@@ -22,7 +22,7 @@
 import { createHash } from "node:crypto";
 import { createLogger } from "@atlas/logger";
 import { createJetStreamKVStorage, type KVStorage } from "@atlas/storage";
-import { dec, enc } from "jetstream";
+import { dec, enc, isStreamNotFound, registerReconnectReset } from "jetstream";
 import { AckPolicy, DeliverPolicy, type NatsConnection, RetentionPolicy, StorageType } from "nats";
 import type { SessionStreamEvent, SessionSummary, SessionView } from "./session-events.ts";
 import { SessionStreamEventSchema, SessionSummarySchema } from "./session-events.ts";
@@ -51,6 +51,20 @@ const METADATA_BUCKET = "SESSION_METADATA";
 const INFLIGHT_BUCKET = "SESSION_INFLIGHT";
 
 const NINETY_DAYS_NS = 90 * 24 * 60 * 60 * 1_000_000_000;
+/**
+ * Default broker-side dedup window for `SESSION_EVENTS`. The default
+ * `duplicate_window` (2m) was insufficient for long-running FSM jobs: past
+ * 2m a re-publish of the stable-msg-id event from `save()` lands AS NEW
+ * instead of being deduped. The reducer's `step:start` matcher (agentName +
+ * pending) then appends a duplicate AgentBlock, and status derivation sees
+ * both pending and complete simultaneously — surfacing to the user as
+ * `status: "active"` post-completion.
+ *
+ * 24h matches the default chosen by the JetStream config module
+ * (`packages/jetstream/src/config.ts`), and by the chat backend and
+ * narrative store. ~Few hundred MB of extra disk on bursty workloads.
+ */
+const DEFAULT_DUPLICATE_WINDOW_NS = 24 * 60 * 60 * 1_000_000_000;
 
 const SAFE_TOKEN_RE = /[^A-Za-z0-9_-]/g;
 function sanitize(s: string): string {
@@ -62,22 +76,42 @@ export class JetStreamSessionHistoryAdapter implements SessionHistoryAdapter {
   private inflightKV: KVStorage | null = null;
   private streamReady = false;
 
-  constructor(private readonly nc: NatsConnection) {}
+  constructor(private readonly nc: NatsConnection) {
+    // N6: invalidate cached ensure-state on NATS reconnect.
+    registerReconnectReset(this.nc, () => {
+      this.metadataKV = null;
+      this.inflightKV = null;
+      this.streamReady = false;
+    });
+  }
 
   /** Lazily provision the SESSION_EVENTS stream with the right config. */
   private async ensureStream(): Promise<void> {
     if (this.streamReady) return;
     const jsm = await this.nc.jetstreamManager();
+    const cfg = {
+      name: STREAM_NAME,
+      subjects: [`${SUBJECT_PREFIX}.>`],
+      retention: RetentionPolicy.Limits,
+      storage: StorageType.File,
+      max_age: NINETY_DAYS_NS,
+      duplicate_window: DEFAULT_DUPLICATE_WINDOW_NS,
+    };
     try {
       await jsm.streams.info(STREAM_NAME);
-    } catch {
-      await jsm.streams.add({
-        name: STREAM_NAME,
-        subjects: [`${SUBJECT_PREFIX}.>`],
-        retention: RetentionPolicy.Limits,
-        storage: StorageType.File,
-        max_age: NINETY_DAYS_NS,
-      });
+      // Stream exists. Reconcile config for streams created before the J2
+      // fix (broker default duplicate_window was 2m). `streams.update` is
+      // idempotent when the config matches and harmless otherwise.
+      // Typed catch: if the update itself fails for a permanent reason
+      // (incompatible config field, broker rejection),
+      // re-raise instead of silently falling through to `streams.add`
+      // (which would fail with stream-already-exists and mask the real
+      // error). Mirrors the elicitations adapter's `isStreamNotFound`
+      // discrimination.
+      await jsm.streams.update(STREAM_NAME, cfg);
+    } catch (err) {
+      if (!isStreamNotFound(err)) throw err;
+      await jsm.streams.add(cfg);
     }
     this.streamReady = true;
   }
@@ -127,14 +161,16 @@ export class JetStreamSessionHistoryAdapter implements SessionHistoryAdapter {
     await this.ensureStream();
     const js = this.nc.jetstream();
     // Idempotent backfill: republish each event with a stable
-    // `Nats-Msg-Id`. The broker silently rejects duplicates within its
-    // dedup window (default 2m, plenty for "appendEvent → save" in the
-    // same handler), so the common case where appendEvent already
-    // streamed every event becomes a no-op at the stream layer.
-    // Without this, the reducer would see two `step:start` events for
-    // every step on a save() that follows appendEvent (the reducer
-    // matches step:start by agentName+pending, so a re-publish appends
-    // a duplicate block instead of merging — verified in repro).
+    // `Nats-Msg-Id`. The broker silently rejects duplicates within the
+    // configured dedup window (24h post-J2; see DEFAULT_DUPLICATE_WINDOW_NS
+    // above for why we bumped it from the 2m default), so the common
+    // case where appendEvent already streamed every event becomes a
+    // no-op at the stream layer. Without this, the reducer would see
+    // two `step:start` events for every step on a save() that follows
+    // appendEvent (pre-J2 reducer matched step:start by agentName+pending,
+    // so a re-publish appended a duplicate block instead of merging —
+    // verified in repro). J2 also added a reducer-side guard against the
+    // same dup as defense-in-depth.
     if (events.length > 0) {
       for (const e of events) {
         await js.publish(this.subject(sessionId), enc.encode(JSON.stringify(e)), {
@@ -148,6 +184,18 @@ export class JetStreamSessionHistoryAdapter implements SessionHistoryAdapter {
     await inflight.delete([sessionId]);
   }
 
+  /**
+   * Overwrite the metadata KV entry for an already-saved session. C2's
+   * detached aiSummary path calls this once `generateSessionSummary`
+   * finishes so the Activity page (which reads via `listByWorkspace`) sees
+   * the polished summary on next read. KV history=1 means the previous
+   * value is dropped on write — desired semantics.
+   */
+  async updateSummary(sessionId: string, summary: SessionSummary): Promise<void> {
+    const metadata = await this.getMetadataKV();
+    await metadata.set([sessionId], summary);
+  }
+
   async get(sessionId: string): Promise<SessionView | null> {
     await this.ensureStream();
     const subject = this.subject(sessionId);
@@ -156,7 +204,14 @@ export class JetStreamSessionHistoryAdapter implements SessionHistoryAdapter {
     // Spin up an ephemeral pull consumer filtered to this session's
     // subject. Cheaper than scanning the whole stream by sequence;
     // ephemeral so we don't accumulate per-session consumer entries.
-    const consumerName = `session-read-${sanitize(sessionId)}-${Date.now()}`;
+    //
+    // Suffix uses `crypto.randomUUID()` rather than `Date.now()` because
+    // two reads of the same session can race within the same millisecond
+    // (cron + HTTP). With the timestamp-based suffix the second
+    // `consumers.add` threw `consumer-already-exists`, the catch
+    // swallowed, and the second reader returned `null` — surfacing as a
+    // session that vanished between requests (review N1).
+    const consumerName = `session-read-${sanitize(sessionId)}-${crypto.randomUUID()}`;
     try {
       await jsm.consumers.add(STREAM_NAME, {
         name: consumerName,
@@ -179,6 +234,7 @@ export class JetStreamSessionHistoryAdapter implements SessionHistoryAdapter {
       if (total === 0) return null;
       let received = 0;
       while (received < total) {
+        const before = received;
         const batch = await consumer.fetch({
           max_messages: Math.min(500, total - received),
           expires: 1000,
@@ -191,6 +247,19 @@ export class JetStreamSessionHistoryAdapter implements SessionHistoryAdapter {
           } catch (err) {
             logger.warn("Skipping corrupted session event", { sessionId, error: String(err) });
           }
+        }
+        if (received === before) {
+          // Fetch timed out without delivering anything. info() saw `total`
+          // pending but the consumer never produced them — typically
+          // mid-read drift (events were ack'd by another reader, or the
+          // consumer's filter raced a stream purge). Break instead of
+          // spinning so a degraded stream doesn't wedge the read path.
+          logger.warn("session-history get() stalled mid-read", {
+            sessionId,
+            expectedTotal: total,
+            actualReceived: received,
+          });
+          break;
         }
       }
     } finally {

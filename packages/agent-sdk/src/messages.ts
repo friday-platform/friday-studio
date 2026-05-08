@@ -161,12 +161,6 @@ export const AtlasDataEventSchemas = {
     toVersion: z.string(),
     at: z.string(),
   }),
-  "scratchpad-write": z.object({
-    sessionKey: z.string(),
-    chunkId: z.string(),
-    kind: z.string(),
-    at: z.string(),
-  }),
   "skill-write": z.object({
     workspaceId: z.string(),
     name: z.string(),
@@ -215,14 +209,6 @@ export const MemoryRollbackEventSchema = z.object({
   at: z.string(),
 });
 
-export const ScratchpadWriteEventSchema = z.object({
-  type: z.literal("scratchpad-write"),
-  sessionKey: z.string(),
-  chunkId: z.string(),
-  kind: z.string(),
-  at: z.string(),
-});
-
 export const SkillWriteEventSchema = z.object({
   type: z.literal("skill-write"),
   workspaceId: z.string(),
@@ -242,7 +228,6 @@ export const SkillRollbackEventSchema = z.object({
 export const AtlasDataEventSchema = z.discriminatedUnion("type", [
   MemoryWriteEventSchema,
   MemoryRollbackEventSchema,
-  ScratchpadWriteEventSchema,
   SkillWriteEventSchema,
   SkillRollbackEventSchema,
 ]);
@@ -279,7 +264,6 @@ export type AtlasDataEvents = {
   "action-summary": z.infer<(typeof AtlasDataEventSchemas)["action-summary"]>;
   "memory-write": z.infer<(typeof AtlasDataEventSchemas)["memory-write"]>;
   "memory-rollback": z.infer<(typeof AtlasDataEventSchemas)["memory-rollback"]>;
-  "scratchpad-write": z.infer<(typeof AtlasDataEventSchemas)["scratchpad-write"]>;
   "skill-write": z.infer<(typeof AtlasDataEventSchemas)["skill-write"]>;
   "skill-rollback": z.infer<(typeof AtlasDataEventSchemas)["skill-rollback"]>;
   "skill-lint-warning": z.infer<(typeof AtlasDataEventSchemas)["skill-lint-warning"]>;

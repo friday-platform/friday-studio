@@ -3,13 +3,11 @@
   import { Chat as ChatImpl } from "@ai-sdk/svelte";
   import type { AtlasUIMessage } from "@atlas/agent-sdk";
   import { createQuery, useQueryClient } from "@tanstack/svelte-query";
-  import { goto } from "$app/navigation";
   import { page } from "$app/state";
   import { workspaceQueries } from "$lib/queries";
   import { DefaultChatTransport } from "ai";
   import ChatInput, { type ImageAttachment } from "./chat-input.svelte";
   import ChatInspector from "./chat-inspector.svelte";
-  import ChatListPanel from "./chat-list-panel.svelte";
   import ChatMessageList from "./chat-message-list.svelte";
   import { createCursorTrackingFetch } from "./cursor-tracking-fetch.ts";
   import { nextQueueStep } from "./chat-queue.ts";
@@ -543,7 +541,7 @@
 
     (async () => {
       try {
-        for await (const event of sessionEventStream(sid)) {
+        for await (const event of sessionEventStream(sid, { signal: controller.signal })) {
           if (controller.signal.aborted) return;
           if ("type" in event && event.type === "step:validation") {
             untrack(() => {
@@ -1030,17 +1028,6 @@
     return chatMsgs;
   });
 
-  /** Navigate to a fresh chat. The loader generates the new chatId. */
-  function startNewChat() {
-    goto(`/platform/${encodeURIComponent(wsId)}/chat`);
-  }
-
-  /** Navigate to an existing chat (from the chat list panel). */
-  function switchToChat(targetChatId: string): void {
-    if (targetChatId === chatId) return;
-    goto(`/platform/${encodeURIComponent(wsId)}/chat/${encodeURIComponent(targetChatId)}`);
-  }
-
   async function handleSubmit(text: string, inputImages: ImageAttachment[] = []) {
     if (!chat) return;
     error = null;
@@ -1199,15 +1186,6 @@
     </div>
   {/if}
 
-  <header class="chat-header">
-    <h2>Chat</h2>
-    <span class="workspace-badge">{workspaceName}</span>
-    <span class="header-spacer"></span>
-    {#if chat && chat.messages.length > 0}
-      <button class="new-chat-button" onclick={startNewChat}>New Chat</button>
-    {/if}
-  </header>
-
   <div class="chat-body">
     <div class="chat-main">
       {#if rehydrating}
@@ -1273,27 +1251,6 @@
       workspaceId={wsId}
       status={streaming ? "streaming" : (chat?.status ?? "idle")}
     />
-
-    <ChatListPanel
-      workspaceId={wsId}
-      currentChatId={chatId}
-      onSelect={switchToChat}
-      onDelete={(deletedId, nextChatId) => {
-        // Only react when the user nuked the chat they're currently
-        // viewing — otherwise the rest of the list stays put and there's
-        // nothing to do here. When it IS the current chat, jump to the
-        // neighbor the panel picked (older-first, falling back to newer)
-        // so browsing history stays fluid. If the list is empty now,
-        // start a fresh chat instead of leaving a dead id on screen.
-        if (deletedId !== chatId) return;
-        if (nextChatId) {
-          // switchToChat already persists and kicks off rehydration.
-          switchToChat(nextChatId);
-        } else {
-          startNewChat();
-        }
-      }}
-    />
   </div>
 </div>
 
@@ -1304,57 +1261,6 @@
     flex-direction: column;
     min-block-size: 0;
     overflow: hidden;
-  }
-
-  .chat-header {
-    align-items: center;
-    background-color: var(--surface);
-    border-block-end: 1px solid var(--color-border-1);
-    display: flex;
-    flex-shrink: 0;
-    gap: var(--size-3);
-    padding: var(--size-4) var(--size-5);
-    position: sticky;
-    inset-block-start: 0;
-    z-index: var(--layer-1, 10);
-  }
-
-  .chat-header h2 {
-    font-size: var(--font-size-4);
-    font-weight: var(--font-weight-6);
-  }
-
-  .workspace-badge {
-    background-color: var(--color-surface-3);
-    border-radius: var(--radius-2);
-    color: color-mix(in srgb, var(--color-text), transparent 20%);
-    font-size: var(--font-size-1);
-    padding: var(--size-0-5) var(--size-2);
-  }
-
-  .header-spacer {
-    flex: 1;
-  }
-
-  .new-chat-button {
-    background-color: var(--color-surface-3);
-    border: 1px solid var(--color-border-1);
-    border-radius: var(--radius-2);
-    color: var(--color-text);
-    cursor: pointer;
-    font-size: var(--font-size-1);
-    font-weight: var(--font-weight-5);
-    padding: var(--size-1) var(--size-2-5);
-    transition: background-color 150ms ease;
-  }
-
-  .new-chat-button:hover:not(:disabled) {
-    background-color: var(--color-surface-2);
-  }
-
-  .new-chat-button:disabled {
-    cursor: default;
-    opacity: 0.5;
   }
 
   .rehydrating-indicator {

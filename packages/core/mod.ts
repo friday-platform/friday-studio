@@ -33,6 +33,32 @@ export { conversationStorage } from "./src/chat-storage.ts";
 export * from "./src/constants/supervisor-status.ts";
 // Credential Fetcher
 export * from "./src/credential-fetcher.ts";
+// Elicitations (durable HITL pause-and-ask events).
+export type {
+  CreateElicitationInput,
+  Elicitation,
+  ElicitationAnswer,
+  ElicitationKind,
+  ElicitationOption,
+  ElicitationPendingTool,
+  ElicitationStatus,
+  ElicitationStorageAdapter,
+  ExpireSweepResult,
+  ToolAccessGrant,
+} from "./src/elicitations/mod.ts";
+export {
+  CreateElicitationSchema,
+  ElicitationAnswerSchema,
+  ElicitationKindSchema,
+  ElicitationOptionSchema,
+  ElicitationPendingToolSchema,
+  ElicitationSchema,
+  ElicitationStatusSchema,
+  ElicitationStorage,
+  initElicitationStorage,
+  ToolAccessGrantSchema,
+  ToolAccessGrants,
+} from "./src/elicitations/mod.ts";
 // Error types
 export { MissingEnvironmentError } from "./src/errors/missing-environment-error.ts";
 export { SessionFailedError } from "./src/errors/session-failed-error.ts";
@@ -79,7 +105,6 @@ export {
 export { mapFsmEventToSessionEvent } from "./src/session/fsm-event-mapper.ts";
 export * from "./src/session/history-storage.ts";
 export { JetStreamSessionHistoryAdapter } from "./src/session/jetstream-session-history-adapter.ts";
-export { LocalSessionHistoryAdapter } from "./src/session/local-session-history-adapter.ts";
 // Planned Steps (FSM graph traversal)
 export {
   extractPlannedSteps,
@@ -115,8 +140,14 @@ export {
   StepStartEventSchema,
   type StepValidationEvent,
   StepValidationEventSchema,
+  type StepValidationIssue,
+  StepValidationIssueSchema,
+  type StepValidationOutput,
+  StepValidationOutputSchema,
   type ToolCallSummary,
   ToolCallSummarySchema,
+  type ValidationStrategy,
+  ValidationStrategySchema,
 } from "./src/session/session-events.ts";
 export type { SessionHistoryAdapter } from "./src/session/session-history-adapter.ts";
 // Session Reducer

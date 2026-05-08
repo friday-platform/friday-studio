@@ -248,7 +248,12 @@ export async function expandArtifactRefsInInput(
     const timeout = AbortSignal.timeout(5000);
 
     const response = await parseResult(
-      client.artifactsStorage["batch-get"].$post({ json: { ids } }, { init: { signal: timeout } }),
+      (
+        client.artifactsStorage["batch-get"].$post as unknown as (
+          args: { json: { ids: string[]; includeContents?: boolean } },
+          opts?: { init?: { signal?: AbortSignal } },
+        ) => ReturnType<(typeof client.artifactsStorage)["batch-get"]["$post"]>
+      )({ json: { ids, includeContents: true } }, { init: { signal: timeout } }),
     );
 
     if (!response.ok) {
@@ -257,7 +262,16 @@ export async function expandArtifactRefsInInput(
 
     const artifactContent: Record<string, unknown> = {};
     for (const artifact of response.data.artifacts) {
-      artifactContent[artifact.id] = artifact.data;
+      const withContents = artifact as typeof artifact & { contents?: string };
+      if (typeof withContents.contents === "string") {
+        try {
+          artifactContent[artifact.id] = JSON.parse(withContents.contents) as unknown;
+        } catch {
+          artifactContent[artifact.id] = withContents.contents;
+        }
+      } else {
+        artifactContent[artifact.id] = artifact.data;
+      }
     }
 
     if (Object.keys(artifactContent).length === 0) {

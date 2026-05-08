@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+
+description: Friday first-principles daemon evals
+
+prompts:
+  - '{{scenarioId}}'
+
+providers:
+  - id: file://provider.cjs
+    label: friday-first-principles-daemon
+
+defaultTest:
+  assert:
+    - type: is-json
+    - type: javascript
+      value: |
+        const result = JSON.parse(output);
+        if (result.pass !== true) {
+          throw new Error(`${result.id} failed: ${(result.notes || []).join('; ')}`);
+        }
+        return true;
+
+tests: file://tests.yaml

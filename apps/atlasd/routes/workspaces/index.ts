@@ -1,6 +1,7 @@
 import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import process from "node:process";
+import type { AtlasUIMessageChunk } from "@atlas/agent-sdk";
 import {
   exportAll,
   exportGlobalSkills,
@@ -133,7 +134,9 @@ async function validateImportedWorkspace(
       status: 400,
       body: {
         success: false,
-        error: `Invalid workspace configuration: ${validationResult.error.issues.map((issue) => issue.message).join(", ")}`,
+        error: `Invalid workspace configuration: ${validationResult.error.issues
+          .map((issue) => issue.message)
+          .join(", ")}`,
       },
     };
   }
@@ -213,10 +216,39 @@ async function buildMcpToolRegistry(config: WorkspaceConfig): Promise<Registry> 
 
 /** Shared schemas for the signal endpoint (SSE + JSON handlers). */
 const signalParamSchema = z.object({ workspaceId: z.string(), signalId: z.string() });
+const INTERNAL_SIGNAL_BYPASS_HEADER = "x-friday-internal-signal-bypass";
+const INTERNAL_SIGNAL_BYPASS_TOKEN_ENV = "FRIDAY_INTERNAL_SIGNAL_BYPASS_TOKEN";
+
+function isInternalSignalBypassAuthorized(c: {
+  req: { header: (name: string) => string | undefined };
+}): boolean {
+  const token = process.env[INTERNAL_SIGNAL_BYPASS_TOKEN_ENV];
+  return Boolean(token && c.req.header(INTERNAL_SIGNAL_BYPASS_HEADER) === token);
+}
+
+function rejectUnauthorizedSignalBypass() {
+  return { error: "bypassConcurrency is internal to workspace-chat job tools" };
+}
+
 const signalBodySchema = z.object({
   payload: z.record(z.string(), z.unknown()).optional(),
   streamId: z.string().optional(),
   skipStates: z.array(z.string()).optional(),
+  /**
+   * Internal: workspace-chat job tools set this so interactive chat-spawned
+   * jobs bypass the JetStream cascade concurrency gate. User-facing HTTP
+   * triggers still go through the per-signal skip/queue/concurrent/replace
+   * policy.
+   */
+  bypassConcurrency: z.boolean().optional(),
+  /**
+   * Parent session id, when this signal is being fired from inside another
+   * session (chat-spawned-job, signal-trigger-from-FSM). Forwarded to the
+   * runtime so the spawned session's `SessionSummary.parentSessionId` is
+   * populated. Phase 11 of the fan-out-without-fan-in plan — provenance
+   * data layer for crystallization.
+   */
+  parentSessionId: z.string().optional(),
 });
 
 export * from "./schemas.ts";
@@ -1587,6 +1619,90 @@ const workspacesRoutes = daemonFactory
     }
 
     const encoder = new TextEncoder();
+
+    if (body.bypassConcurrency) {
+      if (!isInternalSignalBypassAuthorized(c)) {
+        return c.json(rejectUnauthorizedSignalBypass(), 403);
+      }
+      const clientAbort = c.req.raw.signal;
+      const sseStream = new ReadableStream({
+        async start(controller) {
+          const safeEnqueue = (bytes: Uint8Array) => {
+            try {
+              controller.enqueue(bytes);
+              return true;
+            } catch (err) {
+              logger.debug("Client disconnected during direct signal SSE stream", {
+                workspaceId,
+                signalId,
+                error: err,
+              });
+              return false;
+            }
+          };
+
+          const forwardChunk = (chunk: AtlasUIMessageChunk) => {
+            safeEnqueue(encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`));
+          };
+
+          try {
+            const result = await ctx.daemon.triggerWorkspaceSignal(
+              workspaceId,
+              signalId,
+              body.payload,
+              body.streamId,
+              forwardChunk,
+              undefined,
+              clientAbort,
+              body.parentSessionId,
+            );
+            safeEnqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({
+                  type: "job-complete",
+                  data: {
+                    success: true,
+                    sessionId: result.sessionId,
+                    status: "completed",
+                    output: result.output,
+                    artifactIds: result.artifactIds ?? [],
+                    summary: result.summary ?? "",
+                  },
+                })}\n\n`,
+              ),
+            );
+          } catch (error) {
+            const errorMessage = stringifyError(error);
+            logger.error("Direct signal trigger SSE error", {
+              error: errorMessage,
+              workspaceId,
+              signalId,
+            });
+            safeEnqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({ type: "job-error", data: { error: errorMessage } })}\n\n`,
+              ),
+            );
+          } finally {
+            safeEnqueue(encoder.encode("data: [DONE]\n\n"));
+            try {
+              controller.close();
+            } catch {
+              /* already closed */
+            }
+          }
+        },
+      });
+
+      return new Response(sseStream, {
+        headers: {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          Connection: "keep-alive",
+        },
+      });
+    }
+
     const correlationId = crypto.randomUUID();
     const nc = ctx.daemon.getNatsConnection();
 
@@ -1670,6 +1786,11 @@ const workspacesRoutes = daemonFactory
             signalId,
             payload: body.payload,
             streamId: body.streamId,
+            // Phase 11: forwarded as the cascade envelope's
+            // `sourceSessionId`, which the daemon's CascadeConsumer threads
+            // into `SessionSummary.parentSessionId`. Absent on root signal
+            // triggers (cron, external HTTP, no-parent calls).
+            sourceSessionId: body.parentSessionId,
             correlationId,
           });
 
@@ -1679,7 +1800,13 @@ const workspacesRoutes = daemonFactory
             const result = response.result as {
               sessionId: string;
               output: Array<{ id: string; type: string; data: Record<string, unknown> }>;
+              artifactIds?: string[];
+              summary?: string;
             };
+            // Phase 2.C — additive payload extension. `output: Document[]`
+            // stays for one transition window so existing supervisor
+            // consumers don't break; new fields let opt-in callers prefer
+            // refs + a synthesized summary over the bulky doc array.
             safeEnqueue(
               encoder.encode(
                 `data: ${JSON.stringify({
@@ -1689,6 +1816,8 @@ const workspacesRoutes = daemonFactory
                     sessionId: result.sessionId,
                     status: "completed",
                     output: result.output,
+                    artifactIds: result.artifactIds ?? [],
+                    summary: result.summary ?? "",
                   },
                 })}\n\n`,
               ),
@@ -1701,7 +1830,10 @@ const workspacesRoutes = daemonFactory
             });
             safeEnqueue(
               encoder.encode(
-                `data: ${JSON.stringify({ type: "job-error", data: { error: response.error } })}\n\n`,
+                `data: ${JSON.stringify({
+                  type: "job-error",
+                  data: { error: response.error },
+                })}\n\n`,
               ),
             );
           }
@@ -1753,8 +1885,46 @@ const workspacesRoutes = daemonFactory
     zValidator("json", signalBodySchema),
     async (c) => {
       const { workspaceId, signalId } = c.req.valid("param");
-      const { payload, streamId, skipStates: _skipStates } = c.req.valid("json");
+      const {
+        payload,
+        streamId,
+        skipStates: _skipStates,
+        parentSessionId,
+        bypassConcurrency,
+      } = c.req.valid("json");
       const ctx = c.get("app");
+
+      if (bypassConcurrency) {
+        if (!isInternalSignalBypassAuthorized(c)) {
+          return c.json(rejectUnauthorizedSignalBypass(), 403);
+        }
+        try {
+          const result = await ctx.daemon.triggerWorkspaceSignal(
+            workspaceId,
+            signalId,
+            payload,
+            streamId,
+            undefined,
+            _skipStates,
+            c.req.raw.signal,
+            parentSessionId,
+          );
+          return c.json({
+            message: "Signal completed",
+            status: "completed" as const,
+            workspaceId,
+            signalId,
+            sessionId: result.sessionId,
+            output: result.output,
+            artifactIds: result.artifactIds ?? [],
+            summary: result.summary ?? "",
+          });
+        } catch (error) {
+          const errorMessage = stringifyError(error);
+          logger.error("Direct signal trigger failed", { error, workspaceId, signalId });
+          return c.json({ error: `Failed to process signal: ${errorMessage}` }, 500);
+        }
+      }
 
       const correlationId = crypto.randomUUID();
       const nc = ctx.daemon.getNatsConnection();
@@ -1809,6 +1979,10 @@ const workspacesRoutes = daemonFactory
           signalId,
           payload,
           streamId,
+          // Phase 11: forwarded as the cascade envelope's
+          // `sourceSessionId`, threaded by the daemon's CascadeConsumer
+          // into `SessionSummary.parentSessionId`.
+          sourceSessionId: parentSessionId,
           correlationId,
         });
         const response = await responsePromise;
@@ -1819,6 +1993,8 @@ const workspacesRoutes = daemonFactory
         const result = response.result as {
           sessionId: string;
           output: Array<{ id: string; type: string; data: Record<string, unknown> }>;
+          artifactIds?: string[];
+          summary?: string;
         };
         return c.json({
           message: "Signal completed",
@@ -1827,6 +2003,8 @@ const workspacesRoutes = daemonFactory
           signalId,
           sessionId: result.sessionId,
           output: result.output,
+          artifactIds: result.artifactIds ?? [],
+          summary: result.summary ?? "",
         });
       } catch (error) {
         const errorMessage = stringifyError(error);
@@ -2175,12 +2353,16 @@ const workspacesRoutes = daemonFactory
       const available: typeof catalog = [];
 
       for (const skill of catalog) {
-        if (skill.name === null || skill.name === "" || skill.disabled) continue;
+        if (skill.name === null || skill.name === "" || skill.disabled) {
+          continue;
+        }
         if (skill.namespace === "friday") {
           friday.push(skill);
           continue;
         }
-        if (inheritedIds.has(skill.skillId) || jobIds.has(skill.skillId)) continue;
+        if (inheritedIds.has(skill.skillId) || jobIds.has(skill.skillId)) {
+          continue;
+        }
         available.push(skill);
       }
 
@@ -2197,7 +2379,9 @@ const workspacesRoutes = daemonFactory
       const manager = ctx.getWorkspaceManager();
       const workspace =
         (await manager.find({ id: workspaceId })) || (await manager.find({ name: workspaceId }));
-      if (!workspace) return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
+      if (!workspace) {
+        return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
+      }
 
       const config = await manager.getWorkspaceConfig(workspace.id);
       const jobNames = Object.keys(config?.workspace?.jobs ?? {});

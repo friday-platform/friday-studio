@@ -10,9 +10,11 @@ export type { ToolCall, ToolResult };
 import type { ValidationVerdict } from "@atlas/hallucination/verdict";
 import type { ModelMessage, Tool } from "ai";
 import type { DocumentScope } from "../document-store/mod.ts";
+import type { ValidateStrategy } from "./schema.ts";
 
+// Re-export ValidateStrategy for consumers of this types module.
 // Re-export DocumentScope for convenience
-export type { DocumentScope };
+export type { DocumentScope, ValidateStrategy };
 
 export interface JSONSchema {
   [key: string]: unknown;
@@ -65,6 +67,32 @@ export interface LLMAction {
   model: string;
   prompt: string;
   tools?: string[];
+  /**
+   * Step-level skill allowlist. Narrows which skills this LLM action can
+   * `load_skill`. See `LLMActionSchema.skills` in schema.ts for full semantics
+   * (undefined ⇒ inherit, [] ⇒ opt-out, populated ⇒ whitelist).
+   */
+  skills?: string[];
+  /**
+   * Short human-readable summary of what this action does. See
+   * `LLMActionSchema.summary` in schema.ts.
+   */
+  summary?: string;
+  /**
+   * Per-action validation strategy. See `ValidateStrategySchema` in schema.ts
+   * for full semantics. Absent or `"auto"` ⇒ runtime classifier picks `skip`
+   * or `self`. The classifier never auto-resolves to `external`.
+   */
+  validate?: ValidateStrategy;
+  /**
+   * Author opt-in to treat `run_code` as read-only for this action. See
+   * `LLMActionSchema.run_code` in schema.ts.
+   * `run_code` is excluded from the default `READ_ONLY_ALLOWLIST` because
+   * it can mutate state; this knob lets a deterministic SQL `SELECT` /
+   * HTTP `GET` / arithmetic transform skip self-validation. Combined with
+   * `outputType:`, the action then resolves to `validate: skip`.
+   */
+  run_code?: { readOnly: boolean };
   outputTo?: string;
   /** Explicit document type name for schema lookup. Takes precedence over outputTo document's type. */
   outputType?: string;
@@ -86,6 +114,20 @@ export interface AgentAction {
   outputType?: string;
   /** Per-step task instructions. Concatenated after the workspace agent's config prompt. */
   prompt?: string;
+  /**
+   * Step-level skill allowlist. See `AgentActionSchema.skills` in schema.ts.
+   */
+  skills?: string[];
+  /**
+   * Short human-readable summary of what this action does. See
+   * `LLMActionSchema.summary` in schema.ts.
+   */
+  summary?: string;
+  /**
+   * Per-action validation strategy — see `ValidateStrategySchema` in
+   * schema.ts. Mirrors the field on LLMAction.
+   */
+  validate?: ValidateStrategy;
   /**
    * Document id(s) whose `data` becomes the agent's task input. String form
    * chains a single prior step's `outputTo`; array form concatenates
@@ -180,6 +222,39 @@ export interface FSMActionExecutionEvent {
       toolCalls: Array<{ toolName: string; args: unknown }>;
       reasoning?: string;
       output: unknown;
+      /**
+       * Per-call LLM token usage. Optional; non-LLM (agent) paths leave this
+       * absent. See
+       * `@atlas/core/session-events` `StepUsageSchema` for the on-the-wire
+       * shape.
+       */
+      usage?: {
+        inputTokens?: number;
+        outputTokens?: number;
+        cacheReadTokens?: number;
+        cacheWriteTokens?: number;
+        model?: string;
+      };
+      /**
+       * Per-action validation outcome — present on every `type: llm` and
+       * `case "agent" → type: llm` action. Three shapes mirror the resolved
+       * strategy: `skip` carries `skipReason`; `self` carries the LLM's
+       * `record_validation` args; `external` carries the judge-derived
+       * verdict. See `@atlas/core/session-events` `StepValidationOutputSchema`
+       * for the on-the-wire shape.
+       */
+      validation?: {
+        strategy: "skip" | "self" | "external";
+        verdict?: "pass" | "advisory" | "blocking";
+        issues?: Array<{
+          category?: string;
+          claim: string;
+          reasoning?: string;
+          severity?: "low" | "medium" | "high" | "info" | "warn" | "error";
+          citation?: string | null;
+        }>;
+        skipReason?: string;
+      };
     };
   };
 }
@@ -285,6 +360,14 @@ export interface SignalWithContext extends Signal {
     abortSignal?: AbortSignal;
     /** State IDs to skip — their entry actions won't execute, engine chains through */
     skipStates?: string[];
+    /**
+     * Delegation depth at this signal's frame.
+     * `0` (or unset) means the FSM is running at the user-facing top level.
+     * Each `delegate` tool invocation increments this on the child's
+     * synthetic signal context, so depth-cap enforcement can read a single
+     * counter regardless of how the child is invoked.
+     */
+    delegationDepth?: number;
   };
 }
 
@@ -312,28 +395,60 @@ export interface LLMActionTrace {
 }
 
 /**
- * Result of validating LLM output.
- * Named distinctly to avoid collision with ValidationResult in validator.ts.
+ * One tool call's projection in the judge handoff manifest. The runtime walks
+ * the action's `traceToolResults` and builds one entry per call:
  *
- * The verdict's `status` field drives retry policy: `pass` and `uncertain`
- * proceed identically to downstream steps; `fail` triggers a single retry, and
- * a second `fail` throws with the verdict attached on the error.
+ *   - `resultArtifactId` + `resultSummary` for scrubber-lifted (A2) results
+ *     so the judge sees a short ref string and fetches via `artifacts_get`
+ *     only for the specific claims it needs to verify.
+ *   - `resultInline` otherwise — small payloads inline up to the cap.
  */
-export interface LLMOutputValidationResult {
-  verdict: ValidationVerdict;
+export interface JudgeToolCallEntry {
+  toolName: string;
+  args?: unknown;
+  /** Set when the tool result was lifted to an artifact by the scrubber. */
+  resultArtifactId?: string;
+  /** Human-readable preview of the lifted artifact (mime / size / source). */
+  resultSummary?: string;
+  /** Set when the tool result was small enough to inline directly. */
+  resultInline?: string;
 }
 
 /**
- * Function type for validating LLM action output.
- * Returns a promise because real validators call LLMs for analysis.
- *
- * `abortSignal` lets callers cancel an in-flight judge call when a job is
- * aborted mid-validation, so doomed validations do not waste tokens.
+ * Distilled handoff the FSM engine builds for the judge agent's delegate
+ * call. Refs-not-bytes: scrubber-lifted results carry only the artifact id
+ * + summary, so cost scales with judgment work rather than input size.
  */
-export type OutputValidator = (
-  trace: LLMActionTrace,
-  abortSignal?: AbortSignal,
-) => Promise<LLMOutputValidationResult>;
+export interface JudgeHandoff {
+  /** The action's input prompt — what the LLM was asked to produce. */
+  actionInput: string;
+  /** The action's output — the LLM's draft to be judged. */
+  actionOutput: string;
+  /** Per-tool-call manifest with refs for lifted artifacts and inline for small payloads. */
+  toolCalls: JudgeToolCallEntry[];
+}
+
+/**
+ * Function type the FSM engine calls when an action's resolved validation
+ * decision is `external`. External validation is a separate system-level judge
+ * agent (default `judge-agent`, overridable via `validate.agent`).
+ *
+ * Implementations live outside fsm-engine (workspace runtime wires this to
+ * the agent orchestrator). Returns the verdict the judge emitted, or `ok:
+ * false` when the judge failed (budget exhausted, agent not found,
+ * exception). The runtime synthesizes an advisory verdict on `ok: false`
+ * so the action still emits.
+ */
+export type JudgeAgentRunner = (input: {
+  /** Default `"judge-agent"`; can be overridden via `validate.agent`. */
+  agentId: string;
+  /** Distilled handoff the judge agent reads. */
+  handoff: JudgeHandoff;
+  /** Parent workspace/session context for artifact-aware judge tools. */
+  workspaceId?: string;
+  sessionId?: string;
+  abortSignal?: AbortSignal;
+}) => Promise<{ ok: true; verdict: ValidationVerdict } | { ok: false; error: string }>;
 
 export interface LLMProvider {
   call(params: {

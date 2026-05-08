@@ -96,6 +96,17 @@ export class NatsSessionStream {
     await this.adapter.save(this.sessionId, [...this.events], summary);
   }
 
+  /**
+   * C2 — overwrite the persisted SessionSummary for this session after
+   * finalize() has already saved the synchronous-fallback summary. The
+   * detached `generateSessionSummary` flow calls this once the LLM round-
+   * trip finishes so the Activity page picks up the polished aiSummary.
+   * Last-write-wins; safe to call concurrently.
+   */
+  async updateSummary(summary: SessionSummary): Promise<void> {
+    await this.adapter.updateSummary(this.sessionId, summary);
+  }
+
   isActive(): boolean {
     return this.active;
   }

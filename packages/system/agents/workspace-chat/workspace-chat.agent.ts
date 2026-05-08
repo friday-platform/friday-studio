@@ -1,5 +1,5 @@
 import process from "node:process";
-import type { AtlasTools, AtlasUIMessage } from "@atlas/agent-sdk";
+import type { AtlasTools, AtlasUIMessage, ToolCall, ToolResult } from "@atlas/agent-sdk";
 import {
   closePendingToolParts,
   createAgent,
@@ -7,11 +7,17 @@ import {
   repairToolCall,
   validateAtlasUIMessages,
 } from "@atlas/agent-sdk";
-import { pipeUIMessageStream } from "@atlas/agent-sdk/vercel-helpers";
+import {
+  collectToolUsageFromSteps,
+  extractArtifactRefsFromToolResults,
+  pipeUIMessageStream,
+} from "@atlas/agent-sdk/vercel-helpers";
 import { bundledAgents } from "@atlas/bundled-agents";
 import { client, parseResult } from "@atlas/client/v2";
 import { CommunicatorKindSchema, type WorkspaceConfig } from "@atlas/config";
+import { scrubAssistantMessage } from "@atlas/core/artifacts/scrubber";
 import { ChatStorage } from "@atlas/core/chat/storage";
+import { createDelegateTool } from "@atlas/core/delegate";
 import { createErrorCause, getErrorDisplayMessage } from "@atlas/core/errors";
 import {
   buildTemporalFacts,
@@ -32,23 +38,22 @@ import {
 import { z } from "zod";
 import { fetchLinkSummary, formatIntegrationsSection } from "../link-context.ts";
 import {
+  composeArtifactBlocks,
   composeMemoryBlocks,
   composeSkills,
   composeTools,
   composeWorkspaceSections,
   fetchForegroundContexts,
 } from "./compose-context.ts";
-import { scrubAssistantMessage } from "./lib/scrub-tool-output.ts";
 import { buildOnboardingClause, buildUserProfileClause } from "./onboarding.ts";
 import SYSTEM_PROMPT from "./prompt.txt" with { type: "text" };
 import { connectCommunicatorSucceeded, connectServiceSucceeded } from "./stop-conditions.ts";
 import { artifactTools, createArtifactsCreateTool } from "./tools/artifact-tools.ts";
-import { createAgentTool } from "./tools/bundled-agent-tools.ts";
+import { createAgentTool, rebindAgentTool } from "./tools/bundled-agent-tools.ts";
 import { createRunCodeTool } from "./tools/code-exec.ts";
 import { createConnectCommunicatorTool } from "./tools/connect-communicator.ts";
 import { createConnectServiceTool } from "./tools/connect-service.ts";
 import { createCreateMcpServerTool } from "./tools/create-mcp-server.ts";
-import { createDelegateTool } from "./tools/delegate/index.ts";
 import { createDisableMcpServerTool } from "./tools/disable-mcp-server.ts";
 import { createBoundDraftTools } from "./tools/draft-tools.ts";
 import { createEnableMcpServerTool } from "./tools/enable-mcp-server.ts";
@@ -60,6 +65,7 @@ import { createListMcpToolsTool } from "./tools/list-mcp-tools.ts";
 import { createMcpDependenciesTool } from "./tools/mcp-dependencies.ts";
 import { createMemorySaveTool } from "./tools/memory-save.ts";
 import { createPublishSkillTool } from "./tools/publish-skill.ts";
+import { createRequestToolAccessTool } from "./tools/request-tool-access.ts";
 import { createSearchMcpServersTool } from "./tools/search-mcp-servers.ts";
 import {
   createAssignWorkspaceSkillTool,
@@ -307,6 +313,14 @@ export function getSystemPrompt(
     userIdentity?: string;
     resources?: string;
     memory?: string;
+    /**
+     * Phase 9 retrieval-gated artifact injection. Joined
+     * `<retrieved_content>` envelopes built from artifacts created in
+     * the current chat session. Sits next to `memory` in the prompt
+     * because the two are semantic siblings — one carries narrative
+     * recall, the other carries byte-level recall.
+     */
+    artifacts?: string;
     onboarding?: string;
     userProfile?: string;
   },
@@ -317,6 +331,10 @@ export function getSystemPrompt(
 
   if (options?.memory) {
     prompt = `${prompt}\n\n${options.memory}`;
+  }
+
+  if (options?.artifacts) {
+    prompt = `${prompt}\n\n${options.artifacts}`;
   }
 
   if (options?.onboarding) {
@@ -404,6 +422,13 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
     }
 
     let finalText: string | undefined;
+    // Capture the bundled-agent's internal tool calls so the workspace-runtime
+    // side-channel (runtime.ts:executeAgent) can mirror them onto
+    // `step:complete.toolCalls`. This keeps `case "agent" → workspace-chat`
+    // history aligned with the FSM `case "llm"` path.
+    let assembledToolCalls: ToolCall[] = [];
+    let assembledToolResults: ToolResult[] = [];
+    let assembledReasoning: string | undefined;
     let cleanupSkills: (() => Promise<void>) | undefined;
 
     const persistStreamMessage = createUIMessageStream<AtlasUIMessage>({
@@ -469,10 +494,16 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
             });
           }
 
-          // Defense-in-depth: lift any binary that escaped the MCP-boundary
-          // scrubber (LLM-fabricated base64, future tool surfaces) into
-          // artifacts before append. Same scrub logic as the boundary
-          // wrapper; just runs against the assembled assistant message.
+          // F8 (review-2): defense-in-depth pre-persist scrub on the
+          // assistant message. The producer-LLM-side
+          // `liftToolResultsForPersist` (runtime.ts side-channel) already
+          // walks `toolCalls[].result` and replaces oversized strings
+          // with markers; this pass operates on a different view (the
+          // AI SDK's `message.parts` array, persisted to chat history)
+          // and catches anything LLM-fabricated outside the tool-result
+          // path. Cost is bounded — already-lifted strings hit the
+          // marker-prefix early-exit (`scrubber.ts:scrubString` first
+          // check) and short-circuit without re-uploading.
           try {
             const { rewritten } = await scrubAssistantMessage(
               lastMessage.parts as Array<Record<string, unknown>>,
@@ -629,6 +660,9 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           session.streamId,
           writer,
           abortSignal,
+          // Phase 11 provenance: spawned job sessions record this chat
+          // session as their parent so the chat→job tree is recoverable.
+          session.sessionId,
         );
 
         // Ad-hoc freedom tools — modeled on Hermes + OpenClaw patterns.
@@ -676,6 +710,14 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
             logger,
             abortSignal,
             repairToolCall,
+            // Chat composes bundled-agent tools (`agent_<id>`) into the
+            // parent's tool set. When the delegate inherits them, we need to
+            // re-bind so the inner agent's stream events route through the
+            // delegate proxy instead of leaking to the parent writer.
+            // FSM-side callers don't compose these wrappers, so they leave
+            // this hook unset and the delegate just passes inherited tools
+            // through verbatim.
+            rebindAgentTool,
             workspaceConfig: wsConfig,
             linkSummary: linkSummary ?? undefined,
           },
@@ -726,6 +768,12 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
             streamId: session.streamId,
           }),
           ...createMemorySaveTool(workspaceId, logger),
+          ...createRequestToolAccessTool({
+            workspaceId,
+            sessionId: adHocSessionId,
+            workspacePermissions: wsConfig?.permissions,
+            logger,
+          }),
           ...webFetchTool,
           ...webSearchTool,
           ...runCodeTool,
@@ -760,29 +808,35 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
             session.streamId,
             writer,
             abortSignal,
+            // Phase 11 provenance: parent linkage for foreground-workspace
+            // job spawns mirrors the primary path above.
+            session.sessionId,
           ),
         }));
         const allTools = composeTools(primaryTools, foregroundToolSets);
         allToolsRef = allTools;
 
-        // Surface artifacts list so the LLM knows what files are available
-        // via artifacts_get. Resources subsystem (Ledger) was deleted; the
-        // artifact catalog is the only stored-output surface now.
-        const resourceSectionParts: string[] = [];
-        if (workspaceDetails.artifacts.length > 0) {
-          const artifactLines = workspaceDetails.artifacts.map(
-            (a) => `- ${a.id} (${a.type}): ${a.title} - ${a.summary}`,
-          );
-          resourceSectionParts.push(
-            `Files (access via artifacts_get):\n${artifactLines.join("\n")}`,
-          );
-        }
-        const resourceSection =
-          resourceSectionParts.length > 0 ? resourceSectionParts.join("\n\n") : undefined;
+        // Do not stuff the workspace's top-N artifact catalog into every chat
+        // prompt. Job tools now return explicit `{ artifactIds, summary }`, and
+        // same-chat artifacts are retrieval-gated below via `composeArtifactBlocks`.
+        // Ambient artifact lists made old sessions' files look current and pushed
+        // supervisors toward artifact/session fan-in instead of explicit refs.
+        const resourceSection = undefined;
 
         // Compose memory blocks from primary + foreground workspaces (always load primary)
         const memoryBlocks = await composeMemoryBlocks(workspaceId, foregroundIds, logger);
         const memorySection = memoryBlocks.length > 0 ? memoryBlocks.join("\n\n") : undefined;
+
+        // Phase 9 retrieval-gated injection. Pull recent artifacts created
+        // during this chat session and surface them as `<retrieved_content>`
+        // envelopes. Per-chat-session scope (user decision 2026-05-05). The
+        // chat path uses chatId (= session.streamId) to match how artifact
+        // tools persist them. Failures fall through silently.
+        const artifactBlocks = await composeArtifactBlocks(
+          { workspaceId, chatId: session.streamId },
+          logger,
+        );
+        const artifactSection = artifactBlocks.length > 0 ? artifactBlocks.join("\n\n") : undefined;
 
         const onboardingClause = buildOnboardingClause(profileState);
         const userProfileClause = buildUserProfileClause(profileState);
@@ -793,6 +847,7 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           userIdentity: userIdentitySection,
           resources: resourceSection,
           memory: memorySection,
+          artifacts: artifactSection,
           onboarding: onboardingClause,
           userProfile: userProfileClause,
         });
@@ -887,8 +942,17 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
             maxRetries: 3,
             abortSignal,
             providerOptions: getDefaultProviderOpts("anthropic"),
-            onFinish: ({ text }) => {
+            onFinish: ({ text, steps, toolCalls, toolResults, reasoningText }) => {
               finalText = text;
+              // J3: harvest internal tool calls from streamText's terminal
+              // event. `collectToolUsageFromSteps` flattens per-step calls
+              // (the AI SDK populates them under `steps[*].toolCalls` /
+              // `.toolResults`) and falls back to top-level arrays. Mirrors
+              // the canonical pattern in `from-llm.ts:195-211`.
+              const collected = collectToolUsageFromSteps({ steps, toolCalls, toolResults });
+              assembledToolCalls = collected.assembledToolCalls;
+              assembledToolResults = collected.assembledToolResults;
+              assembledReasoning = reasoningText || undefined;
             },
             onError: ({ error }) => {
               if (!error) return;
@@ -959,7 +1023,23 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
       cleanupSkills?.();
     }
 
-    return ok({ text: finalText });
+    // J3: surface assembled tool-call telemetry on the result envelope.
+    // The workspace-runtime side-channel writer (runtime.ts) reads
+    // `result.toolCalls` / `result.toolResults` / `result.reasoning` to
+    // populate `step:complete.{toolCalls,reasoning,artifactRefs}`. Without
+    // these `extras`, agentBlocks for `type: atlas` agents (workspace-chat,
+    // auto-triage flows) showed an empty `toolNames` array in the session
+    // view even when many tools had been invoked internally.
+    const artifactRefs = extractArtifactRefsFromToolResults(assembledToolResults, logger);
+    return ok(
+      { text: finalText },
+      {
+        toolCalls: assembledToolCalls,
+        toolResults: assembledToolResults,
+        ...(assembledReasoning && { reasoning: assembledReasoning }),
+        ...(artifactRefs.length > 0 && { artifactRefs }),
+      },
+    );
   },
   environment: {
     required: [],

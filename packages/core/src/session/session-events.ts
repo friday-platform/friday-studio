@@ -84,6 +84,80 @@ export const StepStartEventSchema = z.object({
 });
 export type StepStartEvent = z.infer<typeof StepStartEventSchema>;
 
+/**
+ * LLM token usage captured at step completion. All fields are optional —
+ * the AI SDK reports tokens as `number | undefined`, and non-LLM step
+ * sources (agent actions, bundled agents) may omit usage entirely.
+ *
+ * Shape mirrors the AI SDK's `LanguageModelUsage` projection we care about:
+ * input/output totals plus prompt-cache read/write counts. `model` is the
+ * registry-qualified id (e.g. "anthropic:claude-opus-4-7") of the model
+ * that produced the call so retrospective analysis can group by model.
+ *
+ * Persisted on LLM-backed steps so session history, analytics, and future
+ * cost-aware routing can reason about token usage by model.
+ */
+export const StepUsageSchema = z.object({
+  inputTokens: z.number().optional(),
+  outputTokens: z.number().optional(),
+  cacheReadTokens: z.number().optional(),
+  cacheWriteTokens: z.number().optional(),
+  model: z.string().optional(),
+});
+export type StepUsage = z.infer<typeof StepUsageSchema>;
+
+/**
+ * Resolved validation strategy for a `type: llm` (or `case "agent" → type: llm`)
+ * action — the runtime's per-action decision after factoring action / job /
+ * workspace tiers and the auto classifier.
+ *
+ * - `skip`     — no validation ran; the classifier or an explicit decision
+ *                marked the action as not requiring it.
+ * - `self`     — the LLM self-validated inline via the `record_validation`
+ *                platform tool; the verdict is what the LLM emitted.
+ * - `external` — a separate hallucination-judge call ran post-LLM and
+ *                produced the verdict.
+ */
+export const ValidationStrategySchema = z.enum(["skip", "self", "external"]);
+export type ValidationStrategy = z.infer<typeof ValidationStrategySchema>;
+
+/**
+ * Issue surfaced by validation — minimal shape that's a structural superset
+ * of `@atlas/hallucination`'s `ValidationIssueSchema`. The hallucination
+ * judge's stricter category enum and severity buckets parse cleanly into
+ * this looser shape; the looser shape lets `record_validation` accept any
+ * author-supplied category/severity strings without coupling the session
+ * event schema to the judge's evolving taxonomy.
+ */
+export const StepValidationIssueSchema = z.object({
+  category: z.string().optional(),
+  claim: z.string(),
+  reasoning: z.string().optional(),
+  severity: z.enum(["low", "medium", "high", "info", "warn", "error"]).optional(),
+  citation: z.string().nullable().optional(),
+});
+export type StepValidationIssue = z.infer<typeof StepValidationIssueSchema>;
+
+/**
+ * Structured validation outcome attached to every `type: llm` action's
+ * `step:complete` event. Three emit shapes mirror the three resolved strategies:
+ *
+ *   { strategy: "skip", skipReason }                  — classifier reason
+ *   { strategy: "self", verdict?, issues? }           — LLM-emitted via record_validation
+ *   { strategy: "external", verdict?, issues? }       — judge-derived
+ *
+ * `verdict` is intentionally optional so a `self` action whose LLM forgot
+ * to call `record_validation` still emits — observable as missing-verdict
+ * without erroring the action.
+ */
+export const StepValidationOutputSchema = z.object({
+  strategy: ValidationStrategySchema,
+  verdict: z.enum(["pass", "advisory", "blocking"]).optional(),
+  issues: z.array(StepValidationIssueSchema).optional(),
+  skipReason: z.string().optional(),
+});
+export type StepValidationOutput = z.infer<typeof StepValidationOutputSchema>;
+
 export const StepCompleteEventSchema = z.object({
   type: z.literal("step:complete"),
   sessionId: z.string(),
@@ -95,6 +169,19 @@ export const StepCompleteEventSchema = z.object({
   output: z.unknown(),
   artifactRefs: z.array(z.unknown()).optional(),
   error: z.string().optional(),
+  /**
+   * Optional LLM token usage for this step. Present when the step was an
+   * LLM action; absent for pure agent / tool steps. See
+   * {@link StepUsageSchema}.
+   */
+  usage: StepUsageSchema.optional(),
+  /**
+   * Structured validation outcome — present on every `type: llm` and
+   * `case "agent" → type: llm` action's step:complete event. Absent on
+   * pure-agent (`type: user` / `type: atlas`) steps. See
+   * {@link StepValidationOutputSchema}.
+   */
+  validation: StepValidationOutputSchema.optional(),
   timestamp: z.string(),
 });
 export type StepCompleteEvent = z.infer<typeof StepCompleteEventSchema>;
@@ -221,6 +308,14 @@ export const AgentBlockSchema = z.object({
   artifactRefs: z.array(z.unknown()).optional(),
   error: z.string().optional(),
   ephemeral: z.array(z.custom<AtlasUIMessageChunk>(() => true)).optional(),
+  /**
+   * LLM token usage aggregated from this block's `step:complete` event.
+   * Present when the underlying step carried `usage` (LLM actions and
+   * bundled agents that surface provider usage); absent for pure-agent
+   * steps. Mirrors {@link StepUsageSchema} so UI surfaces can display the
+   * same usage captured on `step:complete`.
+   */
+  usage: StepUsageSchema.optional(),
 });
 export type AgentBlock = z.infer<typeof AgentBlockSchema>;
 
@@ -260,5 +355,19 @@ export const SessionSummarySchema = z.object({
   error: z.string().optional(),
   /** AI-generated summary produced at session finalization */
   aiSummary: SessionAISummarySchema.optional(),
+  /**
+   * Parent session id when this session was spawned by another session
+   * (chat→job, signal-trigger from a parent context). Absent for root
+   * sessions (cron, external HTTP, signal triggers without a parent).
+   * Lets analysis walk the chat→job→child tree from any node.
+   */
+  parentSessionId: z.string().optional(),
+  /**
+   * Stream-event id within the parent session that caused this session
+   * to spawn (e.g. the chat tool-call that fired the signal). Optional
+   * — populated when the spawn site can identify a stable event id;
+   * pure session-level linkage works without it.
+   */
+  parentEventId: z.string().optional(),
 });
 export type SessionSummary = z.infer<typeof SessionSummarySchema>;

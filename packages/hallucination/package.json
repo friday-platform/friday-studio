@@ -4,13 +4,6 @@
   "type": "module",
   "exports": { ".": "./mod.ts", "./verdict": "./src/verdict.ts" },
   "main": "./mod.ts",
-  "dependencies": {
-    "@atlas/agent-sdk": "workspace:*",
-    "@atlas/fsm-engine": "workspace:*",
-    "@atlas/llm": "workspace:*",
-    "@atlas/logger": "workspace:*",
-    "ai": "^6.0.174",
-    "zod": "^4.3.5"
-  },
+  "dependencies": { "zod": "^4.3.5" },
   "devDependencies": { "vitest": "^4.1.0" }
 }

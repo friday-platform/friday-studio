@@ -1,76 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { SupervisionLevel } from "./supervision-levels.ts";
-import {
-  getThresholdForLevel,
-  judgeErrorVerdict,
-  severityForCategory,
-  statusFromConfidence,
-} from "./verdict.ts";
-
-describe("getThresholdForLevel", () => {
-  it("returns 0.35 for MINIMAL", () => {
-    expect(getThresholdForLevel(SupervisionLevel.MINIMAL)).toBe(0.35);
-  });
-  it("returns 0.45 for STANDARD", () => {
-    expect(getThresholdForLevel(SupervisionLevel.STANDARD)).toBe(0.45);
-  });
-  it("returns 0.6 for PARANOID", () => {
-    expect(getThresholdForLevel(SupervisionLevel.PARANOID)).toBe(0.6);
-  });
-});
-
-describe("statusFromConfidence", () => {
-  describe("MINIMAL (threshold 0.35)", () => {
-    const t = getThresholdForLevel(SupervisionLevel.MINIMAL);
-    it("0.5 → pass (above threshold)", () => {
-      expect(statusFromConfidence(0.5, t)).toBe("pass");
-    });
-    it("0.32 → uncertain (between fail-floor and threshold)", () => {
-      expect(statusFromConfidence(0.32, t)).toBe("uncertain");
-    });
-    it("0.2 → fail (below fail-floor)", () => {
-      expect(statusFromConfidence(0.2, t)).toBe("fail");
-    });
-  });
-
-  describe("STANDARD (threshold 0.45)", () => {
-    const t = getThresholdForLevel(SupervisionLevel.STANDARD);
-    it("0.6 → pass", () => {
-      expect(statusFromConfidence(0.6, t)).toBe("pass");
-    });
-    it("0.4 → uncertain", () => {
-      expect(statusFromConfidence(0.4, t)).toBe("uncertain");
-    });
-    it("0.25 → fail", () => {
-      expect(statusFromConfidence(0.25, t)).toBe("fail");
-    });
-  });
-
-  describe("PARANOID (threshold 0.6)", () => {
-    const t = getThresholdForLevel(SupervisionLevel.PARANOID);
-    it("0.7 → pass", () => {
-      expect(statusFromConfidence(0.7, t)).toBe("pass");
-    });
-    it("0.5 → uncertain (below paranoid threshold but above fail-floor)", () => {
-      expect(statusFromConfidence(0.5, t)).toBe("uncertain");
-    });
-    it("0.1 → fail", () => {
-      expect(statusFromConfidence(0.1, t)).toBe("fail");
-    });
-  });
-
-  describe("boundary conditions", () => {
-    it("exact threshold value → pass (>= is inclusive)", () => {
-      expect(statusFromConfidence(0.45, 0.45)).toBe("pass");
-    });
-    it("exact 0.3 fail-floor → uncertain (>= is inclusive)", () => {
-      expect(statusFromConfidence(0.3, 0.45)).toBe("uncertain");
-    });
-    it("just below fail-floor (0.299) → fail", () => {
-      expect(statusFromConfidence(0.299, 0.45)).toBe("fail");
-    });
-  });
-});
+import { severityForCategory, ValidationFailedError, ValidationVerdictSchema } from "./verdict.ts";
 
 describe("severityForCategory", () => {
   it("sourcing → error", () => {
@@ -87,32 +16,44 @@ describe("severityForCategory", () => {
   });
 });
 
-describe("judgeErrorVerdict", () => {
-  it("returns uncertain status with confidence 0.4", () => {
-    const verdict = judgeErrorVerdict(0.45, "boom");
-    expect(verdict.status).toBe("uncertain");
-    expect(verdict.confidence).toBe(0.4);
+describe("ValidationVerdictSchema", () => {
+  it("accepts a minimal pass verdict", () => {
+    const parsed = ValidationVerdictSchema.parse({ verdict: "pass" });
+    expect(parsed.verdict).toBe("pass");
+    expect(parsed.issues).toBeUndefined();
   });
 
-  it("preserves the supplied threshold", () => {
-    const verdict = judgeErrorVerdict(0.6, "boom");
-    expect(verdict.threshold).toBe(0.6);
+  it("accepts an advisory verdict with issues", () => {
+    const parsed = ValidationVerdictSchema.parse({
+      verdict: "advisory",
+      issues: [{ claim: "Reported user count is unsourced", category: "sourcing" }],
+    });
+    expect(parsed.verdict).toBe("advisory");
+    expect(parsed.issues).toHaveLength(1);
   });
 
-  it("emits a single judge-error issue with null citation", () => {
-    const verdict = judgeErrorVerdict(0.45, "rate limited");
-    expect(verdict.issues).toHaveLength(1);
-    const [issue] = verdict.issues;
-    expect(issue).toBeDefined();
-    if (!issue) return;
-    expect(issue.category).toBe("judge-error");
-    expect(issue.severity).toBe("info");
-    expect(issue.citation).toBeNull();
-    expect(issue.reasoning).toBe("rate limited");
+  it("accepts a blocking verdict", () => {
+    const parsed = ValidationVerdictSchema.parse({
+      verdict: "blocking",
+      issues: [{ claim: "Fabricated tool output" }],
+    });
+    expect(parsed.verdict).toBe("blocking");
   });
 
-  it("retryGuidance is empty (judge-error is not actionable)", () => {
-    const verdict = judgeErrorVerdict(0.45, "boom");
-    expect(verdict.retryGuidance).toBe("");
+  it("rejects an unknown verdict literal", () => {
+    expect(() => ValidationVerdictSchema.parse({ verdict: "fail" })).toThrow();
+  });
+});
+
+describe("ValidationFailedError", () => {
+  it("carries the verdict and surfaces issues in its message", () => {
+    const verdict = {
+      verdict: "blocking" as const,
+      issues: [{ claim: "no source for total" }, { claim: "no tool called" }],
+    };
+    const err = new ValidationFailedError(verdict, "agent-x");
+    expect(err.verdict).toEqual(verdict);
+    expect(err.message).toContain("agent-x");
+    expect(err.message).toContain("no source for total");
   });
 });

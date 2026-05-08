@@ -1,8 +1,8 @@
 /**
  * @atlas/fsm-engine
  *
- * FSM execution engine with code-based guards and actions.
- * Executes finite state machines defined in YAML with TypeScript functions.
+ * FSM execution engine. Executes finite state machines defined in YAML
+ * whose entry actions are llm, agent, emit, or notification.
  */
 
 // Re-export AgentResult from agent-sdk for consumers
@@ -17,6 +17,7 @@ export * from "./document-schemas.ts";
 // Core engine and execution
 export type {
   AgentExecutor,
+  AgentExecutorOptions,
   FSMEngineOptions,
 } from "./fsm-engine.ts";
 export { FSMEngine, interpolatePromptPlaceholders } from "./fsm-engine.ts";

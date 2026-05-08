@@ -145,11 +145,15 @@ export class AtlasLLMProviderAdapter implements LLMProvider {
           : undefined,
       });
 
-      const [text, steps, toolCalls, toolResults] = await Promise.all([
+      const [text, steps, toolCalls, toolResults, totalUsage] = await Promise.all([
         result.text,
         result.steps,
         result.toolCalls,
         result.toolResults,
+        // `totalUsage` aggregates across all steps in the streamText loop;
+        // `result.usage` is the last-step-only count and would undercount
+        // multi-tool turns. Persist the full call cost.
+        result.totalUsage,
       ]);
 
       // Flatten tool calls across all steps (toolCalls only has last step)
@@ -162,6 +166,19 @@ export class AtlasLLMProviderAdapter implements LLMProvider {
       // Raw text response - FSM engine extracts structured output from toolCalls
       const data: FSMLLMOutput = { response: text };
 
+      // Project AI SDK usage into the persisted shape. Cache token fields
+      // live under `inputTokenDetails` in the SDK; flatten so consumers
+      // (event mapper, session reducer) don't need to know the SDK shape.
+      // The model id reported back is the registry-qualified id we logged
+      // above so retrospective grouping matches what shows up in traces.
+      const usage = {
+        inputTokens: totalUsage.inputTokens,
+        outputTokens: totalUsage.outputTokens,
+        cacheReadTokens: totalUsage.inputTokenDetails?.cacheReadTokens,
+        cacheWriteTokens: totalUsage.inputTokenDetails?.cacheWriteTokens,
+        model: modelIdForLog,
+      };
+
       return {
         agentId: params.agentId,
         timestamp: new Date().toISOString(),
@@ -171,6 +188,7 @@ export class AtlasLLMProviderAdapter implements LLMProvider {
         durationMs: Date.now() - startMs,
         toolCalls: assembledToolCalls,
         toolResults: assembledToolResults,
+        usage,
       } satisfies AgentExecutionSuccess<string, FSMLLMOutput>;
     } catch (error) {
       const toolCount = params.tools ? Object.keys(params.tools).length : 0;

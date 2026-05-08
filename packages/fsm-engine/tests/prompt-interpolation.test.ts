@@ -11,9 +11,9 @@ import { interpolatePromptPlaceholders } from "../fsm-engine.ts";
  * values were already sitting in the Input section appended below.
  *
  * `interpolatePromptPlaceholders` resolves those references against the
- * prepare-result's `config` object, which now auto-seeds from the triggering
- * signal payload, so "payload in → fields available in prompt" works without
- * requiring authors to write a bespoke code action per job.
+ * prepare-result's `config` object, which auto-seeds from the triggering
+ * signal payload so "payload in → fields available in prompt" works
+ * without per-job glue.
  */
 describe("interpolatePromptPlaceholders", () => {
   it("returns the prompt unchanged when no prepareResult is available", () => {

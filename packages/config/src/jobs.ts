@@ -14,7 +14,10 @@ import {
   // SuccessConfigSchema,  // Currently unused
   SupervisionLevel,
 } from "./base.ts";
+import { DelegationBudgetSchema } from "./delegation.ts";
+import { PermissionsConfigSchema } from "./permissions.ts";
 import { SkillRefSchema } from "./skills.ts";
+import { ValidationDefaultsSchema } from "./validation.ts";
 
 // ==============================================================================
 // TRIGGER SPECIFICATION
@@ -62,7 +65,20 @@ const JobExecutionAgentDetailedSchema = z.strictObject({
   nickname: z.string().optional().describe("Optional nickname for reference"),
   context: AgentContextSchema.optional(),
   dependencies: z.array(z.string()).optional().describe("Explicit agent dependencies"),
-  tools: AllowDenyFilterSchema.optional().describe("Tool access override for this agent"),
+  /**
+   * TODO(pt3 L4 followup): Schema accepts a per-agent allow/deny filter but
+   * the execution-to-FSM compiler (`packages/workspace/src/execution-to-fsm.ts`)
+   * synthesizes `AgentAction` entries that don't carry it through, and
+   * `AgentActionSchema` in `@atlas/fsm-engine` has no matching `tools` field
+   * either. Wiring this end-to-end requires (1) adding a `tools` field to
+   * `AgentActionSchema`, (2) plumbing it through `compileExecutionToFsm`,
+   * and (3) honoring it at agent-invocation time in the FSM engine. Until
+   * then, this field parses but has no runtime effect.
+   */
+  tools: AllowDenyFilterSchema.optional().describe(
+    "Tool access override for this agent. NOTE: declarative only — not " +
+      "enforced at runtime yet (see TODO above).",
+  ),
 });
 
 export const JobExecutionAgentSchema = z.union([
@@ -182,6 +198,53 @@ export const JobSpecificationSchema = z
 
     // Job configuration
     config: JobConfigSchema.optional(),
+
+    // Per-job permissions override. When omitted, inherits the workspace-level
+    // setting (then the daemon FRIDAY_DANGEROUSLY_SKIP_PERMISSIONS env var
+    // as the floor). Jobs are the execution sandbox abstraction, so per-job
+    // is the natural granularity for `dangerouslySkipAllowlist`.
+    permissions: PermissionsConfigSchema.optional(),
+
+    /**
+     * Phase 8 — per-job delegation budget override. Per-field merge with
+     * the workspace-level `delegation:` block: job wins per-field over
+     * workspace; unset fields fall through to workspace then to runtime
+     * defaults. Bounds the `delegate` tool invocations spawned from this
+     * job's `type: llm` actions.
+     */
+    delegation: DelegationBudgetSchema.optional(),
+
+    /**
+     * Phase B5 — per-job validation policy override. Per-field merge
+     * with the workspace-level `validation:` block: job wins per field
+     * over workspace; unset fields fall through. Action-level
+     * `validate:` always wins over both.
+     */
+    validation: ValidationDefaultsSchema.optional(),
+
+    /**
+     * Phase 6 — per-job artifact lifecycle override. When set, every
+     * non-plumbing FSM document this job emits gets the matching
+     * `lifecycle.kind`. Without an override, the runtime falls back to
+     * the per-action default (terminal-state outputs durable;
+     * non-terminal outputs ephemeral, bound to session).
+     */
+    artifacts: z
+      .strictObject({
+        ephemeral: z
+          .boolean()
+          .optional()
+          .describe(
+            "true → all artifacts ephemeral (session-bound). false → all durable. " +
+              "Omit for per-action defaults.",
+          ),
+        default_grace: DurationSchema.optional().describe(
+          "Grace window after job completion before ephemeral artifacts are " +
+            "swept (Phase 6.B). Inherits from workspace.artifacts.default_grace " +
+            "when omitted; that defaults to '24h'.",
+        ),
+      })
+      .optional(),
 
     // Memory output declaration — where a job's findings are written
     outputs: z.object({ memory: z.string(), entryKind: z.string() }).optional(),

@@ -10,42 +10,27 @@ import { createErrorResponse, createSuccessResponse } from "./utils.ts";
 
 const CreateFSMInputSchema = z.object({
   definition: FSMDefinitionSchema.describe(
-    "Complete FSM definition with id, initial state, states, functions, tools, and documentTypes",
+    "Complete FSM definition with id, initial state, states, and documentTypes",
   ),
 });
 
 /**
  * Register the fsm_create tool
  *
- * Creates a validated FSM definition from a complete specification with code-based guards and actions.
+ * Creates a validated FSM definition from a complete specification.
  * Returns the validated FSM definition ready for instantiation.
  */
 export function registerFSMCreateTool(server: McpServer) {
   server.registerTool(
     "fsm_create",
     {
-      description: `Create a finite state machine definition with TypeScript code for guards and actions.
+      description: `Create a finite state machine definition.
 
 An FSM definition consists of:
 - id: Unique identifier
 - initial: Initial state name
 - states: Map of state definitions with documents, entry actions, and transitions
-- functions: Map of guard and action functions (TypeScript code)
-- tools: Map of tool functions that LLMs can call (TypeScript code)
 - documentTypes: JSON Schema definitions for document validation
-
-Functions are TypeScript code strings that will be executed via dynamic import:
-- Guards: Functions that return boolean to control transitions
-  function hasInventory(context, event) {
-    const order = context.documents.find(d => d.id === 'order');
-    return order.data.items.length > 0;
-  }
-
-- Actions: Functions that modify state and documents
-  function validateOrder(context, event) {
-    const order = context.documents.find(d => d.id === 'order');
-    context.updateDoc(order.id, { status: 'validated' });
-  }
 
 States have:
 - documents: Array of { id, type, data } for initial document setup
@@ -55,13 +40,8 @@ States have:
 
 Transitions have:
 - target: Destination state name
-- guards: Array of guard function names (all must pass)
-- actions: Array of actions (code, llm, agent, emit)
 
-Actions types:
-- code: Execute TypeScript function
-  { type: "code", function: "validateOrder" }
-
+Action types:
 - emit: Emit an event
   { type: "emit", event: "order.approved", data: {...} }
 
@@ -70,6 +50,9 @@ Actions types:
 
 - agent: Invoke Atlas agent
   { type: "agent", agentId: "weather-fetcher", outputTo: "weather" }
+
+- notification: Surface a notification to the user
+  { type: "notification", title: "...", body: "..." }
 
 Example:
 {
@@ -85,16 +68,6 @@ Example:
       "required": ["total", "status"]
     }
   },
-  "functions": {
-    "hasMinimumTotal": {
-      "type": "guard",
-      "code": "export default function(context, event) { const order = context.documents[0]; return order.data.total >= 100; }"
-    },
-    "updateStatus": {
-      "type": "action",
-      "code": "export default function(context, event) { const order = context.documents[0]; context.updateDoc(order.id, { status: 'approved' }); }"
-    }
-  },
   "states": {
     "pending": {
       "documents": [
@@ -102,12 +75,7 @@ Example:
       ],
       "on": {
         "APPROVE": {
-          "target": "approved",
-          "guards": ["hasMinimumTotal"],
-          "actions": [
-            { "type": "code", "function": "updateStatus" },
-            { "type": "emit", "event": "order.approved" }
-          ]
+          "target": "approved"
         }
       }
     },

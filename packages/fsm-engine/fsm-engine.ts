@@ -1,20 +1,20 @@
 /**
- * FSMEngine - FSM execution engine using code-based guards and actions
+ * FSMEngine - FSM execution engine.
  *
- * Executes FSMDefinition with TypeScript code for guards and actions.
- * Guards and actions are executed via dynamic import from code strings.
+ * Executes FSMDefinition entry actions of type llm, agent, emit, or notification.
  */
 
 import {
   type AgentResult as AgentSDKExecutionResult,
   type ArtifactRef,
-  ArtifactRefSchema,
   type FailInput,
   FailInputSchema,
   PLATFORM_TOOL_NAMES,
 } from "@atlas/agent-sdk";
 import { extractToolCallInput, unstringifyNestedJson } from "@atlas/agent-sdk/vercel-helpers";
-import type { MCPServerConfig } from "@atlas/config";
+import type { MCPServerConfig, ValidationDefaults, WorkspaceMCPServerConfig } from "@atlas/config";
+import { normalizeActionValidate, resolveValidation } from "@atlas/config";
+import { resolvePermissions } from "@atlas/config/permissions";
 import {
   createErrorCause,
   hasUnusableCredentialCause,
@@ -26,10 +26,22 @@ import {
   UserConfigurationError,
   wrapPlatformToolsWithScope,
 } from "@atlas/core";
+import {
+  composeArtifactBlocks,
+  composeMemoryBlocks,
+  composeValidationBlock,
+} from "@atlas/core/agent-context/compose-blocks";
+import {
+  createRecordValidationTool,
+  RECORD_VALIDATION_TOOL_NAME,
+} from "@atlas/core/agent-context/record-validation-tool";
 import type { ArtifactStorageAdapter } from "@atlas/core/artifacts";
 import { resolveImageParts } from "@atlas/core/artifacts/images";
+import { liftToolResultsForPersist } from "@atlas/core/artifacts/scrubber";
+import { createDelegateTool, DEFAULT_MAX_DEPTH } from "@atlas/core/delegate";
+import type { LinkSummary } from "@atlas/core/mcp-registry/discovery";
 import { ValidationFailedError, type ValidationVerdict } from "@atlas/hallucination/verdict";
-import { buildTemporalFacts } from "@atlas/llm";
+import { buildTemporalFacts, type PlatformModels } from "@atlas/llm";
 import { logger } from "@atlas/logger";
 import { createMCPTools, type MCPToolsResult } from "@atlas/mcp";
 import { getAtlasPlatformServerConfig } from "@atlas/oapi-client";
@@ -42,13 +54,21 @@ import {
 } from "@atlas/skills";
 import { stringifyError } from "@atlas/utils";
 import { type Span as OtelSpan, withOtelSpan } from "@atlas/utils/telemetry.server";
-import { type ImagePart, type ModelMessage, type Tool, tool } from "ai";
+import {
+  type ImagePart,
+  type ModelMessage,
+  type Tool,
+  type ToolCallRepairFunction,
+  tool,
+  type UIMessageStreamWriter,
+} from "ai";
 import { z } from "zod";
 import type { DocumentScope, DocumentStore } from "../document-store/mod.ts";
 import { expandArtifactRefsInInput } from "./artifact-expansion.ts";
 import { FSMDocumentDataSchema } from "./document-schemas.ts";
 import { hasDefinedSchema } from "./schema-utils.ts";
 import * as serializer from "./serializer.ts";
+import { applySkillAllowlist, unmatchedAllowlistEntries } from "./skill-filter.ts";
 import type {
   Action,
   AgentAction,
@@ -60,13 +80,108 @@ import type {
   FSMBroadcastNotifier,
   FSMDefinition,
   FSMLLMOutput,
+  JudgeAgentRunner,
+  JudgeHandoff,
+  JudgeToolCallEntry,
+  LLMAction,
   LLMActionTrace,
   LLMProvider,
-  OutputValidator,
   Signal,
   SignalWithContext,
   TransitionDefinition,
+  ValidateStrategy,
 } from "./types.ts";
+import {
+  type ClassifierInput,
+  classifyAction,
+  type MCPValidationOverride,
+  type ValidateDecision,
+} from "./validate-classifier.ts";
+
+/**
+ * Resolve the final `ValidateDecision` + skill for an action, factoring
+ * in workspace + job-level defaults.
+ *
+ * Precedence (strategy and skill independently):
+ *   action.validate
+ *     > job.validation.default
+ *     > workspace.validation.default
+ *     > "auto"  (the runtime classifier)
+ *
+ * `resolveValidation` (in @atlas/config) does the merge across the three
+ * config tiers; if the merged strategy is `"auto"`, we hand off to
+ * `classifyAction` for the final decision. Skill is propagated up so the
+ * orchestrator-side prompt-assembly site (case "agent") and the inline
+ * prompt builder (case "llm") can pass it to `composeValidationBlock`
+ * without re-running the merge.
+ *
+ * The classifier's `external` decision remains unreachable from `auto`
+ * — the classifier itself enforces this so picking the slower
+ * separate-judge path stays an explicit opt-in.
+ */
+function resolveValidateDecision(
+  explicit: ValidateStrategy | undefined,
+  classifierInput: ClassifierInput,
+  defaults: { job?: ValidationDefaults; workspace?: ValidationDefaults } = {},
+): {
+  decision: ValidateDecision;
+  source: "explicit" | "auto" | "merged-default";
+  reason: string;
+  skill?: string;
+} {
+  const merged = resolveValidation({
+    action: normalizeActionValidate(explicit),
+    job: defaults.job,
+    workspace: defaults.workspace,
+  });
+
+  // Carry the merged skill forward so callers don't have to re-derive
+  // it. `composeValidationBlock` defaults to DEFAULT_VALIDATION_SKILL
+  // when caller passes undefined; we only forward the resolved skill
+  // when at least one tier set it (preserves "explicit when explicit"
+  // semantics for the observability log).
+  const explicitSkillSet =
+    (typeof explicit === "object" && explicit.skill !== undefined) ||
+    defaults.job?.skill !== undefined ||
+    defaults.workspace?.skill !== undefined;
+  const skill = explicitSkillSet ? merged.skill : undefined;
+
+  if (merged.strategy === "auto") {
+    const auto = classifyAction(classifierInput);
+    return {
+      decision: auto.decision,
+      source: "auto",
+      reason: auto.reason,
+      ...(skill !== undefined ? { skill } : {}),
+    };
+  }
+
+  // The merged strategy came from action / job / workspace — record
+  // which level supplied it so the observability log stays useful.
+  // Action wins → `explicit`; otherwise → `merged-default`.
+  if (typeof explicit === "string" && explicit !== "auto") {
+    return {
+      decision: explicit,
+      source: "explicit",
+      reason: `explicit:${explicit}`,
+      ...(skill !== undefined ? { skill } : {}),
+    };
+  }
+  if (typeof explicit === "object") {
+    return {
+      decision: explicit.strategy,
+      source: "explicit",
+      reason: `explicit-object:${explicit.strategy}`,
+      ...(skill !== undefined ? { skill } : {}),
+    };
+  }
+  return {
+    decision: merged.strategy,
+    source: "merged-default",
+    reason: `merged-default:${merged.strategy}`,
+    ...(skill !== undefined ? { skill } : {}),
+  };
+}
 
 /**
  * Platform tools exposed to FSM LLM steps.
@@ -123,12 +238,15 @@ export function interpolatePromptPlaceholders(
   // three is one line per alias. `inputs.*` is the most common.
   const scopes: Record<string, unknown> = { inputs: config, config, signal: { payload: config } };
   // Pattern: `{{ path[ | default: 'literal' ] }}`
-  // - path: dotted identifier
+  // - path: dotted identifier; segments may contain hyphens. Hyphens are
+  //   needed because `inputFrom: pick-result` exposes a hyphenated key in
+  //   the config bag — without hyphen support, `{{config.pick-result.ticketId}}`
+  //   would silently fall through as a literal string.
   // - optional `| default: '...'` (single or double quoted) supplies a fallback
   //   when the path is missing — matches Liquid/Jinja convention used by most
   //   prompt-templating frameworks.
   const placeholderRe =
-    /\{\{\s*([a-zA-Z_][a-zA-Z0-9_.]*)\s*(?:\|\s*default\s*:\s*(?:'([^']*)'|"([^"]*)"))?\s*\}\}/g;
+    /\{\{\s*([a-zA-Z_][a-zA-Z0-9_.-]*)\s*(?:\|\s*default\s*:\s*(?:'([^']*)'|"([^"]*)"))?\s*\}\}/g;
   return prompt.replace(placeholderRe, (original, path, sq, dq) => {
     const fallback: string | undefined = sq ?? dq;
     const segments = String(path).split(".");
@@ -144,14 +262,18 @@ export function interpolatePromptPlaceholders(
     // convention). Without this, an explicit `default: 'classic'` would do
     // nothing for the very case authors reach for it — a form field that
     // arrives as "" rather than absent.
-    if (typeof cursor === "string") return cursor === "" ? (fallback ?? cursor) : cursor;
-    if (typeof cursor === "number" || typeof cursor === "boolean") return String(cursor);
+    if (typeof cursor === "string") {
+      return cursor === "" ? (fallback ?? cursor) : cursor;
+    }
+    if (typeof cursor === "number" || typeof cursor === "boolean") {
+      return String(cursor);
+    }
     return JSON.stringify(cursor);
   });
 }
 
 /**
- * Parse a code action return value into a PrepareResult.
+ * Parse an action return value into a PrepareResult.
  * Returns undefined for null, non-conforming, or empty (neither task nor config) results.
  */
 export function parsePrepareResult(raw: unknown): PrepareResult | undefined {
@@ -182,21 +304,52 @@ export function parsePrepareResult(raw: unknown): PrepareResult | undefined {
  *    Wins over carried-over prepareResult: cron/manual triggers auto-seed
  *    prepareResult from signal payloads, and an empty payload (`{}`) used to
  *    overshadow inputFrom and surface as `## Input: { config: {} }`.
- * 2. `prepareResult` from a `prepare` code action — falls through when no
+ * 2. `prepareResult` from a prior action — falls through when no
  *    inputFrom is set on the action.
  * 3. Legacy `foo_result` ↔ `foo-request` document convention.
+ *
+ * Array-form `inputFrom` joins each doc's data as
+ * `<id>: <data>\n\n<id2>: <data2>` — the LLM sees a concatenated
+ * `## Input` block. Artifact refs are collected from the selected input
+ * documents themselves and expanded before prompt construction, so single
+ * and array inputFrom use the same explicit dependency surface.
  */
 export function getInputSnapshot(
   prepareResult: PrepareResult | undefined,
   action: { type: string; outputTo?: string; inputFrom?: string | string[] },
   documents: Map<string, unknown>,
-): { task?: string; config?: Record<string, unknown> } | undefined {
+): { task?: string; config?: Record<string, unknown>; artifactRefs?: ArtifactRef[] } | undefined {
   // inputFrom: explicit chain from a prior step's output document.
   // Fails loud — running with empty context is the bug we're trying to
   // avoid; if the referenced doc isn't there, the FSM is misconfigured.
   const inputFrom = action.type === "agent" || action.type === "llm" ? action.inputFrom : undefined;
   if (inputFrom !== undefined) {
     const ids = Array.isArray(inputFrom) ? inputFrom : [inputFrom];
+
+    const artifactRefs: ArtifactRef[] = [];
+    const seenArtifactRefs = new Set<string>();
+
+    const collectArtifactRefs = (data: unknown) => {
+      if (!data || typeof data !== "object" || Array.isArray(data)) return;
+      const obj = data as Record<string, unknown>;
+      const candidates = [
+        obj.artifactRef,
+        ...(Array.isArray(obj.artifactRefs) ? obj.artifactRefs : []),
+      ];
+      for (const candidate of candidates) {
+        if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) continue;
+        const ref = candidate as Record<string, unknown>;
+        if (
+          typeof ref.id === "string" &&
+          typeof ref.type === "string" &&
+          typeof ref.summary === "string" &&
+          !seenArtifactRefs.has(ref.id)
+        ) {
+          seenArtifactRefs.add(ref.id);
+          artifactRefs.push({ id: ref.id, type: ref.type, summary: ref.summary });
+        }
+      }
+    };
 
     const items = ids.map((id) => {
       const doc = documents.get(id);
@@ -211,6 +364,7 @@ export function getInputSnapshot(
       if (data === undefined || data === null) {
         throw new Error(`inputFrom: document '${id}' has no data`);
       }
+      collectArtifactRefs(data);
       return { id, data };
     });
 
@@ -228,11 +382,11 @@ export function getInputSnapshot(
     const config: Record<string, unknown> = Object.fromEntries(
       items.map(({ id, data }) => [id, data]),
     );
-    return { task, config };
+    return { task, config, ...(artifactRefs.length > 0 ? { artifactRefs } : {}) };
   }
 
-  // Carried-over prepareResult — from a prior `prepare` code action or
-  // auto-seeded from the triggering signal payload.
+  // Carried-over prepareResult — from a prior action or auto-seeded
+  // from the triggering signal payload.
   if (prepareResult) {
     const { task, config } = prepareResult;
     if (task || config) return { task, config };
@@ -314,56 +468,191 @@ function findFailStepToolArgs(result: LLMResult): Record<string, unknown> | unde
   return extractToolCallInput(result.toolCalls ?? [], "failStep");
 }
 
-/** Max characters per tool result when formatting for retry context */
-const MAX_RETRY_TOOL_RESULT_CHARS = 4000;
-
-/** Max total characters for all tool results in retry context */
-const MAX_RETRY_TOOL_CONTEXT_CHARS = 50_000;
+/**
+ * Extract `record_validation` tool args from an LLM result. Mirrors
+ * `findCompleteToolArgs` — scans the result's toolCalls for one whose name
+ * matches the platform tool, returning the input object verbatim. Caller is
+ * responsible for parsing it through `StepValidationOutputSchema` before emit.
+ *
+ * Returns `undefined` when the LLM didn't call the tool — this is observable
+ * (the runtime emits `validation: { strategy: "self" }` without a verdict)
+ * rather than fatal, because the goal is visibility into self-check
+ * outcomes, not enforcing that every action calls the tool.
+ */
+function findRecordValidationToolArgs(result: LLMResult): Record<string, unknown> | undefined {
+  if (!result.ok) return undefined;
+  return extractToolCallInput(result.toolCalls ?? [], RECORD_VALIDATION_TOOL_NAME);
+}
 
 /**
- * Format tool results from a previous LLM attempt into a readable text block
- * for injection into the retry prompt. Gives the retry LLM visibility into
- * data it already fetched so it can fix its reasoning without re-calling tools.
+ * Build the structured validation block that rides on `step:complete.validation`.
+ * Three resolved strategies → three emit shapes; see `StepValidationOutputSchema`
+ * in `@atlas/core/session-events` for the on-the-wire contract.
+ *
+ * Caller is responsible for the failStep semantics on `verdict: "blocking"` —
+ * this helper only assembles the shape; it doesn't throw.
  */
-export function formatToolResultsForRetry(trace: LLMActionTrace): string {
-  if (!trace.toolResults?.length) return "";
-
-  const parts: string[] = [];
-  let totalLen = 0;
-
-  for (let i = 0; i < trace.toolResults.length; i++) {
-    const tr = trace.toolResults[i];
-    if (!tr) continue;
-
-    const toolName = tr.toolName ?? "unknown";
-    const inputText = tr.input != null ? ` | input: ${JSON.stringify(tr.input)}` : "";
-    const header = `=== Tool Result ${i + 1}: ${toolName}${inputText} ===`;
-
-    let outputText: string;
-    try {
-      const raw = typeof tr.output === "string" ? tr.output : JSON.stringify(tr.output, null, 2);
-      outputText =
-        raw.length > MAX_RETRY_TOOL_RESULT_CHARS
-          ? `${raw.slice(0, MAX_RETRY_TOOL_RESULT_CHARS)}…[truncated]`
-          : raw;
-    } catch {
-      outputText = "[Failed to serialize]";
-    }
-
-    const entry = `${header}\n${outputText}`;
-    // Account for "\n\n" join separator between entries
-    const separatorLen = parts.length > 0 ? 2 : 0;
-
-    if (totalLen + separatorLen + entry.length > MAX_RETRY_TOOL_CONTEXT_CHARS) {
-      parts.push(`…[${trace.toolResults.length - i} more tool results truncated for size]`);
-      break;
-    }
-
-    parts.push(entry);
-    totalLen += separatorLen + entry.length;
+function buildValidationOutput(input: {
+  decision: ValidateDecision;
+  reason: string;
+  /** Captured `record_validation` args (self path); undefined if LLM didn't call it. */
+  recordedArgs?: Record<string, unknown>;
+  /** Final verdict from the external judge; undefined when judge didn't run. */
+  externalVerdict?: ValidationVerdict;
+  /**
+   * Structured + self path. The action declared an outputType with a defined
+   * schema, so the runtime injected a `complete` tool and elided
+   * `record_validation`. Successful structured emission is the
+   * implicit verdict — surface as `pass` so step:complete.validation isn't
+   * silently empty.
+   */
+  implicitPass?: boolean;
+}): NonNullable<FSMActionExecutionEvent["data"]["llmResult"]>["validation"] {
+  if (input.decision === "skip") {
+    return { strategy: "skip", skipReason: input.reason };
   }
+  if (input.decision === "self") {
+    if (!input.recordedArgs) {
+      return input.implicitPass ? { strategy: "self", verdict: "pass" } : { strategy: "self" };
+    }
+    const verdict = input.recordedArgs.verdict;
+    const issues = Array.isArray(input.recordedArgs.issues)
+      ? (input.recordedArgs.issues as Array<Record<string, unknown>>).map((i) => ({
+          claim: typeof i.claim === "string" ? i.claim : "",
+          ...(typeof i.category === "string" && { category: i.category }),
+          ...(typeof i.reasoning === "string" && { reasoning: i.reasoning }),
+          ...(typeof i.severity === "string" && {
+            severity: i.severity as "low" | "medium" | "high" | "info" | "warn" | "error",
+          }),
+          ...(typeof i.citation === "string" || i.citation === null
+            ? { citation: i.citation as string | null }
+            : {}),
+        }))
+      : undefined;
+    return {
+      strategy: "self",
+      ...(typeof verdict === "string" &&
+      (verdict === "pass" || verdict === "advisory" || verdict === "blocking")
+        ? { verdict }
+        : {}),
+      ...(issues && issues.length > 0 ? { issues } : {}),
+    };
+  }
+  // external
+  if (!input.externalVerdict) return { strategy: "external" };
+  const issues = input.externalVerdict.issues ?? [];
+  return {
+    strategy: "external",
+    verdict: input.externalVerdict.verdict,
+    ...(issues.length > 0
+      ? {
+          issues: issues.map((iss) => ({
+            claim: iss.claim,
+            ...(iss.category !== undefined && { category: iss.category }),
+            ...(iss.reasoning !== undefined && { reasoning: iss.reasoning }),
+            ...(iss.severity !== undefined && { severity: iss.severity }),
+            ...(iss.citation !== undefined && { citation: iss.citation }),
+          })),
+        }
+      : {}),
+  };
+}
 
-  return parts.join("\n\n");
+/**
+ * Detect a scrubber-lifted (A2) tool result. Mirrors the refMarker
+ * pattern from `@atlas/core/artifacts/scrubber.ts`:
+ *
+ *   `[attachment lifted to artifact <id> (<kb> KB, <mime>, from <server>/<tool>) — use display_artifact or artifacts_get to read]`
+ *
+ * Returns `{ artifactId, summary }` on match — the runtime hands this to
+ * the judge so the judge can call `artifacts_get` only when it needs to
+ * verify a specific claim. Cost scales with judgment work, not with input
+ * size.
+ */
+const REF_MARKER_RE = /^\[attachment lifted to artifact ([\w-]+) \(([^)]+)\) — use [^\]]+\]$/;
+
+function detectLiftedArtifact(
+  output: unknown,
+): { artifactId: string; summary: string } | undefined {
+  const text = extractToolResultText(output);
+  if (!text) return undefined;
+  const trimmed = text.trim();
+  const match = REF_MARKER_RE.exec(trimmed);
+  if (!match || !match[1]) return undefined;
+  return { artifactId: match[1], summary: match[2] ?? "" };
+}
+
+/** Max characters to inline per tool result in the judge handoff. */
+const MAX_JUDGE_INLINE_CHARS = 8000;
+
+/**
+ * Extract a string preview of a tool result's `output`. Mirrors the
+ * deleted hallucination/detector.ts shape — string passthrough, MCP text
+ * content array, JSON.stringify fallback. Inlined here so the judge
+ * handoff builder doesn't depend on the deleted package.
+ */
+function extractToolResultText(output: unknown): string {
+  if (typeof output === "string") return output;
+  if (output && typeof output === "object") {
+    const obj = output as { content?: unknown };
+    if (Array.isArray(obj.content)) {
+      const texts: string[] = [];
+      for (const item of obj.content) {
+        if (
+          item &&
+          typeof item === "object" &&
+          typeof (item as { text?: unknown }).text === "string"
+        ) {
+          texts.push((item as { text: string }).text);
+        }
+      }
+      if (texts.length > 0) return texts.join("\n");
+    }
+  }
+  try {
+    return JSON.stringify(output);
+  } catch {
+    return String(output);
+  }
+}
+
+function truncateForJudge(text: string): string {
+  if (text.length <= MAX_JUDGE_INLINE_CHARS) return text;
+  return `${text.slice(0, MAX_JUDGE_INLINE_CHARS)}\n[...truncated ${
+    text.length - MAX_JUDGE_INLINE_CHARS
+  } chars]`;
+}
+
+/**
+ * Build the judge handoff for an action's external-validation pass. Walks
+ * the trace's tool calls and projects each one as either an artifact
+ * reference (scrubber-lifted) or an inline preview. The judge agent
+ * receives this as its `handoff` payload.
+ */
+export function buildJudgeHandoff(trace: LLMActionTrace): JudgeHandoff {
+  const toolResults = trace.toolResults ?? [];
+  const toolCalls = trace.toolCalls ?? [];
+  const callsByCallId = new Map(toolCalls.map((tc) => [tc.toolCallId, tc.input]));
+
+  const entries: JudgeToolCallEntry[] = toolResults.map((tr) => {
+    const args = tr.toolCallId ? callsByCallId.get(tr.toolCallId) : undefined;
+    const lifted = detectLiftedArtifact(tr.output);
+    if (lifted) {
+      return {
+        toolName: tr.toolName,
+        ...(args !== undefined && { args }),
+        resultArtifactId: lifted.artifactId,
+        resultSummary: lifted.summary,
+      };
+    }
+    return {
+      toolName: tr.toolName,
+      ...(args !== undefined && { args }),
+      resultInline: truncateForJudge(extractToolResultText(tr.output)),
+    };
+  });
+
+  return { actionInput: trace.prompt, actionOutput: trace.content, toolCalls: entries };
 }
 
 /**
@@ -393,19 +682,48 @@ export function buildLLMActionTrace(
 }
 
 /**
+ * Per-call options the FSM engine threads into `agentExecutor`. Today: the
+ * resolved `outputSchema` (FSM documentTypes) and the resolved validation
+ * decision. The orchestrator-side adapter (workspace runtime → agent server
+ * → `convertLLMToAgent`) reads `validateDecision` / `validateSkill` and
+ * passes them to `composeValidationBlock` at the LLM-prompt-assembly site so
+ * `case "agent" → type: llm` ends up with the same validation skill body in
+ * its system prompt that an inline `case "llm"` action would.
+ */
+export interface AgentExecutorOptions {
+  /** JSON Schema resolved from FSM `documentTypes` or default outputTo contract. */
+  outputSchema?: Record<string, unknown>;
+  /**
+   * Resolved validation decision for this action — already factored across
+   * `action.validate` and the auto classifier. The orchestrator
+   * forwards it to `composeValidationBlock`. `"skip"` means the helper
+   * isn't called; `"self"` injects the skill body inline; `"external"` is
+   * handled post-execution by the FSM engine, not the orchestrator.
+   */
+  validateDecision?: "skip" | "self" | "external";
+  /**
+   * Optional override skill name for the `self` path (the object form of
+   * `validate:` lets authors point at a custom validating skill). When
+   * absent, `composeValidationBlock` uses `DEFAULT_VALIDATION_SKILL`.
+   */
+  validateSkill?: string;
+}
+
+/**
  * Agent executor callback type
  * Integrates FSM agent actions with external agent orchestration systems
  *
  * @param action - The full AgentAction object (includes agentId, prompt, outputTo)
  * @param context - FSM context with documents, state, and utility functions
  * @param signal - Signal with context (sessionId, workspaceId, onEvent callback)
- * @param options - Optional execution options (e.g., resolved outputSchema from documentTypes)
+ * @param options - Optional execution options (e.g., resolved outputSchema from documentTypes,
+ *   resolved validation decision threaded into the orchestrator's prompt assembly)
  */
 export type AgentExecutor = (
   action: AgentAction,
   context: Context,
   signal: SignalWithContext,
-  options?: { outputSchema?: Record<string, unknown> },
+  options?: AgentExecutorOptions,
 ) => Promise<AgentSDKExecutionResult>;
 
 export interface FSMEngineOptions {
@@ -414,8 +732,23 @@ export interface FSMEngineOptions {
   scope: DocumentScope;
   agentExecutor?: AgentExecutor;
   /** MCP server configs from workspace — merged with atlas-platform at call time */
-  mcpServerConfigs?: Record<string, MCPServerConfig>;
-  validateOutput?: OutputValidator;
+  /**
+   * MCP server configs from workspace — merged with atlas-platform at call time.
+   * Accepts the workspace-level superset `WorkspaceMCPServerConfig` so the
+   * per-server `validation:` override
+   * flows through to the validate-classifier. Plain `MCPServerConfig`
+   * from non-workspace callers (tests, atlas) remains structurally
+   * assignable since `validation` is optional.
+   */
+  mcpServerConfigs?: Record<string, MCPServerConfig | WorkspaceMCPServerConfig>;
+  /**
+   * External-validation runner. Workspace runtime wires this to invoke
+   * `@friday/judge-agent` (or the per-action override from
+   * `validate.agent`) through the agent orchestrator. When unset,
+   * external-validation actions log + fall through to an advisory
+   * verdict so the action still emits.
+   */
+  runJudge?: JudgeAgentRunner;
   /** Storage adapter for resolving image artifact binary data */
   artifactStorage?: ArtifactStorageAdapter;
   /**
@@ -424,11 +757,126 @@ export interface FSMEngineOptions {
    * a typed error on first encounter.
    */
   broadcastNotifier?: FSMBroadcastNotifier;
+  /**
+   * Required to expose `delegate` to `type: llm` actions. The delegate child
+   * runs its own `streamText` against the registry's
+   * `conversational` model, mirroring the chat-side behavior. Without this
+   * field the engine silently omits delegate from the action's tool set
+   * (callers without delegate-capable runtimes don't pay for the wiring).
+   */
+  platformModels?: PlatformModels;
+  /**
+   * Repair function forwarded to the delegate child's streamText. Mirrors
+   * the chat-side wiring so children handle malformed tool args
+   * identically to the parent. Falls back to the agent-sdk default when
+   * unset.
+   */
+  repairToolCall?: ToolCallRepairFunction<Record<string, Tool>>;
+  /**
+   * Workspace link summary, used by the delegate when an LLM passes
+   * `mcpServers` to discover candidate servers. Optional; absence
+   * disables MCP-server discovery inside the delegate child but does not
+   * disable delegate itself.
+   */
+  linkSummary?: LinkSummary;
+  /**
+   * Resolved delegation budget for this engine. Top-level caller (workspace
+   * runtime) computes the per-job-merged-over-workspace
+   * value before constructing the engine. Forwarded into `createDelegateTool`
+   * so wall-clock, input-token, output-token, step, and depth budgets are
+   * all enforced inside the child's streamText. Default depth cap = 1
+   * (today's chat-side hard cap, preserved for back-compat when no
+   * `delegation:` block exists).
+   */
+  delegationBudget?: import("@atlas/config").DelegationBudget;
+  /**
+   * Per-job permissions (raw, unresolved). Forwarded into the
+   * `wrapPlatformToolsWithScope` call so
+   * `request_tool_access` can resolve effective bypass at LLM-call time
+   * (job > workspace > daemon-env precedence). Optional — undefined means
+   * "no per-job override".
+   */
+  jobPermissions?: import("@atlas/config").PermissionsConfig;
+  /**
+   * Workspace-level permissions config. Same forwarding contract as
+   * `jobPermissions` but at the workspace tier.
+   */
+  workspacePermissions?: import("@atlas/config").PermissionsConfig;
+  /**
+   * Effective parent-job timeout in milliseconds. When set, surfaces in
+   * the wrapped scope as `jobTimeoutMs` so scope-injected elicitation
+   * tools (e.g. `request_tool_access`) can derive `expiresAt = now +
+   * jobTimeoutMs`. Workspace runtime sets this from the resolved per-job
+   * timeout, or omits it when no timeout is configured.
+   */
+  jobTimeoutMs?: number;
+  /**
+   * Agent-type resolver for `case "agent"` actions. The validate classifier
+   * short-circuits to `skip` when the resolved agent type is
+   * `"user"` or `"atlas"` (Python is code; bundled SDK agents have fixed
+   * prompts — neither path builds an LLM system prompt that
+   * `composeValidationBlock` could augment). Without this callback the
+   * classifier sees `resolvedAgentType: undefined` and falls through to
+   * the existing tool/prose heuristics, which is fine for `case "llm"`
+   * (where the type is implicitly `"llm"`) but loses the cheap
+   * type-based skip on the agent path.
+   *
+   * Returns `undefined` when the agent isn't registered in the workspace
+   * (the executor itself will then surface a clear error). Synchronous
+   * — the caller (workspace runtime) already has the resolved
+   * `agents.<id>` block in memory at engine-construction time.
+   */
+  resolveAgentType?: (agentId: string) => "llm" | "user" | "atlas" | undefined;
+  /**
+   * Workspace-level validation defaults. Merged at decision-resolution time
+   * inside `case "llm"` and `case "agent"`:
+   * `action.validate > job.validation.default > workspace.validation.default
+   * > "auto"` (classifier). Skill name follows the same merge.
+   * Optional — undefined means "no workspace-level default; fall through
+   * to "auto" classifier when neither job nor action set it".
+   */
+  workspaceValidation?: ValidationDefaults;
+  /**
+   * Per-job validation override. Wins over `workspaceValidation` per field.
+   * Action-level `validate:` still
+   * wins over both. See `workspaceValidation` for full precedence.
+   */
+  jobValidation?: ValidationDefaults;
+  /**
+   * Per-action artifact persistence hook. Fired immediately after a
+   * `case "llm"` or `case "agent"`
+   * action writes its `outputTo` document, so the workspace runtime
+   * can persist the artifact mid-session rather than waiting for the
+   * post-drain pass. Without this,
+   * `composeArtifactBlocks({ workspaceId, sessionId })` finds zero
+   * artifacts for the in-flight session because nothing is persisted
+   * until the engine drains.
+   *
+   * The callback receives the freshly-written document, the action
+   * that produced it, and `fromTerminalState` (whether the emitting
+   * state has `type: "final"` — drives the durable vs ephemeral
+   * lifecycle decision identically to the post-drain pass).
+   *
+   * Implementations MUST tolerate repeat invocations for the same
+   * `outputTo` (later actions can overwrite an existing doc) — the
+   * runtime side issues an artifact `update` on the second hit.
+   * Failures should log-and-continue inside the callback; the engine
+   * never blocks on persistence. Optional — when unset, behavior
+   * falls back to post-drain persistence only.
+   */
+  persistFsmActionArtifact?: (input: {
+    doc: Document;
+    action: LLMAction | AgentAction;
+    workspaceId: string;
+    sessionId: string;
+    fromTerminalState: boolean;
+  }) => Promise<void>;
 }
 
 export class FSMEngine {
   private _currentState: string;
   private _documents = new Map<string, Document>();
+  /** Auxiliary, non-document context values such as seeded __meta and __lastPrepare. */
   private _results = new Map<string, Record<string, unknown>>();
   private _signalQueue: SignalWithContext[] = [];
   private _processing = false;
@@ -569,7 +1017,76 @@ export class FSMEngine {
     // from storage regardless of which initialization path was taken
     await this.persistDocuments();
 
+    // B1: emit one info log per (state × llm/agent action) summarizing the
+    // statically-resolved validation decision. Authors can grep their
+    // daemon logs to confirm "what's resolving where" without bisecting
+    // the workspace > job > action precedence chain by hand. The
+    // classifier runs with the static context (declared tools, no
+    // calledToolNames, no emittedProse) which matches the pre-call
+    // resolution at runtime — explicit/merged-default decisions are
+    // identical; only `auto` may shift if the LLM emits unexpected prose.
+    this.logResolvedValidationDecisions();
+
     this._initialized = true;
+  }
+
+  /** B1: see the inline call site in `initialize()` for rationale. */
+  private logResolvedValidationDecisions(): void {
+    const job = this.options.jobValidation;
+    const workspace = this.options.workspaceValidation;
+    for (const [stateId, stateNode] of Object.entries(this._definition.states ?? {})) {
+      const collectActions = (): Array<{ trigger: string; action: Action }> => {
+        const out: Array<{ trigger: string; action: Action }> = [];
+        for (const a of stateNode.entry ?? []) {
+          out.push({ trigger: "entry", action: a });
+        }
+        for (const [event, transition] of Object.entries(stateNode.on ?? {})) {
+          const actions = Array.isArray(transition)
+            ? []
+            : ((transition as { actions?: Action[] }).actions ?? []);
+          for (const a of actions) {
+            out.push({ trigger: `on:${event}`, action: a });
+          }
+        }
+        return out;
+      };
+      for (const { trigger, action } of collectActions()) {
+        if (action.type !== "llm" && action.type !== "agent") continue;
+        const declaredTools = "tools" in action && Array.isArray(action.tools) ? action.tools : [];
+        const resolution = resolveValidateDecision(
+          "validate" in action ? action.validate : undefined,
+          {
+            declaredTools,
+            calledToolNames: [],
+            hasOutputType:
+              action.type === "llm" && !!(action as { outputType?: string }).outputType,
+            hasInputFrom: "inputFrom" in action && !!action.inputFrom,
+            resolvedAgentType: undefined,
+            emittedProse: false,
+            toolsAvailable: declaredTools.length > 0,
+            ...(action.type === "llm" &&
+            (action as { run_code?: { readOnly?: boolean } }).run_code?.readOnly
+              ? { runCodeReadOnly: true }
+              : {}),
+          },
+          { ...(job && { job }), ...(workspace && { workspace }) },
+        );
+        logger.info("FSM action validation resolved", {
+          fsm: this._definition.id,
+          state: stateId,
+          trigger,
+          actionType: action.type,
+          ...(action.type === "llm" && action.outputTo ? { outputTo: action.outputTo } : {}),
+          ...(action.type === "agent" && (action as { agentId?: string }).agentId
+            ? { agentId: (action as { agentId: string }).agentId }
+            : {}),
+          decision: resolution.decision,
+          source: resolution.source,
+          reason: resolution.reason,
+          ...(resolution.skill ? { skill: resolution.skill } : {}),
+        });
+      }
+    }
   }
 
   async signal(
@@ -583,12 +1100,88 @@ export class FSMEngine {
       abortSignal?: AbortSignal;
       /** State IDs to skip — their entry actions won't execute, engine chains through */
       skipStates?: string[];
+      /**
+       * Phase 7 — current delegation depth. Top-level signals leave this
+       * unset (treated as 0); a delegate child-frame would set this to its
+       * parent's depth + 1. Used to gate `delegate` tool registration in
+       * `type: llm` actions against `FSMEngineOptions.delegationBudget.
+       * max_depth`.
+       */
+      delegationDepth?: number;
     },
   ): Promise<void> {
     const signalWithContext: SignalWithContext = context ? { ...sig, _context: context } : sig;
     this._signalQueue.push(signalWithContext);
     if (!this._processing) {
       await this.processQueue();
+    }
+  }
+
+  /**
+   * Collect per-MCP `validation:` overrides from `mcpServerConfigs` into a
+   * flat `Record<serverId, override>` for the
+   * validate-classifier. Returns `undefined` when no servers carry an
+   * override so the classifier can short-circuit.
+   */
+  private buildMCPValidationOverrides(): Record<string, MCPValidationOverride> | undefined {
+    const configs = this.options.mcpServerConfigs;
+    if (!configs) return undefined;
+    let result: Record<string, MCPValidationOverride> | undefined;
+    for (const [id, config] of Object.entries(configs)) {
+      const override = (config as WorkspaceMCPServerConfig).validation;
+      if (override) {
+        result ??= {};
+        result[id] = override;
+      }
+    }
+    return result;
+  }
+
+  /**
+   * Bridge to the workspace runtime's mid-session artifact persister.
+   * Invoked by `case "llm"` and
+   * `case "agent"` immediately after `documents.set(action.outputTo, ...)`.
+   *
+   * No-op when the host hasn't wired `persistFsmActionArtifact`, when the
+   * signal context lacks a workspaceId/sessionId pair, or when the
+   * freshly-written document is missing. `fromTerminalState` is the
+   * static "is the emitting state's `type === "final"`?" check.
+   *
+   * Errors are swallowed inside the persister callback (logged on the
+   * runtime side); this method itself wraps in a try/catch so a
+   * misbehaving callback can't crash the action loop.
+   */
+  private materializeResults(
+    documents: Map<string, Document>,
+    auxiliary: Map<string, Record<string, unknown>> = this._results,
+  ): Record<string, Record<string, unknown>> {
+    const projected = new Map<string, Record<string, unknown>>(auxiliary);
+    for (const [id, doc] of documents) {
+      projected.set(id, doc.data);
+    }
+    return Object.fromEntries(projected);
+  }
+
+  private async maybePersistActionArtifact(
+    action: LLMAction | AgentAction,
+    doc: Document | undefined,
+    sig: SignalWithContext,
+    currentState: string,
+  ): Promise<void> {
+    const persister = this.options.persistFsmActionArtifact;
+    if (!persister) return;
+    if (!doc) return;
+    const workspaceId = sig._context?.workspaceId;
+    const sessionId = sig._context?.sessionId;
+    if (!workspaceId || !sessionId) return;
+    const fromTerminalState = this._definition.states[currentState]?.type === "final";
+    try {
+      await persister({ doc, action, workspaceId, sessionId, fromTerminalState });
+    } catch (err) {
+      logger.warn("persistFsmActionArtifact threw — continuing", {
+        outputTo: action.outputTo,
+        error: stringifyError(err),
+      });
     }
   }
 
@@ -659,7 +1252,6 @@ export class FSMEngine {
       ? transitionsOrSingle
       : [transitionsOrSingle];
 
-    // Select first transition (guards removed in Phase 4)
     const selectedTransition: TransitionDefinition | null = transitions[0] ?? null;
 
     if (!selectedTransition) return; // No valid transition found
@@ -917,8 +1509,6 @@ export class FSMEngine {
     try {
       // Seed prepareResult from the previous state's stored value so agent
       // actions in a cascaded state inherit config (e.g. platformUrl, workDir)
-      // without needing their own code action. A code action in this state
-      // overrides the stored value naturally via its return value.
       const storedPrepare = results?.get("__lastPrepare");
       let prepareResult: PrepareResult | undefined = storedPrepare
         ? parsePrepareResult(storedPrepare)
@@ -926,12 +1516,11 @@ export class FSMEngine {
 
       // If there's no prior prepare result and the triggering signal carries a
       // payload, auto-seed the config from it. Friday-authored FSMs routinely
-      // expect agent prompts to reference signal-payload fields (either via
-      // `{{inputs.x}}` substitution or the Input section), but most authors
-      // never add an explicit code-action to move the payload into
-      // prepareResult. Without this, signal payloads simply vanished — the
-      // job fired, the FSM ran, and the agent complained about missing
-      // inputs while the values sat in `sig.data` unread.
+      // expect agent prompts to reference signal-payload fields (via
+      // `{{inputs.x}}` substitution or the Input section). Without this,
+      // signal payloads simply vanished — the job fired, the FSM ran, and
+      // the agent complained about missing inputs while the values sat in
+      // `sig.data` unread.
       if (!prepareResult && sig.data && typeof sig.data === "object") {
         const candidate = sig.data as Record<string, unknown>;
         // `createJobTools` wraps tool args under `payload` when firing the
@@ -954,40 +1543,10 @@ export class FSMEngine {
           results,
           prepareResult,
         );
-
-        // After a code action produces a prepareResult without artifactRefs,
-        // collect any artifactRefs from prior agent results in the accumulator.
-        // This ensures LLM steps see artifact content even when the prepare
-        // function only forwards .response (the common compiled-workspace pattern).
-        if (prepareResult && !prepareResult.artifactRefs && results) {
-          const seen = new Set<string>();
-          const collectedRefs: ArtifactRef[] = [];
-          for (const entry of results.values()) {
-            const refs = entry.artifactRefs;
-            if (Array.isArray(refs)) {
-              for (const ref of refs) {
-                const parsed = ArtifactRefSchema.safeParse(ref);
-                if (parsed.success) {
-                  if (!seen.has(parsed.data.id)) {
-                    seen.add(parsed.data.id);
-                    collectedRefs.push(parsed.data);
-                  }
-                } else {
-                  logger.warn("Malformed artifactRef in agent result, skipping", {
-                    error: parsed.error.message,
-                  });
-                }
-              }
-            }
-          }
-          if (collectedRefs.length > 0) {
-            prepareResult = { ...prepareResult, artifactRefs: collectedRefs };
-          }
-        }
       }
 
       // Persist prepareResult so subsequent states inherit config
-      // (e.g. platformUrl, workDir) without needing their own code action.
+      // (e.g. platformUrl, workDir) without re-deriving it.
       if (prepareResult && results) {
         results.set("__lastPrepare", { ...prepareResult });
       }
@@ -1028,11 +1587,7 @@ export class FSMEngine {
       (action.type === "agent" || action.type === "llm") && action.inputFrom !== undefined;
     const effectivePrepareResult: PrepareResult | undefined =
       hasExplicitInputFrom && inputSnapshot
-        ? {
-            ...inputSnapshot,
-            config: { ...prepareResult?.config, ...inputSnapshot.config },
-            ...(prepareResult?.artifactRefs ? { artifactRefs: prepareResult.artifactRefs } : {}),
-          }
+        ? { ...inputSnapshot, config: { ...prepareResult?.config, ...inputSnapshot.config } }
         : prepareResult;
 
     // Emit action started event
@@ -1053,14 +1608,20 @@ export class FSMEngine {
       });
     }
 
-    // Create a context bound to the pending documents/signals
+    // Create a context bound to the pending documents/signals. Action outputs
+    // are projected from documents; setResult remains only for auxiliary
+    // caller-provided values such as __meta.
     const resultsMap = results ?? this._results;
     const context: Context = {
       documents: Array.from(documents.values()),
       state: currentState,
-      results: Object.fromEntries(resultsMap),
+      results: this.materializeResults(documents, resultsMap),
       setResult: (key: string, data: Record<string, unknown>) => {
-        resultsMap.set(key, data);
+        if (documents.has(key)) {
+          documents.set(key, { ...documents.get(key)!, data });
+        } else {
+          resultsMap.set(key, data);
+        }
       },
       emit: (s: Signal) => {
         logger.debug("Signal emitted from action", {
@@ -1133,12 +1694,27 @@ export class FSMEngine {
             // skills assigned to other workspaces into this LLM call.
             const workspaceId = sig._context?.workspaceId;
             const jobName = this._definition.id;
-            const skills: SkillSummary[] = workspaceId
+            const resolved: SkillSummary[] = workspaceId
               ? await resolveVisibleSkills(workspaceId, SkillStorage, { jobName })
               : [];
             if (!workspaceId) {
               logger.warn("LLM action without workspaceId — skill list empty", {
                 state: currentState,
+              });
+            }
+            // Per-action skill allowlist (LLMActionSchema.skills): narrows the
+            // resolved set to those explicitly named on the action. See
+            // `applySkillAllowlist` for the full inherit/empty/populated rules.
+            const skills: SkillSummary[] = applySkillAllowlist(resolved, action.skills);
+            if (action.skills) {
+              logger.debug("Applied per-action skill filter", {
+                workspaceId,
+                jobName,
+                state: currentState,
+                requested: action.skills,
+                matched: skills.map((s) => s.name),
+                unmatched: unmatchedAllowlistEntries(resolved, action.skills),
+                droppedCount: resolved.length - skills.length,
               });
             }
             logger.debug("Resolved workspace skills", {
@@ -1148,9 +1724,22 @@ export class FSMEngine {
               skillNames: skills.map((s) => s.name),
             });
 
-            const buildResult = action.tools
-              ? await this.buildTools(action.tools, context, sig._context?.abortSignal)
-              : { tools: {}, dispose: async () => {} };
+            // Always run buildTools so atlas-platform's auto-injected tool set
+            // (memory_save, memory_read, artifacts_create, artifacts_get,
+            // parse_artifact, webfetch, etc.) is available regardless of
+            // whether the action declares `tools:`. Authors don't need to
+            // know which tools are platform vs workspace-defined; the
+            // platform set is additive, mirroring chat-side behavior. When
+            // the action declares tools, those *narrow* the workspace-server
+            // side via buildTools' existing allowlist; platform tools remain
+            // ambient (PLATFORM_TOOL_ALLOWLIST in buildTools is already
+            // filtered there). Phase 5 of the fan-in plan.
+            const buildResult = await this.buildTools(
+              action.tools ?? [],
+              context,
+              sig._context,
+              actionId,
+            );
             const baseTools = buildResult.tools;
 
             let cleanupSkills: (() => Promise<void>) | undefined;
@@ -1172,8 +1761,112 @@ export class FSMEngine {
 
               const tools: Record<string, Tool> = { ...baseTools, failStep: failStepTool };
 
-              // Check if outputTo document type has a structured schema (properties defined)
-              // If so, inject a `complete` tool to capture structured output
+              // Phase 7 — opt-in `delegate` tool for FSM type:llm actions.
+              // Mirrors the chat-side wiring: the LLM declares `tools:
+              // [..., "delegate"]` to spawn an in-process child agent with
+              // isolated context. Skipped silently with a debug log when a
+              // required dep (platformModels) is unwired or when the
+              // workspace's `delegation.max_depth` is exhausted, so authors
+              // can declare the tool unconditionally without runtime errors
+              // in environments that don't support it.
+              const wantsDelegate = (action.tools ?? []).includes("delegate");
+              if (wantsDelegate) {
+                const currentDepth = sig._context?.delegationDepth ?? 0;
+                const maxDepth = this.options.delegationBudget?.max_depth ?? DEFAULT_MAX_DEPTH;
+                if (!this.options.platformModels) {
+                  logger.debug(
+                    "delegate requested but FSMEngineOptions.platformModels missing — omitting from tool set",
+                    { state: currentState, jobName: this._definition.id },
+                  );
+                } else if (currentDepth >= maxDepth) {
+                  logger.debug("delegate requested but delegation depth cap reached — omitting", {
+                    state: currentState,
+                    currentDepth,
+                    maxDepth,
+                  });
+                } else {
+                  // Build a synthetic writer that forwards every chunk into
+                  // the FSM signal's `onStreamEvent` callback. The delegate
+                  // expects a `UIMessageStreamWriter`; FSM's adapter exposes
+                  // a per-chunk callback. The bridge below preserves the
+                  // delegate's envelope semantics (`data-delegate-chunk`,
+                  // `data-delegate-ledger`, `delegate-end`) — the chat-side
+                  // path uses an SSE-backed writer; we use a callback fan-out
+                  // that delivers chunks to the same downstream consumer.
+                  const onStreamEvent = sig._context?.onStreamEvent;
+                  const bridgedWriter: UIMessageStreamWriter<
+                    import("@atlas/agent-sdk").AtlasUIMessage
+                  > = {
+                    write(chunk) {
+                      onStreamEvent?.(chunk);
+                    },
+                    async merge(stream) {
+                      const reader = stream.getReader();
+                      try {
+                        while (true) {
+                          const { done, value } = await reader.read();
+                          if (done) return;
+                          if (value !== undefined) onStreamEvent?.(value);
+                        }
+                      } finally {
+                        reader.releaseLock();
+                      }
+                    },
+                    onError: undefined,
+                  };
+
+                  const ws = sig._context?.workspaceId ?? this.options.scope.workspaceId;
+                  const ss = sig._context?.sessionId ?? this.options.scope.sessionId ?? "fsm";
+                  const delegateTool = createDelegateTool(
+                    {
+                      writer: bridgedWriter,
+                      session: {
+                        sessionId: ss,
+                        workspaceId: ws,
+                        // FSM signals don't carry a streamId today; reuse
+                        // sessionId as the correlation key. Same fallback
+                        // pattern as `buildTools`'s scrubber wiring.
+                        streamId: ss,
+                      },
+                      platformModels: this.options.platformModels,
+                      logger,
+                      abortSignal: sig._context?.abortSignal,
+                      // Default to the agent-sdk's repair fn when the engine
+                      // wasn't constructed with one. Keeps unit-test wiring
+                      // minimal while honoring chat-parity in production.
+                      repairToolCall:
+                        this.options.repairToolCall ??
+                        (((args: unknown) => Promise.resolve(args)) as ToolCallRepairFunction<
+                          Record<string, Tool>
+                        >),
+                      linkSummary: this.options.linkSummary,
+                      // Pass the resolved budget and current depth. The
+                      // delegate enforces
+                      // wall-clock / input-tokens / output-tokens / steps
+                      // internally; depth fail-fast happens at execute
+                      // time when `depth >= max_depth` (covers the case
+                      // of a stale tool-list snapshot).
+                      budget: this.options.delegationBudget,
+                      depth: currentDepth,
+                    },
+                    () => {
+                      // The child inherits the parent's tool set minus
+                      // `delegate` itself (the existing destructuring inside
+                      // `createDelegateTool` performs the strip). We pass
+                      // the assembled `tools` map by closure; the thunk lets
+                      // the delegate read the final shape after `complete`
+                      // tool injection finishes below.
+                      return tools as import("@atlas/agent-sdk").AtlasTools;
+                    },
+                  );
+                  tools.delegate = delegateTool as unknown as Tool;
+                }
+              }
+
+              // Every output document needs a mechanical emission contract.
+              // Explicit outputType schemas use the declared document schema;
+              // untyped outputTo actions get a non-empty object contract
+              // instead of relying on free-form prose.
               let capturedCompleteOutput: Record<string, unknown> | undefined;
               let completeToolInjected = false;
 
@@ -1183,32 +1876,34 @@ export class FSMEngine {
                 // 2. Fall back to document.type if document exists
                 const outputDoc = documents.get(action.outputTo);
                 const docTypeName = action.outputType ?? outputDoc?.type;
+                const jsonSchema = docTypeName
+                  ? this._definition.documentTypes?.[docTypeName]
+                  : undefined;
+                const compiledSchema =
+                  docTypeName && hasDefinedSchema(jsonSchema)
+                    ? this._compiledSchemas.get(docTypeName)
+                    : undefined;
+                const outputSchema =
+                  compiledSchema ??
+                  z
+                    .record(z.string(), z.unknown())
+                    .refine((value) => Object.keys(value).length > 0, {
+                      message: "complete output must not be empty",
+                    });
 
-                if (docTypeName) {
-                  const jsonSchema = this._definition.documentTypes?.[docTypeName];
+                completeToolInjected = true;
+                tools.complete = {
+                  description:
+                    "Call this to complete the task and store results. You MUST call this when finished.",
+                  inputSchema: outputSchema,
+                  execute: () => ({ success: true }),
+                };
 
-                  // Only inject complete tool if schema has properties defined (not just catch-all)
-                  if (hasDefinedSchema(jsonSchema)) {
-                    const compiledSchema = this._compiledSchemas.get(docTypeName);
-                    if (compiledSchema) {
-                      completeToolInjected = true;
-
-                      // Create tool object directly (same pattern as buildTools at line 1118)
-                      // This avoids type inference issues with the tool() helper
-                      tools.complete = {
-                        description:
-                          "Call this to complete the task and store results. You MUST call this when finished.",
-                        inputSchema: compiledSchema,
-                        execute: () => ({ success: true }),
-                      };
-
-                      logger.debug("Injected complete tool for structured output", {
-                        docType: docTypeName,
-                        outputTo: action.outputTo,
-                      });
-                    }
-                  }
-                }
+                logger.debug("Injected complete tool for output document", {
+                  docType: docTypeName ?? "LLMResult",
+                  outputTo: action.outputTo,
+                  hasExplicitOutputType: Boolean(action.outputType),
+                });
               }
 
               // Build prompt with curated input from prepare function, skills, and image resolution
@@ -1217,6 +1912,187 @@ export class FSMEngine {
                 effectivePrepareResult,
                 skills,
               );
+
+              // Auto-inject recent narrative-memory entries — same XML envelope
+              // workspace-chat uses (`<memory workspace="..." store="...">`).
+              // Mirrors the chat path's `composeMemoryBlocks` call so an FSM
+              // `type: llm` action sees the same memory surface a chat turn
+              // would see at action-start. Per-FSM-session narrowing is a
+              // future refinement; today this is "last 20 entries per declared
+              // narrative store", matching chat behavior. Skipped without a
+              // workspaceId (pre-1.0 callers / unit tests) — without one we
+              // can't authoritatively scope memory. Failures are swallowed
+              // and logged; never blocks the action.
+              if (workspaceId) {
+                try {
+                  // Honor foregroundWorkspaceIds the same way chat does
+                  // (composeMemoryBlocks reads memory across the primary +
+                  // any foreground workspaces). Without this, FSM jobs
+                  // triggered via foreground-workspace cascades silently
+                  // see a smaller memory surface than chat.
+                  const rawFgIds = sig.data?.foregroundWorkspaceIds;
+                  const foregroundIds = Array.isArray(rawFgIds)
+                    ? rawFgIds.filter((id): id is string => typeof id === "string")
+                    : [];
+                  const memoryBlocks = await composeMemoryBlocks(
+                    workspaceId,
+                    foregroundIds,
+                    logger,
+                  );
+                  if (memoryBlocks.length > 0) {
+                    contextPrompt = `${memoryBlocks.join("\n\n")}\n\n${contextPrompt}`;
+                    logger.debug("Injected memory blocks into LLM action prompt", {
+                      workspaceId,
+                      blockCount: memoryBlocks.length,
+                    });
+                  }
+                } catch (err) {
+                  logger.warn("composeMemoryBlocks failed — proceeding without memory blocks", {
+                    workspaceId,
+                    error: stringifyError(err),
+                  });
+                }
+              }
+
+              // Retrieval-gated artifact injection. Pull recent session-bound
+              // ephemeral artifacts and prepend them as
+              // `<retrieved_content>` envelopes alongside the memory blocks.
+              // Per-FSM-session scope (user decision 2026-05-05): the
+              // workspace runtime tags FSM-produced ephemeral artifacts with
+              // `lifecycle.boundTo.sessionId`, and `composeArtifactBlocks`
+              // filters on that. Capped at ARTIFACT_INJECTION_LIMIT (10).
+              // Each block carries the artifact's summary + id so the LLM
+              // can `parse_artifact` for full content. v1 is a pull at
+              // action-start — no NATS subscriber. Failures swallowed.
+              const sessionIdForArtifacts = sig._context?.sessionId;
+              if (workspaceId && sessionIdForArtifacts) {
+                try {
+                  const artifactBlocks = await composeArtifactBlocks(
+                    { workspaceId, sessionId: sessionIdForArtifacts },
+                    logger,
+                  );
+                  if (artifactBlocks.length > 0) {
+                    contextPrompt = `${artifactBlocks.join("\n\n")}\n\n${contextPrompt}`;
+                    logger.debug("Injected artifact blocks into LLM action prompt", {
+                      workspaceId,
+                      sessionId: sessionIdForArtifacts,
+                      blockCount: artifactBlocks.length,
+                    });
+                  }
+                } catch (err) {
+                  logger.warn("composeArtifactBlocks failed — proceeding without artifact blocks", {
+                    workspaceId,
+                    sessionId: sessionIdForArtifacts,
+                    error: stringifyError(err),
+                  });
+                }
+              }
+
+              // When the action's resolved validate decision is `self`, compose the
+              // validating-llm-outputs system skill into the prompt so the
+              // LLM self-checks its draft before emitting. This mirrors the
+              // agent-orchestrator prompt assembly path.
+              //
+              // We resolve the decision PRE-call here using only static
+              // signals — `calledToolNames` and `emittedProse` are unknowable
+              // at prompt-build time, so the static path treats them as
+              // empty/false. The post-call gating site below re-resolves
+              // with observed signals; in the rare edge case where they
+              // disagree (e.g. mutating-tool declared but never called),
+              // the prompt-time path may inject the skill while the
+              // post-call path picks `skip` — we eat that asymmetry rather
+              // than build a two-phase classifier knob. Inline self-check
+              // only adds prompt tokens; nothing downstream depends on the
+              // pre-call decision.
+              const declaredToolsStatic = action.tools ?? [];
+              // Thread per-MCP `validation:` overrides and the action's
+              // `run_code: { readOnly: true }` opt-in into the classifier
+              // so author overrides win over the default regex / allowlist.
+              const mcpServerOverrides = this.buildMCPValidationOverrides();
+              const preCallResolution = resolveValidateDecision(
+                action.validate,
+                {
+                  declaredTools: declaredToolsStatic,
+                  calledToolNames: [],
+                  hasOutputType: completeToolInjected,
+                  hasInputFrom: !!action.inputFrom,
+                  resolvedAgentType: undefined,
+                  emittedProse: false,
+                  toolsAvailable: declaredToolsStatic.length > 0,
+                  ...(mcpServerOverrides ? { mcpServerOverrides } : {}),
+                  ...(action.run_code?.readOnly ? { runCodeReadOnly: true } : {}),
+                },
+                { job: this.options.jobValidation, workspace: this.options.workspaceValidation },
+              );
+              const preCallDecision = preCallResolution.decision;
+              // On the structured + self path, skip the validation skill body
+              // too — not just the `record_validation` tool injection below.
+              // The skill body instructs the LLM to call `record_validation`
+              // exactly once, but the tool
+              // isn't in the catalog. The contradictory instructions made
+              // the LLM bail into prose ("the artifact chain keeps
+              // wrapping...") instead of calling `complete`. Use the same
+              // `completeToolInjected` predicate as the tool-skip site
+              // below so both gates share one source of truth.
+              const skipValidationSkillBody = preCallDecision === "self" && completeToolInjected;
+              const validationBlock = skipValidationSkillBody
+                ? ""
+                : await composeValidationBlock({
+                    decision: preCallDecision,
+                    // Prefer merged skill (factors action object form +
+                    // job + workspace overrides) over the older direct read
+                    // of action.validate.skill.
+                    skillName: preCallResolution.skill,
+                    logger,
+                  });
+              const validationSkillLoaded = validationBlock.length > 0;
+              if (validationBlock) {
+                contextPrompt = `${contextPrompt}\n\n${validationBlock}`;
+                logger.debug("Injected validation skill block into LLM action prompt", {
+                  decision: preCallDecision,
+                  blockChars: validationBlock.length,
+                });
+              }
+
+              // When the pre-call decision is `self`, inject the
+              // `record_validation` platform tool alongside
+              // the skill body. The skill instructs the LLM to call this tool
+              // before emitting; the post-call gating site below reads the
+              // captured args off `result.toolCalls` (mirroring the `complete`
+              // tool's capture path) and surfaces them on `step:complete.validation`.
+              //
+              // Mirrors `completeToolInjected`: a flag carries the injection
+              // state forward to the capture site so we don't re-derive the
+              // decision there. Pre-call asymmetry note: in the rare edge case
+              // where pre-call resolves `self` but the post-call classifier
+              // resolves `skip`, the injected tool is harmless — the LLM may
+              // call it (we capture and emit) or ignore it (we emit a skip
+              // verdict from the post-call path, ignoring whatever the LLM
+              // recorded). The same asymmetry-tolerance applies to the skill
+              // body — see the longer comment above `preCallResolution`.
+              //
+              // Structured-output actions (those with `outputType:` resolving
+              // to a defined schema, i.e. `completeToolInjected`) skip
+              // `record_validation` injection.
+              // The structured schema IS the validation contract — pinning
+              // toolChoice to `complete` is what makes structured output
+              // reliable, and `record_validation` injection forces toolChoice
+              // back to `auto` (see `llmToolChoice` below), letting the LLM
+              // emit free-form prose instead of calling `complete`. Authors
+              // who want explicit self-verdict on structured output should
+              // split into two FSM steps (free-form analyze → structured
+              // emit). The skill body is also skipped on this path — see the
+              // `skipValidationSkillBody` block above for why. Verdict on the
+              // structured + self path is implicit
+              // pass on successful complete-tool emission.
+              const recordValidationInjected = preCallDecision === "self" && !completeToolInjected;
+              if (recordValidationInjected) {
+                tools[RECORD_VALIDATION_TOOL_NAME] = createRecordValidationTool();
+                logger.debug("Injected record_validation tool", {
+                  decision: preCallDecision,
+                  state: currentState,
+                });
+              }
 
               if (completeToolInjected) {
                 contextPrompt +=
@@ -1237,11 +2113,29 @@ export class FSMEngine {
                   ? [{ role: "user", content: [{ type: "text", text: contextPrompt }, ...images] }]
                   : undefined;
 
-              const llmToolChoice = completeToolInjected
-                ? ({ type: "tool", toolName: "complete" } as const)
-                : ("auto" as const);
+              // When both `complete` (structured-output capture) and
+              // `record_validation` (self-check capture) are injected, we
+              // can't pin toolChoice to `complete` — that would forbid the
+              // LLM from calling record_validation. Switch to `auto` so the
+              // LLM can sequence record_validation → complete the way the
+              // skill body instructs. Stop semantics still halt on complete
+              // OR failStep, so the second-tool-call assumption stays
+              // sound. When only complete is injected, today's pinned
+              // toolChoice path is preserved.
+              //
+              // With the `recordValidationInjected` guard above
+              // (structured + self skips `record_validation` injection),
+              // structured-output actions always pin toolChoice to
+              // `complete`.
+              const hasActionTools = (action.tools?.length ?? 0) > 0;
+              const llmToolChoice =
+                completeToolInjected && !recordValidationInjected
+                  ? hasActionTools
+                    ? ("required" as const)
+                    : ({ type: "tool", toolName: "complete" } as const)
+                  : ("auto" as const);
 
-              let result = await this.options.llmProvider.call({
+              const result = await this.options.llmProvider.call({
                 agentId: llmAgentId,
                 provider: action.provider,
                 model: action.model,
@@ -1270,167 +2164,248 @@ export class FSMEngine {
                 throw new Error(`LLM step failed: ${JSON.stringify(failArgs)}`);
               }
 
-              // Check if LLM called complete tool - capture the structured output.
-              // The adapter already extracts complete args into result.data, but we
-              // also check toolCalls for backward compatibility with mock providers.
+              // Check if LLM called complete tool - capture the contracted output.
               if (completeToolInjected) {
                 capturedCompleteOutput = findCompleteToolArgs(result);
+                if (!capturedCompleteOutput) {
+                  throw new Error(
+                    `LLM action with outputTo '${action.outputTo}' did not call complete`,
+                  );
+                }
+                if (Object.keys(capturedCompleteOutput).length === 0) {
+                  throw new Error(
+                    `LLM action with outputTo '${action.outputTo}' emitted empty output`,
+                  );
+                }
+                const response = capturedCompleteOutput.response;
+                if (typeof response === "string" && response.trim().length === 0) {
+                  throw new Error(
+                    `LLM action with outputTo '${action.outputTo}' emitted an empty response`,
+                  );
+                }
               }
 
-              // Validate output if validator provided.
-              // Retry policy: only verdict.status === "fail" triggers a retry.
-              // Both `pass` and `uncertain` proceed identically — uncertain is observability-only,
-              // never gating, so judge confusion (timezones, math) cannot kill recoverable work.
-              if (this.options.validateOutput) {
+              // Resolve the per-action validation strategy and gate the
+              // external-judge call by it.
+              // `external` runs the runJudge callback; `self` injects the
+              // inline self-check skill body; `skip` bypasses validation
+              // entirely. The classifier (used when the author hasn't set
+              // `validate:`) never returns `external`.
+              const observedTrace = buildLLMActionTrace(result, action.model, contextPrompt);
+              const declaredTools = action.tools ?? [];
+              const classifierInput: ClassifierInput = {
+                declaredTools,
+                calledToolNames: observedTrace.toolCalls?.map((tc) => tc.toolName) ?? [],
+                hasOutputType: completeToolInjected,
+                hasInputFrom: !!action.inputFrom,
+                // case "llm" — type is always "llm". The case "agent" path
+                // fills in resolvedAgentType before classification.
+                resolvedAgentType: undefined,
+                emittedProse:
+                  typeof observedTrace.content === "string" &&
+                  observedTrace.content.trim().length > 0,
+                toolsAvailable: declaredTools.length > 0,
+                // Re-thread overrides for the post-call resolution.
+                ...(mcpServerOverrides ? { mcpServerOverrides } : {}),
+                ...(action.run_code?.readOnly ? { runCodeReadOnly: true } : {}),
+              };
+              const {
+                decision: validateDecision,
+                source: validateSource,
+                reason: validateReason,
+              } = resolveValidateDecision(action.validate, classifierInput, {
+                job: this.options.jobValidation,
+                workspace: this.options.workspaceValidation,
+              });
+              logger.info("validate-decision resolved", {
+                state: currentState,
+                action: action.outputTo ?? "anonymous",
+                decision: validateDecision,
+                source: validateSource,
+                reason: validateReason,
+                ranExternalJudge: validateDecision === "external" && !!this.options.runJudge,
+                // Whether the inline self-check skill was injected at
+                // prompt-build time. Useful to verify in `global.log` that
+                // self-decisions actually got the skill body — and to spot
+                // pre/post-call decision asymmetry (preCall=self injected
+                // skill, postCall=skip).
+                validationSkillLoaded,
+              });
+
+              // Track the verdict that ultimately survives the external-judge
+              // lifecycle so it can ride on
+              // `step:complete.validation`. Set at every point a verdict is
+              // accepted (first-call pass, first-call uncertain, retry pass,
+              // retry uncertain). On terminal-fail the throw upstream
+              // unwinds before we read this back.
+              let externalSurvivingVerdict: ValidationVerdict | undefined;
+
+              // External validation invokes a system-level judge agent. The
+              // runtime hands the judge an action-output + tool-call manifest
+              // (refs-not-bytes for scrubber-lifted results); the judge returns
+              // a structured verdict. Judge failures synthesize an advisory
+              // verdict so the action still emits.
+              if (validateDecision === "external" && this.options.runJudge) {
                 const trace = buildLLMActionTrace(result, action.model, contextPrompt);
                 const validationActionId = this.getActionId(action);
+                const judgeAgentId =
+                  typeof action.validate === "object" &&
+                  action.validate !== null &&
+                  typeof action.validate.agent === "string"
+                    ? action.validate.agent
+                    : "judge-agent";
 
                 this.emitValidationAttempt(sig, currentState, validationActionId, {
                   attempt: 1,
                   status: "running",
                 });
 
-                const { verdict } = await this.options.validateOutput(
-                  trace,
-                  sig._context?.abortSignal,
-                );
-                // Note: If validator throws, error propagates and aborts the action (fail-closed)
+                const judgeResult = await this.options.runJudge({
+                  agentId: judgeAgentId,
+                  handoff: buildJudgeHandoff(trace),
+                  ...(sig._context?.workspaceId ? { workspaceId: sig._context.workspaceId } : {}),
+                  ...(sig._context?.sessionId ? { sessionId: sig._context.sessionId } : {}),
+                  abortSignal: sig._context?.abortSignal,
+                });
 
-                if (verdict.status === "fail") {
+                if (judgeResult.ok) {
+                  externalSurvivingVerdict = judgeResult.verdict;
                   this.emitValidationAttempt(sig, currentState, validationActionId, {
                     attempt: 1,
-                    status: "failed",
-                    terminal: false,
-                    verdict,
+                    status: judgeResult.verdict.verdict === "blocking" ? "failed" : "passed",
+                    terminal: true,
+                    verdict: judgeResult.verdict,
                   });
-
-                  logger.warn("LLM action failed validation, retrying with feedback", {
-                    state: currentState,
-                    model: action.model,
-                    confidence: verdict.confidence,
-                    threshold: verdict.threshold,
-                    retryGuidance: verdict.retryGuidance,
-                  });
-
-                  // Include previous tool results so the retry LLM can see data
-                  // it already fetched and fix its reasoning without re-calling tools.
-                  const previousToolContext = formatToolResultsForRetry(trace);
-
-                  const retryPrompt =
-                    `${contextPrompt}\n\n` +
-                    (previousToolContext
-                      ? `<previous-attempt-tool-results>\nThese are the tool results from your previous attempt. Use this data to correct your output.\n\n${previousToolContext}\n</previous-attempt-tool-results>\n\n`
-                      : "") +
-                    `<validation-feedback>\n${
-                      verdict.retryGuidance || "Output failed validation."
-                    }\n</validation-feedback>\n` +
-                    (previousToolContext
-                      ? `IMPORTANT: Correct your output using the tool results above. Only re-call tools if you need different data. If you cannot comply, call failStep.`
-                      : `IMPORTANT: Correct your output based on the feedback above. If you cannot comply, call failStep.`);
-
-                  // Rebuild messages with retry prompt, preserving image parts from the original call
-                  const retryMessages: ModelMessage[] | undefined =
-                    images.length > 0
-                      ? [
-                          {
-                            role: "user",
-                            content: [{ type: "text", text: retryPrompt }, ...images],
-                          },
-                        ]
-                      : undefined;
-
-                  result = await this.options.llmProvider.call({
-                    agentId: llmAgentId,
-                    provider: action.provider,
-                    model: action.model,
-                    prompt: retryPrompt,
-                    messages: retryMessages,
-                    tools,
-                    toolChoice: llmToolChoice,
-                    stopOnToolCall: completeToolInjected ? ["complete", "failStep"] : ["failStep"],
-                    onStreamEvent: sig._context?.onStreamEvent,
-                    abortSignal: sig._context?.abortSignal,
-                  });
-
-                  // Check for adapter-level errors on retry
-                  if (!result.ok) {
-                    throw new Error(`LLM call failed on retry: ${result.error.reason}`);
-                  }
-
-                  // Emit tool events for UI visibility (retry — skip when streaming)
-                  if (!sig._context?.onStreamEvent) {
-                    this.emitToolEvents(result, action, sig, currentState);
-                  }
-
-                  // Check if LLM called failStep on retry (search toolCalls for multi-tool scenarios)
-                  const retryFailArgs = findFailStepToolArgs(result);
-                  if (retryFailArgs) {
-                    throw new Error(`LLM step failed on retry: ${JSON.stringify(retryFailArgs)}`);
-                  }
-
-                  // Check if LLM called complete tool on retry
-                  if (completeToolInjected) {
-                    capturedCompleteOutput = findCompleteToolArgs(result);
-                  }
-
-                  const retryTrace = buildLLMActionTrace(result, action.model, retryPrompt);
-
-                  // Merge original call's tool results into the retry trace so the
-                  // validator can see all fetched data, even if the retry LLM didn't
-                  // re-issue the same tool calls.
-                  if (trace.toolResults?.length && !retryTrace.toolResults?.length) {
-                    retryTrace.toolResults = trace.toolResults;
-                    retryTrace.toolCalls = trace.toolCalls;
-                  }
-
-                  this.emitValidationAttempt(sig, currentState, validationActionId, {
-                    attempt: 2,
-                    status: "running",
-                  });
-
-                  const { verdict: retryVerdict } = await this.options.validateOutput(
-                    retryTrace,
-                    sig._context?.abortSignal,
-                  );
-
-                  if (retryVerdict.status === "fail") {
-                    this.emitValidationAttempt(sig, currentState, validationActionId, {
-                      attempt: 2,
-                      status: "failed",
-                      terminal: true,
-                      verdict: retryVerdict,
-                    });
-
-                    logger.error("LLM action failed validation after retry", {
+                  if (judgeResult.verdict.verdict === "blocking") {
+                    logger.error("LLM action external validation: blocking", {
                       state: currentState,
                       model: action.model,
-                      confidence: retryVerdict.confidence,
-                      threshold: retryVerdict.threshold,
-                      retryGuidance: retryVerdict.retryGuidance,
+                      issues: judgeResult.verdict.issues,
                     });
-                    // Attach the verdict to the error so callers (Task #29 system error
-                    // chunk renderer) can inspect issues without re-parsing strings.
-                    throw new ValidationFailedError(retryVerdict, llmAgentId);
+                    throw new ValidationFailedError(judgeResult.verdict, llmAgentId);
                   }
-
-                  this.emitValidationAttempt(sig, currentState, validationActionId, {
-                    attempt: 2,
-                    status: "passed",
-                    verdict: retryVerdict,
-                  });
-
-                  logger.info("LLM action passed validation on retry", {
+                } else {
+                  // Judge failure → advisory verdict with judge-error category.
+                  // Action still emits; the failure is observable
+                  // on `step:complete.validation`.
+                  logger.warn("Judge failed, synthesizing advisory verdict", {
                     state: currentState,
                     model: action.model,
-                    status: retryVerdict.status,
+                    error: judgeResult.error,
                   });
-                } else {
+                  externalSurvivingVerdict = {
+                    verdict: "advisory",
+                    issues: [
+                      {
+                        category: "judge-error",
+                        severity: "info",
+                        claim: "validation",
+                        reasoning: `judge failed: ${judgeResult.error}`,
+                      },
+                    ],
+                  };
                   this.emitValidationAttempt(sig, currentState, validationActionId, {
                     attempt: 1,
                     status: "passed",
-                    verdict,
+                    terminal: true,
+                    verdict: externalSurvivingVerdict,
                   });
                 }
+              } else if (validateDecision === "self") {
+                // The validating-llm-outputs skill was already composed into
+                // `contextPrompt` pre-call (see `composeValidationBlock`
+                // above), so the LLM self-checked its draft inside the same
+                // call. No separate post-call step needed at this gate.
+                // The `record_validation` tool was injected pre-call when
+                // preCallDecision === "self"; the captured args are read off
+                // result.toolCalls below for `step:complete.validation`.
+              } else if (validateDecision === "skip") {
+                // No validation. The decision was logged above; nothing else
+                // to do here.
+              }
+
+              // Build the structured validation block for emit. Three resolved
+              // strategies → three shapes:
+              //   skip     → { strategy, skipReason }
+              //   self     → { strategy, verdict?, issues? }   (record_validation)
+              //   external → { strategy, verdict, issues? }    (judge-derived)
+              // The captured `validateDecision` (post-call) wins over the
+              // pre-call decision used to inject the tool — see preCallResolution
+              // for the asymmetry-tolerance comment. For external, the surviving
+              // verdict (after retry, when applicable) is the one we surface.
+              const recordedValidationArgs =
+                validateDecision === "self" ? findRecordValidationToolArgs(result) : undefined;
+              const validationOutput = buildValidationOutput({
+                decision: validateDecision,
+                reason: validateReason,
+                recordedArgs: recordedValidationArgs,
+                // Structured + self path emits an implicit pass verdict.
+                ...(validateDecision === "self" && completeToolInjected
+                  ? { implicitPass: true }
+                  : {}),
+                ...(validateDecision === "external" && externalSurvivingVerdict
+                  ? { externalVerdict: externalSurvivingVerdict }
+                  : {}),
+              });
+
+              // Sentinel-text guard. When `validate: self` resolves and the
+              // LLM had no `complete` tool to pin a structured output,
+              // the outputDoc falls back to `result.data.response` — i.e.
+              // the model's most recent text turn before its closing tool
+              // call. If that text reads like a transition phrase ("Now let
+              // me record validation and return the final output:") rather
+              // than the actual content the action was asked to produce,
+              // the persisted doc will be a stub. Log a warn so the
+              // operator can correlate and either tighten the action's
+              // prompt or add an outputType schema. Heuristic — this
+              // doesn't fail the action, just surfaces it. Repro:
+              // Known trigger: a transition phrase just before `record_validation`.
+              if (
+                validateDecision === "self" &&
+                !completeToolInjected &&
+                recordedValidationArgs !== undefined
+              ) {
+                const responseText =
+                  typeof (result.data as { response?: unknown })?.response === "string"
+                    ? ((result.data as { response: string }).response as string)
+                    : "";
+                const trimmed = responseText.trim();
+                const looksTransitional =
+                  trimmed.length > 0 &&
+                  trimmed.length < 500 &&
+                  (trimmed.endsWith(":") || /^(now\s+(let|i)|let\s+me|i'?ll\s+now)/i.test(trimmed));
+                if (looksTransitional) {
+                  logger.warn(
+                    "LLM action validate:self may have terminated on record_validation without emitting final output",
+                    {
+                      state: currentState,
+                      outputTo: action.outputTo,
+                      responseChars: trimmed.length,
+                      responseHead: trimmed.slice(0, 120),
+                      hint: "Update the action's prompt (or the validating-llm-outputs skill) so the LLM emits its final output before calling record_validation.",
+                    },
+                  );
+                }
+              }
+
+              // failStep semantics on a self-recorded `blocking` verdict.
+              // The LLM has explicitly told us its output is unsourced and
+              // should not emit; treat that signal the same way as a failStep
+              // tool call. Mirrors the `findFailStepToolArgs` → throw path
+              // immediately above. Skipped on `external` because the judge's
+              // retry-and-throw lifecycle already runs upstream; if the
+              // external surviving verdict is `blocking`, we got there via
+              // the already-thrown ValidationFailedError path — not via this
+              // branch.
+              if (
+                validationOutput?.strategy === "self" &&
+                validationOutput.verdict === "blocking"
+              ) {
+                const issuesSummary =
+                  validationOutput.issues
+                    ?.map((i) => `${i.category ?? "issue"}: ${i.claim}`)
+                    .join("; ") || "no issues recorded";
+                throw new Error(`LLM action self-validation: blocking. ${issuesSummary}`);
               }
 
               if (action.outputTo) {
@@ -1447,27 +2422,36 @@ export class FSMEngine {
                   });
                 }
 
-                // Dual-write: results accumulator (replace semantics)
-                // LLMs sometimes stringify nested JSON fields (e.g. arrays as
-                // JSON strings). Parse them so downstream .map() calls don't crash.
-                if (results && dataToStore) {
-                  const sanitized = unstringifyNestedJson(dataToStore);
-                  const parsed = z.record(z.string(), z.unknown()).safeParse(sanitized);
-                  if (parsed.success) {
-                    results.set(action.outputTo, parsed.data);
-                  }
-                }
-
-                // Dual-write: documents (backward compat)
+                // Documents are the canonical action-output surface. LLMs
+                // sometimes stringify nested JSON fields (e.g. arrays as JSON
+                // strings); normalize before storing so downstream inputFrom
+                // consumers receive the usable shape.
+                const sanitized = unstringifyNestedJson(dataToStore);
+                const parsed = z.record(z.string(), z.unknown()).safeParse(sanitized);
+                const docData = parsed.success ? parsed.data : dataToStore;
                 if (outputDoc) {
-                  outputDoc.data = { ...outputDoc.data, ...dataToStore };
+                  outputDoc.data = { ...outputDoc.data, ...docData };
                 } else {
                   documents.set(action.outputTo, {
                     id: action.outputTo,
                     type: newDocType,
-                    data: dataToStore,
+                    data: docData,
                   });
                 }
+
+                // Persist mid-session so a later action's
+                // `composeArtifactBlocks({ workspaceId,
+                // sessionId })` can see this document via
+                // `ArtifactStorage.listBySession`. Without this hook the
+                // post-drain pass is the only writer, so intra-session
+                // retrieval injection is empty. No-op when the host hasn't
+                // wired the callback.
+                await this.maybePersistActionArtifact(
+                  action,
+                  documents.get(action.outputTo),
+                  sig,
+                  currentState,
+                );
               }
 
               // Capture LLM result for session history side-channel
@@ -1475,13 +2459,31 @@ export class FSMEngine {
                 const resultsByCallId = new Map(
                   result.toolResults?.map((tr) => [tr.toolCallId, tr.output]) ?? [],
                 );
-                const toolCalls = (result.toolCalls ?? []).map((tc) => ({
+                const rawToolCalls = (result.toolCalls ?? []).map((tc) => ({
                   toolName: tc.toolName,
                   args: tc.input,
                   ...(resultsByCallId.has(tc.toolCallId) && {
                     result: resultsByCallId.get(tc.toolCallId),
                   }),
                 }));
+                // Lift oversized tool results post-streamText so the
+                // persisted side-channel +
+                // session events stay compact while the producer LLM saw
+                // full bytes during the streamText loop. See
+                // `liftToolResultsForPersist` for the rationale. Skipped
+                // when context lacks workspaceId/sessionId (older test
+                // callers, internal invocations) — the artifact upload
+                // needs both for tagging.
+                const liftWorkspaceId = sig._context?.workspaceId;
+                const liftSessionId = sig._context?.sessionId;
+                const toolCalls =
+                  liftWorkspaceId && liftSessionId
+                    ? await liftToolResultsForPersist(rawToolCalls, {
+                        workspaceId: liftWorkspaceId,
+                        chatId: liftSessionId,
+                        logger,
+                      })
+                    : rawToolCalls;
                 // Structured output = args from the "complete" tool call (the actual
                 // result the agent declared). Falls back to result.data (LLM text)
                 // when no complete tool call exists. Mirrors workspace-runtime logic.
@@ -1490,6 +2492,17 @@ export class FSMEngine {
                   toolCalls,
                   reasoning: result.reasoning,
                   output: completeCall?.args ?? result.data,
+                  // Pass-through optional `usage` from the LLM provider so the
+                  // session event mapper can persist it on `step:complete`.
+                  // Provider adapters that don't set usage (e.g. tests with
+                  // stub providers) leave this undefined — handled downstream.
+                  ...(result.usage && { usage: result.usage }),
+                  // Ride the structured validation block on the same
+                  // side-channel `step:complete` mapping reads. Always set
+                  // for `type: llm` actions — the three resolved strategies
+                  // each have a non-empty shape; only pure-agent actions
+                  // (case "agent" → type: user/atlas) leave this absent.
+                  ...(validationOutput && { validation: validationOutput }),
                 };
               }
 
@@ -1530,14 +2543,14 @@ export class FSMEngine {
               hasSignalContext: !!sig._context,
               hasOnStreamEvent: !!sig._context?.onStreamEvent,
               hasPrepareInput: !!prepareResult,
-              resultKeys: Object.keys(Object.fromEntries(resultsMap)),
+              resultKeys: Object.keys(this.materializeResults(documents, resultsMap)),
             });
 
             // Build context for agent execution
             const agentContext: Context = {
               documents: Array.from(documents.values()),
               state: currentState,
-              results: Object.fromEntries(resultsMap),
+              results: this.materializeResults(documents, resultsMap),
               ...(effectivePrepareResult ? { input: effectivePrepareResult } : {}),
               emit: context.emit,
               updateDoc: this.makeUpdateDocFn(documents),
@@ -1556,19 +2569,256 @@ export class FSMEngine {
                   .optional()
                   .parse(this._definition.documentTypes?.[agentDocTypeName])
               : undefined;
+            const resolvedAgentType = this.options.resolveAgentType?.(action.agentId);
+            const defaultAgentOutputSchema =
+              action.outputTo && !agentOutputSchema && resolvedAgentType === "llm"
+                ? { type: "object", minProperties: 1, additionalProperties: true }
+                : undefined;
+            const executorOutputSchema = agentOutputSchema ?? defaultAgentOutputSchema;
+
+            // Resolve the per-action validation decision PRE-call so it can
+            // ride through
+            // `AgentExecutorOptions` to the orchestrator's prompt-assembly
+            // site (`convertLLMToAgent`'s system-prompt builder). The same
+            // shape `case "llm"` uses inline — empty `calledToolNames` and
+            // `emittedProse: false` because we don't have observed signals
+            // yet — plus `resolvedAgentType` from the optional resolver so
+            // the classifier can short-circuit `user`/`atlas` paths to
+            // `skip` (rule 1 in `validate-classifier.ts`).
+            // Agent actions don't carry a `tools:` allowlist — the agent
+            // itself owns its tool surface (workspace.yml `agents.<id>`).
+            // From the FSM engine's vantage we only know structural fields:
+            // `outputType`, `inputFrom`, and the resolved agent kind. The
+            // classifier short-circuits on type "user" / "atlas" before
+            // reaching any tool-based rule, and for type "llm" without
+            // declared tools it falls through to "default-self" — same
+            // safe-by-default behavior as `case "llm"` with no tools.
+            const agentClassifierInput: ClassifierInput = {
+              declaredTools: [],
+              calledToolNames: [],
+              hasOutputType: !!executorOutputSchema,
+              hasInputFrom: !!action.inputFrom,
+              resolvedAgentType,
+              emittedProse: false,
+              toolsAvailable: false,
+            };
+            const {
+              decision: agentValidateDecision,
+              source: agentValidateSource,
+              reason: agentValidateReason,
+              skill: agentValidateSkill,
+            } = resolveValidateDecision(action.validate, agentClassifierInput, {
+              job: this.options.jobValidation,
+              workspace: this.options.workspaceValidation,
+            });
 
             // Execute agent via callback, passing full action object for prompt access
             // Agent returns AgentResult envelope directly
+            const executorOptions: AgentExecutorOptions = {
+              ...(executorOutputSchema ? { outputSchema: executorOutputSchema } : {}),
+              validateDecision: agentValidateDecision,
+              ...(agentValidateSkill ? { validateSkill: agentValidateSkill } : {}),
+            };
             const result = await this.options.agentExecutor(
               action,
               agentContext,
               sig,
-              agentOutputSchema ? { outputSchema: agentOutputSchema } : undefined,
+              executorOptions,
             );
 
-            // Check envelope's ok discriminant for error
+            // Mirror `case "llm"`'s `validate-decision resolved` info log so
+            // both paths surface uniformly in `global.log`. `validationSkillLoaded`
+            // is unknown from this side (the orchestrator owns the load) — we
+            // report whether the decision was "self" so a reader can correlate
+            // with orchestrator-side composeValidationBlock logs.
+            logger.info("validate-decision resolved", {
+              state: currentState,
+              action: action.agentId,
+              decision: agentValidateDecision,
+              source: agentValidateSource,
+              reason: agentValidateReason,
+              ranExternalJudge: agentValidateDecision === "external" && !!this.options.runJudge,
+              validationSkillLoaded: agentValidateDecision === "self",
+              resolvedAgentType: resolvedAgentType ?? "unknown",
+            });
+
+            // Check envelope's ok discriminant for error. Preserve tool-call
+            // observability for failed user agents before throwing so the
+            // session history can explain what capability call failed.
             if (!result.ok) {
+              const agentResultsByCallId = new Map(
+                result.toolResults?.map((tr) => [tr.toolCallId, tr.output]) ?? [],
+              );
+              const rawAgentToolCalls = (result.toolCalls ?? []).map((tc) => ({
+                toolName: tc.toolName,
+                args: tc.input,
+                ...(agentResultsByCallId.has(tc.toolCallId) && {
+                  result: agentResultsByCallId.get(tc.toolCallId),
+                }),
+              }));
+              const liftWorkspaceId = sig._context?.workspaceId;
+              const liftSessionId = sig._context?.sessionId;
+              const agentToolCalls =
+                liftWorkspaceId && liftSessionId
+                  ? await liftToolResultsForPersist(rawAgentToolCalls, {
+                      workspaceId: liftWorkspaceId,
+                      chatId: liftSessionId,
+                      logger,
+                    })
+                  : rawAgentToolCalls;
+              llmResultData = { toolCalls: agentToolCalls, output: { error: result.error.reason } };
               throw new Error(result.error.reason);
+            }
+
+            // Track the external surviving verdict for case "agent" so it
+            // can ride on `step:complete.validation`. Mirrors the case
+            // "llm" path's tracking. Set only when the judge accepted the
+            // verdict (no throw); a thrown ValidationFailedError unwinds
+            // before this is read.
+            let agentExternalSurvivingVerdict: ValidationVerdict | undefined;
+
+            // External validation invokes a system-level judge agent — same
+            // shape as the case "llm" path. The judge sees the agent's output
+            // + tool-call manifest (refs-not-bytes for scrubber-lifted results)
+            // and returns a structured verdict. Judge failure synthesizes an
+            // advisory verdict so the action still emits.
+            if (agentValidateDecision === "external" && this.options.runJudge) {
+              const validationActionId = this.getActionId(action);
+              const judgeAgentId =
+                typeof action.validate === "object" &&
+                action.validate !== null &&
+                typeof action.validate.agent === "string"
+                  ? action.validate.agent
+                  : "judge-agent";
+
+              this.emitValidationAttempt(sig, currentState, validationActionId, {
+                attempt: 1,
+                status: "running",
+              });
+              const trace: LLMActionTrace = {
+                content:
+                  result.ok && typeof result.data === "string"
+                    ? result.data
+                    : result.ok
+                      ? JSON.stringify(result.data)
+                      : "",
+                reasoning: result.ok ? result.reasoning : undefined,
+                toolCalls: result.ok ? result.toolCalls : undefined,
+                toolResults: result.ok ? result.toolResults : undefined,
+                model: `agent:${action.agentId}`,
+                prompt: action.prompt ?? "",
+              };
+              const judgeResult = await this.options.runJudge({
+                agentId: judgeAgentId,
+                handoff: buildJudgeHandoff(trace),
+                ...(sig._context?.workspaceId ? { workspaceId: sig._context.workspaceId } : {}),
+                ...(sig._context?.sessionId ? { sessionId: sig._context.sessionId } : {}),
+                abortSignal: sig._context?.abortSignal,
+              });
+
+              if (judgeResult.ok) {
+                agentExternalSurvivingVerdict = judgeResult.verdict;
+                this.emitValidationAttempt(sig, currentState, validationActionId, {
+                  attempt: 1,
+                  status: judgeResult.verdict.verdict === "blocking" ? "failed" : "passed",
+                  terminal: true,
+                  verdict: judgeResult.verdict,
+                });
+                if (judgeResult.verdict.verdict === "blocking") {
+                  throw new ValidationFailedError(judgeResult.verdict, action.agentId);
+                }
+              } else {
+                logger.warn("Judge failed for agent action, synthesizing advisory", {
+                  state: currentState,
+                  agentId: action.agentId,
+                  error: judgeResult.error,
+                });
+                agentExternalSurvivingVerdict = {
+                  verdict: "advisory",
+                  issues: [
+                    {
+                      category: "judge-error",
+                      severity: "info",
+                      claim: "validation",
+                      reasoning: `judge failed: ${judgeResult.error}`,
+                    },
+                  ],
+                };
+                this.emitValidationAttempt(sig, currentState, validationActionId, {
+                  attempt: 1,
+                  status: "passed",
+                  terminal: true,
+                  verdict: agentExternalSurvivingVerdict,
+                });
+              }
+            }
+
+            // Build the structured validation block for `case "agent" → type:
+            // llm`, mirroring the inline
+            // `case "llm"` path. The `record_validation` tool was injected at
+            // the orchestrator's prompt-assembly site (`from-llm.ts`) when
+            // decision === "self"; capture its args off the agent result's
+            // toolCalls — same mechanism `findCompleteToolArgs` uses, just
+            // applied to the agent envelope.
+            const agentRecordedValidationArgs =
+              agentValidateDecision === "self" && result.ok
+                ? extractToolCallInput(result.toolCalls ?? [], RECORD_VALIDATION_TOOL_NAME)
+                : undefined;
+            const agentValidationOutput = buildValidationOutput({
+              decision: agentValidateDecision,
+              reason: agentValidateReason,
+              recordedArgs: agentRecordedValidationArgs,
+              ...(agentValidateDecision === "external" && agentExternalSurvivingVerdict
+                ? { externalVerdict: agentExternalSurvivingVerdict }
+                : {}),
+              ...(agentValidateDecision === "self" && executorOutputSchema
+                ? { implicitPass: true }
+                : {}),
+            });
+
+            const agentResultsByCallId = new Map(
+              result.toolResults?.map((tr) => [tr.toolCallId, tr.output]) ?? [],
+            );
+            const rawAgentToolCalls = (result.toolCalls ?? []).map((tc) => ({
+              toolName: tc.toolName,
+              args: tc.input,
+              ...(agentResultsByCallId.has(tc.toolCallId) && {
+                result: agentResultsByCallId.get(tc.toolCallId),
+              }),
+            }));
+            const liftWorkspaceId = sig._context?.workspaceId;
+            const liftSessionId = sig._context?.sessionId;
+            const agentToolCalls =
+              liftWorkspaceId && liftSessionId
+                ? await liftToolResultsForPersist(rawAgentToolCalls, {
+                    workspaceId: liftWorkspaceId,
+                    chatId: liftSessionId,
+                    logger,
+                  })
+                : rawAgentToolCalls;
+            const agentCompleteCall = agentToolCalls.find((tc) => tc.toolName === "complete");
+            llmResultData = {
+              toolCalls: agentToolCalls,
+              reasoning: result.reasoning,
+              output: agentCompleteCall?.args ?? result.data,
+              ...(result.artifactRefs ? { artifactRefs: result.artifactRefs } : {}),
+              ...(result.usage ? { usage: result.usage } : {}),
+              ...(agentValidationOutput ? { validation: agentValidationOutput } : {}),
+            };
+
+            // failStep semantics on a self-recorded `blocking` verdict. Mirrors
+            // the case "llm" path. The agent result projection above
+            // lives directly on the action event; workspace runtime no longer
+            // needs an out-of-band side-channel to build step:complete.
+            if (
+              agentValidationOutput?.strategy === "self" &&
+              agentValidationOutput.verdict === "blocking"
+            ) {
+              const issuesSummary =
+                agentValidationOutput.issues
+                  ?.map((i) => `${i.category ?? "issue"}: ${i.claim}`)
+                  .join("; ") || "no issues recorded";
+              throw new Error(`Agent action self-validation: blocking. ${issuesSummary}`);
             }
 
             // Store result if outputTo specified
@@ -1599,18 +2849,23 @@ export class FSMEngine {
                   ? { ...baseData, artifactRefs: result.artifactRefs }
                   : baseData;
 
-              // Dual-write: results accumulator (replace semantics)
-              if (results) {
-                results.set(action.outputTo, data);
-              }
-
-              // Dual-write: documents (backward compat)
               const existingDoc = documents.get(action.outputTo);
               if (existingDoc) {
                 existingDoc.data = { ...existingDoc.data, ...data };
               } else {
                 documents.set(action.outputTo, { id: action.outputTo, type: "AgentResult", data });
               }
+
+              // See the matching call in `case "llm"` above for rationale.
+              // Persist mid-session so
+              // `composeArtifactBlocks` sees agent-action artifacts during
+              // the same session that emitted them.
+              await this.maybePersistActionArtifact(
+                action,
+                documents.get(action.outputTo),
+                sig,
+                currentState,
+              );
             }
 
             logger.debug("Agent action completed", {
@@ -1683,6 +2938,7 @@ export class FSMEngine {
               error: stringifyError(error),
               timestamp: Date.now(),
               inputSnapshot,
+              llmResult: llmResultData,
             },
           });
         }
@@ -1857,12 +3113,23 @@ export class FSMEngine {
 
   /**
    * Build AI SDK Tool objects for LLM action.
-   * MCP tools: ephemeral createMCPTools() call — dispose in finally block
+   * MCP tools: ephemeral createMCPTools() call — dispose in finally block.
+   *
+   * `signalContext` carries the per-call session/workspace identity used by
+   * scope-injected platform tools and by post-call artifact lifting when
+   * oversized tool outputs are persisted.
    */
   private async buildTools(
     toolNames: string[],
     _context: Context,
-    _abortSignal?: AbortSignal,
+    signalContext?: SignalWithContext["_context"],
+    /**
+     * Action id forwarded into the scope-injection wrapper so
+     * `request_tool_access` can stamp the originating action onto its
+     * elicitation envelope. Optional because non-LLM-action callers don't
+     * own an action id (and don't expose `request_tool_access` anyway).
+     */
+    actionId?: string,
   ): Promise<{ tools: Record<string, Tool>; dispose: () => Promise<void> }> {
     const tools: Record<string, Tool> = {};
     let dispose: () => Promise<void> = async () => {};
@@ -1925,9 +3192,15 @@ export class FSMEngine {
       }
     }
 
+    // Do not lift MCP results before the producer LLM sees them. Oversized
+    // result lifting happens when side-channel tool results are persisted,
+    // via `liftToolResultsForPersist`; the pre-persist scrubber retains its
+    // defense-in-depth role.
     let mcpResult: MCPToolsResult;
     try {
-      mcpResult = await createMCPTools(effectiveConfigs, logger);
+      mcpResult = await createMCPTools(effectiveConfigs, logger, {
+        signal: signalContext?.abortSignal,
+      });
     } catch (error) {
       if (hasUnusableCredentialCause(error)) {
         let provider = "unknown";
@@ -1963,15 +3236,42 @@ export class FSMEngine {
     // still see every other server's tools (e.g. `send_gmail_message`) —
     // the source of the daily-memo "fetcher agents send their own emails"
     // bug.
+    //
+    // Bypass — when the resolved permissions for this action declare
+    // `dangerouslySkipAllowlist`, skip the per-agent narrowing
+    // and pass every platform-allowlisted tool through to the LLM.
+    // Mirrors Claude Code's `--dangerously-skip-permissions`. Resolution
+    // precedence: job > workspace > FRIDAY_DANGEROUSLY_SKIP_PERMISSIONS
+    // env var. resolvePermissions is the canonical merge helper.
+    // Falls through to wrapPlatformToolsWithScope below so request_tool_access
+    // and other scope-injected tools still receive sessionId/actionId/perms.
+    const effectivePermissions = resolvePermissions({
+      job: this.options.jobPermissions,
+      workspace: this.options.workspacePermissions,
+      daemonDangerouslySkipAllowlist:
+        typeof Deno !== "undefined"
+          ? Deno.env.get("FRIDAY_DANGEROUSLY_SKIP_PERMISSIONS") === "1"
+          : undefined,
+    });
+    const bypassActive = effectivePermissions.dangerouslySkipAllowlist === true;
+    if (bypassActive) {
+      logger.info("Bypassing per-agent tool allowlist (dangerouslySkipAllowlist)", {
+        jobName: this._definition.id,
+        toolCount: Object.keys(filtered).length,
+      });
+    }
+
     let scoped: Record<string, Tool> = filtered;
-    if (hasNameAllowlist) {
+    if (hasNameAllowlist && !bypassActive) {
       scoped = {};
       for (const [serverId, names] of Object.entries(mcpResult.toolsByServer)) {
         if (serverId === "atlas-platform") {
           // Platform tools were already filtered above by PLATFORM_TOOL_ALLOWLIST.
           // Don't re-filter here — they're ambient, not subject to the agent's
           // workspace MCP whitelist.
-          for (const name of names) if (filtered[name]) scoped[name] = filtered[name];
+          for (const name of names) {
+            if (filtered[name]) scoped[name] = filtered[name];
+          }
           continue;
         }
         const allow = serverAllow.get(serverId);
@@ -1991,6 +3291,27 @@ export class FSMEngine {
     const wrapped = wrapPlatformToolsWithScope(scoped, {
       workspaceId: this.options.scope.workspaceId,
       workspaceName: this.options.scope.workspaceName,
+      // sessionId + actionId + permissions flow into `request_tool_access`
+      // (and any future scope-injected tool that
+      // needs them). Other wrapped tools strip extras via Zod input
+      // validation, so this is harmless surface widening.
+      //
+      // Pass `resolvedPermissions` (computed once above for the bypass check)
+      // so the tool consumes the same merge result
+      // instead of re-resolving at call time. Raw fields kept for
+      // back-compat with callers that don't have a resolution context.
+      ...(this.options.scope.sessionId && { sessionId: this.options.scope.sessionId }),
+      ...(actionId && { actionId }),
+      resolvedPermissions: effectivePermissions,
+      ...(this.options.jobPermissions && { jobPermissions: this.options.jobPermissions }),
+      ...(this.options.workspacePermissions && {
+        workspacePermissions: this.options.workspacePermissions,
+      }),
+      // Surface job timeout when known so request_tool_access can derive
+      // expiresAt = now + jobTimeoutMs. Optional — falls back to tool-local
+      // default when absent.
+      ...(this.options.jobTimeoutMs !== undefined && { jobTimeoutMs: this.options.jobTimeoutMs }),
+      availableToolNames: Object.keys(filtered),
     });
     Object.assign(tools, wrapped);
 
@@ -2165,7 +3486,7 @@ export class FSMEngine {
   }
 
   get results(): Record<string, Record<string, unknown>> {
-    return Object.fromEntries(this._results);
+    return this.materializeResults(this._documents);
   }
 
   getDocument(id: string): Document | undefined {
@@ -2176,9 +3497,13 @@ export class FSMEngine {
     return {
       documents: this.documents,
       state: this._currentState,
-      results: Object.fromEntries(this._results),
+      results: this.materializeResults(this._documents),
       setResult: (key: string, data: Record<string, unknown>) => {
-        this._results.set(key, data);
+        if (this._documents.has(key)) {
+          this._documents.set(key, { ...this._documents.get(key)!, data });
+        } else {
+          this._results.set(key, data);
+        }
       },
       emit: (s: Signal) => this.signal(s),
       updateDoc: this.makeUpdateDocFn(),
@@ -2206,7 +3531,7 @@ export class FSMEngine {
   /**
    * Pre-populate results entries before any signal processing.
    * Used by WorkspaceRuntime to inject `__meta` (and potentially other
-   * seed data) so code actions see it via `context.results`.
+   * seed data) so actions see it via `context.results`.
    *
    * Merges entries — safe to call between sessions (when not actively
    * processing). Throws if called mid-session to prevent mutation while

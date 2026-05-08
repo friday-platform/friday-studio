@@ -1,7 +1,12 @@
 import { z } from "zod";
 import { WorkspaceAgentConfigSchema } from "./agents.ts";
 import { AtlasServerConfigSchema, PlatformModelsSchema, ServerConfigSchema } from "./atlas.ts";
-import { FederationConfigSchema, MCPToolNameSchema, WorkspaceIdentitySchema } from "./base.ts";
+import {
+  DurationSchema,
+  FederationConfigSchema,
+  MCPToolNameSchema,
+  WorkspaceIdentitySchema,
+} from "./base.ts";
 import { CommunicatorConfigSchema } from "./communicators.ts";
 import { JobSpecificationSchema } from "./jobs.ts";
 import { AtlasToolsConfigSchema, ToolsConfigSchema } from "./mcp.ts";
@@ -23,6 +28,16 @@ export const MemoryOwnEntrySchema = z.object({
   name: z.string().min(1),
   type: MemoryTypeSchema,
   strategy: MemoryStrategySchema,
+  /**
+   * Optional TTL override. When set, entries in this store inherit
+   * `lifecycle.expiresAt`
+   * computed from the entry's `createdAt + ttl`. Overrides the
+   * type-based default (`short_term` → ephemeral, `long_term` →
+   * durable). Cleanup remains app-layer: the runtime sweep at
+   * session-complete still runs first; an out-of-band sweep based on
+   * `expiresAt` is reserved for a future pass.
+   */
+  ttl: DurationSchema.optional(),
 });
 
 // _global is GLOBAL_WORKSPACE_ID from @atlas/agent-sdk/memory-scope
@@ -100,6 +115,30 @@ export function parseMemoryMountSource(source: string): {
 // WORKSPACE CONFIGURATION (workspace.yml)
 // ==============================================================================
 
+// PermissionsConfigSchema lives in `permissions.ts` so jobs.ts can import
+// it without creating a workspace.ts ↔ jobs.ts cycle. Re-exported here for
+// callers that previously imported from `@atlas/config/workspace`.
+export {
+  type PermissionsConfig,
+  PermissionsConfigSchema,
+} from "./permissions.ts";
+
+import { PermissionsConfigSchema } from "./permissions.ts";
+
+// DelegationBudgetSchema lives in `delegation.ts` so jobs.ts can import
+// it without creating a workspace.ts ↔ jobs.ts cycle. Re-exported here
+// for callers that previously imported from `@atlas/config/workspace`.
+export { type DelegationBudget, DelegationBudgetSchema } from "./delegation.ts";
+
+import { DelegationBudgetSchema } from "./delegation.ts";
+
+// ValidationDefaultsSchema lives in `validation.ts` so jobs.ts can
+// import it without creating a workspace.ts ↔ jobs.ts cycle. Re-exported
+// here for callers that previously imported from `@atlas/config/workspace`.
+export { type ValidationDefaults, ValidationDefaultsSchema } from "./validation.ts";
+
+import { ValidationDefaultsSchema } from "./validation.ts";
+
 export const WorkspaceConfigSchema = z.strictObject({
   version: z.literal("1.0").describe("Configuration version (currently '1.0')"),
   workspace: WorkspaceIdentitySchema,
@@ -120,6 +159,33 @@ export const WorkspaceConfigSchema = z.strictObject({
         "'surface' writes proposals to scratchpad for review. Defaults to 'surface'.",
     ),
   memory: MemoryConfigSchema.optional(),
+  permissions: PermissionsConfigSchema.optional(),
+  delegation: DelegationBudgetSchema.optional(),
+  /**
+   * Phase B5 — workspace-level validation policy default. Applied to
+   * every LLM/agent action that doesn't set `validate:` itself. Per-job
+   * `validation:` block overrides per-field. Action-level `validate:`
+   * always wins. Default `"auto"` (classifier) for unset workspaces.
+   */
+  validation: ValidationDefaultsSchema.optional(),
+  /**
+   * Workspace-level artifact lifecycle policy (Phase 6.B).
+   *
+   * `default_grace` is the time window after job completion before
+   * ephemeral artifacts are swept. Default `24h`. Per-job override at
+   * `jobs.<name>.artifacts.default_grace`. Promotion-by-reference signals
+   * (memory_save text contains the artifact id; display_artifact called;
+   * aiSummary.keyDetails URL references it) keep an artifact alive past
+   * the grace window without an author opt-in.
+   */
+  artifacts: z
+    .strictObject({
+      default_grace: DurationSchema.optional().describe(
+        "Grace window after job completion before ephemeral artifacts are " +
+          "swept. Default '24h'.",
+      ),
+    })
+    .optional(),
 });
 
 export type WorkspaceConfig = z.infer<typeof WorkspaceConfigSchema>;

@@ -1,11 +1,15 @@
 <script lang="ts">
+  import type { Elicitation } from "@atlas/core/elicitations/model";
   import { Collapsible, Dialog, IconLarge, IconSmall } from "@atlas/ui";
   import { createQuery } from "@tanstack/svelte-query";
+  import { browser } from "$app/environment";
   import { page } from "$app/state";
   import CreateWorkspaceForm from "$lib/components/workspace/create-workspace-form.svelte";
   import WorkspaceLoader from "$lib/components/workspace/workspace-loader.svelte";
   import { daemonHealth } from "$lib/daemon-health.svelte";
+  import { countPendingElicitations } from "$lib/elicitation-counts.ts";
   import { workspaceQueries } from "$lib/queries";
+  import { elicitationQueries } from "$lib/queries/elicitation-queries.ts";
   import type { Component } from "svelte";
   import { writable } from "svelte/store";
 
@@ -18,6 +22,23 @@
   let addTab = $state<"create" | "upload">("create");
 
   const workspacesQuery = createQuery(() => workspaceQueries.enriched());
+  const elicitationsQuery = createQuery(() => elicitationQueries.list(null));
+  const elicitations = $derived<Elicitation[]>(elicitationsQuery.data ?? []);
+
+  let nowMs = $state<number>(Date.now());
+  $effect(() => {
+    if (!browser) return;
+    const timer = setInterval(() => {
+      nowMs = Date.now();
+    }, 30_000);
+    return () => clearInterval(timer);
+  });
+
+  const globalPendingElicitations = $derived(countPendingElicitations(elicitations, nowMs));
+  const activeWorkspacePendingElicitations = $derived(
+    activeWorkspaceId ? countPendingElicitations(elicitations, nowMs, activeWorkspaceId) : 0,
+  );
+
   // Personal workspace is always pinned at the top; every other workspace
   // follows in the backend's delivery order. The `ws.id === "user"` check
   // matches the same identity used elsewhere in the playground.
@@ -34,6 +55,7 @@
   const toolLinks: NavItem[] = [
     { label: "Chat", href: "/platform/user/chat", icon: IconLarge.SpeechBubble },
     { label: "Memory", href: "/memory", icon: IconLarge.Write },
+    { label: "Activity", href: "/activity", icon: IconLarge.SpeechBubble },
     { label: "Agent Tester", href: "/agents", icon: IconLarge.Chip },
     { label: "Job Inspector", href: "/inspector", icon: IconLarge.DiamondCheck },
     { label: "Schedules", href: "/schedules", icon: IconLarge.Target },
@@ -79,7 +101,16 @@
         <li>
           <a href={link.href} class="nav-item" class:active={isToolActive(link.href)}>
             <Icon />
-            {link.label}
+            <span class="nav-label">{link.label}</span>
+            {#if link.href === "/activity" && globalPendingElicitations > 0}
+              <span
+                class="pending-badge"
+                data-testid="global-activity-pending-badge"
+                aria-label={`${globalPendingElicitations} pending activity items`}
+              >
+                {globalPendingElicitations}
+              </span>
+            {/if}
           </a>
         </li>
       {/each}
@@ -163,12 +194,26 @@
                     href: `/memory/${ws.id}`,
                     isActive: pathname.startsWith(`/memory/${ws.id}`),
                   },
+                  {
+                    label: "Activity",
+                    href: `${base}/activity`,
+                    isActive: pathname.startsWith(`${base}/activity`),
+                  },
                 ]}
                 <ul class="sub-nav">
                   {#each subPages as sub (sub.label)}
                     <li>
                       <a href={sub.href} class="nav-item" class:active={sub.isActive}>
-                        {sub.label}
+                        <span class="nav-label">{sub.label}</span>
+                        {#if sub.label === "Activity" && activeWorkspacePendingElicitations > 0}
+                          <span
+                            class="pending-badge"
+                            data-testid="workspace-activity-pending-badge"
+                            aria-label={`${activeWorkspacePendingElicitations} pending activity items`}
+                          >
+                            {activeWorkspacePendingElicitations}
+                          </span>
+                        {/if}
                       </a>
                     </li>
                   {/each}
@@ -391,11 +436,28 @@
       }
     }
 
-    .text {
+    .text,
+    .nav-label {
       flex: 1;
       overflow: hidden;
       text-overflow: ellipsis;
       text-wrap: nowrap;
+    }
+
+    .pending-badge {
+      align-items: center;
+      background-color: var(--color-red-9, #dc2626);
+      border-radius: var(--radius-round);
+      color: white;
+      display: inline-flex;
+      flex-shrink: 0;
+      font-size: var(--font-size-1);
+      font-weight: var(--font-weight-7);
+      justify-content: center;
+      line-height: 1;
+      min-inline-size: var(--size-4-5);
+      padding-block: var(--size-0-5);
+      padding-inline: var(--size-1);
     }
 
     &.active {

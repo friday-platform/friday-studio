@@ -64,6 +64,15 @@ export const SkillSummarySchema = z.object({
    * provenance badge (e.g. "skills.sh") next to installed skills.
    */
   source: z.string().optional(),
+  /**
+   * Mirrors the `user-invocable` frontmatter flag. `false` flags a system
+   * skill the runtime auto-composes (e.g. `@friday/validating-llm-outputs`
+   * for `validate: self`); these are excluded from the workspace's user-
+   * facing skill catalog by `resolveVisibleSkills`. Defaults to `true` when
+   * unset. Direct `SkillStorage.get(namespace, name)` lookups bypass this
+   * filter, so the runtime can still pull the body by name.
+   */
+  userInvocable: z.boolean().default(true),
 });
 
 /** Lightweight summary for listing */

@@ -3,7 +3,6 @@ import { z } from "zod";
 import { HistoryEntrySchema, NarrativeEntrySchema } from "./memory-adapter.ts";
 import { AtlasDataEventSchema } from "./messages.ts";
 import { withSchemaBoundary } from "./schema-boundary.ts";
-import { ScratchpadChunkSchema } from "./scratchpad-adapter.ts";
 import { SkillDraftSchema } from "./skill-adapter.ts";
 
 // ── withSchemaBoundary ──────────────────────────────────────────────────────
@@ -69,21 +68,6 @@ describe("NarrativeEntrySchema", () => {
   });
 });
 
-// ── ScratchpadChunkSchema ───────────────────────────────────────────────────
-
-describe("ScratchpadChunkSchema", () => {
-  it("round-trips a valid ScratchpadChunk", () => {
-    const chunk = {
-      id: "sc-1",
-      kind: "reasoning",
-      body: "thinking about X",
-      createdAt: "2026-01-01T00:00:00Z",
-    };
-    const result = ScratchpadChunkSchema.parse(chunk);
-    expect(result).toEqual(chunk);
-  });
-});
-
 // ── SkillDraftSchema ────────────────────────────────────────────────────────
 
 describe("SkillDraftSchema", () => {
@@ -119,18 +103,6 @@ describe("AtlasDataEventSchema", () => {
     };
     const result = AtlasDataEventSchema.parse(event);
     expect(result.type).toBe("memory-rollback");
-  });
-
-  it("correctly discriminates scratchpad-write event", () => {
-    const event = {
-      type: "scratchpad-write" as const,
-      sessionKey: "sess-1",
-      chunkId: "ch-1",
-      kind: "reasoning",
-      at: "2026-01-01T00:00:00Z",
-    };
-    const result = AtlasDataEventSchema.parse(event);
-    expect(result.type).toBe("scratchpad-write");
   });
 
   it("correctly discriminates skill-write event", () => {

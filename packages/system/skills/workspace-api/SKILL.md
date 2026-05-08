@@ -1,7 +1,6 @@
 ---
 name: workspace-api
 description: "Create, list, update, delete, and clean up workspaces via the daemon HTTP API (localhost:8080). Use when the user asks to create, edit, delete, or list workspaces, spaces, projects, or environments; add or patch signals / agents / jobs / memory / skills; convert a workspace.yml into a live workspace; wire up triggers (HTTP webhooks, cron, fs-watch, Slack / Telegram / WhatsApp); or clean up test/scratch workspaces."
-user-invocable: false
 ---
 
 # Workspace API
@@ -18,7 +17,7 @@ Create and manage Friday workspaces. This skill is where LLM judgment lives: whe
 |---|---|---|
 | `atlas` | A bundled platform agent fits the task **and its `constraints` allow it** | `type: atlas, agent: "web"` |
 | `llm` | Default for open-ended work — classifying, summarizing, scoring, choosing among options. Use when in doubt. | `type: llm, config: { prompt, tools }` |
-| `user` | ONLY when each call's decision is mechanical (regex, schema, fixed routing). If the agent body would call `ctx.llm.generate` to decide anything, this is wrong — use `llm`. | `type: user, agent: "csv-parser"` |
+| `user` | ONLY when each call's decision is mechanical (regex, schema, fixed routing). If the agent body would call `ctx.llm.generate` to decide anything, this is wrong — use `llm`. User agents must use host capabilities (`ctx.tools`, `ctx.http`, `ctx.llm`) rather than direct local MCP/API calls. | `type: user, agent: "csv-parser"` |
 
 **Decision rule.** Call `list_capabilities` first. If a bundled agent's `constraints` cover the user's intent end-to-end, pick `atlas`. Otherwise default to `llm` with the right MCP tools wired. Reach for `user` only when you can name the deterministic decision the agent body makes — never as a fallback. If the user names a type explicitly (`use an llm agent`), respect it.
 
@@ -48,7 +47,8 @@ Create and manage Friday workspaces. This skill is where LLM judgment lives: whe
 **Key one-liners.**
 - Jobs must use `fsm:`, not `execution:` — the runtime silently skips jobs without `fsm:`.
 - `write_file` writes to scratch only; use `run_code` with an absolute path to edit `workspace.yml`.
-- Tool names in `agents.*.config.tools` resolve against `tools.mcp.servers.*`; there are no platform-default filesystem tools outside MCP.
+- Tool names in `agents.*.config.tools` resolve against `tools.mcp.servers.*` for workspace-scoped MCP servers. Atlas-platform built-ins (memory, artifacts, fs, `request_tool_access`, `request_human_input`) auto-inject everywhere and use bare names (`memory_save`, `fs_glob`, `request_human_input`); no `serverId/` prefix.
+- Jobs that return data need `outputTo`; LLM-backed `outputTo` actions must finish with the injected `complete` tool (`outputType` schema args, or `{ response }` for untyped output).
 
 ---
 
@@ -368,6 +368,232 @@ The cheat-sheet table covers the decision rule. These are worked examples for ea
 10. **Always resolve workspace IDs from the API.** Runtime IDs like `layered_ham` are random per daemon. Never hardcode them.
 
 11. **Never DELETE+CREATE a workspace to edit it.** That loses the runtime id, kills sessions, and breaks cross-workspace mounts. Use in-place updates (`POST /update` or partial endpoints) instead.
+
+12. **Per-job and per-workspace policy blocks.** workspace.yml carries a few optional blocks beyond the core wiring. All precedence chains follow **per-job > per-workspace > daemon-level** (env var or runtime default), except `validation:` which extends one level higher to action-level.
+    - **`permissions: { dangerouslySkipAllowlist: bool }`** — bypass tool/skill allowlist enforcement. Floor: daemon `FRIDAY_DANGEROUSLY_SKIP_PERMISSIONS=1` env var. Trusted contexts only. Without bypass, allowlist denials become elicitations: an agent that calls `request_tool_access(toolName, reason)` produces a `tool-allowlist` elicitation surfaced via `GET /api/elicitations`, the Activity page, and sidebar pending badges. The blocked action waits for allow/deny/expiry; on allow it resumes in the same session. For non-permission user decisions, call `request_human_input({ question, options? })`; it creates an `open-question` elicitation and returns the answer to the same run.
+    - **`delegation: { max_depth, max_steps_per_call, max_output_tokens, max_input_tokens, max_wall_time_ms, max_cost_usd }`** — bounds for the `delegate` tool when an agent uses it. Workspace-level + per-job override (`jobs.<name>.delegation`) — per-field merge, job wins. Default `max_depth: 1`.
+    - **`validation: { default, skill }`** — default LLM-output validation strategy applied to `type: llm` / `type: agent` actions that don't set `validate:` themselves. See the dedicated `validation:` section below for the full precedence chain (action > job > workspace > `"auto"`).
+    - **`memory.own[].ttl: <duration>`** — explicit TTL on a memory store. Without it, `type: short_term` (notes) defaults to ephemeral session-bound and `type: long_term` (memory) to durable.
+    - **`artifacts: { default_grace: <duration> }`** — workspace-level grace window after job completion before ephemeral artifacts are swept (default `24h`). Per-job override: `jobs.<name>.artifacts: { default_grace, ephemeral }`. Promotion-by-reference (a `memory_save` text containing the artifact id, a `display_artifact` call, or `aiSummary.keyDetails[].url`) keeps an artifact alive past the grace window with no author opt-in.
+    - **`jobs.<name>.elicitations: { timeout: <duration> }`** — per-job elicitation timeout, independent of `config.timeout`. Useful for long batch jobs whose individual prompts shouldn't sit unanswered.
+
+    Worked example showing every option in one workspace.yml. Comments
+    flag mutually exclusive choices and per-job overrides.
+
+    ```yaml
+    # ── Workspace-level defaults (top of workspace.yml) ────────────
+    permissions:
+      # Bypass tool/skill allowlist enforcement. When true, NO elicitations
+      # fire — the elicitation flow and bypass are mutually exclusive.
+      # Trusted contexts only. Job-level setting wins; daemon
+      # FRIDAY_DANGEROUSLY_SKIP_PERMISSIONS=1 env var is the floor.
+      dangerouslySkipAllowlist: false
+
+    delegation:
+      # Per-field merge with per-job override. Job wins per-field; unset
+      # fields fall through to workspace, then to runtime defaults.
+      max_depth: 1                # default 1; child cannot itself delegate
+      max_steps_per_call: 40
+      max_output_tokens: 20000
+      max_input_tokens: 100000
+      max_wall_time_ms: 120000
+      max_cost_usd: null          # reserved; not enforced until cost-tracking lands
+
+    validation:
+      # Default LLM-output validation strategy. Per-field merge with
+      # per-job override; action-level `validate:` always wins. See the
+      # `validation:` section below for the four-level precedence chain
+      # and what each strategy means at runtime.
+      default: auto               # auto | skip | self | external
+      skill: validating-llm-outputs   # OPTIONAL: override the validator skill
+
+    artifacts:
+      # Workspace-level grace window after job completion before ephemeral
+      # artifacts are swept. Default '24h'. Promotion-by-reference
+      # (memory_save text containing the id, display_artifact, or
+      # aiSummary.keyDetails[].url) keeps an artifact past the window.
+      default_grace: 24h
+
+    memory:
+      own:
+        - name: notes
+          type: short_term        # ephemeral session-bound
+          strategy: narrative
+          # ttl: 7d               # OPTIONAL: explicit TTL overrides the
+                                  #   type-default. With ttl set, type
+                                  #   becomes advisory.
+        - name: memory
+          type: long_term         # durable across sessions
+          strategy: narrative
+
+    # ── Per-job overrides (under jobs.<name>) ─────────────────────────
+    jobs:
+      sensitive-job:
+        config:
+          timeout: 30m            # parent timeout; default for elicitation TTL
+          max_steps: 60
+
+        # Per-job permissions override. Wins over workspace; daemon env
+        # var is the floor for both.
+        permissions:
+          dangerouslySkipAllowlist: true   # this job bypasses; siblings stay strict
+
+        # Per-job delegation override. Per-field merge with workspace.
+        delegation:
+          max_depth: 2            # only this job; siblings inherit workspace 1
+          max_wall_time_ms: 60000
+
+        # Per-job validation override. Per-field merge with workspace;
+        # action-level `validate:` still wins over both.
+        validation:
+          default: external       # this job's actions get judged unless action overrides
+          # skill: "@my/financial-claims"   # OPTIONAL: domain-specific judge
+
+        # Per-job artifact lifecycle. EITHER ephemeral (whole-job) OR
+        # default_grace (window override) — both can coexist; ephemeral
+        # is the kind, default_grace is the sweep delay.
+        artifacts:
+          ephemeral: true         # all this job's artifacts ephemeral
+                                  # (omit for per-action defaults: terminal-state
+                                  #  outputs durable, non-terminal ephemeral)
+          default_grace: 6h       # shorter grace than workspace 24h
+
+        # Per-job elicitation timeout. Independent of config.timeout —
+        # use to constrain individual prompt latency on a long job.
+        elicitations:
+          timeout: 5m
+
+        triggers:
+          - signal: ...
+        fsm:
+          # ...
+    ```
+
+    Mutually exclusive / precedence reminders:
+    - `permissions.dangerouslySkipAllowlist: true` and the elicitation
+      flow are exclusive. Bypass-on jobs never emit elicitations; their
+      `request_tool_access` calls return `{ ok: true, granted: true,
+      reason: "bypass" }` immediately.
+    - `memory.own[].ttl` overrides the type-based default. Set it only
+      when the type default is wrong; otherwise omit and let `short_term`
+      stay session-bound, `long_term` durable.
+    - `artifacts.ephemeral: true` (job-level) forces every artifact this
+      job emits to be ephemeral. Omit it to let the runtime apply
+      per-action defaults (terminal-state outputs durable, non-terminal
+      ephemeral). The two are exclusive within a single job.
+    - `delegation.max_cost_usd` accepts `null` for "no enforcement";
+      a positive number is reserved for the future cost-tracking layer
+      and currently has no runtime effect.
+
+---
+
+## `validation:` — LLM-output validation defaults
+
+Workspace- and job-level defaults for the LLM-output validation
+policy applied to every `type: llm` and `type: agent` action that
+doesn't set `validate:` itself. Sits alongside `permissions:` and
+`delegation:` and follows the same merge model — except the
+precedence chain extends one level higher to action-level.
+
+### The block
+
+```yaml
+# workspace.yml — workspace-wide default
+validation:
+  default: external      # auto | skip | self | external
+  skill: "@my/judge"     # optional; defaults to validating-llm-outputs
+
+# workspace.yml — job-level override
+jobs:
+  review-inbox:
+    validation:
+      default: skip
+```
+
+Both `default` and `skill` are optional. Per-field merge with the
+workspace block: a job that sets only `default:` inherits
+`workspace.validation.skill`, and vice versa.
+
+### Precedence (highest wins)
+
+```
+action.validate.strategy
+  > job.validation.default
+  > workspace.validation.default
+  > "auto"   (the classifier — see writing-workspace-jobs)
+```
+
+`skill` resolution follows the same chain; falls back to
+`validating-llm-outputs` when nothing is set.
+
+### What each `default:` value means
+
+- `auto` — runtime classifier picks per-action: `skip` for
+  read-only / structured actions, `self` for prose / mutating
+  actions. Never auto-picks `external`.
+- `skip` — bypass validation entirely.
+- `self` — LLM self-checks its draft via the
+  `validating-llm-outputs` skill (or your `skill:` override).
+- `external` — separate-judge LLM call after the action emits.
+
+For the deeper auto-detect rules (which tools count as read-only,
+which verbs as mutating), see the **Validation strategies**
+section in `@friday/writing-workspace-jobs`.
+
+### Skill override
+
+Pin a domain-specific validator with `skill:`:
+
+```yaml
+validation:
+  default: self
+  skill: "@my/financial-claims"
+```
+
+The same skill works for both `self` and `external` strategies —
+one source-of-truth for what counts as a sourced claim. Useful for
+financial / medical / legal workspaces where the generic validator
+under-flags domain claims.
+
+### Real-world configs
+
+Always check everything (high-stakes workspace, latency-tolerant):
+
+```yaml
+validation:
+  default: external
+```
+
+Trust everything; the FSMs verify with deterministic agents:
+
+```yaml
+validation:
+  default: skip
+```
+
+Per-job mix — workspace defaults to `external`, one high-volume
+job downgrades to `self`:
+
+```yaml
+validation:
+  default: external
+
+jobs:
+  triage-inbox:
+    validation:
+      default: self     # cheaper; runs on every inbound message
+    fsm:
+      # ...
+```
+
+### Cross-references
+
+- `@friday/writing-workspace-jobs` — **Validation strategies**
+  section covers action-level `validate:` (string and object form),
+  the auto-detect classifier rules, and worked overrides.
+- `@friday/validating-llm-outputs` — system skill the runtime
+  composes into action prompts when the resolved strategy is
+  `self`. Not user-loadable; runtime composes it automatically.
 
 ---
 

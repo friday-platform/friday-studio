@@ -126,6 +126,31 @@ function reduceStepStart(
   view: SessionView,
   event: SessionStreamEvent & { type: "step:start" },
 ): SessionView {
+  // Defense in depth (J2 / review H1): if a `step:start` for this exact
+  // (stepNumber, agentName) pair already lives in the view, treat the
+  // re-publish as a no-op. Pre-J2 the broker dedup window (default 2m)
+  // was shorter than long-running FSM jobs, so a `save()` republish past
+  // the window landed as a NEW message. The reducer would then fail to
+  // find a *pending* match (the prior copy was already running/done) and
+  // append a duplicate block — status derivation then saw both pending
+  // and complete simultaneously, surfacing as `status: "active"` post-
+  // completion. The dedup_window bump fixes the broker side; this guard
+  // protects the reducer regardless.
+  //
+  // The reducer is a pure function shared with browser clients, so we don't
+  // log from here. Operators investigating "is this
+  // guard firing in production?" should check the NATS dedup-rejection
+  // counter (`nats stream info SESSION_EVENTS` reports duplicates) and
+  // grep daemon logs for "step:start" with the same (stepNumber,
+  // agentName). A non-zero dedup rate paired with this guard firing
+  // means the dedup_window is still too short and should be raised.
+  if (event.stepNumber !== undefined) {
+    const dupIdx = view.agentBlocks.findIndex(
+      (b) => b.stepNumber === event.stepNumber && b.agentName === event.agentName,
+    );
+    if (dupIdx !== -1) return view;
+  }
+
   // Find first pending block with matching agentName
   const pendingIdx = view.agentBlocks.findIndex(
     (b) => b.status === "pending" && b.agentName === event.agentName,
@@ -191,6 +216,10 @@ function reduceStepComplete(
       output: event.output,
       artifactRefs: event.artifactRefs,
       error: event.error,
+      // Surface step:complete.usage on the placeholder block too so
+      // out-of-order completions (no preceding step:start) don't drop
+      // token counts that downstream UI relies on.
+      usage: event.usage,
     };
     return { ...view, agentBlocks: [...view.agentBlocks, placeholder] };
   }
@@ -208,6 +237,10 @@ function reduceStepComplete(
     artifactRefs: event.artifactRefs,
     error: event.error,
     ephemeral: undefined, // clear ephemeral on completion
+    // Aggregate step:complete.usage onto the parent agentBlock. Prefer the
+    // just-arrived event's usage; fall back to any value
+    // already present (mid-flight reducer replays should not regress).
+    usage: event.usage ?? existing.usage,
   };
   const blocks = [...view.agentBlocks];
   blocks[idx] = updated;
