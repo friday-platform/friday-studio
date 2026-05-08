@@ -27,6 +27,7 @@ import { describe, expect, it, vi } from "vitest";
 // ---------------------------------------------------------------------------
 
 const capturedPrompts = vi.hoisted(() => [] as string[]);
+const releasedSessions = vi.hoisted(() => [] as string[]);
 
 vi.mock("@atlas/core", async (importActual) => {
   const actual = await importActual<typeof import("@atlas/core")>();
@@ -50,6 +51,10 @@ vi.mock("@atlas/core", async (importActual) => {
     }
     getActiveExecutions() {
       return [];
+    }
+    releaseSession(sessionId: string) {
+      releasedSessions.push(sessionId);
+      return Promise.resolve();
     }
     shutdown() {
       return Promise.resolve();
@@ -151,6 +156,7 @@ async function withTestRuntime(
 describe("runtime.executeAgent — agent prompt composition (call site)", () => {
   it("passes BOTH the agent-config prompt and the (interpolated) action prompt to executeAgent", async () => {
     capturedPrompts.length = 0;
+    releasedSessions.length = 0;
 
     await withTestRuntime(async (runtime) => {
       await runtime.processSignal({
@@ -177,5 +183,22 @@ describe("runtime.executeAgent — agent prompt composition (call site)", () => 
     expect(prompt.indexOf(CONFIG_PROMPT)).toBeLessThan(
       prompt.indexOf("Generate a sprite of a robot chef."),
     );
+  });
+
+  it("releases the orchestrator session when the workspace session completes", async () => {
+    releasedSessions.length = 0;
+
+    let sessionId: string | undefined;
+    await withTestRuntime(async (runtime) => {
+      const session = await runtime.processSignal({
+        id: "test-signal",
+        type: "test-signal",
+        data: { subject: "robot chef" },
+        timestamp: new Date(),
+      });
+      sessionId = session.id;
+    });
+
+    expect(releasedSessions).toEqual([sessionId]);
   });
 });

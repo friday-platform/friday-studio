@@ -2470,6 +2470,7 @@ export class WorkspaceRuntime {
     this.sessions.set(sessionResult.id, activeSession);
 
     if (sessionResult.status !== WorkspaceSessionStatus.ACTIVE) {
+      await this.orchestrator.releaseSession(sessionResult.id);
       await this.persistSessionToHistory(sessionResult, job, signal);
     }
 

@@ -78,6 +78,7 @@ const mockClient = {
       callToolReject = reject;
     });
   }),
+  notification: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
   setNotificationHandler: vi.fn(),
   close: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
 };
@@ -103,6 +104,28 @@ function assertResolverCaptured(
   if (!resolver) throw new Error("Expected callToolResolve to be set");
 }
 
+function resolveSuccessfulCall(agentId = "test-agent", input = "hello") {
+  assertResolverCaptured(callToolResolve);
+  callToolResolve({
+    content: [
+      {
+        type: "text",
+        text: JSON.stringify({
+          type: "completed",
+          result: {
+            agentId,
+            timestamp: new Date().toISOString(),
+            input,
+            ok: true,
+            durationMs: 100,
+            data: {},
+          },
+        }),
+      },
+    ],
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -126,6 +149,23 @@ describe("AgentOrchestrator - MCP transport fatal error handling", () => {
 
   afterEach(async () => {
     await orchestrator.shutdown();
+  });
+
+  it("does not open an MCP session when the workspace session is already cancelled", async () => {
+    const abortController = new AbortController();
+    abortController.abort();
+
+    const result = await orchestrator.executeAgent("test-agent", "hello", {
+      sessionId: "session-1",
+      workspaceId: "workspace-1",
+      abortSignal: abortController.signal,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(mockClient.connect).not.toHaveBeenCalled();
+    expect(mockClient.callTool).not.toHaveBeenCalled();
+    // biome-ignore lint/complexity/useLiteralKeys: accessing private property in test
+    expect(orchestrator["mcpSessions"].size).toBe(0);
   });
 
   it("closes transport and rejects pending callTool on max reconnection attempts exceeded", async () => {
@@ -182,8 +222,10 @@ describe("AgentOrchestrator - MCP transport fatal error handling", () => {
     capturedTransportOnclose?.();
 
     // Session should be cleaned up
-    // biome-ignore lint/complexity/useLiteralKeys: accessing private property in test
-    expect(orchestrator["mcpSessions"].has("session-1")).toBe(false);
+    await vi.waitFor(() => {
+      // biome-ignore lint/complexity/useLiteralKeys: accessing private property in test
+      expect(orchestrator["mcpSessions"].has("session-1")).toBe(false);
+    });
 
     await executionPromise;
   });
@@ -253,5 +295,66 @@ describe("AgentOrchestrator - MCP transport fatal error handling", () => {
 
     const result = await executionPromise;
     expect(result.ok).toBe(false);
+  });
+
+  it("releaseSession closes the MCP transport and removes server-assigned session aliases", async () => {
+    const executionPromise = orchestrator.executeAgent("test-agent", "hello", {
+      sessionId: "session-1",
+      workspaceId: "workspace-1",
+    });
+
+    await vi.waitFor(() => {
+      expect(mockClient.callTool).toHaveBeenCalled();
+    });
+
+    resolveSuccessfulCall();
+    await executionPromise;
+
+    // The transport mock exposes a different server-side session id, so the
+    // orchestrator stores the same setup under both keys.
+    // biome-ignore lint/complexity/useLiteralKeys: accessing private property in test
+    expect(orchestrator["mcpSessions"].has("session-1")).toBe(true);
+    // biome-ignore lint/complexity/useLiteralKeys: accessing private property in test
+    expect(orchestrator["mcpSessions"].has("mock-session-id")).toBe(true);
+
+    mockTransport.close.mockClear();
+
+    await orchestrator.releaseSession("session-1");
+
+    expect(mockTransport.close).toHaveBeenCalledTimes(1);
+    // biome-ignore lint/complexity/useLiteralKeys: accessing private property in test
+    expect(orchestrator["mcpSessions"].has("session-1")).toBe(false);
+    // biome-ignore lint/complexity/useLiteralKeys: accessing private property in test
+    expect(orchestrator["mcpSessions"].has("mock-session-id")).toBe(false);
+  });
+
+  it("releaseSession removes active stream handlers and request bookkeeping for all aliases", async () => {
+    const executionPromise = orchestrator.executeAgent("test-agent", "hello", {
+      sessionId: "session-1",
+      workspaceId: "workspace-1",
+      onStreamEvent: () => undefined,
+    });
+
+    await vi.waitFor(() => {
+      expect(mockClient.callTool).toHaveBeenCalled();
+    });
+
+    // biome-ignore lint/complexity/useLiteralKeys: accessing private property in test
+    expect(orchestrator["activeStreamHandlers"].has("session-1:test-agent")).toBe(true);
+    // biome-ignore lint/complexity/useLiteralKeys: accessing private property in test
+    expect(orchestrator["activeMCPRequests"].has("session-1:test-agent")).toBe(true);
+
+    mockTransport.close.mockClear();
+    await orchestrator.releaseSession("mock-session-id");
+
+    expect(mockTransport.close).toHaveBeenCalledTimes(1);
+    // biome-ignore lint/complexity/useLiteralKeys: accessing private property in test
+    expect(orchestrator["activeStreamHandlers"].has("session-1:test-agent")).toBe(false);
+    // biome-ignore lint/complexity/useLiteralKeys: accessing private property in test
+    expect(orchestrator["activeMCPRequests"].has("session-1:test-agent")).toBe(false);
+
+    // Let the in-flight executeAgent promise settle cleanly.
+    capturedTransportOnclose?.();
+    await executionPromise;
   });
 });

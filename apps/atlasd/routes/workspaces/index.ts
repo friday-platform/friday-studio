@@ -1711,7 +1711,22 @@ const workspacesRoutes = daemonFactory
     // worker publishes; the response subscription delivers the terminal
     // {ok, result} envelope and triggers SSE close.
     const streamSub = nc.subscribe(`signals.stream.${correlationId}`);
-    const responsePromise = awaitSignalCompletion(nc, correlationId, 600_000);
+    const clientAbort = c.req.raw.signal;
+    const signalStreamAbort = new AbortController();
+    const responsePromise = awaitSignalCompletion(
+      nc,
+      correlationId,
+      600_000,
+      signalStreamAbort.signal,
+    );
+    void responsePromise.catch(() => undefined);
+    let subscriptionsClosed = false;
+    const closeSignalSubscriptions = () => {
+      if (subscriptionsClosed) return;
+      subscriptionsClosed = true;
+      signalStreamAbort.abort();
+      streamSub.unsubscribe();
+    };
 
     // Capture the spawned session's id from the live stream so we can cancel
     // it on client disconnect. Without this, an aborted chat-tool fetch only
@@ -1720,10 +1735,7 @@ const workspacesRoutes = daemonFactory
     // etc.) finish anyway. Caused observed email storms when chat follow-ups
     // aborted prior turns mid-job.
     let spawnedSessionId: string | undefined;
-    // The Hono request's underlying AbortSignal fires when the client
-    // disconnects (browser navigates away, fetch is aborted, etc.).
-    const clientAbort = c.req.raw.signal;
-    const onClientAbort = () => {
+    const cancelSpawnedSession = () => {
       if (!spawnedSessionId) return;
       try {
         const runtime = ctx.getWorkspaceRuntime(workspaceId);
@@ -1737,10 +1749,26 @@ const workspacesRoutes = daemonFactory
         });
       }
     };
-    clientAbort.addEventListener("abort", onClientAbort, { once: true });
+    // The Hono request's underlying AbortSignal fires when the client
+    // disconnects (browser navigates away, fetch is aborted, etc.).
+    const onClientAbort = () => {
+      closeSignalSubscriptions();
+      cancelSpawnedSession();
+    };
+    if (clientAbort.aborted) {
+      onClientAbort();
+    } else {
+      clientAbort.addEventListener("abort", onClientAbort, { once: true });
+    }
 
     const sseStream = new ReadableStream({
       async start(controller) {
+        let clientGone = false;
+        const markClientGone = () => {
+          clientGone = true;
+          closeSignalSubscriptions();
+          cancelSpawnedSession();
+        };
         const safeEnqueue = (bytes: Uint8Array) => {
           try {
             controller.enqueue(bytes);
@@ -1751,6 +1779,7 @@ const workspacesRoutes = daemonFactory
               signalId,
               error: err,
             });
+            markClientGone();
             return false;
           }
         };
@@ -1781,6 +1810,10 @@ const workspacesRoutes = daemonFactory
         })();
 
         try {
+          if (clientAbort.aborted || signalStreamAbort.signal.aborted) {
+            return;
+          }
+
           await ctx.daemon.publishSignalToJetStream({
             workspaceId,
             signalId,
@@ -1839,19 +1872,27 @@ const workspacesRoutes = daemonFactory
           }
           safeEnqueue(encoder.encode("data: [DONE]\n\n"));
         } catch (error) {
-          const errorMessage = stringifyError(error);
-          logger.error("Signal trigger SSE error", { error: errorMessage, workspaceId, signalId });
-          safeEnqueue(
-            encoder.encode(
-              `data: ${JSON.stringify({ type: "job-error", data: { error: errorMessage } })}\n\n`,
-            ),
-          );
-          safeEnqueue(encoder.encode("data: [DONE]\n\n"));
+          if (clientGone || signalStreamAbort.signal.aborted || clientAbort.aborted) {
+            logger.debug("Signal trigger SSE aborted by client", { workspaceId, signalId });
+          } else {
+            const errorMessage = stringifyError(error);
+            logger.error("Signal trigger SSE error", {
+              error: errorMessage,
+              workspaceId,
+              signalId,
+            });
+            safeEnqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({ type: "job-error", data: { error: errorMessage } })}\n\n`,
+              ),
+            );
+            safeEnqueue(encoder.encode("data: [DONE]\n\n"));
+          }
         } finally {
-          streamSub.unsubscribe();
+          closeSignalSubscriptions();
           await forward.catch(() => undefined);
-          // SSE finished cleanly — the session has already terminated, so
-          // there's nothing to cancel on client abort. Drop the listener.
+          // This response path owns subscription cleanup/cancellation now;
+          // drop the request-abort listener before closing the stream.
           clientAbort.removeEventListener("abort", onClientAbort);
           try {
             controller.close();
@@ -1859,6 +1900,11 @@ const workspacesRoutes = daemonFactory
             /* already closed */
           }
         }
+      },
+      cancel() {
+        closeSignalSubscriptions();
+        cancelSpawnedSession();
+        clientAbort.removeEventListener("abort", onClientAbort);
       },
     });
 
@@ -1935,6 +1981,14 @@ const workspacesRoutes = daemonFactory
       // discovery), and cancel on `c.req.raw.signal` abort.
       let spawnedSessionId: string | undefined;
       const discoverySub = nc.subscribe(`signals.stream.${correlationId}`);
+      const signalResponseAbort = new AbortController();
+      let subscriptionsClosed = false;
+      const closeSignalSubscriptions = () => {
+        if (subscriptionsClosed) return;
+        subscriptionsClosed = true;
+        signalResponseAbort.abort();
+        discoverySub.unsubscribe();
+      };
       const discovery = (async () => {
         for await (const msg of discoverySub) {
           if (spawnedSessionId) break;
@@ -1945,6 +1999,7 @@ const workspacesRoutes = daemonFactory
             };
             if (parsed.type === "data-session-start" && parsed.data?.sessionId) {
               spawnedSessionId = parsed.data.sessionId;
+              discoverySub.unsubscribe();
               break;
             }
           } catch {
@@ -1954,7 +2009,7 @@ const workspacesRoutes = daemonFactory
       })();
       discovery.catch(() => undefined);
       const clientAbort = c.req.raw.signal;
-      const onClientAbort = () => {
+      const cancelSpawnedSession = () => {
         if (!spawnedSessionId) return;
         try {
           const runtime = ctx.getWorkspaceRuntime(workspaceId);
@@ -1968,12 +2023,30 @@ const workspacesRoutes = daemonFactory
           });
         }
       };
-      clientAbort.addEventListener("abort", onClientAbort, { once: true });
+      const onClientAbort = () => {
+        closeSignalSubscriptions();
+        cancelSpawnedSession();
+      };
+      if (clientAbort.aborted) {
+        onClientAbort();
+      } else {
+        clientAbort.addEventListener("abort", onClientAbort, { once: true });
+      }
 
       try {
+        if (clientAbort.aborted || signalResponseAbort.signal.aborted) {
+          return c.json({ error: "Client disconnected" }, 408);
+        }
+
         // Subscribe BEFORE publishing — a fast consumer could otherwise
         // beat us to the response subject and we'd miss the reply.
-        const responsePromise = awaitSignalCompletion(nc, correlationId, 600_000);
+        const responsePromise = awaitSignalCompletion(
+          nc,
+          correlationId,
+          600_000,
+          signalResponseAbort.signal,
+        );
+        void responsePromise.catch(() => undefined);
         await ctx.daemon.publishSignalToJetStream({
           workspaceId,
           signalId,
@@ -2007,6 +2080,11 @@ const workspacesRoutes = daemonFactory
           summary: result.summary ?? "",
         });
       } catch (error) {
+        if (clientAbort.aborted || signalResponseAbort.signal.aborted) {
+          logger.debug("Signal trigger aborted by client", { workspaceId, signalId });
+          return c.json({ error: "Client disconnected" }, 408);
+        }
+
         const errorMessage = stringifyError(error);
         if (error instanceof SessionFailedError) {
           logger.warn("Signal session failed", { error });
@@ -2053,7 +2131,7 @@ const workspacesRoutes = daemonFactory
         return c.json({ error: `Failed to process signal: ${errorMessage}` }, 500);
       } finally {
         clientAbort.removeEventListener("abort", onClientAbort);
-        discoverySub.unsubscribe();
+        closeSignalSubscriptions();
         await discovery.catch(() => undefined);
       }
     },

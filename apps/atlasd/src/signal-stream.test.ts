@@ -1,12 +1,13 @@
 import { startNatsTestServer, type TestNatsServer } from "@atlas/core/test-utils/nats-test-server";
 import { connect, type NatsConnection } from "nats";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   awaitSignalCompletion,
   ensureSignalsStream,
   publishSignal,
   SignalConsumer,
   type SignalEnvelope,
+  signalResponseSubject,
   signalSubject,
 } from "./signal-stream.ts";
 
@@ -118,6 +119,26 @@ describe("publishSignal + SignalConsumer", () => {
   it("awaitSignalCompletion times out when nobody publishes a response", async () => {
     const correlationId = crypto.randomUUID();
     await expect(awaitSignalCompletion(nc, correlationId, 200)).rejects.toThrow(/timeout/);
+  });
+
+  it("awaitSignalCompletion unsubscribes promptly when aborted", async () => {
+    const correlationId = crypto.randomUUID();
+    const unsubscribe = vi.fn();
+    const pendingNext = new Promise<IteratorResult<unknown>>(() => {});
+    const subscription = {
+      unsubscribe,
+      [Symbol.asyncIterator]: () => ({ next: () => pendingNext }),
+    };
+    const subscribe = vi.fn(() => subscription);
+    const fakeNc = { subscribe } as unknown as NatsConnection;
+    const controller = new AbortController();
+
+    const responsePromise = awaitSignalCompletion(fakeNc, correlationId, 60_000, controller.signal);
+    controller.abort();
+
+    await expect(responsePromise).rejects.toThrow(/aborted/);
+    expect(subscribe).toHaveBeenCalledWith(signalResponseSubject(correlationId), { max: 1 });
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
   });
 
   it("forwards a burst of published signals in arrival order", async () => {

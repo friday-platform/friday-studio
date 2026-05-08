@@ -365,29 +365,54 @@ export async function awaitSignalCompletion(
   nc: NatsConnection,
   correlationId: string,
   timeoutMs = 30_000,
+  signal?: AbortSignal,
 ): Promise<SignalResponse> {
   const subject = signalResponseSubject(correlationId);
   const sub = nc.subscribe(subject, { max: 1 });
 
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let abortHandler: (() => void) | undefined;
+  let subscriptionClosed = false;
+  const closeSubscription = () => {
+    if (subscriptionClosed) return;
+    subscriptionClosed = true;
+    sub.unsubscribe();
+  };
+
   const timeout = new Promise<never>((_, reject) => {
     timer = setTimeout(() => {
-      sub.unsubscribe();
+      closeSubscription();
       reject(new Error(`awaitSignalCompletion: timeout after ${timeoutMs}ms`));
     }, timeoutMs);
   });
 
+  const abort = signal
+    ? new Promise<never>((_, reject) => {
+        abortHandler = () => {
+          closeSubscription();
+          reject(new Error("awaitSignalCompletion: aborted"));
+        };
+        if (signal.aborted) {
+          abortHandler();
+          return;
+        }
+        signal.addEventListener("abort", abortHandler, { once: true });
+      })
+    : undefined;
+
   try {
     const iter = sub[Symbol.asyncIterator]();
-    const winner = await Promise.race([iter.next(), timeout]);
+    const pending = abort ? [iter.next(), timeout, abort] : [iter.next(), timeout];
+    const winner = await Promise.race(pending);
     if (winner.done || !winner.value) {
       throw new Error("awaitSignalCompletion: subscription closed without a response");
     }
     return SignalResponseSchema.parse(JSON.parse(dec.decode(winner.value.data)));
   } finally {
     if (timer) clearTimeout(timer);
+    if (abortHandler) signal?.removeEventListener("abort", abortHandler);
     try {
-      sub.unsubscribe();
+      closeSubscription();
     } catch {
       // Already gone
     }
