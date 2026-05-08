@@ -52,17 +52,29 @@ const INFLIGHT_BUCKET = "SESSION_INFLIGHT";
 
 const NINETY_DAYS_NS = 90 * 24 * 60 * 60 * 1_000_000_000;
 
-// Defense-in-depth dedup window for `save()` republishes. Default JetStream
-// dedup is 2 minutes, which is shorter than many real sessions — a 9-min
-// reindex's start events fall outside it, so `save()`'s republish (intended
-// to be a no-op via Nats-Msg-Id dedup) becomes a duplicate publish, which
-// the reducer used to fold in as a state reset. The reducer is now
-// idempotent (see session-reducer.ts), but a 24-hour dedup window also
-// closes the gap at the broker layer for any plausible session lifetime
-// (cron jobs, slow LLM runs, batch reindex of large corpora). Cost: in-memory
-// dedup table grows linearly with traffic; 24h × ~10k events/day × ~64B
-// per entry ≈ ~6 MB even at high-volume single-instance deployments.
-const DEDUP_WINDOW_NS = 24 * 60 * 60 * 1_000_000_000;
+// Dedup window for `save()` republishes. Default JetStream dedup is 2
+// minutes, which is shorter than many real sessions — a 9-min reindex's
+// start events fall outside it, so `save()`'s republish (intended to be a
+// no-op via Nats-Msg-Id dedup) becomes a duplicate publish, which the
+// reducer used to fold in as a state reset.
+//
+// **Correctness is now in the reducer, not the broker.** session:start
+// and step:start are idempotent (see session-reducer.ts) — duplicate
+// landings reduce to the same view. The dedup window is purely an
+// optimization to avoid broker churn (network, disk, dedup-table writes)
+// from re-publishing events the broker already stored.
+//
+// 30 minutes is a measured bump from the 2m default: 15× more headroom,
+// covers normal cron / LLM / mid-size reindex sessions cleanly, and stays
+// well below "huge global change" territory. Sessions longer than 30 min
+// will see save() re-publishes hit the broker as new messages — that's
+// fine, the reducer still produces a correct view.
+//
+// Memory cost (broker holds active dedup table in memory, ~64 bytes/entry):
+//   - 10k events/day with 30m window → ~13 KB
+//   - 100k events/day → ~130 KB
+// Trivial at every plausible deployment scale.
+const DEDUP_WINDOW_NS = 30 * 60 * 1_000_000_000;
 
 const SAFE_TOKEN_RE = /[^A-Za-z0-9_-]/g;
 function sanitize(s: string): string {
@@ -84,12 +96,12 @@ export class JetStreamSessionHistoryAdapter implements SessionHistoryAdapter {
       const info = await jsm.streams.info(STREAM_NAME);
       // Bump dedup_window on existing streams that were created before
       // DEDUP_WINDOW_NS landed (default 2m too short for long sessions).
-      // Update is idempotent — broker accepts the same value as a no-op.
+      // Use partial update — `streams.update` accepts `Partial<StreamUpdateConfig>`,
+      // so we send only the field we want to change. Spreading `info.config`
+      // would re-send server-managed fields (e.g. `created`) and risks
+      // breakage on future broker version bumps that tighten validation.
       if (Number(info.config.duplicate_window) !== DEDUP_WINDOW_NS) {
-        await jsm.streams.update(STREAM_NAME, {
-          ...info.config,
-          duplicate_window: DEDUP_WINDOW_NS,
-        });
+        await jsm.streams.update(STREAM_NAME, { duplicate_window: DEDUP_WINDOW_NS });
       }
     } catch {
       await jsm.streams.add({
@@ -247,7 +259,7 @@ export class JetStreamSessionHistoryAdapter implements SessionHistoryAdapter {
     // 2. We treat any KV read error as "no summary" rather than propagating
     //    a 5xx — the caller still gets the event-derived view, which is at
     //    least consistent with what the events show.
-    let summary: SessionSummary | undefined;
+    let summary: SessionSummary | null = null;
     try {
       const metadata = await this.getMetadataKV();
       summary = await metadata.get<SessionSummary>([sessionId]);

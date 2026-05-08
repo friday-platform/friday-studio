@@ -808,11 +808,22 @@ describe("buildSessionView", () => {
 
     const view = buildSessionView(events);
 
+    // The pre-fix bug produced TWO agentBlocks of the same agent — the
+    // duplicate `step:start` fell through to the "no matching pending
+    // block" branch and APPENDED a second running block on top of the
+    // already-completed one. Pin both `length === 1` AND `agentName` so
+    // a regression that brings back the duplicate-append path fails loud.
     expect(view.status).toBe("completed");
     expect(view.agentBlocks).toHaveLength(1);
     const block = view.agentBlocks[0];
     expect.assert(block !== undefined);
+    expect(block.agentName).toBe("researcher");
     expect(block.status).toBe("completed");
+    // The duplicate `step:start` carries the same NOW timestamp as the
+    // original; without idempotency it would overwrite startedAt. Pin it
+    // to catch the case where step:start partially overwrites a running
+    // block instead of being a clean no-op.
+    expect(block.startedAt).toBe(NOW);
     expect(view.completedAt).toBe(LATER);
     expect(view.durationMs).toBe(5000);
   });

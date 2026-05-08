@@ -151,6 +151,13 @@ describe("JetStreamSessionHistoryAdapter", () => {
     // metadata summary was correctly written by `save()`. Cross-referencing
     // the metadata KV in `get()` lets the consumer reach the right
     // terminal state without depending on the event stream being complete.
+    //
+    // NB: `startNatsTestServer` runs single-node, so KV reads are served
+    // by the leader and read-your-writes holds. On clustered (R≥3)
+    // deployments the immediate `metadata.get()` after `save()` could be
+    // served by a follower that hasn't replicated yet — the production
+    // adapter handles that by falling through to the event-derived view
+    // (see `jetstream-session-history-adapter.ts:get`).
     const adapter = new JetStreamSessionHistoryAdapter(nc);
     const sid = `s-${crypto.randomUUID()}`;
     const start = startEvent(sid, "ws-stale");
@@ -185,7 +192,72 @@ describe("JetStreamSessionHistoryAdapter", () => {
     // Per-block sweep: running/pending blocks become `skipped` (matches
     // the reducer's pending→skipped behavior on session:complete).
     const knowledgeBlock = view?.agentBlocks.find((b) => b.agentName === "knowledge");
-    expect(knowledgeBlock?.status).toBe("skipped");
+    expect.assert(knowledgeBlock !== undefined);
+    expect(knowledgeBlock.status).toBe("skipped");
+  });
+
+  it("get() degrades to event-derived view when metadata KV lookup throws", async () => {
+    // The production adapter wraps `metadata.get()` in try/catch so a
+    // transient KV failure (broker hiccup, bucket race during init)
+    // logs a warning and falls back to the event-derived view rather
+    // than propagating a 5xx. Without this branch a future regression
+    // that re-throws would silently revert to the original "stuck at
+    // status: active" symptom and we'd never know.
+    const adapter = new JetStreamSessionHistoryAdapter(nc);
+    const sid = `s-${crypto.randomUUID()}`;
+    // Append events but don't save() — no summary in KV at all yet.
+    await adapter.appendEvent(sid, startEvent(sid, "ws-kv-fail"));
+
+    // Force the KV lookup path to throw. The adapter caches the KV
+    // handle in `metadataKV`; we replace it with a stub whose `get()`
+    // rejects. No `as any` — narrow the cast to the property we touch.
+    const stubKV = { get: () => Promise.reject(new Error("simulated KV failure")) };
+    Object.defineProperty(adapter, "metadataKV", { value: stubKV, writable: true });
+
+    const view = await adapter.get(sid);
+    // Event-derived view returned (status from `session:start` reducer
+    // is "active"); we did NOT throw despite the KV failure.
+    expect(view).not.toBeNull();
+    expect(view?.status).toBe("active");
+    expect(view?.workspaceId).toBe("ws-kv-fail");
+  });
+
+  it("ensureStream upgrades duplicate_window on existing streams (2m → 30m)", async () => {
+    // Stream config drift is the most likely deployed-environment
+    // regression: a daemon upgrade lands the new DEDUP_WINDOW_NS but
+    // the broker already has the SESSION_EVENTS stream with the 2m
+    // default. ensureStream must `streams.update` it on next access.
+    // This was not exercised by other tests because beforeAll always
+    // creates a fresh server — none had a pre-existing stream with the
+    // OLD config. We construct that condition explicitly here.
+    const TWO_MINUTES_NS = 2 * 60 * 1_000_000_000;
+    const THIRTY_MINUTES_NS = 30 * 60 * 1_000_000_000;
+
+    // Delete any existing SESSION_EVENTS so we can re-create with the
+    // old config (the per-suite adapters left one with the new
+    // duplicate_window during prior tests).
+    const jsm = await nc.jetstreamManager();
+    try {
+      await jsm.streams.delete("SESSION_EVENTS");
+    } catch {
+      // stream didn't exist — fine
+    }
+    await jsm.streams.add({
+      name: "SESSION_EVENTS",
+      subjects: ["sessions.>"],
+      duplicate_window: TWO_MINUTES_NS,
+    });
+
+    const before = await jsm.streams.info("SESSION_EVENTS");
+    expect(Number(before.config.duplicate_window)).toBe(TWO_MINUTES_NS);
+
+    // Trigger ensureStream via any adapter call.
+    const adapter = new JetStreamSessionHistoryAdapter(nc);
+    const sid = `s-${crypto.randomUUID()}`;
+    await adapter.appendEvent(sid, startEvent(sid, "ws-upgrade"));
+
+    const after = await jsm.streams.info("SESSION_EVENTS");
+    expect(Number(after.config.duplicate_window)).toBe(THIRTY_MINUTES_NS);
   });
 
   it("save() then markInterruptedSessions() does not double-finalize", async () => {
