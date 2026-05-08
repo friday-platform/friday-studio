@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-05-08
+
 ### Breaking changes
 
 - **`scratchpad` storage and tools removed.** The schema-unification effort that gated MCP-exposed scratchpad has been resolved by deletion: `packages/agent-sdk/src/scratchpad-adapter.ts`, `packages/agent-sdk/src/platform-tools/scratchpad-tools.ts`, the entire `packages/adapters-memory/` package, the `/api/scratchpad` HTTP route, `scratchpad.ts` storage module, `ScratchpadWriteEventSchema`, and the `scratchpad_append/read/clear` entries from `PLATFORM_TOOL_NAMES` are all gone. Agents that need chunked working state should declare a `memory.own` store typed `short_term` and call `memory_save`/`memory_read` instead. `atlas-cli inspect --kind scratchpad` arm dropped. Existing daemons get the orphaned `KV_SCRATCHPAD` bucket removed by a new idempotent migration `m_20260507_120000_drop_scratchpad_kv`. (#225)
