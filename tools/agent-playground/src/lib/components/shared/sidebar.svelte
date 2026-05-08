@@ -488,26 +488,6 @@
     }
   }
 
-  .as-button {
-    align-items: center;
-    border-radius: var(--radius-2);
-    color: color-mix(in srgb, var(--color-text), transparent 20%);
-    cursor: pointer;
-    display: flex;
-    inline-size: 100%;
-    outline: none;
-    padding-inline: var(--size-2-5) var(--size-2);
-    position: relative;
-
-    :global(svg) {
-      opacity: 0.4;
-
-      @media (prefers-color-scheme: light) {
-        opacity: 0.6;
-      }
-    }
-  }
-
   /* --- Sub-nav --- */
 
   .sub-nav {
@@ -613,13 +593,5 @@
       margin-block-end: var(--size-1);
     }
 
-    code {
-      background-color: var(--color-surface-1);
-      border-radius: var(--radius-1);
-      color: var(--color-text);
-      display: block;
-      font-size: var(--font-size-1);
-      padding: var(--size-1) var(--size-2);
-    }
   }
 </style>
