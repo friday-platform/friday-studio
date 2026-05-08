@@ -246,18 +246,18 @@ function reduceStepComplete(
   const existing = view.agentBlocks[idx];
   if (!existing) return view;
 
-  // Idempotent: if the block is already in a terminal status, this is a
-  // duplicate `step:complete` (e.g. `save()` republish landing outside
-  // JetStream's `duplicate_window`). Re-applying would re-stamp
-  // `durationMs`/`output`/`toolCalls`. Identical-payload duplicates would
-  // overwrite to the same values (no-op), but a payload-divergent
-  // re-publish (which shouldn't happen with Nats-Msg-Id dedup but defends
-  // against upstream bugs) would corrupt the block. First-wins.
+  // Idempotent: if the block is already in a terminal status (completed /
+  // failed / skipped), this is a duplicate `step:complete` (e.g. `save()`
+  // republish landing outside JetStream's `duplicate_window`). Re-applying
+  // would re-stamp `durationMs`/`output`/`toolCalls`. Identical-payload
+  // duplicates would overwrite to the same values (no-op), but a
+  // payload-divergent re-publish (which shouldn't happen with Nats-Msg-Id
+  // dedup but defends against upstream bugs) would corrupt the block.
+  // First-wins.
   if (
     existing.status === "completed" ||
     existing.status === "failed" ||
-    existing.status === "skipped" ||
-    existing.status === "cancelled"
+    existing.status === "skipped"
   ) {
     return view;
   }
