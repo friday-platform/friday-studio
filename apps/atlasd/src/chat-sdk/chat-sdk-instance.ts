@@ -76,6 +76,23 @@ const SlackLinkSecretSchema = z.object({
   app_id: z.string().min(1),
 });
 
+// GitHub App secret as stored in Link. `bot_user_slug` (with literal `[bot]`
+// suffix) and `bot_user_id` are auto-populated by the github-app provider's
+// `health()` via `autoFields()` — both are always present in a successfully
+// saved credential. `app_id` is stored as a number; the chat-sdk adapter
+// expects it as a string, conversion happens at the resolver boundary.
+// `installation_id` is intentionally NOT forwarded to the adapter — the
+// chat-sdk multi-tenant mode auto-extracts it from inbound webhook payloads.
+const GithubLinkSecretSchema = z.object({
+  app_id: z.number().int().positive(),
+  private_key: z.string().min(1),
+  webhook_secret: z.string().min(1),
+  installation_id: z.number().int().positive(),
+  bot_user_slug: z.string().min(1),
+  bot_user_id: z.number().int().positive(),
+  api_url: z.string().optional(),
+});
+
 export interface ChatSdkInstanceConfig {
   workspaceId: string;
   userId: string;
@@ -144,7 +161,7 @@ function collectBroadcastDestinations(
   communicators: Record<string, CommunicatorEntry> | undefined,
 ): Record<string, string> {
   const out: Record<string, string> = {};
-  for (const kind of ["slack", "telegram", "discord", "teams", "whatsapp"] as const) {
+  for (const kind of ["slack", "telegram", "discord", "teams", "whatsapp", "github"] as const) {
     const config = pickConfigForKind(kind, signals ?? {}, communicators);
     const dest =
       config && typeof config.default_destination === "string" ? config.default_destination : null;
@@ -198,6 +215,12 @@ export async function resolvePlatformCredentials(
   const slackConfig = pickConfigForKind("slack", signals, communicators);
   if (slackConfig) {
     const creds = await resolveSlackCredentials(workspaceId, userId, slackConfig);
+    if (creds) resolved.push(creds);
+  }
+
+  const githubConfig = pickConfigForKind("github", signals, communicators);
+  if (githubConfig) {
+    const creds = await resolveGithubFromLink(workspaceId, userId);
     if (creds) resolved.push(creds);
   }
 
@@ -744,6 +767,76 @@ async function resolveSlackFromLink(
       botToken: bot_token,
       signingSecret: signing_secret,
       appId: app_id,
+    },
+    credentialId: wiring.credentialId,
+  };
+}
+
+/**
+ * Resolve GitHub App credentials from Link. v1 is Link-only — there's no
+ * yml-inline or env-var fallback because the secret depends on auto-populated
+ * fields (`bot_user_slug`, `bot_user_id`) captured by the provider's
+ * `health()` at credential-save time, and we don't want to ship a half-baked
+ * env path that would silently miss those.
+ *
+ * Returns null on missing wiring, invalid stored secret, or transient Link
+ * errors. `installation_id` from the secret is intentionally NOT forwarded to
+ * the adapter — multi-tenant mode is engaged by omitting it, and the inbound
+ * `installation.id` from each webhook payload becomes the routing key (see
+ * `/signals/github` route).
+ */
+async function resolveGithubFromLink(
+  workspaceId: string,
+  userId: string,
+): Promise<ResolvedCredentials | null> {
+  let wiring: { credentialId: string; connectionId: string | null } | null;
+  try {
+    wiring = await findCommunicatorWiring(workspaceId, "github");
+  } catch (error) {
+    logger.warn("github_link_wiring_lookup_failed", {
+      workspaceId,
+      userId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+
+  if (!wiring) return null;
+
+  let credential: Awaited<ReturnType<typeof fetchLinkCredential>>;
+  try {
+    credential = await fetchLinkCredential(wiring.credentialId, logger);
+  } catch (error) {
+    logger.warn("github_link_credential_fetch_failed", {
+      workspaceId,
+      userId,
+      credentialId: wiring.credentialId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+
+  const secretParse = GithubLinkSecretSchema.safeParse(credential.secret);
+  if (!secretParse.success) {
+    logger.warn("github_link_credential_invalid_secret", {
+      workspaceId,
+      credentialId: wiring.credentialId,
+      issues: secretParse.error.issues,
+    });
+    return null;
+  }
+
+  const { app_id, private_key, webhook_secret, bot_user_slug, bot_user_id, api_url } =
+    secretParse.data;
+  return {
+    credentials: {
+      kind: "github",
+      appId: String(app_id),
+      privateKey: private_key,
+      webhookSecret: webhook_secret,
+      botUserSlug: bot_user_slug,
+      botUserId: bot_user_id,
+      ...(api_url ? { apiUrl: api_url } : {}),
     },
     credentialId: wiring.credentialId,
   };
