@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-05-08
+
+### Changed
+
+- Playground Svelte/Vite warnings cleared. Melt UI builders (`collapsible`, `dialog`, `dropdown-menu`, `tooltip`, `tree`) wrap option objects in `untrack(...)` so prop destructures stop tripping `state_referenced_locally`; `useCredentialConnect` accepts a `() => providerId` getter so the read is reactive at the call site. Dead scoped CSS, a redundant `role="banner"`, and the unused `signalDetails` plumbing through `job-index-sidebar` removed alongside. (#235)
+
+### Fixed
+
+- Chat send no longer aborts its own streaming response. `user-chat.svelte` was handing `ChatImpl` the same `$state` array the resume `$effect` was tracking; the AI SDK's in-place push re-triggered the effect, whose cleanup called `instance.stop()` and killed the live SSE. Now clones the array before construction and wraps the trailing-user check in `untrack(...)`. Regression from #230. (#239)
+- Chat debug page no longer wedges the daemon gate on "Connecting to daemon…". `shortJson()` / `fullJson()` called `JSON.stringify(undefined)` (which returns `undefined`) and then `.length` on it for `tool-*` parts in `output-error` state that never received an `input` — the thrown `TypeError` aborted the parent reactive update so `daemon-gate.svelte` never swapped to its loaded branch. Both helpers fall back to `String(value)`. (#238)
+
 ## [0.1.4] - 2026-05-08
 
 Durable Human-in-the-Loop, artifact-ref handoff, and per-action validation contracts (#225) are the headline; chat connection plumbing got a major cleanup pass too (#230). Read **Breaking changes** before upgrading.
