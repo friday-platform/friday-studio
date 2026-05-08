@@ -458,7 +458,9 @@ export class AgentOrchestrator implements IAgentOrchestrator {
       const client = new Client({ name: "atlas-agent-orchestrator", version: "1.0.0" });
 
       const transport = new StreamableHTTPClientTransport(new URL(this.config.agentsServerUrl), {
-        requestInit: { headers: { ...this.config.headers, "mcp-session-id": sessionId } },
+        requestInit: {
+          headers: { ...this.config.headers, "mcp-session-id": sessionId, Connection: "close" },
+        },
       });
 
       // Workaround for MCP SDK bug (typescript-sdk#731): when the SSE stream
@@ -582,6 +584,18 @@ export class AgentOrchestrator implements IAgentOrchestrator {
   ): Promise<void> {
     const sessionIds = this.sessionIdsForSetup(sessionId, setup);
     this.removeSessionBookkeeping(sessionIds);
+
+    try {
+      await setup.transport.terminateSession();
+    } catch (error) {
+      this.logger.warn("Error terminating MCP server session", {
+        sessionId,
+        sessionIds,
+        reason,
+        error,
+      });
+    }
+
     try {
       await setup.transport.close();
       this.logger.info("Closed MCP transport for session", { sessionId, sessionIds, reason });

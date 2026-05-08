@@ -205,35 +205,118 @@ describe("AtlasDaemon idle/session cleanup", () => {
     expect(resetIdleTimeout).toHaveBeenCalledWith("ws-1");
   });
 
-  it("does not clean up stale platform MCP sessions while a request is in flight", () => {
+  it("does not clean up stale platform MCP sessions while a request is in flight", async () => {
     const daemon = new AtlasDaemon({ port: 0 });
     const now = Date.now();
     const stale = now - 16 * 60 * 1000;
     const sessions = (
       daemon as unknown as { platformMcpSessions: Map<string, Record<string, unknown>> }
     ).platformMcpSessions;
+    const activeClose = vi.fn().mockResolvedValue(undefined);
+    const idleClose = vi.fn().mockResolvedValue(undefined);
 
     sessions.set("active-hitl", {
       server: {},
-      transport: {},
+      transport: { close: activeClose },
       createdAt: stale,
       lastUsed: stale,
       activeRequests: 1,
     });
     sessions.set("idle-old", {
       server: {},
-      transport: {},
+      transport: { close: idleClose },
       createdAt: stale,
       lastUsed: stale,
       activeRequests: 0,
     });
 
-    (
-      daemon as unknown as { performPlatformSessionCleanup: () => void }
+    await (
+      daemon as unknown as { performPlatformSessionCleanup: () => Promise<void> }
     ).performPlatformSessionCleanup();
 
     expect(sessions.has("active-hitl")).toBe(true);
     expect(sessions.has("idle-old")).toBe(false);
+    expect(activeClose).not.toHaveBeenCalled();
+    expect(idleClose).toHaveBeenCalledOnce();
+  });
+
+  it("does not clean up stale agent MCP sessions while a request is in flight", async () => {
+    const daemon = new AtlasDaemon({ port: 0 });
+    const now = Date.now();
+    const stale = now - 16 * 60 * 1000;
+    const sessions = (daemon as unknown as { agentSessions: Map<string, Record<string, unknown>> })
+      .agentSessions;
+    const activeClose = vi.fn().mockResolvedValue(undefined);
+    const activeStop = vi.fn().mockResolvedValue(undefined);
+    const idleClose = vi.fn().mockResolvedValue(undefined);
+    const idleStop = vi.fn().mockResolvedValue(undefined);
+
+    sessions.set("active-agent", {
+      server: { stop: activeStop },
+      transport: { close: activeClose },
+      createdAt: stale,
+      lastUsed: stale,
+      activeRequests: 1,
+    });
+    sessions.set("idle-agent", {
+      server: { stop: idleStop },
+      transport: { close: idleClose },
+      createdAt: stale,
+      lastUsed: stale,
+      activeRequests: 0,
+    });
+
+    await (
+      daemon as unknown as { performAgentSessionCleanup: () => Promise<void> }
+    ).performAgentSessionCleanup();
+
+    expect(sessions.has("active-agent")).toBe(true);
+    expect(sessions.has("idle-agent")).toBe(false);
+    expect(activeClose).not.toHaveBeenCalled();
+    expect(activeStop).not.toHaveBeenCalled();
+    expect(idleClose).toHaveBeenCalledOnce();
+    expect(idleStop).toHaveBeenCalledOnce();
+  });
+
+  it("closes agent and platform MCP transports during explicit cleanup", async () => {
+    const daemon = new AtlasDaemon({ port: 0 });
+    const agentClose = vi.fn().mockResolvedValue(undefined);
+    const agentStop = vi.fn().mockResolvedValue(undefined);
+    const platformClose = vi.fn().mockResolvedValue(undefined);
+    const agentSessions = (
+      daemon as unknown as { agentSessions: Map<string, Record<string, unknown>> }
+    ).agentSessions;
+    const platformSessions = (
+      daemon as unknown as { platformMcpSessions: Map<string, Record<string, unknown>> }
+    ).platformMcpSessions;
+
+    agentSessions.set("agent-session", {
+      server: { stop: agentStop },
+      transport: { close: agentClose, onclose: () => undefined },
+      createdAt: Date.now(),
+      lastUsed: Date.now(),
+      activeRequests: 0,
+    });
+    platformSessions.set("platform-session", {
+      server: {},
+      transport: { close: platformClose, onclose: () => undefined },
+      createdAt: Date.now(),
+      lastUsed: Date.now(),
+      activeRequests: 0,
+    });
+
+    await (
+      daemon as unknown as { cleanupAgentSession: (sessionId: string) => Promise<void> }
+    ).cleanupAgentSession("agent-session");
+    await (
+      daemon as unknown as { cleanupPlatformSession: (sessionId: string) => Promise<void> }
+    ).cleanupPlatformSession("platform-session");
+
+    expect(agentClose).toHaveBeenCalledOnce();
+    expect(agentStop).toHaveBeenCalledOnce();
+    expect(platformClose).toHaveBeenCalledOnce();
+    expect(agentSessions.has("agent-session")).toBe(false);
+    expect(platformSessions.has("platform-session")).toBe(false);
   });
 });
 

@@ -290,6 +290,7 @@ export class AtlasDaemon {
       transport: StreamableHTTPTransport;
       createdAt: number;
       lastUsed: number;
+      activeRequests: number;
     }
   >();
   // Track active SSE connections per session
@@ -984,15 +985,37 @@ export class AtlasDaemon {
       transport,
       createdAt: Date.now(),
       lastUsed: Date.now(),
+      activeRequests: 0,
     });
 
     // Set up cleanup
     transport.onclose = () => {
       logger.info("[Daemon] Agent session closed", { sessionId });
-      this.cleanupAgentSession(sessionId);
+      void this.cleanupAgentSession(sessionId);
     };
 
     return { server, transport };
+  }
+
+  private async handleAgentMcpRequest(
+    sessionId: string,
+    transport: StreamableHTTPTransport,
+    c: Context,
+  ): Promise<Response | undefined> {
+    const session = this.agentSessions.get(sessionId);
+    if (session) {
+      session.activeRequests++;
+      session.lastUsed = Date.now();
+    }
+    try {
+      return await transport.handleRequest(c);
+    } finally {
+      const current = this.agentSessions.get(sessionId);
+      if (current) {
+        current.activeRequests = Math.max(0, current.activeRequests - 1);
+        current.lastUsed = Date.now();
+      }
+    }
   }
 
   /**
@@ -1000,12 +1023,25 @@ export class AtlasDaemon {
    */
   private async cleanupAgentSession(sessionId: string): Promise<void> {
     const session = this.agentSessions.get(sessionId);
-    if (session) {
-      await session.server.stop();
-      this.agentSessions.delete(sessionId);
-      this.agentSSEConnections.delete(sessionId);
-      logger.info("[Daemon] Agent session cleaned up", { sessionId });
+    if (!session) return;
+
+    this.agentSessions.delete(sessionId);
+    this.agentSSEConnections.delete(sessionId);
+    session.transport.onclose = undefined;
+
+    try {
+      await session.transport.close();
+    } catch (error) {
+      logger.debug("Error closing agent MCP transport", { error, sessionId });
     }
+
+    try {
+      await session.server.stop();
+    } catch (error) {
+      logger.debug("Error stopping agent MCP server", { error, sessionId });
+    }
+
+    logger.info("[Daemon] Agent session cleaned up", { sessionId });
   }
 
   /**
@@ -1078,7 +1114,7 @@ export class AtlasDaemon {
     // Set up cleanup
     transport.onclose = () => {
       logger.info("[Daemon] Platform session closed", { sessionId });
-      this.cleanupPlatformSession(sessionId);
+      void this.cleanupPlatformSession(sessionId);
     };
 
     return { server, transport };
@@ -1108,13 +1144,20 @@ export class AtlasDaemon {
   /**
    * Clean up platform session
    */
-  private cleanupPlatformSession(sessionId: string): void {
+  private async cleanupPlatformSession(sessionId: string): Promise<void> {
     const session = this.platformMcpSessions.get(sessionId);
-    if (session) {
-      // Platform MCP Server doesn't have explicit stop() - just remove from map
-      this.platformMcpSessions.delete(sessionId);
-      logger.info("[Daemon] Platform session cleaned up", { sessionId });
+    if (!session) return;
+
+    this.platformMcpSessions.delete(sessionId);
+    session.transport.onclose = undefined;
+
+    try {
+      await session.transport.close();
+    } catch (error) {
+      logger.debug("Error closing platform MCP transport", { error, sessionId });
     }
+
+    logger.info("[Daemon] Platform session cleaned up", { sessionId });
   }
 
   /** Get the NATS connection (available after initialize()). */
@@ -1292,7 +1335,7 @@ export class AtlasDaemon {
             if (c.req.method === "DELETE") {
               logger.info("Terminating Platform MCP session", { sessionId });
               const response = await this.handlePlatformMcpRequest(sessionId, transport, c);
-              this.cleanupPlatformSession(sessionId);
+              await this.cleanupPlatformSession(sessionId);
               return response;
             }
 
@@ -1350,7 +1393,7 @@ export class AtlasDaemon {
             const { transport } = await this.getOrCreateAgentSession(newSessionId);
 
             // Handle the request - this will set the Mcp-Session-Id header
-            const response = await transport.handleRequest(c);
+            const response = await this.handleAgentMcpRequest(newSessionId, transport, c);
 
             // The transport now has the session ID set
             if (transport.sessionId) {
@@ -1374,13 +1417,13 @@ export class AtlasDaemon {
             // Handle DELETE specially - clean up after processing
             if (c.req.method === "DELETE") {
               logger.info("Terminating Agent Server SSE session", { sessionId });
-              const response = await transport.handleRequest(c);
+              const response = await this.handleAgentMcpRequest(sessionId, transport, c);
               await this.cleanupAgentSession(sessionId);
               return response;
             }
 
             // Handle the request
-            return transport.handleRequest(c);
+            return this.handleAgentMcpRequest(sessionId, transport, c);
           } else {
             // No session ID and not a POST request - this is an error
             logger.error("[Daemon] Invalid request - no session ID for non-POST", {
@@ -2715,13 +2758,11 @@ export class AtlasDaemon {
     this.agentSessions.clear();
     this.agentSSEConnections.clear();
 
-    for (const sessionId of this.platformMcpSessions.keys()) {
-      try {
-        this.cleanupPlatformSession(sessionId);
-      } catch (error) {
-        logger.debug("Error cleaning up platform session", { error, sessionId });
-      }
-    }
+    await Promise.allSettled(
+      Array.from(this.platformMcpSessions.keys()).map((sessionId) =>
+        this.cleanupPlatformSession(sessionId),
+      ),
+    );
     this.platformMcpSessions.clear();
 
     if (this.capabilityRegistry) {
@@ -2840,7 +2881,7 @@ export class AtlasDaemon {
 
     // Check every minute for stale sessions
     this.agentSessionCleanupInterval = setInterval(() => {
-      this.performAgentSessionCleanup();
+      void this.performAgentSessionCleanup();
     }, 60000);
 
     logger.info("Agent session cleanup started", {
@@ -2857,8 +2898,11 @@ export class AtlasDaemon {
     const now = Date.now();
     const sessionsToCleanup: string[] = [];
 
-    // Find stale sessions
+    // Find stale sessions. A workspace-chat/agent call can legitimately
+    // hold the MCP response stream open for many minutes, so never reap a
+    // session while an HTTP request is still in flight.
     for (const [sessionId, session] of this.agentSessions) {
+      if (session.activeRequests > 0) continue;
       if (now - session.lastUsed > this.AGENT_SESSION_TIMEOUT_MS) {
         sessionsToCleanup.push(sessionId);
       }
@@ -2878,9 +2922,9 @@ export class AtlasDaemon {
 
     // Enforce session limit (LRU eviction)
     if (this.agentSessions.size > this.MAX_AGENT_SESSIONS) {
-      const sortedSessions = Array.from(this.agentSessions.entries()).sort(
-        (a, b) => a[1].lastUsed - b[1].lastUsed,
-      );
+      const sortedSessions = Array.from(this.agentSessions.entries())
+        .filter(([, session]) => session.activeRequests === 0)
+        .sort((a, b) => a[1].lastUsed - b[1].lastUsed);
 
       const toEvict = sortedSessions.slice(0, this.agentSessions.size - this.MAX_AGENT_SESSIONS);
 
@@ -2906,7 +2950,7 @@ export class AtlasDaemon {
 
     // Check every minute for stale sessions
     this.platformSessionCleanupInterval = setInterval(() => {
-      this.performPlatformSessionCleanup();
+      void this.performPlatformSessionCleanup();
     }, 60000);
 
     logger.info("Platform session cleanup started", {
@@ -2919,7 +2963,7 @@ export class AtlasDaemon {
   /**
    * Clean up stale platform sessions
    */
-  private performPlatformSessionCleanup(): void {
+  private async performPlatformSessionCleanup(): Promise<void> {
     const now = Date.now();
     const sessionsToCleanup: string[] = [];
 
@@ -2941,7 +2985,7 @@ export class AtlasDaemon {
       });
 
       for (const sessionId of sessionsToCleanup) {
-        this.cleanupPlatformSession(sessionId);
+        await this.cleanupPlatformSession(sessionId);
       }
     }
 
@@ -2963,7 +3007,7 @@ export class AtlasDaemon {
       });
 
       for (const [sessionId] of toEvict) {
-        this.cleanupPlatformSession(sessionId);
+        await this.cleanupPlatformSession(sessionId);
       }
     }
   }

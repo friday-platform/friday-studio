@@ -10,9 +10,11 @@ import { AgentOrchestrator } from "./agent-orchestrator.ts";
 let capturedTransportOnerror: ((error: Error) => void) | undefined;
 // Capture the onclose handler that Protocol.connect() wraps
 let capturedTransportOnclose: (() => void) | undefined;
+let capturedTransportOptions: { requestInit?: { headers?: Record<string, string> } } | undefined;
 
 const mockTransport = {
   close: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
+  terminateSession: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
   get sessionId() {
     return "mock-session-id";
   },
@@ -37,7 +39,8 @@ const mockTransport = {
 
 vi.mock("@modelcontextprotocol/sdk/client/streamableHttp.js", () => ({
   StreamableHTTPClientTransport: class {
-    constructor() {
+    constructor(_url: URL, options?: { requestInit?: { headers?: Record<string, string> } }) {
+      capturedTransportOptions = options;
       // biome-ignore lint/correctness/noConstructorReturn: mock must return exact object for vi.fn tracking
       return mockTransport;
     }
@@ -138,6 +141,7 @@ describe("AgentOrchestrator - MCP transport fatal error handling", () => {
     vi.clearAllMocks();
     capturedTransportOnerror = undefined;
     capturedTransportOnclose = undefined;
+    capturedTransportOptions = undefined;
     callToolResolve = undefined;
     callToolReject = undefined;
 
@@ -187,7 +191,9 @@ describe("AgentOrchestrator - MCP transport fatal error handling", () => {
     capturedTransportOnerror(new Error("Maximum reconnection attempts (2) exceeded."));
 
     // The onerror handler should have called transport.close()
-    expect(mockTransport.close).toHaveBeenCalled();
+    await vi.waitFor(() => {
+      expect(mockTransport.close).toHaveBeenCalled();
+    });
 
     // transport.close() triggers onclose, which rejects callTool via Protocol._onclose
     // Simulate the close callback chain
@@ -289,7 +295,9 @@ describe("AgentOrchestrator - MCP transport fatal error handling", () => {
     assertOnerrorCaptured(capturedTransportOnerror);
     capturedTransportOnerror(new Error("Failed to reconnect SSE stream: ECONNREFUSED"));
 
-    expect(mockTransport.close).toHaveBeenCalled();
+    await vi.waitFor(() => {
+      expect(mockTransport.close).toHaveBeenCalled();
+    });
 
     capturedTransportOnclose?.();
 
@@ -297,7 +305,23 @@ describe("AgentOrchestrator - MCP transport fatal error handling", () => {
     expect(result.ok).toBe(false);
   });
 
-  it("releaseSession closes the MCP transport and removes server-assigned session aliases", async () => {
+  it("creates MCP transports with connection-close requests", async () => {
+    const executionPromise = orchestrator.executeAgent("test-agent", "hello", {
+      sessionId: "session-1",
+      workspaceId: "workspace-1",
+    });
+
+    await vi.waitFor(() => {
+      expect(mockClient.callTool).toHaveBeenCalled();
+    });
+
+    expect(capturedTransportOptions?.requestInit?.headers?.Connection).toBe("close");
+
+    resolveSuccessfulCall();
+    await executionPromise;
+  });
+
+  it("releaseSession terminates the server MCP session, closes the transport, and removes server-assigned session aliases", async () => {
     const executionPromise = orchestrator.executeAgent("test-agent", "hello", {
       sessionId: "session-1",
       workspaceId: "workspace-1",
@@ -318,9 +342,11 @@ describe("AgentOrchestrator - MCP transport fatal error handling", () => {
     expect(orchestrator["mcpSessions"].has("mock-session-id")).toBe(true);
 
     mockTransport.close.mockClear();
+    mockTransport.terminateSession.mockClear();
 
     await orchestrator.releaseSession("session-1");
 
+    expect(mockTransport.terminateSession).toHaveBeenCalledTimes(1);
     expect(mockTransport.close).toHaveBeenCalledTimes(1);
     // biome-ignore lint/complexity/useLiteralKeys: accessing private property in test
     expect(orchestrator["mcpSessions"].has("session-1")).toBe(false);
