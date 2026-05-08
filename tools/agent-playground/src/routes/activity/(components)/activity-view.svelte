@@ -4,10 +4,10 @@
 
   Two-column: filtered list on the left, detail panel on the right.
 
-  Live updates via workspace-scoped SSE on `/api/elicitations/stream?workspaceId=...`.
-  Replay-then-subscribe ordering, mirrors `/schedules/+page.svelte`:
-  the EventSource doesn't open until the initial list query has
-  succeeded so SSE pushes can't be clobbered by a late-arriving replay.
+  Workspace pages receive full-envelope live updates via
+  `/api/elicitations/stream?workspaceId=...`. The global page is refreshed by
+  the sanitized app-root stream at `/api/elicitations/stream/global`, avoiding
+  both full-envelope global leakage and per-workspace EventSource fanout.
 
   @component
 -->

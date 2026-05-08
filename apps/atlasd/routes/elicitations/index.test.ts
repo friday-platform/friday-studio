@@ -526,4 +526,71 @@ describe("GET /stream — SSE", () => {
       controller.abort();
     }
   });
+
+  test("global stream emits sanitized metadata only", async () => {
+    const wsId = `ws-global-${crypto.randomUUID().slice(0, 8)}`;
+    const app = createSseTestApp(nc);
+
+    const controller = new AbortController();
+    try {
+      const res = await app.request("/stream/global", { signal: controller.signal });
+      expect(res.status).toBe(200);
+      expect(res.headers.get("Content-Type")).toBe("text/event-stream");
+
+      const envelope = makeElicitation({
+        id: "elc_global_1",
+        workspaceId: wsId,
+        sessionId: "sess_global",
+        actionId: "ask-human",
+        kind: "open-question",
+        question: "Sensitive question text?",
+        options: [{ label: "Secret", value: "secret-value" }],
+        pendingTool: { name: "send_email", args: { body: "private" } },
+        status: "answered",
+        answer: {
+          value: "private answer",
+          note: "sensitive note",
+          answeredAt: "2026-05-05T00:30:00.000Z",
+        },
+      });
+      nc.publish(`elicitations.${wsId}.sess_global.elc_global_1`, JSON.stringify(envelope));
+
+      const buf = await readUntil(res, (b) => b.includes("elc_global_1"));
+      const frame = buf.split("\n\n").find((f) => f.length > 0);
+      expect(frame?.startsWith("data: ")).toBe(true);
+      const payload = JSON.parse(frame?.slice("data: ".length) ?? "{}") as Record<string, unknown>;
+
+      expect(payload).toEqual({
+        id: "elc_global_1",
+        workspaceId: wsId,
+        sessionId: "sess_global",
+        actionId: "ask-human",
+        kind: "open-question",
+        createdAt: "2026-05-05T00:00:00.000Z",
+        expiresAt: "2026-05-05T01:00:00.000Z",
+        status: "answered",
+      });
+      expect(payload).not.toHaveProperty("question");
+      expect(payload).not.toHaveProperty("options");
+      expect(payload).not.toHaveProperty("pendingTool");
+      expect(payload).not.toHaveProperty("answer");
+    } finally {
+      controller.abort();
+    }
+  });
+
+  test("global stream abort unsubscribes from NATS", async () => {
+    const app = createSseTestApp(nc);
+    const baseline = activeSubs(nc);
+    const controller = new AbortController();
+
+    const res = await app.request("/stream/global", { signal: controller.signal });
+    expect(res.status).toBe(200);
+    expect(activeSubs(nc)).toBe(baseline + 1);
+
+    controller.abort();
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(activeSubs(nc)).toBe(baseline);
+  });
 });

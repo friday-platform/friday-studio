@@ -43,6 +43,7 @@ export type {
   ElicitationPendingTool,
   ElicitationStatus,
   ElicitationStorageAdapter,
+  ElicitationSummary,
   ExpireSweepResult,
   ToolAccessGrant,
 } from "./src/elicitations/mod.ts";
@@ -55,6 +56,7 @@ export {
   ElicitationSchema,
   ElicitationStatusSchema,
   ElicitationStorage,
+  ElicitationSummarySchema,
   initElicitationStorage,
   ToolAccessGrantSchema,
   ToolAccessGrants,

@@ -84,6 +84,24 @@ export const ElicitationSchema = z.object({
 export type Elicitation = z.infer<typeof ElicitationSchema>;
 
 /**
+ * Safe live-update shape for global UI surfaces. Deliberately excludes
+ * question text, selectable options, pending tool arguments, and answers so a
+ * global stream can drive counts/cache invalidation without leaking HITL
+ * content across workspaces.
+ */
+export const ElicitationSummarySchema = ElicitationSchema.pick({
+  id: true,
+  workspaceId: true,
+  sessionId: true,
+  actionId: true,
+  kind: true,
+  createdAt: true,
+  expiresAt: true,
+  status: true,
+});
+export type ElicitationSummary = z.infer<typeof ElicitationSummarySchema>;
+
+/**
  * Input shape for `ElicitationStorage.create`. The adapter fills in
  * `id`, `status`, and `createdAt`; everything else the caller provides.
  */
