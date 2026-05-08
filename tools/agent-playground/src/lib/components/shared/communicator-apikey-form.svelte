@@ -39,8 +39,14 @@
 
   let { workspaceId, kind, onConnected, onCancel }: Props = $props();
 
-  const detailsQuery = createQuery(() => linkProviderQueries.providerDetails(kind));
-  const connect = useCredentialConnect(kind);
+  // Communicator kind → Link provider id. They match for slack/telegram/
+  // discord/teams/whatsapp; github diverges because Link's PAT-based
+  // `githubProvider` already owns id `"github"`, so the App provider is
+  // registered as `"github-app"` (see apps/link/src/providers/constants.ts).
+  const providerId = kind === "github" ? "github-app" : kind;
+
+  const detailsQuery = createQuery(() => linkProviderQueries.providerDetails(providerId));
+  const connect = useCredentialConnect(providerId);
   const connectMut = useConnectCommunicator();
 
   let wireError = $state<string | null>(null);
