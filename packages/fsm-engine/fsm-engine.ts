@@ -100,7 +100,7 @@ import {
 
 /**
  * Resolve the final `ValidateDecision` + skill for an action, factoring
- * in workspace + job-level defaults (Phase B5).
+ * in workspace + job-level defaults.
  *
  * Precedence (strategy and skill independently):
  *   action.validate
@@ -466,11 +466,10 @@ function findFailStepToolArgs(result: LLMResult): Record<string, unknown> | unde
 }
 
 /**
- * Extract `record_validation` tool args from an LLM result, B6 of
- * melodic-strolling-seal-pt2. Mirrors `findCompleteToolArgs` — scans the
- * result's toolCalls for one whose name matches the platform tool, returning
- * the input object verbatim. Caller is responsible for parsing it through
- * `StepValidationOutputSchema` before emit.
+ * Extract `record_validation` tool args from an LLM result. Mirrors
+ * `findCompleteToolArgs` — scans the result's toolCalls for one whose name
+ * matches the platform tool, returning the input object verbatim. Caller is
+ * responsible for parsing it through `StepValidationOutputSchema` before emit.
  *
  * Returns `undefined` when the LLM didn't call the tool — this is observable
  * (the runtime emits `validation: { strategy: "self" }` without a verdict)
@@ -485,8 +484,7 @@ function findRecordValidationToolArgs(result: LLMResult): Record<string, unknown
 /**
  * Build the structured validation block that rides on `step:complete.validation`.
  * Three resolved strategies → three emit shapes; see `StepValidationOutputSchema`
- * in `@atlas/core/session-events` for the on-the-wire contract. Phase B6 of
- * melodic-strolling-seal-pt2.
+ * in `@atlas/core/session-events` for the on-the-wire contract.
  *
  * Caller is responsible for the failStep semantics on `verdict: "blocking"` —
  * this helper only assembles the shape; it doesn't throw.
@@ -499,9 +497,9 @@ function buildValidationOutput(input: {
   /** Final verdict from the external judge; undefined when judge didn't run. */
   externalVerdict?: ValidationVerdict;
   /**
-   * B5: structured + self path. The action declared an outputType with a
-   * defined schema, so the runtime injected a `complete` tool and elided
-   * `record_validation` (E1.1). Successful structured emission is the
+   * Structured + self path. The action declared an outputType with a defined
+   * schema, so the runtime injected a `complete` tool and elided
+   * `record_validation`. Successful structured emission is the
    * implicit verdict — surface as `pass` so step:complete.validation isn't
    * silently empty.
    */
@@ -687,15 +685,14 @@ export function buildLLMActionTrace(
  * → `convertLLMToAgent`) reads `validateDecision` / `validateSkill` and
  * passes them to `composeValidationBlock` at the LLM-prompt-assembly site so
  * `case "agent" → type: llm` ends up with the same validation skill body in
- * its system prompt that an inline `case "llm"` action would. B4 of
- * melodic-strolling-seal-pt2.
+ * its system prompt that an inline `case "llm"` action would.
  */
 export interface AgentExecutorOptions {
   /** JSON Schema resolved from FSM `documentTypes` or default outputTo contract. */
   outputSchema?: Record<string, unknown>;
   /**
    * Resolved validation decision for this action — already factored across
-   * `action.validate` (B2) and the auto classifier (B1). The orchestrator
+   * `action.validate` and the auto classifier. The orchestrator
    * forwards it to `composeValidationBlock`. `"skip"` means the helper
    * isn't called; `"self"` injects the skill body inline; `"external"` is
    * handled post-execution by the FSM engine, not the orchestrator.
@@ -734,9 +731,8 @@ export interface FSMEngineOptions {
   /** MCP server configs from workspace — merged with atlas-platform at call time */
   /**
    * MCP server configs from workspace — merged with atlas-platform at call time.
-   *
-   * K6 (melodic-strolling-seal-pt3): accepts the workspace-level superset
-   * `WorkspaceMCPServerConfig` so the per-server `validation:` override
+   * Accepts the workspace-level superset `WorkspaceMCPServerConfig` so the
+   * per-server `validation:` override
    * flows through to the validate-classifier. Plain `MCPServerConfig`
    * from non-workspace callers (tests, atlas) remains structurally
    * assignable since `validation` is optional.
@@ -759,30 +755,30 @@ export interface FSMEngineOptions {
    */
   broadcastNotifier?: FSMBroadcastNotifier;
   /**
-   * Phase 7 — required to expose `delegate` to `type: llm` actions. The
-   * delegate child runs its own `streamText` against the registry's
+   * Required to expose `delegate` to `type: llm` actions. The delegate child
+   * runs its own `streamText` against the registry's
    * `conversational` model, mirroring the chat-side behavior. Without this
    * field the engine silently omits delegate from the action's tool set
    * (callers without delegate-capable runtimes don't pay for the wiring).
    */
   platformModels?: PlatformModels;
   /**
-   * Phase 7 — repair function forwarded to the delegate child's streamText.
-   * Mirrors the chat-side wiring so children handle malformed tool args
+   * Repair function forwarded to the delegate child's streamText. Mirrors
+   * the chat-side wiring so children handle malformed tool args
    * identically to the parent. Falls back to the agent-sdk default when
    * unset.
    */
   repairToolCall?: ToolCallRepairFunction<Record<string, Tool>>;
   /**
-   * Phase 7 — workspace link summary, used by the delegate when an LLM
-   * passes `mcpServers` to discover candidate servers. Optional; absence
+   * Workspace link summary, used by the delegate when an LLM passes
+   * `mcpServers` to discover candidate servers. Optional; absence
    * disables MCP-server discovery inside the delegate child but does not
    * disable delegate itself.
    */
   linkSummary?: LinkSummary;
   /**
-   * Phase 7 + 8 — resolved delegation budget for this engine. Top-level
-   * caller (workspace runtime) computes the per-job-merged-over-workspace
+   * Resolved delegation budget for this engine. Top-level caller (workspace
+   * runtime) computes the per-job-merged-over-workspace
    * value before constructing the engine. Forwarded into `createDelegateTool`
    * so wall-clock, input-token, output-token, step, and depth budgets are
    * all enforced inside the child's streamText. Default depth cap = 1
@@ -791,30 +787,29 @@ export interface FSMEngineOptions {
    */
   delegationBudget?: import("@atlas/config").DelegationBudget;
   /**
-   * Phase 12.C / Phase 1.C — per-job permissions (raw, unresolved).
-   * Forwarded into the `wrapPlatformToolsWithScope` call so
+   * Per-job permissions (raw, unresolved). Forwarded into the
+   * `wrapPlatformToolsWithScope` call so
    * `request_tool_access` can resolve effective bypass at LLM-call time
    * (job > workspace > daemon-env precedence). Optional — undefined means
    * "no per-job override".
    */
   jobPermissions?: import("@atlas/config").PermissionsConfig;
   /**
-   * Phase 12.C / Phase 1.C — workspace-level permissions config. Same
-   * forwarding contract as `jobPermissions` but at the workspace tier.
+   * Workspace-level permissions config. Same forwarding contract as
+   * `jobPermissions` but at the workspace tier.
    */
   workspacePermissions?: import("@atlas/config").PermissionsConfig;
   /**
    * Effective parent-job timeout in milliseconds. When set, surfaces in
    * the wrapped scope as `jobTimeoutMs` so scope-injected elicitation
    * tools (e.g. `request_tool_access`) can derive `expiresAt = now +
-   * jobTimeoutMs` per the user-resolved Phase 12 policy ("tied to job
-   * timeout"). Workspace runtime sets this from the resolved per-job
-   * timeout (or omits when no timeout configured). Review N3.
+   * jobTimeoutMs`. Workspace runtime sets this from the resolved per-job
+   * timeout, or omits it when no timeout is configured.
    */
   jobTimeoutMs?: number;
   /**
-   * B4 — agent-type resolver for `case "agent"` actions. The validate
-   * classifier short-circuits to `skip` when the resolved agent type is
+   * Agent-type resolver for `case "agent"` actions. The validate classifier
+   * short-circuits to `skip` when the resolved agent type is
    * `"user"` or `"atlas"` (Python is code; bundled SDK agents have fixed
    * prompts — neither path builds an LLM system prompt that
    * `composeValidationBlock` could augment). Without this callback the
@@ -830,8 +825,8 @@ export interface FSMEngineOptions {
    */
   resolveAgentType?: (agentId: string) => "llm" | "user" | "atlas" | undefined;
   /**
-   * Phase B5 — workspace-level validation defaults. Merged at
-   * decision-resolution time inside `case "llm"` and `case "agent"`:
+   * Workspace-level validation defaults. Merged at decision-resolution time
+   * inside `case "llm"` and `case "agent"`:
    * `action.validate > job.validation.default > workspace.validation.default
    * > "auto"` (classifier). Skill name follows the same merge.
    * Optional — undefined means "no workspace-level default; fall through
@@ -839,17 +834,17 @@ export interface FSMEngineOptions {
    */
   workspaceValidation?: ValidationDefaults;
   /**
-   * Phase B5 — per-job validation override. Wins over
-   * `workspaceValidation` per field. Action-level `validate:` still
+   * Per-job validation override. Wins over `workspaceValidation` per field.
+   * Action-level `validate:` still
    * wins over both. See `workspaceValidation` for full precedence.
    */
   jobValidation?: ValidationDefaults;
   /**
-   * I4 (melodic-strolling-seal-pt3) — per-action artifact persistence
-   * hook. Fired immediately after a `case "llm"` or `case "agent"`
+   * Per-action artifact persistence hook. Fired immediately after a
+   * `case "llm"` or `case "agent"`
    * action writes its `outputTo` document, so the workspace runtime
    * can persist the artifact mid-session rather than waiting for the
-   * post-drain pass. Closes the H1 Phase 9 known-fail: without this,
+   * post-drain pass. Without this,
    * `composeArtifactBlocks({ workspaceId, sessionId })` finds zero
    * artifacts for the in-flight session because nothing is persisted
    * until the engine drains.
@@ -864,9 +859,7 @@ export interface FSMEngineOptions {
    * runtime side issues an artifact `update` on the second hit.
    * Failures should log-and-continue inside the callback; the engine
    * never blocks on persistence. Optional — when unset, behavior
-   * matches the pre-I4 model (post-drain only). Wire-up on the
-   * runtime side is a follow-up; the field is shipped here so the
-   * engine half is ready when the runtime catches up.
+   * falls back to post-drain persistence only.
    */
   persistFsmActionArtifact?: (input: {
     doc: Document;
@@ -1041,12 +1034,16 @@ export class FSMEngine {
     for (const [stateId, stateNode] of Object.entries(this._definition.states ?? {})) {
       const collectActions = (): Array<{ trigger: string; action: Action }> => {
         const out: Array<{ trigger: string; action: Action }> = [];
-        for (const a of stateNode.entry ?? []) out.push({ trigger: "entry", action: a });
+        for (const a of stateNode.entry ?? []) {
+          out.push({ trigger: "entry", action: a });
+        }
         for (const [event, transition] of Object.entries(stateNode.on ?? {})) {
           const actions = Array.isArray(transition)
             ? []
             : ((transition as { actions?: Action[] }).actions ?? []);
-          for (const a of actions) out.push({ trigger: `on:${event}`, action: a });
+          for (const a of actions) {
+            out.push({ trigger: `on:${event}`, action: a });
+          }
         }
         return out;
       };
@@ -1118,8 +1115,8 @@ export class FSMEngine {
   }
 
   /**
-   * K6 (melodic-strolling-seal-pt3) — collect per-MCP `validation:` overrides
-   * from `mcpServerConfigs` into a flat `Record<serverId, override>` for the
+   * Collect per-MCP `validation:` overrides from `mcpServerConfigs` into a
+   * flat `Record<serverId, override>` for the
    * validate-classifier. Returns `undefined` when no servers carry an
    * override so the classifier can short-circuit.
    */
@@ -1138,8 +1135,8 @@ export class FSMEngine {
   }
 
   /**
-   * I4 (melodic-strolling-seal-pt3) — bridge to the workspace runtime's
-   * mid-session artifact persister. Invoked by `case "llm"` and
+   * Bridge to the workspace runtime's mid-session artifact persister.
+   * Invoked by `case "llm"` and
    * `case "agent"` immediately after `documents.set(action.outputTo, ...)`.
    *
    * No-op when the host hasn't wired `persistFsmActionArtifact`, when the
@@ -1840,8 +1837,8 @@ export class FSMEngine {
                           Record<string, Tool>
                         >),
                       linkSummary: this.options.linkSummary,
-                      // Phase 8 — pass the resolved budget and the
-                      // current depth. The delegate enforces
+                      // Pass the resolved budget and current depth. The
+                      // delegate enforces
                       // wall-clock / input-tokens / output-tokens / steps
                       // internally; depth fail-fast happens at execute
                       // time when `depth >= max_depth` (covers the case
@@ -1917,20 +1914,19 @@ export class FSMEngine {
               // workspace-chat uses (`<memory workspace="..." store="...">`).
               // Mirrors the chat path's `composeMemoryBlocks` call so an FSM
               // `type: llm` action sees the same memory surface a chat turn
-              // would see at action-start. Per-FSM-session narrowing is Phase
-              // 9 territory; today this is "last 20 entries per declared
+              // would see at action-start. Per-FSM-session narrowing is a
+              // future refinement; today this is "last 20 entries per declared
               // narrative store", matching chat behavior. Skipped without a
               // workspaceId (pre-1.0 callers / unit tests) — without one we
               // can't authoritatively scope memory. Failures are swallowed
-              // and logged; never blocks the action. Phase 5.
+              // and logged; never blocks the action.
               if (workspaceId) {
                 try {
                   // Honor foregroundWorkspaceIds the same way chat does
                   // (composeMemoryBlocks reads memory across the primary +
                   // any foreground workspaces). Without this, FSM jobs
                   // triggered via foreground-workspace cascades silently
-                  // see a smaller memory surface than chat — Phase 5 parity
-                  // break.
+                  // see a smaller memory surface than chat.
                   const rawFgIds = sig.data?.foregroundWorkspaceIds;
                   const foregroundIds = Array.isArray(rawFgIds)
                     ? rawFgIds.filter((id): id is string => typeof id === "string")
@@ -1955,8 +1951,8 @@ export class FSMEngine {
                 }
               }
 
-              // Phase 9 retrieval-gated artifact injection. Pull recent
-              // session-bound ephemeral artifacts and prepend them as
+              // Retrieval-gated artifact injection. Pull recent session-bound
+              // ephemeral artifacts and prepend them as
               // `<retrieved_content>` envelopes alongside the memory blocks.
               // Per-FSM-session scope (user decision 2026-05-05): the
               // workspace runtime tags FSM-produced ephemeral artifacts with
@@ -1989,11 +1985,10 @@ export class FSMEngine {
                 }
               }
 
-              // Phase B3 (melodic-strolling-seal-pt2): when the action's
-              // resolved validate decision is `self`, compose the
+              // When the action's resolved validate decision is `self`, compose the
               // validating-llm-outputs system skill into the prompt so the
-              // LLM self-checks its draft before emitting. Same call shape
-              // B4 will use from the agent orchestrator's prompt assembly.
+              // LLM self-checks its draft before emitting. This mirrors the
+              // agent-orchestrator prompt assembly path.
               //
               // We resolve the decision PRE-call here using only static
               // signals — `calledToolNames` and `emittedProse` are unknowable
@@ -2007,10 +2002,9 @@ export class FSMEngine {
               // only adds prompt tokens; nothing downstream depends on the
               // pre-call decision.
               const declaredToolsStatic = action.tools ?? [];
-              // K6 (melodic-strolling-seal-pt3): thread per-MCP `validation:`
-              // overrides + the action's `run_code: { readOnly: true }`
-              // opt-in into the classifier so author overrides win over
-              // the default regex / allowlist.
+              // Thread per-MCP `validation:` overrides and the action's
+              // `run_code: { readOnly: true }` opt-in into the classifier
+              // so author overrides win over the default regex / allowlist.
               const mcpServerOverrides = this.buildMCPValidationOverrides();
               const preCallResolution = resolveValidateDecision(
                 action.validate,
@@ -2028,12 +2022,10 @@ export class FSMEngine {
                 { job: this.options.jobValidation, workspace: this.options.workspaceValidation },
               );
               const preCallDecision = preCallResolution.decision;
-              // E1.1 (melodic-strolling-seal-pt3): on the structured + self
-              // path, skip the validation skill body too — not just the
-              // `record_validation` tool injection (E1, below). E1 left the
-              // skill body composing into the prompt while the tool was
-              // suppressed; the skill body emphatically instructs the LLM
-              // to call `record_validation` exactly once, but the tool
+              // On the structured + self path, skip the validation skill body
+              // too — not just the `record_validation` tool injection below.
+              // The skill body instructs the LLM to call `record_validation`
+              // exactly once, but the tool
               // isn't in the catalog. The contradictory instructions made
               // the LLM bail into prose ("the artifact chain keeps
               // wrapping...") instead of calling `complete`. Use the same
@@ -2044,7 +2036,7 @@ export class FSMEngine {
                 ? ""
                 : await composeValidationBlock({
                     decision: preCallDecision,
-                    // B5: prefer merged skill (factors action object form +
+                    // Prefer merged skill (factors action object form +
                     // job + workspace overrides) over the older direct read
                     // of action.validate.skill.
                     skillName: preCallResolution.skill,
@@ -2059,8 +2051,8 @@ export class FSMEngine {
                 });
               }
 
-              // B6 (melodic-strolling-seal-pt2): when the pre-call decision is
-              // `self`, inject the `record_validation` platform tool alongside
+              // When the pre-call decision is `self`, inject the
+              // `record_validation` platform tool alongside
               // the skill body. The skill instructs the LLM to call this tool
               // before emitting; the post-call gating site below reads the
               // captured args off `result.toolCalls` (mirroring the `complete`
@@ -2076,9 +2068,9 @@ export class FSMEngine {
               // recorded). The same asymmetry-tolerance applies to the skill
               // body — see the longer comment above `preCallResolution`.
               //
-              // E1 (melodic-strolling-seal-pt2): structured-output actions
-              // (those with `outputType:` resolving to a defined schema, i.e.
-              // `completeToolInjected`) skip `record_validation` injection.
+              // Structured-output actions (those with `outputType:` resolving
+              // to a defined schema, i.e. `completeToolInjected`) skip
+              // `record_validation` injection.
               // The structured schema IS the validation contract — pinning
               // toolChoice to `complete` is what makes structured output
               // reliable, and `record_validation` injection forces toolChoice
@@ -2086,9 +2078,9 @@ export class FSMEngine {
               // emit free-form prose instead of calling `complete`. Authors
               // who want explicit self-verdict on structured output should
               // split into two FSM steps (free-form analyze → structured
-              // emit). E1.1 (pt3): the skill body is also skipped on this
-              // path — see the `skipValidationSkillBody` block above for
-              // why. Verdict on the structured + self path is implicit
+              // emit). The skill body is also skipped on this path — see the
+              // `skipValidationSkillBody` block above for why. Verdict on the
+              // structured + self path is implicit
               // pass on successful complete-tool emission.
               const recordValidationInjected = preCallDecision === "self" && !completeToolInjected;
               if (recordValidationInjected) {
@@ -2118,7 +2110,7 @@ export class FSMEngine {
                   ? [{ role: "user", content: [{ type: "text", text: contextPrompt }, ...images] }]
                   : undefined;
 
-              // B6: when both `complete` (structured-output capture) and
+              // When both `complete` (structured-output capture) and
               // `record_validation` (self-check capture) are injected, we
               // can't pin toolChoice to `complete` — that would forbid the
               // LLM from calling record_validation. Switch to `auto` so the
@@ -2128,10 +2120,10 @@ export class FSMEngine {
               // sound. When only complete is injected, today's pinned
               // toolChoice path is preserved.
               //
-              // E1: with the `recordValidationInjected` guard above
+              // With the `recordValidationInjected` guard above
               // (structured + self skips `record_validation` injection),
               // structured-output actions always pin toolChoice to
-              // `complete` — which is the whole reason E1 exists.
+              // `complete`.
               const hasActionTools = (action.tools?.length ?? 0) > 0;
               const llmToolChoice =
                 completeToolInjected && !recordValidationInjected
@@ -2190,8 +2182,8 @@ export class FSMEngine {
                 }
               }
 
-              // Phase B2 (melodic-strolling-seal-pt2): resolve the per-action
-              // validation strategy and gate the external-judge call by it.
+              // Resolve the per-action validation strategy and gate the
+              // external-judge call by it.
               // `external` runs the runJudge callback; `self` injects the
               // inline self-check skill body; `skip` bypasses validation
               // entirely. The classifier (used when the author hasn't set
@@ -2204,13 +2196,13 @@ export class FSMEngine {
                 hasOutputType: completeToolInjected,
                 hasInputFrom: !!action.inputFrom,
                 // case "llm" — type is always "llm". The case "agent" path
-                // will fill in resolvedAgentType in B4.
+                // fills in resolvedAgentType before classification.
                 resolvedAgentType: undefined,
                 emittedProse:
                   typeof observedTrace.content === "string" &&
                   observedTrace.content.trim().length > 0,
                 toolsAvailable: declaredTools.length > 0,
-                // K6: re-thread overrides for the post-call resolution.
+                // Re-thread overrides for the post-call resolution.
                 ...(mcpServerOverrides ? { mcpServerOverrides } : {}),
                 ...(action.run_code?.readOnly ? { runCodeReadOnly: true } : {}),
               };
@@ -2229,7 +2221,7 @@ export class FSMEngine {
                 source: validateSource,
                 reason: validateReason,
                 ranExternalJudge: validateDecision === "external" && !!this.options.runJudge,
-                // B3: whether the inline self-check skill was injected at
+                // Whether the inline self-check skill was injected at
                 // prompt-build time. Useful to verify in `global.log` that
                 // self-decisions actually got the skill body — and to spot
                 // pre/post-call decision asymmetry (preCall=self injected
@@ -2237,22 +2229,19 @@ export class FSMEngine {
                 validationSkillLoaded,
               });
 
-              // B6: track the verdict that ultimately survives the
-              // external-judge lifecycle so it can ride on
+              // Track the verdict that ultimately survives the external-judge
+              // lifecycle so it can ride on
               // `step:complete.validation`. Set at every point a verdict is
               // accepted (first-call pass, first-call uncertain, retry pass,
               // retry uncertain). On terminal-fail the throw upstream
               // unwinds before we read this back.
               let externalSurvivingVerdict: ValidationVerdict | undefined;
 
-              // B7 (melodic-strolling-seal-pt2): external validation is a
-              // delegate spawn to a system-level judge agent. The runtime
-              // hands the judge an action-output + tool-call manifest
-              // (refs-not-bytes for scrubber-lifted results); the judge
-              // returns a structured verdict. Phase 8 budgets gate the
-              // spawn; delegate failure (budget exhausted, judge agent
-              // missing, exception) synthesizes an advisory verdict so
-              // the action still emits.
+              // External validation invokes a system-level judge agent. The
+              // runtime hands the judge an action-output + tool-call manifest
+              // (refs-not-bytes for scrubber-lifted results); the judge returns
+              // a structured verdict. Judge failures synthesize an advisory
+              // verdict so the action still emits.
               if (validateDecision === "external" && this.options.runJudge) {
                 const trace = buildLLMActionTrace(result, action.model, contextPrompt);
                 const validationActionId = this.getActionId(action);
@@ -2271,6 +2260,8 @@ export class FSMEngine {
                 const judgeResult = await this.options.runJudge({
                   agentId: judgeAgentId,
                   handoff: buildJudgeHandoff(trace),
+                  ...(sig._context?.workspaceId ? { workspaceId: sig._context.workspaceId } : {}),
+                  ...(sig._context?.sessionId ? { sessionId: sig._context.sessionId } : {}),
                   abortSignal: sig._context?.abortSignal,
                 });
 
@@ -2291,10 +2282,10 @@ export class FSMEngine {
                     throw new ValidationFailedError(judgeResult.verdict, llmAgentId);
                   }
                 } else {
-                  // Delegate failure → advisory verdict with judge-error
-                  // category. Action still emits; the failure is observable
+                  // Judge failure → advisory verdict with judge-error category.
+                  // Action still emits; the failure is observable
                   // on `step:complete.validation`.
-                  logger.warn("Judge delegate failed, synthesizing advisory verdict", {
+                  logger.warn("Judge failed, synthesizing advisory verdict", {
                     state: currentState,
                     model: action.model,
                     error: judgeResult.error,
@@ -2306,7 +2297,7 @@ export class FSMEngine {
                         category: "judge-error",
                         severity: "info",
                         claim: "validation",
-                        reasoning: `judge delegate failed: ${judgeResult.error}`,
+                        reasoning: `judge failed: ${judgeResult.error}`,
                       },
                     ],
                   };
@@ -2318,11 +2309,11 @@ export class FSMEngine {
                   });
                 }
               } else if (validateDecision === "self") {
-                // B3: the validating-llm-outputs skill was already composed
-                // into `contextPrompt` pre-call (see `composeValidationBlock`
+                // The validating-llm-outputs skill was already composed into
+                // `contextPrompt` pre-call (see `composeValidationBlock`
                 // above), so the LLM self-checked its draft inside the same
                 // call. No separate post-call step needed at this gate.
-                // B6: the `record_validation` tool was injected pre-call when
+                // The `record_validation` tool was injected pre-call when
                 // preCallDecision === "self"; the captured args are read off
                 // result.toolCalls below for `step:complete.validation`.
               } else if (validateDecision === "skip") {
@@ -2330,8 +2321,8 @@ export class FSMEngine {
                 // to do here.
               }
 
-              // B6: build the structured validation block for emit. Three
-              // resolved strategies → three shapes:
+              // Build the structured validation block for emit. Three resolved
+              // strategies → three shapes:
               //   skip     → { strategy, skipReason }
               //   self     → { strategy, verdict?, issues? }   (record_validation)
               //   external → { strategy, verdict, issues? }    (judge-derived)
@@ -2345,7 +2336,7 @@ export class FSMEngine {
                 decision: validateDecision,
                 reason: validateReason,
                 recordedArgs: recordedValidationArgs,
-                // B5: structured + self path emits an implicit pass verdict.
+                // Structured + self path emits an implicit pass verdict.
                 ...(validateDecision === "self" && completeToolInjected
                   ? { implicitPass: true }
                   : {}),
@@ -2354,8 +2345,8 @@ export class FSMEngine {
                   : {}),
               });
 
-              // F9: sentinel-text guard. When `validate: self` resolves and
-              // the LLM had no `complete` tool to pin a structured output,
+              // Sentinel-text guard. When `validate: self` resolves and the
+              // LLM had no `complete` tool to pin a structured output,
               // the outputDoc falls back to `result.data.response` — i.e.
               // the model's most recent text turn before its closing tool
               // call. If that text reads like a transition phrase ("Now let
@@ -2365,7 +2356,7 @@ export class FSMEngine {
               // operator can correlate and either tighten the action's
               // prompt or add an outputType schema. Heuristic — this
               // doesn't fail the action, just surfaces it. Repro:
-              // fizzy_cauliflower/chat_dnFo9lv7cI auto-triage 2026-05-07.
+              // Known trigger: a transition phrase just before `record_validation`.
               if (
                 validateDecision === "self" &&
                 !completeToolInjected &&
@@ -2394,7 +2385,7 @@ export class FSMEngine {
                 }
               }
 
-              // B6: failStep semantics on a self-recorded `blocking` verdict.
+              // failStep semantics on a self-recorded `blocking` verdict.
               // The LLM has explicitly told us its output is unsourced and
               // should not emit; treat that signal the same way as a failStep
               // tool call. Mirrors the `findFailStepToolArgs` → throw path
@@ -2445,13 +2436,13 @@ export class FSMEngine {
                   });
                 }
 
-                // I4 (melodic-strolling-seal-pt3) — persist mid-session so
-                // a later action's `composeArtifactBlocks({ workspaceId,
+                // Persist mid-session so a later action's
+                // `composeArtifactBlocks({ workspaceId,
                 // sessionId })` can see this document via
                 // `ArtifactStorage.listBySession`. Without this hook the
                 // post-drain pass is the only writer, so intra-session
-                // retrieval injection is empty (the H1 Phase 9 known-fail).
-                // No-op when the host hasn't wired the callback.
+                // retrieval injection is empty. No-op when the host hasn't
+                // wired the callback.
                 await this.maybePersistActionArtifact(
                   action,
                   documents.get(action.outputTo),
@@ -2472,8 +2463,8 @@ export class FSMEngine {
                     result: resultsByCallId.get(tc.toolCallId),
                   }),
                 }));
-                // N4 (melodic-strolling-seal-pt3) — lift oversized tool
-                // results post-streamText so the persisted side-channel +
+                // Lift oversized tool results post-streamText so the
+                // persisted side-channel +
                 // session events stay compact while the producer LLM saw
                 // full bytes during the streamText loop. See
                 // `liftToolResultsForPersist` for the rationale. Skipped
@@ -2503,7 +2494,7 @@ export class FSMEngine {
                   // Provider adapters that don't set usage (e.g. tests with
                   // stub providers) leave this undefined — handled downstream.
                   ...(result.usage && { usage: result.usage }),
-                  // B6: ride the structured validation block on the same
+                  // Ride the structured validation block on the same
                   // side-channel `step:complete` mapping reads. Always set
                   // for `type: llm` actions — the three resolved strategies
                   // each have a non-empty shape; only pure-agent actions
@@ -2582,8 +2573,8 @@ export class FSMEngine {
                 : undefined;
             const executorOutputSchema = agentOutputSchema ?? defaultAgentOutputSchema;
 
-            // B4 (melodic-strolling-seal-pt2): resolve the per-action
-            // validation decision PRE-call so it can ride through
+            // Resolve the per-action validation decision PRE-call so it can
+            // ride through
             // `AgentExecutorOptions` to the orchestrator's prompt-assembly
             // site (`convertLLMToAgent`'s system-prompt builder). The same
             // shape `case "llm"` uses inline — empty `calledToolNames` and
@@ -2676,19 +2667,18 @@ export class FSMEngine {
               throw new Error(result.error.reason);
             }
 
-            // B6: track the external surviving verdict for case "agent" so
-            // it can ride on `step:complete.validation`. Mirrors the case
+            // Track the external surviving verdict for case "agent" so it
+            // can ride on `step:complete.validation`. Mirrors the case
             // "llm" path's tracking. Set only when the judge accepted the
             // verdict (no throw); a thrown ValidationFailedError unwinds
             // before this is read.
             let agentExternalSurvivingVerdict: ValidationVerdict | undefined;
 
-            // B7 (melodic-strolling-seal-pt2): external validation is a
-            // delegate spawn to a system-level judge agent — same shape as
-            // the case "llm" path. The judge sees the agent's output +
-            // tool-call manifest (refs-not-bytes for scrubber-lifted
-            // results) and returns a structured verdict. Delegate failure
-            // synthesizes an advisory verdict so the action still emits.
+            // External validation invokes a system-level judge agent — same
+            // shape as the case "llm" path. The judge sees the agent's output
+            // + tool-call manifest (refs-not-bytes for scrubber-lifted results)
+            // and returns a structured verdict. Judge failure synthesizes an
+            // advisory verdict so the action still emits.
             if (agentValidateDecision === "external" && this.options.runJudge) {
               const validationActionId = this.getActionId(action);
               const judgeAgentId =
@@ -2718,6 +2708,8 @@ export class FSMEngine {
               const judgeResult = await this.options.runJudge({
                 agentId: judgeAgentId,
                 handoff: buildJudgeHandoff(trace),
+                ...(sig._context?.workspaceId ? { workspaceId: sig._context.workspaceId } : {}),
+                ...(sig._context?.sessionId ? { sessionId: sig._context.sessionId } : {}),
                 abortSignal: sig._context?.abortSignal,
               });
 
@@ -2733,7 +2725,7 @@ export class FSMEngine {
                   throw new ValidationFailedError(judgeResult.verdict, action.agentId);
                 }
               } else {
-                logger.warn("Judge delegate failed for agent action, synthesizing advisory", {
+                logger.warn("Judge failed for agent action, synthesizing advisory", {
                   state: currentState,
                   agentId: action.agentId,
                   error: judgeResult.error,
@@ -2745,7 +2737,7 @@ export class FSMEngine {
                       category: "judge-error",
                       severity: "info",
                       claim: "validation",
-                      reasoning: `judge delegate failed: ${judgeResult.error}`,
+                      reasoning: `judge failed: ${judgeResult.error}`,
                     },
                   ],
                 };
@@ -2758,8 +2750,8 @@ export class FSMEngine {
               }
             }
 
-            // B6 (melodic-strolling-seal-pt2): build the structured validation
-            // block for `case "agent" → type: llm`, mirroring the inline
+            // Build the structured validation block for `case "agent" → type:
+            // llm`, mirroring the inline
             // `case "llm"` path. The `record_validation` tool was injected at
             // the orchestrator's prompt-assembly site (`from-llm.ts`) when
             // decision === "self"; capture its args off the agent result's
@@ -2811,8 +2803,8 @@ export class FSMEngine {
               ...(agentValidationOutput ? { validation: agentValidationOutput } : {}),
             };
 
-            // B6: failStep semantics on a self-recorded `blocking` verdict.
-            // Mirrors the case "llm" path. The agent result projection above
+            // failStep semantics on a self-recorded `blocking` verdict. Mirrors
+            // the case "llm" path. The agent result projection above
             // lives directly on the action event; workspace runtime no longer
             // needs an out-of-band side-channel to build step:complete.
             if (
@@ -2861,8 +2853,8 @@ export class FSMEngine {
                 documents.set(action.outputTo, { id: action.outputTo, type: "AgentResult", data });
               }
 
-              // I4 (melodic-strolling-seal-pt3) — see the matching call in
-              // `case "llm"` above for rationale. Persist mid-session so
+              // See the matching call in `case "llm"` above for rationale.
+              // Persist mid-session so
               // `composeArtifactBlocks` sees agent-action artifacts during
               // the same session that emitted them.
               await this.maybePersistActionArtifact(
@@ -3120,19 +3112,16 @@ export class FSMEngine {
    * Build AI SDK Tool objects for LLM action.
    * MCP tools: ephemeral createMCPTools() call — dispose in finally block.
    *
-   * `signalContext` carries the per-call session/workspace identity. When
-   * present, an MCP-boundary scrubber is wired into createMCPTools so
-   * oversized binary tool outputs (Gmail attachment base64, image data
-   * URLs, run_code stdout blobs) get lifted to artifacts before they enter
-   * the AI SDK message buffer — same protection the chat path already had
-   * via the `delegate` tool. Phase 3 of the fan-in plan.
+   * `signalContext` carries the per-call session/workspace identity used by
+   * scope-injected platform tools and by post-call artifact lifting when
+   * oversized tool outputs are persisted.
    */
   private async buildTools(
     toolNames: string[],
     _context: Context,
     signalContext?: SignalWithContext["_context"],
     /**
-     * Phase 12.C — action id forwarded into the scope-injection wrapper so
+     * Action id forwarded into the scope-injection wrapper so
      * `request_tool_access` can stamp the originating action onto its
      * elicitation envelope. Optional because non-LLM-action callers don't
      * own an action id (and don't expose `request_tool_access` anyway).
@@ -3200,16 +3189,9 @@ export class FSMEngine {
       }
     }
 
-    // N4 (melodic-strolling-seal-pt3) — MCP-boundary scrubber removed.
-    // Pre-N4, the scrubber lifted large tool results into artifacts at
-    // this boundary and replaced them with marker text in the LLM's
-    // view. For consume-immediately actions (inbox-fetcher: gmail batch
-    // → emit JSON) the marker forced a round-trip through
-    // `artifacts_get` and the LLM frequently bailed into prose. The
-    // lift's value is persistence + cross-consumer compactness, not
-    // producer-LLM context shrinkage; it now lives at the side-channel
-    // population point below (post-streamText), via
-    // `liftToolResultsForPersist`. The pre-persist scrubber retains its
+    // Do not lift MCP results before the producer LLM sees them. Oversized
+    // result lifting happens when side-channel tool results are persisted,
+    // via `liftToolResultsForPersist`; the pre-persist scrubber retains its
     // defense-in-depth role.
     let mcpResult: MCPToolsResult;
     try {
@@ -3252,8 +3234,8 @@ export class FSMEngine {
     // the source of the daily-memo "fetcher agents send their own emails"
     // bug.
     //
-    // Phase 1.C bypass — when the resolved permissions for this action
-    // declare `dangerouslySkipAllowlist`, skip the per-agent narrowing
+    // Bypass — when the resolved permissions for this action declare
+    // `dangerouslySkipAllowlist`, skip the per-agent narrowing
     // and pass every platform-allowlisted tool through to the LLM.
     // Mirrors Claude Code's `--dangerously-skip-permissions`. Resolution
     // precedence: job > workspace > FRIDAY_DANGEROUSLY_SKIP_PERMISSIONS
@@ -3306,13 +3288,13 @@ export class FSMEngine {
     const wrapped = wrapPlatformToolsWithScope(scoped, {
       workspaceId: this.options.scope.workspaceId,
       workspaceName: this.options.scope.workspaceName,
-      // Phase 12.C — sessionId + actionId + permissions flow into
-      // `request_tool_access` (and any future scope-injected tool that
+      // sessionId + actionId + permissions flow into `request_tool_access`
+      // (and any future scope-injected tool that
       // needs them). Other wrapped tools strip extras via Zod input
       // validation, so this is harmless surface widening.
       //
-      // Review N2: pass `resolvedPermissions` (computed once above for
-      // the bypass check) so the tool consumes the same merge result
+      // Pass `resolvedPermissions` (computed once above for the bypass check)
+      // so the tool consumes the same merge result
       // instead of re-resolving at call time. Raw fields kept for
       // back-compat with callers that don't have a resolution context.
       ...(this.options.scope.sessionId && { sessionId: this.options.scope.sessionId }),
@@ -3322,9 +3304,9 @@ export class FSMEngine {
       ...(this.options.workspacePermissions && {
         workspacePermissions: this.options.workspacePermissions,
       }),
-      // Review N3: surface job timeout when known so request_tool_access
-      // can derive expiresAt = now + jobTimeoutMs (Phase 12 user-resolved
-      // policy). Optional — falls back to tool-local default when absent.
+      // Surface job timeout when known so request_tool_access can derive
+      // expiresAt = now + jobTimeoutMs. Optional — falls back to tool-local
+      // default when absent.
       ...(this.options.jobTimeoutMs !== undefined && { jobTimeoutMs: this.options.jobTimeoutMs }),
       availableToolNames: Object.keys(filtered),
     });

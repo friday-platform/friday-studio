@@ -1,6 +1,5 @@
 /**
- * Re-export of the `record_validation` platform tool factory. Phase B6 of
- * melodic-strolling-seal-pt2.
+ * Re-export of the `record_validation` platform tool factory.
  *
  * The canonical implementation lives in `@atlas/core/agent-context` because
  * both the FSM engine (`case "llm"` inline path) and the agent orchestrator

@@ -19,7 +19,9 @@ import {
   ElicitationSchema,
   ElicitationStatusSchema,
   ElicitationStorage,
+  ToolAccessGrants,
 } from "@atlas/core";
+import { createLogger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
 import { describeRoute, resolver, validator } from "hono-openapi";
 import { z } from "zod";
@@ -27,6 +29,7 @@ import { daemonFactory } from "../../src/factory.ts";
 import { errorResponseSchema } from "../../src/utils.ts";
 
 const elicitationApp = daemonFactory.createApp();
+const logger = createLogger({ component: "elicitation-routes" });
 
 const enc = new TextEncoder();
 
@@ -216,7 +219,9 @@ elicitationApp.get(
       const { id } = c.req.valid("param");
       const result = await ElicitationStorage.get({ id });
       if (!result.ok) return c.json({ error: result.error }, 500);
-      if (!result.data) return c.json({ error: `Elicitation ${id} not found` }, 404);
+      if (!result.data) {
+        return c.json({ error: `Elicitation ${id} not found` }, 404);
+      }
       return c.json(result.data);
     } catch (error) {
       return c.json({ error: stringifyError(error) }, 500);
@@ -274,7 +279,9 @@ elicitationApp.post(
       // first so the HTTP status mirrors the user's expectation.
       const got = await ElicitationStorage.get({ id });
       if (!got.ok) return c.json({ error: got.error }, 500);
-      if (!got.data) return c.json({ error: `Elicitation ${id} not found` }, 404);
+      if (!got.data) {
+        return c.json({ error: `Elicitation ${id} not found` }, 404);
+      }
 
       const result = await ElicitationStorage.answer({
         id,
@@ -286,6 +293,24 @@ elicitationApp.post(
         },
       });
       if (!result.ok) return c.json({ error: result.error }, 500);
+      if (
+        result.data.kind === "tool-allowlist" &&
+        result.data.answer?.value === "allow_always" &&
+        result.data.pendingTool?.name
+      ) {
+        const grant = await ToolAccessGrants.grantAlways({
+          workspaceId: result.data.workspaceId,
+          toolName: result.data.pendingTool.name,
+          sourceElicitationId: result.data.id,
+          ...(body.answeredBy ? { grantedBy: body.answeredBy } : {}),
+        });
+        if (!grant.ok) {
+          // The user's answer is already durable; log the secondary
+          // persistence failure without hiding the accepted answer from
+          // the UI or the blocked run.
+          logger.warn("Failed to persist allow-always tool grant", { error: grant.error });
+        }
+      }
       return c.json(result.data);
     } catch (error) {
       return c.json({ error: stringifyError(error) }, 500);
@@ -335,7 +360,9 @@ elicitationApp.post(
 
       const got = await ElicitationStorage.get({ id });
       if (!got.ok) return c.json({ error: got.error }, 500);
-      if (!got.data) return c.json({ error: `Elicitation ${id} not found` }, 404);
+      if (!got.data) {
+        return c.json({ error: `Elicitation ${id} not found` }, 404);
+      }
 
       const result = await ElicitationStorage.decline({
         id,

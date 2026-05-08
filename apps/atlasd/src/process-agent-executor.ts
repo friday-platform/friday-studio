@@ -87,28 +87,34 @@ export class ProcessAgentExecutor {
       }
     })();
 
-    // 4. Spawn agent subprocess (polyglot: infer runtime from file extension)
-    const [cmd, args] = buildAgentSpawnArgs(agentPath);
-    const proc = spawn(cmd, args, {
-      env: {
-        ...process.env,
-        ...options.env,
-        NATS_URL: process.env.FRIDAY_NATS_URL ?? "nats://localhost:4222",
-        FRIDAY_SESSION_ID: sessionId,
-      },
-      stdio: "pipe",
-    });
-
+    let proc: ReturnType<typeof spawn> | undefined;
     const stderrLines: string[] = [];
-    proc.stderr?.on("data", (chunk: Uint8Array) => {
-      const lines = chunk.toString().split("\n").filter(Boolean);
-      stderrLines.push(...lines);
-      for (const line of lines) {
-        options.logger.debug("agent stderr", { line });
-      }
-    });
 
     try {
+      // Ensure the broker has registered both host-side subscriptions
+      // before the child can publish `ready`. NATS `subscribe()` is
+      // local until a flush/PING round trip completes.
+      await this.nc.flush();
+
+      // 4. Spawn agent subprocess (polyglot: infer runtime from file extension)
+      const [cmd, args] = buildAgentSpawnArgs(agentPath);
+      proc = spawn(cmd, args, {
+        env: {
+          ...process.env,
+          ...options.env,
+          NATS_URL: process.env.FRIDAY_NATS_URL ?? "nats://localhost:4222",
+          FRIDAY_SESSION_ID: sessionId,
+        },
+        stdio: "pipe",
+      });
+
+      proc.stderr?.on("data", (chunk: Uint8Array) => {
+        const lines = chunk.toString().split("\n").filter(Boolean);
+        stderrLines.push(...lines);
+        for (const line of lines) {
+          options.logger.debug("agent stderr", { line });
+        }
+      });
       // 5. Wait for the agent to signal it's ready (subscribed and ready to receive execute).
       //    This replaces the 503-retry loop, which breaks when any wildcard NATS subscriber
       //    (e.g. `nats sub ">"`) is present — wildcard subs prevent 503 from firing.
@@ -132,15 +138,16 @@ export class ProcessAgentExecutor {
       const requestPromise = this.nc.request(`agents.${sessionId}.execute`, payload, {
         timeout: timeoutMs,
       });
-      const response = await (options.abortSignal
+      const abortSignal = options.abortSignal;
+      const response = await (abortSignal
         ? Promise.race([
             requestPromise,
             new Promise<never>((_, reject) => {
-              if (options.abortSignal!.aborted) {
+              if (abortSignal.aborted) {
                 reject(new DOMException("Aborted", "AbortError"));
                 return;
               }
-              options.abortSignal!.addEventListener(
+              abortSignal.addEventListener(
                 "abort",
                 () => reject(new DOMException("Aborted", "AbortError")),
                 { once: true },
@@ -216,22 +223,25 @@ export class ProcessAgentExecutor {
       streamSub.unsubscribe();
       await streamForward.catch(() => {}); // drain loop
 
-      proc.kill("SIGTERM");
-      await new Promise<void>((resolve) => {
-        const t = setTimeout(() => {
-          // Subprocess didn't exit within 2s — escalate to SIGKILL so a hung
-          // user agent (deadlock, infinite loop, etc.) doesn't keep the
-          // executor blocked.
-          if (proc.exitCode === null && proc.signalCode === null) {
-            proc.kill("SIGKILL");
-          }
-          resolve();
-        }, 2_000);
-        proc.once("exit", () => {
-          clearTimeout(t);
-          resolve();
+      if (proc) {
+        const child = proc;
+        child.kill("SIGTERM");
+        await new Promise<void>((resolve) => {
+          const t = setTimeout(() => {
+            // Subprocess didn't exit within 2s — escalate to SIGKILL so a hung
+            // user agent (deadlock, infinite loop, etc.) doesn't keep the
+            // executor blocked.
+            if (child.exitCode === null && child.signalCode === null) {
+              child.kill("SIGKILL");
+            }
+            resolve();
+          }, 2_000);
+          child.once("exit", () => {
+            clearTimeout(t);
+            resolve();
+          });
         });
-      });
+      }
     }
   }
 }

@@ -30,8 +30,10 @@ if (validateId) {
   if (sessionId) {
     const nc = await connect({ servers: natsUrl });
     const sub = nc.subscribe(`agents.${sessionId}.execute`);
-    // Signal ready after subscribing so the daemon knows to send the execute request.
+    // Signal ready after the execute subscription is registered server-side.
+    await nc.flush();
     nc.publish(`agents.${sessionId}.ready`, sc.encode(""));
+    await nc.flush();
     for await (const msg of sub) {
       const raw = JSON.parse(sc.decode(msg.data)) as { prompt?: string };
       const prompt = raw.prompt ?? "";

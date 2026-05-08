@@ -19,11 +19,10 @@ export const DocumentSchema = z.object({
  *
  * String form:
  *   - "skip"     — never validate; output is accepted as-is.
- *   - "self"     — inline validation in the same LLM call (B3 will inject a
- *                  `record_validation` tool + the validating-llm-outputs skill).
- *                  No-op until B3 lands; today behaves like "skip".
- *   - "external" — delegate spawn to a system-level judge agent
- *                  (`runJudge` callback, B7).
+ *   - "self"     — inline validation in the same LLM call via the
+ *                  `record_validation` tool and validating-llm-outputs skill.
+ *   - "external" — separate system-level judge agent invocation via the
+ *                  `runJudge` callback.
  *   - "auto"     — delegate to the runtime classifier (read-only/structured →
  *                  skip; mutating-tool/prose-emitting → self). Same as omitting
  *                  the field. The classifier never returns "external" — that
@@ -43,8 +42,7 @@ export const ValidateStrategySchema = z.union([
     strategy: z.enum(["self", "external"]),
     skill: z.string().optional(),
     /**
-     * Optional override for the `external` judge agent. B7 of
-     * melodic-strolling-seal-pt2 — `external` is a delegate spawn to
+     * Optional override for the `external` judge agent. `external` uses
      * `@friday/judge-agent` by default; authors can swap in a domain-
      * specific judge (e.g. `fin-judge` for finance pipelines) without
      * changing the runtime contract. Ignored when strategy is `"self"`.
@@ -85,15 +83,14 @@ export const LLMActionSchema = z.object({
    */
   validate: ValidateStrategySchema.optional(),
   /**
-   * K6 (melodic-strolling-seal-pt3) — `run_code` opt-in for read-only
-   * classifier treatment. `run_code` is excluded from the default
-   * `READ_ONLY_ALLOWLIST` because it can mutate state (write files, POST
-   * over the network, etc.). When the author knows a particular invocation
-   * is genuinely read-only — e.g. a one-shot SQL `SELECT`, a deterministic
-   * HTTP `GET`, an arithmetic transform — setting `run_code: { readOnly:
-   * true }` makes the classifier treat `run_code` as a read-only tool for
-   * this action. Combined with structured `outputType:`, the action then
-   * resolves to `validate: skip`.
+   * `run_code` opt-in for read-only classifier treatment. `run_code` is
+   * excluded from the default `READ_ONLY_ALLOWLIST` because it can mutate
+   * state (write files, POST over the network, etc.). When the author knows
+   * a particular invocation is genuinely read-only — e.g. a one-shot SQL
+   * `SELECT`, a deterministic HTTP `GET`, an arithmetic transform — setting
+   * `run_code: { readOnly: true }` makes the classifier treat `run_code` as
+   * a read-only tool for this action. Combined with structured
+   * `outputType:`, the action then resolves to `validate: skip`.
    */
   run_code: z.strictObject({ readOnly: z.boolean() }).optional(),
   outputTo: z.string().optional(),

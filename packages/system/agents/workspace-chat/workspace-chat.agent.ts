@@ -422,15 +422,10 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
     }
 
     let finalText: string | undefined;
-    // J3 (melodic-strolling-seal-pt3): capture the bundled-agent's
-    // internal tool calls so the workspace-runtime side-channel
-    // (runtime.ts:executeAgent) can mirror them onto
-    // `step:complete.toolCalls`. Pre-J3 the chat agent returned only
-    // `ok({ text })`, so `agentBlocks[].toolCalls` for `case "agent" →
-    // workspace-chat` actions came back empty even though the LLM had
-    // invoked many tools internally. The FSM `case "llm"` path already
-    // surfaces these via emitToolEvents (fsm-engine.ts) — we mirror that
-    // shape here for parity.
+    // Capture the bundled-agent's internal tool calls so the workspace-runtime
+    // side-channel (runtime.ts:executeAgent) can mirror them onto
+    // `step:complete.toolCalls`. This keeps `case "agent" → workspace-chat`
+    // history aligned with the FSM `case "llm"` path.
     let assembledToolCalls: ToolCall[] = [];
     let assembledToolResults: ToolResult[] = [];
     let assembledReasoning: string | undefined;

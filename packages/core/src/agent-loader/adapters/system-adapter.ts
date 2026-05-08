@@ -46,9 +46,9 @@ export class SystemAgentAdapter implements AgentAdapter {
 
   private registerSystemAgents(): void {
     this.agents.set(workspaceChatAgent.metadata.id, workspaceChatAgent);
-    // B7 (melodic-strolling-seal-pt2). Judge agent for `validate: external`
-    // — invoked via the FSM engine's `runJudge` callback (workspace runtime
-    // wires the executor → this adapter → judgeAgent.handler).
+    // Judge agent for `validate: external` — invoked via the FSM engine's
+    // `runJudge` callback (workspace runtime wires the executor → this
+    // adapter → judgeAgent.handler).
     this.agents.set(judgeAgent.metadata.id, judgeAgent as AtlasAgent<unknown, unknown>);
     // NOTE: when adding agents here, also add the id to `SYSTEM_AGENT_IDS`
     // above so synchronous type lookups stay in sync.

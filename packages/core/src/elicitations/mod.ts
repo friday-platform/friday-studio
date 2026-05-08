@@ -32,6 +32,15 @@ export {
   initElicitationStorage,
   resetElicitationStorageForTests,
 } from "./storage.ts";
+export type { ToolAccessGrant } from "./tool-access-grants.ts";
+export {
+  bootstrapToolAccessGrantStorage,
+  initToolAccessGrantStorage,
+  JetStreamToolAccessGrantAdapter,
+  resetToolAccessGrantStorageForTests,
+  ToolAccessGrantSchema,
+  ToolAccessGrants,
+} from "./tool-access-grants.ts";
 
 // Adapter interface
 export type { ElicitationStorageAdapter, ExpireSweepResult } from "./types.ts";

@@ -394,8 +394,8 @@ interface WorkspaceRuntimeOptions {
    */
   broadcastNotifier?: FSMBroadcastNotifier;
   /**
-   * B7 (melodic-strolling-seal-pt2) — judge agent runner injected by the
-   * daemon. The daemon owns the system-agent registry (workspace can't
+   * Judge agent runner injected by the daemon. The daemon owns the system-agent
+   * registry (workspace can't
    * import `@atlas/system` without a layering violation) and supplies a
    * function that delegates to `judgeAgent.execute(...)` (or the override
    * named in `validate.agent`). When unset, FSM external-validation
@@ -420,32 +420,31 @@ interface FSMJob {
   /** Max LLM tool-calling steps for FSM actions */
   maxSteps?: number;
   /**
-   * Phase 8 — per-job delegation override. Merged per-field over the
-   * workspace-level `delegation:` block at engine-construction time
+   * Per-job delegation override. Merged per-field over the workspace-level
+   * `delegation:` block at engine-construction time
    * (job wins; unset fields fall through). Carried on the job record so
    * the merge is local to `createJobEngine` and stays out of the
    * signal-routing path.
    */
   delegationOverride?: import("@atlas/config").DelegationBudget;
   /**
-   * Phase 12.C / Phase 1.C — per-job permissions from `JobSpecification.permissions`.
-   * Forwarded into FSMEngine options so `request_tool_access` can resolve
+   * Per-job permissions from `JobSpecification.permissions`. Forwarded into
+   * FSMEngine options so `request_tool_access` can resolve
    * the effective `dangerouslySkipAllowlist` at LLM-call time. Optional;
    * undefined = "no per-job override; fall through to workspace + daemon".
    *
    * `timeoutMs` is the parsed `JobSpecification.config.timeout` in
    * milliseconds. Forwarded into FSMEngine options as `jobTimeoutMs` so
    * scope-injected elicitation tools (`request_tool_access`) can derive
-   * `expiresAt = now + jobTimeoutMs` per the user-resolved Phase 12 policy
-   * ("tied to job timeout"). Undefined when no timeout configured;
+   * `expiresAt = now + jobTimeoutMs`. Undefined when no timeout configured;
    * elicitation tools fall back to their built-in default.
    */
   permissions?: import("@atlas/config").PermissionsConfig;
   /** Parsed `jobSpec.config.timeout` in milliseconds. See doc above. */
   timeoutMs?: number;
   /**
-   * Phase B5 — per-job validation override from
-   * `JobSpecification.validation`. Forwarded into FSMEngineOptions so
+   * Per-job validation override from `JobSpecification.validation`. Forwarded
+   * into FSMEngineOptions so
    * the engine resolves action-level `validate:` against this and the
    * workspace-level default. Optional; undefined = "no per-job
    * override; fall through to workspace then to "auto" classifier".
@@ -1653,16 +1652,16 @@ export class WorkspaceRuntime {
       }),
       agentExecutor,
       mcpServerConfigs,
-      // B7 (melodic-strolling-seal-pt2). External validation is a delegate
-      // call to `@friday/judge-agent` (or the per-action override). The
+      // External validation calls `@friday/judge-agent` (or the per-action
+      // override). The
       // daemon supplies the runner via `WorkspaceRuntimeOptions.runJudge`;
       // when unset, fsm-engine synthesizes an advisory verdict so actions
       // still emit on the no-judge path.
       ...(this.options.runJudge ? { runJudge: this.options.runJudge } : {}),
       artifactStorage: ArtifactStorage,
       broadcastNotifier: this.options.broadcastNotifier,
-      // Phase 7 — wires the optional `delegate` tool for FSM type:llm
-      // actions. `platformModels` and `repairToolCall` are mandatory for
+      // Wires the optional `delegate` tool for FSM type:llm actions.
+      // `platformModels` and `repairToolCall` are mandatory for
       // the delegate child's streamText call; `delegationBudget` carries
       // the workspace-level depth cap (default 1, matching today's chat
       // hard cap). `linkSummary` is intentionally omitted today —
@@ -1671,26 +1670,25 @@ export class WorkspaceRuntime {
       // clean error if the LLM passes `mcpServers` without one.
       platformModels,
       repairToolCall,
-      // Phase 8 — per-field merge: workspace defaults, then job override
-      // wins per field. `mergeDelegationBudgets` returns `undefined` when
+      // Per-field merge: workspace defaults, then job override wins per field.
+      // `mergeDelegationBudgets` returns `undefined` when
       // both inputs are undefined, preserving back-compat (delegate falls
       // back to its built-in defaults inside `createDelegateTool`).
       delegationBudget: mergeDelegationBudgets(
         this.config.workspace.delegation,
         job.delegationOverride,
       ),
-      // Phase 12.C / Phase 1.C — forward raw permissions (unresolved) so
-      // `request_tool_access` can run `resolvePermissions` with the daemon
+      // Forward raw permissions (unresolved) so `request_tool_access` can run
+      // `resolvePermissions` with the daemon
       // env floor at call time. Job > workspace > daemon precedence. The
       // engine also resolves these once at action-construction time and
-      // surfaces the result through scope as `resolvedPermissions` (review
-      // N2 single source of truth).
+      // surfaces the result through scope as `resolvedPermissions`.
       ...(job.permissions && { jobPermissions: job.permissions }),
       ...(this.config.workspace.permissions && {
         workspacePermissions: this.config.workspace.permissions,
       }),
-      // Phase B5 — workspace + per-job validation defaults. Resolved at
-      // action-execution time inside `resolveValidateDecision` (action >
+      // Workspace + per-job validation defaults. Resolved at action-execution
+      // time inside `resolveValidateDecision` (action >
       // job > workspace > "auto" classifier). No merge here: the engine
       // itself walks the precedence chain, so unsetting one tier doesn't
       // require the other to clone.
@@ -1698,8 +1696,8 @@ export class WorkspaceRuntime {
         workspaceValidation: this.config.workspace.validation,
       }),
       ...(job.validation && { jobValidation: job.validation }),
-      // E2 (melodic-strolling-seal-pt2): resolve agent type for the FSM
-      // classifier's user/atlas → skip rule. Workspace-config-declared
+      // Resolve agent type for the FSM classifier's user/atlas → skip rule.
+      // Workspace-config-declared
       // agents (`workspace.agents.<id>`) are the common case. Bundled
       // system agents like `workspace-chat` and `judge-agent` don't appear
       // in workspace config — they resolve through `SystemAgentAdapter`.
@@ -2532,8 +2530,8 @@ export class WorkspaceRuntime {
       validateSkill?: string;
     },
   ): Promise<AgentResult> {
-    // E1 (melodic-strolling-seal-pt2): when the FSM engine resolved an
-    // `outputSchema` for this action (i.e. the action declared an
+    // When the FSM engine resolved an `outputSchema` for this action (i.e.
+    // the action declared an
     // `outputType:`), thread that fact through `__atlas_validate` so the
     // orchestrator's prompt-assembly site (`convertLLMToAgent`) can skip
     // `record_validation` injection on the structured + self path.
@@ -2644,8 +2642,8 @@ export class WorkspaceRuntime {
       ? { ...agentCustomConfig, ...prepareConfig }
       : agentCustomConfig;
 
-    // B4 + B6 (melodic-strolling-seal-pt2): thread the resolved validation
-    // decision under the reserved `__atlas_validate` key so the agent
+    // Thread the resolved validation decision under the reserved
+    // `__atlas_validate` key so the agent
     // orchestrator's prompt-assembly site (`convertLLMToAgent` in
     // `@atlas/core/agent-conversion/from-llm.ts`) can compose the
     // validating-llm-outputs skill body and inject the `record_validation`

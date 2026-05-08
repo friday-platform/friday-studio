@@ -85,8 +85,8 @@ export interface LLMAction {
    */
   validate?: ValidateStrategy;
   /**
-   * K6 (melodic-strolling-seal-pt3) — author opt-in to treat `run_code` as
-   * read-only for this action. See `LLMActionSchema.run_code` in schema.ts.
+   * Author opt-in to treat `run_code` as read-only for this action. See
+   * `LLMActionSchema.run_code` in schema.ts.
    * `run_code` is excluded from the default `READ_ONLY_ALLOWLIST` because
    * it can mutate state; this knob lets a deterministic SQL `SELECT` /
    * HTTP `GET` / arithmetic transform skip self-validation. Combined with
@@ -223,8 +223,8 @@ export interface FSMActionExecutionEvent {
       reasoning?: string;
       output: unknown;
       /**
-       * Per-call LLM token usage. Optional — pre-Phase-11 callers and
-       * non-LLM (agent) paths leave this absent. See
+       * Per-call LLM token usage. Optional; non-LLM (agent) paths leave this
+       * absent. See
        * `@atlas/core/session-events` `StepUsageSchema` for the on-the-wire
        * shape.
        */
@@ -240,9 +240,8 @@ export interface FSMActionExecutionEvent {
        * `case "agent" → type: llm` action. Three shapes mirror the resolved
        * strategy: `skip` carries `skipReason`; `self` carries the LLM's
        * `record_validation` args; `external` carries the judge-derived
-       * verdict. Phase B6 of melodic-strolling-seal-pt2. See
-       * `@atlas/core/session-events` `StepValidationOutputSchema` for the
-       * on-the-wire shape.
+       * verdict. See `@atlas/core/session-events` `StepValidationOutputSchema`
+       * for the on-the-wire shape.
        */
       validation?: {
         strategy: "skip" | "self" | "external";
@@ -362,11 +361,11 @@ export interface SignalWithContext extends Signal {
     /** State IDs to skip — their entry actions won't execute, engine chains through */
     skipStates?: string[];
     /**
-     * Phase 7 — delegation depth at this signal's frame.
+     * Delegation depth at this signal's frame.
      * `0` (or unset) means the FSM is running at the user-facing top level.
      * Each `delegate` tool invocation increments this on the child's
-     * synthetic signal context, so depth-cap enforcement (Phase 8 budgets)
-     * can read a single counter regardless of how the child is invoked.
+     * synthetic signal context, so depth-cap enforcement can read a single
+     * counter regardless of how the child is invoked.
      */
     delegationDepth?: number;
   };
@@ -396,9 +395,8 @@ export interface LLMActionTrace {
 }
 
 /**
- * One tool call's projection in the judge handoff manifest. Phase B7 of
- * melodic-strolling-seal-pt2. The runtime walks the action's
- * `traceToolResults` and builds one entry per call:
+ * One tool call's projection in the judge handoff manifest. The runtime walks
+ * the action's `traceToolResults` and builds one entry per call:
  *
  *   - `resultArtifactId` + `resultSummary` for scrubber-lifted (A2) results
  *     so the judge sees a short ref string and fetches via `artifacts_get`
@@ -432,13 +430,12 @@ export interface JudgeHandoff {
 
 /**
  * Function type the FSM engine calls when an action's resolved validation
- * decision is `external`. Replaces the pre-B7 `OutputValidator` hook —
- * external validation is now a delegate spawn to a system-level judge
+ * decision is `external`. External validation is a separate system-level judge
  * agent (default `judge-agent`, overridable via `validate.agent`).
  *
  * Implementations live outside fsm-engine (workspace runtime wires this to
  * the agent orchestrator). Returns the verdict the judge emitted, or `ok:
- * false` when the delegate failed (budget exhausted, agent not found,
+ * false` when the judge failed (budget exhausted, agent not found,
  * exception). The runtime synthesizes an advisory verdict on `ok: false`
  * so the action still emits.
  */
@@ -447,6 +444,9 @@ export type JudgeAgentRunner = (input: {
   agentId: string;
   /** Distilled handoff the judge agent reads. */
   handoff: JudgeHandoff;
+  /** Parent workspace/session context for artifact-aware judge tools. */
+  workspaceId?: string;
+  sessionId?: string;
   abortSignal?: AbortSignal;
 }) => Promise<{ ok: true; verdict: ValidationVerdict } | { ok: false; error: string }>;
 

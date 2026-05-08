@@ -1,47 +1,73 @@
 /**
- * Wires the FSM engine's `runJudge` callback to the system-level
- * `judgeAgent` (Phase B7 of melodic-strolling-seal-pt2). The daemon owns
- * this seam: workspace can't import `@atlas/system` (layering), so the
- * daemon constructs the runner once at boot and passes it down via
- * WorkspaceRuntimeOptions.runJudge.
+ * Wires the FSM engine's `runJudge` callback to the system-level judge agent.
  *
- * Today the runner only knows how to dispatch to the bundled `judgeAgent`.
- * The schema's `validate.agent` override (B7) carries the agent id through
- * to fsm-engine's call site; if a future revision wants user-supplied
- * judges (e.g. `fin-judge`), this is the dispatch point — match the
- * `agentId` against a small registry / fall back to the default.
+ * The daemon owns this seam: workspace cannot import `@atlas/system`
+ * directly (layering), so the daemon constructs the runner once at boot and
+ * passes it down via `WorkspaceRuntimeOptions.runJudge`.
  *
- * K2 (pt3): the judge agent now routes through the delegate primitive,
- * so it consumes optional `ctx.config.budget` (DelegationBudget) and
- * `ctx.config.depth` plumbing. The current `JudgeAgentRunner` signature
- * doesn't carry those — when the FSM-side wiring grows budget/depth fields,
- * thread them into `ctx.config` here. Likewise `ctx.tools` is empty today;
- * to give the judge `artifacts_get` (so it can selectively pull lifted
- * bytes), inject the MCP server's tool map here.
+ * The runner currently dispatches to the bundled `judgeAgent`. If user-supplied
+ * judges become supported, this is the dispatch point for matching
+ * `validate.agent` against a small registry. The judge receives the parent
+ * workspace/session context plus artifact-inspection tools so lifted tool
+ * results can be fetched on demand.
  */
 
+import type { AtlasTools } from "@atlas/agent-sdk";
 import type { JudgeAgentRunner } from "@atlas/fsm-engine";
 import type { PlatformModels } from "@atlas/llm";
 import { logger } from "@atlas/logger";
+import { createMCPTools } from "@atlas/mcp";
+import { getAtlasPlatformServerConfig } from "@atlas/oapi-client";
 import { judgeAgent } from "@atlas/system/agents";
 import { stringifyError } from "@atlas/utils";
 
+const JUDGE_TOOL_NAMES = ["artifacts_get", "parse_artifact"] as const;
+
+async function createJudgeToolMap(
+  abortSignal?: AbortSignal,
+): Promise<{ tools: AtlasTools; dispose: () => Promise<void> }> {
+  const result = await createMCPTools(
+    { "atlas-platform": getAtlasPlatformServerConfig() },
+    logger.child({ component: "judge-tools" }),
+    { signal: abortSignal },
+  );
+  const tools: AtlasTools = {};
+  for (const name of JUDGE_TOOL_NAMES) {
+    const tool = result.tools[name];
+    if (tool) tools[name] = tool;
+  }
+  return { tools, dispose: result.dispose };
+}
+
 export function createJudgeRunner(platformModels: PlatformModels): JudgeAgentRunner {
-  return async ({ agentId, handoff, abortSignal }) => {
+  return async ({ agentId, handoff, workspaceId, sessionId, abortSignal }) => {
     if (agentId !== "judge-agent") {
       logger.warn(
         "validate.agent override requested but only `judge-agent` is wired today; falling back",
         { requested: agentId },
       );
     }
+    let dispose: (() => Promise<void>) | undefined;
     try {
+      let tools: AtlasTools = {};
+      try {
+        const created = await createJudgeToolMap(abortSignal);
+        tools = created.tools;
+        dispose = created.dispose;
+      } catch (toolError) {
+        logger.warn("Failed to create artifact-aware judge tools", {
+          error: stringifyError(toolError),
+        });
+      }
+
+      const judgeSessionId = sessionId ? `judge-${sessionId}` : `judge-${crypto.randomUUID()}`;
       const payload = await judgeAgent.execute(handoff, {
-        tools: {},
+        tools,
         env: {},
         session: {
-          sessionId: `judge-${crypto.randomUUID()}`,
-          workspaceId: "system",
-          streamId: `judge-${Date.now()}`,
+          sessionId: judgeSessionId,
+          workspaceId: workspaceId ?? "system",
+          streamId: judgeSessionId,
         },
         stream: undefined,
         logger: logger.child({ component: "judge-runner" }),
@@ -53,12 +79,20 @@ export function createJudgeRunner(platformModels: PlatformModels): JudgeAgentRun
       }
       return { ok: true, verdict: payload.data };
     } catch (error) {
-      // Propagate caller-driven aborts; treat anything else as a delegate
-      // failure so the action still emits with an advisory verdict.
+      // Propagate caller-driven aborts; treat anything else as a judge failure
+      // so the action still emits with an advisory verdict.
       if (error instanceof DOMException && error.name === "AbortError") {
         throw error;
       }
       return { ok: false, error: stringifyError(error) };
+    } finally {
+      if (dispose) {
+        try {
+          await dispose();
+        } catch (error) {
+          logger.warn("Failed to dispose judge tools", { error: stringifyError(error) });
+        }
+      }
     }
   };
 }

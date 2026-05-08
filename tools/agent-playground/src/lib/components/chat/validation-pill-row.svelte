@@ -91,9 +91,9 @@
     return n.toFixed(2);
   }
 
-  // B7 (melodic-strolling-seal-pt2). Pre-B7 verdicts carried
-  // confidence/threshold; the new judge agent emits only verdict + issues.
-  // The confidence pill renders only on legacy events that still set them.
+  // Legacy verdicts carried confidence/threshold; the current judge agent
+  // emits only verdict + issues. Render confidence only on old events that
+  // still set those fields.
   const confidenceText = $derived.by(() => {
     if (!verdict) return null;
     if (typeof verdict.confidence !== "number" || typeof verdict.threshold !== "number") {

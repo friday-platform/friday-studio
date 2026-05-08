@@ -29,8 +29,8 @@ import { WorkspaceTimeoutConfigSchema } from "./base.ts";
 // are imported from @atlas/agent-sdk above
 
 /**
- * K6 (melodic-strolling-seal-pt3) — workspace-level MCP server config that
- * extends the agent-sdk's `MCPServerConfig` with an optional per-server
+ * Workspace-level MCP server config that extends the agent-sdk's
+ * `MCPServerConfig` with an optional per-server
  * `validation:` override. The `validate-classifier` honors this over its
  * regex / allowlist defaults: `"read-only"` makes ALL tools from that
  * server skip-eligible regardless of name; `"mutating"` makes them

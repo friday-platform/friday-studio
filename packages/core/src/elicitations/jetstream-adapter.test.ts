@@ -230,6 +230,61 @@ describe("JetStreamElicitationStorageAdapter", () => {
     expect(result.data.answer?.answeredAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 
+  it("concurrent answer/decline allows only one terminal write", async () => {
+    const adapter = new JetStreamElicitationStorageAdapter(nc);
+    const created = await adapter.create(
+      baseInput({ workspaceId: `ws-terminal-race-${crypto.randomUUID()}` }),
+    );
+    expect.assert(created.ok === true);
+
+    const [answered, declined] = await Promise.all([
+      adapter.answer({
+        id: created.data.id,
+        answer: { value: "allow_once", answeredAt: new Date().toISOString() },
+      }),
+      adapter.decline({ id: created.data.id, note: "no" }),
+    ]);
+
+    const okCount = [answered, declined].filter((r) => r.ok).length;
+    expect(okCount).toBe(1);
+
+    const got = await adapter.get({ id: created.data.id });
+    expect.assert(got.ok === true);
+    expect(["answered", "declined"]).toContain(got.data?.status);
+    const winner = answered.ok ? answered.data.status : declined.ok ? declined.data.status : null;
+    expect(got.data?.status).toBe(winner);
+  });
+
+  it("concurrent answer/expire allows only one terminal write", async () => {
+    const adapter = new JetStreamElicitationStorageAdapter(nc);
+    const created = await adapter.create(
+      baseInput({
+        workspaceId: `ws-expire-race-${crypto.randomUUID()}`,
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      }),
+    );
+    expect.assert(created.ok === true);
+
+    const [answered, expired] = await Promise.all([
+      adapter.answer({
+        id: created.data.id,
+        answer: { value: "allow_once", answeredAt: new Date().toISOString() },
+      }),
+      adapter.expirePending({ now: new Date(Date.now() + 120_000), limit: 500 }),
+    ]);
+
+    const got = await adapter.get({ id: created.data.id });
+    expect.assert(got.ok === true);
+    expect(["answered", "expired"]).toContain(got.data?.status);
+    if (got.data?.status === "answered") {
+      expect(answered.ok).toBe(true);
+      expect(expired.ok && expired.data.expired.includes(created.data.id)).toBe(false);
+    } else {
+      expect(expired.ok && expired.data.expired.includes(created.data.id)).toBe(true);
+      expect(answered.ok).toBe(false);
+    }
+  });
+
   it("answer on an already-declined elicitation fails with a status-guard error", async () => {
     const adapter = new JetStreamElicitationStorageAdapter(nc);
     const created = await adapter.create(baseInput({ workspaceId: "ws-guard" }));

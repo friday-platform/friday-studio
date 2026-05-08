@@ -1,5 +1,5 @@
 /**
- * Delegation budgets (Phase 8 of melodic-strolling-seal plan).
+ * Delegation budgets.
  *
  * Bounds on `delegate` tool invocations spawned from chat or FSM type:llm
  * actions. Workspace-level defaults; per-job override via JobSpecification
@@ -10,7 +10,7 @@
  * workspace.ts imports it for workspace-level config. Mirrors the
  * permissions.ts pattern from `44f5605`.
  *
- * Runtime enforcement (Phase 8): all five fields below are honored by
+ * Runtime enforcement: all five fields below are honored by
  * `packages/core/src/delegate/index.ts`. `max_cost_usd` is reserved —
  * plumbed through but not enforced until cost-tracking infrastructure
  * lands.

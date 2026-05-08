@@ -1,7 +1,7 @@
 import process from "node:process";
 import { PLATFORM_TOOL_NAMES } from "@atlas/agent-sdk";
 import { resolvePermissions } from "@atlas/config/permissions";
-import { ElicitationStorage } from "@atlas/core/elicitations";
+import { ElicitationStorage, ToolAccessGrants } from "@atlas/core/elicitations";
 import { stringifyError } from "@atlas/utils";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
@@ -141,6 +141,24 @@ export function registerRequestToolAccessTool(server: McpServer, ctx: ToolContex
         });
       }
 
+      const persistentGrant = await ToolAccessGrants.hasGrant({ workspaceId, toolName });
+      if (persistentGrant.ok && persistentGrant.data) {
+        ctx.logger.info("request_tool_access persistent grant", {
+          toolName,
+          workspaceId,
+          sessionId,
+          actionId,
+        });
+        return createSuccessResponse({ ok: true, granted: true, reason: "persistent_allow" });
+      }
+      if (!persistentGrant.ok) {
+        ctx.logger.warn("request_tool_access persistent grant check failed", {
+          toolName,
+          workspaceId,
+          error: persistentGrant.error,
+        });
+      }
+
       if (effective.dangerouslySkipAllowlist) {
         // Bypass branch. Operators read this in ~/.atlas/logs/global.log to
         // spot which jobs run unsandboxed.
@@ -220,12 +238,29 @@ export function registerRequestToolAccessTool(server: McpServer, ctx: ToolContex
         }
         if (terminal.status === "answered") {
           const granted = terminal.value === "allow_once" || terminal.value === "allow_always";
+          let persistent = false;
+          if (terminal.value === "allow_always") {
+            const persisted = await ToolAccessGrants.grantAlways({
+              workspaceId,
+              toolName,
+              sourceElicitationId: created.data.id,
+            });
+            persistent = persisted.ok;
+            if (!persisted.ok) {
+              ctx.logger.warn("request_tool_access allow-always persistence failed", {
+                toolName,
+                workspaceId,
+                error: persisted.error,
+              });
+            }
+          }
           return createSuccessResponse({
             ok: granted,
             granted,
             elicitationId: created.data.id,
             answer: terminal.value,
             reason: granted ? "answered" : "declined",
+            ...(persistent ? { persistent: true } : {}),
             ...(terminal.note ? { note: terminal.note } : {}),
           });
         }

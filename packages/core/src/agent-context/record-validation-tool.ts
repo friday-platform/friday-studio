@@ -1,6 +1,6 @@
 /**
  * `record_validation` — platform tool the LLM calls to record its inline
- * self-check verdict before emitting. Phase B6 of melodic-strolling-seal-pt2.
+ * self-check verdict before emitting.
  *
  * Conditional injection: the FSM runtime adds this to an action's tool
  * catalog only when the resolved validation decision is `"self"`. The

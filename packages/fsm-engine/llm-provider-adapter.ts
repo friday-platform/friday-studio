@@ -152,7 +152,7 @@ export class AtlasLLMProviderAdapter implements LLMProvider {
         result.toolResults,
         // `totalUsage` aggregates across all steps in the streamText loop;
         // `result.usage` is the last-step-only count and would undercount
-        // multi-tool turns. Phase 11 persistence wants the full call cost.
+        // multi-tool turns. Persist the full call cost.
         result.totalUsage,
       ]);
 

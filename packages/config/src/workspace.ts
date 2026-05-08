@@ -29,8 +29,8 @@ export const MemoryOwnEntrySchema = z.object({
   type: MemoryTypeSchema,
   strategy: MemoryStrategySchema,
   /**
-   * Optional TTL override (Phase 6 of melodic-strolling-seal plan).
-   * When set, entries in this store inherit `lifecycle.expiresAt`
+   * Optional TTL override. When set, entries in this store inherit
+   * `lifecycle.expiresAt`
    * computed from the entry's `createdAt + ttl`. Overrides the
    * type-based default (`short_term` → ephemeral, `long_term` →
    * durable). Cleanup remains app-layer: the runtime sweep at

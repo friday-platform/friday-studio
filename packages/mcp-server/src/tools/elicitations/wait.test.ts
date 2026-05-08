@@ -5,16 +5,27 @@ import { waitForTerminalElicitation } from "./wait.ts";
 const mockState = vi.hoisted(() => ({
   status: "pending" as "pending" | "answered",
   expireCalls: 0,
+  getCalls: 0,
+  answerOnGetCall: undefined as number | undefined,
   reset() {
     this.status = "pending";
     this.expireCalls = 0;
+    this.getCalls = 0;
+    this.answerOnGetCall = undefined;
   },
 }));
 
 vi.mock("@atlas/core/elicitations", () => ({
   ElicitationStorage: {
-    get: () =>
-      Promise.resolve({
+    get: () => {
+      mockState.getCalls++;
+      if (
+        mockState.answerOnGetCall !== undefined &&
+        mockState.getCalls >= mockState.answerOnGetCall
+      ) {
+        mockState.status = "answered";
+      }
+      return Promise.resolve({
         ok: true,
         data: {
           id: "elc-1",
@@ -29,7 +40,8 @@ vi.mock("@atlas/core/elicitations", () => ({
             ? { answer: { value: "yes", answeredAt: new Date().toISOString() } }
             : {}),
         },
-      }),
+      });
+    },
     expirePending: () => {
       mockState.expireCalls++;
       return Promise.resolve({
@@ -40,7 +52,9 @@ vi.mock("@atlas/core/elicitations", () => ({
   },
 }));
 
-function makeCtxWithNats(): ToolContext {
+function makeCtxWithNats(
+  options: { answerOnFlush?: boolean } = { answerOnFlush: true },
+): ToolContext {
   const sub = {
     unsubscribe: vi.fn(),
     [Symbol.asyncIterator]: () => ({
@@ -62,7 +76,7 @@ function makeCtxWithNats(): ToolContext {
     natsConnection: {
       subscribe: vi.fn(() => sub),
       flush: vi.fn(() => {
-        mockState.status = "answered";
+        if (options.answerOnFlush) mockState.status = "answered";
         return Promise.resolve();
       }),
     } as unknown as ToolContext["natsConnection"],
@@ -78,6 +92,19 @@ describe("waitForTerminalElicitation", () => {
       workspaceId: "ws-1",
       sessionId: "sess-1",
       expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    });
+
+    expect(terminal).toEqual({ status: "answered", value: "yes" });
+    expect(mockState.expireCalls).toBe(0);
+  });
+
+  it("polls KV while subscribed so a missed stream publish does not wedge the waiter", async () => {
+    mockState.answerOnGetCall = 2;
+    const terminal = await waitForTerminalElicitation(makeCtxWithNats({ answerOnFlush: false }), {
+      id: "elc-1",
+      workspaceId: "ws-1",
+      sessionId: "sess-1",
+      expiresAt: new Date(Date.now() + 2_000).toISOString(),
     });
 
     expect(terminal).toEqual({ status: "answered", value: "yes" });

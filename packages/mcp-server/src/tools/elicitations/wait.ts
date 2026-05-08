@@ -78,10 +78,21 @@ export async function waitForTerminalElicitation(
       // waiting for future stream events.
       const current = await readTerminalElicitation(input.id);
       if (current) return current;
+      let nextMessage: Promise<IteratorResult<{ data: Uint8Array }>> | undefined;
       while (Date.now() < deadlineMs) {
         const remainingMs = Math.max(1, deadlineMs - Date.now());
-        const next = await Promise.race([iter.next(), sleep(remainingMs).then(() => null)]);
-        if (!next || next.done) break;
+        nextMessage ??= iter.next();
+        const next = await Promise.race([
+          nextMessage,
+          sleep(Math.min(WAIT_POLL_MS, remainingMs)).then(() => null),
+        ]);
+        if (!next) {
+          const polled = await readTerminalElicitation(input.id);
+          if (polled) return polled;
+          continue;
+        }
+        nextMessage = undefined;
+        if (next.done) break;
         const text = new TextDecoder().decode(next.value.data);
         const terminal = terminalFromEnvelope(JSON.parse(text));
         if (terminal) return terminal;

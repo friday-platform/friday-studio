@@ -253,7 +253,9 @@ function defaultFilename(mime: string | undefined, toolCtx: { toolName: string }
 function sniffTextMime(s: string): string {
   const trimmed = s.trimStart();
   const head = trimmed.slice(0, 16).toLowerCase();
-  if (head.startsWith("<!doctype") || head.startsWith("<html")) return "text/html";
+  if (head.startsWith("<!doctype") || head.startsWith("<html")) {
+    return "text/html";
+  }
   const first = trimmed[0];
   if (first === "{" || first === "[") {
     // Try a partial parse; on small inputs, also try a full parse. Either
@@ -268,7 +270,9 @@ function sniffTextMime(s: string): string {
       return "application/json";
     }
   }
-  if (trimmed.startsWith("# ") || trimmed.startsWith("---\n")) return "text/markdown";
+  if (trimmed.startsWith("# ") || trimmed.startsWith("---\n")) {
+    return "text/markdown";
+  }
   return "text/plain";
 }
 
@@ -370,30 +374,17 @@ export interface ScrubberOptions {
 }
 
 /**
- * N4 (melodic-strolling-seal-pt3) — post-streamText lift for runtime
- * side-channel persistence.
+ * Lift oversized tool results at the persistence boundary.
  *
- * The pre-N4 architecture installed the scrubber at the MCP-tool-result
- * boundary so the producer LLM saw a marker instead of bytes. For
- * actions that consume tool results inline (inbox-fetcher: gmail batch
- * → emit JSON), the marker forced a round-trip through `artifacts_get`
- * and the LLM frequently bailed into prose instead. The lift's actual
- * value was never producer-LLM-side context shrinkage (the LLM has to
- * fetch the bytes anyway); it was persistence and cross-consumer
- * handoff compactness.
- *
- * This function moves the lift to the persistence boundary: invoked on
- * the runtime's side-channel `toolCalls` array post-streamText, before
- * the side-channel data is mapped to a `step:complete` session event.
- * The producer LLM has already finished (full bytes in its live
- * context); we lift here so the *persisted form* (session events,
- * agentBlocks, cross-consumer refs) stays compact.
+ * Producer LLMs need live tool bytes while they are reasoning, so runtime paths
+ * keep raw tool results in the active model context. Before side-channel
+ * `toolCalls` are mapped to durable `step:complete` session events, this helper
+ * replaces large string payloads with artifact markers so persisted session
+ * events, agentBlocks, and cross-consumer handoffs stay compact.
  *
  * Returns a new array with each entry's `result` field walked through
- * `scrubValue` — large strings replaced with marker text + artifact
- * upload, identical to the pre-N4 MCP-boundary output. Marker shape is
- * stable across the move so existing consumers (G2 marker rendering,
- * legacy session replays) keep working.
+ * `scrubValue` — large strings are uploaded as artifacts and replaced with the
+ * stable marker shape rendered by existing consumers.
  */
 export interface ToolCallForLift {
   toolName: string;
@@ -413,8 +404,8 @@ export async function liftToolResultsForPersist(
   };
   const out: ToolCallForLift[] = [];
   for (const call of toolCalls) {
-    // F3 (review-2): `== null` covers both `undefined` (not set) and
-    // `null` (explicit "no result"). Either way there's nothing to
+    // `== null` covers both `undefined` (not set) and `null` (explicit
+    // "no result"). Either way there's nothing to
     // scrub. Matches the rest of the codebase's nullish-check style.
     if (call.result == null) {
       out.push(call);

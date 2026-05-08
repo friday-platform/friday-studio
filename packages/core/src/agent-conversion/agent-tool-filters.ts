@@ -26,14 +26,9 @@ export const SCOPE_INJECTED_PLATFORM_TOOLS = new Set([
   "memory_save",
   "memory_read",
   "memory_remove",
-  // N5 (melodic-strolling-seal-pt3) — fs_write_file uses workspaceId
-  // to resolve relative paths against the workspace working directory
-  // (`<friday-home>/workspaces/<workspaceId>/`). Pre-N5, relative paths
-  // resolved against `process.cwd()` (the daemon's launch dir), so a
-  // workspace's auto-triage agent writing `triage-reports/triage-*.md`
-  // landed in the worktree on dev-mode daemons. Other fs_* tools
-  // (fs_read_file, fs_glob, fs_grep, fs_list_files) have the same
-  // ambient-cwd behavior; tracking as N5-followup.
+  // fs_write_file uses workspaceId to resolve relative paths against the
+  // workspace working directory (`<friday-home>/workspaces/<workspaceId>/`)
+  // instead of the daemon's launch directory.
   "fs_write_file",
   // HITL tools read sessionId/actionId from the wrapper so Activity can
   // correlate the pending item and the blocked run can resume on answer.
@@ -64,10 +59,9 @@ export interface ToolScope {
    * with the daemon-env floor. Optional — missing means "no per-job
    * override; fall through to workspace + daemon".
    *
-   * 2026-05-06 review N2: prefer setting `resolvedPermissions` (single
-   * source of truth resolved at scope-construction time). Raw
-   * job/workspace fields remain supported for back-compat / call-sites
-   * that don't have a resolution context handy.
+   * Prefer setting `resolvedPermissions` (single source of truth resolved at
+   * scope-construction time). Raw job/workspace fields remain supported for
+   * back-compat / call-sites that don't have a resolution context handy.
    */
   jobPermissions?: PermissionsConfig;
   /**
@@ -87,9 +81,8 @@ export interface ToolScope {
   /**
    * Parent job's effective timeout (ms). When set, scope-injected
    * elicitation tools derive `expiresAt = now + jobTimeoutMs` so the
-   * elicitation TTL matches the job lifetime — per the user-resolved
-   * Phase 12 policy ("tied to job timeout"). When absent, callers fall
-   * back to a tool-local default. Review N3.
+   * elicitation TTL matches the job lifetime. When absent, callers fall back
+   * to a tool-local default.
    */
   jobTimeoutMs?: number;
   /**
@@ -128,8 +121,8 @@ export function wrapPlatformToolsWithScope(
             ...(args as Record<string, unknown>),
             workspaceId: scope.workspaceId,
             ...(scope.workspaceName && { workspaceName: scope.workspaceName }),
-            // Phase 12.C — these flow into `request_tool_access` (and any
-            // future scope-injected tool that needs them). Other wrapped
+            // These flow into `request_tool_access` (and any future
+            // scope-injected tool that needs them). Other wrapped
             // tools ignore unknown fields because their MCP-side schemas
             // don't declare them; Zod parses out only what each tool asks
             // for. Defense in depth still applies: caller-supplied values

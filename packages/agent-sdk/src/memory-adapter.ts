@@ -10,7 +10,7 @@ import { z } from "zod";
 // ── Zod schemas for wire-serialisable types ─────────────────────────────────
 
 /**
- * Narrative-entry lifecycle (Phase 6 of melodic-strolling-seal plan).
+ * Narrative-entry lifecycle.
  *
  * Mirrors {@link ArtifactLifecycleSchema} in `@atlas/core/artifacts`.
  * `durable` (default-on-read) keeps existing entries unaffected;
@@ -38,8 +38,8 @@ export const NarrativeEntrySchema = z.object({
   createdAt: z.string().datetime(),
   metadata: z.record(z.string(), z.unknown()).optional(),
   /**
-   * Phase 6 lifecycle metadata. Optional — entries written by clients
-   * unaware of the field default to `durable` semantics on read.
+   * Lifecycle metadata. Optional — entries written by clients unaware of the
+   * field default to `durable` semantics on read.
    */
   lifecycle: NarrativeLifecycleSchema.optional(),
 });
@@ -99,7 +99,7 @@ export interface NarrativeEntry {
   author?: string;
   createdAt: string;
   metadata?: Record<string, unknown>;
-  /** Phase 6 lifecycle metadata. Absent → durable. */
+  /** Lifecycle metadata. Absent → durable. */
   lifecycle?: NarrativeLifecycle;
 }
 

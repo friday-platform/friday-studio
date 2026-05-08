@@ -94,8 +94,8 @@ export type StepStartEvent = z.infer<typeof StepStartEventSchema>;
  * registry-qualified id (e.g. "anthropic:claude-opus-4-7") of the model
  * that produced the call so retrospective analysis can group by model.
  *
- * Phase 11 of the fan-out-without-fan-in plan — data-layer prerequisite
- * for crystallization. Schema only; no behavior depends on it yet.
+ * Persisted on LLM-backed steps so session history, analytics, and future
+ * cost-aware routing can reason about token usage by model.
  */
 export const StepUsageSchema = z.object({
   inputTokens: z.number().optional(),
@@ -109,7 +109,7 @@ export type StepUsage = z.infer<typeof StepUsageSchema>;
 /**
  * Resolved validation strategy for a `type: llm` (or `case "agent" → type: llm`)
  * action — the runtime's per-action decision after factoring action / job /
- * workspace tiers and the auto classifier (see B1–B5 of melodic-strolling-seal-pt2).
+ * workspace tiers and the auto classifier.
  *
  * - `skip`     — no validation ran; the classifier or an explicit decision
  *                marked the action as not requiring it.
@@ -148,7 +148,7 @@ export type StepValidationIssue = z.infer<typeof StepValidationIssueSchema>;
  *
  * `verdict` is intentionally optional so a `self` action whose LLM forgot
  * to call `record_validation` still emits — observable as missing-verdict
- * without erroring the action. Phase B6 of melodic-strolling-seal-pt2.
+ * without erroring the action.
  */
 export const StepValidationOutputSchema = z.object({
   strategy: ValidationStrategySchema,
@@ -171,9 +171,8 @@ export const StepCompleteEventSchema = z.object({
   error: z.string().optional(),
   /**
    * Optional LLM token usage for this step. Present when the step was an
-   * LLM action; absent for pure agent / tool steps. Phase 11 reservation —
-   * crystallization (feeding successful past run paths into future runs)
-   * uses this for cost-aware selection. See {@link StepUsageSchema}.
+   * LLM action; absent for pure agent / tool steps. See
+   * {@link StepUsageSchema}.
    */
   usage: StepUsageSchema.optional(),
   /**
@@ -313,8 +312,8 @@ export const AgentBlockSchema = z.object({
    * LLM token usage aggregated from this block's `step:complete` event.
    * Present when the underlying step carried `usage` (LLM actions and
    * bundled agents that surface provider usage); absent for pure-agent
-   * steps. Mirrors {@link StepUsageSchema}. J1 of melodic-strolling-seal-pt3
-   * — closes the reducer drop that left this field invisible to UI surfaces.
+   * steps. Mirrors {@link StepUsageSchema} so UI surfaces can display the
+   * same usage captured on `step:complete`.
    */
   usage: StepUsageSchema.optional(),
 });

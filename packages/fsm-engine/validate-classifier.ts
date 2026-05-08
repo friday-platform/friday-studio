@@ -1,20 +1,18 @@
 /**
- * Observability-only classifier (phase B1 of melodic-strolling-seal-pt2).
+ * Runtime validation classifier for FSM `type: llm` actions.
  *
- * Decides what validation strategy WOULD apply per FSM `type: llm` action,
- * without changing runtime behavior. Wired into fsm-engine.ts as a debug log
- * so we can compare decisions against author intent on real workloads BEFORE
- * B2 lands the schema field that flips behavior.
+ * Chooses the automatic strategy used when an action omits `validate` or sets
+ * `validate: auto`:
  *
- * - "skip"     — read-only fetcher / pure formatter / non-llm agent type
- * - "self"     — LLM did real reasoning (or called mutating tools), validate inline
- * - "external" — author opt-in only (B2). The auto classifier never returns this.
+ * - "skip"     — read-only fetcher / pure formatter / non-LLM agent type
+ * - "self"     — LLM did real reasoning or called mutating tools; validate inline
+ * - "external" — author opt-in only. The auto classifier never returns this.
  */
 
 export type ValidateDecision = "skip" | "self" | "external";
 
 /**
- * K6 (melodic-strolling-seal-pt3) — author override per MCP server.
+ * Author override per MCP server.
  * `"read-only"` makes every tool from that server skip-eligible regardless
  * of name; `"mutating"` makes every tool from that server self-eligible.
  * When omitted, the classifier falls back to the per-tool regex defaults
@@ -38,13 +36,13 @@ export interface ClassifierInput {
   /** declaredTools.length > 0 (cached for clarity at call sites). */
   toolsAvailable: boolean;
   /**
-   * K6 — per-MCP `validation:` overrides (workspace-yml authored). Tool
+   * Per-MCP `validation:` overrides (workspace-yml authored). Tool
    * names map by their `<server>/` prefix; built-ins (no prefix) ignore
    * overrides entirely. Wins over the regex defaults.
    */
   mcpServerOverrides?: Record<string, MCPValidationOverride>;
   /**
-   * K6 — `run_code: { readOnly: true }` opt-in. When set, the classifier
+   * `run_code: { readOnly: true }` opt-in. When set, the classifier
    * treats this action's `run_code` invocation as read-only (joins the
    * allowlist) so a structured-output `run_code` action can resolve to
    * `skip`. Default (false / undefined): `run_code` is treated as
@@ -65,13 +63,11 @@ export interface ClassifierResult {
  *
  * `run_code` is intentionally NOT in this list — it can mutate state.
  * Authors who know a particular invocation is genuinely read-only can opt in
- * via `run_code: { readOnly: true }` (K6, melodic-strolling-seal-pt3).
+ * via `run_code: { readOnly: true }`.
  *
- * K6 (M1 dedup): `^search_/`, `^get_/`, `^list_/`, `^view_/` are vendor-
- * agnostic — they match the suffix-after-slash for both gmail and github.
- * Pre-pt3 we also listed `^get_gmail_/` and `^list_gmail_/` (dominated by
- * the more general `^get_/` / `^list_/`) and `^search_/` twice (gmail +
- * github sections). Dedup'd here; semantics unchanged.
+ * Verb-prefix patterns such as `^search_/`, `^get_/`, `^list_/`, and
+ * `^view_/` are vendor-agnostic — they match the suffix-after-slash for
+ * namespaced tools from MCP servers as well as built-in tools.
  */
 export const READ_ONLY_ALLOWLIST: ReadonlyArray<string | RegExp> = [
   // verb-based prefixes (vendor-agnostic — covers gmail, github, etc.)
@@ -114,8 +110,8 @@ function stripPrefix(toolName: string): string {
 
 /**
  * Extract the `<mcp-server>` prefix from a tool name, or `undefined` for
- * built-ins (no slash). K6 — used for per-MCP `validation:` override
- * lookup at classification time.
+ * built-ins (no slash). Used for per-MCP `validation:` override lookup at
+ * classification time.
  */
 function extractServerId(toolName: string): string | undefined {
   const slash = toolName.indexOf("/");
@@ -162,9 +158,9 @@ export function classifyAction(input: ClassifierInput): ClassifierResult {
     return { decision: "skip", reason: `non-llm-agent-type:${input.resolvedAgentType}` };
   }
 
-  // K6 (melodic-strolling-seal-pt3) — apply per-MCP `validation:` overrides
-  // and the `run_code: { readOnly }` opt-in over the regex defaults. Author
-  // intent wins. The closures capture `input` so `every`/`some` callbacks
+  // Apply per-MCP `validation:` overrides and the `run_code: { readOnly }`
+  // opt-in over the regex defaults. Author intent wins. The closures capture
+  // `input` so `every`/`some` callbacks
   // stay terse below.
   const overrides = input.mcpServerOverrides;
   const localIsReadOnly = (t: string): boolean => {

@@ -25,21 +25,14 @@ import { truncateForLedger } from "@atlas/utils";
 import type { ToolCallRepairFunction, UIMessageStreamWriter } from "ai";
 import { stepCountIs, streamText, tool } from "ai";
 import { z } from "zod";
-// N4 (melodic-strolling-seal-pt3): MCP-boundary scrubber wiring removed.
-// The lift now happens at the persistence boundary via
-// `liftToolResultsForPersist` invoked from the workspace runtime + FSM
-// engine side-channel population. See `packages/core/src/artifacts/scrubber.ts`
-// for the post-streamText helper.
+// Oversized tool-result lifting happens at artifact persistence boundaries via
+// `liftToolResultsForPersist` in the workspace runtime and FSM engine. Delegate
+// returns remain compact and scrubbed before parent-visible persistence.
 import { discoverMCPServers, type LinkSummary } from "../mcp-registry/discovery.ts";
 import { FINISH_TOOL_NAME, type FinishInput, finishTool, parseFinishInput } from "./finish-tool.ts";
 import { createDelegateProxyWriter } from "./proxy-writer.ts";
 
 const DELEGATE_TOOL_NAME = "delegate";
-/**
- * Phase 8 — defaults applied when no `delegation:` block in workspace.yml
- * (or when a per-job override leaves a field unset). Match the historical
- * hardcoded constants for back-compat with un-migrated workspaces.
- */
 /**
  * Default delegation budget constants. Exported so callers (notably
  * `fsm-engine`'s pre-strip gate) reference the same values rather than
@@ -95,7 +88,7 @@ export interface DelegateDeps {
   workspaceConfig?: WorkspaceConfig;
   linkSummary?: LinkSummary;
   /**
-   * Phase 8 — resolved delegation budget (per-job merged over workspace).
+   * Resolved delegation budget (per-job merged over workspace).
    * Each unset field falls through to the back-compat defaults above
    * (DEFAULT_MAX_STEPS_PER_CALL, DEFAULT_MAX_OUTPUT_TOKENS, DEFAULT_MAX_DEPTH;
    * wall-clock and input-token are unbounded by default).
@@ -105,8 +98,8 @@ export interface DelegateDeps {
    */
   budget?: DelegationBudget;
   /**
-   * Phase 8 — current delegation depth at the time the parent LLM
-   * invokes delegate. 0 for top-level, parent's depth + 1 for nested.
+   * Current delegation depth at the time the parent LLM invokes delegate.
+   * 0 for top-level, parent's depth + 1 for nested.
    * Compared against `budget?.max_depth ?? DEFAULT_MAX_DEPTH` and used to
    * decide whether the child's tool set keeps `delegate` (allowing
    * further nesting up to the cap) or strips it (today's behavior at
@@ -168,7 +161,7 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
       "Spawn a sub-agent that runs in-process and inherits all of your tools (except delegate itself). Use for arbitrary multi-step work that doesn't map to a more specific tool. Provide a clear goal and a distilled handoff summary — the sub-agent does NOT see your conversation history.",
     inputSchema: DelegateInputSchema,
     execute: async ({ goal, handoff, mcpServers }, { toolCallId }): Promise<DelegateResult> => {
-      // Phase 8 — depth budget. Fail before spawning the child when the
+      // Depth budget. Fail before spawning the child when the
       // parent's depth is already at the cap. The fsm-engine wiring also
       // strips `delegate` from the child's tool set at this depth, so this
       // path is reachable only via a non-FSM caller (chat) or a
@@ -195,8 +188,8 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
       let executionError: Error | undefined;
       let mcpDispose: (() => Promise<void>) | undefined;
       const serverFailures: ServerFailure[] = [];
-      // Phase 8 — track which budget triggered an abort. Set when
-      // `wallTimeSignal` fires or when the per-step input-token watchdog
+      // Track which budget triggered an abort. Set when `wallTimeSignal`
+      // fires or when the per-step input-token watchdog
       // aborts `internalAbort`. Promoted to the result's `reason` field
       // ahead of generic abort/text errors so the parent LLM gets the
       // specific budget that exhausted.
@@ -216,15 +209,15 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
 
       try {
         const inheritedTools = toolSetThunk();
-        // Phase 8 — when the child's effective depth (`depth + 1`) is still
-        // below `max_depth`, keep `delegate` in the tool set so the child
+        // When the child's effective depth (`depth + 1`) is still below
+        // `max_depth`, keep `delegate` in the tool set so the child
         // can re-delegate. Otherwise strip it (today's behavior at the
         // single-level cap). Splitting the destructure makes the keep/strip
         // decision explicit without two near-duplicate code paths.
         const childCanDelegate = depth + 1 < maxDepth;
         const { [DELEGATE_TOOL_NAME]: _parentDelegate, ...withoutDelegate } = inheritedTools;
-        // Phase 8 — when the child can re-delegate, build a fresh delegate
-        // tool bound to `depth + 1`. We reuse the parent's deps (writer,
+        // When the child can re-delegate, build a fresh delegate tool bound
+        // to `depth + 1`. We reuse the parent's deps (writer,
         // session, platformModels, etc. — already in this function's
         // closure) and the same `toolSetThunk` so the grandchild also
         // inherits properly. Without this rebind, the inherited
@@ -282,15 +275,10 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
             if (c) selectedConfigs[id] = c.mergedConfig;
           }
 
-          // N4 (melodic-strolling-seal-pt3) — MCP-boundary scrubber
-          // removed. The pre-N4 lift transformed the child LLM's view of
-          // tool results, which forced consume-immediately children to
-          // round-trip through `artifacts_get` and frequently bail into
-          // prose. The lift's value is persistence + parent-handoff
-          // compactness, not child-LLM context shrinkage; it now lives
-          // in the post-streamText path that emits the delegate's final
-          // answer + tool ledger to the parent. Pre-persist scrubber
-          // remains as defense-in-depth.
+          // Do not lift MCP results before the child LLM sees them. The lift's
+          // value is persistence + parent-handoff compactness, not child-LLM
+          // context shrinkage; persistence paths scrub/lift the delegate's final
+          // answer and ledger before they become durable parent-visible state.
           const serverEntries = Object.entries(selectedConfigs);
           const serverResults = await Promise.allSettled(
             serverEntries.map(([serverId, config]) => {
@@ -353,8 +341,8 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
 
         const conversationalModel = platformModels.get("conversational");
 
-        // Phase 8 — input-token watchdog. The AI SDK's `onStepFinish`
-        // fires after each child step with `usage.inputTokens` for that
+        // Input-token watchdog. The AI SDK's `onStepFinish` fires after
+        // each child step with `usage.inputTokens` for that
         // step. Sum across steps; when the running total exceeds the
         // budget, abort the internal controller so streamText terminates
         // cleanly. Recording `budgetExhaustedReason` lets us return the
@@ -467,8 +455,8 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
           message: executionError.message,
         });
       } finally {
-        // Phase 8 — distinguish budget-driven aborts from caller-driven
-        // aborts. Wall-clock fires its own AbortSignal.timeout; the
+        // Distinguish budget-driven aborts from caller-driven aborts.
+        // Wall-clock fires its own AbortSignal.timeout; the
         // input-token watchdog flips `internalAbort` and stamps
         // `budgetExhaustedReason`. We treat both as the budget reason on
         // the final result; only fall through to the generic
@@ -520,8 +508,8 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
 
       const resultBase = serverFailures.length > 0 ? { toolsUsed, serverFailures } : { toolsUsed };
 
-      // Phase 8 — budget exhaustion takes precedence over caller-driven
-      // aborts and over text-stream errors (the AI SDK surfaces aborts as
+      // Budget exhaustion takes precedence over caller-driven aborts and
+      // over text-stream errors (the AI SDK surfaces aborts as
       // AbortError on `result.text`; we want the structured reason, not
       // the wrapped message).
       if (budgetExhaustedReason) {

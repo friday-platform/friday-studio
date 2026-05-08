@@ -2,14 +2,27 @@ import process from "node:process";
 import { createLogger } from "@atlas/logger";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+const grantState = vi.hoisted(() => ({
+  hasGrant: false,
+  reset() {
+    this.hasGrant = false;
+  },
+}));
+
 vi.mock("@atlas/core/elicitations", async () => {
   const actual = await vi.importActual<typeof import("@atlas/core/elicitations")>(
     "@atlas/core/elicitations",
   );
-  return { ...actual, ElicitationStorage: { create: vi.fn() } };
+  return {
+    ...actual,
+    ElicitationStorage: { create: vi.fn() },
+    ToolAccessGrants: {
+      hasGrant: vi.fn(() => Promise.resolve({ ok: true, data: grantState.hasGrant })),
+    },
+  };
 });
 
-import { ElicitationStorage } from "@atlas/core/elicitations";
+import { ElicitationStorage, ToolAccessGrants } from "@atlas/core/elicitations";
 import { createRequestToolAccessTool } from "./request-tool-access.ts";
 
 interface ToolWithExecute {
@@ -26,6 +39,7 @@ const baseOpts = { workspaceId: "ws_test", sessionId: "chat_session", logger };
 
 describe("createRequestToolAccessTool", () => {
   const create = vi.mocked(ElicitationStorage.create);
+  const hasGrant = vi.mocked(ToolAccessGrants.hasGrant);
   const ENV_KEY = "FRIDAY_DANGEROUSLY_SKIP_PERMISSIONS";
   let prevEnv: string | undefined;
 
@@ -33,6 +47,8 @@ describe("createRequestToolAccessTool", () => {
     prevEnv = process.env[ENV_KEY];
     delete process.env[ENV_KEY];
     create.mockReset();
+    hasGrant.mockClear();
+    grantState.reset();
   });
 
   afterEach(() => {
@@ -43,6 +59,17 @@ describe("createRequestToolAccessTool", () => {
   it("registers a tool keyed `request_tool_access`", () => {
     const tools = createRequestToolAccessTool(baseOpts);
     expect(Object.keys(tools)).toEqual(["request_tool_access"]);
+  });
+
+  it("persistent allow branch — existing allow-always grant returns granted without elicitation", async () => {
+    grantState.hasGrant = true;
+    const tools = createRequestToolAccessTool(baseOpts);
+    const t = tools.request_tool_access as unknown as ToolWithExecute;
+    const result = await t.execute({ toolName: "bash_run", reason: "shell" }, noopCtx);
+
+    expect(result).toEqual({ ok: true, granted: true, reason: "persistent_allow" });
+    expect(create).not.toHaveBeenCalled();
+    expect(hasGrant).toHaveBeenCalledWith({ workspaceId: "ws_test", toolName: "bash_run" });
   });
 
   it("bypass branch — workspacePermissions.dangerouslySkipAllowlist=true returns granted without elicitation", async () => {

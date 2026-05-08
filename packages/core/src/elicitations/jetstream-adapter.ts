@@ -133,9 +133,9 @@ export class JetStreamElicitationStorageAdapter implements ElicitationStorageAda
   }
 
   /**
-   * Publish the current envelope shape to the stream + write to KV.
-   * Both happen on create AND on every transition (answer/decline) so
-   * subscribers always see the latest snapshot via the stream alone.
+   * Create-time write path: publish the pending envelope, then write KV.
+   * Terminal transitions use `transitionPending` so KV CAS decides the winner
+   * before any terminal stream event is published.
    */
   private async writeEnvelope(elicitation: Elicitation): Promise<void> {
     await this.ensureStream();
@@ -147,12 +147,9 @@ export class JetStreamElicitationStorageAdapter implements ElicitationStorageAda
     const ttlMs = Math.max(1000, new Date(elicitation.expiresAt).getTime() - Date.now());
     const h = natsHeaders();
     h.set("Nats-TTL", `${Math.floor(ttlMs / 1000)}s`);
-    // N5 (review-2): stable msg-id keyed on (id, status). Retried
-    // create/answer/decline/expire calls in the broker dedup window
-    // collapse to a single envelope — durable for the audit trail
-    // without producing duplicates after a network retry. Falls within
-    // the 2m broker-default duplicate_window which is appropriate for
-    // user-driven transitions (no FSM-job-class long delays here).
+    // Stable msg-id keyed on (id, status). Retried publishes in the broker
+    // dedup window collapse to a single envelope without producing duplicate
+    // audit events after a network retry.
     h.set("Nats-Msg-Id", `${elicitation.id}:${elicitation.status}`);
 
     const js = this.nc.jetstream();
@@ -233,7 +230,9 @@ export class JetStreamElicitationStorageAdapter implements ElicitationStorageAda
         const view = deriveExpired(elicitation, now);
         if (input.workspaceId !== undefined && view.workspaceId !== input.workspaceId) continue;
         if (input.sessionId !== undefined && view.sessionId !== input.sessionId) continue;
-        if (input.status !== undefined && view.status !== input.status) continue;
+        if (input.status !== undefined && view.status !== input.status) {
+          continue;
+        }
         out.push(view);
       }
       out.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -243,47 +242,70 @@ export class JetStreamElicitationStorageAdapter implements ElicitationStorageAda
     }
   }
 
-  async answer(input: {
-    id: string;
-    answer: ElicitationAnswer;
-  }): Promise<Result<Elicitation, string>> {
+  private async transitionPending(
+    id: string,
+    makeNext: (current: Elicitation) => Elicitation,
+  ): Promise<Result<Elicitation, string>> {
     try {
-      const got = await this.get({ id: input.id });
-      if (!got.ok) return got;
-      if (!got.data) return fail(`Elicitation ${input.id} not found`);
-      if (got.data.status !== "pending") {
-        return fail(`Elicitation ${input.id} already in terminal state: ${got.data.status}`);
+      const kv = await this.kv();
+      const entry = await kv.get(id);
+      if (!entry || entry.operation !== "PUT") {
+        return fail(`Elicitation ${id} not found`);
       }
-      const next: Elicitation = { ...got.data, status: "answered", answer: input.answer };
-      await this.writeEnvelope(next);
+
+      const current = ElicitationSchema.parse(JSON.parse(dec.decode(entry.value)));
+      const view = deriveExpired(current, new Date());
+      if (view.status !== "pending") {
+        return fail(`Elicitation ${id} already in terminal state: ${view.status}`);
+      }
+
+      const next = ElicitationSchema.parse(makeNext(current));
+      const body = enc.encode(JSON.stringify(next));
+      try {
+        await kv.update(id, body, entry.revision);
+      } catch (err) {
+        if (!isCASConflict(err)) throw err;
+        const latest = await this.get({ id });
+        const status = latest.ok && latest.data ? latest.data.status : "unknown";
+        return fail(`Elicitation ${id} already in terminal state: ${status}`);
+      }
+
+      try {
+        await this.publishEnvelope(next);
+      } catch (err) {
+        logger.warn("Failed to publish terminal elicitation envelope after KV update", {
+          elicitationId: id,
+          status: next.status,
+          error: stringifyError(err),
+        });
+      }
       return success(next);
     } catch (err) {
       return fail(stringifyError(err));
     }
   }
 
+  async answer(input: {
+    id: string;
+    answer: ElicitationAnswer;
+  }): Promise<Result<Elicitation, string>> {
+    return await this.transitionPending(input.id, (current) => ({
+      ...current,
+      status: "answered",
+      answer: input.answer,
+    }));
+  }
+
   async decline(input: { id: string; note?: string }): Promise<Result<Elicitation, string>> {
-    try {
-      const got = await this.get({ id: input.id });
-      if (!got.ok) return got;
-      if (!got.data) return fail(`Elicitation ${input.id} not found`);
-      if (got.data.status !== "pending") {
-        return fail(`Elicitation ${input.id} already in terminal state: ${got.data.status}`);
-      }
-      const next: Elicitation = {
-        ...got.data,
-        status: "declined",
-        answer: {
-          value: "declined",
-          ...(input.note ? { note: input.note } : {}),
-          answeredAt: new Date().toISOString(),
-        },
-      };
-      await this.writeEnvelope(next);
-      return success(next);
-    } catch (err) {
-      return fail(stringifyError(err));
-    }
+    return await this.transitionPending(input.id, (current) => ({
+      ...current,
+      status: "declined",
+      answer: {
+        value: "declined",
+        ...(input.note ? { note: input.note } : {}),
+        answeredAt: new Date().toISOString(),
+      },
+    }));
   }
 
   /**
@@ -342,18 +364,20 @@ export class JetStreamElicitationStorageAdapter implements ElicitationStorageAda
         const next: Elicitation = { ...elicitation, status: "expired" };
         const body = enc.encode(JSON.stringify(next));
         try {
-          // F2 (review-2): publish FIRST, CAS-update KV SECOND. Reasoning:
-          // if the publish fails (NATS hiccup), KV still says `pending`
-          // and the next sweeper tick retries. If the publish succeeds
-          // but the CAS fails (concurrent answer/decline), we leave a
-          // phantom `expired` envelope on the stream — but consumers
-          // reading state come through `get()` / `list()` which both
-          // run `deriveExpired()` against the KV-current status, so
-          // they observe the answered/declined value and ignore the
-          // stale envelope. The audit trail captures both transitions
-          // in publish order, which is the honest history.
-          await this.publishEnvelope(next);
+          // KV is the source of truth for terminal-state arbitration.
+          // CAS first so concurrent answer/decline wins cannot leak a
+          // stale `expired` envelope to live waiters. Publish only after
+          // the revision update succeeds; waiters also poll KV, so a
+          // post-CAS publish hiccup does not wedge the blocked run.
           await kv.update(elicitation.id, body, entry.revision);
+          try {
+            await this.publishEnvelope(next);
+          } catch (publishErr) {
+            logger.warn("expirePending: publish after KV update failed", {
+              elicitationId: elicitation.id,
+              error: stringifyError(publishErr),
+            });
+          }
           expired.push(elicitation.id);
         } catch (err) {
           if (isCASConflict(err)) {
@@ -391,8 +415,8 @@ export class JetStreamElicitationStorageAdapter implements ElicitationStorageAda
     const ttlMs = Math.max(1000, new Date(elicitation.expiresAt).getTime() - Date.now());
     const h = natsHeaders();
     h.set("Nats-TTL", `${Math.floor(ttlMs / 1000)}s`);
-    // N5 (review-2): same dedup-msg-id as writeEnvelope so retried
-    // sweeper publishes (post-F2's publish-then-CAS) collapse cleanly.
+    // Same dedup-msg-id as writeEnvelope so retried terminal publishes
+    // collapse cleanly within the broker dedup window.
     h.set("Nats-Msg-Id", `${elicitation.id}:${elicitation.status}`);
     const js = this.nc.jetstream();
     await js.publish(subject, body, { headers: h });
@@ -408,7 +432,9 @@ export class JetStreamElicitationStorageAdapter implements ElicitationStorageAda
  */
 function deriveExpired(elicitation: Elicitation, now: Date): Elicitation {
   if (elicitation.status !== "pending") return elicitation;
-  if (new Date(elicitation.expiresAt).getTime() > now.getTime()) return elicitation;
+  if (new Date(elicitation.expiresAt).getTime() > now.getTime()) {
+    return elicitation;
+  }
   return { ...elicitation, status: "expired" };
 }
 

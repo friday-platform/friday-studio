@@ -1,6 +1,6 @@
 /**
- * B4 (melodic-strolling-seal-pt2). Shared envelope used to thread the
- * resolved validation decision from the FSM engine's `case "agent"` site
+ * Shared envelope used to thread the resolved validation decision from the
+ * FSM engine's `case "agent"` site
  * through the workspace-runtime → orchestrator → agent-server boundary into
  * the LLM-prompt-assembly site (`convertLLMToAgent`).
  *
@@ -23,8 +23,8 @@ export interface ValidateDecisionContext {
   /** Optional skill name override for the `self` path. */
   skill?: string;
   /**
-   * E1 (melodic-strolling-seal-pt2): whether the action declares an
-   * `outputType:` resolving to a structured schema. When `true` AND
+   * Whether the action declares an `outputType:` resolving to a structured
+   * schema. When `true` AND
    * `decision === "self"`, the orchestrator skips `record_validation`
    * tool injection — the structured schema IS the validation contract,
    * and injecting `record_validation` would force toolChoice off the

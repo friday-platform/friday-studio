@@ -102,8 +102,8 @@ export class JetStreamSessionHistoryAdapter implements SessionHistoryAdapter {
       // Stream exists. Reconcile config for streams created before the J2
       // fix (broker default duplicate_window was 2m). `streams.update` is
       // idempotent when the config matches and harmless otherwise.
-      // F1 (review-2): typed catch — if the update itself fails for a
-      // permanent reason (incompatible config field, broker rejection),
+      // Typed catch: if the update itself fails for a permanent reason
+      // (incompatible config field, broker rejection),
       // re-raise instead of silently falling through to `streams.add`
       // (which would fail with stream-already-exists and mask the real
       // error). Mirrors the elicitations adapter's `isStreamNotFound`

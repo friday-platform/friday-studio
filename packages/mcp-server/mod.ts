@@ -9,8 +9,8 @@ export {
   PlatformMCPServer,
   type PlatformMCPServerDependencies,
 } from "./src/platform-server.ts";
-// `record_validation` — phase B6 of melodic-strolling-seal-pt2. Local
-// AI-SDK tool conditionally injected by the FSM runtime when an action's
+// `record_validation` — local AI-SDK tool conditionally injected by the FSM
+// runtime when an action's
 // resolved validation strategy is `"self"`. Canonical implementation in
 // @atlas/core/agent-context (so fsm-engine and the agent orchestrator can
 // both import without pulling mcp-server's daemon dep into their closure);

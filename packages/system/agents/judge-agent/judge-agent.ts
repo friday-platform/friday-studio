@@ -1,28 +1,22 @@
 /**
- * `@friday/judge-agent` — system-level external validator. Phase B7 of
- * melodic-strolling-seal-pt2; routed through the delegate primitive in K2
- * (pt3).
+ * `@friday/judge-agent` — system-level external validator.
  *
- * Replaces the deleted `@atlas/hallucination` runtime hook
- * (`createFSMOutputValidator` + `validateWithLLM` + retry/error policy,
- * ~700 lines) with a bounded sub-agent call. The FSM engine hands the
- * agent a refs-not-bytes handoff (lifted artifacts carry only their id +
- * summary) and the agent emits a structured `validation-verdict`.
+ * The FSM engine hands the agent a refs-not-bytes handoff: lifted artifacts
+ * carry only their id + summary, and the judge can fetch exact bytes on demand
+ * with injected artifact tools. The agent emits a structured
+ * `validation-verdict`.
  *
- * Why delegate instead of `generateObject`:
- *   - Phase 8 budgets (max_input_tokens, max_wall_time_ms, etc.) cap the
- *     judge's resource use rather than running unbounded.
- *   - Phase 11 provenance: the child invocation surfaces in agentBlocks
- *     via the parent writer's `data-delegate-chunk` envelopes.
- *   - `artifacts_get` (and any other tool the runner injects) is available
- *     to the child, so the judge can selectively pull lifted bytes
- *     instead of relying on inline-quoted tool results.
+ * Why delegate instead of a single unbounded object-generation call:
+ *   - Delegation budgets (max_input_tokens, max_wall_time_ms, etc.) cap the
+ *     judge's resource use.
+ *   - The child invocation can surface in session history via the parent
+ *     writer's `data-delegate-chunk` envelopes.
+ *   - `artifacts_get` / `parse_artifact` let the judge selectively inspect
+ *     lifted bytes instead of relying on inline-quoted tool results.
  *
- * Structured-output contract preserved: the child is instructed to emit
- * the validation-verdict JSON via the synthetic `finish` tool's `answer`
- * string. We parse that answer with `repairJson` + `ValidationVerdictSchema`
- * so the verdict shape downstream consumers see is byte-for-byte the same
- * as the pre-K2 `generateObject` result.
+ * Structured-output contract: the child emits validation-verdict JSON via the
+ * synthetic `finish` tool's `answer` string. We parse that answer with
+ * `repairJson` + `ValidationVerdictSchema` before returning it downstream.
  */
 
 import {
@@ -71,7 +65,7 @@ export type JudgeInput = z.infer<typeof JudgeInputSchema>;
  * through to the delegate primitive's back-compat defaults.
  */
 const JudgeConfigSchema = z.object({
-  /** Phase 8 budget for the delegate child. */
+  /** Budget for the delegate child. */
   budget: z.unknown().optional(),
   /** Current delegation depth in the parent context (0 if top-level). */
   depth: z.number().int().nonnegative().optional(),
@@ -94,7 +88,9 @@ function buildHandoffMessage(input: JudgeInput): string {
       lines.push(`### Tool ${i + 1}: ${tc.toolName}${argsBlock}`);
       if (tc.resultArtifactId) {
         lines.push(
-          `Result lifted to artifact ${tc.resultArtifactId} (${tc.resultSummary ?? "no summary"}). Use artifacts_get only if a specific claim depends on the artifact's contents.`,
+          `Result lifted to artifact ${tc.resultArtifactId} (${
+            tc.resultSummary ?? "no summary"
+          }). Use artifacts_get only if a specific claim depends on the artifact's contents.`,
         );
       } else if (tc.resultInline) {
         lines.push("Result (inline):");
@@ -111,7 +107,7 @@ function buildHandoffMessage(input: JudgeInput): string {
 
 /**
  * The child's goal — instructs it to finish with a JSON-encoded
- * validation-verdict, preserving the pre-K2 structured-output contract.
+ * validation-verdict, preserving the structured-output contract.
  */
 const JUDGE_DELEGATE_GOAL =
   "Read the action's input, output, and tool-call manifest. Decide whether each factual claim in the output is sourced from the inputs or tool results. Then call the `finish` tool exactly once with `{ ok: true, answer: <verdict-json> }`, where `<verdict-json>` is a single JSON object conforming to the `validation-verdict` schema (top-level `verdict` discriminator: `pass` | `advisory` | `blocking`). Do not narrate. Do not produce any text outside the `finish` call.";
@@ -181,7 +177,7 @@ export const judgeAgent = createAgent<JudgeInput, ValidationVerdict>({
   displayName: "Judge Agent",
   version: "1.0.0",
   description:
-    "External-validation judge for FSM `validate: external` actions. Reads action output + tool-call manifest and emits a structured validation-verdict via the delegate primitive (Phase 8 budgets, Phase 11 provenance, on-demand artifacts_get). Internal platform agent, not exposed to users.",
+    "External-validation judge for FSM `validate: external` actions. Reads action output + tool-call manifest, inspects artifact refs on demand, and emits a structured validation-verdict. Internal platform agent, not exposed to users.",
   expertise: { examples: [] },
   inputSchema: JudgeInputSchema,
   handler: async (input, ctx) => {
@@ -195,8 +191,7 @@ export const judgeAgent = createAgent<JudgeInput, ValidationVerdict>({
       const depth = cfg?.success ? cfg.data.depth : undefined;
 
       // Bridged writer: forwards delegate envelopes into the agent's
-      // StreamEmitter when present (Phase 11 provenance), no-ops when
-      // running detached.
+      // StreamEmitter when present, no-ops when running detached.
       const bridged = buildBridgedWriter(stream?.emit?.bind(stream));
 
       // The child inherits whichever tools the runner provided —

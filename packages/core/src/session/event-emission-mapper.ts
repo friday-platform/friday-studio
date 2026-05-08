@@ -43,7 +43,7 @@ export interface AgentResultData {
   /**
    * Per-action validation outcome — set on `type: llm` and
    * `case "agent" → type: llm` paths. Three shapes mirror the resolved
-   * strategy. Phase B6 of melodic-strolling-seal-pt2.
+   * strategy.
    */
   validation?: StepValidationOutput;
 }
@@ -122,11 +122,10 @@ export function mapActionToStepComplete(
     output: agentResult?.output,
     artifactRefs: agentResult?.artifactRefs,
     error: event.data.error,
-    // Conditionally spread so absence is preserved on the wire — keeps
-    // pre-Phase-11 events round-trippable through the schema.
+    // Conditionally spread so absence is preserved on the wire.
     ...(agentResult?.usage && { usage: agentResult.usage }),
-    // B6 (melodic-strolling-seal-pt2): structured validation outcome.
-    // Conditionally spread so legacy paths and pure-agent (`type: user` /
+    // Structured validation outcome. Conditionally spread so legacy paths
+    // and pure-agent (`type: user` /
     // `type: atlas`) actions that don't run validation leave the field
     // absent on the wire.
     ...(agentResult?.validation && { validation: agentResult.validation }),

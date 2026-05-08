@@ -1,12 +1,9 @@
 /**
- * Validation verdict shape returned by the external judge agent (B7 of
- * melodic-strolling-seal-pt2).
+ * Validation verdict shape returned by the external judge agent.
  *
- * Phase B7 collapsed the heavy hallucination/detector.ts machinery (~700
- * lines of generateObject + retry + error classification) into a delegate
- * call to `@friday/judge-agent`. The shapes that survive here are the
- * narrow data contract the FSM engine emits on `step:complete.validation`
- * and that the judge agent populates as its `outputType: validation-verdict`.
+ * This is the narrow data contract the FSM engine emits on
+ * `step:complete.validation` and that the judge agent populates as its
+ * `outputType: validation-verdict`.
  *
  * NOTE: "Validator (Workspace)" in `@atlas/config` is a different concept;
  * this module is the post-hoc Output Validator (Hallucination Judge) —
@@ -35,8 +32,8 @@ export type IssueCategory = z.infer<typeof IssueCategorySchema>;
 /**
  * Severity buckets surfaced on `step:complete.validation.issues[].severity`.
  * Kept as a structural superset of what authors can hand to
- * `record_validation` (B6) so the judge-derived shape parses cleanly into
- * the same emit envelope.
+ * `record_validation` so the judge-derived shape parses cleanly into the
+ * same emit envelope.
  */
 export const IssueSeveritySchema = z.enum(["low", "medium", "high", "info", "warn", "error"]);
 export type IssueSeverity = z.infer<typeof IssueSeveritySchema>;

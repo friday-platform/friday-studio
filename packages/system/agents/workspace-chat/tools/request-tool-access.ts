@@ -1,7 +1,7 @@
 import process from "node:process";
 import type { AtlasTools } from "@atlas/agent-sdk";
 import { type PermissionsConfig, resolvePermissions } from "@atlas/config/permissions";
-import { ElicitationStorage } from "@atlas/core/elicitations";
+import { ElicitationStorage, ToolAccessGrants } from "@atlas/core/elicitations";
 import type { Logger } from "@atlas/logger";
 import { tool } from "ai";
 import { z } from "zod";
@@ -32,8 +32,7 @@ export interface CreateRequestToolAccessToolOpts {
 /**
  * Chat-side `request_tool_access` factory. Mirrors the MCP tool at
  * `packages/mcp-server/src/tools/permissions/request-tool-access.ts` so
- * the chat supervisor can elicit tool-access on behalf of the user — the
- * headline use case for Phase 12.
+ * the chat supervisor can elicit tool-access on behalf of the user.
  *
  * Why a chat factory rather than the MCP tool: chat composes `primaryTools`
  * from chat-side factories and doesn't pull from the atlas-platform MCP
@@ -68,6 +67,23 @@ export function createRequestToolAccessTool(opts: CreateRequestToolAccessToolOpt
           workspace: workspacePermissions,
           daemonDangerouslySkipAllowlist,
         });
+
+        const persistentGrant = await ToolAccessGrants.hasGrant({ workspaceId, toolName });
+        if (persistentGrant.ok && persistentGrant.data) {
+          logger.info("request_tool_access persistent grant (chat)", {
+            toolName,
+            workspaceId,
+            sessionId,
+          });
+          return { ok: true, granted: true, reason: "persistent_allow" };
+        }
+        if (!persistentGrant.ok) {
+          logger.warn("request_tool_access persistent grant check failed (chat)", {
+            toolName,
+            workspaceId,
+            error: persistentGrant.error,
+          });
+        }
 
         if (effective.dangerouslySkipAllowlist) {
           logger.info("request_tool_access bypass (chat)", {

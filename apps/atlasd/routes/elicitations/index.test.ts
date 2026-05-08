@@ -19,7 +19,7 @@ import { getTestNc } from "../../../../vitest.setup.ts";
 // Hoisted mock for the storage facade
 // ---------------------------------------------------------------------------
 
-const { mockElicitationStorage } = vi.hoisted(() => ({
+const { mockElicitationStorage, mockToolAccessGrants } = vi.hoisted(() => ({
   mockElicitationStorage: {
     create: vi.fn(),
     get: vi.fn(),
@@ -27,11 +27,16 @@ const { mockElicitationStorage } = vi.hoisted(() => ({
     answer: vi.fn(),
     decline: vi.fn(),
   },
+  mockToolAccessGrants: { grantAlways: vi.fn() },
 }));
 
 vi.mock("@atlas/core", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@atlas/core")>();
-  return { ...actual, ElicitationStorage: mockElicitationStorage };
+  return {
+    ...actual,
+    ElicitationStorage: mockElicitationStorage,
+    ToolAccessGrants: mockToolAccessGrants,
+  };
 });
 
 // Import AFTER the mock so the route binds to the mocked facade.
@@ -71,6 +76,14 @@ function makeElicitation(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockToolAccessGrants.grantAlways.mockResolvedValue(
+    success({
+      workspaceId: "ws_1",
+      toolName: "send_email",
+      scope: "workspace",
+      grantedAt: "2026-05-05T00:30:00.000Z",
+    }),
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -185,6 +198,39 @@ describe("POST /:id/answer", () => {
       | undefined;
     expect(callArg?.answer.answeredAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     expect(callArg?.answer.value).toBe("allow-once");
+  });
+
+  test("allow_always on a tool-allowlist elicitation persists a workspace tool grant", async () => {
+    const pending = makeElicitation({
+      kind: "tool-allowlist",
+      pendingTool: { name: "send_email", args: {} },
+    });
+    const answered = makeElicitation({
+      kind: "tool-allowlist",
+      pendingTool: { name: "send_email", args: {} },
+      status: "answered",
+      answer: {
+        value: "allow_always",
+        answeredBy: "user@x",
+        answeredAt: "2026-05-05T00:30:00.000Z",
+      },
+    });
+    mockElicitationStorage.get.mockResolvedValueOnce(success(pending));
+    mockElicitationStorage.answer.mockResolvedValueOnce(success(answered));
+
+    const res = await createTestApp().request("/elc_1/answer", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ value: "allow_always", answeredBy: "user@x" }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(mockToolAccessGrants.grantAlways).toHaveBeenCalledWith({
+      workspaceId: "ws_1",
+      toolName: "send_email",
+      sourceElicitationId: "elc_1",
+      grantedBy: "user@x",
+    });
   });
 
   test("rejects body missing `value`", async () => {

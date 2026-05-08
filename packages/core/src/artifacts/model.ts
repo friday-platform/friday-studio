@@ -52,10 +52,10 @@ export type ArtifactDataInputWire = z.infer<typeof ArtifactDataInputWireSchema>;
 export const ArtifactTypeSchema = z.literal("file");
 
 /**
- * Lifecycle metadata (Phase 6 of melodic-strolling-seal plan).
+ * Lifecycle metadata.
  *
  * `durable` — persists indefinitely. The default for back-compat with
- * pre-Phase-6 entries that have no `lifecycle` field on read.
+ * entries that have no `lifecycle` field on read.
  *
  * `ephemeral` — bound to a session (FSM session id) or job
  * (workspaceId + jobName). The workspace runtime sweeps these on
@@ -127,8 +127,8 @@ export const ArtifactSchema = z.object({
   slug: SlugSchema.optional(),
   source: z.string().optional(),
   /**
-   * Phase 6 lifecycle metadata. Optional for back-compat — entries
-   * created before Phase 6 have no field; readers treat absence as
+   * Lifecycle metadata. Optional for back-compat — older entries may have
+   * no field; readers treat absence as
    * `{ kind: "durable" }`.
    */
   lifecycle: ArtifactLifecycleSchema.optional(),

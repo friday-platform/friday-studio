@@ -23,10 +23,16 @@ import type { ZodRawShape } from "zod";
 // the supported way to share a binding with the (hoisted) `vi.mock` factory.
 const mockState = vi.hoisted(() => ({
   creates: [] as Record<string, unknown>[],
+  grants: [] as Record<string, unknown>[],
+  hasPersistentGrant: false,
+  getData: null as Record<string, unknown> | null,
   nextId: "elc_test_id",
   nextOk: true,
   reset() {
     this.creates = [];
+    this.grants = [];
+    this.hasPersistentGrant = false;
+    this.getData = null;
     this.nextId = "elc_test_id";
     this.nextOk = true;
   },
@@ -36,7 +42,9 @@ vi.mock("@atlas/core/elicitations", () => ({
   ElicitationStorage: {
     create: (input: Record<string, unknown>) => {
       mockState.creates.push(input);
-      if (!mockState.nextOk) return Promise.resolve({ ok: false, error: "stub failure" });
+      if (!mockState.nextOk) {
+        return Promise.resolve({ ok: false, error: "stub failure" });
+      }
       return Promise.resolve({
         ok: true,
         data: {
@@ -47,10 +55,20 @@ vi.mock("@atlas/core/elicitations", () => ({
         },
       });
     },
-    get: () => Promise.resolve({ ok: true, data: null }),
+    get: () => Promise.resolve({ ok: true, data: mockState.getData }),
     list: () => Promise.resolve({ ok: true, data: [] }),
     answer: () => Promise.resolve({ ok: false, error: "not implemented" }),
     decline: () => Promise.resolve({ ok: false, error: "not implemented" }),
+  },
+  ToolAccessGrants: {
+    hasGrant: () => Promise.resolve({ ok: true, data: mockState.hasPersistentGrant }),
+    grantAlways: (input: Record<string, unknown>) => {
+      mockState.grants.push(input);
+      return Promise.resolve({
+        ok: true,
+        data: { ...input, scope: "workspace", grantedAt: new Date().toISOString() },
+      });
+    },
   },
 }));
 
@@ -229,6 +247,41 @@ describe("request_tool_access — elicitation branch (Phase 12.C)", () => {
     expect((env.question as string).includes("send_email")).toBe(true);
   });
 
+  it("persists allow_always answers as workspace grants", async () => {
+    mockState.nextId = "elc_allow";
+    mockState.getData = {
+      id: "elc_allow",
+      workspaceId: "ws_1",
+      sessionId: "sess_1",
+      kind: "tool-allowlist",
+      question: "Allow?",
+      status: "answered",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      answer: { value: "allow_always" },
+    };
+    const { registered } = captureRegistration();
+    const result = await registered.handler({
+      toolName: "send_email",
+      reason: "x",
+      workspaceId: "ws_1",
+      sessionId: "sess_1",
+    });
+
+    expect(parseBody(result)).toEqual({
+      ok: true,
+      granted: true,
+      elicitationId: "elc_allow",
+      answer: "allow_always",
+      reason: "answered",
+      persistent: true,
+    });
+    expect(mockState.grants).toEqual([
+      { workspaceId: "ws_1", toolName: "send_email", sourceElicitationId: "elc_allow" },
+    ]);
+  });
+
   it("returns an error when ElicitationStorage.create fails", async () => {
     mockState.nextOk = false;
     const { ctx, registered } = captureRegistration();
@@ -262,6 +315,22 @@ describe("request_tool_access — elicitation branch (Phase 12.C)", () => {
     });
     const env = mockState.creates[0] as Record<string, unknown>;
     expect("actionId" in env).toBe(false);
+  });
+
+  it("returns granted without elicitation when an allow-always grant already exists", async () => {
+    mockState.hasPersistentGrant = true;
+    const { registered } = captureRegistration();
+    const result = await registered.handler({
+      toolName: "send_email",
+      reason: "already approved",
+      workspaceId: "ws_1",
+      sessionId: "sess_1",
+      availableToolNames: ["send_email"],
+    });
+
+    expect(result.isError).toBeFalsy();
+    expect(mockState.creates).toHaveLength(0);
+    expect(parseBody(result)).toEqual({ ok: true, granted: true, reason: "persistent_allow" });
   });
 
   it("uses resolvedPermissions when provided, skipping raw resolution (review N2)", async () => {

@@ -7,6 +7,10 @@ import type {
   ElicitationAnswer,
   ElicitationStatus,
 } from "./model.ts";
+import {
+  initToolAccessGrantStorage,
+  resetToolAccessGrantStorageForTests,
+} from "./tool-access-grants.ts";
 import type { ElicitationStorageAdapter, ExpireSweepResult } from "./types.ts";
 
 let adapter: ElicitationStorageAdapter | null = null;
@@ -18,6 +22,7 @@ let adapter: ElicitationStorageAdapter | null = null;
  */
 export function initElicitationStorage(nc: NatsConnection): void {
   adapter = new JetStreamElicitationStorageAdapter(nc);
+  initToolAccessGrantStorage(nc);
 }
 
 /**
@@ -26,6 +31,7 @@ export function initElicitationStorage(nc: NatsConnection): void {
  */
 export function resetElicitationStorageForTests(): void {
   adapter = null;
+  resetToolAccessGrantStorageForTests();
 }
 
 function require_(): ElicitationStorageAdapter {

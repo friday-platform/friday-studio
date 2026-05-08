@@ -1,5 +1,5 @@
 /**
- * Validation defaults (Phase B5 of melodic-strolling-seal-pt2).
+ * Validation defaults.
  *
  * Workspace- and per-job-level defaults for the LLM-output validation
  * policy that the FSM engine resolves per action. Mirrors the
@@ -11,12 +11,12 @@
  *   action.validate
  *     > job.validation.default
  *     > workspace.validation.default
- *     > "auto"  (the B1 classifier)
+ *     > "auto"  (the runtime classifier)
  *
  * Skill name follows the same merge: explicit object-form override on
  * the action wins, then job, then workspace, then the package default.
  *
- * Default of "auto" everywhere preserves the B1 classifier behavior for
+ * Default of "auto" everywhere preserves automatic classifier behavior for
  * unmodified workspaces — no migration required.
  */
 import { z } from "zod";
@@ -30,9 +30,8 @@ export const ValidationDefaultsSchema = z.strictObject({
    */
   default: z.enum(["auto", "skip", "self", "external"]).optional(),
   /**
-   * Default skill name used when the resolved strategy is `self` (or
-   * `external` once B7 lands the validator-agent delegate). Action-level
-   * object-form `validate.skill` still wins.
+   * Default skill name used when the resolved strategy is `self`.
+   * Action-level object-form `validate.skill` still wins.
    */
   skill: z.string().optional(),
 });

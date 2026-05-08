@@ -31,12 +31,11 @@ Usage:
               "working directory; absolute paths are honored as-is.",
           ),
         content: z.string().describe("The content to write to the file"),
-        // N5 (melodic-strolling-seal-pt3): scope-injected by
-        // `wrapPlatformToolsWithScope` from the FSM/orchestrator runtime.
-        // Authors do NOT pass this; the runtime overwrites any
-        // caller-supplied value (defense-in-depth). When absent (CLI
-        // invocations, ad-hoc test calls) we fall back to `process.cwd()`
-        // matching the pre-N5 behavior.
+        // Scope-injected by `wrapPlatformToolsWithScope` from the FSM/
+        // orchestrator runtime. Authors do NOT pass this; the runtime
+        // overwrites any caller-supplied value (defense-in-depth). When
+        // absent (CLI invocations, ad-hoc test calls) we fall back to
+        // `process.cwd()`.
         workspaceId: z
           .string()
           .optional()
@@ -47,8 +46,8 @@ Usage:
       },
     },
     async (params) => {
-      // N5 — relative path base = workspace working directory when we
-      // have a workspaceId, else the daemon's cwd. Absolute paths bypass
+      // Relative path base = workspace working directory when we have a
+      // workspaceId, else the daemon's cwd. Absolute paths bypass
       // this entirely.
       const baseDir = params.workspaceId
         ? path.join(getFridayHome(), "workspaces", params.workspaceId)

@@ -68,8 +68,8 @@ export function convertLLMToAgent(
         // Use agent's system prompt directly - no attribution protocol injection
         let systemPrompt = config.config.prompt || "";
 
-        // B4 (melodic-strolling-seal-pt2): close the case-llm-vs-case-agent
-        // validation asymmetry. The FSM engine resolves the validation
+        // Close the case-llm-vs-case-agent validation asymmetry. The FSM
+        // engine resolves the validation
         // decision in `case "agent"` and threads it through
         // `AgentExecutorOptions.validateDecision` → workspace runtime →
         // `AgentExecutionContext.config` (under the reserved
@@ -82,12 +82,12 @@ export function convertLLMToAgent(
         // `composeValidationBlock` swallow + log; they never block the
         // agent.
         const validateCtx: ValidateDecisionContext = readValidateDecisionFromConfig(ctxConfig);
-        // E1.1 (melodic-strolling-seal-pt3): on the structured + self path,
-        // skip the validation skill body — mirrors the `injectRecordValidation`
+        // On the structured + self path, skip the validation skill body —
+        // mirrors the `injectRecordValidation`
         // predicate below. The skill body says "you MUST call
         // record_validation"; if we've also suppressed the tool injection
-        // (E1, below), the LLM sees contradictory instructions and bails
-        // into prose. Skip both for the structured + self case so verdict
+        // below), the LLM sees contradictory instructions and bails into
+        // prose. Skip both for the structured + self case so verdict
         // is implicit pass on successful complete-tool emission.
         const skipValidationSkillBody =
           validateCtx.decision === "self" && validateCtx.hasOutputType === true;
@@ -116,24 +116,24 @@ export function convertLLMToAgent(
         // Tools are provided via execution context from workspace-level MCP servers
         const filteredTools = filterWorkspaceAgentTools(tools, logger);
 
-        // B6 (melodic-strolling-seal-pt2): inject the `record_validation`
-        // platform tool when the resolved validation decision is `self`. The
-        // FSM engine threads the decision in via `__atlas_validate` (B4); the
+        // Inject the `record_validation` platform tool when the resolved
+        // validation decision is `self`. The FSM engine threads the decision
+        // in via `__atlas_validate`; the
         // skill body composed above instructs the LLM to call this tool with
         // its inline self-check verdict. The captured args are read off the
         // streamText result's toolCalls back in fsm-engine's `case "agent"`
         // post-execution site so `step:complete.validation` carries them
         // identically to the inline `case "llm"` path.
         //
-        // E1 (melodic-strolling-seal-pt2): when the action declares an
-        // `outputType:` (structured schema), the orchestrator skips
+        // When the action declares an `outputType:` (structured schema), the
+        // orchestrator skips
         // `record_validation` injection. The structured schema IS the
         // validation contract; injecting `record_validation` here forces
         // toolChoice off the forced-complete pin and lets the LLM emit
         // free-form prose instead of structured output. Verdict on the
         // structured + self path is implicit pass on successful structured
-        // emission. E1.1 (pt3): the skill body is also skipped on this
-        // path — see `skipValidationSkillBody` above for why.
+        // emission. The skill body is also skipped on this path — see
+        // `skipValidationSkillBody` above for why.
         const injectRecordValidation =
           validateCtx.decision === "self" && !validateCtx.hasOutputType;
         const toolsWithValidation = injectRecordValidation
@@ -215,8 +215,8 @@ export function convertLLMToAgent(
           usage,
         });
 
-        // N2 (melodic-strolling-seal-pt3): defensive fallback for empty
-        // `result.text`. The AI SDK's `result.text` reflects only the
+        // Defensive fallback for empty `result.text`. The AI SDK's
+        // `result.text` reflects only the
         // FINAL step's assistant text. When the LLM ends on a tool call
         // (e.g. `record_validation` injected by the validate:self path)
         // its final assistant message has no text part, so `result.text`
@@ -238,7 +238,7 @@ export function convertLLMToAgent(
               .filter((t): t is string => typeof t === "string" && t.length > 0);
             if (textParts.length > 0) {
               resolvedText = textParts.join("");
-              logger.debug("Recovered empty result.text from earlier step (N2)", {
+              logger.debug("Recovered empty result.text from earlier step", {
                 agentId,
                 recoveredFromStep: i,
                 recoveredChars: resolvedText.length,
