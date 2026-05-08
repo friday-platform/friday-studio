@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   DiscordProviderConfigSchema,
+  GitHubProviderConfigSchema,
   SlackProviderConfigSchema,
   TeamsProviderConfigSchema,
   TelegramProviderConfigSchema,
@@ -8,10 +9,17 @@ import {
 } from "./signals.ts";
 
 /**
- * Canonical 5-kind enum for chat-transport communicators. Single source of
+ * Canonical 6-kind enum for chat-transport communicators. Single source of
  * truth for all surfaces — config, daemon wiring, agent prompts.
  */
-export const CommunicatorKindSchema = z.enum(["slack", "telegram", "discord", "teams", "whatsapp"]);
+export const CommunicatorKindSchema = z.enum([
+  "slack",
+  "telegram",
+  "discord",
+  "teams",
+  "whatsapp",
+  "github",
+]);
 export type CommunicatorKind = z.infer<typeof CommunicatorKindSchema>;
 
 /**
@@ -39,12 +47,15 @@ const WhatsAppCommunicatorSchema = WhatsAppProviderConfigSchema.extend({
   kind: z.literal("whatsapp"),
 });
 
+const GitHubCommunicatorSchema = GitHubProviderConfigSchema.extend({ kind: z.literal("github") });
+
 export const CommunicatorConfigSchema = z.discriminatedUnion("kind", [
   SlackCommunicatorSchema,
   TelegramCommunicatorSchema,
   DiscordCommunicatorSchema,
   TeamsCommunicatorSchema,
   WhatsAppCommunicatorSchema,
+  GitHubCommunicatorSchema,
 ]);
 
 export type CommunicatorConfig = z.infer<typeof CommunicatorConfigSchema>;

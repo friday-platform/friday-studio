@@ -171,6 +171,25 @@ export const DiscordProviderConfigSchema = z.strictObject({
 });
 export type DiscordProviderConfig = z.infer<typeof DiscordProviderConfigSchema>;
 
+export const GitHubProviderConfigSchema = z.strictObject({
+  app_id: z.string().optional().describe("GitHub App ID. Falls back to GITHUB_APP_ID env var."),
+  installation_id: z
+    .string()
+    .optional()
+    .describe("GitHub App installation ID. Falls back to GITHUB_INSTALLATION_ID env var."),
+  api_url: z
+    .string()
+    .optional()
+    .describe(
+      "GitHub REST API base URL. Defaults to https://api.github.com; set for GitHub Enterprise.",
+    ),
+  default_destination: z
+    .string()
+    .optional()
+    .describe("Placeholder for v2 proactive outbound (unused in v1)."),
+});
+export type GitHubProviderConfig = z.infer<typeof GitHubProviderConfigSchema>;
+
 export const TeamsProviderConfigSchema = z.strictObject({
   app_id: z.string().optional().describe("Azure Bot App ID. Falls back to TEAMS_APP_ID env var."),
   app_password: z
