@@ -1,25 +1,14 @@
 /**
- * `atlas migrate` — run pending data migrations directly against NATS.
- *
- * Standalone: connects to the broker (FRIDAY_NATS_URL or default
- * localhost:4222), invokes `runMigrations` from the `jetstream` package
- * — same function the daemon's startup hook calls. No daemon HTTP API
- * involved; the CLI is independent of daemon lifecycle.
+ * `atlas migrate` — run pending data migrations. Idempotent.
  *
  *   atlas migrate                run pending migrations
  *   atlas migrate --list         show every migration entry + status
  *   atlas migrate --dry-run      report what would run without changing state
  *   atlas migrate --json         machine-readable output
  *
- * Daemon also runs the same queue at startup; this command is for
- * recovery scenarios (daemon down + want to inspect / advance state)
- * and for CI/CD pipelines that want to migrate before starting the
- * daemon. Idempotent — re-running is safe.
- *
- * Caveat: in the solo-dev default the daemon spawns nats-server, so
- * if the daemon is down NATS is also down — the CLI will surface a
- * connection error pointing the operator at `atlas daemon start` or
- * external NATS.
+ * Refuses to run mutations while the daemon is up (the daemon owns the
+ * KV migration lock and runs the same queue at startup). `--list` and
+ * `--dry-run` work either way.
  */
 
 import { join } from "node:path";
@@ -28,6 +17,7 @@ import { getAllMigrations } from "@atlas/atlasd/migrations";
 import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
 import { getFridayHome } from "@atlas/utils/paths.server";
+import { load } from "@std/dotenv";
 import {
   type ConnectionHandle,
   connectOrSpawn,
@@ -40,6 +30,7 @@ import {
 } from "jetstream";
 import { errorOutput, infoOutput, successOutput } from "../utils/output.ts";
 import type { YargsInstance } from "../utils/yargs.ts";
+import { relocateJetStreamStore } from "./relocate-jetstream-store.ts";
 
 interface MigrateArgs {
   list?: boolean;
@@ -81,28 +72,60 @@ export function builder(y: YargsInstance) {
     .example("$0 migrate --dry-run", "Preview what would run");
 }
 
-export const handler = async (argv: MigrateArgs): Promise<void> => {
-  const url = resolveNatsUrl({ url: argv.natsUrl });
-  // Same store_dir resolution the daemon uses — env override → daemon
-  // home / jetstream. So if we end up auto-spawning, the spawn reads
-  // (and writes) the same JetStream data the daemon would have served.
-  const cfg = readJetStreamConfig();
-  const storeDir = cfg.server.storeDir.value ?? join(getFridayHome(), "jetstream");
+/**
+ * Load `<friday_home>/.env` into `process.env` so subsequent reads see
+ * the installer's port remap (and any other operator-set values).
+ * Tolerant — missing `.env` is fine on a fresh dev install.
+ */
+export async function loadFridayEnv(fridayHome: string): Promise<void> {
+  try {
+    await load({ envPath: join(fridayHome, ".env"), export: true });
+  } catch {
+    // .env may not exist yet (fresh install); defaults apply.
+  }
+}
 
-  // For mutating runs only: refuse if a daemon is reachable. The daemon
-  // runs the same queue at startup under the same lock, so racing it
-  // would just produce a `MigrationLockError` later — fail early with a
-  // friendlier message. `--list` and `--dry-run` are read-only and stay
-  // available for inspection while the daemon is up.
+export const handler = async (argv: MigrateArgs): Promise<void> => {
+  // .env load must happen before any process.env reads — the
+  // daemon-alive probe below reads FRIDAY_PORT_FRIDAY from it.
+  const fridayHome = getFridayHome();
+  await loadFridayEnv(fridayHome);
+
   const isReadOnly = argv.list || argv.dryRun;
+
+  if (argv.list) {
+    await handleList(argv);
+    return;
+  }
+
+  // The daemon owns the migration lock and runs the same queue at
+  // startup. Racing it just yields a MigrationLockError later — refuse
+  // up front with a friendlier message. Read-only ops skip this.
   if (!isReadOnly && (await isDaemonRunning())) {
+    const port = process.env.FRIDAY_PORT_FRIDAY ?? "8080";
     errorOutput(
-      "Daemon is running on http://localhost:8080 — restart it to apply pending " +
+      `Daemon is running on http://localhost:${port} — restart it to apply pending ` +
         "migrations (`atlas daemon restart`), or stop it to run them standalone. " +
         "`atlas migrate --list` and `--dry-run` work while the daemon is up.",
     );
     process.exit(1);
   }
+
+  // Move legacy data out of $TMPDIR before connecting to NATS — see
+  // relocate-jetstream-store.ts. Skip on dry-run (don't mutate). Throws
+  // on real errors (ENOSPC, etc.); we surface them and bail.
+  if (!argv.dryRun) {
+    try {
+      await relocateJetStreamStore(logger);
+    } catch (err) {
+      errorOutput(`failed to relocate JetStream store: ${stringifyError(err)}`);
+      process.exit(1);
+    }
+  }
+
+  const url = resolveNatsUrl({ url: argv.natsUrl });
+  const cfg = readJetStreamConfig();
+  const storeDir = cfg.server.storeDir.value ?? join(getFridayHome(), "nats");
 
   let handle: ConnectionHandle;
   try {
@@ -119,32 +142,22 @@ export const handler = async (argv: MigrateArgs): Promise<void> => {
   }
 
   const { nc, cleanup } = handle;
-
   try {
     const migrations = await getAllMigrations();
-    if (argv.list) {
-      const records = await listMigrationRecords(nc);
-      const byId = new Map(records.map((r) => [r.id, r]));
-      const entries = migrations.map((m) => ({
-        id: m.id,
-        name: m.name,
-        description: m.description,
-        record: byId.get(m.id) ?? null,
-      }));
-      if (argv.json) {
-        console.log(JSON.stringify({ migrations: entries }, null, 2));
-        return;
-      }
-      printList(entries);
-      return;
-    }
-
     const result = await runMigrations(nc, migrations, logger, {
       dryRun: !!argv.dryRun,
       runner: "cli",
     });
     if (argv.json) {
-      console.log(JSON.stringify(result, null, 2));
+      // Single-line JSON for `--json` parseability — pretty-printing
+      // would split across lines that don't individually parse. Exit
+      // nonzero on failure so callers that key on exit code see it.
+      console.log(
+        JSON.stringify({ ran: result.ran, skipped: result.skipped, failed: result.failed }),
+      );
+      if (result.failed.length > 0) {
+        process.exit(1);
+      }
       return;
     }
     if (argv.dryRun) {
@@ -175,15 +188,61 @@ export const handler = async (argv: MigrateArgs): Promise<void> => {
   }
 };
 
+async function handleList(argv: MigrateArgs): Promise<void> {
+  const url = resolveNatsUrl({ url: argv.natsUrl });
+  const cfg = readJetStreamConfig();
+  const storeDir = cfg.server.storeDir.value ?? join(getFridayHome(), "nats");
+
+  let handle: ConnectionHandle;
+  try {
+    handle = await connectOrSpawn({
+      url,
+      name: "atlas-cli-migrate",
+      storeDir,
+      spawnFallback: !argv.noSpawn,
+      logger,
+    });
+  } catch (err) {
+    errorOutput(stringifyError(err));
+    process.exit(1);
+  }
+  const { nc, cleanup } = handle;
+  try {
+    const migrations = await getAllMigrations();
+    const records = await listMigrationRecords(nc);
+    const byId = new Map(records.map((r) => [r.id, r]));
+    const entries = migrations.map((m) => ({
+      id: m.id,
+      name: m.name,
+      description: m.description,
+      record: byId.get(m.id) ?? null,
+    }));
+    if (argv.json) {
+      console.log(JSON.stringify({ migrations: entries }));
+      return;
+    }
+    printList(entries);
+  } finally {
+    await cleanup();
+  }
+}
+
 /**
  * Cheap probe of the daemon's /health endpoint. 500ms timeout is enough
  * on localhost; failure modes (DNS, connection refused, timeout) all
- * fall through to "no daemon" which is the safe default — the lock in
+ * fall through to "no daemon" — the safe default. The KV lock in
  * `runMigrations` is the actual correctness guard.
+ *
+ * Reads `FRIDAY_PORT_FRIDAY` from `process.env` (already populated by
+ * `loadFridayEnv` at handler entry) so the probe sees the installer's
+ * remapped port (typically 18080) rather than the legacy default 8080.
  */
-async function isDaemonRunning(): Promise<boolean> {
+export async function isDaemonRunning(): Promise<boolean> {
+  const port = process.env.FRIDAY_PORT_FRIDAY ?? "8080";
   try {
-    const res = await fetch("http://localhost:8080/health", { signal: AbortSignal.timeout(500) });
+    const res = await fetch(`http://localhost:${port}/health`, {
+      signal: AbortSignal.timeout(500),
+    });
     return res.ok;
   } catch {
     return false;

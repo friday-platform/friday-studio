@@ -358,6 +358,19 @@ func onReady() {
 		}
 	}()
 
+	// Resolve + log the JetStream store dir once, before building the
+	// process specs. supervisedProcesses() resolves the same value
+	// internally to wire it into nats-server's args; the explicit
+	// log here gives support a single audit line per launcher boot
+	// (and not per nats-server restart) with both the path and its
+	// provenance — `env-from-dotenv` if .env supplied the value,
+	// `default` if the launcher fell back to <friday_home>/jetstream.
+	jetstreamStoreDir, jetstreamStoreSource := resolveJetStreamStoreDir()
+	log.Info("nats-server jetstream store",
+		"path", jetstreamStoreDir,
+		"source", jetstreamStoreSource,
+	)
+
 	// Build project + supervisor.
 	specs := supervisedProcesses(binDir)
 	project := newProjectFromSpecs(specs)

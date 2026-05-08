@@ -19,12 +19,12 @@
   import MCPRegistryImport from "$lib/components/mcp/mcp-registry-import.svelte";
   import MCPServerDetail from "$lib/components/mcp/mcp-server-detail.svelte";
   import {
+    mcpQueries,
     useCheckMCPUpdate,
     useDeleteMCPServer,
     useInstallMCPServer,
     usePullMCPUpdate,
-  } from "$lib/queries/mcp";
-  import { mcpQueries } from "$lib/queries/mcp-queries";
+  } from "$lib/queries/mcp-queries";
 
   // ---------------------------------------------------------------------------
   // Selection from URL param

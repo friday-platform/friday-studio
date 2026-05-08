@@ -112,7 +112,7 @@ export interface AgentAction {
   outputTo?: string;
   /** Explicit result type name for schema validation. */
   outputType?: string;
-  /** Task instructions for the agent. Takes precedence over agent config prompt. */
+  /** Per-step task instructions. Concatenated after the workspace agent's config prompt. */
   prompt?: string;
   /**
    * Step-level skill allowlist. See `AgentActionSchema.skills` in schema.ts.

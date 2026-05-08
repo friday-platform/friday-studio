@@ -121,7 +121,7 @@ export const AgentActionSchema = z.object({
   outputTo: z.string().optional(),
   /** Explicit document type name for output schema lookup. Resolves to JSON Schema from documentTypes. */
   outputType: z.string().optional(),
-  /** Task instructions for the agent. Takes precedence over agent config prompt. */
+  /** Per-step task instructions. Concatenated after the workspace agent's config prompt. */
   prompt: z.string().optional(),
   /** Step-level skill allowlist — see LLMActionSchema.skills for semantics. */
   skills: z.array(z.string()).optional(),

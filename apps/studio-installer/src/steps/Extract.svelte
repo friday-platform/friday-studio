@@ -44,6 +44,15 @@ let tools = $state<Tool[]>([
     args: async () => ({ installDir: await installDir() }),
     status: "pending",
   },
+  {
+    // Runs `friday migrate`. Idempotent. Failures are non-fatal — the
+    // row flips to ✗ and the launcher boots anyway. What `migrate`
+    // does is atlas-cli's concern, not the installer's.
+    display: "Running migrations",
+    command: "migrate",
+    args: async () => ({ installDir: await installDir() }),
+    status: "pending",
+  },
 ]);
 
 async function runTool(idx: number): Promise<void> {
@@ -99,6 +108,21 @@ onMount(async () => {
     // the launcher and the user can re-launch after they Quit.
     // Non-fatal if it fails — see createAppBundleIfDarwin.
     await createAppBundleIfDarwin(dest, store.availableVersion);
+    // Top up `.env` with any platform vars the installer ships defaults
+    // for but the user's `.env` doesn't yet contain. ADD-IF-MISSING —
+    // never overwrites existing values, so a user-customised port or
+    // STORE_DIR survives. Critical: when the wizard runs in update
+    // mode, `write_env_file` is skipped (the user has an API key
+    // already), so this is the only way new defaults like
+    // FRIDAY_JETSTREAM_STORE_DIR reach the installed `.env` on
+    // upgrade. Must run BEFORE migrate so the migrate handler reads
+    // the freshly-written value. Best-effort — a write failure is
+    // logged; the launcher's own defaults still kick in.
+    try {
+      await invoke("ensure_platform_env_vars");
+    } catch (err) {
+      console.warn("ensure_platform_env_vars failed (non-fatal):", err);
+    }
     // Tools run in parallel. Each pip animates independently while its
     // tool resolves. Failures are non-fatal — the row pip flips to ✗,
     // the daemon surfaces a clear 'binary not found' at first agent

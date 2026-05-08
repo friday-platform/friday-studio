@@ -2,11 +2,6 @@ import process from "node:process";
 import type { LinkCredentialRef, MCPServerConfig } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
 import { buildBearerAuthConfig } from "@atlas/core/mcp-registry/auth-config";
-import {
-  LinkCredentialExpiredError,
-  LinkCredentialNotFoundError,
-  NoDefaultCredentialError,
-} from "@atlas/core/mcp-registry/credential-resolver";
 import { discoverMCPServers, type LinkSummary } from "@atlas/core/mcp-registry/discovery";
 import {
   getOfficialOverride,
@@ -25,10 +20,19 @@ import { MCPUpstreamClient } from "@atlas/core/mcp-registry/upstream-client";
 import { createLogger } from "@atlas/logger";
 import { createMCPTools } from "@atlas/mcp";
 import { zValidator } from "@hono/zod-validator";
-import { RetryError } from "@std/async/retry";
 import { stepCountIs, streamText } from "ai";
 import { z } from "zod";
 import { daemonFactory } from "../src/factory.ts";
+import {
+  classifyProbeError,
+  getCachedTools,
+  getInFlightPrewarm,
+  getRaceCapMs,
+  invalidateCache,
+  prewarmTools,
+  probeAndExtract,
+  putCachedTools,
+} from "./mcp-tool-cache.ts";
 
 const logger = createLogger({ name: "mcp-registry-routes" });
 
@@ -41,83 +45,6 @@ function deriveId(name: string): string {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "")
     .slice(0, 64);
-}
-
-/**
- * Classify an MCP tool probe error into a user-facing phase.
- */
-function classifyProbeError(error: unknown): {
-  error: string;
-  phase: "dns" | "connect" | "auth" | "tools";
-} {
-  // Unwrap RetryError so we classify the underlying failure, not the retry wrapper.
-  let inner = error;
-  if (error instanceof RetryError && error.cause) {
-    inner = error.cause;
-  }
-
-  if (
-    inner instanceof LinkCredentialNotFoundError ||
-    inner instanceof LinkCredentialExpiredError ||
-    inner instanceof NoDefaultCredentialError
-  ) {
-    return { error: error instanceof Error ? error.message : String(error), phase: "auth" };
-  }
-
-  if (
-    inner instanceof Error &&
-    inner.name === "MCPStartupError" &&
-    "kind" in inner &&
-    typeof inner.kind === "string"
-  ) {
-    const msg = inner.message + (inner.cause instanceof Error ? ` ${inner.cause.message}` : "");
-    if (isDnsPattern(msg)) {
-      return { error: inner.message, phase: "dns" };
-    }
-    return { error: inner.message, phase: "connect" };
-  }
-
-  if (inner instanceof Error) {
-    const msg = inner.message + (inner.cause instanceof Error ? ` ${inner.cause.message}` : "");
-    if (isDnsPattern(msg)) {
-      return { error: inner.message, phase: "dns" };
-    }
-    if (isConnectPattern(msg)) {
-      return { error: inner.message, phase: "connect" };
-    }
-    if (
-      msg.toLowerCase().includes("tool") &&
-      (msg.toLowerCase().includes("timeout") || msg.toLowerCase().includes("timed out"))
-    ) {
-      return { error: inner.message, phase: "tools" };
-    }
-    return { error: inner.message, phase: "connect" };
-  }
-
-  return { error: String(inner), phase: "connect" };
-}
-
-function isDnsPattern(msg: string): boolean {
-  const lower = msg.toLowerCase();
-  return (
-    lower.includes("enotfound") ||
-    lower.includes("getaddrinfo") ||
-    lower.includes("eai_again") ||
-    lower.includes("eai_nodata") ||
-    lower.includes("name or service not known")
-  );
-}
-
-function isConnectPattern(msg: string): boolean {
-  const lower = msg.toLowerCase();
-  return (
-    lower.includes("econnrefused") ||
-    lower.includes("econnreset") ||
-    lower.includes("etimedout") ||
-    lower.includes("connection refused") ||
-    lower.includes("connect etimedout") ||
-    lower.includes("network is unreachable")
-  );
 }
 
 /**
@@ -270,6 +197,7 @@ export const mcpRegistryRouter = daemonFactory
     // Atomic add - throws if entry already exists
     try {
       await adapter.add(entry);
+      prewarmTools(entry.id, entry.configTemplate, logger);
       return c.json({ server: entry }, 201);
     } catch {
       const suggested = `${entry.id}-${Date.now().toString(36).slice(-4)}`;
@@ -409,6 +337,7 @@ export const mcpRegistryRouter = daemonFactory
 
       // Persist the entry
       await adapter.add(entry);
+      prewarmTools(entry.id, entry.configTemplate, logger);
 
       let warning: string | undefined;
 
@@ -532,6 +461,7 @@ export const mcpRegistryRouter = daemonFactory
     };
 
     await adapter.add(entry);
+    prewarmTools(entry.id, entry.configTemplate, logger);
 
     let warning: string | undefined;
     if (linkProvider) {
@@ -658,6 +588,9 @@ export const mcpRegistryRouter = daemonFactory
           return c.json({ error: "Server was modified concurrently." }, 409);
         }
 
+        invalidateCache(updatedEntry.id);
+        prewarmTools(updatedEntry.id, updatedEntry.configTemplate, logger);
+
         return c.json({ server: updatedEntry });
       } catch (error) {
         logger.error("pull-update failed", { error, id });
@@ -691,6 +624,14 @@ export const mcpRegistryRouter = daemonFactory
       }
 
       await adapter.delete(id);
+      // Deliberate leak window: an in-flight prewarm started moments before
+      // this DELETE will eventually `putCachedTools` *after* this
+      // `invalidateCache(id)`, leaving a stale entry until TTL eviction or
+      // process restart. Re-add with the same config hits the stale entry
+      // (correct tools); re-add with different config sees configHash
+      // mismatch and re-probes. Not worth wiring an AbortController through
+      // prewarm.
+      invalidateCache(id);
       return new Response(null, { status: 204 });
     },
   )
@@ -718,22 +659,50 @@ export const mcpRegistryRouter = daemonFactory
         return c.json({ error: "Server not found" }, 404);
       }
 
+      const cached = getCachedTools(id, server.configTemplate);
+      if (cached) {
+        return c.json({ ok: true as const, tools: cached });
+      }
+
+      // If a prewarm is already in flight (just-added server, cold install
+      // still downloading), wait for it instead of spawning a duplicate
+      // npx/uvx process. Race-cap the wait at 5s — if the cold install runs
+      // longer, return a retryable hint rather than block for the prewarm's
+      // full 60s budget.
+      const inFlight = getInFlightPrewarm(id, server.configTemplate);
+      if (inFlight) {
+        const TIMED_OUT = Symbol("timeout");
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const timed = new Promise<typeof TIMED_OUT>((resolve) => {
+          timer = setTimeout(() => resolve(TIMED_OUT), getRaceCapMs());
+        });
+        const winner = await Promise.race([inFlight, timed]);
+        if (timer) clearTimeout(timer);
+
+        if (winner === TIMED_OUT) {
+          return c.json({
+            ok: false as const,
+            retryable: true as const,
+            error: "MCP server is still starting up. Retry in a few seconds.",
+          });
+        }
+        if (winner.ok) {
+          return c.json({ ok: true as const, tools: winner.tools });
+        }
+        // Prewarm finished with a classified error (DNS, auth, etc.) — surface
+        // it directly instead of forcing the user to retry into the foreground
+        // probe just to learn what went wrong.
+        logger.warn("MCP tool probe failed", {
+          serverId: id,
+          phase: winner.phase,
+          error: winner.error,
+        });
+        return c.json({ ok: false as const, error: winner.error, phase: winner.phase });
+      }
+
       try {
-        const result = await createMCPTools({ [id]: server.configTemplate }, logger, {
-          signal: AbortSignal.timeout(5000),
-        });
-
-        const tools = Object.entries(result.tools).map(([name, tool]) => {
-          const t = tool as Record<string, unknown>;
-          const schema = t.inputSchema as Record<string, unknown> | undefined;
-          return {
-            name,
-            description: typeof t.description === "string" ? t.description : undefined,
-            inputSchema: (schema?.jsonSchema ?? null) as Record<string, unknown> | null,
-          };
-        });
-
-        await result.dispose();
+        const tools = await probeAndExtract(id, server.configTemplate, logger, 5000);
+        putCachedTools(id, server.configTemplate, tools);
         return c.json({ ok: true as const, tools });
       } catch (error) {
         const classified = classifyProbeError(error);

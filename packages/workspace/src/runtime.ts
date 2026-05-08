@@ -81,7 +81,6 @@ import {
   type FSMEngine,
   type FSMEvent,
   type FSMStateSkippedEvent,
-  interpolatePromptPlaceholders,
   type LLMAction,
   type SignalWithContext,
   validateFSMStructure,
@@ -102,9 +101,8 @@ import { parse as parseYAML } from "@std/yaml";
 import { z } from "zod";
 import {
   buildAgentPrompt,
-  buildFinalAgentPrompt,
+  composeAgentPrompt,
   extractAgentConfig,
-  extractAgentConfigPrompt,
   validateAgentOutput,
 } from "../../../apps/atlasd/src/agent-helpers.ts";
 import { generateSessionSummary } from "../../../apps/atlasd/src/session-summarizer.ts";
@@ -2552,8 +2550,6 @@ export class WorkspaceRuntime {
     });
 
     const agentConfig = this.config.workspace.agents?.[agentId];
-
-    const agentConfigPrompt = extractAgentConfigPrompt(agentConfig);
     const agentCustomConfig = extractAgentConfig(agentConfig);
 
     const context = await buildAgentPrompt(
@@ -2565,26 +2561,7 @@ export class WorkspaceRuntime {
       ArtifactStorage,
     );
 
-    // Resolve `{{inputs.x}}` / `{{config.x}}` / `{{signal.payload.x}}` against
-    // the prepare-result payload before composing the final prompt. The LLM
-    // action path does this in `buildContextPrompt`; agent actions skipped it,
-    // so Friday workspaces (which exclusively use agent actions) saw literal
-    // `{{inputs.description}}` and the agent fell back to whatever it could
-    // glean from the appended `## Input` block instead. Interpolating here
-    // makes the convention work uniformly across both action types.
-    const prepareResult = fsmContext.input;
-    const interpolatedActionPrompt = action.prompt
-      ? interpolatePromptPlaceholders(action.prompt, prepareResult)
-      : action.prompt;
-    const interpolatedConfigPrompt = interpolatePromptPlaceholders(
-      agentConfigPrompt,
-      prepareResult,
-    );
-    const prompt = buildFinalAgentPrompt(
-      interpolatedActionPrompt,
-      interpolatedConfigPrompt,
-      context,
-    );
+    const prompt = composeAgentPrompt(action, agentConfig, fsmContext.input, context);
 
     let standingOrdersBlock = "";
     if (process.env.FRIDAY_STANDING_ORDERS_BOOTSTRAP === "1" && this.options.memoryAdapter) {

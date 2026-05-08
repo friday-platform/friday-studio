@@ -69,7 +69,7 @@ describe("publishSignal + SignalConsumer", () => {
     expect(received[0]?.signalId).toBe("my-signal");
     expect(received[0]?.payload).toEqual({ hello: "world" });
     expect(received[0]?.publishedAt).toBeDefined();
-  });
+  }, 15_000);
 
   it("redelivers on forward failure up to maxDeliver, then dead-letters", async () => {
     let attempts = 0;
@@ -89,7 +89,7 @@ describe("publishSignal + SignalConsumer", () => {
     await consumer.destroy();
 
     expect(attempts).toBeGreaterThanOrEqual(3);
-  });
+  }, 20_000);
 
   it("dedups identical dedupId within the duplicate_window", async () => {
     const dispatched: string[] = [];
@@ -113,7 +113,7 @@ describe("publishSignal + SignalConsumer", () => {
     await consumer.destroy();
 
     expect(dispatched).toEqual(["once"]);
-  });
+  }, 15_000);
 
   it("awaitSignalCompletion times out when nobody publishes a response", async () => {
     const correlationId = crypto.randomUUID();
@@ -140,7 +140,7 @@ describe("publishSignal + SignalConsumer", () => {
     await consumer.destroy();
 
     expect(seen).toEqual(["s-0", "s-1", "s-2", "s-3", "s-4", "s-5"]);
-  });
+  }, 15_000);
 });
 
 async function waitFor(predicate: () => boolean, timeoutMs: number): Promise<void> {

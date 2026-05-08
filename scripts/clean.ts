@@ -41,10 +41,10 @@ function isLocalhostUrl(url: string): boolean {
 /**
  * Resolve the JetStream on-disk store directory for the embedded broker.
  * Mirrors the resolution in `apps/atlasd/src/nats-manager.ts`: env override
- * → `<getFridayHome()>/jetstream`.
+ * → `<getFridayHome()>/nats`.
  */
 function resolveEmbeddedStoreDir(): string {
-  return process.env.FRIDAY_JETSTREAM_STORE_DIR ?? join(getFridayHome(), "jetstream");
+  return process.env.FRIDAY_JETSTREAM_STORE_DIR ?? join(getFridayHome(), "nats");
 }
 
 async function clearExternalBroker(force: boolean): Promise<void> {

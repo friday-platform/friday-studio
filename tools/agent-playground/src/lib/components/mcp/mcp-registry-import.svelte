@@ -17,8 +17,12 @@
   import { createDialog } from "@melt-ui/svelte";
   import { createQuery } from "@tanstack/svelte-query";
   import { parseCustomMCPConfig, type ParseResult } from "@atlas/core/mcp-registry/custom-parser";
-  import { mcpQueries, type SearchResult } from "$lib/queries/mcp-queries";
-  import { useAddCustomMCPServer, type AddCustomMCPInput } from "$lib/queries/mcp";
+  import {
+    mcpQueries,
+    useAddCustomMCPServer,
+    type AddCustomMCPInput,
+    type SearchResult,
+  } from "$lib/queries/mcp-queries";
 
   interface Props {
     open: boolean;

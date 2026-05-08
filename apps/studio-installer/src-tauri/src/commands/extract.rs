@@ -109,6 +109,83 @@ mod tests {
     }
 
     #[test]
+    fn promote_replaces_archive_paths_and_preserves_user_data() {
+        // Pin the load-bearing invariant: extract MUST replace any
+        // path the new archive ships AND leave every other path in
+        // dest untouched. A regression that wiped dest before extract
+        // (e.g. by reverting to the rename-to-bak pattern) would
+        // delete user data — chats, memory, workspaces — on every
+        // reinstall. VM-tested 2026-05-06.
+        let tmp = tempfile::tempdir().unwrap();
+        let dest = tmp.path().join("local");
+        let staging = tmp.path().join("local.staging");
+
+        // Seed dest with: a binary tree the new archive will replace
+        // (bin/), plus user data the new archive doesn't ship
+        // (workspaces/, nats/, .env, friday.yml).
+        fs::create_dir_all(dest.join("bin")).unwrap();
+        fs::write(dest.join("bin").join("friday"), b"OLD-BINARY").unwrap();
+        fs::create_dir_all(dest.join("workspaces").join("imported-abc")).unwrap();
+        fs::write(
+            dest.join("workspaces").join("imported-abc").join("workspace.yml"),
+            b"name: dnd campaign",
+        )
+        .unwrap();
+        fs::create_dir_all(dest.join("nats").join("jetstream").join("$G").join("streams").join("CHAT_x")).unwrap();
+        fs::write(
+            dest.join("nats").join("jetstream").join("$G").join("streams").join("CHAT_x").join("meta.inf"),
+            b"chat data",
+        )
+        .unwrap();
+        fs::write(dest.join(".env"), b"ANTHROPIC_API_KEY=secret").unwrap();
+        fs::write(dest.join("friday.yml"), b"models: {}").unwrap();
+
+        // Seed staging with what the archive would produce: a NEW
+        // bin/, plus a fresh friday-launcher binary. Note: archive
+        // does NOT ship workspaces/, nats/, .env, friday.yml.
+        fs::create_dir_all(staging.join("bin")).unwrap();
+        fs::write(staging.join("bin").join("friday"), b"NEW-BINARY").unwrap();
+        fs::write(staging.join("friday-launcher"), b"NEW-LAUNCHER").unwrap();
+
+        promote_staging_into_dest(&staging, &dest).unwrap();
+
+        // Archive paths replaced: bin/friday is the NEW binary.
+        assert_eq!(
+            fs::read(dest.join("bin").join("friday")).unwrap(),
+            b"NEW-BINARY"
+        );
+        assert_eq!(
+            fs::read(dest.join("friday-launcher")).unwrap(),
+            b"NEW-LAUNCHER"
+        );
+
+        // User data untouched: workspaces/, nats/, .env, friday.yml.
+        assert_eq!(
+            fs::read(dest.join("workspaces").join("imported-abc").join("workspace.yml")).unwrap(),
+            b"name: dnd campaign",
+            "workspaces/imported-abc/workspace.yml was deleted — this is the bug we just fixed"
+        );
+        assert_eq!(
+            fs::read(
+                dest.join("nats")
+                    .join("jetstream")
+                    .join("$G")
+                    .join("streams")
+                    .join("CHAT_x")
+                    .join("meta.inf")
+            )
+            .unwrap(),
+            b"chat data",
+            "nats/jetstream/.../CHAT_x was deleted — would destroy chat history"
+        );
+        assert_eq!(
+            fs::read(dest.join(".env")).unwrap(),
+            b"ANTHROPIC_API_KEY=secret"
+        );
+        assert_eq!(fs::read(dest.join("friday.yml")).unwrap(), b"models: {}");
+    }
+
+    #[test]
     fn intermediate_tick_emits_at_or_past_throttle_window() {
         let last = Instant::now();
         // Exactly at the boundary: emit (>= window).
@@ -270,18 +347,30 @@ fn extract_zip(
     Ok(())
 }
 
-/// Backs up an existing install by renaming `<dest>` to `<dest>.bak` (sibling),
-/// extracts the new archive into `<dest>`, then either commits (deletes bak)
-/// or rolls back (restores bak). Treats `<dest>` itself as the install root —
-/// the studio archive expands flat (atlas, link, playground, webhook-tunnel,
-/// gh, cloudflared at the top level).
+/// Extract the studio archive into `<dest>` while preserving every file
+/// in `<dest>` that isn't part of the new archive.
 ///
-/// `on_progress` carries a Tauri Channel the wizard subscribes to for the
-/// running entry count. Per Stack 2 the count is the only progress signal —
-/// no total, since computing it would require an extra streaming pass over
-/// the (often >500 MB) archive. Stack 3 introduces split-destination
-/// + staging + atomic swap; this function keeps the prior `.bak`-rollback
-/// shape so the Stack 2 PR is small.
+/// `<dest>` is the install root (typically `~/.friday/local`). It also
+/// holds user state alongside the binaries: `.env`, `friday.yml`,
+/// `workspaces/`, `nats/` (JetStream store), `uv/`, `link-data/`, etc.
+/// **None of those must be deleted on reinstall** — losing
+/// `workspaces/<id>/workspace.yml` orphans the corresponding
+/// `KV_WORKSPACE_REGISTRY` entry; losing `nats/jetstream/` destroys
+/// every chat / memory / artifact across all workspaces.
+///
+/// Strategy:
+///   1. Extract the archive into a sibling staging dir
+///      `<dest>.staging` (so a partial extract can't taint the live
+///      tree).
+///   2. On success, walk the staging dir's TOP-LEVEL entries. For each
+///      one, atomically replace the corresponding entry in `<dest>` —
+///      the new tree wins for any path the archive ships, but anything
+///      in `<dest>` that the archive doesn't ship (workspaces/, nats/,
+///      uv/, etc.) is left untouched.
+///   3. On failure, drop the staging dir; `<dest>` is unchanged.
+///
+/// `on_progress` carries a Tauri Channel the wizard subscribes to for
+/// the running entry count.
 #[tauri::command]
 pub fn extract_archive(
     src: String,
@@ -304,91 +393,89 @@ pub fn extract_archive(
         return Err(msg);
     }
 
-    let bak_path = dest_path.with_extension("bak");
+    let staging_path = dest_path.with_extension("staging");
 
-    // Clean any stale backup from a prior failed run.
-    if bak_path.exists() {
-        fs::remove_dir_all(&bak_path)
-            .map_err(|e| format!("Failed to remove stale backup: {e}"))?;
+    // Clean any stale staging dir from a prior failed run.
+    if staging_path.exists() {
+        fs::remove_dir_all(&staging_path)
+            .map_err(|e| format!("Failed to remove stale staging dir: {e}"))?;
     }
 
-    // Stop any running studio processes before mutating the install dir —
-    // overwriting a running binary mid-execution is a portability minefield
-    // (Linux silently swaps inode, macOS Gatekeeper revalidates, Windows
-    // outright refuses with sharing violation).
-    if dest_path.exists() {
-        terminate_studio_processes();
-        fs::rename(&dest_path, &bak_path)
-            .map_err(|e| format!("Failed to backup existing install: {e}"))?;
-    }
-
+    // Ensure dest exists (first install) — but DO NOT touch its contents.
     fs::create_dir_all(&dest_path)
         .map_err(|e| format!("Failed to create install dir: {e}"))?;
 
+    fs::create_dir_all(&staging_path)
+        .map_err(|e| format!("Failed to create staging dir: {e}"))?;
+
+    // Stop any running studio processes before swapping binaries —
+    // overwriting a running binary mid-execution is a portability
+    // minefield (Linux silently swaps inode, macOS Gatekeeper
+    // revalidates, Windows outright refuses with sharing violation).
+    terminate_studio_processes();
+
     let mut emitter = ProgressEmitter::new(on_progress);
     let result = if is_tar_gz {
-        extract_tar_gz(&src_path, &dest_path, &mut emitter)
+        extract_tar_gz(&src_path, &staging_path, &mut emitter)
     } else if is_tar_zst {
-        extract_tar_zst(&src_path, &dest_path, &mut emitter)
+        extract_tar_zst(&src_path, &staging_path, &mut emitter)
     } else {
-        extract_zip(&src_path, &dest_path, &mut emitter)
+        extract_zip(&src_path, &staging_path, &mut emitter)
     };
 
-    match result {
-        Ok(()) => {
-            emitter.finish();
-            if bak_path.exists() {
-                // The API Keys wizard step writes ~/.friday/local/.env
-                // and friday.yml *before* extract runs, so the
-                // rename-to-bak above hides them inside the backup
-                // tree. The archive doesn't contain user-state files
-                // (.env, .installed, friday.yml, malformed-yml
-                // backups), so without this copy-back every install
-                // would wipe them — for friday.yml that means the
-                // daemon boots against the default Anthropic chain
-                // and crashes for non-Anthropic users. Glob friday.yml*
-                // to also restore the *.bak.<ts> files
-                // read_friday_yml_or_recover writes during malformed
-                // recovery, so a user who hand-edited can still find
-                // their pre-corruption content.
-                for name in [".env", ".installed", "friday.yml"] {
-                    let src = bak_path.join(name);
-                    if src.exists() && !dest_path.join(name).exists() {
-                        let _ = fs::copy(&src, dest_path.join(name));
-                    }
-                }
-                if let Ok(entries) = fs::read_dir(&bak_path) {
-                    for entry in entries.flatten() {
-                        let name = entry.file_name();
-                        let name_str = name.to_string_lossy();
-                        if name_str.starts_with("friday.yml.bak.") {
-                            let dst = dest_path.join(&name);
-                            if !dst.exists() {
-                                let _ = fs::copy(entry.path(), &dst);
-                            }
-                        }
-                    }
-                }
-                let _ = fs::remove_dir_all(&bak_path);
-            }
-            Ok(())
-        }
-        Err(e) => {
-            let _ = emitter.channel.send(ExtractEvent::Error {
-                message: e.clone(),
-            });
-            // Roll back: drop the partial new install. When a backup
-            // exists, restore it (covers the update path). When it
-            // doesn't, the dest dir was created fresh by us inside
-            // this call — drop it too so a retry starts clean instead
-            // of unpacking on top of a half-extracted tree.
-            if bak_path.exists() {
-                let _ = fs::remove_dir_all(&dest_path);
-                let _ = fs::rename(&bak_path, &dest_path);
-            } else {
-                let _ = fs::remove_dir_all(&dest_path);
-            }
-            Err(e)
-        }
+    if let Err(e) = result {
+        let _ = emitter.channel.send(ExtractEvent::Error {
+            message: e.clone(),
+        });
+        let _ = fs::remove_dir_all(&staging_path);
+        return Err(e);
     }
+
+    emitter.finish();
+
+    // Promote staging into dest. For each top-level entry in staging,
+    // remove the corresponding entry in dest (if any) and rename the
+    // staged version into place. Entries in dest that aren't in the
+    // archive — user data — are never touched.
+    if let Err(e) = promote_staging_into_dest(&staging_path, &dest_path) {
+        let _ = fs::remove_dir_all(&staging_path);
+        return Err(e);
+    }
+
+    // staging should be empty after the renames; clean it up.
+    let _ = fs::remove_dir_all(&staging_path);
+    Ok(())
+}
+
+/// Walk the staging dir's top-level entries and atomically replace the
+/// matching entries in `dest`. Entries in `dest` not present in
+/// staging are left alone — that's how user state survives across
+/// reinstalls.
+fn promote_staging_into_dest(staging: &Path, dest: &Path) -> Result<(), String> {
+    let entries = fs::read_dir(staging)
+        .map_err(|e| format!("read staging dir {}: {e}", staging.display()))?;
+    for entry in entries {
+        let entry = entry.map_err(|e| format!("staging entry: {e}"))?;
+        let name = entry.file_name();
+        let from = staging.join(&name);
+        let to = dest.join(&name);
+        if to.exists() || to.is_symlink() {
+            // Need to drop the existing entry first because rename's
+            // overwrite behaviour differs across platforms (POSIX
+            // overwrites a regular file but errors on a non-empty
+            // directory; Windows errors on any existing target).
+            let target_meta = fs::symlink_metadata(&to)
+                .map_err(|e| format!("stat {}: {e}", to.display()))?;
+            if target_meta.is_dir() && !target_meta.file_type().is_symlink() {
+                fs::remove_dir_all(&to)
+                    .map_err(|e| format!("replace dir {}: {e}", to.display()))?;
+            } else {
+                fs::remove_file(&to)
+                    .map_err(|e| format!("replace file {}: {e}", to.display()))?;
+            }
+        }
+        fs::rename(&from, &to)
+            .map_err(|e| format!("promote {} -> {}: {e}", from.display(), to.display()))?;
+    }
+    Ok(())
 }
