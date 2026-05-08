@@ -80,7 +80,11 @@ export const elicitationQueries = {
         return ListResponseSchema.parse(data).elicitations;
       },
       staleTime: 5_000,
-      refetchInterval: 5_000,
+      // Workspace-scoped views subscribe to the SSE feed; keep polling only
+      // for the global Activity view, which intentionally has no all-workspace
+      // SSE endpoint.
+      refetchInterval: workspaceId ? false : 5_000,
+      refetchIntervalInBackground: false,
     }),
 };
 

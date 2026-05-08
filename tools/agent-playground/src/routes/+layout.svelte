@@ -1,6 +1,7 @@
 <script lang="ts">
   import { NotificationPortal } from "@atlas/ui";
   import { QueryClient, QueryClientProvider } from "@tanstack/svelte-query";
+  import { onMount } from "svelte";
   import { browser } from "$app/environment";
   import "@atlas/ui/tokens.css";
   import "@atlas/ui/colors.css";
@@ -16,9 +17,10 @@
   const { children } = $props();
 
   if (browser) {
-    startHealthPolling();
     void loadUpdateStatus();
   }
+
+  onMount(() => startHealthPolling());
 
   const queryClient = new QueryClient({
     defaultOptions: { queries: { enabled: browser, refetchOnReconnect: true } },

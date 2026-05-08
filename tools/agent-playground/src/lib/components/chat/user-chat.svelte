@@ -382,6 +382,17 @@
       : null,
   );
 
+  // Route changes and component teardown must abort any active AI SDK stream.
+  // Otherwise a chat left waiting on HITL can keep its fetch/SSE connection
+  // alive behind the dev-server proxy after the UI moved elsewhere.
+  $effect(() => {
+    const instance = chat;
+    if (!instance) return;
+    return () => {
+      void instance.stop().catch(() => {});
+    };
+  });
+
   // Pick up an in-flight turn the user navigated away from. 204 = no live
   // stream; if the last loaded message was an unanswered user turn, surface
   // the interrupted banner so they can resend.

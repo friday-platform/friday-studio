@@ -15,26 +15,46 @@ type DaemonHealthState = { connected: boolean; loading: boolean };
 // deno-lint-ignore prefer-const
 let state: DaemonHealthState = $state({ connected: false, loading: true });
 let polling = false;
+let interval: ReturnType<typeof setInterval> | null = null;
+let inFlight: AbortController | null = null;
 
 async function check() {
+  if (inFlight) return;
+  const controller = new AbortController();
+  inFlight = controller;
+  const timeout = setTimeout(() => controller.abort(), 4_500);
   try {
-    const res = await fetch("/api/daemon/health");
+    const res = await fetch("/api/daemon/health", { signal: controller.signal });
     state.connected = res.ok;
   } catch {
     state.connected = false;
   } finally {
+    clearTimeout(timeout);
+    if (inFlight === controller) inFlight = null;
     state.loading = false;
   }
 }
 
 /**
  * Begin polling daemon health. Safe to call multiple times — only starts once.
+ * Returns a cleanup callback for HMR/component teardown.
  */
-export function startHealthPolling() {
-  if (polling) return;
+export function startHealthPolling(): () => void {
+  if (polling) return stopHealthPolling;
   polling = true;
-  check();
-  setInterval(check, 5_000);
+  void check();
+  interval = setInterval(() => void check(), 5_000);
+  return stopHealthPolling;
+}
+
+export function stopHealthPolling(): void {
+  if (interval !== null) {
+    clearInterval(interval);
+    interval = null;
+  }
+  polling = false;
+  inFlight?.abort();
+  inFlight = null;
 }
 
 /** Trigger an immediate health check (used by retry buttons). */
