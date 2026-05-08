@@ -45,12 +45,7 @@ const ListResponseSchema = z.object({
  * differs from the workspace-scoped one so the global view never shows
  * scoped data and vice-versa.
  */
-export type ElicitationListKey = readonly [
-  "daemon",
-  "elicitations",
-  "list",
-  string | null,
-];
+export type ElicitationListKey = readonly ["daemon", "elicitations", "list", string | null];
 
 export function elicitationListKey(workspaceId: string | null): ElicitationListKey {
   return ["daemon", "elicitations", "list", workspaceId] as const;
@@ -85,6 +80,7 @@ export const elicitationQueries = {
         return ListResponseSchema.parse(data).elicitations;
       },
       staleTime: 5_000,
+      refetchInterval: 5_000,
     }),
 };
 
@@ -111,14 +107,11 @@ export function useAnswerElicitation() {
       answeredBy?: string;
     }): Promise<Elicitation> => {
       const { id, ...body } = input;
-      const res = await fetch(
-        `/api/daemon/api/elicitations/${encodeURIComponent(id)}/answer`,
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(body),
-        },
-      );
+      const res = await fetch(`/api/daemon/api/elicitations/${encodeURIComponent(id)}/answer`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
       if (!res.ok) {
         const text = await res.text().catch(() => "");
         throw new Error(`answer failed: ${res.status} ${text}`);
@@ -135,14 +128,11 @@ export function useDeclineElicitation() {
   return createMutation(() => ({
     mutationFn: async (input: { id: string; note?: string }): Promise<Elicitation> => {
       const { id, ...body } = input;
-      const res = await fetch(
-        `/api/daemon/api/elicitations/${encodeURIComponent(id)}/decline`,
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(body),
-        },
-      );
+      const res = await fetch(`/api/daemon/api/elicitations/${encodeURIComponent(id)}/decline`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
       if (!res.ok) {
         const text = await res.text().catch(() => "");
         throw new Error(`decline failed: ${res.status} ${text}`);
@@ -165,10 +155,7 @@ export function useDeclineElicitation() {
  *
  * Exported so the page-level SSE handler can reuse the same merge logic.
  */
-export function mergeElicitationIntoCache(
-  queryClient: QueryClient,
-  next: Elicitation,
-): void {
+export function mergeElicitationIntoCache(queryClient: QueryClient, next: Elicitation): void {
   const merge = (prev: Elicitation[] | undefined): Elicitation[] => {
     const list = prev ?? [];
     const idx = list.findIndex((e) => e.id === next.id);
@@ -178,10 +165,7 @@ export function mergeElicitationIntoCache(
     return copy;
   };
   queryClient.setQueryData<Elicitation[]>(elicitationListKey(null), merge);
-  queryClient.setQueryData<Elicitation[]>(
-    elicitationListKey(next.workspaceId),
-    merge,
-  );
+  queryClient.setQueryData<Elicitation[]>(elicitationListKey(next.workspaceId), merge);
 }
 
 function mergeAndInvalidate(queryClient: QueryClient, next: Elicitation): void {

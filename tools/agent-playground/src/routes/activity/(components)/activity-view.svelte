@@ -52,14 +52,11 @@
   const elicitations = $derived<Elicitation[]>(listQuery.data ?? []);
 
   // Workspace list — drives the workspace filter dropdown on the
-  // global view and the per-workspace SSE subscriptions. Scoped view
-  // doesn't render the dropdown so the query is just unused there;
-  // TanStack dedupes against the sidebar's copy so this is essentially free.
+  // global view. Scoped view doesn't render the dropdown so the query
+  // is just unused there; TanStack dedupes against the sidebar's copy
+  // so this is essentially free.
   const workspacesQuery = createQuery(() => workspaceQueries.enriched());
   const workspaceOptions = $derived(workspacesQuery.data ?? []);
-  const streamWorkspaceIds = $derived(
-    workspaceId ? [workspaceId] : workspaceOptions.map((workspace) => workspace.id),
-  );
 
   // ---------------------------------------------------------------------------
   // Live tick — drives the countdown + lazy-expired status
@@ -80,35 +77,28 @@
     if (!browser) return;
     if (!listQuery.isSuccess) return;
 
-    const workspaceIds = streamWorkspaceIds;
-    if (workspaceIds.length === 0) return;
+    if (!workspaceId) return;
 
-    const sources = workspaceIds.map((id) => {
-      const url = new URL("/api/daemon/api/elicitations/stream", globalThis.location.origin);
-      url.searchParams.set("workspaceId", id);
+    const url = new URL("/api/daemon/api/elicitations/stream", globalThis.location.origin);
+    url.searchParams.set("workspaceId", workspaceId);
 
-      const es = new EventSource(url.toString());
-      es.addEventListener("error", () => {
-        // EventSource auto-reconnects; surfacing for devtools when the
-        // daemon's NATS isn't ready (503) or the tab gets a transient drop.
-        console.error("Elicitations SSE feed errored (EventSource will retry)");
-      });
-      es.addEventListener("message", (e) => {
-        let parsed: Elicitation;
-        try {
-          parsed = ElicitationSchema.parse(JSON.parse(e.data));
-        } catch (err) {
-          console.error("Failed to parse elicitation SSE event", err);
-          return;
-        }
-        mergeElicitationIntoCache(queryClient, parsed);
-      });
-      return es;
+    const es = new EventSource(url.toString());
+    es.addEventListener("error", () => {
+      // EventSource auto-reconnects; surfacing for devtools when the
+      // daemon's NATS isn't ready (503) or the tab gets a transient drop.
+      console.error("Elicitations SSE feed errored (EventSource will retry)");
     });
-
-    return () => {
-      for (const es of sources) es.close();
-    };
+    es.addEventListener("message", (e) => {
+      let parsed: Elicitation;
+      try {
+        parsed = ElicitationSchema.parse(JSON.parse(e.data));
+      } catch (err) {
+        console.error("Failed to parse elicitation SSE event", err);
+        return;
+      }
+      mergeElicitationIntoCache(queryClient, parsed);
+    });
+    return () => es.close();
   });
 
   // ---------------------------------------------------------------------------

@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { ElicitationSchema, type Elicitation } from "@atlas/core/elicitations/model";
+  import type { Elicitation } from "@atlas/core/elicitations/model";
   import { Collapsible, Dialog, IconLarge, IconSmall } from "@atlas/ui";
-  import { createQuery, useQueryClient } from "@tanstack/svelte-query";
+  import { createQuery } from "@tanstack/svelte-query";
   import { browser } from "$app/environment";
   import { page } from "$app/state";
   import CreateWorkspaceForm from "$lib/components/workspace/create-workspace-form.svelte";
@@ -9,10 +9,7 @@
   import { daemonHealth } from "$lib/daemon-health.svelte";
   import { countPendingElicitations } from "$lib/elicitation-counts.ts";
   import { workspaceQueries } from "$lib/queries";
-  import {
-    elicitationQueries,
-    mergeElicitationIntoCache,
-  } from "$lib/queries/elicitation-queries.ts";
+  import { elicitationQueries } from "$lib/queries/elicitation-queries.ts";
   import type { Component } from "svelte";
   import { writable } from "svelte/store";
 
@@ -24,11 +21,9 @@
   let showTooltip = $state(false);
   let addTab = $state<"create" | "upload">("create");
 
-  const queryClient = useQueryClient();
   const workspacesQuery = createQuery(() => workspaceQueries.enriched());
   const elicitationsQuery = createQuery(() => elicitationQueries.list(null));
   const elicitations = $derived<Elicitation[]>(elicitationsQuery.data ?? []);
-  const elicitationStreamWorkspaceIds = $derived((workspacesQuery.data ?? []).map((ws) => ws.id));
 
   let nowMs = $state<number>(Date.now());
   $effect(() => {
@@ -37,37 +32,6 @@
       nowMs = Date.now();
     }, 30_000);
     return () => clearInterval(timer);
-  });
-
-  $effect(() => {
-    if (!browser) return;
-    if (!elicitationsQuery.isSuccess) return;
-    const workspaceIds = elicitationStreamWorkspaceIds;
-    if (workspaceIds.length === 0) return;
-
-    const sources = workspaceIds.map((workspaceId) => {
-      const url = new URL("/api/daemon/api/elicitations/stream", globalThis.location.origin);
-      url.searchParams.set("workspaceId", workspaceId);
-      const es = new EventSource(url.toString());
-      es.addEventListener("message", (event) => {
-        let parsed: Elicitation;
-        try {
-          parsed = ElicitationSchema.parse(JSON.parse(event.data));
-        } catch (err) {
-          console.error("Failed to parse sidebar elicitation SSE event", err);
-          return;
-        }
-        mergeElicitationIntoCache(queryClient, parsed);
-      });
-      es.addEventListener("error", () => {
-        console.error("Sidebar elicitations SSE feed errored (EventSource will retry)");
-      });
-      return es;
-    });
-
-    return () => {
-      for (const es of sources) es.close();
-    };
   });
 
   const globalPendingElicitations = $derived(countPendingElicitations(elicitations, nowMs));
