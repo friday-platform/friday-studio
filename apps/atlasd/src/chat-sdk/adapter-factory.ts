@@ -45,7 +45,6 @@ export type PlatformCredentials =
       webhookSecret: string;
       botUserSlug: string;
       botUserId: number;
-      apiUrl?: string;
     };
 
 /** Supported chat-capable platform providers. */
@@ -114,7 +113,6 @@ function buildAdapter(creds: PlatformCredentials): Adapter {
         webhookSecret: creds.webhookSecret,
         userName: creds.botUserSlug,
         botUserId: creds.botUserId,
-        apiUrl: creds.apiUrl,
       });
   }
 }

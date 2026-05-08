@@ -77,12 +77,13 @@ const SlackLinkSecretSchema = z.object({
 });
 
 // GitHub App secret as stored in Link. `bot_user_slug` (with literal `[bot]`
-// suffix) and `bot_user_id` are auto-populated by the github-app provider's
-// `health()` via `autoFields()` — both are always present in a successfully
-// saved credential. `app_id` is stored as a number; the chat-sdk adapter
-// expects it as a string, conversion happens at the resolver boundary.
-// `installation_id` is intentionally NOT forwarded to the adapter — the
-// chat-sdk multi-tenant mode auto-extracts it from inbound webhook payloads.
+// suffix) and `bot_user_id` are populated by the github-app provider's
+// `health()` via the credentials route's metadata merge — both are always
+// present in a successfully saved credential. `app_id` is stored as a
+// number; the chat-sdk adapter expects it as a string, conversion happens
+// at the resolver boundary. `installation_id` is intentionally NOT
+// forwarded to the adapter — the chat-sdk multi-tenant mode auto-extracts
+// it from inbound webhook payloads.
 const GithubLinkSecretSchema = z.object({
   app_id: z.number().int().positive(),
   private_key: z.string().min(1),
@@ -90,7 +91,6 @@ const GithubLinkSecretSchema = z.object({
   installation_id: z.number().int().positive(),
   bot_user_slug: z.string().min(1),
   bot_user_id: z.number().int().positive(),
-  api_url: z.string().optional(),
 });
 
 export interface ChatSdkInstanceConfig {
@@ -826,8 +826,7 @@ async function resolveGithubFromLink(
     return null;
   }
 
-  const { app_id, private_key, webhook_secret, bot_user_slug, bot_user_id, api_url } =
-    secretParse.data;
+  const { app_id, private_key, webhook_secret, bot_user_slug, bot_user_id } = secretParse.data;
   return {
     credentials: {
       kind: "github",
@@ -836,7 +835,6 @@ async function resolveGithubFromLink(
       webhookSecret: webhook_secret,
       botUserSlug: bot_user_slug,
       botUserId: bot_user_id,
-      ...(api_url ? { apiUrl: api_url } : {}),
     },
     credentialId: wiring.credentialId,
   };

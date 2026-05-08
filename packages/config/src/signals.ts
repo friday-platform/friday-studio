@@ -177,12 +177,6 @@ export const GitHubProviderConfigSchema = z.strictObject({
     .string()
     .optional()
     .describe("GitHub App installation ID. Falls back to GITHUB_INSTALLATION_ID env var."),
-  api_url: z
-    .string()
-    .optional()
-    .describe(
-      "GitHub REST API base URL. Defaults to https://api.github.com; set for GitHub Enterprise.",
-    ),
   default_destination: z
     .string()
     .optional()

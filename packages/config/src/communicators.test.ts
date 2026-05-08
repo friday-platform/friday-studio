@@ -63,14 +63,8 @@ describe("CommunicatorConfigSchema", () => {
         kind: "github",
         app_id: "12345",
         installation_id: "67890",
-        api_url: "https://api.github.com",
       });
-      expect(parsed).toEqual({
-        kind: "github",
-        app_id: "12345",
-        installation_id: "67890",
-        api_url: "https://api.github.com",
-      });
+      expect(parsed).toEqual({ kind: "github", app_id: "12345", installation_id: "67890" });
     });
   });
 
