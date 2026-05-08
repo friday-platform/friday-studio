@@ -21,7 +21,10 @@
     useDeclineElicitation,
   } from "$lib/queries/elicitation-queries.ts";
   import {
+    buildGroupedOptionAnswer,
     buildNestedChoiceAnswer,
+    formatChoiceComments,
+    parseGroupedOptionPrompt,
     parseNestedChoicePrompt,
   } from "$lib/human-input/nested-choice.ts";
 
@@ -49,6 +52,7 @@
    */
   let selectedValue = $state<string>("");
   let nestedChoices = $state<Record<string, string>>({});
+  let choiceComments = $state<Record<string, string>>({});
   let freeText = $state<string>("");
   let note = $state<string>("");
 
@@ -57,6 +61,7 @@
     elicitation.id;
     selectedValue = elicitation.options?.[0]?.value ?? "";
     nestedChoices = {};
+    choiceComments = {};
     freeText = "";
     note = "";
   });
@@ -67,9 +72,13 @@
   const inFlight = $derived(answerMutation.isPending || declineMutation.isPending);
 
   const hasOptions = $derived((elicitation.options?.length ?? 0) > 0);
+  const groupedOptionPrompt = $derived(
+    hasOptions ? parseGroupedOptionPrompt(elicitation.question, elicitation.options) : null,
+  );
   const nestedChoicePrompt = $derived(
     !hasOptions ? parseNestedChoicePrompt(elicitation.question) : null,
   );
+  const choicePrompt = $derived(groupedOptionPrompt ?? nestedChoicePrompt);
 
   /**
    * Effective answer value:
@@ -80,20 +89,37 @@
    * don't POST a meaningless `value: ""` to the daemon.
    */
   const answerValue = $derived(
-    hasOptions
-      ? selectedValue
-      : nestedChoicePrompt
-        ? buildNestedChoiceAnswer(nestedChoices)
-        : freeText.trim(),
+    groupedOptionPrompt
+      ? buildGroupedOptionAnswer(nestedChoices)
+      : hasOptions
+        ? selectedValue
+        : nestedChoicePrompt
+          ? buildNestedChoiceAnswer(nestedChoices)
+          : freeText.trim(),
   );
-  const canAnswer = $derived(!isReadOnly && !inFlight && answerValue.length > 0);
+  const hasAnswerValue = $derived(
+    groupedOptionPrompt
+      ? Object.values(nestedChoices).some((value) => value.trim().length > 0)
+      : answerValue.length > 0,
+  );
+  const canAnswer = $derived(!isReadOnly && !inFlight && hasAnswerValue);
+
+  function answerNote(): string {
+    const parts: string[] = [];
+    const baseNote = note.trim();
+    if (baseNote.length > 0) parts.push(baseNote);
+    const choiceCommentText = formatChoiceComments(choiceComments);
+    if (choiceCommentText.length > 0) parts.push(`Choice comments:\n${choiceCommentText}`);
+    return parts.join("\n\n");
+  }
 
   function onAnswer() {
     if (!canAnswer) return;
+    const finalNote = answerNote();
     answerMutation.mutate({
       id: elicitation.id,
       value: answerValue,
-      ...(note.trim().length > 0 ? { note: note.trim() } : {}),
+      ...(finalNote.length > 0 ? { note: finalNote } : {}),
     });
   }
 
@@ -114,7 +140,7 @@
 <div class="detail">
   <header class="detail-header">
     <span class="kind">{elicitation.kind}</span>
-    <h2>{nestedChoicePrompt?.intro || elicitation.question}</h2>
+    <h2>{choicePrompt?.intro || elicitation.question}</h2>
     <div class="meta">
       <span>workspace: <code>{elicitation.workspaceId}</code></span>
       <span class="sep">·</span>
@@ -153,7 +179,59 @@
     <section class="block">
       <h3>Respond</h3>
 
-      {#if hasOptions}
+      {#if groupedOptionPrompt}
+        <div class="nested-choice-list" aria-label="Choose an action for each item">
+          {#each groupedOptionPrompt.items as item (item.index)}
+            <section class="nested-choice-item">
+              <div class="nested-choice-copy">
+                <strong>{item.index}. {item.title}</strong>
+                {#if item.detail}
+                  <span>{item.detail}</span>
+                {/if}
+              </div>
+              <div class="nested-choice-controls">
+                <div class="choice-buttons" role="radiogroup" aria-label={`Action for ${item.title}`}>
+                  {#each item.actions as action (action.value)}
+                    <label class="choice-button" class:active={nestedChoices[String(item.index)] === action.value}>
+                      <input
+                        type="radio"
+                        name="answer-{elicitation.id}-{item.index}"
+                        value={action.value}
+                        checked={nestedChoices[String(item.index)] === action.value}
+                        disabled={inFlight}
+                        onchange={(event) => {
+                          if (!event.currentTarget.checked) return;
+                          nestedChoices = {
+                            ...nestedChoices,
+                            [String(item.index)]: action.value,
+                          };
+                        }}
+                      />
+                      <span>{action.label}</span>
+                    </label>
+                  {/each}
+                </div>
+                <input
+                  class="choice-comment"
+                  type="text"
+                  value={choiceComments[String(item.index)] ?? ""}
+                  disabled={inFlight}
+                  placeholder="Comment for this item…"
+                  oninput={(event) => {
+                    choiceComments = {
+                      ...choiceComments,
+                      [String(item.index)]: event.currentTarget.value,
+                    };
+                  }}
+                />
+              </div>
+            </section>
+          {/each}
+          {#if groupedOptionPrompt.instructions}
+            <p class="muted nested-instructions">{groupedOptionPrompt.instructions}</p>
+          {/if}
+        </div>
+      {:else if hasOptions}
         <div class="options" role="radiogroup">
           {#each elicitation.options ?? [] as opt (opt.value)}
             <label class="option" class:active={selectedValue === opt.value}>
@@ -171,29 +249,44 @@
       {:else if nestedChoicePrompt}
         <div class="nested-choice-list" aria-label="Choose an action for each item">
           {#each nestedChoicePrompt.items as item (item.index)}
-            <label class="nested-choice-item">
-              <span class="nested-choice-copy">
+            <section class="nested-choice-item">
+              <div class="nested-choice-copy">
                 <strong>{item.index}. {item.title}</strong>
                 {#if item.detail}
                   <span>{item.detail}</span>
                 {/if}
-              </span>
-              <select
-                disabled={inFlight}
-                value={nestedChoices[String(item.index)] ?? ""}
-                onchange={(event) => {
-                  nestedChoices = {
-                    ...nestedChoices,
-                    [String(item.index)]: event.currentTarget.value,
-                  };
-                }}
-              >
-                <option value="">Choose…</option>
-                {#each item.actions as action (action.value)}
-                  <option value={action.value}>{action.label}</option>
-                {/each}
-              </select>
-            </label>
+              </div>
+              <div class="nested-choice-controls">
+                <select
+                  disabled={inFlight}
+                  value={nestedChoices[String(item.index)] ?? ""}
+                  onchange={(event) => {
+                    nestedChoices = {
+                      ...nestedChoices,
+                      [String(item.index)]: event.currentTarget.value,
+                    };
+                  }}
+                >
+                  <option value="">Choose…</option>
+                  {#each item.actions as action (action.value)}
+                    <option value={action.value}>{action.label}</option>
+                  {/each}
+                </select>
+                <input
+                  class="choice-comment"
+                  type="text"
+                  value={choiceComments[String(item.index)] ?? ""}
+                  disabled={inFlight}
+                  placeholder="Comment for this item…"
+                  oninput={(event) => {
+                    choiceComments = {
+                      ...choiceComments,
+                      [String(item.index)]: event.currentTarget.value,
+                    };
+                  }}
+                />
+              </div>
+            </section>
           {/each}
           {#if nestedChoicePrompt.instructions}
             <p class="muted nested-instructions">{nestedChoicePrompt.instructions}</p>
@@ -375,7 +468,7 @@
     border-radius: var(--radius-2);
     display: grid;
     gap: var(--size-2);
-    grid-template-columns: minmax(0, 1fr) minmax(9rem, max-content);
+    grid-template-columns: minmax(12rem, 1fr) minmax(16rem, 1.2fr);
     padding: var(--size-2) var(--size-3);
   }
 
@@ -399,7 +492,40 @@
     white-space: pre-wrap;
   }
 
-  .nested-choice-item select {
+  .nested-choice-controls {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-1);
+    min-width: 0;
+  }
+
+  .choice-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--size-1);
+  }
+
+  .choice-button {
+    align-items: center;
+    border: 1px solid color-mix(in srgb, var(--color-border-1), transparent 30%);
+    border-radius: var(--radius-round);
+    cursor: pointer;
+    display: inline-flex;
+    gap: var(--size-1);
+    padding: var(--size-1) var(--size-2);
+    transition: border-color 120ms ease, background-color 120ms ease;
+  }
+
+  .choice-button.active {
+    border-color: var(--color-accent, #1f6feb);
+  }
+
+  .choice-button input {
+    margin: 0;
+  }
+
+  .nested-choice-item select,
+  .choice-comment {
     background-color: var(--surface, white);
     border: 1px solid color-mix(in srgb, var(--color-border-1), transparent 30%);
     border-radius: var(--radius-2);

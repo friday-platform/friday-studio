@@ -67,7 +67,12 @@ export function registerRequestHumanInputTool(server: McpServer, ctx: ToolContex
           .array(ElicitationOptionInputSchema)
           .min(1)
           .optional()
-          .describe("Optional selectable answers. Omit for free-form text input."),
+          .describe(
+            "Optional flat selectable answers. Omit for free-form text input. " +
+              "Do not pass multi_select. For repeated per-item choices, use labels like " +
+              "'[1] Archive — Subject' and values like '1:archive'; the UI groups them " +
+              "and returns the selected values as an answer string containing a JSON array.",
+          ),
         // ── Scope-injected fields (do not provide; runtime overrides) ─────
         workspaceId: z.string().describe("(runtime-injected) workspace identity"),
         sessionId: z.string().optional().describe("(runtime-injected) session identity"),

@@ -1169,6 +1169,29 @@ Do not fake this by streaming a menu and hoping a later chat turn resumes the
 FSM action; without `request_human_input`, an `outputTo` action must complete in
 one execution and will fail if it waits for a future user message.
 
+`request_human_input` has a flat options contract. Do not pass unsupported
+fields such as `multi_select`. For repeated decisions such as "pick one action
+for each email", encode the item id in each option value and label so the UI can
+render nested choice sets:
+
+```json
+{
+  "question": "Review your inbox — select an action for each email:\n\n[1] From: ...\n[2] From: ...",
+  "options": [
+    { "label": "[1] Archive — Invoice", "value": "1:archive" },
+    { "label": "[1] Keep — Invoice", "value": "1:keep" },
+    { "label": "[2] Archive — Investor update", "value": "2:archive" },
+    { "label": "[2] Keep — Investor update", "value": "2:keep" }
+  ]
+}
+```
+
+Grouped option answers come back as an answer string containing a JSON array of
+selected values, for example `["1:archive","2:keep"]`; parse it before
+executing side effects. Optional per-item comments may appear in the returned
+`note` field. For complex comments or free-form data per item, ask one item at
+a time instead of flattening everything into one huge option list.
+
 **Per-job elicitation timeout.** Defaults to the parent job's `config.timeout`
 (elicitations expire when the job times out). Override per-job to constrain
 finer:

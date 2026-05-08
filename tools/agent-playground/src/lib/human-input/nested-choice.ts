@@ -16,9 +16,15 @@ export type NestedChoicePrompt = {
   instructions: string;
 };
 
+export type HumanInputOption = {
+  label: string;
+  value: string;
+};
+
 const ITEM_RE =
   /(?:^|\n)\s*\[(\d+)\]\s*([\s\S]*?)(?=(?:\n\s*\[\d+\])|(?:\n\s*```)|(?:\n\s*Enter choices as:)|$)/gi;
 const ACTION_RE = /\(([A-Za-z0-9])\)\s*([^()]*?)(?=\s+\([A-Za-z0-9]\)|$)/g;
+const OPTION_GROUP_RE = /^\s*\[([^\]]+)\]\s*(.+?)(?:\s+[—-]\s+(.+))?\s*$/u;
 
 function stripFenceTail(text: string): string {
   return text.replace(/```[\w-]*\s*$/u, "").trim();
@@ -73,6 +79,28 @@ function summarizeItem(
   };
 }
 
+function questionItemsByIndex(
+  question: string,
+): Map<string, Omit<NestedChoiceItem, "actions">> {
+  const normalized = question.replace(/\r\n?/g, "\n");
+  const items = new Map<string, Omit<NestedChoiceItem, "actions">>();
+  for (const match of normalized.matchAll(ITEM_RE)) {
+    const key = match[1];
+    if (!key) continue;
+    const index = Number(key);
+    if (!Number.isFinite(index)) continue;
+    items.set(key, summarizeItem(index, match[2] ?? ""));
+  }
+  return items;
+}
+
+function numericSort(a: string, b: string): number {
+  const left = Number(a);
+  const right = Number(b);
+  if (Number.isFinite(left) && Number.isFinite(right)) return left - right;
+  return a.localeCompare(b);
+}
+
 export function parseNestedChoicePrompt(
   question: string,
 ): NestedChoicePrompt | null {
@@ -104,12 +132,95 @@ export function parseNestedChoicePrompt(
   return { intro, items, instructions };
 }
 
+/**
+ * Detects the common nested-choice shape agents produce today with the flat
+ * `request_human_input.options` contract: `[1] Archive — subject` labels and
+ * `1:archive` values. The UI can render this as one choice set per item while
+ * still submitting the original option values back to the agent.
+ */
+export function parseGroupedOptionPrompt(
+  question: string,
+  options: readonly HumanInputOption[] | undefined,
+): NestedChoicePrompt | null {
+  if (!options || options.length < 4) return null;
+
+  const byQuestionIndex = questionItemsByIndex(question);
+  const groups = new Map<
+    string,
+    { title?: string; actions: NestedChoiceAction[] }
+  >();
+
+  for (const option of options) {
+    const colon = option.value.indexOf(":");
+    if (colon <= 0 || colon === option.value.length - 1) return null;
+    const key = option.value.slice(0, colon);
+    if (!/^\d+$/.test(key)) return null;
+    const labelMatch = OPTION_GROUP_RE.exec(option.label);
+    if (!labelMatch || labelMatch[1] !== key) return null;
+
+    const actionLabel = labelMatch[2]?.trim();
+    if (!actionLabel) return null;
+    const title = labelMatch[3]?.trim();
+    const group = groups.get(key) ?? { actions: [] };
+    if (title && !group.title) group.title = title;
+    group.actions.push({ label: actionLabel, value: option.value });
+    groups.set(key, group);
+  }
+
+  if (
+    groups.size < 2 ||
+    Array.from(groups.values()).some((g) => g.actions.length < 2)
+  ) {
+    return null;
+  }
+
+  const firstItem = Array.from(question.matchAll(ITEM_RE))[0];
+  const intro = stripFenceTail(question.slice(0, firstItem?.index ?? 0));
+  const items = Array.from(groups.entries())
+    .sort(([a], [b]) => numericSort(a, b))
+    .map(([key, group]) => {
+      const index = Number(key);
+      const fromQuestion = byQuestionIndex.get(key);
+      return {
+        index,
+        title: group.title ?? fromQuestion?.title ?? `Item ${key}`,
+        detail: fromQuestion?.detail ?? "",
+        actions: group.actions,
+      };
+    });
+
+  return {
+    intro: intro || question.trim(),
+    items,
+    instructions:
+      "Select one action per item. Items without a selected action are left unchanged.",
+  };
+}
+
 export function buildNestedChoiceAnswer(
   choices: Record<string, string>,
 ): string {
   return Object.entries(choices)
     .filter(([, value]) => value.trim().length > 0)
-    .sort(([a], [b]) => Number(a) - Number(b))
+    .sort(([a], [b]) => numericSort(a, b))
     .map(([index, value]) => `${index}=${value.trim()}`)
     .join(" ");
+}
+
+export function buildGroupedOptionAnswer(
+  choices: Record<string, string>,
+): string {
+  const selected = Object.entries(choices)
+    .filter(([, value]) => value.trim().length > 0)
+    .sort(([a], [b]) => numericSort(a, b))
+    .map(([, value]) => value.trim());
+  return JSON.stringify(selected);
+}
+
+export function formatChoiceComments(comments: Record<string, string>): string {
+  return Object.entries(comments)
+    .filter(([, value]) => value.trim().length > 0)
+    .sort(([a], [b]) => numericSort(a, b))
+    .map(([index, value]) => `[${index}] ${value.trim()}`)
+    .join("\n");
 }

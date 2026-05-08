@@ -90,6 +90,8 @@ Use `request_human_input` when the agent needs:
 
 Repair old workflows that print "choose A/B" and then expect a later chat turn to resume the same FSM action. The repaired workflow should create an Activity elicitation, block, then resume or terminate with `answered`, `declined`, or `expired` status.
 
+For repeated choices (for example, one action per email), keep the tool contract flat but encode the item id in option labels/values: `[1] Archive — Subject` / `1:archive`, `[1] Keep — Subject` / `1:keep`, etc. Do not invent unsupported `multi_select` fields; grouped answers are returned as a string containing a JSON array of selected values, with optional per-item comments in `note`.
+
 ### Tool access requests are only for real tools
 
 `request_tool_access` is for granting access to a known existing tool that is blocked by policy. It is not a discovery mechanism.
