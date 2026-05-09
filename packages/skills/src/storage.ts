@@ -82,27 +82,28 @@ export interface SkillStorageAdapter {
  * shim would silently fork the skill catalog away from the broker
  * and lose every published skill on restart.
  */
-/**
- * Production storage type bundles `SkillReplayer` because the singleton is
- * always `JetStreamSkillAdapter`, which implements both. Bundle import + the
- * SQLite migration accept this combined type so they can call `replayVersion`
- * without wide-interface mock churn.
- */
-type ProductionSkillStorage = SkillStorageAdapter & SkillReplayer;
-
-let _storage: ProductionSkillStorage | null = null;
+let _storage: SkillStorageAdapter | null = null;
+let _replayer: SkillReplayer | null = null;
 
 export function initSkillStorage(nc: NatsConnection): void {
-  _storage = new JetStreamSkillAdapter(nc);
+  const adapter = new JetStreamSkillAdapter(nc);
+  _storage = adapter;
+  _replayer = adapter;
   logger.info("Skill storage initialized (JetStream)");
 }
 
-/** Inject a custom adapter — tests only. */
-export function _setSkillStorageForTest(adapter: ProductionSkillStorage | null): void {
+/**
+ * Inject a custom adapter — tests only. Accepts the narrow
+ * `SkillStorageAdapter` so unrelated tests can pass minimal mocks without
+ * stubbing `replayVersion`. Tests that exercise replay-using code paths
+ * must wire a real `JetStreamSkillAdapter` via the in-process NATS harness
+ * rather than this seam.
+ */
+export function _setSkillStorageForTest(adapter: SkillStorageAdapter | null): void {
   _storage = adapter;
 }
 
-function getStorage(): ProductionSkillStorage {
+function getStorage(): SkillStorageAdapter {
   if (!_storage) {
     throw new Error(
       "Skill storage not initialized — call initSkillStorage(nc) at daemon startup, " +
@@ -112,15 +113,25 @@ function getStorage(): ProductionSkillStorage {
   return _storage;
 }
 
+function getReplayer(): SkillReplayer {
+  if (!_replayer) {
+    throw new Error(
+      "SkillReplayer not initialized — replay-using tests must use a real " +
+        "JetStreamSkillAdapter via the NATS test harness, not _setSkillStorageForTest.",
+    );
+  }
+  return _replayer;
+}
+
 /**
  * Lazily-initialized skill storage adapter.
  * Defers adapter creation until first method call, allowing tests to
  * configure environment variables before initialization.
  */
-export const SkillStorage: ProductionSkillStorage = {
+export const SkillStorage: SkillStorageAdapter & SkillReplayer = {
   create: (...args) => getStorage().create(...args),
   publish: (...args) => getStorage().publish(...args),
-  replayVersion: (...args) => getStorage().replayVersion(...args),
+  replayVersion: (...args) => getReplayer().replayVersion(...args),
   get: (...args) => getStorage().get(...args),
   getById: (...args) => getStorage().getById(...args),
   getBySkillId: (...args) => getStorage().getBySkillId(...args),
