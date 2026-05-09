@@ -37,6 +37,9 @@ import { defineApiKeyProvider, type HealthResult } from "./types.ts";
  */
 export const GithubAppSecretSchema = z.object({
   app_id: z.number().int().positive(),
+  // `format: "multiline"` is a Friday convention surfaced via `z.toJSONSchema`
+  // so the playground form renders this as a `<textarea>` instead of a
+  // `<input type="password">` (single-line inputs strip pasted PEM newlines).
   private_key: z
     .string()
     .refine(
@@ -47,7 +50,8 @@ export const GithubAppSecretSchema = z.object({
         message:
           "private_key must be a PEM-encoded RSA key (BEGIN RSA PRIVATE KEY or BEGIN PRIVATE KEY)",
       },
-    ),
+    )
+    .meta({ format: "multiline" }),
   webhook_secret: z.string().min(1),
   installation_id: z.number().int().positive(),
 });

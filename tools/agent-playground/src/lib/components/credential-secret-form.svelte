@@ -50,10 +50,16 @@
 
   // ─── Derived ─────────────────────────────────────────────────────────────────
 
-  // JSON Schema property type. We only handle string/integer/number; anything
-  // else (object/array/boolean/null) falls back to text input.
-  const FieldTypeSchema = z
-    .object({ type: z.enum(["string", "integer", "number"]) })
+  // JSON Schema property hints we read off each field. `type` is standard;
+  // `format: "multiline"` is a Friday convention surfaced via `.meta()` on the
+  // Zod side so the form can render a textarea (e.g. PEM private keys).
+  // Anything else (object/array/boolean/null, unknown formats) falls back to a
+  // plain text input.
+  const FieldHintsSchema = z
+    .object({
+      type: z.enum(["string", "integer", "number"]),
+      format: z.enum(["multiline"]),
+    })
     .partial();
 
   const schemaShape = $derived.by(() => {
@@ -69,20 +75,25 @@
   });
 
   type FieldType = "string" | "integer" | "number";
+  type FieldFormat = "multiline" | undefined;
 
   const secretFields = $derived.by(() => {
     if (!schemaShape?.properties) return [];
     const required = new Set(schemaShape.required ?? []);
     return Object.entries(schemaShape.properties).map(([key, prop]) => {
-      const parsedType = FieldTypeSchema.safeParse(prop);
-      const type: FieldType = parsedType.success
-        ? parsedType.data.type ?? "string"
+      const parsedHints = FieldHintsSchema.safeParse(prop);
+      const type: FieldType = parsedHints.success
+        ? parsedHints.data.type ?? "string"
         : "string";
+      const format: FieldFormat = parsedHints.success
+        ? parsedHints.data.format
+        : undefined;
       return {
         key,
         label: secretKeyToLabel(key),
         required: required.has(key),
         type,
+        format,
       };
     });
   });
@@ -181,21 +192,34 @@
   {#each secretFields as field (field.key)}
     <div class="field">
       <label for="credential-{field.key}">{field.label}</label>
-      <input
-        id="credential-{field.key}"
-        type={field.type === "integer" || field.type === "number"
-          ? "number"
-          : isSensitiveField(field.key)
-            ? "password"
-            : "text"}
-        step={field.type === "integer" ? "1" : undefined}
-        bind:value={fieldValues[field.key]}
-        placeholder={field.required
-          ? `Enter ${field.label.toLowerCase()}`
-          : `${field.label} (optional)`}
-        disabled={submitting}
-        required={field.required}
-      />
+      {#if field.format === "multiline"}
+        <textarea
+          id="credential-{field.key}"
+          class="multiline"
+          bind:value={fieldValues[field.key]}
+          placeholder={field.required
+            ? `Enter ${field.label.toLowerCase()}`
+            : `${field.label} (optional)`}
+          disabled={submitting}
+          required={field.required}
+          rows="6"
+        ></textarea>
+      {:else}
+        <input
+          id="credential-{field.key}"
+          type={isSensitiveField(field.key) ? "password" : "text"}
+          inputmode={field.type === "integer" || field.type === "number"
+            ? "numeric"
+            : undefined}
+          pattern={field.type === "integer" ? "[0-9]*" : undefined}
+          bind:value={fieldValues[field.key]}
+          placeholder={field.required
+            ? `Enter ${field.label.toLowerCase()}`
+            : `${field.label} (optional)`}
+          disabled={submitting}
+          required={field.required}
+        />
+      {/if}
     </div>
   {/each}
 
@@ -244,7 +268,8 @@
     color: var(--color-text);
   }
 
-  .field input {
+  .field input,
+  .field textarea {
     background: var(--color-surface-1);
     border: 1px solid var(--color-border-1);
     border-radius: var(--radius-2);
@@ -254,7 +279,13 @@
     width: 100%;
   }
 
-  .field input:focus {
+  .field textarea.multiline {
+    font-family: var(--font-family-monospace);
+    resize: vertical;
+  }
+
+  .field input:focus,
+  .field textarea:focus {
     outline: 2px solid var(--color-accent);
     outline-offset: -2px;
   }
