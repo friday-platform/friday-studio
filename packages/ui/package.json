@@ -50,7 +50,7 @@
     "shiki": "^4.0.2"
   },
   "devDependencies": {
-    "@eslint/compat": "^2.0.5",
+    "@eslint/compat": "^2.1.0",
     "@eslint/js": "^10.0.1",
     "@ianvs/prettier-plugin-sort-imports": "^4.7.1",
     "@sveltejs/adapter-auto": "^7.0.1",
@@ -69,7 +69,7 @@
     "svelte-check": "^4.4.7",
     "svelte-eslint-parser": "^1.6.0",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.59.1",
+    "typescript-eslint": "^8.59.2",
     "vite": "^7.3.2",
     "vitest": "^4.1.0"
   },

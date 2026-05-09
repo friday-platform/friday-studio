@@ -204,11 +204,6 @@
     font-weight: var(--font-weight-5);
   }
 
-  .drop-hint {
-    color: color-mix(in srgb, var(--color-text), transparent 25%);
-    font-size: var(--font-size-2);
-  }
-
   .drop-error {
     background-color: color-mix(in srgb, var(--color-error), transparent 90%);
     border-radius: var(--radius-2);

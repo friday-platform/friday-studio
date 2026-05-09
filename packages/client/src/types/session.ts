@@ -41,7 +41,7 @@ export interface SessionDetailedInfo {
     durationMs?: number;
     toolCalls: Array<{ toolName: string; args?: unknown; result?: unknown; durationMs?: number }>;
     reasoning?: string;
-    output: unknown;
+    output?: unknown;
     error?: string;
   }>;
   results?: Record<string, unknown>;

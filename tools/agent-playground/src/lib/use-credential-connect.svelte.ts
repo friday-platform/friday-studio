@@ -34,13 +34,19 @@ interface CredentialConnectState {
   error: string | null;
 }
 
+type ProviderIdInput = string | (() => string);
+
+function readProviderId(providerId: ProviderIdInput): string {
+  return typeof providerId === "function" ? providerId() : providerId;
+}
+
 /**
  * Returns reactive state and action functions for connecting a credential
  * for the given provider.
  *
- * @param providerId - The provider identifier (e.g. "openai", "slack")
+ * @param providerId - The provider identifier (e.g. "openai", "slack"), or a getter for reactive props.
  */
-export function useCredentialConnect(providerId: string) {
+export function useCredentialConnect(providerId: ProviderIdInput) {
   // Per-instance reactive state
   // deno-lint-ignore prefer-const
   let state: CredentialConnectState = $state({
@@ -60,19 +66,21 @@ export function useCredentialConnect(providerId: string) {
 
   function startOAuth() {
     reset();
-    const popup = startOAuthFlow(providerId);
+    const currentProviderId = readProviderId(providerId);
+    const popup = startOAuthFlow(currentProviderId);
     if (!popup || popup.closed) {
       state.popupBlocked = true;
-      state.blockedUrl = getOAuthUrl(providerId);
+      state.blockedUrl = getOAuthUrl(currentProviderId);
     }
   }
 
   function startAppInstall() {
     reset();
-    const popup = startAppInstallFlow(providerId);
+    const currentProviderId = readProviderId(providerId);
+    const popup = startAppInstallFlow(currentProviderId);
     if (!popup || popup.closed) {
       state.popupBlocked = true;
-      state.blockedUrl = getAppInstallUrl(providerId);
+      state.blockedUrl = getAppInstallUrl(currentProviderId);
     }
   }
 
@@ -80,7 +88,7 @@ export function useCredentialConnect(providerId: string) {
     cleanup = listenForOAuthCallback((message) => {
       reset();
       onSuccess(message);
-    }, providerId);
+    }, readProviderId(providerId));
 
     return () => {
       cleanup?.();
@@ -106,7 +114,7 @@ export function useCredentialConnect(providerId: string) {
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ provider: providerId, label, secret }),
+          body: JSON.stringify({ provider: readProviderId(providerId), label, secret }),
         },
       );
 

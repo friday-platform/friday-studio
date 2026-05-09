@@ -378,7 +378,14 @@
   // before we know whether we're resuming or starting fresh.
   const chat = $derived(
     rehydrationDone && chatId.length > 0
-      ? new ChatImpl<AtlasUIMessage>({ id: chatId, messages: initialMessages, transport })
+      ? new ChatImpl<AtlasUIMessage>({
+          id: chatId,
+          // ChatImpl mutates its `messages` state during send/stream. Do not
+          // hand it our `$state` rehydration array directly, or a user send
+          // will mutate `initialMessages` and retrigger resume-effect cleanup.
+          messages: [...initialMessages],
+          transport,
+        })
       : null,
   );
 
@@ -401,14 +408,17 @@
   // below can't queue a same-tick re-run whose cleanup would `instance.stop()`
   // the just-fired resumeStream. The chatId-change effect sets the flag true
   // BEFORE chat is created, so reading it untracked still observes the right
-  // value when this effect runs on the chat null→ChatImpl transition.
+  // value when this effect runs on the chat null→ChatImpl transition. The
+  // trailing-user check is also one-shot; tracking `initialMessages` here would
+  // make ChatImpl message pushes re-run this cleanup and abort fresh sends.
   $effect(() => {
     if (!chat) return;
     if (!untrack(() => shouldResumeStream)) return;
     shouldResumeStream = false;
     const instance = chat;
-    const hadUnansweredUser =
-      initialMessages.length > 0 && initialMessages.at(-1)?.role === "user";
+    const hadUnansweredUser = untrack(
+      () => initialMessages.length > 0 && initialMessages.at(-1)?.role === "user",
+    );
     instance.resumeStream().catch(() => {
       if (hadUnansweredUser) wasInterrupted = true;
     });

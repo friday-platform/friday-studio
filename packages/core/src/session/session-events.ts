@@ -166,7 +166,7 @@ export const StepCompleteEventSchema = z.object({
   durationMs: z.number(),
   toolCalls: z.array(ToolCallSummarySchema),
   reasoning: z.string().optional(),
-  output: z.unknown(),
+  output: z.unknown().optional(),
   artifactRefs: z.array(z.unknown()).optional(),
   error: z.string().optional(),
   /**
@@ -304,7 +304,7 @@ export const AgentBlockSchema = z.object({
   durationMs: z.number().optional(),
   toolCalls: z.array(ToolCallSummarySchema),
   reasoning: z.string().optional(),
-  output: z.unknown(),
+  output: z.unknown().optional(),
   artifactRefs: z.array(z.unknown()).optional(),
   error: z.string().optional(),
   ephemeral: z.array(z.custom<AtlasUIMessageChunk>(() => true)).optional(),

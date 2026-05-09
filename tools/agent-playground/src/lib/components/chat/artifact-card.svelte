@@ -504,14 +504,4 @@
     text-align: start;
     unicode-bidi: plaintext;
   }
-
-  .meta-path a {
-    color: inherit;
-    text-decoration: none;
-  }
-
-  .meta-path a:hover {
-    color: var(--color-accent);
-    text-decoration: underline;
-  }
 </style>
