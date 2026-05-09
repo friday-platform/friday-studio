@@ -97,27 +97,45 @@ const handler: RequestHandler = async ({ params, request }) => {
     );
   }
 
+  // Strip headers that don't survive the proxy / HTTP/2 boundary:
+  //  - content-encoding: fetch() already decompressed; forwarding makes
+  //    the browser try to decompress again.
+  //  - content-length: chunked re-encoding by the dev server breaks the
+  //    invariant; let the framework recompute (or omit and stream).
+  //  - HTTP/1.1 connection-specific headers: HTTP/2 forbids them
+  //    (Node throws ERR_HTTP2_INVALID_CONNECTION_HEADERS at writeHead).
+  //    The daemon serves h1.1 to us; the browser talks h2 to vite, so
+  //    the SvelteKit response writer hits Http2ServerResponse and rejects
+  //    `transfer-encoding: chunked`. Same applies to SSE responses.
+  const responseHeaders = new Headers(res.headers);
+  for (const h of [
+    "content-encoding",
+    "content-length",
+    "transfer-encoding",
+    "connection",
+    "keep-alive",
+    "upgrade",
+    "proxy-connection",
+    "te",
+    "trailer",
+  ]) {
+    responseHeaders.delete(h);
+  }
+
   // SSE: proxy with explicit cancellation. Returning `res.body` directly
   // leaves the upstream daemon fetch alive when the browser closes the
   // EventSource/fetch, which leaks daemon subscriptions and dev-server fds.
   if (res.headers.get("content-type")?.includes("text/event-stream")) {
     if (!res.body) {
       request.signal.removeEventListener("abort", abortUpstream);
-      return new Response(null, { status: res.status, headers: res.headers });
+      return new Response(null, { status: res.status, headers: responseHeaders });
     }
     request.signal.removeEventListener("abort", abortUpstream);
     const stream = proxyAbortableBody(res.body, request.signal, abortUpstream);
-    return new Response(stream, { status: res.status, headers: res.headers });
+    return new Response(stream, { status: res.status, headers: responseHeaders });
   }
 
   request.signal.removeEventListener("abort", abortUpstream);
-
-  // Strip content-encoding — fetch() already decompresses the body,
-  // so forwarding the header causes the browser to double-decompress.
-  const responseHeaders = new Headers(res.headers);
-  responseHeaders.delete("content-encoding");
-  responseHeaders.delete("content-length");
-
   return new Response(res.body, { status: res.status, headers: responseHeaders });
 };
 

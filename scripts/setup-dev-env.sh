@@ -27,6 +27,11 @@
 #   7. Writes daemon envfile (FRIDAY_UV_PATH, UV_*, FRIDAY_AGENT_SDK_VERSION,
 #      FRIDAY_JETSTREAM_STORE_DIR).
 #   8. Pre-warms the uv cache (Python 3.12 + pinned SDK).
+#   9. Sets up local TLS (mkcert) so vite + atlasd can serve HTTP/2,
+#      lifting the per-origin 6-socket cap that deadlocks the playground
+#      once SSE feeds + multiple tabs saturate the pool. Skippable via
+#      SKIP_TLS=1 for environments where mkcert can't run (no admin
+#      access, no NSS tools).
 #
 # Each tool's existing install is **preferred** if it satisfies the
 # minimum version — we never replace a working toolchain. Auto-install
@@ -468,6 +473,25 @@ UV_CACHE_DIR="$PRIMARY_HOME/uv/cache" \
 "$UV_PATH" run --python 3.12 \
     --with "friday-agent-sdk==$PINNED_SDK_VERSION" \
     python -c "import friday_agent_sdk; print(f'  ✓ friday_agent_sdk imported from {friday_agent_sdk.__file__}')"
+
+# ── 9. Local TLS for HTTP/2 ─────────────────────────────────────────────────
+# Without this, the playground's 3 SSE feeds × multiple tabs hit Chrome's
+# 6-socket-per-origin HTTP/1.1 cap and every fetch deadlocks. With TLS the
+# dev server (and atlasd) negotiate h2 over ALPN and the cap is gone.
+# Honors SKIP_TLS=1 for sandboxed CI / environments where `mkcert -install`
+# can't reach the OS trust store.
+if [[ "${SKIP_TLS:-0}" == "1" ]]; then
+    echo "→ Skipping TLS setup (SKIP_TLS=1)"
+    SKIPPED_TOOLS+=("TLS (mkcert) — playground HTTP/1.1 will deadlock under multiple tabs. Re-run \`bash scripts/setup-tls.sh\`.")
+else
+    if bash "$SCRIPT_DIR/setup-tls.sh"; then
+        :
+    else
+        echo "  ⚠ TLS setup failed — playground will run on HTTP/1.1 and may deadlock with multiple tabs." >&2
+        echo "    Re-run after fixing: bash scripts/setup-tls.sh" >&2
+        SKIPPED_TOOLS+=("TLS (mkcert) — re-run \`bash scripts/setup-tls.sh\` after resolving the install error.")
+    fi
+fi
 
 echo ""
 echo "✓ Dev environment ready."

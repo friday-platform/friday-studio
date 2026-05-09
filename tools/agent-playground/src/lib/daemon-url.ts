@@ -4,8 +4,19 @@ import { z } from "zod";
  * (`/api/daemon/*` route). The compiled binary uses static-server.ts
  * which reads `FRIDAYD_URL` from env for the same purpose; this dev
  * path always targets the default 8080 since it only runs under
- * `deno task playground`. */
-export const DAEMON_BASE_URL = "http://localhost:8080";
+ * `deno task playground`.
+ *
+ * The scheme is injected at build time by vite via the
+ * `__FRIDAY_DAEMON_BASE_URL__` define key (see vite.config.ts). We can't
+ * read it from `process.env` because vite's `define: { "process.env": "{}" }`
+ * wipes that for everything that goes through the route SSR transform —
+ * an http→https daemon mismatch trips an HTTPParserError as soon as the
+ * daemon starts the TLS handshake on a cleartext request. */
+declare const __FRIDAY_DAEMON_BASE_URL__: string | undefined;
+export const DAEMON_BASE_URL =
+	typeof __FRIDAY_DAEMON_BASE_URL__ !== "undefined"
+		? __FRIDAY_DAEMON_BASE_URL__
+		: "http://localhost:8080";
 
 interface RuntimeConfig {
 	externalDaemonUrl?: string;

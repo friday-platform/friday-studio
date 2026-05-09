@@ -7,6 +7,8 @@
  * via `deno compile --include build`, so the executable is fully
  * self-contained.
  */
+import { existsSync } from "node:fs";
+import { homedir } from "node:os";
 import process from "node:process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -17,12 +19,45 @@ import { api } from "./src/lib/server/router.ts";
 
 const PORT = Number(process.env.PLAYGROUND_PORT ?? "5200");
 const HOST = process.env.PLAYGROUND_HOST ?? "127.0.0.1";
-const DAEMON_URL = process.env.FRIDAYD_URL ?? "http://localhost:8080";
+
+// HTTP/2 + TLS resolution. Same source-of-truth as the Vite dev config:
+// env vars first, then ~/.friday/local/tls, then ~/.atlas/tls. When a
+// pair is found, `Deno.serve` negotiates h2 over ALPN and the per-origin
+// 6-socket HTTP/1.1 cap (which the playground hits with 3 SSE feeds ×
+// multiple tabs) goes away. No cert → HTTP fallback, behaviour unchanged.
+function resolveTls(): { cert: string; key: string } | null {
+  const candidates: Array<[string, string]> = [];
+  const envCert = process.env.FRIDAY_TLS_CERT;
+  const envKey = process.env.FRIDAY_TLS_KEY;
+  if (envCert && envKey) candidates.push([envCert, envKey]);
+  const home = homedir();
+  candidates.push([
+    join(home, ".friday", "local", "tls", "localhost.crt"),
+    join(home, ".friday", "local", "tls", "localhost.key"),
+  ]);
+  candidates.push([
+    join(home, ".atlas", "tls", "localhost.crt"),
+    join(home, ".atlas", "tls", "localhost.key"),
+  ]);
+  for (const [c, k] of candidates) {
+    if (existsSync(c) && existsSync(k)) {
+      return { cert: Deno.readTextFileSync(c), key: Deno.readTextFileSync(k) };
+    }
+  }
+  return null;
+}
+
+const TLS = resolveTls();
+const SCHEME = TLS ? "https" : "http";
+const DAEMON_URL = process.env.FRIDAYD_URL ?? `${SCHEME}://localhost:8080`;
 
 // Browser-facing URLs. The launcher owns the port layout, so we can't
 // bake these into the bundle — read them at runtime and inject into the
 // served HTML. Daemon URL falls back to FRIDAYD_URL since the daemon
 // proxy and the browser-facing daemon are the same endpoint in Studio.
+// When TLS is on, browser fetches to a plain http:// daemon would be
+// blocked as mixed content — default the public URL to the same scheme
+// we're serving on, while still letting an explicit env value win.
 const EXTERNAL_DAEMON_URL = process.env.EXTERNAL_DAEMON_URL ?? DAEMON_URL;
 const EXTERNAL_TUNNEL_URL = process.env.EXTERNAL_TUNNEL_URL ?? null;
 
@@ -150,6 +185,29 @@ const daemonProxy = new Hono().all("/api/daemon/*", async (c) => {
     return c.json({ error: `daemon proxy fetch failed: ${message}` }, 502);
   }
 
+  // Strip headers that don't survive the proxy / HTTP/2 boundary:
+  //  - content-encoding: fetch() already decompressed; forwarding makes
+  //    the browser double-decompress.
+  //  - content-length: chunked re-encoding may invalidate it.
+  //  - HTTP/1.1 connection-specific headers: when this binary serves TLS
+  //    (https://) the Deno HTTP server negotiates h2 with the browser;
+  //    h2 forbids `transfer-encoding`, `connection`, etc. The daemon
+  //    upstream is h1.1, so its responses carry these — drop them.
+  const responseHeaders = new Headers(res.headers);
+  for (const h of [
+    "content-encoding",
+    "content-length",
+    "transfer-encoding",
+    "connection",
+    "keep-alive",
+    "upgrade",
+    "proxy-connection",
+    "te",
+    "trailer",
+  ]) {
+    responseHeaders.delete(h);
+  }
+
   // SSE: pass the body stream through unbuffered so live event streams
   // don't get held up at our proxy boundary. Wrap the body so browser
   // disconnects cancel the daemon fetch instead of leaving subscriptions
@@ -157,21 +215,14 @@ const daemonProxy = new Hono().all("/api/daemon/*", async (c) => {
   if (res.headers.get("content-type")?.includes("text/event-stream")) {
     if (!res.body) {
       c.req.raw.signal.removeEventListener("abort", abortUpstream);
-      return new Response(null, { status: res.status, headers: res.headers });
+      return new Response(null, { status: res.status, headers: responseHeaders });
     }
     c.req.raw.signal.removeEventListener("abort", abortUpstream);
     const stream = proxyAbortableBody(res.body, c.req.raw.signal, abortUpstream);
-    return new Response(stream, { status: res.status, headers: res.headers });
+    return new Response(stream, { status: res.status, headers: responseHeaders });
   }
 
   c.req.raw.signal.removeEventListener("abort", abortUpstream);
-
-  // Strip content-encoding/length — fetch() decompressed the body, so
-  // forwarding the original encoding header makes the browser try to
-  // decompress again. Drop content-length too; chunked is fine.
-  const responseHeaders = new Headers(res.headers);
-  responseHeaders.delete("content-encoding");
-  responseHeaders.delete("content-length");
   return new Response(res.body, { status: res.status, headers: responseHeaders });
 });
 
@@ -206,8 +257,11 @@ function origin(u: string): string {
     return "<invalid url>";
   }
 }
-console.log(`[playground] listening on http://${HOST}:${PORT}`);
+console.log(`[playground] listening on ${SCHEME}://${HOST}:${PORT}`);
 console.log(`[playground] daemon proxy → ${origin(DAEMON_URL)}`);
 console.log(`[playground] external daemon → ${origin(EXTERNAL_DAEMON_URL)}`);
 if (EXTERNAL_TUNNEL_URL) console.log(`[playground] external tunnel → ${origin(EXTERNAL_TUNNEL_URL)}`);
-Deno.serve({ port: PORT, hostname: HOST }, app.fetch);
+Deno.serve(
+  TLS ? { port: PORT, hostname: HOST, cert: TLS.cert, key: TLS.key } : { port: PORT, hostname: HOST },
+  app.fetch,
+);
