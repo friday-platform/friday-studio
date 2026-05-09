@@ -1142,6 +1142,8 @@
           provider: typeof m.provider === "string" ? m.provider : undefined,
           modelId: typeof m.modelId === "string" ? m.modelId : undefined,
           sessionId: typeof m.sessionId === "string" ? m.sessionId : undefined,
+          startTimestamp: typeof m.startTimestamp === "string" ? m.startTimestamp : undefined,
+          endTimestamp: typeof m.endTimestamp === "string" ? m.endTimestamp : undefined,
           // Token + cache usage. Two sources, in priority order:
           //
           //   1. The persisted `metadata.usage` field (set by the chat

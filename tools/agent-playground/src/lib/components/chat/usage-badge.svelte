@@ -19,9 +19,34 @@
       cacheWriteTokens?: number;
     };
     provider?: string;
+    /** Stream start (`metadata.startTimestamp` ISO) — when the model
+     *  began emitting output for this turn. */
+    startTimestamp?: string;
+    /** Stream end (`metadata.endTimestamp` ISO) — when the terminal
+     *  finish event landed. The difference between these is the
+     *  user-perceptible turn duration. */
+    endTimestamp?: string;
   }
 
-  const { usage, provider }: Props = $props();
+  const { usage, provider, startTimestamp, endTimestamp }: Props = $props();
+
+  /** Duration in ms or `null` when either timestamp is missing. */
+  const durationMs = $derived.by(() => {
+    if (!startTimestamp || !endTimestamp) return null;
+    const start = Date.parse(startTimestamp);
+    const end = Date.parse(endTimestamp);
+    if (Number.isNaN(start) || Number.isNaN(end)) return null;
+    const delta = end - start;
+    return delta >= 0 ? delta : null;
+  });
+
+  function fmtDuration(ms: number): string {
+    if (ms < 1000) return `${ms}ms`;
+    if (ms < 60_000) return `${(ms / 1000).toFixed(ms < 10_000 ? 1 : 0)}s`;
+    const minutes = Math.floor(ms / 60_000);
+    const seconds = Math.floor((ms % 60_000) / 1000);
+    return seconds === 0 ? `${minutes}m` : `${minutes}m ${seconds}s`;
+  }
 
   const totalInputTokens = $derived(usage.inputTokens ?? 0);
   const outputTokens = $derived(usage.outputTokens ?? 0);
@@ -65,6 +90,7 @@
       cacheWriteTokens > 0
         ? `Cache write:  ${cacheWriteTokens.toLocaleString()}`
         : null,
+      durationMs !== null ? `Duration:     ${fmtDuration(durationMs)}` : null,
       provider ? `\nProvider: ${provider}` : null,
       // Per-block cache attribution would require a provider feature
       // that doesn't exist; the tooltip names the limitation so the
@@ -81,8 +107,11 @@
   <span class="pill">↓ {fmt(outputTokens)}</span>
   {#if showCachePill}
     <span class="cache-text" class:hit={cacheHitRatio > 0.3}>
-      cache {pct(cacheHitRatio)}
+      {pct(cacheHitRatio)}
     </span>
+  {/if}
+  {#if durationMs !== null}
+    <span class="pill duration">{fmtDuration(durationMs)}</span>
   {/if}
 </span>
 
@@ -103,6 +132,12 @@
      other components. */
   .pill {
     font-variant-numeric: tabular-nums;
+  }
+  /* Duration sits at the trailing edge so the time-cost of the turn
+     reads as the natural close of the stat row. Kept faded — it's
+     observability data, not an alert. */
+  .pill.duration {
+    color: var(--text-faded);
   }
   /* Cache stat is text, not a pill — keeps the row low-noise. Faded
      when the hit ratio is poor (cool but uninteresting); green when

@@ -524,7 +524,12 @@
               {altPressed ? fullTime : compactTime}
             </span>
             {#if message.role === "assistant" && message.metadata?.usage}
-              <UsageBadge usage={message.metadata.usage} provider={message.metadata.provider} />
+              <UsageBadge
+                usage={message.metadata.usage}
+                provider={message.metadata.provider}
+                startTimestamp={message.metadata.startTimestamp}
+                endTimestamp={message.metadata.endTimestamp}
+              />
             {/if}
           </div>
       {/if}
@@ -623,6 +628,20 @@
     cursor: default;
     font-variant-numeric: tabular-nums;
     user-select: none;
+  }
+
+  /* Per-bubble cache hit ratio mirrors the session bar — hidden by
+     default, revealed when the row is hovered. The UsageBadge owns
+     `.cache-text` in its own scoped style; reach in with `:global`
+     so the hover state on the parent .message-actions controls
+     visibility. */
+  .message-actions :global(.cache-text) {
+    opacity: 0;
+    transition: opacity 120ms ease;
+  }
+  .message:hover .message-actions :global(.cache-text),
+  .message-actions:focus-within :global(.cache-text) {
+    opacity: 1;
   }
 
   .message-actions :global(.message-menu-trigger) {

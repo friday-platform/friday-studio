@@ -179,6 +179,11 @@ export interface ChatMessage {
       cacheReadTokens?: number;
       cacheWriteTokens?: number;
     };
+    /** ISO timestamp when the model began emitting output for this
+     *  turn. Pairs with `endTimestamp` to compute turn duration. */
+    startTimestamp?: string;
+    /** ISO timestamp when the model's terminal finish event landed. */
+    endTimestamp?: string;
   };
 }
 
