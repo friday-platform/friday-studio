@@ -13,7 +13,6 @@
     "zod": "^4.3.5"
   },
   "devDependencies": {
-    "@atlas/core": "workspace:*",
     "jetstream": "workspace:*",
     "nats": "^2.29.3",
     "vitest": "^4.1.0"
