@@ -410,10 +410,14 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
       throw new Error("Workspace ID is required for workspace chat");
     }
 
-    // Load and validate chat history via workspace-scoped HTTP endpoint
+    // Load and validate chat history via workspace-scoped HTTP endpoint.
+    // chatId may contain `/` (e.g. github thread ids) — encode so Hono's
+    // single-segment `:chatId` matcher captures it; the daemon's param()
+    // decodes back to the original before lookup.
+    const encodedChatId = encodeURIComponent(session.streamId);
     let messages: AtlasUIMessage[] = [];
     const res = await parseResult(
-      client.workspaceChat(workspaceId)[":chatId"].$get({ param: { chatId: session.streamId } }),
+      client.workspaceChat(workspaceId)[":chatId"].$get({ param: { chatId: encodedChatId } }),
     );
     if (res.ok) {
       messages = await validateAtlasUIMessages(res.data.messages);
@@ -444,7 +448,7 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           const titleResult = await parseResult(
             client
               .workspaceChat(workspaceId)
-              [":chatId"].title.$patch({ param: { chatId: session.streamId }, json: { title } }),
+              [":chatId"].title.$patch({ param: { chatId: encodedChatId }, json: { title } }),
           );
           if (!titleResult.ok) {
             logger.error("Failed to update chat title", { streamId: session.streamId, title });
