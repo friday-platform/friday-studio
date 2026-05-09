@@ -80,7 +80,7 @@
   <span class="pill">↑ {fmt(freshInputTokens)}</span>
   <span class="pill">↓ {fmt(outputTokens)}</span>
   {#if showCachePill}
-    <span class="pill cache" class:hit={cacheHitRatio > 0.3}>
+    <span class="cache-text" class:hit={cacheHitRatio > 0.3}>
       cache {pct(cacheHitRatio)}
     </span>
   {/if}
@@ -97,15 +97,25 @@
     line-height: 1;
     user-select: none;
   }
+  /* Plain text — no chip background — so the row reads as inline
+     stats next to the message rather than a row of UI controls. The
+     class is still named `.pill` for parity with similar widgets in
+     other components. */
   .pill {
-    background: var(--highlight);
-    border-radius: 0.5rem;
     font-variant-numeric: tabular-nums;
-    padding-block: 0.125rem;
-    padding-inline: 0.375rem;
   }
-  .pill.cache.hit {
-    background: color-mix(in srgb, var(--green-primary) 18%, transparent);
-    color: var(--green-primary);
+  /* Cache stat is text, not a pill — keeps the row low-noise. Faded
+     when the hit ratio is poor (cool but uninteresting); green when
+     it's good (the bit worth glancing at). */
+  .cache-text {
+    color: var(--text-faded);
+    font-variant-numeric: tabular-nums;
+  }
+  .cache-text.hit {
+    /* Muted green: half green-primary, half body-text. The text token
+       flips between slate (light mode) and cream (dark mode), so the
+       result is a desaturated olive-toned green in either theme rather
+       than the eye-grabbing pure --green-primary. */
+    color: color-mix(in srgb, var(--green-primary) 50%, var(--text));
   }
 </style>

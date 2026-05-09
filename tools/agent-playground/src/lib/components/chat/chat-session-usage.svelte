@@ -75,7 +75,7 @@
     <span class="metric">↑ {fmt(totals.freshInputTokens)}</span>
     <span class="metric">↓ {fmt(totals.outputTokens)}</span>
     {#if totals.cacheReadTokens > 0}
-      <span class="metric cache" class:hit={cacheHitRatio > 0.3}>
+      <span class="cache-text" class:hit={cacheHitRatio > 0.3}>
         cache {pct(cacheHitRatio)}
       </span>
     {/if}
@@ -104,15 +104,18 @@
   .metric {
     font-variant-numeric: tabular-nums;
   }
-  .metric.cache {
-    background: var(--highlight);
-    border-radius: 0.4rem;
-    padding-block: 0.1rem;
-    padding-inline: 0.35rem;
+  /* Cache stat is text, not a chip. Faded when the hit ratio is low
+     (uninteresting); green when it's good (the part worth glancing
+     at). */
+  .cache-text {
+    color: var(--text-faded);
+    font-variant-numeric: tabular-nums;
   }
-  .metric.cache.hit {
-    background: color-mix(in srgb, var(--green-primary) 18%, transparent);
-    color: var(--green-primary);
+  .cache-text.hit {
+    /* Muted green: half green-primary, half body-text. Desaturates the
+       accent against the page background in both themes so the row
+       stays low-noise. */
+    color: color-mix(in srgb, var(--green-primary) 50%, var(--text));
   }
   .turns {
     color: var(--text-faded);
