@@ -164,10 +164,13 @@
     replacingId = null;
   }
 
-  function handleReplaceSubmit(label: string, secret: Record<string, string>) {
+  function handleReplaceSubmit(
+    label: string,
+    secret: Record<string, string | number>,
+  ) {
     if (!replacingId) return;
     updateMutation.mutate(
-      { id: replacingId, secret: secret as Record<string, unknown> },
+      { id: replacingId, secret },
       {
         onSettled: () => {
           replacingId = null;
@@ -184,7 +187,10 @@
     addingProvider = null;
   }
 
-  function handleAddNewSubmit(label: string, secret: Record<string, string>) {
+  function handleAddNewSubmit(
+    label: string,
+    secret: Record<string, string | number>,
+  ) {
     if (!addingProvider) return;
     const connect = getConnect(addingProvider);
     connect.submitApiKey(label, secret).then(() => {

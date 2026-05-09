@@ -111,7 +111,10 @@
 
   // ─── Handlers ──────────────────────────────────────────────────────────────
 
-  async function handleApiKeySubmit(label: string, secret: Record<string, string>) {
+  async function handleApiKeySubmit(
+    label: string,
+    secret: Record<string, string | number>,
+  ) {
     await connect.submitApiKey(label, secret);
     if (!connect.error) {
       connected = true;

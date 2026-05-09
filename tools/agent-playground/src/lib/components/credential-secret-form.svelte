@@ -26,7 +26,10 @@
     initialLabel?: string;
     submitting: boolean;
     error: string | null;
-    onSubmit: (label: string, secret: Record<string, string>) => void;
+    onSubmit: (
+      label: string,
+      secret: Record<string, string | number>,
+    ) => void;
     onCancel?: () => void;
   }
 
@@ -47,9 +50,17 @@
 
   // ─── Derived ─────────────────────────────────────────────────────────────────
 
+  // JSON Schema property type. We only handle string/integer/number; anything
+  // else (object/array/boolean/null) falls back to text input.
+  const FieldTypeSchema = z
+    .object({ type: z.enum(["string", "integer", "number"]) })
+    .partial();
+
   const schemaShape = $derived.by(() => {
     const shape = z.object({
-      properties: z.record(z.string(), z.object({}).passthrough()).optional(),
+      properties: z
+        .record(z.string(), z.object({}).passthrough())
+        .optional(),
       required: z.array(z.string()).optional(),
     });
     const parsed = shape.safeParse(secretSchema);
@@ -57,14 +68,23 @@
     return parsed.data;
   });
 
+  type FieldType = "string" | "integer" | "number";
+
   const secretFields = $derived.by(() => {
     if (!schemaShape?.properties) return [];
     const required = new Set(schemaShape.required ?? []);
-    return Object.keys(schemaShape.properties).map((key) => ({
-      key,
-      label: secretKeyToLabel(key),
-      required: required.has(key),
-    }));
+    return Object.entries(schemaShape.properties).map(([key, prop]) => {
+      const parsedType = FieldTypeSchema.safeParse(prop);
+      const type: FieldType = parsedType.success
+        ? parsedType.data.type ?? "string"
+        : "string";
+      return {
+        key,
+        label: secretKeyToLabel(key),
+        required: required.has(key),
+        type,
+      };
+    });
   });
 
   const isAddMode = $derived(initialLabel === undefined);
@@ -106,10 +126,25 @@
       return;
     }
 
-    const secret: Record<string, string> = {};
+    const secret: Record<string, string | number> = {};
     for (const field of secretFields) {
       const value = fieldValues[field.key]?.trim();
-      if (value) secret[field.key] = value;
+      if (!value) continue;
+
+      if (field.type === "integer" || field.type === "number") {
+        const num = Number(value);
+        if (!Number.isFinite(num)) {
+          validationError = `${field.label} must be a number`;
+          return;
+        }
+        if (field.type === "integer" && !Number.isInteger(num)) {
+          validationError = `${field.label} must be an integer`;
+          return;
+        }
+        secret[field.key] = num;
+      } else {
+        secret[field.key] = value;
+      }
     }
 
     onSubmit(submitLabel, secret);
@@ -148,7 +183,12 @@
       <label for="credential-{field.key}">{field.label}</label>
       <input
         id="credential-{field.key}"
-        type={isSensitiveField(field.key) ? "password" : "text"}
+        type={field.type === "integer" || field.type === "number"
+          ? "number"
+          : isSensitiveField(field.key)
+            ? "password"
+            : "text"}
+        step={field.type === "integer" ? "1" : undefined}
         bind:value={fieldValues[field.key]}
         placeholder={field.required
           ? `Enter ${field.label.toLowerCase()}`

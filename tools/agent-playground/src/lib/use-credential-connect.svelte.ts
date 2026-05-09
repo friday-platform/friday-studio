@@ -95,7 +95,7 @@ export function useCredentialConnect(providerId: string) {
    */
   async function submitApiKey(
     label: string,
-    secret: Record<string, string>,
+    secret: Record<string, string | number>,
   ): Promise<string | null> {
     state.submitting = true;
     state.error = null;

@@ -51,7 +51,10 @@
 
   let wireError = $state<string | null>(null);
 
-  async function handleSubmit(label: string, secret: Record<string, string>) {
+  async function handleSubmit(
+    label: string,
+    secret: Record<string, string | number>,
+  ) {
     wireError = null;
     const credentialId = await connect.submitApiKey(label, secret);
     if (!credentialId) return;
