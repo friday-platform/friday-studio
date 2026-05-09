@@ -9,28 +9,82 @@
   import type { ValidationAttemptDisplay } from "./validation-accumulator.ts";
   import UsageBadge from "./usage-badge.svelte";
 
-  // Message timestamp for the per-message "…" menu.
-  //   • same calendar day → "Today, 12:31 PM"
-  //   • any other day     → "Apr 20, 11:31 PM"
+  // Per-message timestamp formatters. Default is HH:MM:SS in the user's
+  // locale; the alt-pressed view swaps in full date + time so the
+  // operator can confirm a turn happened on the day they think it did
+  // without leaving the row.
   const TIME_FMT = new Intl.DateTimeFormat(undefined, {
     hour: "numeric",
     minute: "2-digit",
+    second: "2-digit",
   });
   const DATETIME_FMT = new Intl.DateTimeFormat(undefined, {
+    year: "numeric",
     month: "short",
     day: "numeric",
     hour: "numeric",
     minute: "2-digit",
+    second: "2-digit",
   });
-  function formatMessageTimestamp(timestamp: number): string {
-    const date = new Date(timestamp);
-    const now = new Date();
-    const sameDay =
-      date.getFullYear() === now.getFullYear() &&
-      date.getMonth() === now.getMonth() &&
-      date.getDate() === now.getDate();
-    if (sameDay) return `Today, ${TIME_FMT.format(date)}`;
-    return DATETIME_FMT.format(date);
+  function formatTimeShort(timestamp: number): string {
+    return TIME_FMT.format(new Date(timestamp));
+  }
+  function formatDateTimeFull(timestamp: number): string {
+    return DATETIME_FMT.format(new Date(timestamp));
+  }
+
+  // Global alt-key state. Held → time elements display the full
+  // date + time format; released → back to compact HH:MM:SS. Single
+  // listener pair on window keeps every message reactive to one
+  // source. Hover tooltip (title="...") is also set so the same info
+  // is reachable without a keyboard chord.
+  let altPressed = $state(false);
+  $effect(() => {
+    function onDown(e: KeyboardEvent) {
+      if (e.key === "Alt" && !altPressed) altPressed = true;
+    }
+    function onUp(e: KeyboardEvent) {
+      if (e.key === "Alt" && altPressed) altPressed = false;
+    }
+    function onBlur() {
+      altPressed = false;
+    }
+    window.addEventListener("keydown", onDown);
+    window.addEventListener("keyup", onUp);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      window.removeEventListener("keydown", onDown);
+      window.removeEventListener("keyup", onUp);
+      window.removeEventListener("blur", onBlur);
+    };
+  });
+
+  // Pull every text segment out of a chat message for the "Copy
+  // message" action. Tool-bursts contribute their visible reasoning
+  // commentary (when present) — the raw tool I/O is debug detail and
+  // would bloat a copy-paste; users grabbing the message want the
+  // prose.
+  function messageTextForCopy(msg: ChatMessage): string {
+    const parts: string[] = [];
+    for (const segment of msg.segments) {
+      if (segment.type === "text" && segment.content.length > 0) {
+        parts.push(segment.content);
+      } else if (segment.type === "tool-burst" && segment.reasoning) {
+        parts.push(segment.reasoning);
+      }
+    }
+    return parts.join("\n\n");
+  }
+
+  async function copyMessageText(msg: ChatMessage): Promise<void> {
+    const text = messageTextForCopy(msg);
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      // Permission denied or insecure context — silent failure is
+      // fine; the menu closing is feedback enough.
+    }
   }
 
   interface Props {
@@ -359,10 +413,6 @@
             {/if}
           {/each}
 
-          {#if message.role === "assistant" && message.metadata?.usage}
-            <UsageBadge usage={message.metadata.usage} provider={message.metadata.provider} />
-          {/if}
-
           {@const sessionPills = message.role === "assistant"
             ? pillsForSession(message.metadata?.sessionId)
             : []}
@@ -439,11 +489,16 @@
             </div>
           {/if}
 
-          <!-- Per-message overflow menu. Holds the timestamp today; later
-               actions (branch, read aloud, copy, etc.) hang off the same
-               Content. User/assistant only — system messages stay quiet. -->
-          <div class="message-actions">
-            <DropdownMenu.Root positioning={{ placement: "bottom-start" }}>
+          <!-- Compact actions row under the bubble: ellipsis menu, the
+               turn timestamp, and (assistant only) the inline usage
+               badge. Layout flips by role:
+                 • assistant — left-aligned: ellipsis · time · usage
+                 • user      — right-aligned: time · ellipsis
+               System messages stay quiet (no menu, no time). -->
+          {@const fullTime = formatDateTimeFull(message.timestamp)}
+          {@const compactTime = formatTimeShort(message.timestamp)}
+          <div class="message-actions" class:assistant={message.role === "assistant"} class:user={message.role === "user"}>
+            <DropdownMenu.Root positioning={{ placement: message.role === "user" ? "bottom-end" : "bottom-start" }}>
               {#snippet children()}
                 <DropdownMenu.Trigger class="message-menu-trigger" aria-label="Message options">
                   <svg
@@ -459,12 +514,18 @@
                   </svg>
                 </DropdownMenu.Trigger>
                 <DropdownMenu.Content>
-                  <DropdownMenu.Label>
-                    {formatMessageTimestamp(message.timestamp)}
-                  </DropdownMenu.Label>
+                  <DropdownMenu.Item onclick={() => void copyMessageText(message)}>
+                    Copy message
+                  </DropdownMenu.Item>
                 </DropdownMenu.Content>
               {/snippet}
             </DropdownMenu.Root>
+            <span class="message-time" title={fullTime}>
+              {altPressed ? fullTime : compactTime}
+            </span>
+            {#if message.role === "assistant" && message.metadata?.usage}
+              <UsageBadge usage={message.metadata.usage} provider={message.metadata.provider} />
+            {/if}
           </div>
       {/if}
     </div>
@@ -522,41 +583,75 @@
     width: 100%;
   }
 
-  /* Per-message overflow menu. Sits just below the bubble, dims until
-     the row is hovered so it doesn't compete with message content. */
+  /* Compact actions row — ellipsis menu, time, optional usage badge.
+     Sits just below the bubble. Whole row dims until hovered so it
+     stays out of the way of message reading. `align-items: flex-end`
+     anchors every child to the row's bottom edge so the ellipsis
+     sits flush with the bottom of the text rather than floating
+     above it. */
   .message-actions {
+    align-items: flex-end;
+    column-gap: var(--size-2);
     display: flex;
-    gap: var(--size-1);
-    opacity: 0.45;
+    flex-wrap: wrap;
+    font-size: 0.7rem;
+    line-height: 1;
+    opacity: 0.6;
     padding-block-start: 2px;
+    row-gap: 0;
     transition: opacity 120ms ease;
   }
   .message:hover .message-actions,
   .message-actions:focus-within {
     opacity: 1;
   }
-  .message.user .message-actions {
-    justify-content: flex-end;
+  /* Assistant: ellipsis on the LEFT (already first in DOM order). */
+  .message-actions.assistant {
+    justify-content: flex-start;
+  }
+  /* User: row right-aligned + reversed so the order in the DOM
+     (ellipsis → time) renders as (time → ellipsis) on screen — time
+     sits to the LEFT of the ellipsis, which itself anchors at the
+     right edge next to the user bubble. */
+  .message-actions.user {
+    flex-direction: row-reverse;
+    justify-content: flex-start;
+  }
+
+  .message-time {
+    color: var(--text-faded);
+    cursor: default;
+    font-variant-numeric: tabular-nums;
+    user-select: none;
   }
 
   .message-actions :global(.message-menu-trigger) {
+    /* Sized to match the row's text height so the dots line up with
+       the bottom of the time / usage labels instead of floating above
+       them. The SVG fills the trigger; the dots sit at viewBox center,
+       which now overlaps the text's mid-band rather than the row's
+       own taller bounding box. */
     align-items: center;
     background: transparent;
+    block-size: 12px;
     border: none;
     border-radius: var(--radius-1);
-    color: color-mix(in srgb, var(--color-text), transparent 35%);
+    color: var(--text-faded);
     cursor: pointer;
     display: inline-flex;
-    inline-size: 24px;
-    block-size: 20px;
+    inline-size: 16px;
     justify-content: center;
     padding: 0;
     transition: background-color 120ms ease, color 120ms ease;
   }
+  .message-actions :global(.message-menu-trigger svg) {
+    block-size: 12px;
+    inline-size: 12px;
+  }
   .message-actions :global(.message-menu-trigger:hover),
   .message-actions :global(.message-menu-trigger[data-state="open"]) {
-    background: color-mix(in srgb, var(--color-text), transparent 92%);
-    color: var(--color-text);
+    background: var(--highlight);
+    color: var(--text);
   }
 
   /* Thinking placeholder — same footprint as a real assistant bubble so
