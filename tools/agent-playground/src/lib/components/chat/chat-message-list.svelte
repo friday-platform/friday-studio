@@ -7,6 +7,7 @@
   import { IconSmall } from "@atlas/ui";
   import ValidationPillRow from "./validation-pill-row.svelte";
   import type { ValidationAttemptDisplay } from "./validation-accumulator.ts";
+  import UsageBadge from "./usage-badge.svelte";
 
   // Message timestamp for the per-message "…" menu.
   //   • same calendar day → "Today, 12:31 PM"
@@ -357,6 +358,10 @@
               {/if}
             {/if}
           {/each}
+
+          {#if message.role === "assistant" && message.metadata?.usage}
+            <UsageBadge usage={message.metadata.usage} provider={message.metadata.provider} />
+          {/if}
 
           {@const sessionPills = message.role === "assistant"
             ? pillsForSession(message.metadata?.sessionId)

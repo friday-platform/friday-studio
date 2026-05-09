@@ -166,6 +166,19 @@ export interface ChatMessage {
     provider?: string;
     modelId?: string;
     sessionId?: string;
+    /**
+     * Per-turn token + cache usage. Populated by workspace-chat from
+     * `streamText.totalUsage` so the inline usage badge can render
+     * without re-fetching session events. Cache fields are absent when
+     * the provider didn't surface them (e.g. some non-Anthropic
+     * non-OpenAI providers).
+     */
+    usage?: {
+      inputTokens?: number;
+      outputTokens?: number;
+      cacheReadTokens?: number;
+      cacheWriteTokens?: number;
+    };
   };
 }
 

@@ -205,10 +205,6 @@ No emoji. Math: plain text (/ * ^). No LaTeX/MathJax.
 Show actual tool results — not descriptions of what would have been returned.
 </response_style>
 
-<tabular_data>
-UI can't render markdown tables. Use bullet/numbered list per row.
-</tabular_data>
-
 <questions_format>
 Numbered list. Five or fewer. Prioritize by need.
 

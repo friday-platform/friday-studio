@@ -438,6 +438,17 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
     }
 
     let finalText: string | undefined;
+    // Per-turn token + cache usage captured from streamText.onFinish so
+    // the assistant message metadata (and downstream UI badges +
+    // /usage aggregations) can read it without re-reading session events.
+    let turnUsage:
+      | {
+          inputTokens?: number;
+          outputTokens?: number;
+          cacheReadTokens?: number;
+          cacheWriteTokens?: number;
+        }
+      | undefined;
     // Capture the bundled-agent's internal tool calls so the workspace-runtime
     // side-channel (runtime.ts:executeAgent) can mirror them onto
     // `step:complete.toolCalls`. This keeps `case "agent" → workspace-chat`
@@ -1019,7 +1030,7 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
             // anthropic; the top-level providerOptions still carries the
             // default for tool/message-level caching the SDK applies.
             providerOptions: getDefaultProviderOpts("anthropic"),
-            onFinish: ({ text, steps, toolCalls, toolResults, reasoningText }) => {
+            onFinish: ({ text, steps, toolCalls, toolResults, reasoningText, totalUsage }) => {
               finalText = text;
               // J3: harvest internal tool calls from streamText's terminal
               // event. `collectToolUsageFromSteps` flattens per-step calls
@@ -1030,6 +1041,17 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
               assembledToolCalls = collected.assembledToolCalls;
               assembledToolResults = collected.assembledToolResults;
               assembledReasoning = reasoningText || undefined;
+              // `totalUsage` aggregates across every step in the
+              // streamText loop. `result.usage` would be the last-step
+              // count and would undercount multi-tool turns. Cache token
+              // fields ride under `inputTokenDetails` in the SDK shape;
+              // flatten so consumers don't need to know the SDK layout.
+              turnUsage = {
+                inputTokens: totalUsage.inputTokens,
+                outputTokens: totalUsage.outputTokens,
+                cacheReadTokens: totalUsage.inputTokenDetails?.cacheReadTokens,
+                cacheWriteTokens: totalUsage.inputTokenDetails?.cacheWriteTokens,
+              };
             },
             onError: ({ error }) => {
               if (!error) return;
@@ -1070,6 +1092,11 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
                   provider: conversationalModel.provider,
                   modelId: conversationalModel.modelId,
                   agentId: "workspace-chat",
+                  // Usage is set by `onFinish` (above) once the stream
+                  // settles. On in-flight metadata frames this is
+                  // undefined — UI consumers treat absence as
+                  // "still streaming".
+                  ...(turnUsage ? { usage: turnUsage } : {}),
                 };
               },
             }),

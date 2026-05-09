@@ -400,6 +400,63 @@
   });
 
   /**
+   * Per-session cache health roll-up. Walks every assistant turn and
+   * sums input / output / cache-read / cache-write tokens. The "hit ratio"
+   * is the fraction of input tokens served from the cache averaged across
+   * every turn that reported usage. Turns with no usage (legacy messages
+   * that pre-date the field) are excluded from the denominator.
+   *
+   * The first-turn cache write — the cost of populating the prefix —
+   * shows up as cacheWriteTokens; every subsequent turn that hits the
+   * same prefix contributes to cacheReadTokens. A healthy chat session
+   * shows write-heavy turn 1 followed by read-dominant turns 2+.
+   */
+  const cacheHealth = $derived.by(() => {
+    if (!open) {
+      return {
+        turnsWithUsage: 0,
+        turnsWithCacheHit: 0,
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+      };
+    }
+    let turnsWithUsage = 0;
+    let turnsWithCacheHit = 0;
+    let inputTokens = 0;
+    let outputTokens = 0;
+    let cacheReadTokens = 0;
+    let cacheWriteTokens = 0;
+    for (const msg of snapshotMessages) {
+      if (msg.role !== "assistant") continue;
+      const usage = msg.metadata?.usage;
+      if (!usage) continue;
+      turnsWithUsage++;
+      const turnRead = usage.cacheReadTokens ?? 0;
+      if (turnRead > 0) turnsWithCacheHit++;
+      inputTokens += usage.inputTokens ?? 0;
+      outputTokens += usage.outputTokens ?? 0;
+      cacheReadTokens += turnRead;
+      cacheWriteTokens += usage.cacheWriteTokens ?? 0;
+    }
+    return {
+      turnsWithUsage,
+      turnsWithCacheHit,
+      inputTokens,
+      outputTokens,
+      cacheReadTokens,
+      cacheWriteTokens,
+    };
+  });
+
+  const cacheHitRatio = $derived(
+    cacheHealth.inputTokens > 0
+      ? cacheHealth.cacheReadTokens / cacheHealth.inputTokens
+      : 0,
+  );
+
+  /**
    * Session-wide loaded skills. Aggregates `load_skill` tool calls across
    * every assistant turn (not just the latest) so the Context tab still
    * shows a skill that was loaded 10 turns ago. Keyed by skill name.
@@ -739,6 +796,32 @@
               <dt>Chars</dt>
               <dd>{systemPromptContext.systemMessages.reduce((s, m) => s + m.length, 0).toLocaleString()}</dd>
             </dl>
+          </div>
+        {/if}
+
+        {#if cacheHealth.turnsWithUsage > 0}
+          <div class="section">
+            <h4>Cache health</h4>
+            <dl class="kv-list">
+              <dt>Cached turns</dt>
+              <dd>{cacheHealth.turnsWithCacheHit} / {cacheHealth.turnsWithUsage}</dd>
+              <dt>Hit ratio</dt>
+              <dd>{Math.round(cacheHitRatio * 100)}% of input tokens</dd>
+              <dt>Input</dt>
+              <dd class="mono">{cacheHealth.inputTokens.toLocaleString()}</dd>
+              <dt>Output</dt>
+              <dd class="mono">{cacheHealth.outputTokens.toLocaleString()}</dd>
+              <dt>Cache read</dt>
+              <dd class="mono">{cacheHealth.cacheReadTokens.toLocaleString()}</dd>
+              <dt>Cache write</dt>
+              <dd class="mono">{cacheHealth.cacheWriteTokens.toLocaleString()}</dd>
+            </dl>
+            <p class="hint">
+              Hit ratio averages every assistant turn that reported usage. A
+              fresh chat shows write-heavy turn 1 followed by read-dominant
+              turns 2+; persistent 0% beyond turn 2 signals an unstable
+              prefix.
+            </p>
           </div>
         {/if}
 

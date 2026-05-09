@@ -12,6 +12,7 @@
   import ChatInput, { type ImageAttachment } from "./chat-input.svelte";
   import ChatInspector from "./chat-inspector.svelte";
   import ChatMessageList from "./chat-message-list.svelte";
+  import ChatSessionUsage from "./chat-session-usage.svelte";
   import { createCursorTrackingFetch } from "./cursor-tracking-fetch.ts";
   import { nextQueueStep } from "./chat-queue.ts";
   import { nextResumeBudgetStep } from "./resume-budget.ts";
@@ -1076,6 +1077,31 @@
           provider: typeof m.provider === "string" ? m.provider : undefined,
           modelId: typeof m.modelId === "string" ? m.modelId : undefined,
           sessionId: typeof m.sessionId === "string" ? m.sessionId : undefined,
+          // Token + cache usage stamped by workspace-chat. Lives next to
+          // provider/modelId because it's the per-turn observability
+          // surface the inline UsageBadge reads to render input/output/
+          // cache counts.
+          usage:
+            m.usage && typeof m.usage === "object"
+              ? {
+                  inputTokens:
+                    typeof (m.usage as { inputTokens?: unknown }).inputTokens === "number"
+                      ? ((m.usage as { inputTokens: number }).inputTokens)
+                      : undefined,
+                  outputTokens:
+                    typeof (m.usage as { outputTokens?: unknown }).outputTokens === "number"
+                      ? ((m.usage as { outputTokens: number }).outputTokens)
+                      : undefined,
+                  cacheReadTokens:
+                    typeof (m.usage as { cacheReadTokens?: unknown }).cacheReadTokens === "number"
+                      ? ((m.usage as { cacheReadTokens: number }).cacheReadTokens)
+                      : undefined,
+                  cacheWriteTokens:
+                    typeof (m.usage as { cacheWriteTokens?: unknown }).cacheWriteTokens === "number"
+                      ? ((m.usage as { cacheWriteTokens: number }).cacheWriteTokens)
+                      : undefined,
+                }
+              : undefined,
         },
       };
     });
@@ -1242,6 +1268,8 @@
 
   <div class="chat-body">
     <div class="chat-main">
+      <ChatSessionUsage messages={displayedMessages} />
+
       {#if rehydrating}
         <div class="rehydrating-indicator">Loading conversation...</div>
       {/if}
