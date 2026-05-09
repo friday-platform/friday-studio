@@ -21,6 +21,7 @@ import {
   importGlobalSkills,
   LegacyArchiveError,
   type SkillRowV1,
+  SkillRowV2Schema,
 } from "./global-skills.ts";
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -115,7 +116,7 @@ describe("exportGlobalSkills (v2)", () => {
     const rows = jsonlText
       .split("\n")
       .filter((l) => l.length > 0)
-      .map((l) => JSON.parse(l) as { name: string; version: number });
+      .map((l) => SkillRowV2Schema.parse(JSON.parse(l)));
     expect(rows.map((r) => r.version)).toEqual([1, 2, 3]);
   });
 
@@ -161,7 +162,7 @@ describe("exportGlobalSkills (v2)", () => {
     const rows = jsonl
       .split("\n")
       .filter((l) => l.length > 0)
-      .map((l) => JSON.parse(l) as SkillRowV1 & { archive: { kind: string } });
+      .map((l) => SkillRowV2Schema.parse(JSON.parse(l)));
     expect(rows[0]?.archive.kind).toBe("bytes");
     expect(rows[1]?.archive.kind).toBe("inherited");
     expect(rows[2]?.archive.kind).toBe("bytes");
