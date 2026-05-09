@@ -39,7 +39,6 @@ import { getBlock2Inputs } from "./block2-cache.ts";
 import {
   composeArtifactBlocks,
   composeMemoryBlocks,
-  composeSkills,
   composeTools,
   composeWorkspaceSections,
   fetchForegroundContexts,
@@ -696,10 +695,13 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
         );
         const workspaceSection = composeWorkspaceSections(primaryWorkspaceSection, foregrounds);
 
-        // Skills — scoped to this workspace (unassigned ∪ directly assigned), merged with foregrounds
+        // Skills — scoped to the primary workspace only. Foreground skills
+        // used to merge into <available_skills>, which made any pinned
+        // foreground's skill assignment burst the prefix cache. Now the
+        // chat reaches across via list_skills(scope=...) / describe_skill
+        // when it actually needs a foreground's skill.
         const primarySkills = await resolveVisibleSkills(workspaceId, SkillStorage);
-        const mergedSkills = composeSkills(primarySkills, foregrounds);
-        const skillsSection = buildSkillsSection(mergedSkills);
+        const skillsSection = buildSkillsSection(primarySkills);
 
         // Connect service tool
         const connectServiceTool: AtlasTools = {};

@@ -41,12 +41,13 @@ export function createListBundledAgentsTool(logger: Logger): AtlasTools {
         "for any task that fits their domain. To inspect input/output schemas, follow up with " +
         "`describe_bundled_agent(id)` — and to actually invoke, call `agent_<id>` or `delegate`.",
       inputSchema: z.object({}),
-      execute: () => {
+      execute: async () => {
+        await Promise.resolve();
         const agents = discoverableBundledAgents
           .map(summarize)
           .sort((a, b) => a.id.localeCompare(b.id));
         logger.info("list_bundled_agents succeeded", { count: agents.length });
-        return Promise.resolve({ ok: true as const, agents, count: agents.length });
+        return { ok: true as const, agents, count: agents.length };
       },
     }),
   };
@@ -75,17 +76,18 @@ export function createDescribeBundledAgentTool(logger: Logger): AtlasTools {
       inputSchema: z.object({
         id: z.string().min(1).describe("Bundled agent id, e.g. 'web', 'gh', 'slack'."),
       }),
-      execute: ({ id }) => {
+      execute: async ({ id }) => {
+        await Promise.resolve();
         const agent = bundledAgents.find((a) => a.metadata.id === id);
         if (!agent) {
-          return Promise.resolve({
+          return {
             ok: false as const,
             error: `Bundled agent "${id}" not found. Use list_bundled_agents to see valid ids.`,
-          });
+          };
         }
         const { metadata } = agent;
         logger.info("describe_bundled_agent succeeded", { id });
-        return Promise.resolve({
+        return {
           ok: true as const,
           agent: {
             id: metadata.id,
@@ -95,7 +97,7 @@ export function createDescribeBundledAgentTool(logger: Logger): AtlasTools {
             inputSchema: serializeSchema(metadata.inputSchema),
             outputSchema: serializeSchema(metadata.outputSchema),
           },
-        });
+        };
       },
     }),
   };
