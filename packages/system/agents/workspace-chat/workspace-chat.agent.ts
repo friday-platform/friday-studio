@@ -61,6 +61,11 @@ import { createInstallMcpServerTool } from "./tools/install-mcp-server.ts";
 import { createJobTools } from "./tools/job-tools.ts";
 import { createListCapabilitiesTool } from "./tools/list-capabilities.ts";
 import { createListMcpToolsTool } from "./tools/list-mcp-tools.ts";
+import {
+  createDescribeSkillTool,
+  createListSkillsTool,
+  createSearchSkillsTool,
+} from "./tools/list-skills.ts";
 import { createMcpDependenciesTool } from "./tools/mcp-dependencies.ts";
 import { createMemorySaveTool } from "./tools/memory-save.ts";
 import { createPublishSkillTool } from "./tools/publish-skill.ts";
@@ -287,17 +292,49 @@ export function formatWorkspaceSection(
 }
 
 /**
- * Build skills section from workspace skills.
+ * Cap a skill description at the first line break / sentence boundary, then a
+ * fixed character limit, so the inline `<available_skills>` index stays
+ * cheap. The full description is still retrievable via `describe_skill`,
+ * and the body via `load_skill`. Trims trailing whitespace + dangling
+ * partial-word tails, appends `…` when truncated.
+ *
+ * The 80-char cap is a soft target — at ~25 skills per workspace it keeps
+ * the index under ~600 tokens regardless of skill-author description length.
+ */
+const SKILL_SUMMARY_MAX_CHARS = 80;
+
+export function summarizeSkillDescription(description: string): string {
+  const collapsed = description.replace(/\s+/g, " ").trim();
+  if (!collapsed) return "";
+  const firstLine = collapsed.split(/(?<=[.!?])\s/)[0] ?? collapsed;
+  const candidate = firstLine.length <= collapsed.length ? firstLine : collapsed;
+  if (candidate.length <= SKILL_SUMMARY_MAX_CHARS) return candidate;
+  const cut = candidate.slice(0, SKILL_SUMMARY_MAX_CHARS);
+  const lastSpace = cut.lastIndexOf(" ");
+  const safe = lastSpace > SKILL_SUMMARY_MAX_CHARS / 2 ? cut.slice(0, lastSpace) : cut;
+  return `${safe.replace(/[\s,;:.!?-]+$/, "")}…`;
+}
+
+/**
+ * Build the `<available_skills>` index that ships in block 2.
+ *
+ * Each entry carries name + ref + a one-line summary capped at
+ * SKILL_SUMMARY_MAX_CHARS — full descriptions are retrievable via
+ * `describe_skill(ref)` and bodies via `load_skill(ref)`. Keeping the
+ * inline section bounded means a workspace with N skills costs O(N) bytes
+ * at ~30 tokens each instead of ~120 tokens of per-skill description text.
  */
 export function buildSkillsSection(workspaceSkills: SkillSummary[]): string {
   if (workspaceSkills.length === 0) return "";
 
-  const entries = workspaceSkills.map(
-    (s) => `<skill name="@${s.namespace}/${s.name}">${s.description}</skill>`,
-  );
+  const entries = workspaceSkills.map((s) => {
+    const summary = summarizeSkillDescription(s.description);
+    const body = summary.length > 0 ? summary : "";
+    return `<skill name="@${s.namespace}/${s.name}">${body}</skill>`;
+  });
 
   return `<available_skills>
-<instruction>Load skills with load_skill when task matches.</instruction>
+<instruction>Index of skills visible to this workspace. Each entry is ref + one-line summary. Use describe_skill for full descriptions, load_skill to bring instructions into chat, search_skills/list_skills to discover.</instruction>
 ${entries.join("\n")}
 </available_skills>`;
 }
@@ -678,6 +715,14 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
         const assignSkillTool = createAssignWorkspaceSkillTool(workspaceId, logger);
         const unassignSkillTool = createUnassignWorkspaceSkillTool(workspaceId, logger);
 
+        // Skill discovery tools — pair with the names+summary index in
+        // <available_skills>. The chat reads names from the index and pulls
+        // descriptions/bodies on demand, so skill assignment doesn't burst
+        // the prefix cache for every other skill in the workspace.
+        const listSkillsTool = createListSkillsTool(workspaceId, logger);
+        const searchSkillsTool = createSearchSkillsTool(workspaceId, logger);
+        const describeSkillTool = createDescribeSkillTool(logger);
+
         // Job tools — pass session.streamId so nested job sessions inherit
         // the chat thread ID. The daemon's broadcast hook reads it to skip
         // the originating chat communicator (no echo back to Discord/Slack/etc).
@@ -825,6 +870,9 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           ...publishSkillTool,
           ...assignSkillTool,
           ...unassignSkillTool,
+          ...listSkillsTool,
+          ...searchSkillsTool,
+          ...describeSkillTool,
           delegate: delegateTool,
           load_skill: loadSkillTool,
         };
