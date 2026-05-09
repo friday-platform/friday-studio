@@ -786,16 +786,45 @@
         </div>
 
         {#if systemPromptContext}
+          {@const blockLabels = [
+            "Block 1 — weeks-stable (1h cache)",
+            "Block 2 — workspace-stable (1h cache)",
+            "Block 3 — session-stable (5m cache)",
+            "Block 4 — volatile preface (uncached)",
+          ]}
+          {@const blocks = systemPromptContext.systemMessages}
+          {@const hasBlock3 = blocks.length === 4}
           <div class="section">
-            <h4>System Prompt</h4>
+            <h4>Cache blocks</h4>
             <dl class="kv-list">
               <dt>Captured</dt>
               <dd class="mono">{new Date(systemPromptContext.timestamp).toLocaleTimeString()}</dd>
-              <dt>Parts</dt>
-              <dd>{systemPromptContext.systemMessages.length}</dd>
-              <dt>Chars</dt>
-              <dd>{systemPromptContext.systemMessages.reduce((s, m) => s + m.length, 0).toLocaleString()}</dd>
+              <dt>Total chars</dt>
+              <dd class="mono">{blocks.reduce((s, m) => s + m.length, 0).toLocaleString()}</dd>
             </dl>
+            <ul class="block-list">
+              {#each blocks as content, i (i)}
+                {@const isVolatile = i === blocks.length - 1}
+                {@const labelIndex = !hasBlock3 && i === blocks.length - 1 ? 3 : i}
+                <li class="block-row" class:volatile={isVolatile}>
+                  <div class="block-label">{blockLabels[labelIndex]}</div>
+                  <div class="block-meta">
+                    <span class="mono">{content.length.toLocaleString()} chars</span>
+                    <span class="mono dim">~{Math.round(content.length / 4).toLocaleString()} tok</span>
+                  </div>
+                  <details class="block-details">
+                    <summary>preview</summary>
+                    <pre class="block-preview">{content.slice(0, 600)}{content.length > 600 ? "…" : ""}</pre>
+                  </details>
+                </li>
+              {/each}
+            </ul>
+            <p class="hint">
+              Anthropic's `cache_control` markers sit on blocks 1, 2, and 3
+              (when present). The volatile preface — temporal facts plus
+              memory and artifact retrievals — rides as a synthetic user
+              message and is intentionally NOT cached.
+            </p>
           </div>
         {/if}
 
@@ -1136,10 +1165,19 @@
 
       {:else if activeTab === "prompt"}
         {#if systemPromptContext}
+          {@const promptBlocks = systemPromptContext.systemMessages}
+          {@const promptHasBlock3 = promptBlocks.length === 4}
+          {@const promptBlockLabels = [
+            "Block 1 — weeks-stable (1h cache)",
+            "Block 2 — workspace-stable (1h cache)",
+            "Block 3 — session-stable (5m cache)",
+            "Block 4 — volatile preface (uncached)",
+          ]}
           <div class="prompt-viewer">
-            {#each systemPromptContext.systemMessages as msg, i (i)}
+            {#each promptBlocks as msg, i (i)}
+              {@const labelIndex = !promptHasBlock3 && i === promptBlocks.length - 1 ? 3 : i}
               <details class="prompt-section" open={i === 0}>
-                <summary>Part {i + 1} ({msg.length.toLocaleString()} chars)</summary>
+                <summary>{promptBlockLabels[labelIndex]} ({msg.length.toLocaleString()} chars)</summary>
                 <pre class="prompt-text">{msg}</pre>
               </details>
             {/each}
@@ -1269,6 +1307,77 @@
 
   .mono {
     font-family: var(--font-family-mono, ui-monospace, monospace);
+  }
+
+  .hint {
+    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    font-size: var(--font-size-1);
+    line-height: 1.4;
+    margin-block: var(--size-2) 0;
+  }
+
+  .block-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-2);
+    list-style: none;
+    margin: var(--size-2) 0 0;
+    padding: 0;
+  }
+
+  .block-row {
+    border: 1px solid var(--border, var(--cream-800));
+    border-radius: var(--radius-1, 0.4rem);
+    padding: var(--size-2);
+  }
+
+  .block-row.volatile {
+    border-style: dashed;
+    opacity: 0.85;
+  }
+
+  .block-label {
+    color: color-mix(in srgb, var(--color-text), transparent 20%);
+    font-size: var(--font-size-1);
+    font-weight: var(--font-weight-6);
+  }
+
+  .block-meta {
+    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    display: flex;
+    font-size: var(--font-size-0);
+    gap: var(--size-3);
+    margin-block-start: var(--size-1);
+  }
+
+  .block-meta .dim {
+    color: color-mix(in srgb, var(--color-text), transparent 60%);
+  }
+
+  .block-details {
+    margin-block-start: var(--size-1);
+  }
+
+  .block-details summary {
+    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    cursor: pointer;
+    font-size: var(--font-size-0);
+    user-select: none;
+  }
+
+  .block-preview {
+    background: var(--highlight, transparent);
+    border-radius: var(--radius-1, 0.3rem);
+    color: color-mix(in srgb, var(--color-text), transparent 30%);
+    font-family: var(--font-family-mono, ui-monospace, monospace);
+    font-size: var(--font-size-0);
+    line-height: 1.4;
+    margin: var(--size-1) 0 0;
+    max-block-size: 12rem;
+    overflow: auto;
+    padding: var(--size-2);
+    white-space: pre-wrap;
+    word-break: break-word;
   }
 
   .status-dot {

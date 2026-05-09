@@ -116,7 +116,14 @@ export class AtlasLLMProviderAdapter implements LLMProvider {
       // what the Anthropic provider uses to fan out per-block cache_control
       // markers; non-Anthropic providers keep the conventional top-level
       // `system` string.
-      const isAnthropic = providerName === "anthropic";
+      // The AI SDK's Anthropic provider sets `.provider` to the
+      // surface-qualified id ("anthropic.messages", "anthropic.tools"),
+      // never the bare "anthropic". Match the family prefix so any
+      // future Anthropic surface gets the cache_control + system-
+      // message layout. A strict `=== "anthropic"` would silently fall
+      // through to the conventional `system` field with no cache
+      // markers attached.
+      const isAnthropic = providerName.startsWith("anthropic");
       const systemMessages: ModelMessage[] =
         isAnthropic && params.system
           ? [

@@ -188,6 +188,18 @@ export const AtlasDataEventSchemas = {
       }),
     ),
   }),
+  // Per-turn token + cache usage emitted from streamText.onFinish so the
+  // chat UI can render the usage badge live, without waiting for a page
+  // reload to read the persisted assistant-message metadata. The chunk
+  // is purely informational; the source of truth for the persisted
+  // turn lives on the assistant message's `metadata.usage` field, which
+  // the chat handler stamps just before append.
+  usage: z.object({
+    inputTokens: z.number().optional(),
+    outputTokens: z.number().optional(),
+    cacheReadTokens: z.number().optional(),
+    cacheWriteTokens: z.number().optional(),
+  }),
 };
 
 // ── Standalone event schemas with type discriminant (leapfrog #3) ───────────
@@ -267,6 +279,7 @@ export type AtlasDataEvents = {
   "skill-write": z.infer<(typeof AtlasDataEventSchemas)["skill-write"]>;
   "skill-rollback": z.infer<(typeof AtlasDataEventSchemas)["skill-rollback"]>;
   "skill-lint-warning": z.infer<(typeof AtlasDataEventSchemas)["skill-lint-warning"]>;
+  usage: z.infer<(typeof AtlasDataEventSchemas)["usage"]>;
 };
 
 /**

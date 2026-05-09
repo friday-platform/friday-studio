@@ -955,6 +955,71 @@
    * Svelte $state race-bug phantom) still get filtered because their
    * only part is data-*.
    */
+  /**
+   * Pull per-turn token + cache usage off a UI message. Reads
+   * `metadata.usage` first (the persisted shape, set by the chat
+   * handler just before append) and falls back to a `data-usage`
+   * part on the message (the live-stream shape, emitted from
+   * `streamText.onFinish` so the UsageBadge can render the in-flight
+   * turn before the first page refresh).
+   *
+   * Returns `undefined` when neither source is present — legacy chat
+   * messages, or turns that haven't reported usage yet.
+   */
+  function extractTurnUsage(
+    msg: AtlasUIMessage,
+    metadataRecord: Record<string, unknown>,
+  ):
+    | {
+        inputTokens?: number;
+        outputTokens?: number;
+        cacheReadTokens?: number;
+        cacheWriteTokens?: number;
+      }
+    | undefined {
+    function pickNumber(source: unknown, key: string): number | undefined {
+      if (typeof source !== "object" || source === null) return undefined;
+      const v = (source as Record<string, unknown>)[key];
+      return typeof v === "number" ? v : undefined;
+    }
+
+    function shape(source: unknown):
+      | {
+          inputTokens?: number;
+          outputTokens?: number;
+          cacheReadTokens?: number;
+          cacheWriteTokens?: number;
+        }
+      | undefined {
+      if (typeof source !== "object" || source === null) return undefined;
+      return {
+        inputTokens: pickNumber(source, "inputTokens"),
+        outputTokens: pickNumber(source, "outputTokens"),
+        cacheReadTokens: pickNumber(source, "cacheReadTokens"),
+        cacheWriteTokens: pickNumber(source, "cacheWriteTokens"),
+      };
+    }
+
+    const fromMetadata = shape(metadataRecord.usage);
+    if (fromMetadata) return fromMetadata;
+
+    if (Array.isArray(msg.parts)) {
+      // Walk in reverse so the latest data-usage part wins on the
+      // (rare) case the stream emits more than one.
+      for (let i = msg.parts.length - 1; i >= 0; i--) {
+        const part = msg.parts[i];
+        if (typeof part !== "object" || part === null || !("type" in part)) continue;
+        const p = part as { type: unknown; data?: unknown };
+        if (p.type === "data-usage") {
+          const fromPart = shape(p.data);
+          if (fromPart) return fromPart;
+        }
+      }
+    }
+
+    return undefined;
+  }
+
   function extractImages(msg: AtlasUIMessage): ImageDisplay[] {
     if (!Array.isArray(msg.parts)) return [];
     const imgs: ImageDisplay[] = [];
@@ -1077,31 +1142,19 @@
           provider: typeof m.provider === "string" ? m.provider : undefined,
           modelId: typeof m.modelId === "string" ? m.modelId : undefined,
           sessionId: typeof m.sessionId === "string" ? m.sessionId : undefined,
-          // Token + cache usage stamped by workspace-chat. Lives next to
-          // provider/modelId because it's the per-turn observability
-          // surface the inline UsageBadge reads to render input/output/
-          // cache counts.
-          usage:
-            m.usage && typeof m.usage === "object"
-              ? {
-                  inputTokens:
-                    typeof (m.usage as { inputTokens?: unknown }).inputTokens === "number"
-                      ? ((m.usage as { inputTokens: number }).inputTokens)
-                      : undefined,
-                  outputTokens:
-                    typeof (m.usage as { outputTokens?: unknown }).outputTokens === "number"
-                      ? ((m.usage as { outputTokens: number }).outputTokens)
-                      : undefined,
-                  cacheReadTokens:
-                    typeof (m.usage as { cacheReadTokens?: unknown }).cacheReadTokens === "number"
-                      ? ((m.usage as { cacheReadTokens: number }).cacheReadTokens)
-                      : undefined,
-                  cacheWriteTokens:
-                    typeof (m.usage as { cacheWriteTokens?: unknown }).cacheWriteTokens === "number"
-                      ? ((m.usage as { cacheWriteTokens: number }).cacheWriteTokens)
-                      : undefined,
-                }
-              : undefined,
+          // Token + cache usage. Two sources, in priority order:
+          //
+          //   1. The persisted `metadata.usage` field (set by the chat
+          //      handler just before append). Available on reload and
+          //      after the turn has fully settled.
+          //   2. A `data-usage` part emitted from streamText.onFinish.
+          //      Streamed during the live turn so the UsageBadge can
+          //      render before the first reload.
+          //
+          // The data-part path lets the UI update without waiting for
+          // the SDK to re-fetch chat history; both paths produce the
+          // same shape, so the UsageBadge consumes either uniformly.
+          usage: extractTurnUsage(msg, m),
         },
       };
     });

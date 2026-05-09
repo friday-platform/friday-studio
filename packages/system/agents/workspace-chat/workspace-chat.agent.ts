@@ -20,12 +20,7 @@ import { scrubAssistantMessage } from "@atlas/core/artifacts/scrubber";
 import { ChatStorage } from "@atlas/core/chat/storage";
 import { createDelegateTool } from "@atlas/core/delegate";
 import { createErrorCause, getErrorDisplayMessage } from "@atlas/core/errors";
-import {
-  buildTemporalFacts,
-  getDefaultProviderOpts,
-  type PlatformModels,
-  smallLLM,
-} from "@atlas/llm";
+import { buildTemporalFacts, type PlatformModels, smallLLM } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import type { SkillSummary } from "@atlas/skills";
 import { createLoadSkillTool, resolveVisibleSkills, SkillStorage } from "@atlas/skills";
@@ -313,7 +308,7 @@ ${entries.join("\n")}
  *   - block1: weeks-stable static instructions (prompt.txt)
  *   - block2: workspace-stable inventory + identity (workspace XML,
  *     skills, integrations, user identity)
- *   - block3: session-stable turn-context (resources, onboarding clause)
+ *   - block3: session-stable turn-context (onboarding clause, user profile)
  *
  * Block 4 (memory + temporal facts) is NOT in the system prompt — it
  * rides as a synthetic user-message preface so the system stays
@@ -336,7 +331,6 @@ export function getSystemBlocks(
     integrations?: string;
     skills?: string;
     userIdentity?: string;
-    resources?: string;
     onboarding?: string;
     userProfile?: string;
   },
@@ -347,7 +341,6 @@ export function getSystemBlocks(
   if (options?.userIdentity) block2Parts.push(options.userIdentity);
 
   const block3Parts: string[] = [];
-  if (options?.resources) block3Parts.push(options.resources);
   if (options?.onboarding) block3Parts.push(options.onboarding);
   if (options?.userProfile) block3Parts.push(options.userProfile);
 
@@ -842,13 +835,6 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
         const allTools = composeTools(primaryTools, foregroundToolSets);
         allToolsRef = allTools;
 
-        // Do not stuff the workspace's top-N artifact catalog into every chat
-        // prompt. Job tools now return explicit `{ artifactIds, summary }`, and
-        // same-chat artifacts are retrieval-gated below via `composeArtifactBlocks`.
-        // Ambient artifact lists made old sessions' files look current and pushed
-        // supervisors toward artifact/session fan-in instead of explicit refs.
-        const resourceSection = undefined;
-
         // Block 4 (turn-local): memory + artifacts + temporal facts injected
         // as a synthetic user-message preface, NOT in the system prompt.
         // Keeps the system prompt byte-stable across turns so the Anthropic
@@ -897,7 +883,6 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           integrations: integrationsSection,
           skills: skillsSection,
           userIdentity: userIdentitySection,
-          resources: resourceSection,
           onboarding: onboardingClause,
           userProfile: userProfileClause,
         });
@@ -907,9 +892,18 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
         // stored snapshot reflects what the model actually saw on the latest
         // turn — useful for debugging stale-context bugs and replays.
         if (session.streamId) {
+          // Capture each cache block separately so the chat-inspector can
+          // render the breakpoint layout the model actually saw — block 1
+          // (weeks-stable), block 2 (workspace-stable), block 3 (session-
+          // stable, optional), and block 4 (volatile preface). The
+          // operator can spot prefix drift by comparing block-by-block
+          // across turns instead of squinting at a single 26K-char blob.
+          const capturedSystemMessages: string[] = [systemBlocks.block1, systemBlocks.block2];
+          if (systemBlocks.block3) capturedSystemMessages.push(systemBlocks.block3);
+          capturedSystemMessages.push(block4Preface);
           ChatStorage.setSystemPromptContext(
             session.streamId,
-            { systemMessages: [systemPrompt, block4Preface] },
+            { systemMessages: capturedSystemMessages },
             workspaceId,
           ).catch((err: unknown) =>
             logger.warn("Failed to capture system prompt context", { error: err }),
@@ -996,9 +990,25 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
         // breakpoints per request; we use 3 here, leaving 1 for future
         // turn-level use. Other providers see a single `system` string —
         // multi-system messages are not portable.
-        const isAnthropic = conversationalModel.provider === "anthropic";
+        // The AI SDK's Anthropic provider sets `.provider` to surface-
+        // qualified ids like "anthropic.messages" and "anthropic.tools",
+        // never the bare registry key. Match the family prefix so any
+        // future Anthropic surface (Vertex, Bedrock, future endpoints)
+        // also gets the multi-system-block + cache_control layout. A
+        // strict `=== "anthropic"` check silently bypassed the entire
+        // caching path — every turn went through the conventional
+        // top-level `system` string, no cache_control was attached, and
+        // every prefix wrote fresh.
+        const isAnthropic = conversationalModel.provider.startsWith("anthropic");
         const systemModelMessages: ModelMessage[] = isAnthropic
           ? (() => {
+              // Anthropic enforces non-increasing TTL across the
+              // tools → system → messages block sequence — a 1h
+              // cache_control cannot come after a 5m one — but the
+              // reverse (1h, 1h, 5m, ...) is valid. Block 1 and 2 are
+              // weeks-stable / workspace-stable; block 3 is session-
+              // stable so it gets the cheaper 5m TTL (~0.6× write cost
+              // vs 1h).
               const longTtl = { type: "ephemeral", ttl: "1h" } as const;
               const shortTtl = { type: "ephemeral" } as const;
               const msgs: ModelMessage[] = [
@@ -1038,10 +1048,25 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
             experimental_transform: smoothStream({ chunking: "word" }),
             maxRetries: 3,
             abortSignal,
-            // Per-block cacheControl is set on the system messages above for
-            // anthropic; the top-level providerOptions still carries the
-            // default for tool/message-level caching the SDK applies.
-            providerOptions: getDefaultProviderOpts("anthropic"),
+            // Provider-level cache controls.
+            //
+            // Anthropic — per-block `cacheControl` markers sit on the
+            //   system messages above. Setting a top-level
+            //   `cache_control` here would land on the messages block
+            //   AFTER block 3, violating Anthropic's non-increasing-
+            //   TTL rule (1h cannot come after 5m). Leave it off.
+            //
+            // OpenAI — caching is automatic for prefixes ≥1024 tokens;
+            //   no explicit markers are needed. The optional
+            //   `promptCacheKey` is a routing hint that pins requests
+            //   sharing a long common prefix to the same backend, which
+            //   improves cache hit rate when the serving fleet would
+            //   otherwise scatter them. Keying on `workspaceId` groups
+            //   every chat in the same workspace onto the same cache.
+            //
+            // Other providers (Gemini, Groq) auto-cache without any
+            // markers; their unused providerOptions are no-ops.
+            providerOptions: { openai: { promptCacheKey: workspaceId } },
             onFinish: ({ text, steps, toolCalls, toolResults, reasoningText, totalUsage }) => {
               finalText = text;
               // J3: harvest internal tool calls from streamText's terminal
@@ -1064,6 +1089,16 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
                 cacheReadTokens: totalUsage.inputTokenDetails?.cacheReadTokens,
                 cacheWriteTokens: totalUsage.inputTokenDetails?.cacheWriteTokens,
               };
+              // Emit a `data-usage` chunk so the UI can render the
+              // badge live for the in-flight assistant turn instead of
+              // waiting for a page reload to read the persisted
+              // metadata. The persisted message metadata (set just
+              // before append, below) is the source of truth on
+              // refresh; this chunk is a peer signal for the live
+              // render path.
+              if (stream) {
+                writer.write({ id: crypto.randomUUID(), type: "data-usage", data: turnUsage });
+              }
             },
             onError: ({ error }) => {
               if (!error) return;

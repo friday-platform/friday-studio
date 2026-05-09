@@ -359,6 +359,57 @@
     </section>
   {/if}
 
+  {#if data.systemPromptContext && data.systemPromptContext.systemMessages.length > 0}
+    {@const blocks = data.systemPromptContext.systemMessages}
+    {@const hasBlock3 = blocks.length === 4}
+    {@const blockLabels = [
+      "Block 1 — weeks-stable (1h cache)",
+      "Block 2 — workspace-stable (1h cache)",
+      "Block 3 — session-stable (5m cache)",
+      "Block 4 — volatile preface (uncached)",
+    ]}
+    <section>
+      <h2>system prompt blocks</h2>
+      <p class="hint">
+        Captured {fmtTs(data.systemPromptContext.timestamp)} —
+        {blocks.length} block{blocks.length === 1 ? "" : "s"} totaling
+        {blocks.reduce((s, m) => s + m.length, 0).toLocaleString()} chars.
+        Anthropic's `cache_control` markers sit on blocks 1, 2, and 3 (when
+        present); block 4 is the volatile per-turn preface and is
+        intentionally not cached. To force a fresh cache write next turn,
+        edit any byte in block 1 or 2 (e.g. `prompt.txt` for block 1, the
+        workspace YAML for block 2). Anthropic doesn't expose a
+        clear-cache API — entries expire by their TTL (1h on block 1+2,
+        5m on block 3) or by prefix-byte change.
+      </p>
+      <div class="block-grid">
+        {#each blocks as content, bi (bi)}
+          {@const isVolatile = bi === blocks.length - 1}
+          {@const labelIndex = !hasBlock3 && bi === blocks.length - 1 ? 3 : bi}
+          {@const blockKey = `block:${bi}`}
+          <article class="block-card" class:volatile={isVolatile}>
+            <header class="block-head">
+              <span class="block-name">{blockLabels[labelIndex]}</span>
+              <span class="block-stats">
+                {content.length.toLocaleString()} chars
+                · ~{Math.round(content.length / 4).toLocaleString()} tok
+              </span>
+              {@render copyBtn(`copy:${blockKey}`, content)}
+            </header>
+            <button type="button" class="block-toggle" onclick={() => toggle(blockKey)}>
+              {expanded[blockKey] ? "▼ collapse" : "▶ expand"}
+            </button>
+            {#if expanded[blockKey]}
+              <pre class="block-body">{content}</pre>
+            {:else}
+              <pre class="block-body block-body-collapsed">{content.slice(0, 400)}{content.length > 400 ? "…" : ""}</pre>
+            {/if}
+          </article>
+        {/each}
+      </div>
+    </section>
+  {/if}
+
   <section>
     <h2>messages</h2>
     {#each data.messages as m, i (m.id)}
@@ -779,5 +830,74 @@
   }
   .job {
     color: var(--color-link, #4a9eff);
+  }
+
+  .block-grid {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-3);
+    margin-block-start: var(--size-2);
+  }
+
+  .block-card {
+    background: var(--surface, transparent);
+    border: 1px solid var(--border, var(--cream-800));
+    border-radius: var(--radius-2, 0.5rem);
+    padding: var(--size-3);
+  }
+
+  .block-card.volatile {
+    border-style: dashed;
+    opacity: 0.85;
+  }
+
+  .block-head {
+    align-items: center;
+    display: flex;
+    gap: var(--size-3);
+    margin-block-end: var(--size-2);
+  }
+
+  .block-name {
+    color: color-mix(in srgb, var(--color-text), transparent 10%);
+    font-weight: var(--font-weight-6);
+  }
+
+  .block-stats {
+    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    font-family: var(--font-family-mono, ui-monospace, monospace);
+    font-size: var(--font-size-0);
+  }
+
+  .block-toggle {
+    background: transparent;
+    border: 0;
+    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    cursor: pointer;
+    font-size: var(--font-size-0);
+    padding: 0;
+    text-align: start;
+  }
+
+  .block-toggle:hover {
+    color: var(--color-text);
+  }
+
+  .block-body {
+    background: var(--highlight, transparent);
+    border-radius: var(--radius-1, 0.3rem);
+    color: color-mix(in srgb, var(--color-text), transparent 20%);
+    font-family: var(--font-family-mono, ui-monospace, monospace);
+    font-size: var(--font-size-0);
+    line-height: 1.4;
+    margin-block-start: var(--size-1);
+    overflow: auto;
+    padding: var(--size-2);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  .block-body-collapsed {
+    max-block-size: 8rem;
   }
 </style>

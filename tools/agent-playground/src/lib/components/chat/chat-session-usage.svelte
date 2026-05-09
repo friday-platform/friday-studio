@@ -17,7 +17,7 @@
   const { messages }: Props = $props();
 
   const totals = $derived.by(() => {
-    let inputTokens = 0;
+    let totalInputTokens = 0;
     let outputTokens = 0;
     let cacheReadTokens = 0;
     let cacheWriteTokens = 0;
@@ -27,18 +27,31 @@
       const usage = msg.metadata?.usage;
       if (!usage) continue;
       turnsWithUsage++;
-      inputTokens += usage.inputTokens ?? 0;
+      totalInputTokens += usage.inputTokens ?? 0;
       outputTokens += usage.outputTokens ?? 0;
       cacheReadTokens += usage.cacheReadTokens ?? 0;
       cacheWriteTokens += usage.cacheWriteTokens ?? 0;
     }
-    return { inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, turnsWithUsage };
+    // The badge shows fresh input across the session — bytes that
+    // actually paid the full input rate. Total prompt size including
+    // cached prefix is in the tooltip + /usage page; surfacing it here
+    // would scale linearly with turn count even when the cache is
+    // serving 97% of every prompt.
+    const freshInputTokens = Math.max(0, totalInputTokens - cacheReadTokens);
+    return {
+      totalInputTokens,
+      freshInputTokens,
+      outputTokens,
+      cacheReadTokens,
+      cacheWriteTokens,
+      turnsWithUsage,
+    };
   });
 
   const hasUsage = $derived(totals.turnsWithUsage > 0);
   const cacheHitRatio = $derived(
-    totals.inputTokens > 0 && totals.cacheReadTokens > 0
-      ? totals.cacheReadTokens / totals.inputTokens
+    totals.totalInputTokens > 0 && totals.cacheReadTokens > 0
+      ? totals.cacheReadTokens / totals.totalInputTokens
       : 0,
   );
 
@@ -54,9 +67,12 @@
 </script>
 
 {#if hasUsage}
-  <div class="session-usage">
+  <div
+    class="session-usage"
+    title={`Fresh input:  ${totals.freshInputTokens.toLocaleString()}\nTotal prompt: ${totals.totalInputTokens.toLocaleString()} (incl. cached prefix)\nOutput:       ${totals.outputTokens.toLocaleString()}\nCache read:   ${totals.cacheReadTokens.toLocaleString()}\nCache write:  ${totals.cacheWriteTokens.toLocaleString()}`}
+  >
     <span class="label">Session</span>
-    <span class="metric">↑ {fmt(totals.inputTokens)}</span>
+    <span class="metric">↑ {fmt(totals.freshInputTokens)}</span>
     <span class="metric">↓ {fmt(totals.outputTokens)}</span>
     {#if totals.cacheReadTokens > 0}
       <span class="metric cache" class:hit={cacheHitRatio > 0.3}>
@@ -69,35 +85,37 @@
 
 <style>
   .session-usage {
-    display: flex;
-    gap: 0.5rem;
     align-items: center;
-    padding: 0.25rem 0.75rem;
-    border-bottom: 1px solid var(--border-subtle, #eee);
+    background: var(--surface-bright);
+    border-block-end: 1px solid var(--border);
+    color: var(--text-faded);
+    display: flex;
     font-size: 0.7rem;
-    color: var(--text-tertiary, #888);
-    background: var(--surface-secondary, #fafafa);
+    gap: 0.5rem;
+    padding-block: 0.25rem;
+    padding-inline: 0.75rem;
   }
   .label {
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
+    color: var(--text-faded);
     font-weight: 500;
-    color: var(--text-quaternary, #aaa);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
   }
   .metric {
     font-variant-numeric: tabular-nums;
   }
   .metric.cache {
-    padding: 0.1rem 0.35rem;
+    background: var(--highlight);
     border-radius: 0.4rem;
-    background: var(--surface-tertiary, #f0f0f0);
+    padding-block: 0.1rem;
+    padding-inline: 0.35rem;
   }
   .metric.cache.hit {
-    background: var(--accent-soft, #d9f0d4);
-    color: var(--accent-fg, #2a6c1e);
+    background: color-mix(in srgb, var(--green-primary) 18%, transparent);
+    color: var(--green-primary);
   }
   .turns {
-    margin-left: auto;
-    color: var(--text-quaternary, #aaa);
+    color: var(--text-faded);
+    margin-inline-start: auto;
   }
 </style>

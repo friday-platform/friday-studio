@@ -71,7 +71,7 @@
   let totalChats = $state(0);
 
   const totals = $derived.by(() => {
-    let inputTokens = 0;
+    let totalInputTokens = 0;
     let outputTokens = 0;
     let cacheReadTokens = 0;
     let cacheWriteTokens = 0;
@@ -79,7 +79,7 @@
     let turns = 0;
     let unresolvedTurns = 0;
     for (const row of perChat) {
-      inputTokens += row.inputTokens;
+      totalInputTokens += row.inputTokens;
       outputTokens += row.outputTokens;
       cacheReadTokens += row.cacheReadTokens;
       cacheWriteTokens += row.cacheWriteTokens;
@@ -87,10 +87,18 @@
       turns += row.turns;
       if (!row.pricingResolved) unresolvedTurns += row.turns;
     }
+    // Fresh input is what was billed at the full rate. The cached
+    // portion of `totalInputTokens` was billed at ~10% (Anthropic) or
+    // ~50% (OpenAI) of the fresh rate; surfacing the total as the
+    // top-line "Input tokens" overstates the cost share.
+    const freshInputTokens = Math.max(0, totalInputTokens - cacheReadTokens);
     const cacheHitRatio =
-      inputTokens > 0 && cacheReadTokens > 0 ? cacheReadTokens / inputTokens : 0;
+      totalInputTokens > 0 && cacheReadTokens > 0
+        ? cacheReadTokens / totalInputTokens
+        : 0;
     return {
-      inputTokens,
+      totalInputTokens,
+      freshInputTokens,
       outputTokens,
       cacheReadTokens,
       cacheWriteTokens,
@@ -268,8 +276,11 @@
         <div class="value">{totals.turns.toLocaleString()}</div>
       </div>
       <div class="stat">
-        <div class="label">Input tokens</div>
-        <div class="value">{fmtTokens(totals.inputTokens)}</div>
+        <div class="label">Fresh input</div>
+        <div class="value">{fmtTokens(totals.freshInputTokens)}</div>
+        <div class="caveat">
+          {fmtTokens(totals.totalInputTokens)} total prompt incl. cache
+        </div>
       </div>
       <div class="stat">
         <div class="label">Output tokens</div>
@@ -291,7 +302,7 @@
           <tr>
             <th>Model</th>
             <th class="num">Turns</th>
-            <th class="num">Input</th>
+            <th class="num">Fresh input</th>
             <th class="num">Output</th>
             <th class="num">Cache read</th>
             <th class="num">Cache write</th>
@@ -303,7 +314,7 @@
             <tr>
               <td>{row.modelId}</td>
               <td class="num">{row.turns}</td>
-              <td class="num">{fmtTokens(row.inputTokens)}</td>
+              <td class="num">{fmtTokens(Math.max(0, row.inputTokens - row.cacheReadTokens))}</td>
               <td class="num">{fmtTokens(row.outputTokens)}</td>
               <td class="num">{fmtTokens(row.cacheReadTokens)}</td>
               <td class="num">{fmtTokens(row.cacheWriteTokens)}</td>
@@ -328,7 +339,7 @@
             <th>Chat</th>
             <th>Workspace</th>
             <th class="num">Turns</th>
-            <th class="num">Input</th>
+            <th class="num">Fresh input</th>
             <th class="num">Output</th>
             <th class="num">Cache read</th>
             <th class="num">Cost</th>
@@ -341,7 +352,7 @@
               <td class="chat-title">{row.title}</td>
               <td><span class="dim">{row.workspaceId ?? "—"}</span></td>
               <td class="num">{row.turns}</td>
-              <td class="num">{fmtTokens(row.inputTokens)}</td>
+              <td class="num">{fmtTokens(Math.max(0, row.inputTokens - row.cacheReadTokens))}</td>
               <td class="num">{fmtTokens(row.outputTokens)}</td>
               <td class="num">{fmtTokens(row.cacheReadTokens)}</td>
               <td class="num">
@@ -364,71 +375,80 @@
 
 <style>
   .usage-page {
+    color: var(--text);
+    inline-size: 100%;
+    margin-inline: auto;
+    max-inline-size: 1200px;
     padding: 1.5rem;
-    max-width: 1200px;
-    margin: 0 auto;
-    font-family: var(--font-system, system-ui);
   }
   header {
-    display: flex;
     align-items: baseline;
+    display: flex;
     gap: 1rem;
-    margin-bottom: 1.5rem;
+    margin-block-end: 1.5rem;
   }
   header h1 {
-    margin: 0;
+    color: var(--text-bright);
     font-size: 1.5rem;
+    margin: 0;
   }
   header .subtitle {
-    margin: 0;
+    color: var(--text-faded);
     flex: 1;
-    color: var(--text-tertiary, #888);
     font-size: 0.85rem;
+    margin: 0;
   }
   header button {
-    padding: 0.4rem 0.9rem;
-    border: 1px solid var(--border-default, #ccc);
+    background: var(--surface);
+    border: 1px solid var(--border);
     border-radius: 0.4rem;
-    background: var(--surface-primary, #fff);
+    color: var(--text);
     cursor: pointer;
+    padding-block: 0.4rem;
+    padding-inline: 0.9rem;
+  }
+  header button:hover:not(:disabled) {
+    background: var(--highlight);
   }
   header button:disabled {
-    opacity: 0.5;
     cursor: not-allowed;
+    opacity: 0.5;
   }
   .loading,
   .empty {
-    color: var(--text-tertiary, #888);
-    padding: 1rem 0;
+    color: var(--text-faded);
+    padding-block: 1rem;
   }
   .error {
-    color: var(--danger-fg, #b00);
-    padding: 1rem 0;
+    color: var(--red-primary);
+    padding-block: 1rem;
   }
   .totals {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
     gap: 1rem;
-    margin-bottom: 2rem;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    margin-block-end: 2rem;
   }
   .big-stat,
   .stat {
-    padding: 0.75rem 1rem;
-    border: 1px solid var(--border-subtle, #eee);
+    background: var(--surface-bright);
+    border: 1px solid var(--border);
     border-radius: 0.5rem;
-    background: var(--surface-primary, #fff);
+    padding-block: 0.75rem;
+    padding-inline: 1rem;
   }
   .big-stat {
     grid-column: span 2;
   }
   .label {
+    color: var(--text-faded);
     font-size: 0.7rem;
-    text-transform: uppercase;
     letter-spacing: 0.05em;
-    color: var(--text-tertiary, #888);
-    margin-bottom: 0.25rem;
+    margin-block-end: 0.25rem;
+    text-transform: uppercase;
   }
   .value {
+    color: var(--text-bright);
     font-size: 1.5rem;
     font-variant-numeric: tabular-nums;
   }
@@ -436,45 +456,61 @@
     font-size: 2rem;
   }
   .caveat {
-    margin-top: 0.25rem;
+    color: var(--text-faded);
     font-size: 0.7rem;
-    color: var(--text-tertiary, #888);
+    margin-block-start: 0.25rem;
   }
   section {
-    margin-bottom: 2rem;
+    margin-block-end: 2rem;
   }
   section h2 {
+    color: var(--text-bright);
     font-size: 1rem;
     margin: 0 0 0.5rem 0;
   }
   table {
-    width: 100%;
     border-collapse: collapse;
+    inline-size: 100%;
   }
   thead {
-    border-bottom: 1px solid var(--border-default, #ccc);
+    border-block-end: 1px solid var(--border);
   }
   th,
   td {
-    padding: 0.4rem 0.6rem;
-    text-align: left;
     font-size: 0.85rem;
+    padding-block: 0.4rem;
+    padding-inline: 0.6rem;
+    text-align: start;
+  }
+  th {
+    color: var(--text-faded);
+    font-weight: 500;
   }
   th.num,
   td.num {
-    text-align: right;
     font-variant-numeric: tabular-nums;
+    text-align: end;
   }
-  tbody tr:nth-child(even) {
-    background: var(--surface-secondary, #fafafa);
+  tbody tr {
+    border-block-end: 1px solid var(--border);
+  }
+  tbody tr:hover {
+    background: var(--highlight);
+  }
+  td a {
+    color: var(--blue-primary);
+    text-decoration: none;
+  }
+  td a:hover {
+    text-decoration: underline;
   }
   .chat-title {
-    max-width: 24ch;
+    max-inline-size: 24ch;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
   .dim {
-    color: var(--text-tertiary, #888);
+    color: var(--text-faded);
   }
 </style>
