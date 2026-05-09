@@ -14,12 +14,8 @@
 // The manifest carries a sha256 over the assembled JSONL bytes for integrity;
 // each row that owns archive bytes carries a per-archive sha256.
 
-import {
-  type SkillRecord,
-  type SkillReplayer,
-  type SkillStorageAdapter,
-  SYSTEM_USER_ID,
-} from "@atlas/skills";
+import type { SkillRecord, SkillReplayer, SkillStorageAdapter } from "@atlas/skills";
+import { SYSTEM_USER_ID } from "@atlas/skills/constants";
 import { parse as parseYaml, stringify as stringifyYaml } from "@std/yaml";
 import JSZip from "jszip";
 import { z } from "zod";

@@ -28,13 +28,12 @@
 
 import { join } from "node:path";
 import { JetStreamSkillAdapter, type SkillRecord } from "@atlas/skills";
+import { SYSTEM_USER_ID } from "@atlas/skills/constants";
 import { stringifyError } from "@atlas/utils";
 import { getFridayHome } from "@atlas/utils/paths.server";
 import { Database } from "@db/sqlite";
 import type { Migration } from "jetstream";
 import { z } from "zod";
-
-const SYSTEM_USER_ID = "system";
 
 const SkillRow = z.object({
   id: z.string(),

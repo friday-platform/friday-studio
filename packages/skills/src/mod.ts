@@ -9,6 +9,8 @@ export {
   validateSkillReferences,
   writeSkillFiles,
 } from "./archive.ts";
+// Constants
+export { SYSTEM_USER_ID } from "./constants.ts";
 // Canonical content hash for system-skill reconciliation.
 export { computeSkillHash } from "./content-hash.ts";
 // Utilities
@@ -63,9 +65,4 @@ export {
 } from "./skills-sh-client.ts";
 export { toSlug } from "./slug.ts";
 export type { SkillStorageAdapter } from "./storage.ts";
-export {
-  _setSkillStorageForTest,
-  initSkillStorage,
-  SkillStorage,
-  SYSTEM_USER_ID,
-} from "./storage.ts";
+export { _setSkillStorageForTest, initSkillStorage, SkillStorage } from "./storage.ts";
