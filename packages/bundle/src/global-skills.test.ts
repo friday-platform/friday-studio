@@ -332,6 +332,24 @@ describe("exportGlobalSkills", () => {
     expect(skillIds).toContain("user-2");
     expect(skillIds).not.toContain("sys-1");
   });
+
+  it("returns { bytes: null } when the adapter has no exportable skills", async () => {
+    const empty = await exportGlobalSkills({ adapter: new InMemorySkillAdapter() });
+    expect(empty.bytes).toBeNull();
+    expect(empty.manifest).toBeUndefined();
+
+    const onlySystem = new InMemorySkillAdapter();
+    onlySystem.seed({
+      skillId: "sys-1",
+      namespace: "friday",
+      name: "system-skill",
+      instructions: "sys",
+      createdBy: "system",
+    });
+    const filtered = await exportGlobalSkills({ adapter: onlySystem });
+    expect(filtered.bytes).toBeNull();
+    expect(filtered.manifest).toBeUndefined();
+  });
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -371,19 +389,12 @@ describe("importGlobalSkills", () => {
       createdBy: "user-1",
     });
 
-    const originalPublish = target.publish.bind(target);
-    let publishCalls = 0;
-    target.publish = ((...args: Parameters<typeof originalPublish>) => {
-      publishCalls++;
-      return originalPublish(...args);
-    }) as typeof target.publish;
-
     const result = await importGlobalSkills({ zipBytes, adapter: target });
-    expect(result.status.kind).toBe("imported");
-    if (result.status.kind !== "imported") throw new Error("unreachable");
-    expect(result.status.skillsPublished).toBe(0);
-    expect(result.status.skillsSkipped).toBe(1);
-    expect(publishCalls).toBe(0);
+    expect(result.status).toEqual({ kind: "imported", skillsPublished: 0, skillsSkipped: 1 });
+
+    const post = await target.getBySkillId("abc");
+    if (!post.ok || !post.data) throw new Error("abc missing post-import");
+    expect(post.data.version).toBe(2);
   });
 
   it("returns integrity-failed when manifest sha doesn't match jsonl bytes", async () => {
