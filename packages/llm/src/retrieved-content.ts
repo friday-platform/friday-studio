@@ -55,7 +55,11 @@ export function wrapRetrieved(args: {
   fetched_at?: string;
 }): string {
   const fetched_at = args.fetched_at ?? new Date().toISOString();
-  return `<retrieved_content provenance="${args.source}" origin="${args.origin}" fetched_at="${fetched_at}">\n${args.body}\n</retrieved_content>`;
+  // Defang `</retrieved_content>` inside the body so a payload containing
+  // the literal close tag can't escape the envelope and land outside the
+  // data frame, where the model would treat it as instructions.
+  const safeBody = args.body.replace(/<\/retrieved_content\s*>/gi, "<\\/retrieved_content>");
+  return `<retrieved_content provenance="${args.source}" origin="${args.origin}" fetched_at="${fetched_at}">\n${safeBody}\n</retrieved_content>`;
 }
 
 /**

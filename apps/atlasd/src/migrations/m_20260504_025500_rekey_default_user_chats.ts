@@ -55,24 +55,69 @@ export const migration: Migration = {
       }
     }
 
+    const MAX_CAS_ATTEMPTS = 5;
     let scanned = 0;
     let rewritten = 0;
+    let legacyMatched = 0;
+    let abandoned = 0;
     for (const key of allKeys) {
       scanned++;
-      try {
-        const entry = await kv.get(key);
-        if (!entry || entry.operation !== "PUT") continue;
-        const meta = JSON.parse(dec.decode(entry.value)) as Record<string, unknown>;
-        if (meta.userId !== LEGACY_USER_ID) continue;
+      let isLegacy = false;
+      for (let attempt = 1; attempt <= MAX_CAS_ATTEMPTS; attempt++) {
+        let entry: Awaited<ReturnType<typeof kv.get>>;
+        try {
+          entry = await kv.get(key);
+        } catch (err) {
+          logger.warn("Skipping unreadable chat key", { key, error: String(err) });
+          break;
+        }
+        if (!entry || entry.operation !== "PUT") break;
+
+        let meta: Record<string, unknown>;
+        try {
+          meta = JSON.parse(dec.decode(entry.value)) as Record<string, unknown>;
+        } catch (err) {
+          logger.warn("Skipping malformed chat metadata JSON", { key, error: String(err) });
+          break;
+        }
+
+        if (meta.userId !== LEGACY_USER_ID) break;
+        if (!isLegacy) {
+          isLegacy = true;
+          legacyMatched++;
+        }
         meta.userId = localUserId;
         meta.updatedAt = new Date().toISOString();
-        await kv.update(key, enc.encode(JSON.stringify(meta)), entry.revision);
-        rewritten++;
-      } catch (err) {
-        logger.warn("Skipping malformed or racy chat metadata", { key, error: String(err) });
+        try {
+          await kv.update(key, enc.encode(JSON.stringify(meta)), entry.revision);
+          rewritten++;
+          break;
+        } catch (err) {
+          // Likely CAS conflict — re-read latest revision and try again.
+          if (attempt >= MAX_CAS_ATTEMPTS) {
+            logger.warn("Gave up after CAS retries", {
+              key,
+              attempts: attempt,
+              error: String(err),
+            });
+            abandoned++;
+          }
+        }
       }
     }
 
-    logger.info("Re-key complete", { scanned, rewritten, localUserId });
+    if (legacyMatched !== rewritten) {
+      // Loud signal: don't silently mark the migration successful when
+      // chats were left unrewritten. An operator must reconcile.
+      logger.error("Re-key incomplete — some legacy chats not rewritten", {
+        scanned,
+        legacyMatched,
+        rewritten,
+        abandoned,
+        localUserId,
+      });
+    } else {
+      logger.info("Re-key complete", { scanned, rewritten, localUserId });
+    }
   },
 };

@@ -2,8 +2,8 @@
  * Shared response envelope for retrieval-style read tools.
  *
  * The model learns ONE shape — `{items, cursor?, revision, provenance}` —
- * across `memory_read`, `describe_workspace`, `list_integrations`, etc.
- * The provenance metadata tags trust at the tool-result boundary so the
+ * across `memory_read` and other retrieval-style read tools. The
+ * provenance metadata tags trust at the tool-result boundary so the
  * model can apply the `<retrieved_content_hygiene>` rule consistently.
  *
  * Sibling design: when retrieved content is INJECTED into the system

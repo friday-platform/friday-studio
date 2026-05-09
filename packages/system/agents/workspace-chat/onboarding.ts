@@ -19,3 +19,8 @@ If the user declines to share their name (e.g. "I'd rather not say", "skip"):
 Do NOT re-ask if the user has already responded to this question in this conversation.
 </onboarding>`;
 }
+
+export function buildUserProfileClause(profileState: UserProfileState): string | undefined {
+  if (profileState.status !== "known") return undefined;
+  return `<user_profile>The user's name is ${profileState.name}.</user_profile>`;
+}
