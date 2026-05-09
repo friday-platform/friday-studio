@@ -107,6 +107,21 @@ function githubHeaders(jwt: string): HeadersInit {
   };
 }
 
+/**
+ * Headers for unauthenticated GitHub REST calls.
+ *
+ * `/users/{login}` is a public endpoint and rejects App JWTs with 401 — App
+ * JWTs are scoped to `/app` and `/app/installations/...`. Sending no
+ * Authorization header lets the public endpoint resolve normally.
+ */
+function githubAnonymousHeaders(): HeadersInit {
+  return {
+    Accept: "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+    "User-Agent": "atlas-link",
+  };
+}
+
 export const githubAppProvider = defineApiKeyProvider({
   id: "github-app",
   displayName: "GitHub App",
@@ -153,7 +168,7 @@ export const githubAppProvider = defineApiKeyProvider({
 
       const botSlug = `${appBody.slug}[bot]`;
       const botRes = await fetch(`https://api.github.com/users/${encodeURIComponent(botSlug)}`, {
-        headers,
+        headers: githubAnonymousHeaders(),
       });
       if (!botRes.ok) {
         return {

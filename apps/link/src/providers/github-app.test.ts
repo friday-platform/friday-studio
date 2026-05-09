@@ -130,7 +130,7 @@ describe("githubAppProvider.health", () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
     const [appUrl, appInit] = fetchMock.mock.calls[0] ?? [];
     const [installUrl] = fetchMock.mock.calls[1] ?? [];
-    const [userUrl] = fetchMock.mock.calls[2] ?? [];
+    const [userUrl, userInit] = fetchMock.mock.calls[2] ?? [];
 
     expect(appUrl).toBe("https://api.github.com/app");
     expect(installUrl).toBe("https://api.github.com/app/installations/99001");
@@ -139,6 +139,10 @@ describe("githubAppProvider.health", () => {
     // App-JWT bearer auth on first call
     const auth = appInit?.headers?.Authorization;
     expect(auth).toMatch(/^Bearer eyJ/);
+
+    // /users/{login} is a public endpoint that rejects App JWTs with 401, so
+    // the bot-user fetch must be unauthenticated. Regression guard for B-4.
+    expect(userInit?.headers?.Authorization).toBeUndefined();
   });
 
   it("returns healthy:false on bad keypair (401 from /app)", async () => {
