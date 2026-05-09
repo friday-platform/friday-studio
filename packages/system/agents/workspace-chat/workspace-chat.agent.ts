@@ -552,6 +552,18 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
             });
           }
 
+          // Stamp final per-turn token + cache usage onto the persisted
+          // assistant message. `turnUsage` is captured in streamText's
+          // own onFinish callback (which fires before this UIMessageStream
+          // onFinish), so it's always settled by the time we get here.
+          // The messageMetadata callback during streaming runs too early
+          // — it sees `turnUsage = undefined` and the SDK doesn't
+          // re-invoke it after the stream's terminal usage event. Writing
+          // to `metadata.usage` here is the reliable path.
+          if (turnUsage) {
+            lastMessage.metadata = { ...(lastMessage.metadata ?? {}), usage: turnUsage };
+          }
+
           const appendResult = await ChatStorage.appendMessage(
             session.streamId,
             lastMessage,

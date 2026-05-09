@@ -1,1 +1,5 @@
-{ "name": "@atlas/llm", "version": "1.0.0", "exports": { ".": "./mod.ts" } }
+{
+  "name": "@atlas/llm",
+  "version": "1.0.0",
+  "exports": { ".": "./mod.ts", "./pricing": "./src/pricing.ts" }
+}
