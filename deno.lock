@@ -54,7 +54,7 @@
     "npm:@codemirror/view@^6.41.1": "6.41.1",
     "npm:@coderabbitai/bitbucket@^1.1.4": "1.1.4",
     "npm:@deno/kv@0.13": "0.13.0",
-    "npm:@eslint/compat@^2.0.5": "2.0.5_eslint@10.3.0",
+    "npm:@eslint/compat@^2.1.0": "2.1.0_eslint@10.3.0",
     "npm:@eslint/js@^10.0.1": "10.0.1_eslint@10.3.0",
     "npm:@hono/mcp@~0.2.5": "0.2.5_@modelcontextprotocol+sdk@1.28.0__zod@4.3.6_hono@4.12.18_zod@4.3.6",
     "npm:@hono/standard-validator@~0.2.2": "0.2.2_hono@4.12.18",
@@ -1015,8 +1015,8 @@
     "@eslint-community/regexpp@4.12.2": {
       "integrity": "sha512-EriSTlt5OC9/7SXkRSCAhfSxxoSUgBm33OH+IkwbdpgoqsSsUg7y3uh+IICI/Qg4BBWr3U2i39RpmycbxMq4ew=="
     },
-    "@eslint/compat@2.0.5_eslint@10.3.0": {
-      "integrity": "sha512-IbHDbHJfkVNv6xjlET8AIVo/K1NQt7YT4Rp6ok/clyBGcpRx1l6gv0Rq3vBvYfPJIZt6ODf66Zq08FJNDpnzgg==",
+    "@eslint/compat@2.1.0_eslint@10.3.0": {
+      "integrity": "sha512-LgaSCymEpw7tF53xvDw9SNsraPb1IBHxpdABIOM0hW8UAlP8znrjYtuxfR58FSJ3L9BhwD+FaPRFQpZq84Nh6g==",
       "dependencies": [
         "@eslint/core",
         "eslint"
@@ -6406,7 +6406,7 @@
       "packages/ui": {
         "packageJson": {
           "dependencies": [
-            "npm:@eslint/compat@^2.0.5",
+            "npm:@eslint/compat@^2.1.0",
             "npm:@eslint/js@^10.0.1",
             "npm:@ianvs/prettier-plugin-sort-imports@^4.7.1",
             "npm:@lezer/common@^1.5.2",
