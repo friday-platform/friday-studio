@@ -30,6 +30,10 @@ export {
   LegacyArchiveError,
   type SkillRow,
   SkillRowSchema,
+  type SkillRowV1,
+  SkillRowV1Schema,
+  type SkillRowV2,
+  SkillRowV2Schema,
 } from "./src/global-skills.ts";
 export { type HashResult, hashPrimitive } from "./src/hasher.ts";
 export { type Lockfile, LockfileSchema, readLockfile, writeLockfile } from "./src/lockfile.ts";
