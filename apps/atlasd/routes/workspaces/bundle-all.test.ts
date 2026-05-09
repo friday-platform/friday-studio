@@ -5,7 +5,7 @@ import {
   exportAll,
   FullManifestSchema,
   GlobalSkillsManifestSchema,
-  SkillRowSchema,
+  SkillRowV2Schema,
 } from "@atlas/bundle";
 import { createStubPlatformModels } from "@atlas/llm";
 import { SkillStorage } from "@atlas/skills";
@@ -297,14 +297,15 @@ describe("bundle-all endpoints (end-to-end)", () => {
     const innerManifestYaml = await innerZip.file("manifest.yml")?.async("string");
     expect(innerManifestYaml).toBeTruthy();
     const innerManifest = GlobalSkillsManifestSchema.parse(parseYaml(innerManifestYaml ?? ""));
-    expect(innerManifest.source.filename).toBe("skills.jsonl");
+    expect(innerManifest.schemaVersion).toBe(2);
+    expect(innerManifest.source.filename).toBe("skills-history.jsonl");
 
-    const jsonlText = await innerZip.file("skills.jsonl")?.async("string");
+    const jsonlText = await innerZip.file("skills-history.jsonl")?.async("string");
     expect(jsonlText).toBeTruthy();
     const rows = (jsonlText ?? "")
       .split("\n")
       .filter((line) => line.length > 0)
-      .map((line) => SkillRowSchema.parse(JSON.parse(line)));
+      .map((line) => SkillRowV2Schema.parse(JSON.parse(line)));
 
     // Filter to OUR prefix — the bucket is shared.
     const ours = rows.filter((r) => r.name.startsWith(prefix));
@@ -314,16 +315,17 @@ describe("bundle-all endpoints (end-to-end)", () => {
     // The system skill we published under our prefix must NOT appear.
     expect(rows.find((r) => r.name === `${prefix}sys`)).toBeUndefined();
 
-    // The skill-1 row must carry archive metadata + the corresponding zip entry.
+    // The skill-1 row must carry archive bytes metadata + the corresponding zip entry.
     const row1 = ours.find((r) => r.name === `${prefix}skill-1`);
     expect(row1).toBeDefined();
-    expect(row1?.archive).not.toBeNull();
-    const archivePathInZip = row1?.archive?.path;
-    expect(archivePathInZip).toBe(`archives/${row1?.skillId}__${row1?.version}.tar.gz`);
-    expect(innerZip.file(archivePathInZip ?? "")).toBeTruthy();
-    // The no-archive rows must carry archive: null.
-    expect(ours.find((r) => r.name === `${prefix}skill-2`)?.archive).toBeNull();
-    expect(ours.find((r) => r.name === `${prefix}skill-3`)?.archive).toBeNull();
+    expect(row1?.archive.kind).toBe("bytes");
+    if (row1?.archive.kind === "bytes") {
+      expect(row1.archive.path).toBe(`archives/${row1.skillId}__${row1.version}.tar.gz`);
+      expect(innerZip.file(row1.archive.path)).toBeTruthy();
+    }
+    // The no-archive rows must be marked absent.
+    expect(ours.find((r) => r.name === `${prefix}skill-2`)?.archive.kind).toBe("absent");
+    expect(ours.find((r) => r.name === `${prefix}skill-3`)?.archive.kind).toBe("absent");
 
     // Pre-import versions captured from the export rows. All freshly published
     // → version 1. We assert these don't inflate after the idempotent re-import.
