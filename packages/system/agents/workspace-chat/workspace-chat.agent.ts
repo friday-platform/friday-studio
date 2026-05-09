@@ -15,6 +15,7 @@ import {
 import { bundledAgents } from "@atlas/bundled-agents";
 import { client, parseResult } from "@atlas/client/v2";
 import { CommunicatorKindSchema, type WorkspaceConfig } from "@atlas/config";
+import { composePreface, type PrefaceEntry } from "@atlas/core/agent-context/compose-preface";
 import { scrubAssistantMessage } from "@atlas/core/artifacts/scrubber";
 import { ChatStorage } from "@atlas/core/chat/storage";
 import { createDelegateTool } from "@atlas/core/delegate";
@@ -841,21 +842,30 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
         );
         const datetimeMessage = buildTemporalFacts(session.datetime);
         const block4FetchedAt = new Date().toISOString();
-        const block4Parts: string[] = [];
+        const block4Entries: PrefaceEntry[] = [];
         if (memoryBlocks.length > 0) {
-          block4Parts.push(
-            `<retrieved_content provenance="user-authored" origin="memory:workspace-stores" fetched_at="${block4FetchedAt}">\n${memoryBlocks.join("\n\n")}\n</retrieved_content>`,
-          );
+          block4Entries.push({
+            source: "user-authored",
+            origin: "memory:workspace-stores",
+            body: memoryBlocks.join("\n\n"),
+            fetched_at: block4FetchedAt,
+          });
         }
         if (artifactBlocks.length > 0) {
-          block4Parts.push(
-            `<retrieved_content provenance="user-authored" origin="artifacts:session" fetched_at="${block4FetchedAt}">\n${artifactBlocks.join("\n\n")}\n</retrieved_content>`,
-          );
+          block4Entries.push({
+            source: "user-authored",
+            origin: "artifacts:session",
+            body: artifactBlocks.join("\n\n"),
+            fetched_at: block4FetchedAt,
+          });
         }
-        block4Parts.push(
-          `<retrieved_content provenance="system-config" origin="temporal" fetched_at="${block4FetchedAt}">\n${datetimeMessage}\n</retrieved_content>`,
-        );
-        const block4Preface = block4Parts.join("\n\n");
+        block4Entries.push({
+          source: "system-config",
+          origin: "temporal",
+          body: datetimeMessage,
+          fetched_at: block4FetchedAt,
+        });
+        const block4Preface = composePreface(block4Entries);
 
         const onboardingClause = buildOnboardingClause(profileState);
         const userProfileClause = buildUserProfileClause(profileState);
