@@ -12,12 +12,6 @@ const MemorySaveInput = z.object({
       "Memory store name — pick the store from <memory_stores> in the workspace context that best fits the content",
     ),
   text: z.string().min(1),
-  why: z
-    .string()
-    .min(1)
-    .describe(
-      "Why this is worth remembering — what future request would benefit. If you can't articulate why, don't save. Required.",
-    ),
   id: z.string().optional().describe("UUID; auto-generated if omitted"),
   metadata: z.record(z.string(), z.unknown()).optional(),
 });
@@ -39,13 +33,9 @@ export function createMemorySaveTool(workspaceId: string, logger: Logger): Atlas
   return {
     memory_save: tool({
       description:
-        "Save an entry to a named memory store in this workspace. " +
-        "See <memory_writes> in your system prompt for trigger types and " +
-        "anti-triggers. The `why` field is required and forces a sanity " +
-        "check — if you can't articulate why this should be remembered, " +
-        "don't save. Persists across sessions.",
+        "Save an entry to a named memory store in this workspace. " + "Persists across sessions.",
       inputSchema: MemorySaveInput,
-      execute: async ({ memoryName, text, why, id, metadata }) => {
+      execute: async ({ memoryName, text, id, metadata }) => {
         const url = `${daemonUrl}/api/memory/${encodeURIComponent(workspaceId)}/narrative/${encodeURIComponent(memoryName)}`;
         try {
           const res = await fetch(url, {
@@ -55,7 +45,7 @@ export function createMemorySaveTool(workspaceId: string, logger: Logger): Atlas
               id: id ?? crypto.randomUUID(),
               text,
               createdAt: new Date().toISOString(),
-              metadata: { ...metadata, why },
+              metadata,
             }),
           });
           if (!res.ok) {
