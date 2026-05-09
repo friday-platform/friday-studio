@@ -956,7 +956,7 @@ const githubIssueCommentPayload = {
   installation: { id: 12345 },
   issue: { number: 42 },
   repository: { full_name: "octo/repo" },
-  comment: { id: 999, body: "@friday-bot[bot] hello", user: { login: "alice", id: 1 } },
+  comment: { id: 999, body: "@friday-bot hello", user: { login: "alice", id: 1 } },
 };
 
 const githubHeaders = {

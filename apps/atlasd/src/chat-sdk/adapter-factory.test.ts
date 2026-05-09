@@ -122,6 +122,38 @@ describe("buildChatSdkAdapters", () => {
   });
 });
 
+describe("buildChatSdkAdapters — github userName", () => {
+  // Regression guard for B-5: chat-sdk's `detectMention` compiles a literal
+  // regex `@${userName}\b` against the raw comment body. Humans type
+  // `@slug` on github.com — never `@slug[bot]` — so passing the stored
+  // `botUserSlug` (which carries the `[bot]` suffix) verbatim makes mentions
+  // never match, and the bot stays silent.
+  const githubCreds: PlatformCredentials = {
+    kind: "github",
+    appId: "12345",
+    privateKey: "-----BEGIN PRIVATE KEY-----\nfake\n-----END PRIVATE KEY-----",
+    webhookSecret: "secret",
+    botUserSlug: "foo[bot]",
+    botUserId: 42,
+  };
+  const githubSignals = { "github-chat": { provider: "github", config: {} } };
+
+  it("strips the `[bot]` suffix from botUserSlug before handing it to the adapter", () => {
+    const adapters = build({ signals: githubSignals, credentials: githubCreds });
+    const github = adapters.github as { userName?: unknown } | undefined;
+    expect(github?.userName).toBe("foo");
+  });
+
+  it("leaves a slug without `[bot]` untouched (defensive — Link sets the suffix today, but contracts drift)", () => {
+    const adapters = build({
+      signals: githubSignals,
+      credentials: { ...githubCreds, botUserSlug: "already-clean" },
+    });
+    const github = adapters.github as { userName?: unknown } | undefined;
+    expect(github?.userName).toBe("already-clean");
+  });
+});
+
 describe("buildChatSdkAdapters — communicators map", () => {
   it("discovers a kind declared only in communicators (no signal of that provider)", () => {
     const adapters = build({
