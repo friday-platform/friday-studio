@@ -30,15 +30,15 @@
     "jsr:@std/testing@1": "1.0.18",
     "jsr:@std/testing@^1.0.16": "1.0.18",
     "jsr:@std/yaml@1": "1.1.0",
-    "npm:@ai-sdk/anthropic@^3.0.74": "3.0.74_zod@4.3.6",
-    "npm:@ai-sdk/fireworks@2.0.50": "2.0.50_zod@4.3.6",
-    "npm:@ai-sdk/google@^3.0.67": "3.0.67_zod@4.3.6",
-    "npm:@ai-sdk/groq@3.0.38": "3.0.38_zod@4.3.6",
-    "npm:@ai-sdk/groq@^3.0.38": "3.0.38_zod@4.3.6",
-    "npm:@ai-sdk/mcp@^1.0.39": "1.0.39_zod@4.3.6",
-    "npm:@ai-sdk/openai@^3.0.58": "3.0.58_zod@4.3.6",
+    "npm:@ai-sdk/anthropic@^3.0.76": "3.0.76_zod@4.3.6",
+    "npm:@ai-sdk/fireworks@2.0.52": "2.0.52_zod@4.3.6",
+    "npm:@ai-sdk/google@^3.0.71": "3.0.71_zod@4.3.6",
+    "npm:@ai-sdk/groq@3.0.39": "3.0.39_zod@4.3.6",
+    "npm:@ai-sdk/groq@^3.0.39": "3.0.39_zod@4.3.6",
+    "npm:@ai-sdk/mcp@^1.0.41": "1.0.41_zod@4.3.6",
+    "npm:@ai-sdk/openai@^3.0.63": "3.0.63_zod@4.3.6",
     "npm:@ai-sdk/provider@^3.0.10": "3.0.10",
-    "npm:@ai-sdk/svelte@^4.0.174": "4.0.174_svelte@5.55.5_zod@4.3.6",
+    "npm:@ai-sdk/svelte@^4.0.177": "4.0.177_svelte@5.55.5_zod@4.3.6",
     "npm:@anthropic-ai/claude-agent-sdk@~0.2.126": "0.2.126_zod@4.3.6",
     "npm:@biomejs/biome@*": "2.4.14",
     "npm:@biomejs/biome@latest": "2.4.14",
@@ -111,8 +111,8 @@
     "npm:@worker-tools/html-rewriter@~0.1.0-pre.17": "0.1.0-pre.19",
     "npm:@xmldom/xmldom@~0.9.10": "0.9.10",
     "npm:ai-sdk-provider-claude-code@^3.4.4": "3.4.4_zod@4.3.6",
-    "npm:ai@^6.0.141": "6.0.174_zod@4.3.6",
-    "npm:ai@^6.0.174": "6.0.174_zod@4.3.6",
+    "npm:ai@^6.0.141": "6.0.177_zod@4.3.6",
+    "npm:ai@^6.0.177": "6.0.177_zod@4.3.6",
     "npm:chat@4.27.0": "4.27.0",
     "npm:chat@^4.27.0": "4.27.0",
     "npm:codemirror@^6.0.2": "6.0.2",
@@ -291,16 +291,16 @@
     }
   },
   "npm": {
-    "@ai-sdk/anthropic@3.0.74_zod@4.3.6": {
-      "integrity": "sha512-Xew9rfz9WWhDSyF8rNhjT/XWOWelNfJrMlmG0Ahw210hStisRpQZ1s+7VeI9JTJOZ5y5tXqBi5kfPwYnCfyRTA==",
+    "@ai-sdk/anthropic@3.0.76_zod@4.3.6": {
+      "integrity": "sha512-kOuvT9e6PygFvgYpkr4v9gjvmcMPfJp79jaXjeRl9Gpoj2OXdtc3ero7o1ic+tiSBw5IMubxXFO68BCA/axGJA==",
       "dependencies": [
         "@ai-sdk/provider",
         "@ai-sdk/provider-utils",
         "zod"
       ]
     },
-    "@ai-sdk/fireworks@2.0.50_zod@4.3.6": {
-      "integrity": "sha512-g0Mok+kIq1dxJeGML8m1I/oA7ABTzBzFD8oATjTfbedyfl97PEqVplVfW7VQlhONQypWoo3w1OJKy0X19gY5Yg==",
+    "@ai-sdk/fireworks@2.0.52_zod@4.3.6": {
+      "integrity": "sha512-TwNi+Eqa6Jdoz/IjIR3RvgW/BaHP6H8X2BhiDD8b9d/PvVC5ywIAcC1LLDYj/7guC/4fRjkIyiJMWFpL4Qiyhw==",
       "dependencies": [
         "@ai-sdk/openai-compatible",
         "@ai-sdk/provider",
@@ -308,8 +308,8 @@
         "zod"
       ]
     },
-    "@ai-sdk/gateway@3.0.109_zod@4.3.6": {
-      "integrity": "sha512-r6dOqThjODp1vOhGRJg2OCmyB/ZOQtGx1esZ2SDvwDX5XoX8dBqYaYjLg8MPXTzMGJSgOkJyCxWgUcZtAl16pw==",
+    "@ai-sdk/gateway@3.0.112_zod@4.3.6": {
+      "integrity": "sha512-jiBao9pR4owWyjo0BnuNc7WSQBGOD0thysE4AFgZXaG+zMFbISQXUkJr7ePw/phBvePy7jE5FSA2Lf7lwqUiiQ==",
       "dependencies": [
         "@ai-sdk/provider",
         "@ai-sdk/provider-utils",
@@ -317,24 +317,24 @@
         "zod"
       ]
     },
-    "@ai-sdk/google@3.0.67_zod@4.3.6": {
-      "integrity": "sha512-Qeq+SidYtzMrcf0fdw3L0QLmtXK+ErwdBzbxS4+0Q/2UP85Ges8RJJcbAj7SO8e2JbeJoM35BLqkeNy1o3wJvQ==",
+    "@ai-sdk/google@3.0.71_zod@4.3.6": {
+      "integrity": "sha512-G86UtqkCKM8mQcvsA4FQ1WCRN+w1gl/sxuoYl5CJX5DFSUSkrLNKmLcvi3TtnMvKth5li8W/1h3emQSl2K+qnA==",
       "dependencies": [
         "@ai-sdk/provider",
         "@ai-sdk/provider-utils",
         "zod"
       ]
     },
-    "@ai-sdk/groq@3.0.38_zod@4.3.6": {
-      "integrity": "sha512-mzn+KYeROVHFZnAr3qNX+eZ4Un4BFykOcs8XDH8LLzdfgrW6fxQkdiZyww0asYGjIYaa16dkyVtglp4GV6BeUQ==",
+    "@ai-sdk/groq@3.0.39_zod@4.3.6": {
+      "integrity": "sha512-BZAr6DjCbzWQ0Qn1/TSsHo/bmCt4JaAMb4A7HCSUZBQCAcOjne/03D0sVjHnQhUC3TpwcmYiv7tHAviK7BluRw==",
       "dependencies": [
         "@ai-sdk/provider",
         "@ai-sdk/provider-utils",
         "zod"
       ]
     },
-    "@ai-sdk/mcp@1.0.39_zod@4.3.6": {
-      "integrity": "sha512-x31r0Xs6bOpFCMuc+mjA+sEk3Nd+tnY1H43p1BV29jI9ZuOQmehpfQ+yiFeTPDeOwTRdp+8nZ4PfsqAlj7DnhQ==",
+    "@ai-sdk/mcp@1.0.41_zod@4.3.6": {
+      "integrity": "sha512-AfA0jb6tTnfcieLx1d6breTmuae0fz67UNcBrCgZqPqaZ1NIlJT5uyXx+78pgYOuDHo0GtHECVhI1a9lkZnzgA==",
       "dependencies": [
         "@ai-sdk/provider",
         "@ai-sdk/provider-utils",
@@ -342,24 +342,24 @@
         "zod"
       ]
     },
-    "@ai-sdk/openai-compatible@2.0.45_zod@4.3.6": {
-      "integrity": "sha512-5YBvurNL7Oj7mT3srws4Rh4cQidoorfEGObAOb5jV40eld8IC7EkXWARZjnWYqgYzabUs6Sn6muiXfQVkgOyOQ==",
+    "@ai-sdk/openai-compatible@2.0.47_zod@4.3.6": {
+      "integrity": "sha512-Enm5UlL0zUCrW3792opk5h7hRWxZOZzDe6eQYVFqX9LUOGGCe1h8MZWAGim765nwzgnjlpeYOsuzZmLtRsTPlg==",
       "dependencies": [
         "@ai-sdk/provider",
         "@ai-sdk/provider-utils",
         "zod"
       ]
     },
-    "@ai-sdk/openai@3.0.58_zod@4.3.6": {
-      "integrity": "sha512-2+5xGMROmrBboJuoOwqLL3b/o3i56+NRdxXDNVAiTyYjLiBj6KzembeuyuBT217be1X+zkEfAqD1H0irJlGIyw==",
+    "@ai-sdk/openai@3.0.63_zod@4.3.6": {
+      "integrity": "sha512-4yY/m8a57MNNVoJCsXuNblKf6BO4yuAuLKRX4tzSNffBEBSp1FlcWdPE0Z4FkqUeS0AJhYSSqp0GIiA/cIcDNA==",
       "dependencies": [
         "@ai-sdk/provider",
         "@ai-sdk/provider-utils",
         "zod"
       ]
     },
-    "@ai-sdk/provider-utils@4.0.26_zod@4.3.6": {
-      "integrity": "sha512-CsKNLKsOpvPujRlIYvoz+Ybw+kGn7J4/fIZa/58+R7iWLLfwn6ifE2G6Yq8K9XvH/I/3bzaDAJ3NhRwEMsLBKQ==",
+    "@ai-sdk/provider-utils@4.0.27_zod@4.3.6": {
+      "integrity": "sha512-ubkAJ+xODouwtmN1tYlvTPphH1hPOBfZaEQe8U7skGvFAnIRs9PPpsq57bC2+Ky/MB4yzhd6YOsxTAx9sGpazw==",
       "dependencies": [
         "@ai-sdk/provider",
         "@standard-schema/spec",
@@ -373,8 +373,8 @@
         "json-schema"
       ]
     },
-    "@ai-sdk/svelte@4.0.174_svelte@5.55.5_zod@4.3.6": {
-      "integrity": "sha512-nrBBTXd+wckGt55IGKqeR8ZL10yDFfWDdJOcDZrkdzozOst61jM951FJRg1SwiCVM3BpTis90oq4kxNsgUNdOg==",
+    "@ai-sdk/svelte@4.0.177_svelte@5.55.5_zod@4.3.6": {
+      "integrity": "sha512-8TKa0UFeK9TRoK9TXwW4J/QOF0uA6zZyRBrOv1htKt3d8B8wnPIwjJVC8ufWLjHTGy7YQgQ6yHOnP9Ki0SrS4Q==",
       "dependencies": [
         "@ai-sdk/provider-utils",
         "ai",
@@ -2579,8 +2579,8 @@
         "zod"
       ]
     },
-    "ai@6.0.174_zod@4.3.6": {
-      "integrity": "sha512-bTrfLUWHWtkjzWyCY4bmyuk4Qvmj4S4NSNsXyNSVVqkmftQNtxRj7dzUoMeQDBBwlJO6fC7m2Q/lNOPqQQfAGA==",
+    "ai@6.0.177_zod@4.3.6": {
+      "integrity": "sha512-1xQtbeWwNcLyyM86ixZhkKvT+WRXc1lvarIKqPVtsyn8F9NDikwUMBqYu+aQKDgMht50SMXh4qboYuU8MeHZZA==",
       "dependencies": [
         "@ai-sdk/gateway",
         "@ai-sdk/provider",
@@ -6013,7 +6013,7 @@
             "npm:@jsr/std__dotenv@~0.225.5",
             "npm:@jsr/std__yaml@^1.0.10",
             "npm:@types/react@^19.2.14",
-            "npm:ai@^6.0.174",
+            "npm:ai@^6.0.177",
             "npm:gunshi@~0.29.5",
             "npm:ink@^7.0.1",
             "npm:js-levenshtein@^1.1.6",
@@ -6049,7 +6049,7 @@
             "npm:@jsr/std__yaml@^1.0.10",
             "npm:@libpdf/core@~0.3.4",
             "npm:@opentelemetry/api@^1.9.1",
-            "npm:ai@^6.0.174",
+            "npm:ai@^6.0.177",
             "npm:chat@4.27.0",
             "npm:file-type@^22.0.1",
             "npm:hono-openapi@^1.3.0",
@@ -6126,7 +6126,7 @@
           "dependencies": [
             "npm:@ai-sdk/provider@^3.0.10",
             "npm:@opentelemetry/api@^1.9.1",
-            "npm:ai@^6.0.174",
+            "npm:ai@^6.0.177",
             "npm:jsonrepair@^3.14.0",
             "npm:vitest@^4.1.0",
             "npm:zod@^4.3.5"
@@ -6150,8 +6150,8 @@
         ],
         "packageJson": {
           "dependencies": [
-            "npm:@ai-sdk/fireworks@2.0.50",
-            "npm:@ai-sdk/groq@3.0.38",
+            "npm:@ai-sdk/fireworks@2.0.52",
+            "npm:@ai-sdk/groq@3.0.39",
             "npm:@ai-sdk/provider@^3.0.10",
             "npm:@anthropic-ai/claude-agent-sdk@~0.2.126",
             "npm:@chat-adapter/slack@4.27.0",
@@ -6159,7 +6159,7 @@
             "npm:@hubspot/api-client@^13.4.0",
             "npm:@jsr/db__sqlite@0.12",
             "npm:@types/markdown-it@^14.1.2",
-            "npm:ai@^6.0.174",
+            "npm:ai@^6.0.177",
             "npm:chat@4.27.0",
             "npm:jira.js@^5.3.1",
             "npm:markdown-it@^14.1.1",
@@ -6202,7 +6202,7 @@
             "npm:@libpdf/core@~0.3.4",
             "npm:@modelcontextprotocol/sdk@1.28",
             "npm:@xmldom/xmldom@~0.9.10",
-            "npm:ai@^6.0.174",
+            "npm:ai@^6.0.177",
             "npm:chat@^4.27.0",
             "npm:file-type@^22.0.1",
             "npm:jose@^6.2.3",
@@ -6271,15 +6271,15 @@
       "packages/llm": {
         "packageJson": {
           "dependencies": [
-            "npm:@ai-sdk/anthropic@^3.0.74",
-            "npm:@ai-sdk/google@^3.0.67",
-            "npm:@ai-sdk/groq@^3.0.38",
-            "npm:@ai-sdk/openai@^3.0.58",
+            "npm:@ai-sdk/anthropic@^3.0.76",
+            "npm:@ai-sdk/google@^3.0.71",
+            "npm:@ai-sdk/groq@^3.0.39",
+            "npm:@ai-sdk/openai@^3.0.63",
             "npm:@ai-sdk/provider@^3.0.10",
             "npm:@anthropic-ai/claude-agent-sdk@~0.2.126",
             "npm:@jsr/std__collections@^1.1.3",
             "npm:ai-sdk-provider-claude-code@^3.4.4",
-            "npm:ai@^6.0.174",
+            "npm:ai@^6.0.177",
             "npm:undici@^7.25.0",
             "npm:vitest@^4.1.0",
             "npm:zod@^4.3.5"
@@ -6299,9 +6299,9 @@
       "packages/mcp": {
         "packageJson": {
           "dependencies": [
-            "npm:@ai-sdk/mcp@^1.0.39",
+            "npm:@ai-sdk/mcp@^1.0.41",
             "npm:@modelcontextprotocol/sdk@1.28",
-            "npm:ai@^6.0.174",
+            "npm:ai@^6.0.177",
             "npm:vitest@^4.1.0",
             "npm:zod@^4.3.5"
           ]
@@ -6312,7 +6312,7 @@
           "dependencies": [
             "npm:@modelcontextprotocol/sdk@1.28",
             "npm:@worker-tools/html-rewriter@0.1.0-pre.19",
-            "npm:ai@^6.0.174",
+            "npm:ai@^6.0.177",
             "npm:fast-glob@^3.3.3",
             "npm:minimatch@^10.2.5",
             "npm:nats@^2.29.3",
@@ -6363,7 +6363,7 @@
         "packageJson": {
           "dependencies": [
             "npm:@jsr/std__yaml@^1.0.10",
-            "npm:ai@^6.0.174",
+            "npm:ai@^6.0.177",
             "npm:markdown-it@^14.1.1",
             "npm:nanoid@^5.1.6",
             "npm:nats@^2.29.3",
@@ -6396,7 +6396,7 @@
             "npm:@jsr/std__encoding@^1.0.10",
             "npm:@jsr/std__yaml@^1.0.10",
             "npm:@worker-tools/html-rewriter@~0.1.0-pre.17",
-            "npm:ai@^6.0.174",
+            "npm:ai@^6.0.177",
             "npm:turndown@7.2.4",
             "npm:vitest@^4.1.0",
             "npm:zod@^4.3.5"
@@ -6454,7 +6454,7 @@
           "dependencies": [
             "npm:@jsr/std__dotenv@~0.225.5",
             "npm:@jsr/std__yaml@^1.0.10",
-            "npm:ai@^6.0.174",
+            "npm:ai@^6.0.177",
             "npm:nats@^2.29.3",
             "npm:vitest@^4.1.0",
             "npm:zod@^4.3.5"
@@ -6467,7 +6467,7 @@
         ],
         "packageJson": {
           "dependencies": [
-            "npm:@ai-sdk/svelte@^4.0.174",
+            "npm:@ai-sdk/svelte@^4.0.177",
             "npm:@codemirror/lang-markdown@^6.5.0",
             "npm:@codemirror/lang-yaml@^6.1.3",
             "npm:@codemirror/language@^6.12.3",
@@ -6484,7 +6484,7 @@
             "npm:@tanstack/svelte-query@^6.1.27",
             "npm:@tanstack/svelte-table@9.0.0-alpha.41",
             "npm:@types/deno@2.5.0",
-            "npm:ai@^6.0.174",
+            "npm:ai@^6.0.177",
             "npm:codemirror@^6.0.2",
             "npm:diff@9",
             "npm:dompurify@^3.4.2",
@@ -6509,7 +6509,7 @@
         "packageJson": {
           "dependencies": [
             "npm:@ai-sdk/provider@^3.0.10",
-            "npm:ai@^6.0.174",
+            "npm:ai@^6.0.177",
             "npm:dotenv@17.4.2",
             "npm:gunshi@~0.29.5",
             "npm:vitest@^4.1.0",
