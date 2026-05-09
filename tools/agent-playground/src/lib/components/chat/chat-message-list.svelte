@@ -672,24 +672,20 @@
     opacity: 1;
   }
   /* DOM order is `[time, duration?, usage?, trigger]` for both
-     roles, so the ellipsis is always last. Assistant rows hug the
-     start edge (left); user rows hug the end edge (right). The
-     ellipsis ends up at the trailing edge in both cases — to the
-     right of the time/duration/usage on assistant, and to the right
-     of the time on user.
-
-     Inline padding matches the chat bubble's own inline padding
-     (`var(--size-3)` on `.message-content`) so the row's content
-     edge sits flush with the bubble's text edge: time-glyph aligns
-     with the first letter of an assistant message, ellipsis aligns
-     with the last letter of a user message. */
-  .message-actions.assistant {
-    justify-content: flex-start;
-    padding-inline-start: var(--size-3);
-  }
+     roles, so the ellipsis is always last. Both roles start-align
+     the row content so the time-glyph aligns with the first letter
+     of the message body — for assistant that's the left of the
+     bubble text, for user that's the left of the (right-anchored)
+     bubble text. The ellipsis docks at the trailing edge in either
+     case via `margin-inline-start: auto` on the trigger.
+     Inline padding on both sides matches the chat bubble's own
+     inline padding (`var(--size-3)` on `.message-content`) so the
+     row's content edges sit flush with the bubble's text edges. */
+  .message-actions.assistant,
   .message-actions.user {
-    justify-content: flex-end;
+    justify-content: flex-start;
     padding-inline-end: var(--size-3);
+    padding-inline-start: var(--size-3);
   }
 
   .message-time {
