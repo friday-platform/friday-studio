@@ -813,8 +813,8 @@
                     <span class="mono dim">~{Math.round(content.length / 4).toLocaleString()} tok</span>
                   </div>
                   <details class="block-details">
-                    <summary>preview</summary>
-                    <pre class="block-preview">{content.slice(0, 600)}{content.length > 600 ? "…" : ""}</pre>
+                    <summary>show contents</summary>
+                    <pre class="block-preview">{content}</pre>
                   </details>
                 </li>
               {/each}
@@ -1366,14 +1366,14 @@
   }
 
   .block-preview {
-    background: var(--highlight, transparent);
+    background: var(--highlight);
     border-radius: var(--radius-1, 0.3rem);
-    color: color-mix(in srgb, var(--color-text), transparent 30%);
+    color: var(--text);
     font-family: var(--font-family-mono, ui-monospace, monospace);
     font-size: var(--font-size-0);
     line-height: 1.4;
     margin: var(--size-1) 0 0;
-    max-block-size: 12rem;
+    max-block-size: 60vh;
     overflow: auto;
     padding: var(--size-2);
     white-space: pre-wrap;

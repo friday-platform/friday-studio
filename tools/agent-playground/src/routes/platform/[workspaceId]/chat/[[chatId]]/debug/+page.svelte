@@ -311,14 +311,30 @@
             </dl>
             {#if n.kv?.exists && n.kv.value !== undefined}
               {@const dumpKey = "kv-value-dump"}
+              {@const kvValueForDump =
+                n.kv?.value && typeof n.kv.value === "object" && !Array.isArray(n.kv.value)
+                  ? (() => {
+                      // The full chat record includes
+                      // `systemPromptContext`, which the dedicated
+                      // "system prompt blocks" section above already
+                      // renders with real line breaks. Showing it again
+                      // here as JSON-escaped text invites the "why are
+                      // these different" question — they aren't, it's
+                      // the same bytes. Drop it from the dump to leave
+                      // only the chat metadata + messages.
+                      const { systemPromptContext: _stripped, ...rest } =
+                        n.kv.value as Record<string, unknown>;
+                      return rest;
+                    })()
+                  : n.kv?.value}
               <div class="kv">
                 <div class="kv-head">
                   <button type="button" onclick={() => toggle(dumpKey)}>
                     value {expanded[dumpKey] ? "▼" : "▶"}
                   </button>
-                  {@render copyBtn(`copy:${dumpKey}`, fullJson(n.kv.value))}
+                  {@render copyBtn(`copy:${dumpKey}`, fullJson(kvValueForDump))}
                 </div>
-                <pre class="dump">{expanded[dumpKey] ? fullJson(n.kv.value) : shortJson(n.kv.value)}</pre>
+                <pre class="dump">{expanded[dumpKey] ? fullJson(kvValueForDump) : shortJson(kvValueForDump)}</pre>
               </div>
             {/if}
           </article>
@@ -399,11 +415,7 @@
             <button type="button" class="block-toggle" onclick={() => toggle(blockKey)}>
               {expanded[blockKey] ? "▼ collapse" : "▶ expand"}
             </button>
-            {#if expanded[blockKey]}
-              <pre class="block-body">{content}</pre>
-            {:else}
-              <pre class="block-body block-body-collapsed">{content.slice(0, 400)}{content.length > 400 ? "…" : ""}</pre>
-            {/if}
+            <pre class="block-body" class:block-body-collapsed={!expanded[blockKey]}>{content}</pre>
           </article>
         {/each}
       </div>
@@ -573,247 +585,256 @@
 </div>
 
 <style>
+  /* Style tokens come from `packages/ui/src/lib/colors.css` —
+     `--surface`, `--surface-bright`, `--highlight`, `--border`,
+     `--text`, `--text-bright`, `--text-faded`, plus the accent
+     primaries (`--blue-primary`, `--green-primary`, `--red-primary`).
+     They flip automatically on system light/dark preference. */
+
   .page {
-    padding: var(--size-4);
-    max-width: 1200px;
-    margin: 0 auto;
+    color: var(--text);
     font-family: var(--font-family-mono, ui-monospace, monospace);
     font-size: var(--font-size-1, 13px);
+    margin-inline: auto;
+    max-inline-size: 1200px;
+    padding: var(--size-4);
   }
   h1 {
-    margin: 0 0 var(--size-2);
+    color: var(--text-bright);
     font-size: var(--font-size-3, 18px);
+    margin: 0 0 var(--size-2);
   }
   h2 {
-    margin: var(--size-4) 0 var(--size-2);
+    color: var(--text-bright);
     font-size: var(--font-size-2, 15px);
+    margin: var(--size-4) 0 var(--size-2);
   }
   .meta,
   .links {
-    color: color-mix(in srgb, var(--color-text), transparent 35%);
-    margin-bottom: var(--size-1);
+    color: var(--text-faded);
+    margin-block-end: var(--size-1);
   }
   .links a {
-    color: var(--color-link, #4a9eff);
+    color: var(--blue-primary);
   }
   .page-head {
-    /* Stick to the top edge of the scroll container (Page.Content's
-       `.scrollable` wrapper). The bar must be opaque so content
-       scrolling underneath isn't visible through it; --color-surface-1
-       adapts to dark/light mode. The previous negative top margin
-       shoved the bar above the visible area when stuck — removed. */
+    background: var(--surface);
+    border-block-end: 1px solid var(--border);
+    margin-block-end: var(--size-2);
+    padding-block: var(--size-2);
     position: sticky;
     top: 0;
     z-index: 10;
-    background: var(--color-surface-1);
-    padding-block: var(--size-2);
-    margin-block-end: var(--size-2);
-    border-block-end: 1px solid color-mix(in srgb, var(--color-text), transparent 85%);
   }
   .title-row {
-    display: flex;
     align-items: center;
-    gap: var(--size-2);
+    display: flex;
     flex-wrap: wrap;
+    gap: var(--size-2);
   }
   .toolbar {
-    margin-left: auto;
     display: flex;
-    gap: var(--size-1);
     flex-wrap: wrap;
+    gap: var(--size-1);
+    margin-inline-start: auto;
   }
   .toolbar > button {
+    background: var(--surface-bright);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    color: var(--text);
+    cursor: pointer;
     font: inherit;
     font-size: 0.92em;
-    padding: 4px 10px;
-    border: 1px solid color-mix(in srgb, var(--color-text), transparent 70%);
-    border-radius: 3px;
-    background: var(--color-background, #fff);
-    color: var(--color-text);
-    cursor: pointer;
+    padding-block: 4px;
+    padding-inline: 10px;
   }
   .toolbar > button:hover:not(:disabled) {
-    border-color: var(--color-link, #4a9eff);
-    color: var(--color-link, #4a9eff);
+    background: var(--highlight);
+    border-color: var(--border-bright);
+    color: var(--text-bright);
   }
   .toolbar > button:disabled {
-    opacity: 0.5;
     cursor: wait;
+    opacity: 0.5;
   }
   button.copy {
-    display: inline-flex;
     align-items: center;
-    justify-content: center;
-    width: 22px;
-    height: 22px;
-    padding: 0;
+    background: transparent;
+    block-size: 22px;
     border: 1px solid transparent;
     border-radius: 3px;
-    background: transparent;
-    color: color-mix(in srgb, var(--color-text), transparent 45%);
+    color: var(--text-faded);
     cursor: pointer;
-    margin-left: 4px;
+    display: inline-flex;
     flex-shrink: 0;
-    transition:
-      color 100ms ease,
-      border-color 100ms ease;
+    inline-size: 22px;
+    justify-content: center;
+    margin-inline-start: 4px;
+    padding: 0;
+    transition: color 100ms ease, border-color 100ms ease;
   }
   button.copy:hover {
-    color: var(--color-link, #4a9eff);
-    border-color: color-mix(in srgb, var(--color-link, #4a9eff), transparent 70%);
+    border-color: color-mix(in srgb, var(--blue-primary), transparent 70%);
+    color: var(--blue-primary);
   }
   button.copy.done {
-    color: var(--color-success, #29a36a);
+    color: var(--green-primary);
   }
   button.copy svg {
     display: block;
   }
   .kv-head {
-    display: flex;
     align-items: center;
-    gap: var(--size-1);
+    display: flex;
     flex-wrap: wrap;
+    gap: var(--size-1);
   }
   .kv-label {
+    color: var(--text-faded);
     font-size: 0.92em;
-    color: color-mix(in srgb, var(--color-text), transparent 35%);
   }
   article {
-    border: 1px solid color-mix(in srgb, var(--color-text), transparent 80%);
+    background: var(--surface-bright);
+    border: 1px solid var(--border);
     border-radius: 4px;
+    margin-block-end: var(--size-2);
     padding: var(--size-2);
-    margin-bottom: var(--size-2);
   }
   .message.assistant {
-    background: color-mix(in srgb, var(--color-link, #4a9eff), transparent 95%);
+    background: color-mix(in srgb, var(--blue-primary), transparent 92%);
   }
   .message.user {
-    background: color-mix(in srgb, var(--color-text), transparent 95%);
+    background: var(--highlight);
   }
   article > header {
-    display: flex;
-    gap: var(--size-2);
     align-items: baseline;
-    margin-bottom: var(--size-1);
+    display: flex;
     flex-wrap: wrap;
+    gap: var(--size-2);
+    margin-block-end: var(--size-1);
   }
   .role {
+    color: var(--text-bright);
     font-weight: bold;
   }
   .ts,
   .msgid {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: var(--text-faded);
     font-size: 0.92em;
   }
   .metadata pre {
     font-size: 0.85em;
   }
   .part {
-    border-left: 2px solid color-mix(in srgb, var(--color-text), transparent 80%);
-    padding: var(--size-1) var(--size-2);
-    margin-top: var(--size-1);
+    border-inline-start: 2px solid var(--border);
+    margin-block-start: var(--size-1);
+    padding-block: var(--size-1);
+    padding-inline: var(--size-2);
   }
   .part.tool {
-    border-left-color: var(--color-link, #4a9eff);
+    border-inline-start-color: var(--blue-primary);
   }
   .part.error {
-    border-left-color: var(--color-error, #e44);
+    border-inline-start-color: var(--red-primary);
   }
   .part-head {
-    display: flex;
-    gap: var(--size-2);
-    flex-wrap: wrap;
     align-items: baseline;
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--size-2);
   }
   .kind {
+    color: var(--text-bright);
     font-weight: bold;
   }
   .state {
-    background: color-mix(in srgb, var(--color-text), transparent 90%);
-    padding: 0 0.4em;
+    background: var(--highlight);
     border-radius: 3px;
+    padding-inline: 0.4em;
   }
   .err {
-    color: var(--color-error, #e44);
+    color: var(--red-primary);
   }
   .session-link {
-    color: var(--color-link, #4a9eff);
-    margin-left: auto;
+    color: var(--blue-primary);
+    margin-inline-start: auto;
   }
   pre.text {
+    font-size: 0.95em;
+    margin: var(--size-1) 0 0;
     white-space: pre-wrap;
     word-break: break-word;
-    margin: var(--size-1) 0 0;
-    font-size: 0.95em;
   }
   pre.dump {
-    background: color-mix(in srgb, var(--color-text), transparent 92%);
-    padding: var(--size-1);
+    background: var(--highlight);
     border-radius: 3px;
-    overflow-x: auto;
-    white-space: pre-wrap;
-    word-break: break-word;
+    color: var(--text);
     font-size: 0.85em;
     margin: 4px 0;
-    max-height: 600px;
-    overflow-y: auto;
+    max-block-size: 600px;
+    overflow: auto;
+    padding: var(--size-1);
+    white-space: pre-wrap;
+    word-break: break-word;
   }
   .kv button {
-    font: inherit;
     background: none;
     border: none;
-    color: color-mix(in srgb, var(--color-text), transparent 30%);
+    color: var(--text-faded);
     cursor: pointer;
+    font: inherit;
+    margin-block-start: 4px;
     padding: 0;
-    margin-top: 4px;
   }
   .kv button:hover {
-    color: var(--color-text);
+    color: var(--text-bright);
   }
   details {
-    margin-top: var(--size-1);
+    margin-block-start: var(--size-1);
   }
   summary {
     cursor: pointer;
   }
   .steps {
     margin: var(--size-1) 0;
-    padding-left: var(--size-3);
+    padding-inline-start: var(--size-3);
   }
   .steps li {
-    margin-bottom: var(--size-1);
+    margin-block-end: var(--size-1);
   }
   .tools {
     list-style: none;
-    padding: 0;
     margin: 4px 0 0;
+    padding: 0;
   }
   .tools li {
-    margin: 4px 0;
+    margin-block: 4px;
   }
   .empty {
+    color: var(--text-faded);
+    font-style: italic;
     padding: var(--size-3);
     text-align: center;
-    color: color-mix(in srgb, var(--color-text), transparent 30%);
-    font-style: italic;
   }
   .nats-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
     gap: var(--size-2);
+    grid-template-columns: 1fr 1fr;
   }
   .nats-card h3 {
-    margin: 0;
+    color: var(--text-bright);
     font-size: var(--font-size-2, 14px);
+    margin: 0;
   }
   .nats-card dl {
     display: grid;
-    grid-template-columns: max-content 1fr;
     gap: 2px var(--size-2);
+    grid-template-columns: max-content 1fr;
     margin: var(--size-1) 0 0;
   }
   .nats-card dt {
-    color: color-mix(in srgb, var(--color-text), transparent 45%);
+    color: var(--text-faded);
   }
   .nats-card dd {
     margin: 0;
@@ -825,11 +846,11 @@
     }
   }
   .hint {
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: var(--text-faded);
     font-style: italic;
   }
   .job {
-    color: var(--color-link, #4a9eff);
+    color: var(--blue-primary);
   }
 
   .block-grid {
@@ -840,8 +861,8 @@
   }
 
   .block-card {
-    background: var(--surface, transparent);
-    border: 1px solid var(--border, var(--cream-800));
+    background: var(--surface-bright);
+    border: 1px solid var(--border);
     border-radius: var(--radius-2, 0.5rem);
     padding: var(--size-3);
   }
@@ -859,12 +880,12 @@
   }
 
   .block-name {
-    color: color-mix(in srgb, var(--color-text), transparent 10%);
+    color: var(--text-bright);
     font-weight: var(--font-weight-6);
   }
 
   .block-stats {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: var(--text-faded);
     font-family: var(--font-family-mono, ui-monospace, monospace);
     font-size: var(--font-size-0);
   }
@@ -872,7 +893,7 @@
   .block-toggle {
     background: transparent;
     border: 0;
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: var(--text-faded);
     cursor: pointer;
     font-size: var(--font-size-0);
     padding: 0;
@@ -880,13 +901,13 @@
   }
 
   .block-toggle:hover {
-    color: var(--color-text);
+    color: var(--text-bright);
   }
 
   .block-body {
-    background: var(--highlight, transparent);
+    background: var(--highlight);
     border-radius: var(--radius-1, 0.3rem);
-    color: color-mix(in srgb, var(--color-text), transparent 20%);
+    color: var(--text);
     font-family: var(--font-family-mono, ui-monospace, monospace);
     font-size: var(--font-size-0);
     line-height: 1.4;
@@ -897,7 +918,14 @@
     word-break: break-word;
   }
 
+  /* Collapsed: bounded scroll window so the page doesn't blow up.
+     Expanded: a generous viewport-relative cap so the full block is
+     readable without dominating the screen. Either state is fully
+     scrollable — content is never truncated. */
+  .block-body {
+    max-block-size: 70vh;
+  }
   .block-body-collapsed {
-    max-block-size: 8rem;
+    max-block-size: 12rem;
   }
 </style>
