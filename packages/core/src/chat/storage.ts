@@ -58,7 +58,7 @@ interface ChatSourceInput {
   chatId: string;
   userId: string;
   workspaceId: string;
-  source: "atlas" | "slack" | "discord" | "telegram" | "whatsapp" | "teams";
+  source: "atlas" | "slack" | "discord" | "telegram" | "whatsapp" | "teams" | "github";
 }
 
 function createChat(input: ChatSourceInput): Promise<Result<Chat, string>> {

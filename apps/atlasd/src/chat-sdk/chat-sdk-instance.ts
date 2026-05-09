@@ -895,7 +895,8 @@ export function createMessageHandler(
         adapterName === "discord" ||
         adapterName === "telegram" ||
         adapterName === "whatsapp" ||
-        adapterName === "teams");
+        adapterName === "teams" ||
+        adapterName === "github");
     if (sourceWasSet) {
       stateAdapter.setSource(thread.id, adapterName);
     }
