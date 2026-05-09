@@ -3,25 +3,31 @@
  * Object Store `SKILL_ARCHIVES`.
  *
  * Walks every row in the legacy `skills` and `skill_assignments`
- * tables and republishes through the same `JetStreamSkillAdapter`
- * instances the runtime uses, so the on-disk and in-stream layouts
- * stay in sync. Bundled `friday/*` skills (loaded from
+ * tables and replays each `(skillId, version)` verbatim into the
+ * JetStream `SKILLS` bucket via `JetStreamSkillAdapter.replayVersion()`.
+ * Source `id`, `version`, `createdAt`, and `disabled` are preserved
+ * exactly — the older `publish()`-based path silently lost these
+ * because publish lands at `max(version)+1` regardless of caller
+ * intent. Bundled `friday/*` skills (loaded from
  * `packages/system/skills/<name>/` at every daemon start via
  * `ensureSystemSkills()`) are SKIPPED — their source-of-truth lives
  * in the package, not the database. This migration only covers
  * skills published interactively through `atlas skill publish` /
- * `POST /api/skills/.../upload` (the "skills.sh" path the user
- * cares about).
+ * `POST /api/skills/.../upload`.
  *
- * Idempotent — checks the JetStream `SKILLS` bucket for an entry
- * already keyed by `skill/<skillId>/<version>` before publishing.
- * The legacy `skills.db` file is left in place for rollback.
+ * Idempotent — pre-filters per skill via `listVersions()` and skips
+ * `(skillId, version)` pairs already present in JetStream, so a
+ * re-run after a partial failure is a no-op (no duplicate rows, no
+ * duplicate-rejection errors). Drafts (rows with `name IS NULL`)
+ * still flow through `adapter.create()` since `replayVersion` is
+ * for restoring published-version history, not draft shells. The
+ * legacy `skills.db` file is left in place for rollback.
  *
  * No-op if `~/.atlas/skills.db` doesn't exist.
  */
 
 import { join } from "node:path";
-import { JetStreamSkillAdapter } from "@atlas/skills";
+import { JetStreamSkillAdapter, type SkillRecord } from "@atlas/skills";
 import { stringifyError } from "@atlas/utils";
 import { getFridayHome } from "@atlas/utils/paths.server";
 import { Database } from "@db/sqlite";
@@ -57,12 +63,13 @@ export const migration: Migration = {
   name: "user-published skills (skills.db) → JetStream KV + Object Store",
   description:
     "Walk ~/.atlas/skills.db `skills` rows (excluding bundled friday/* " +
-    "rows whose source-of-truth is packages/system/skills/) and republish " +
-    "every (skillId, version) into the SKILLS KV bucket via " +
-    "JetStreamSkillAdapter.publish(). Archive bytes go to the " +
-    "SKILL_ARCHIVES Object Store. Also copies skill_assignments " +
-    "(workspace + job-level). Idempotent — skips rows whose JetStream " +
-    "entry already exists. Legacy SQLite file left in place.",
+    "rows whose source-of-truth is packages/system/skills/) and replay " +
+    "every (skillId, version) verbatim into the SKILLS KV bucket via " +
+    "JetStreamSkillAdapter.replayVersion(). Source id, version, createdAt " +
+    "and disabled are preserved. Archive bytes go to the SKILL_ARCHIVES " +
+    "Object Store. Also copies skill_assignments (workspace + job-level). " +
+    "Idempotent — pre-filters versions already in JetStream. Legacy SQLite " +
+    "file left in place.",
   async run({ nc, logger }) {
     const dbPath = join(getFridayHome(), "skills.db");
 
@@ -77,9 +84,11 @@ export const migration: Migration = {
     const db = new Database(dbPath, { readonly: true });
 
     try {
-      // Skills: pull every (skill_id, version) pair, oldest version first
-      // so each publish() lands at the correct version number (the adapter
-      // increments from max(version)).
+      // Skills: pull every (skill_id, version) pair, oldest version first.
+      // `replayVersion` honors the source version, so version order isn't
+      // load-bearing for that — but for renamed-across-versions skills it
+      // still matters: each replay overwrites `by_name[ns,name] -> skillId`,
+      // so walking ASC means the latest name wins (matches `publish` semantics).
       const rowsStmt = db.prepare(
         "SELECT * FROM skills WHERE created_by != ? ORDER BY skill_id, version ASC",
       );
@@ -90,23 +99,17 @@ export const migration: Migration = {
       let skipped = 0;
       let failed = 0;
 
-      for (const row of rows) {
-        // Idempotency: if this skillId/version is already in JetStream, skip.
-        const existing = await adapter.getBySkillId(row.skill_id);
-        if (
-          existing.ok &&
-          existing.data &&
-          existing.data.version >= row.version &&
-          existing.data.namespace === row.namespace
-        ) {
-          skipped++;
-          continue;
-        }
+      // Cache of versions already in JetStream per (namespace, name). Built
+      // lazily on first row per skill via `listVersions()` so re-runs after
+      // a partial failure don't trip `replayVersion`'s duplicate guard.
+      const seenVersions = new Map<string, Set<number>>();
 
+      for (const row of rows) {
         if (!row.name) {
           // Draft row — replay via create() then leave at version 1.
           // Most drafts get superseded by a later publish, but copy the
-          // shell so getById() still resolves.
+          // shell so getById() still resolves. `replayVersion` is for
+          // published-version history; drafts have no history to replay.
           const result = await adapter.create(row.namespace, row.created_by);
           if (!result.ok) {
             logger.warn("Failed to migrate skill draft", { id: row.id, error: result.error });
@@ -114,6 +117,34 @@ export const migration: Migration = {
             continue;
           }
           migrated++;
+          continue;
+        }
+
+        const cacheKey = `${row.namespace}\x00${row.name}`;
+        let existingVersions = seenVersions.get(cacheKey);
+        if (!existingVersions) {
+          const versionsResult = await adapter.listVersions(row.namespace, row.name);
+          if (!versionsResult.ok) {
+            logger.warn("Failed to list existing versions for skill", {
+              namespace: row.namespace,
+              name: row.name,
+              error: versionsResult.error,
+            });
+            failed++;
+            continue;
+          }
+          existingVersions = new Set(versionsResult.data.map((v) => v.version));
+          seenVersions.set(cacheKey, existingVersions);
+        }
+
+        if (existingVersions.has(row.version)) {
+          logger.debug("Skipping skill version already present in JetStream", {
+            skillId: row.skill_id,
+            namespace: row.namespace,
+            name: row.name,
+            version: row.version,
+          });
+          skipped++;
           continue;
         }
 
@@ -127,16 +158,25 @@ export const migration: Migration = {
           // bad JSON — ship empty frontmatter rather than skipping the row
         }
 
-        const result = await adapter.publish(row.namespace, row.name, row.created_by, {
+        const record: SkillRecord = {
+          id: row.id,
+          skillId: row.skill_id,
+          namespace: row.namespace,
+          name: row.name,
+          version: row.version,
           description: row.description,
           descriptionManual: row.description_manual !== 0,
-          instructions: row.instructions,
+          disabled: row.disabled !== 0,
           frontmatter,
-          archive: row.archive ?? undefined,
-          skillId: row.skill_id,
-        });
+          instructions: row.instructions,
+          hasArchive: row.archive !== null,
+          createdBy: row.created_by,
+          createdAt: row.created_at,
+        };
+
+        const result = await adapter.replayVersion(record, row.archive ?? undefined);
         if (!result.ok) {
-          logger.warn("Failed to migrate skill row", {
+          logger.warn("Failed to replay skill row", {
             namespace: row.namespace,
             name: row.name,
             version: row.version,
@@ -145,13 +185,7 @@ export const migration: Migration = {
           failed++;
           continue;
         }
-
-        // Mirror disabled state (publish always lands enabled — flip if
-        // the SQLite row was disabled).
-        if (row.disabled !== 0) {
-          await adapter.setDisabled(row.skill_id, true);
-        }
-
+        existingVersions.add(row.version);
         migrated++;
       }
 
