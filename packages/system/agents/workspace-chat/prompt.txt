@@ -142,7 +142,7 @@ No read-verify-read. No incremental edits. No bash loop to verify intermediate s
 
 Two steps for shipping a user agent — don't conflate:
 
-1. **Publish source code** → `POST /api/agents/register` with `{entrypoint: "<abs path>"}` via `run_code` bash. JSON entrypoint only — multipart is rejected (400), no CLI shortcut. This is the only path that copies `agent.py` into the registry. Response includes `agent.path` (install dir).
+1. **Publish source code** → `register_agent({entrypoint: "<abs path>"})`. Idempotent: re-running with the same entrypoint overwrites the install dir, so this is also the update path for editing an existing user agent. Response includes `agent.path` (install dir). To remove an agent, call `delete_agent_from_registry({id, version?})`.
 2. **Wire into workspace** → `upsert_agent`. Edits `workspace.yml` agents list; does not touch source code. For `type: "user"`, the `agent` field is an id reference — must already be registered via step 1.
 
 New agent → both. Edit to existing source → step 1 only; the workspace re-resolves to the latest registered semver (no version pin in `workspace.yml`).

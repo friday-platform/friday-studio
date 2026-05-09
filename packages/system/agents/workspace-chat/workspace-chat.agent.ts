@@ -47,6 +47,10 @@ import {
 import { buildOnboardingClause, buildUserProfileClause } from "./onboarding.ts";
 import SYSTEM_PROMPT from "./prompt.txt" with { type: "text" };
 import { connectCommunicatorSucceeded, connectServiceSucceeded } from "./stop-conditions.ts";
+import {
+  createDeleteAgentFromRegistryTool,
+  createRegisterAgentTool,
+} from "./tools/agent-registry-tools.ts";
 import { artifactTools, createArtifactsCreateTool } from "./tools/artifact-tools.ts";
 import { createAgentTool, rebindAgentTool } from "./tools/bundled-agent-tools.ts";
 import { createRunCodeTool } from "./tools/code-exec.ts";
@@ -723,6 +727,13 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
         const searchSkillsTool = createSearchSkillsTool(workspaceId, logger);
         const describeSkillTool = createDescribeSkillTool(logger);
 
+        // Agent registry tools — replace the run_code + curl workaround for
+        // user-agent registration. register_agent is idempotent so it doubles
+        // as the update path; delete_agent_from_registry removes an installed
+        // agent's on-disk artifacts.
+        const registerAgentTool = createRegisterAgentTool(logger);
+        const deleteAgentFromRegistryTool = createDeleteAgentFromRegistryTool(logger);
+
         // Job tools — pass session.streamId so nested job sessions inherit
         // the chat thread ID. The daemon's broadcast hook reads it to skip
         // the originating chat communicator (no echo back to Discord/Slack/etc).
@@ -873,6 +884,8 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           ...listSkillsTool,
           ...searchSkillsTool,
           ...describeSkillTool,
+          ...registerAgentTool,
+          ...deleteAgentFromRegistryTool,
           delegate: delegateTool,
           load_skill: loadSkillTool,
         };
