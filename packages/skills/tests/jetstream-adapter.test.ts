@@ -4,10 +4,11 @@
  * archive round-trip + assignments + delete.
  */
 
+import { createJetStreamKVStorage } from "@atlas/storage";
 import { startNatsTestServer, type TestNatsServer } from "@atlas/core/test-utils/nats-test-server";
 import { connect, type NatsConnection } from "nats";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { JetStreamSkillAdapter } from "../src/jetstream-adapter.ts";
+import { JetStreamSkillAdapter, type SkillRecord } from "../src/jetstream-adapter.ts";
 
 let server: TestNatsServer;
 let nc: NatsConnection;
@@ -203,5 +204,150 @@ describe("JetStreamSkillAdapter", () => {
     const assignments = await adapter.listAssigned("ws-x");
     expect.assert(assignments.ok === true);
     expect(assignments.data.find((s) => s.skillId === r.data.skillId)).toBeUndefined();
+  });
+});
+
+describe("JetStreamSkillAdapter.replayVersion", () => {
+  // Each test uses a unique skillId so we can `listVersions(ns, name)` against
+  // skills that publish() never wrote (replay does not maintain the by_name
+  // index — that's the migration/bundle caller's job once per skill).
+  function buildRecord(overrides: Partial<SkillRecord> & Pick<SkillRecord, "skillId">): SkillRecord {
+    return {
+      id: overrides.id ?? `id-${overrides.skillId}-${overrides.version ?? 1}`,
+      skillId: overrides.skillId,
+      namespace: overrides.namespace ?? "user",
+      name: overrides.name ?? `replay-${overrides.skillId}`,
+      version: overrides.version ?? 1,
+      description: overrides.description ?? "replayed skill",
+      descriptionManual: overrides.descriptionManual ?? false,
+      disabled: overrides.disabled ?? false,
+      frontmatter: overrides.frontmatter ?? {},
+      instructions: overrides.instructions ?? "ins",
+      hasArchive: overrides.hasArchive ?? false,
+      createdBy: overrides.createdBy ?? "alice",
+      createdAt: overrides.createdAt ?? "2026-01-01T00:00:00.000Z",
+    };
+  }
+
+  // Replay does NOT write the by_name index, so `listVersions(ns, name)` —
+  // which resolves via by_name first — won't see replayed-only skills. Tests
+  // that need it set the index manually, mirroring what the migration/bundle
+  // caller will do after the per-skill replay loop.
+  async function setByNameIndex(
+    nc: NatsConnection,
+    namespace: string,
+    name: string,
+    skillId: string,
+  ): Promise<void> {
+    const kv = await createJetStreamKVStorage(nc, { bucket: "SKILLS", history: 1 });
+    await kv.set<string>(["index", "by_name", namespace, name], skillId);
+  }
+
+  it("replays a record verbatim — version/id/createdAt/archive all honored", async () => {
+    const adapter = new JetStreamSkillAdapter(nc);
+    const skillId = "replay-happy-skill";
+    const archive = new Uint8Array([10, 20, 30, 40]);
+    const record = buildRecord({
+      id: "custom-id-happy",
+      skillId,
+      name: "happy-replay",
+      version: 5,
+      description: "v5",
+      createdAt: "2025-06-15T12:34:56.000Z",
+    });
+
+    const result = await adapter.replayVersion(record, archive);
+    expect.assert(result.ok === true);
+
+    await setByNameIndex(nc, "user", "happy-replay", skillId);
+
+    const byId = await adapter.getById("custom-id-happy");
+    expect.assert(byId.ok === true);
+    expect(byId.data?.skillId).toBe(skillId);
+    expect(byId.data?.version).toBe(5);
+    expect(byId.data?.createdAt.toISOString()).toBe("2025-06-15T12:34:56.000Z");
+
+    const versions = await adapter.listVersions("user", "happy-replay");
+    expect.assert(versions.ok === true);
+    expect(versions.data.map((v) => v.version)).toContain(5);
+
+    const bySkill = await adapter.getBySkillId(skillId);
+    expect.assert(bySkill.ok === true);
+    expect(bySkill.data?.version).toBe(5);
+    expect(Array.from(bySkill.data?.archive ?? [])).toEqual([10, 20, 30, 40]);
+  });
+
+  it("preserves version gaps — replaying [1, 3, 5] yields listVersions desc [5, 3, 1]", async () => {
+    const adapter = new JetStreamSkillAdapter(nc);
+    const skillId = "replay-gaps-skill";
+    for (const version of [1, 3, 5]) {
+      const r = await adapter.replayVersion(
+        buildRecord({ id: `gap-${version}`, skillId, name: "gap-replay", version }),
+      );
+      expect.assert(r.ok === true);
+    }
+    await setByNameIndex(nc, "user", "gap-replay", skillId);
+
+    const versions = await adapter.listVersions("user", "gap-replay");
+    expect.assert(versions.ok === true);
+    expect(versions.data.map((v) => v.version)).toEqual([5, 3, 1]);
+  });
+
+  it("omitting archive bytes leaves the version archive-less", async () => {
+    const adapter = new JetStreamSkillAdapter(nc);
+    const skillId = "replay-noarchive-skill";
+    const r = await adapter.replayVersion(
+      buildRecord({ id: "noarch-1", skillId, name: "noarchive-replay" }),
+    );
+    expect.assert(r.ok === true);
+
+    const got = await adapter.getBySkillId(skillId);
+    expect.assert(got.ok === true);
+    expect(got.data?.archive).toBeNull();
+  });
+
+  it("rejects duplicate replay at the same (skillId, version)", async () => {
+    const adapter = new JetStreamSkillAdapter(nc);
+    const skillId = "replay-dup-skill";
+    const first = await adapter.replayVersion(
+      buildRecord({ id: "dup-1", skillId, name: "dup-replay" }),
+    );
+    expect.assert(first.ok === true);
+
+    const second = await adapter.replayVersion(
+      buildRecord({ id: "dup-1-again", skillId, name: "dup-replay" }),
+    );
+    expect(second.ok).toBe(false);
+    expect.assert(second.ok === false);
+    expect(second.error).toContain("already exists");
+    expect(second.error).toContain(skillId);
+    expect(second.error).toContain("version 1");
+  });
+
+  it("preserves disabled=true without a follow-up setDisabled call", async () => {
+    const adapter = new JetStreamSkillAdapter(nc);
+    const skillId = "replay-disabled-skill";
+    const r = await adapter.replayVersion(
+      buildRecord({ id: "dis-1", skillId, name: "disabled-replay", disabled: true }),
+    );
+    expect.assert(r.ok === true);
+
+    const got = await adapter.getBySkillId(skillId);
+    expect.assert(got.ok === true);
+    expect(got.data?.disabled).toBe(true);
+  });
+
+  it("preserves an explicit createdAt verbatim", async () => {
+    const adapter = new JetStreamSkillAdapter(nc);
+    const skillId = "replay-date-skill";
+    const createdAt = "2026-01-01T00:00:00.000Z";
+    const r = await adapter.replayVersion(
+      buildRecord({ id: "date-1", skillId, name: "date-replay", createdAt }),
+    );
+    expect.assert(r.ok === true);
+
+    const got = await adapter.getBySkillId(skillId);
+    expect.assert(got.ok === true);
+    expect(got.data?.createdAt.toISOString()).toBe(createdAt);
   });
 });

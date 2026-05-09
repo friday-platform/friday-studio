@@ -42,7 +42,7 @@ const KV_BUCKET = "SKILLS";
 const OS_BUCKET = "SKILL_ARCHIVES";
 
 /** Stored skill row — same shape as Skill but without the archive bytes. */
-interface SkillRecord {
+export interface SkillRecord {
   id: string;
   skillId: string;
   namespace: string;
@@ -64,7 +64,18 @@ interface IdLocator {
   version: number;
 }
 
-export class JetStreamSkillAdapter implements SkillStorageAdapter {
+/**
+ * Narrow capability for replaying historical skill versions verbatim — used
+ * by bundle import and the SQLite→JetStream migration. Lives alongside the
+ * concrete adapter rather than widening `SkillStorageAdapter` because only
+ * the JetStream implementation has meaningful semantics here. Callers needing
+ * replay accept `SkillStorageAdapter & SkillReplayer`.
+ */
+export interface SkillReplayer {
+  replayVersion(record: SkillRecord, archive?: Uint8Array): Promise<Result<void, string>>;
+}
+
+export class JetStreamSkillAdapter implements SkillStorageAdapter, SkillReplayer {
   private kv: KVStorage | null = null;
   private os: ObjectStore | null = null;
 
@@ -280,6 +291,46 @@ export class JetStreamSkillAdapter implements SkillStorageAdapter {
       await kv.set<string>(["index", "by_name", namespace, name], skillId);
 
       return success({ id, version, name, skillId });
+    } catch (e) {
+      return fail(stringifyError(e));
+    }
+  }
+
+  /**
+   * Write a historical skill version verbatim — version, id, createdAt,
+   * disabled, frontmatter, etc. are honored as supplied. Skips the
+   * by_name index and prior-version name propagation that `publish` performs;
+   * the caller (bundle import, migration) is responsible for setting the
+   * by_name index once after replaying every version for a skill.
+   *
+   * Refuses to overwrite an existing row at `(skillId, version)`. Callers
+   * should pre-filter via `listVersions()`; this guard exists to surface
+   * TOCTOU corruption rather than silently clobber.
+   */
+  async replayVersion(record: SkillRecord, archive?: Uint8Array): Promise<Result<void, string>> {
+    const kv = await this.getKV();
+    const existing = await kv.get<SkillRecord>([
+      "skill",
+      record.skillId,
+      String(record.version),
+    ]);
+    if (existing) {
+      return fail(
+        `replayVersion: skill ${record.skillId} version ${record.version} already exists`,
+      );
+    }
+
+    try {
+      const hasArchive = archive !== undefined;
+      if (archive) {
+        await this.putArchive(record.skillId, record.version, archive);
+      }
+      await kv.set(["skill", record.skillId, String(record.version)], { ...record, hasArchive });
+      await kv.set<IdLocator>(["index", "by_id", record.id], {
+        skillId: record.skillId,
+        version: record.version,
+      });
+      return success(undefined);
     } catch (e) {
       return fail(stringifyError(e));
     }
