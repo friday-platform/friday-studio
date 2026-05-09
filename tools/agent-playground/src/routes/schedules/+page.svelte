@@ -1,6 +1,7 @@
 <script lang="ts">
   import { IconSmall, PageLayout } from "@atlas/ui";
   import { createQuery, useQueryClient } from "@tanstack/svelte-query";
+  import { browser } from "$app/environment";
   import { getDaemonClient } from "$lib/daemon-client";
   import { z } from "zod";
 
@@ -60,17 +61,82 @@
   const EventsResponseSchema = z.object({ events: z.array(ScheduleMissedEventSchema) });
   type ScheduleMissedEvent = z.infer<typeof ScheduleMissedEventSchema>;
 
+  const EVENTS_QUERY_KEY = ["workspace-events", "schedule.missed"] as const;
+
+  // Replay path — used for first-load hydration and reload-after-disconnect.
+  // The SSE feed (effect below) handles live updates so we no longer poll.
+  // The replay endpoint is the only source for `status` / `pending` /
+  // `actionedAt` (resolved server-side from the WORKSPACE_EVENT_STATE KV).
   const eventsQuery = createQuery(() => ({
-    queryKey: ["workspace-events", "schedule.missed"],
+    queryKey: EVENTS_QUERY_KEY,
     queryFn: async () => {
       const res = await fetch("/api/daemon/api/events?limit=50");
       if (!res.ok) throw new Error(`Failed to fetch events: ${res.status}`);
       return EventsResponseSchema.parse(await res.json());
     },
-    refetchInterval: 60_000,
   }));
 
   const events = $derived(eventsQuery.data?.events ?? []);
+
+  // Composite identity used to dedupe across the replay endpoint (which
+  // re-stamps a sanitized `id`) and the SSE feed (which delivers the
+  // raw event without an `id`). Going through (workspaceId, signalId,
+  // scheduledAt) bypasses the format mismatch.
+  function naturalKey(e: ScheduleMissedEvent): string {
+    return `${e.workspaceId}:${e.signalId}:${e.scheduledAt}`;
+  }
+
+  // Live updates via SSE. Gated on `eventsQuery.isSuccess` so the
+  // EventSource doesn't open until the replay's `queryFn` has resolved
+  // and seeded the cache — without the gate, an SSE event landing
+  // mid-fetch is merged via `setQueryData` and then clobbered when
+  // TanStack overwrites the cache with the replay snapshot. Mirrors
+  // the hydrate-then-subscribe ordering in `CascadeStatusBanner`.
+  // EventSource auto-reconnects on transient disconnects; we don't
+  // replay missed events on reconnect here — operator action endpoints
+  // already invalidate the query and refetch the replay path, which
+  // catches up state. A pure SSE-driven UI would want a `since=<seq>`
+  // cursor on reconnect, but the /schedules surface is fine being
+  // eventually-consistent with a bounded replay window.
+  $effect(() => {
+    if (!browser) return;
+    if (!eventsQuery.isSuccess) return;
+    const es = new EventSource("/api/daemon/api/events?stream=true");
+    es.addEventListener("error", () => {
+      // EventSource auto-reconnects; surfacing the error so a stale
+      // `/schedules` view is at least visible in devtools when the
+      // daemon's NATS connection is down or the SSE route 503s.
+      console.error("Schedules SSE feed errored (EventSource will retry)");
+    });
+    es.addEventListener("message", (e) => {
+      let parsed: ScheduleMissedEvent;
+      try {
+        parsed = ScheduleMissedEventSchema.parse(JSON.parse(e.data));
+      } catch (err) {
+        console.error("Failed to parse schedule SSE event", err);
+        return;
+      }
+      // The publish path doesn't stamp the KV-derived `status`/`pending`
+      // fields — those only exist after the read path joins KV. Apply
+      // the same defaults the replay path uses for fresh events:
+      // coalesce/catchup auto-fired; manual is pending until the
+      // operator acts (which will trigger an invalidate → refetch).
+      if (!parsed.status) {
+        parsed.status = parsed.policy === "manual" ? "pending" : "auto";
+        if (parsed.policy === "manual") parsed.pending = true;
+      }
+      queryClient.setQueryData<{ events: ScheduleMissedEvent[] }>(
+        EVENTS_QUERY_KEY,
+        (prev) => {
+          const existing = prev?.events ?? [];
+          const k = naturalKey(parsed);
+          if (existing.some((ev) => naturalKey(ev) === k)) return prev;
+          return { events: [parsed, ...existing] };
+        },
+      );
+    });
+    return () => es.close();
+  });
 
   let actingOnGroup = $state<Set<string>>(new Set());
   let openMenuFor = $state<string | null>(null);

@@ -1,6 +1,8 @@
 // Public so integration tests under tests/ can call commands directly
 // (specifically launch_studio in tests/launcher_handoff.rs).
 pub mod commands;
+// Shared helpers used by multiple commands. Public for integration tests.
+pub mod friday_home;
 
 use commands::{
     check_running::check_running_processes,
@@ -10,12 +12,17 @@ use commands::{
     ensure_agent_browser_chrome::ensure_agent_browser_chrome,
     ensure_claude_code::ensure_claude_code,
     download_checkpoint::{check_download_complete, mark_download_complete},
-    env_file::{env_file_has_provider_key, env_file_location, playground_url, write_env_file},
+    env_file::{
+        ensure_platform_env_vars, env_file_has_provider_key, env_file_location, playground_url,
+        write_env_file,
+    },
     exit_installer::exit_installer,
     extract::extract_archive,
     fetch_manifest::fetch_manifest,
+    fetch_sha256::fetch_sha256,
     installed_marker::{read_installed, write_installed},
     launch::launch_studio,
+    migrate::migrate,
     platform::{bin_dir, current_platform, install_dir},
     prewarm_agent_sdk::prewarm_agent_sdk,
     stop_running_launcher::stop_running_launcher,
@@ -44,9 +51,11 @@ pub fn run() {
             ensure_agent_browser_chrome,
             ensure_claude_code,
             fetch_manifest,
+            fetch_sha256,
             write_installed,
             read_installed,
             write_env_file,
+            ensure_platform_env_vars,
             env_file_has_provider_key,
             env_file_location,
             playground_url,
@@ -57,6 +66,7 @@ pub fn run() {
             install_dir,
             bin_dir,
             prewarm_agent_sdk,
+            migrate,
             wait_for_services,
             extend_wait_deadline,
         ])

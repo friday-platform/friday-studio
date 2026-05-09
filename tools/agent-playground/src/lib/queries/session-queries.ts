@@ -50,11 +50,14 @@ export const sessionQueries = {
     queryOptions({
       queryKey: ["daemon", "sessions", "view", sessionId] as const,
       queryFn: sessionId
-        ? experimental_streamedQuery<SessionStreamEvent | EphemeralChunk, ReturnType<typeof initialSessionView>>({
-          streamFn: () => sessionEventStream(sessionId),
-          reducer: reduceSessionEvent,
-          initialValue: initialSessionView(),
-        })
+        ? experimental_streamedQuery<
+            SessionStreamEvent | EphemeralChunk,
+            ReturnType<typeof initialSessionView>
+          >({
+            streamFn: ({ signal }) => sessionEventStream(sessionId, { signal }),
+            reducer: reduceSessionEvent,
+            initialValue: initialSessionView(),
+          })
         : skipToken,
       staleTime: 60_000,
     }),

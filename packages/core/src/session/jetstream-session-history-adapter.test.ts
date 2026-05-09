@@ -159,4 +159,54 @@ describe("JetStreamSessionHistoryAdapter", () => {
     const after = await adapter.listByWorkspace("ws-noop");
     expect(after.find((s) => s.sessionId === sid)?.status).toBe(status);
   });
+
+  it("ensureStream sets duplicate_window to 24h on the SESSION_EVENTS stream (J2)", async () => {
+    // Trigger ensureStream via any operation on a fresh adapter.
+    const adapter = new JetStreamSessionHistoryAdapter(nc);
+    await adapter.appendEvent(`s-${crypto.randomUUID()}`, startEvent("dummy", "ws-dup-window"));
+
+    const jsm = await nc.jetstreamManager();
+    const info = await jsm.streams.info("SESSION_EVENTS");
+    // 24h in ns. The default if we did NOT set it would be 2 minutes
+    // (= 120_000_000_000 ns), which is what J2 was fixing.
+    const TWENTY_FOUR_HOURS_NS = 24 * 60 * 60 * 1_000_000_000;
+    expect(Number(info.config.duplicate_window)).toBe(TWENTY_FOUR_HOURS_NS);
+  });
+
+  it("concurrent get() calls on the same session do not collide on consumer name (review N1)", async () => {
+    // Pre-J2: the consumer name suffix was `Date.now()`, so two reads
+    // of the same session in the same millisecond produced identical
+    // names; the second `consumers.add` threw, the catch swallowed,
+    // and the second reader returned null. After the UUID switch all
+    // 16 concurrent reads should produce a SessionView.
+    const adapter = new JetStreamSessionHistoryAdapter(nc);
+    const sid = `s-${crypto.randomUUID()}`;
+    await adapter.appendEvent(sid, startEvent(sid, "ws-race"));
+    await adapter.appendEvent(sid, completeEvent(sid));
+
+    const reads = await Promise.all(Array.from({ length: 16 }, () => adapter.get(sid)));
+    expect(reads.every((v) => v !== null)).toBe(true);
+    expect(reads.every((v) => v?.workspaceId === "ws-race")).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Pure unit test for the consumer-name suffix uniqueness (review N1).
+// Doesn't need a NATS server — exercises the UUID generator directly to
+// prove that 1000 same-millisecond invocations all produce distinct names.
+// ---------------------------------------------------------------------------
+
+describe("consumer-name suffix uniqueness (review N1)", () => {
+  it("generates unique suffixes for 1000 same-millisecond invocations", () => {
+    // The adapter uses `crypto.randomUUID()` for the suffix; this proves
+    // the same generator (called as fast as a tight loop allows) does
+    // not collide. Pre-J2 used `Date.now()`, which obviously did.
+    const sessionId = "fixed-session-***";
+    const N = 1000;
+    const names = new Set<string>();
+    for (let i = 0; i < N; i++) {
+      names.add(`session-read-${sessionId}-${crypto.randomUUID()}`);
+    }
+    expect(names.size).toBe(N);
+  });
 });

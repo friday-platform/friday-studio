@@ -1,6 +1,6 @@
 <script lang="ts">
   import { type CreateTreeViewProps } from "@melt-ui/svelte";
-  import type { Snippet } from "svelte";
+  import { untrack, type Snippet } from "svelte";
   import type { HTMLAttributes } from "svelte/elements";
   import { createContext } from "./context";
 
@@ -15,7 +15,9 @@
     ...rest
   }: Props & HTMLAttributes<HTMLDivElement> = $props();
 
-  const { tree } = createContext({ forceVisible, defaultExpanded, expanded, onExpandedChange });
+  const { tree } = createContext(
+    untrack(() => ({ forceVisible, defaultExpanded, expanded, onExpandedChange })),
+  );
 </script>
 
 <div {...rest} {...$tree} use:tree>

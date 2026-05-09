@@ -9,6 +9,7 @@ import MarkdownIt from "markdown-it";
 import { z } from "zod";
 import { parseOperationConfig } from "../shared/operation-parser.ts";
 import {
+  batchCreateCrmObjects,
   createCreateCrmObjectsTool,
   createGetConversationThreadsTool,
   createGetCrmObjectsTool,
@@ -37,10 +38,71 @@ const SendThreadCommentOpSchema = z.object({
 });
 
 /**
+ * Schema for the deterministic create-note operation.
+ *
+ * Deterministic equivalent of asking the LLM to call `create_crm_objects`
+ * with `objectType: "notes"` and a notes↔tickets association. Empty
+ * `ticketId` or `body` fail-parse here (rather than late at the SDK)
+ * — malformed envelopes from LLM-authored upstreams get caught early.
+ */
+const CreateNoteOpSchema = z.object({
+  operation: z.literal("create-note"),
+  ticketId: z.string().min(1),
+  body: z.string().min(1),
+  hsTimestamp: z.string().optional(),
+});
+
+/**
+ * Schema for the deterministic read-ticket operation.
+ *
+ * Replaces the LLM-driven `read_ticket` FSM step. Returns structured fields
+ * (ticketId, subject, body, companyId, ...) so downstream agents can read
+ * `data.companyId` directly instead of regex-scraping the LLM's markdown
+ * response — which was the dominant source of parser fragility in the
+ * bucketlist-cs auto-answer-tickets pipeline.
+ *
+ * `includeTranscript` defaults to false because most callers only need the
+ * structured ticket metadata + company association — fetching threads is a
+ * second HubSpot round-trip and the LLM-path didn't always do it either.
+ */
+const ReadTicketOpSchema = z.object({
+  operation: z.literal("read-ticket"),
+  // Empty `ticketId` is intentionally allowed: it represents the
+  // skip-sentinel case (ticket-picker returned `{done: true}` so there's
+  // nothing to read). Workspace.yml authors can wire this directly with
+  // `{"ticketId": "{{inputs.ticketId | default: ''}}"}` — Mustache
+  // substitution emits the empty string when the upstream picker has no
+  // ticket. The dispatcher branches on `ticketId === ""` to emit a skip
+  // envelope without hitting HubSpot.
+  ticketId: z.string(),
+  includeTranscript: z.boolean().optional(),
+});
+
+/**
+ * Schema for the deterministic noop operation.
+ *
+ * Lets upstream agents emit a "do-nothing" envelope when they detect a
+ * skip sentinel (e.g. the empty-cron-tick path where ticket-picker
+ * returns `{done: true}`). The dispatcher returns success without
+ * touching HubSpot — replaces the prior pattern of relying on the LLM
+ * to recognize a noop instruction in its prompt.
+ */
+const NoopOpSchema = z.object({
+  operation: z.literal("noop"),
+  reason: z.string().optional(),
+  skipped: z.boolean().optional(),
+});
+
+/**
  * Discriminated union of all deterministic HubSpot operations.
  * New operations are added as additional variants.
  */
-const HubSpotOperationSchema = z.discriminatedUnion("operation", [SendThreadCommentOpSchema]);
+const HubSpotOperationSchema = z.discriminatedUnion("operation", [
+  SendThreadCommentOpSchema,
+  CreateNoteOpSchema,
+  ReadTicketOpSchema,
+  NoopOpSchema,
+]);
 
 /**
  * Output schema for the HubSpot agent.
@@ -298,8 +360,248 @@ export const hubspotAgent = createAgent<string, HubSpotOutput>({
             data: result,
           });
         }
-        default:
-          return err(`Unknown operation: ${config.operation}`);
+
+        case "create-note": {
+          // Reuse the same SDK call + association-id lookup + response
+          // normalization as the LLM path. `batchCreateCrmObjects` is the
+          // plain helper that the LLM-facing tool also delegates to.
+          const client = new Client({
+            accessToken,
+            numberOfApiCallRetries: 3,
+            limiterOptions: DEFAULT_LIMITER_OPTIONS,
+          });
+
+          const result = await batchCreateCrmObjects(
+            client,
+            {
+              objectType: "notes",
+              records: [
+                {
+                  properties: {
+                    hs_note_body: config.body,
+                    // `||` (not `??`) so an empty-string upstream value still
+                    // falls back to a fresh ISO timestamp instead of being
+                    // forwarded to the SDK as "" and rejected late.
+                    hs_timestamp: config.hsTimestamp || new Date().toISOString(),
+                  },
+                  associations: [{ toObjectType: "tickets", toObjectId: config.ticketId }],
+                },
+              ],
+            },
+            abortSignal,
+          );
+
+          if ("error" in result) {
+            return err(`create-note failed (ticket ${config.ticketId}): ${result.error}`);
+          }
+          // Defend against future changes to DEFAULT_ASSOCIATION_TYPES — if
+          // notes↔tickets ever drops out of the lookup table, the helper
+          // would skip the association silently and return a successful
+          // batch with an orphaned note. Without this guard the response
+          // would say "Note created on ticket X" while the link is missing.
+          if (result.skippedAssociations) {
+            return err(
+              `create-note failed (ticket ${config.ticketId}): ${result.skippedAssociations}`,
+            );
+          }
+
+          const created = result.results[0];
+          const hasId = Boolean(created?.id);
+          // For our single-record batch, a returned id IS success — even if
+          // HubSpot also reports `numErrors > 0` (which would have to come
+          // from a partial-success on inputs we didn't send). Without this
+          // priority, the response would say "returned N errors" while
+          // `data.noteId` carried a real created id — a dishonest response.
+          const success = hasId;
+          const hasErrors = result.numErrors > 0;
+          let response: string;
+          if (success) {
+            response = `CRM Note ${created?.id} created on ticket ${config.ticketId}`;
+          } else if (hasErrors) {
+            const noun = result.numErrors === 1 ? "error" : "errors";
+            response = `CRM Note creation on ticket ${config.ticketId} returned ${result.numErrors} ${noun}`;
+          } else {
+            response = `CRM Note creation on ticket ${config.ticketId} returned no usable id`;
+          }
+          return ok({
+            response,
+            operation: "create-note",
+            success,
+            data: {
+              // `|| null` (not `?? null`) so an empty-string id is normalized
+              // to null — matches the empty-string-rejection in `success` above.
+              noteId: created?.id || null,
+              ticketId: config.ticketId,
+              properties: created?.properties ?? {},
+              numErrors: result.numErrors,
+              errors: result.errors,
+            },
+          });
+        }
+
+        case "read-ticket": {
+          // Deterministic read-ticket: structured fields out, no LLM
+          // editorialization. Replaces the LLM-driven FSM step that asks
+          // the model to call `get_crm_object` and emit prose — that path
+          // was the dominant source of regex-scraping fragility in
+          // downstream agents (bucketlist-config-loader, briefing-builder,
+          // reply-builder all used to scrape `Associated Companies: <id>`
+          // out of markdown). The structured `data.companyId` field
+          // returned here lets those agents skip the regex layer entirely.
+
+          // Skip-sentinel: empty ticketId represents the upstream
+          // `{done: true}` path. We emit the same response shape as the
+          // happy path (so downstream `data.skipped` checks work), with
+          // empty fields. Importantly, this matches the shape downstream
+          // agents already check for — `ticket.skipped === true`.
+          if (!config.ticketId) {
+            return ok({
+              response: "Noop — no ticket to read (upstream skip sentinel).",
+              operation: "read-ticket",
+              success: true,
+              data: {
+                ticketId: "",
+                subject: "",
+                body: "",
+                priority: "",
+                pipelineStage: "",
+                pipeline: "",
+                createdAt: "",
+                companyId: "",
+                companyName: "",
+                contactIds: [],
+                threadId: "",
+                transcript: "",
+                skipped: true,
+              },
+            });
+          }
+
+          const client = new Client({
+            accessToken,
+            numberOfApiCallRetries: 3,
+            limiterOptions: DEFAULT_LIMITER_OPTIONS,
+          });
+
+          let ticket: Awaited<ReturnType<typeof client.crm.objects.basicApi.getById>>;
+          try {
+            ticket = await client.crm.objects.basicApi.getById(
+              "tickets",
+              config.ticketId,
+              [
+                "subject",
+                "content",
+                "hs_pipeline_stage",
+                "hs_pipeline",
+                "hs_ticket_priority",
+                "createdate",
+                "hs_lastmodifieddate",
+              ],
+              undefined,
+              ["companies", "contacts"],
+            );
+          } catch (e) {
+            return err(
+              `read-ticket failed (ticket ${config.ticketId}): ${e instanceof Error ? e.message : String(e)}`,
+            );
+          }
+
+          const props = ticket.properties ?? {};
+          const subject = (props.subject as string | undefined) ?? "";
+          const body = (props.content as string | undefined) ?? "";
+          const priority = (props.hs_ticket_priority as string | undefined) ?? "";
+          const stage = (props.hs_pipeline_stage as string | undefined) ?? "";
+          const pipeline = (props.hs_pipeline as string | undefined) ?? "";
+          const createdAt = (props.createdate as string | undefined) ?? "";
+
+          const companyAssoc = ticket.associations?.companies?.results ?? [];
+          const contactAssoc = ticket.associations?.contacts?.results ?? [];
+          const companyId = companyAssoc[0]?.id ?? "";
+          const contactIds = contactAssoc.map((a) => a.id);
+
+          // Lookup company name when associated. Mirrors the prior LLM-path
+          // behavior where the model would chain a second tool call to
+          // `get_crm_object` for the company. Failure here is non-fatal —
+          // surfaced in `companyName: ""` so downstream agents can still
+          // operate on `companyId` alone.
+          let companyName = "";
+          if (companyId) {
+            try {
+              const company = await client.crm.objects.basicApi.getById("companies", companyId, [
+                "name",
+                "domain",
+              ]);
+              companyName = (company.properties?.name as string | undefined) ?? "";
+            } catch {
+              // Non-fatal — caller has companyId; name lookup can be
+              // retried separately or skipped entirely.
+            }
+          }
+
+          // `response` is intentionally a one-line human-readable status —
+          // NOT structured data in markdown form. Downstream agents MUST
+          // read structured fields from `data.*` (subject, body, companyId,
+          // etc.). Putting fields in `response` would re-create the
+          // exact regex-scraping fragility this op was built to eliminate.
+          // The HubSpotOutputSchema requires `response` to be a string, so
+          // we satisfy that with a status line; nothing parseable here.
+          const responseSummary = companyName
+            ? `Read ticket ${config.ticketId} (${companyName}).`
+            : `Read ticket ${config.ticketId}.`;
+
+          return ok({
+            response: responseSummary,
+            operation: "read-ticket",
+            success: true,
+            data: {
+              ticketId: config.ticketId,
+              subject,
+              body,
+              priority,
+              pipelineStage: stage,
+              pipeline,
+              createdAt,
+              companyId,
+              companyName,
+              contactIds,
+              // Reserved for the optional transcript fetch — future work,
+              // gated by `includeTranscript`. Returning empty values now
+              // so downstream type assumptions don't shift later.
+              threadId: "",
+              transcript: "",
+              skipped: false,
+            },
+          });
+        }
+
+        case "noop": {
+          // Skip sentinel — upstream agent decided there's nothing to do
+          // (e.g. empty-cron-tick path). Return success without calling
+          // HubSpot so the FSM drains cleanly.
+          //
+          // `||` (not `??`) for both the response fallback and the data
+          // inclusion check — treat empty-string `reason` the same as
+          // missing, so a malformed upstream envelope can't produce an
+          // empty response or a `data.reason: ""` field.
+          logger.info("Deterministic noop", { reason: config.reason });
+          const data: { skipped: boolean; reason?: string } = { skipped: config.skipped ?? true };
+          if (config.reason) data.reason = config.reason;
+          return ok({
+            response: config.reason || "Noop — upstream signalled nothing to do.",
+            operation: "noop",
+            success: true,
+            data,
+          });
+        }
+
+        default: {
+          // Exhaustive guard: assigning to `never` errors at compile time
+          // if HubSpotOperationSchema gains a new variant without a case.
+          // At runtime this branch is unreachable; `_exhaustive` is unused.
+          const _exhaustive: never = config;
+          void _exhaustive;
+          return err("Unknown operation in deterministic dispatch");
+        }
       }
     }
 

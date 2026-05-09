@@ -5,6 +5,7 @@ import { createAgent, err, ok, repairToolCall } from "@atlas/agent-sdk";
 import {
   collectToolUsageFromSteps,
   extractArtifactRefsFromToolResults,
+  extractToolCallInput,
 } from "@atlas/agent-sdk/vercel-helpers";
 import type { LLMAgentConfig } from "@atlas/config";
 import {
@@ -15,17 +16,27 @@ import {
   validateProvider,
 } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
-import { stepCountIs, streamText } from "ai";
+import { hasToolCall, jsonSchema, stepCountIs, streamText } from "ai";
 import { z } from "zod";
+import { composeValidationBlock } from "../agent-context/compose-blocks.ts";
+import {
+  createRecordValidationTool,
+  RECORD_VALIDATION_TOOL_NAME,
+} from "../agent-context/record-validation-tool.ts";
+import {
+  readValidateDecisionFromConfig,
+  type ValidateDecisionContext,
+} from "../agent-context/validate-decision.ts";
 import { throwWithCause } from "../utils/error-helpers.ts";
 import { filterWorkspaceAgentTools } from "./agent-tool-filters.ts";
 
 /**
  * Default output schema for LLM agents.
- * Text response wrapped as `{ response: string }` for consistent extraction.
+ * Runtime output contracts may supply a stricter schema; otherwise LLM agents
+ * can return any non-empty object-shaped payload.
  */
-export const LLMOutputSchema = z.object({ response: z.string().describe("LLM text response") });
-export type LLMOutput = z.infer<typeof LLMOutputSchema>;
+export const LLMOutputSchema = z.object({}).passthrough();
+export type LLMOutput = Record<string, unknown>;
 
 /**
  * Convert workspace LLM config to AtlasAgent.
@@ -52,10 +63,49 @@ export function convertLLMToAgent(
     outputSchema: LLMOutputSchema,
     expertise: { examples: [] },
     useWorkspaceSkills: true,
-    handler: async (prompt, { tools, stream, abortSignal }) => {
+    handler: async (prompt, { tools, stream, abortSignal, config: ctxConfig, outputSchema }) => {
       try {
         // Use agent's system prompt directly - no attribution protocol injection
-        const systemPrompt = config.config.prompt || "";
+        let systemPrompt = config.config.prompt || "";
+
+        // Close the case-llm-vs-case-agent validation asymmetry. The FSM
+        // engine resolves the validation
+        // decision in `case "agent"` and threads it through
+        // `AgentExecutorOptions.validateDecision` → workspace runtime →
+        // `AgentExecutionContext.config` (under the reserved
+        // `__atlas_validate` key) → here. When the decision is `self` we
+        // append the bundled `validating-llm-outputs` skill body to the
+        // system prompt — same skill, same helper, same placement
+        // (after the author-declared base, mirroring `case "llm"`'s
+        // ordering after memory + artifact blocks). `skip` and
+        // `external` leave the prompt untouched. Failures inside
+        // `composeValidationBlock` swallow + log; they never block the
+        // agent.
+        const validateCtx: ValidateDecisionContext = readValidateDecisionFromConfig(ctxConfig);
+        // On the structured + self path, skip the validation skill body —
+        // mirrors the `injectRecordValidation`
+        // predicate below. The skill body says "you MUST call
+        // record_validation"; if we've also suppressed the tool injection
+        // below), the LLM sees contradictory instructions and bails into
+        // prose. Skip both for the structured + self case so verdict
+        // is implicit pass on successful complete-tool emission.
+        const skipValidationSkillBody =
+          validateCtx.decision === "self" && validateCtx.hasOutputType === true;
+        const validationBlock = skipValidationSkillBody
+          ? ""
+          : await composeValidationBlock({
+              decision: validateCtx.decision,
+              skillName: validateCtx.skill,
+              logger,
+            });
+        if (validationBlock) {
+          systemPrompt = `${systemPrompt}\n\n${validationBlock}`;
+          logger.debug("Injected validation skill block into LLM agent system prompt", {
+            agentId,
+            decision: validateCtx.decision,
+            blockChars: validationBlock.length,
+          });
+        }
 
         stream?.emit({
           type: "data-tool-progress",
@@ -65,6 +115,48 @@ export function convertLLMToAgent(
         // Filter tools based on workspace defaults (apply deny list to remove management tools)
         // Tools are provided via execution context from workspace-level MCP servers
         const filteredTools = filterWorkspaceAgentTools(tools, logger);
+
+        // Inject the `record_validation` platform tool when the resolved
+        // validation decision is `self`. The FSM engine threads the decision
+        // in via `__atlas_validate`; the
+        // skill body composed above instructs the LLM to call this tool with
+        // its inline self-check verdict. The captured args are read off the
+        // streamText result's toolCalls back in fsm-engine's `case "agent"`
+        // post-execution site so `step:complete.validation` carries them
+        // identically to the inline `case "llm"` path.
+        //
+        // When the action declares an `outputType:` (structured schema), the
+        // orchestrator skips
+        // `record_validation` injection. The structured schema IS the
+        // validation contract; injecting `record_validation` here forces
+        // toolChoice off the forced-complete pin and lets the LLM emit
+        // free-form prose instead of structured output. Verdict on the
+        // structured + self path is implicit pass on successful structured
+        // emission. The skill body is also skipped on this path — see
+        // `skipValidationSkillBody` above for why.
+        const injectRecordValidation =
+          validateCtx.decision === "self" && !validateCtx.hasOutputType;
+        const toolsWithValidation = injectRecordValidation
+          ? {
+              ...filteredTools,
+              [RECORD_VALIDATION_TOOL_NAME]:
+                createRecordValidationTool() as (typeof filteredTools)[string],
+            }
+          : filteredTools;
+        const hasRuntimeOutputSchema = !!outputSchema;
+        const toolsWithOutputContract = hasRuntimeOutputSchema
+          ? {
+              ...toolsWithValidation,
+              complete: {
+                description:
+                  "Call this when finished to store the final output for the FSM action.",
+                inputSchema: jsonSchema(outputSchema as Parameters<typeof jsonSchema>[0]),
+                execute: () => ({ success: true }),
+              } as (typeof toolsWithValidation)[string],
+            }
+          : toolsWithValidation;
+
+        const hasNonOutputTools = Object.keys(toolsWithValidation).length > 0;
 
         const result = streamText({
           model,
@@ -82,12 +174,19 @@ export function convertLLMToAgent(
             temporalGroundingMessage(),
             { role: "user", content: prompt },
           ],
-          tools: filteredTools,
-          toolChoice: config.config.tool_choice || "auto",
+          tools: toolsWithOutputContract,
+          toolChoice:
+            hasRuntimeOutputSchema && !hasNonOutputTools
+              ? ({ type: "tool", toolName: "complete" } as const)
+              : hasRuntimeOutputSchema
+                ? "required"
+                : config.config.tool_choice || "auto",
           temperature: config.config.temperature,
           maxOutputTokens: config.config.max_tokens,
           maxRetries,
-          stopWhen: stepCountIs(config.config.max_steps || 10),
+          stopWhen: hasRuntimeOutputSchema
+            ? [stepCountIs(config.config.max_steps || 10), hasToolCall("complete")]
+            : stepCountIs(config.config.max_steps || 10),
           abortSignal,
           experimental_repairToolCall: repairToolCall,
           ...(config.config.provider_options || {}),
@@ -116,23 +215,70 @@ export function convertLLMToAgent(
           usage,
         });
 
+        // Defensive fallback for empty `result.text`. The AI SDK's
+        // `result.text` reflects only the
+        // FINAL step's assistant text. When the LLM ends on a tool call
+        // (e.g. `record_validation` injected by the validate:self path)
+        // its final assistant message has no text part, so `result.text`
+        // is "" and the orchestrator wraps that as `{response: ""}`.
+        // Earlier steps may still carry the actual text emission. Scan
+        // backward through `steps` for the latest text content as a
+        // fallback so we don't drop legitimate output. Cross-package
+        // contract preserved: pass-through when `result.text` is
+        // already populated.
+        let resolvedText = text;
+        if (!resolvedText) {
+          for (let i = steps.length - 1; i >= 0; i--) {
+            const step = steps[i];
+            if (!step) continue;
+            const parts = Array.isArray(step.content) ? step.content : [];
+            const textParts = parts
+              .filter((p): p is { type: "text"; text: string } => p?.type === "text")
+              .map((p) => p.text)
+              .filter((t): t is string => typeof t === "string" && t.length > 0);
+            if (textParts.length > 0) {
+              resolvedText = textParts.join("");
+              logger.debug("Recovered empty result.text from earlier step", {
+                agentId,
+                recoveredFromStep: i,
+                recoveredChars: resolvedText.length,
+              });
+              break;
+            }
+          }
+        }
+
         const { assembledToolCalls, assembledToolResults } = collectToolUsageFromSteps({
           steps,
           toolCalls,
           toolResults,
         });
 
+        const completeOutput = hasRuntimeOutputSchema
+          ? extractToolCallInput<LLMOutput>(assembledToolCalls, "complete")
+          : undefined;
+        if (hasRuntimeOutputSchema && !completeOutput) {
+          throw new Error(`LLM agent '${agentId}' did not call complete`);
+        }
+        if (completeOutput && Object.keys(completeOutput).length === 0) {
+          throw new Error(`LLM agent '${agentId}' emitted empty output`);
+        }
+        if (
+          completeOutput &&
+          typeof (completeOutput as { response?: unknown }).response === "string" &&
+          ((completeOutput as { response: string }).response as string).trim().length === 0
+        ) {
+          throw new Error(`LLM agent '${agentId}' emitted an empty response`);
+        }
+        const output = completeOutput ?? { response: resolvedText };
         const artifactRefs = extractArtifactRefsFromToolResults(assembledToolResults, logger);
 
-        return ok(
-          { response: text },
-          {
-            reasoning: reasoning || undefined,
-            toolCalls: assembledToolCalls,
-            toolResults: assembledToolResults,
-            artifactRefs,
-          },
-        );
+        return ok(output, {
+          reasoning: reasoning || undefined,
+          toolCalls: assembledToolCalls,
+          toolResults: assembledToolResults,
+          artifactRefs,
+        });
       } catch (error) {
         // Simply check if we were aborted, don't try to detect from error
         if (abortSignal?.aborted) {

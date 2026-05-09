@@ -168,6 +168,51 @@ describe("parseSSEStream", () => {
     }
     expect(messages).toEqual([{ data: "one" }, { data: "two" }, { data: "three" }]);
   });
+
+  it("cancels the underlying stream when iteration stops early", async () => {
+    const encoder = new TextEncoder();
+    let cancelled = false;
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode("data: first\n\n"));
+        controller.enqueue(encoder.encode("data: second\n\n"));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+
+    const messages = [];
+    for await (const msg of parseSSEStream(stream)) {
+      messages.push(msg);
+      break;
+    }
+
+    expect(messages).toEqual([{ data: "first" }]);
+    expect(cancelled).toBe(true);
+  });
+
+  it("does not cancel the underlying stream after natural completion", async () => {
+    const encoder = new TextEncoder();
+    let cancelled = false;
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode("data: only\n\n"));
+        controller.close();
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+
+    const messages = [];
+    for await (const msg of parseSSEStream(stream)) {
+      messages.push(msg);
+    }
+
+    expect(messages).toEqual([{ data: "only" }]);
+    expect(cancelled).toBe(false);
+  });
 });
 
 describe("parseSSEEvents", () => {

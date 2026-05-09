@@ -9,12 +9,39 @@ import { z } from "zod";
 
 // ── Zod schemas for wire-serialisable types ─────────────────────────────────
 
+/**
+ * Narrative-entry lifecycle.
+ *
+ * Mirrors {@link ArtifactLifecycleSchema} in `@atlas/core/artifacts`.
+ * `durable` (default-on-read) keeps existing entries unaffected;
+ * `ephemeral` entries get swept by the workspace runtime when their
+ * binding scope ends (today: session-complete).
+ */
+export const NarrativeLifecycleSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("durable") }),
+  z.object({
+    kind: z.literal("ephemeral"),
+    boundTo: z.discriminatedUnion("scope", [
+      z.object({ scope: z.literal("session"), sessionId: z.string() }),
+      z.object({ scope: z.literal("job"), jobName: z.string(), workspaceId: z.string() }),
+    ]),
+    expiresAt: z.string().datetime().optional(),
+  }),
+]);
+
+export type NarrativeLifecycle = z.infer<typeof NarrativeLifecycleSchema>;
+
 export const NarrativeEntrySchema = z.object({
   id: z.string(),
   text: z.string(),
   author: z.string().optional(),
   createdAt: z.string().datetime(),
   metadata: z.record(z.string(), z.unknown()).optional(),
+  /**
+   * Lifecycle metadata. Optional — entries written by clients unaware of the
+   * field default to `durable` semantics on read.
+   */
+  lifecycle: NarrativeLifecycleSchema.optional(),
 });
 
 export const SearchOptsSchema = z.object({ limit: z.number().int().optional() });
@@ -72,6 +99,8 @@ export interface NarrativeEntry {
   author?: string;
   createdAt: string;
   metadata?: Record<string, unknown>;
+  /** Lifecycle metadata. Absent → durable. */
+  lifecycle?: NarrativeLifecycle;
 }
 
 export interface SearchOpts {

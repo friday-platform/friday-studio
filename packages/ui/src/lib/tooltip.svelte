@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createTooltip } from "@melt-ui/svelte";
-  import type { Snippet } from "svelte";
+  import { untrack, type Snippet } from "svelte";
   import { fade } from "svelte/transition";
 
   type Props = {
@@ -27,10 +27,10 @@
     states: { open },
   } = createTooltip({
     positioning: { placement: "top" },
-    openDelay,
+    openDelay: untrack(() => openDelay),
     closeDelay: 0,
     forceVisible: true,
-    closeOnPointerDown,
+    closeOnPointerDown: untrack(() => closeOnPointerDown),
   });
 </script>
 

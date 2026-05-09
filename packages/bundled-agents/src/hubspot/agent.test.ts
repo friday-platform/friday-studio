@@ -5,13 +5,64 @@ import type { LogContext, Logger } from "@atlas/logger";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import createCommentFixture from "./fixtures/create-comment.json" with { type: "json" };
 
-const { mockGenerateText } = vi.hoisted(() => ({ mockGenerateText: vi.fn() }));
+const { mockGenerateText, mockBatchCreate, mockClientConstructor, helperOverride } = vi.hoisted(
+  () => {
+    type BatchCreateRequest = {
+      inputs: Array<{
+        properties: Record<string, string>;
+        associations?: Array<{
+          to: { id: string };
+          types: Array<{ associationCategory: string; associationTypeId: number }>;
+        }>;
+      }>;
+    };
+    return {
+      mockGenerateText: vi.fn(),
+      mockBatchCreate:
+        vi.fn<(objectType: string, request: BatchCreateRequest) => Promise<unknown>>(),
+      // Spy on the Client constructor so tests can pin the auth args (accessToken,
+      // retry config). Without this spy, an agent regression that dropped the
+      // accessToken or passed a wrong one would not fail any test.
+      mockClientConstructor: vi.fn(),
+      // When set, overrides `batchCreateCrmObjects`. Lets tests inject helper
+      // return shapes (e.g., a successful batch with `skippedAssociations` set)
+      // that the agent's natural inputs cannot produce — the agent hardcodes
+      // `toObjectType: "tickets"` which always resolves through DEFAULT_ASSOCIATION_TYPES,
+      // so the `skippedAssociations` guard in agent.ts has no other test path.
+      helperOverride: vi.fn(),
+    };
+  },
+);
 
 vi.mock("ai", () => ({
   generateText: mockGenerateText,
   stepCountIs: vi.fn(() => vi.fn()),
   tool: vi.fn((opts: Record<string, unknown>) => opts),
 }));
+
+vi.mock("@hubspot/api-client", () => ({
+  Client: class {
+    crm = { objects: { batchApi: { create: mockBatchCreate } } };
+    constructor(args: unknown) {
+      mockClientConstructor(args);
+    }
+  },
+  DEFAULT_LIMITER_OPTIONS: {},
+}));
+
+vi.mock("./tools.ts", async () => {
+  const actual = await vi.importActual<typeof import("./tools.ts")>("./tools.ts");
+  return {
+    ...actual,
+    // Delegate to the real helper unless a test has set an override implementation.
+    batchCreateCrmObjects: (...args: Parameters<typeof actual.batchCreateCrmObjects>) => {
+      if (helperOverride.getMockImplementation()) {
+        return helperOverride(...args);
+      }
+      return actual.batchCreateCrmObjects(...args);
+    },
+  };
+});
 
 vi.mock("@atlas/llm", async (importOriginal) => {
   const actual = (await importOriginal()) as Record<string, unknown>;
@@ -418,5 +469,463 @@ describe("hubspotAgent deterministic path", () => {
     expect.assert(!result.ok);
     expect(result.error.reason).toContain("send-thread-comment failed");
     expect(mockGenerateText).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Deterministic create-note + noop ops
+// ---------------------------------------------------------------------------
+
+/** SDK batch-create response shape returned by `client.crm.objects.batchApi.create`. */
+const createNoteSdkResponse = {
+  status: "COMPLETE",
+  results: [
+    {
+      id: "601",
+      properties: {
+        hs_note_body: "<h3>Briefing</h3><p>body</p>",
+        hs_timestamp: "2026-05-07T12:00:00.000Z",
+      },
+    },
+  ],
+};
+
+describe("hubspotAgent deterministic create-note", () => {
+  let originalAnthropicKey: string | undefined;
+
+  beforeEach(() => {
+    originalAnthropicKey = env.ANTHROPIC_API_KEY;
+    env.ANTHROPIC_API_KEY = "sk-test";
+    mockGenerateText.mockReset();
+    mockBatchCreate.mockReset();
+    mockClientConstructor.mockReset();
+    helperOverride.mockReset();
+  });
+
+  afterEach(() => {
+    if (originalAnthropicKey !== undefined) {
+      env.ANTHROPIC_API_KEY = originalAnthropicKey;
+    } else {
+      delete env.ANTHROPIC_API_KEY;
+    }
+  });
+
+  it("creates a CRM Note on the ticket and returns the note id", async () => {
+    mockBatchCreate.mockResolvedValue(createNoteSdkResponse);
+
+    const prompt = JSON.stringify({
+      operation: "create-note",
+      ticketId: "5501",
+      body: "<h3>Briefing</h3><p>body</p>",
+    });
+
+    const result = await hubspotAgent.execute(prompt, validContext());
+
+    expect(result.ok).toBe(true);
+    expect.assert(result.ok);
+    expect(result.data.operation).toBe("create-note");
+    expect(result.data.success).toBe(true);
+    expect(result.data.response).toBe("CRM Note 601 created on ticket 5501");
+    // Pin the full data shape — protects the structured-output contract.
+    expect(result.data.data).toEqual({
+      noteId: "601",
+      ticketId: "5501",
+      properties: {
+        hs_note_body: "<h3>Briefing</h3><p>body</p>",
+        hs_timestamp: "2026-05-07T12:00:00.000Z",
+      },
+      numErrors: 0,
+      errors: [],
+    });
+    // Pin auth + retry + rate-limit wiring — without these, regressions
+    // that dropped any of the three Client args would have no test signal.
+    expect(mockClientConstructor).toHaveBeenCalledWith(
+      expect.objectContaining({
+        accessToken: "tok",
+        numberOfApiCallRetries: 3,
+        limiterOptions: expect.anything(),
+      }),
+    );
+    expect(mockBatchCreate).toHaveBeenCalledOnce();
+    expect(mockGenerateText).not.toHaveBeenCalled();
+  });
+
+  it("posts the body verbatim and resolves the notes↔tickets association via SDK", async () => {
+    mockBatchCreate.mockResolvedValue(createNoteSdkResponse);
+
+    const verbatim =
+      "<h3>Company Context</h3><table><tr><td>SSO</td><td>Google</td></tr></table>" +
+      '<p><a href="https://app-na2.hubspot.com/...">Open in HubSpot</a></p>';
+
+    const prompt = JSON.stringify({
+      operation: "create-note",
+      ticketId: "5501",
+      body: verbatim,
+      hsTimestamp: "2026-05-07T12:00:00.000Z",
+    });
+
+    const result = await hubspotAgent.execute(prompt, validContext());
+
+    expect(mockBatchCreate).toHaveBeenCalledOnce();
+    expect(mockBatchCreate).toHaveBeenCalledWith("notes", {
+      inputs: [
+        {
+          properties: { hs_note_body: verbatim, hs_timestamp: "2026-05-07T12:00:00.000Z" },
+          associations: [
+            {
+              to: { id: "5501" },
+              types: [{ associationCategory: "HUBSPOT_DEFINED", associationTypeId: 228 }],
+            },
+          ],
+        },
+      ],
+    });
+    // Also pin the agent's return — the SDK-call shape and the
+    // user-visible outcome should agree on what happened.
+    expect(result.ok).toBe(true);
+    expect.assert(result.ok);
+    expect(result.data.success).toBe(true);
+    expect(result.data.response).toBe("CRM Note 601 created on ticket 5501");
+  });
+
+  it("returns err when the SDK batch-create rejects", async () => {
+    mockBatchCreate.mockRejectedValue(new Error("Invalid ticketId"));
+
+    const prompt = JSON.stringify({
+      operation: "create-note",
+      ticketId: "not-a-real-id",
+      body: "<p>x</p>",
+    });
+
+    const result = await hubspotAgent.execute(prompt, validContext());
+
+    expect(result.ok).toBe(false);
+    expect.assert(!result.ok);
+    expect(result.error.reason).toContain("create-note failed");
+    expect(result.error.reason).toContain("not-a-real-id");
+    expect(result.error.reason).toContain("Invalid ticketId");
+    expect(mockGenerateText).not.toHaveBeenCalled();
+  });
+
+  it("short-circuits when abortSignal is already aborted", async () => {
+    const controller = new AbortController();
+    controller.abort();
+
+    const prompt = JSON.stringify({ operation: "create-note", ticketId: "5501", body: "<p>x</p>" });
+
+    const result = await hubspotAgent.execute(
+      prompt,
+      createMockContext({ env: { HUBSPOT_ACCESS_TOKEN: "tok" }, abortSignal: controller.signal }),
+    );
+
+    expect(result.ok).toBe(false);
+    expect.assert(!result.ok);
+    expect(result.error.reason).toContain("aborted");
+    expect(mockBatchCreate).not.toHaveBeenCalled();
+    expect(mockGenerateText).not.toHaveBeenCalled();
+  });
+
+  it("reports success=false when the batch response carries numErrors > 0", async () => {
+    mockBatchCreate.mockResolvedValue({
+      status: "COMPLETE",
+      results: [],
+      numErrors: 1,
+      errors: [{ status: "error", message: "Property hs_timestamp is required" }],
+    });
+
+    const prompt = JSON.stringify({ operation: "create-note", ticketId: "5501", body: "<p>x</p>" });
+
+    const result = await hubspotAgent.execute(prompt, validContext());
+
+    expect(result.ok).toBe(true);
+    expect.assert(result.ok);
+    expect(result.data.success).toBe(false);
+    expect(result.data.response).toBe("CRM Note creation on ticket 5501 returned 1 error");
+    // Pin the full data shape — including the `properties: {}` default
+    // that round-5 introduced for stable JSON output on the no-result path.
+    expect(result.data.data).toEqual({
+      noteId: null,
+      ticketId: "5501",
+      properties: {},
+      numErrors: 1,
+      errors: [{ status: "error", message: "Property hs_timestamp is required" }],
+    });
+  });
+
+  it("treats a returned id as success even when numErrors > 0 (single-record batch)", async () => {
+    // For our single-record batch, a returned id IS the real outcome —
+    // partial-success with `numErrors > 0` would have to come from inputs
+    // we didn't send. Without this priority, the response message and
+    // `data.success` would lie about the same operation: message says
+    // "returned N errors" while `data.noteId` carries a real id.
+    mockBatchCreate.mockResolvedValue({
+      status: "COMPLETE",
+      results: [
+        {
+          id: "601",
+          properties: { hs_note_body: "<p>x</p>", hs_timestamp: "2026-05-07T12:00:00.000Z" },
+        },
+      ],
+      numErrors: 1,
+      errors: [{ status: "error", message: "stale request to a phantom input" }],
+    });
+
+    const result = await hubspotAgent.execute(
+      JSON.stringify({ operation: "create-note", ticketId: "5501", body: "<p>x</p>" }),
+      validContext(),
+    );
+
+    expect(result.ok).toBe(true);
+    expect.assert(result.ok);
+    expect(result.data.success).toBe(true);
+    expect(result.data.response).toBe("CRM Note 601 created on ticket 5501");
+    // Pin the full data shape — match the strictness of sibling tests so
+    // unintended extra fields on this branch can't slip through.
+    expect(result.data.data).toEqual({
+      noteId: "601",
+      ticketId: "5501",
+      properties: { hs_note_body: "<p>x</p>", hs_timestamp: "2026-05-07T12:00:00.000Z" },
+      numErrors: 1,
+      errors: [{ status: "error", message: "stale request to a phantom input" }],
+    });
+  });
+
+  it("pluralizes the error noun when numErrors > 1", async () => {
+    mockBatchCreate.mockResolvedValue({
+      status: "COMPLETE",
+      results: [],
+      numErrors: 2,
+      errors: [
+        { status: "error", message: "a" },
+        { status: "error", message: "b" },
+      ],
+    });
+
+    const result = await hubspotAgent.execute(
+      JSON.stringify({ operation: "create-note", ticketId: "5501", body: "<p>x</p>" }),
+      validContext(),
+    );
+
+    expect(result.ok).toBe(true);
+    expect.assert(result.ok);
+    expect(result.data.response).toBe("CRM Note creation on ticket 5501 returned 2 errors");
+  });
+
+  it("distinguishes empty-id (no errors) from numErrors > 0 in the response message", async () => {
+    mockBatchCreate.mockResolvedValue({
+      status: "COMPLETE",
+      results: [{ id: "", properties: {} }],
+    });
+
+    const prompt = JSON.stringify({ operation: "create-note", ticketId: "5501", body: "<p>x</p>" });
+
+    const result = await hubspotAgent.execute(prompt, validContext());
+
+    expect(result.ok).toBe(true);
+    expect.assert(result.ok);
+    expect(result.data.success).toBe(false);
+    expect(result.data.response).toBe("CRM Note creation on ticket 5501 returned no usable id");
+    // Empty-string id from the SDK should be normalized to `null` in the
+    // structured payload — consumers shouldn't see an empty noteId string.
+    expect(result.data.data).toEqual({
+      noteId: null,
+      ticketId: "5501",
+      properties: {},
+      numErrors: 0,
+      errors: [],
+    });
+  });
+
+  it.each([
+    { label: "empty string", envelope: { hsTimestamp: "" } },
+    { label: "omitted", envelope: {} },
+  ])("substitutes a fresh hs_timestamp when upstream hsTimestamp is $label", async ({
+    envelope,
+  }) => {
+    mockBatchCreate.mockResolvedValue(createNoteSdkResponse);
+
+    const before = Date.now();
+    await hubspotAgent.execute(
+      JSON.stringify({ operation: "create-note", ticketId: "5501", body: "<p>x</p>", ...envelope }),
+      validContext(),
+    );
+    const after = Date.now();
+
+    // Pin freshness — not just "any ISO string". A regression that
+    // forwarded a stale upstream timestamp instead of generating a new
+    // one would pass a regex-only check; this proves the timestamp was
+    // generated in-handler. Both `hsTimestamp: ""` and `hsTimestamp`
+    // omitted entirely share the `||` fallback in agent.ts; this
+    // parameterized test pins both branches.
+    expect(mockBatchCreate).toHaveBeenCalledOnce();
+    const firstCall = mockBatchCreate.mock.calls[0];
+    expect(firstCall).toBeDefined();
+    if (!firstCall) throw new Error("expected mockBatchCreate to have been called");
+    const [objectType, request] = firstCall;
+    expect(objectType).toBe("notes");
+    const sentTimestamp = request.inputs[0]?.properties.hs_timestamp;
+    expect(sentTimestamp).toBeDefined();
+    if (!sentTimestamp) throw new Error("expected hs_timestamp on the SDK call");
+    const parsed = Date.parse(sentTimestamp);
+    expect(Number.isFinite(parsed)).toBe(true);
+    expect(parsed).toBeGreaterThanOrEqual(before);
+    expect(parsed).toBeLessThanOrEqual(after);
+  });
+
+  it("falls through to LLM when ticketId or body is missing", async () => {
+    mockGenerateText.mockResolvedValue({
+      text: "LLM response",
+      finishReason: "stop",
+      usage: { promptTokens: 10, completionTokens: 5 },
+      steps: [{}],
+      toolCalls: [],
+      toolResults: [],
+    });
+
+    const prompt = JSON.stringify({
+      operation: "create-note",
+      // missing ticketId AND body — schema rejects, falls through
+    });
+
+    const result = await hubspotAgent.execute(prompt, validContext());
+
+    expect(result.ok).toBe(true);
+    expect(mockBatchCreate).not.toHaveBeenCalled();
+    expect(mockGenerateText).toHaveBeenCalledOnce();
+  });
+
+  it("falls through to LLM when ticketId or body is the empty string", async () => {
+    // `.min(1)` on the schema fields catches malformed envelopes from
+    // LLM-authored upstreams at parse time instead of late at the SDK.
+    mockGenerateText.mockResolvedValue({
+      text: "LLM response",
+      finishReason: "stop",
+      usage: { promptTokens: 10, completionTokens: 5 },
+      steps: [{}],
+      toolCalls: [],
+      toolResults: [],
+    });
+
+    const result = await hubspotAgent.execute(
+      JSON.stringify({ operation: "create-note", ticketId: "", body: "<p>x</p>" }),
+      validContext(),
+    );
+
+    expect(result.ok).toBe(true);
+    expect(mockBatchCreate).not.toHaveBeenCalled();
+    expect(mockGenerateText).toHaveBeenCalledOnce();
+  });
+
+  it("returns err when batchCreateCrmObjects reports skippedAssociations", async () => {
+    // Defense-in-depth: if `DEFAULT_ASSOCIATION_TYPES.notes.tickets` ever
+    // drops out of the lookup table, the helper would skip the association
+    // silently and return success — the agent must convert that into an
+    // error so the orphan-note case is caught instead of looking like
+    // a successful create. The agent's natural inputs always resolve
+    // through the lookup table, so this is the only test path for the guard.
+    helperOverride.mockResolvedValue({
+      results: [{ id: "601", properties: {} }],
+      numErrors: 0,
+      errors: [],
+      skippedAssociations: "No default association type for: notes → tickets.",
+    });
+
+    const result = await hubspotAgent.execute(
+      JSON.stringify({ operation: "create-note", ticketId: "5501", body: "<p>x</p>" }),
+      validContext(),
+    );
+
+    expect(result.ok).toBe(false);
+    expect.assert(!result.ok);
+    expect(result.error.reason).toContain("create-note failed");
+    expect(result.error.reason).toContain("5501");
+    expect(result.error.reason).toContain("notes → tickets");
+    expect(mockGenerateText).not.toHaveBeenCalled();
+  });
+});
+
+describe("hubspotAgent deterministic noop", () => {
+  let originalAnthropicKey: string | undefined;
+
+  beforeEach(() => {
+    originalAnthropicKey = env.ANTHROPIC_API_KEY;
+    env.ANTHROPIC_API_KEY = "sk-test";
+    mockGenerateText.mockReset();
+    mockBatchCreate.mockReset();
+    mockClientConstructor.mockReset();
+  });
+
+  afterEach(() => {
+    if (originalAnthropicKey !== undefined) {
+      env.ANTHROPIC_API_KEY = originalAnthropicKey;
+    } else {
+      delete env.ANTHROPIC_API_KEY;
+    }
+  });
+
+  it("returns success without touching HubSpot", async () => {
+    const prompt = JSON.stringify({
+      operation: "noop",
+      skipped: true,
+      reason: "no ticket to brief",
+    });
+
+    const result = await hubspotAgent.execute(prompt, validContext());
+
+    expect(result.ok).toBe(true);
+    expect.assert(result.ok);
+    expect(result.data.operation).toBe("noop");
+    expect(result.data.success).toBe(true);
+    expect(result.data.data).toEqual({ skipped: true, reason: "no ticket to brief" });
+    expect(result.data.response).toBe("no ticket to brief");
+    expect(mockBatchCreate).not.toHaveBeenCalled();
+    expect(mockGenerateText).not.toHaveBeenCalled();
+  });
+
+  it("works without optional reason / skipped fields", async () => {
+    const prompt = JSON.stringify({ operation: "noop" });
+
+    const result = await hubspotAgent.execute(prompt, validContext());
+
+    expect(result.ok).toBe(true);
+    expect.assert(result.ok);
+    expect(result.data.operation).toBe("noop");
+    expect(result.data.success).toBe(true);
+    expect(result.data.response).toBe("Noop — upstream signalled nothing to do.");
+    // `reason` must be omitted from data when not provided, not emitted as
+    // `reason: undefined` (which would round-trip through JSON as a literal).
+    expect(result.data.data).toEqual({ skipped: true });
+    expect(mockBatchCreate).not.toHaveBeenCalled();
+    expect(mockGenerateText).not.toHaveBeenCalled();
+  });
+
+  it("treats empty-string reason the same as missing — non-empty fallback response", async () => {
+    const prompt = JSON.stringify({ operation: "noop", reason: "" });
+
+    const result = await hubspotAgent.execute(prompt, validContext());
+
+    expect(result.ok).toBe(true);
+    expect.assert(result.ok);
+    expect(result.data.success).toBe(true);
+    // Without the empty-string guard, `?? "Noop..."` would return "" and the
+    // agent would emit an empty user-facing response.
+    expect(result.data.response).toBe("Noop — upstream signalled nothing to do.");
+    // Empty-string reason should not surface in the structured payload.
+    expect(result.data.data).toEqual({ skipped: true });
+  });
+
+  it("preserves explicit skipped: false (boolean uses ??, not ||)", async () => {
+    // Round-6 changed string fallbacks from `??` to `||`; for `skipped`
+    // (boolean) we kept `??` because `false` is a valid intentional value.
+    // This test pins that distinction so a future "consistency" refactor
+    // doesn't accidentally flip false → true.
+    const prompt = JSON.stringify({ operation: "noop", skipped: false, reason: "x" });
+
+    const result = await hubspotAgent.execute(prompt, validContext());
+
+    expect(result.ok).toBe(true);
+    expect.assert(result.ok);
+    expect(result.data.data).toEqual({ skipped: false, reason: "x" });
+    expect(result.data.response).toBe("x");
   });
 });

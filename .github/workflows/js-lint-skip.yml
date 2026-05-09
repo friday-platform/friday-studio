@@ -1,0 +1,24 @@
+name: Lint JS
+
+# Companion to js-lint.yml. Fires only on the paths js-lint.yml's
+# `paths-ignore` skips, and reports success under the required
+# `biome-check` check context so docs-only PRs aren't blocked forever
+# waiting for a status that will never be reported.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '**.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.gitignore'
+
+permissions:
+  contents: read
+
+jobs:
+  biome-check:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "docs-only change — skipping lint"

@@ -7,10 +7,11 @@
     "@atlas/agent-sdk": "workspace:*",
     "@atlas/bundled-agents": "workspace:*",
     "@atlas/core": "workspace:*",
+    "@atlas/fsm-engine": "workspace:*",
     "@atlas/llm": "workspace:*",
     "@atlas/logger": "workspace:*",
     "@atlas/utils": "workspace:*",
-    "ai": "^6.0.174",
+    "ai": "^6.0.177",
     "dotenv": "17.4.2",
     "gunshi": "^0.29.5",
     "zod": "^4.3.5"

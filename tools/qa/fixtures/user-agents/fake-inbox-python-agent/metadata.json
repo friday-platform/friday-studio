@@ -1,0 +1,6 @@
+{
+  "id": "fake-inbox-python-agent",
+  "version": "0.1.0",
+  "description": "No-auth Python user-agent fixture that calls fake inbox MCP tools through ctx.tools.",
+  "entrypoint": "agent.py"
+}

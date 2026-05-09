@@ -5,6 +5,7 @@
  * Tests that zValidator rejects invalid payloads before handlers execute.
  */
 
+import process from "node:process";
 import type { WorkspaceConfig } from "@atlas/config";
 import { createStubPlatformModels } from "@atlas/llm";
 import type { WorkspaceManager } from "@atlas/workspace";
@@ -28,6 +29,9 @@ function createTestApp() {
     registerWorkspace: vi.fn(),
     deleteWorkspace: vi.fn(),
   } as unknown as WorkspaceManager;
+  const triggerWorkspaceSignal = vi
+    .fn()
+    .mockResolvedValue({ sessionId: "sess-1", output: [], artifactIds: [], summary: "" });
 
   const mockContext: AppContext = {
     runtimes: new Map(),
@@ -44,6 +48,7 @@ function createTestApp() {
     evictChatSdkInstance: vi.fn(),
     daemon: {
       getWorkspaceManager: () => mockWorkspaceManager,
+      triggerWorkspaceSignal,
       runtimes: new Map(),
     } as unknown as AppContext["daemon"],
     streamRegistry: {} as AppContext["streamRegistry"],
@@ -61,16 +66,67 @@ function createTestApp() {
   });
   app.route("/workspaces", workspacesRoutes);
 
-  return { app };
+  return { app, mockWorkspaceManager, triggerWorkspaceSignal };
 }
 
-function post(app: ReturnType<typeof createTestApp>["app"], path: string, body: unknown) {
+function post(
+  app: ReturnType<typeof createTestApp>["app"],
+  path: string,
+  body: unknown,
+  headers: Record<string, string> = {},
+) {
   return app.request(path, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...headers },
     body: JSON.stringify(body),
   });
 }
+
+const INTERNAL_SIGNAL_BYPASS_HEADER = "x-friday-internal-signal-bypass";
+const INTERNAL_SIGNAL_BYPASS_TOKEN_ENV = "FRIDAY_INTERNAL_SIGNAL_BYPASS_TOKEN";
+
+describe("POST /workspaces/:workspaceId/signals/:signalId bypass guard", () => {
+  test("rejects public JSON callers that set bypassConcurrency", async () => {
+    const previous = process.env[INTERNAL_SIGNAL_BYPASS_TOKEN_ENV];
+    process.env[INTERNAL_SIGNAL_BYPASS_TOKEN_ENV] = "test-token";
+    try {
+      const { app, triggerWorkspaceSignal } = createTestApp();
+      const res = await post(app, "/workspaces/ws-1/signals/sig-1", {
+        payload: {},
+        bypassConcurrency: true,
+      });
+
+      expect(res.status).toBe(403);
+      expect(await res.json()).toEqual({
+        error: "bypassConcurrency is internal to workspace-chat job tools",
+      });
+      expect(triggerWorkspaceSignal).not.toHaveBeenCalled();
+    } finally {
+      if (previous === undefined) delete process.env[INTERNAL_SIGNAL_BYPASS_TOKEN_ENV];
+      else process.env[INTERNAL_SIGNAL_BYPASS_TOKEN_ENV] = previous;
+    }
+  });
+
+  test("allows internal job-tool callers with the bypass token", async () => {
+    const previous = process.env[INTERNAL_SIGNAL_BYPASS_TOKEN_ENV];
+    process.env[INTERNAL_SIGNAL_BYPASS_TOKEN_ENV] = "test-token";
+    try {
+      const { app, triggerWorkspaceSignal } = createTestApp();
+      const res = await post(
+        app,
+        "/workspaces/ws-1/signals/sig-1",
+        { payload: {}, bypassConcurrency: true },
+        { [INTERNAL_SIGNAL_BYPASS_HEADER]: "test-token" },
+      );
+
+      expect(res.status).toBe(200);
+      expect(triggerWorkspaceSignal).toHaveBeenCalledOnce();
+    } finally {
+      if (previous === undefined) delete process.env[INTERNAL_SIGNAL_BYPASS_TOKEN_ENV];
+      else process.env[INTERNAL_SIGNAL_BYPASS_TOKEN_ENV] = previous;
+    }
+  });
+});
 
 describe("POST /workspaces/add validation", () => {
   test("rejects missing path", async () => {

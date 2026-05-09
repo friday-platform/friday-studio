@@ -163,6 +163,58 @@ func TestImportDotEnvIntoProcessEnv_PopulatesPortOverrides(t *testing.T) {
 	}
 }
 
+// TestImportDotEnvIntoProcessEnv_StripsSurroundingQuotes asserts that
+// values written with surrounding quotes by atlasd's pre-fix
+// stringify (or by hand-edited .env files using standard dotenv
+// quoting) reach spawned services unquoted. Regression guard: prior
+// to the fix, an API key like sk-ant-foo persisted via the Settings
+// UI ended up on disk as `'sk-ant-foo'`, which the launcher forwarded
+// verbatim to agents, so authentication failed with a literal-quoted
+// key.
+func TestImportDotEnvIntoProcessEnv_StripsSurroundingQuotes(t *testing.T) {
+	tmpHome := t.TempDir()
+	envDir := filepath.Join(tmpHome, ".friday", "local")
+	if err := os.MkdirAll(envDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	envFile := filepath.Join(envDir, ".env")
+	envContent := "ANTHROPIC_API_KEY='sk-ant-quoted-single'\nOPENAI_API_KEY=\"sk-proj-quoted-double\"\nMIXED_QUOTE='leftover\"\nPLAIN_KEY=sk-no-quotes\n"
+	if err := os.WriteFile(envFile, []byte(envContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", tmpHome)
+	// importDotEnvIntoProcessEnv calls os.Setenv directly with no restore,
+	// and t.Setenv("", "") won't work here because the import skips keys
+	// already set (LookupEnv returns true for empty strings). Capture the
+	// prior value and restore it via t.Cleanup so these keys don't leak
+	// into sibling tests.
+	for _, k := range []string{"ANTHROPIC_API_KEY", "OPENAI_API_KEY", "MIXED_QUOTE", "PLAIN_KEY"} {
+		prev, hadPrev := os.LookupEnv(k)
+		t.Cleanup(func() {
+			if hadPrev {
+				_ = os.Setenv(k, prev)
+			} else {
+				_ = os.Unsetenv(k)
+			}
+		})
+		_ = os.Unsetenv(k)
+	}
+
+	importDotEnvIntoProcessEnv()
+
+	cases := map[string]string{
+		"ANTHROPIC_API_KEY": "sk-ant-quoted-single",
+		"OPENAI_API_KEY":    "sk-proj-quoted-double",
+		"MIXED_QUOTE":       "'leftover\"", // mismatched quotes left as-is
+		"PLAIN_KEY":         "sk-no-quotes",
+	}
+	for k, want := range cases {
+		if got := os.Getenv(k); got != want {
+			t.Errorf("%s = %q, want %q", k, got, want)
+		}
+	}
+}
+
 // TestImportDotEnvIntoProcessEnv_PreservesExistingEnv asserts that an
 // already-set value (e.g. shell export) wins over the .env file. This
 // matches deno's --env-file precedence rule: process env > file. A
@@ -339,5 +391,81 @@ func TestCommonServiceEnv_EmitsFridayConfigPath(t *testing.T) {
 			t.Errorf("service %q env missing %q\ngot:\n%s",
 				name, want, strings.Join(found.env, "\n"))
 		}
+	}
+}
+
+// TestLoadDotEnv_StripsCRLFTrailingCR verifies that values from a .env
+// file saved with CRLF line endings (e.g. opened in a Windows editor)
+// don't smuggle a trailing `\r` into supervised-service env. Without this
+// trim, `FRIDAY_PORT_FRIDAY=18080\r` would propagate to nats-server's
+// `-sd` flag and to subprocess env, breaking URL construction.
+func TestLoadDotEnv_StripsCRLFTrailingCR(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".env")
+	content := []byte("FRIDAY_PORT_FRIDAY=18080\r\nFRIDAY_HOME=/Users/x/.friday/local\r\n")
+	if err := os.WriteFile(path, content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	entries := loadDotEnv(path)
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(entries))
+	}
+	if entries[0] != "FRIDAY_PORT_FRIDAY=18080" {
+		t.Errorf("port entry = %q, want FRIDAY_PORT_FRIDAY=18080 (trailing CR not stripped)", entries[0])
+	}
+	if entries[1] != "FRIDAY_HOME=/Users/x/.friday/local" {
+		t.Errorf("home entry = %q, want FRIDAY_HOME=/Users/x/.friday/local", entries[1])
+	}
+}
+
+// TestLoadDotEnv_LFOnly verifies the trim is a no-op for standard Unix
+// .env files — no spurious mutation of LF-terminated values.
+func TestLoadDotEnv_LFOnly(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".env")
+	content := []byte("FRIDAY_PORT_FRIDAY=18080\nFRIDAY_HOME=/x/.friday/local\n")
+	if err := os.WriteFile(path, content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	entries := loadDotEnv(path)
+	if len(entries) != 2 || entries[0] != "FRIDAY_PORT_FRIDAY=18080" {
+		t.Errorf("unexpected entries on LF-only file: %v", entries)
+	}
+}
+
+// TestLoadDotEnv_StripsCRLF_AndQuotes pins the ordering of the
+// composed `unquoteEnvValue(strings.TrimRight(line[eq+1:], "\r"))`.
+//
+// `\r` MUST be trimmed before quote-stripping. If the order were
+// reversed:
+//   - line[eq+1:]                  = `"sk-ant-foo"\r`
+//   - unquoteEnvValue first        = `"sk-ant-foo"\r` (last byte is
+//     `\r` not `"`, so the matched-quote check refuses to strip)
+//   - TrimRight after              = `"sk-ant-foo"` (the `\r` is gone
+//     but the literal quotes leak through to the spawned service)
+//
+// PR #203 covered the LF + quoted case; the round-2 CRLF fix covered
+// CRLF without quotes. This test pins the COMBINATION the rebase
+// merge had to compose. A future refactor that swaps the call order
+// is caught here.
+func TestLoadDotEnv_StripsCRLF_AndQuotes(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".env")
+	content := []byte("API_KEY=\"sk-ant-foo\"\r\nNUM=42\r\n")
+	if err := os.WriteFile(path, content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	entries := loadDotEnv(path)
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 entries, got %d: %v", len(entries), entries)
+	}
+	if entries[0] != "API_KEY=sk-ant-foo" {
+		t.Errorf("api_key entry = %q, want API_KEY=sk-ant-foo (CRLF + quotes both stripped)",
+			entries[0])
+	}
+	if entries[1] != "NUM=42" {
+		t.Errorf("num entry = %q, want NUM=42", entries[1])
 	}
 }

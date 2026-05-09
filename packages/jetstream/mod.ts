@@ -41,6 +41,7 @@ export {
   type RunMigrationsResult,
   runMigrations,
 } from "./src/migrations.ts";
+export { registerReconnectReset } from "./src/reconnect-registry.ts";
 export {
   DEFAULT_NATS_MONITOR_PORT,
   DEFAULT_NATS_PORT,

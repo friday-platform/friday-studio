@@ -235,9 +235,6 @@ async function ensureChatStream(
     // One message per subject — each per-message subject only ever
     // retains its latest snapshot. Resnapshots auto-purge prior copies.
     max_msgs_per_subject: 1,
-    // Permits Nats-Rollup headers (not currently used; carried for future
-    // explicit-rollup needs without requiring another stream-config update).
-    allow_rollup_hdrs: true,
     duplicate_window: typeof dup === "bigint" ? Number(dup) : dup,
   });
   logger.info("Created chat stream", { workspaceId, chatId, name, layout: "per-message" });

@@ -13,7 +13,7 @@ import process from "node:process";
 import type { AgentResult } from "@atlas/agent-sdk";
 import type { MergedConfig } from "@atlas/config";
 import type { SessionStreamEvent, SessionSummary } from "@atlas/core";
-import type { FSMLLMOutput, LLMActionTrace } from "@atlas/fsm-engine";
+import type { FSMLLMOutput } from "@atlas/fsm-engine";
 import { createStubPlatformModels } from "@atlas/llm";
 import { makeTempDir } from "@atlas/utils/temp.server";
 import { describe, expect, it, vi } from "vitest";
@@ -40,7 +40,14 @@ vi.mock("@atlas/fsm-engine", async (importActual) => {
         input: params.prompt,
         ok: true,
         data: { response: "stub llm output" },
-        toolCalls: [],
+        toolCalls: [
+          {
+            type: "tool-call",
+            toolCallId: "tc-complete",
+            toolName: "complete",
+            input: { response: "stub llm output" },
+          },
+        ],
         toolResults: [],
         durationMs: 0,
       });
@@ -50,24 +57,9 @@ vi.mock("@atlas/fsm-engine", async (importActual) => {
   return { ...actual, AtlasLLMProviderAdapter: StubLLMProviderAdapter };
 });
 
-vi.mock("@atlas/hallucination", async (importActual) => {
-  const actual = await importActual<typeof import("@atlas/hallucination")>();
-
-  function createFSMOutputValidator() {
-    return (_trace: LLMActionTrace, _abortSignal?: AbortSignal) =>
-      Promise.resolve({
-        verdict: {
-          status: "pass" as const,
-          confidence: 0.95,
-          threshold: 0.45,
-          issues: [],
-          retryGuidance: "",
-        },
-      });
-  }
-
-  return { ...actual, createFSMOutputValidator };
-});
+// B7: the deleted `createFSMOutputValidator` is replaced by a runJudge
+// callback wired by the daemon. The test injects a stub runner via
+// WorkspaceRuntimeOptions.runJudge below.
 
 const { WorkspaceRuntime } = await import("./runtime.ts");
 
@@ -104,6 +96,9 @@ function createLLMActionConfig(): MergedConfig {
                     model: "claude-haiku-4-5",
                     prompt: "anything",
                     outputTo: "result",
+                    // B2: pin to external so the workspace runtime forwards
+                    // real validation lifecycle events to sessionStream.
+                    validate: "external",
                   },
                 ],
                 always: { target: "complete" },
@@ -150,6 +145,9 @@ describe("workspace-runtime FSMValidationAttemptEvent forwarding", () => {
         lazy: true,
         createSessionStream: (_sessionId: string) => mock.stream,
         platformModels: stubPlatformModels,
+        // B7: stub runJudge that returns a passing verdict so the FSM engine's
+        // external-validation branch fires and forwards lifecycle events.
+        runJudge: () => Promise.resolve({ ok: true as const, verdict: { verdict: "pass" } }),
       });
 
       await runtime.initialize();
@@ -178,7 +176,7 @@ describe("workspace-runtime FSMValidationAttemptEvent forwarding", () => {
       expect(passed?.actionId).toEqual(running?.actionId);
 
       // Terminal `passed` carries the verdict, `running` does not.
-      expect(passed?.verdict?.status).toEqual("pass");
+      expect(passed?.verdict?.verdict).toEqual("pass");
       expect(running?.verdict).toBeUndefined();
 
       await runtime.shutdown();

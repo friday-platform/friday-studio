@@ -10,9 +10,9 @@ description: >
   authored or modified, or when upsert_agent was just called with
   type:user. Do NOT load to decide whether to author a user agent —
   that decision belongs in the workspace-chat agent_types rules.
-vendored-from: friday-platform/agent-sdk@a10ca4ef6fd8af3f716ad29a9723425d7505477f
+vendored-from: friday-platform/agent-sdk@b71664e11d4794edc035791fde133eb02dfe1ac3
 vendored-path: packages/python/skills/writing-friday-python-agents/
-vendored-version: 0.1.5
+vendored-version: 0.1.7
 ---
 
 <!--
@@ -70,6 +70,7 @@ stubs in test contexts, but never `None`.
 | LLM         | `ctx.llm`     | Generate text or structured objects via host LLM registry |
 | HTTP        | `ctx.http`    | Make outbound HTTP requests (TLS handled by host)         |
 | MCP Tools   | `ctx.tools`   | Call MCP server tools (GitHub, Jira, databases, etc.)     |
+| Input       | `ctx.input`   | Read structured action input / `inputFrom` artifact refs  |
 | Streaming   | `ctx.stream`  | Emit progress/intent events to the UI                     |
 | Environment | `ctx.env`     | Read environment variables (API keys, config)             |
 | Config      | `ctx.config`  | Agent-specific configuration from workspace               |
@@ -142,6 +143,32 @@ def execute(prompt: str, ctx: AgentContext):
 `{{env.VARIABLE}}` in MCP config references agent environment variables.
 Currently only `stdio` transport is supported.
 
+**Do not bypass `ctx.tools`.** Python agents must not call local MCP HTTP endpoints such as `http://localhost:8002/mcp`, hardcode bearer tokens, or guess provider-specific tool names. Use `ctx.tools.list()` to inspect the runtime tool surface and `ctx.tools.call(name, args)` to invoke it. Host-side tool calls are credentialed, audited, and recorded in session history; direct HTTP calls are invisible to Friday and commonly fail with unknown-tool or invalid-token errors.
+
+If `ctx.tools.call` raises `ToolCallError("Unknown tool ...")`, list tools and fix the workspace/agent config rather than retrying a guessed name.
+
+### Human input — `request_human_input` (platform tool)
+
+When a user agent needs a decision, approval, or disambiguation, call the
+platform tool instead of streaming a question and hoping a later chat turn
+resumes the process:
+
+```python
+choice = ctx.tools.call("request_human_input", {
+    "question": "What should I do with these messages?",
+    "options": [
+        {"label": "Archive", "value": "archive"},
+        {"label": "Keep", "value": "keep"},
+    ],
+})
+# returns JSON text/content with status, answer, and elicitationId
+```
+
+The host creates an Activity/sidebar `open-question` elicitation, blocks this
+same tool call until the user answers/declines/expires, then resumes the agent
+with the answer. Use this for interactive review workflows; do not implement a
+local polling loop or direct `/api/elicitations` HTTP calls.
+
 ### Memory — `memory_save` / `memory_read` (platform tools)
 
 The host injects platform memory tools into every agent's tool surface
@@ -149,16 +176,14 @@ automatically — no MCP declaration needed. Most-used:
 
 ```python
 # Append a single fact. The store handles persistence + ordering.
-# `why` is required — articulate which future request benefits.
 ctx.tools.call("memory_save", {
     "memoryName": "preferences",
     "text": "Always archive newsletters from substack.com",
-    "why": "future newsletter-handling decisions skip the prompt + use this rule",
 })
 
 # Read recent entries. (The 20 most recent narrative entries are
-# auto-injected into the LLM-side prompt every turn — Python agents
-# don't see those, so call memory_read explicitly when you need
+# auto-injected into the LLM-side system prompt every turn — Python
+# agents don't see those, so call memory_read explicitly when you need
 # durable state across runs.)
 result = ctx.tools.call("memory_read", {
     "memoryName": "preferences",
@@ -170,19 +195,15 @@ result = ctx.tools.call("memory_read", {
 
 ```python
 # ✅ Correct — one fact per call. Concurrent writers compose cleanly.
-for fact, reason in new_preferences:
-    ctx.tools.call("memory_save", {
-        "memoryName": "preferences", "text": fact, "why": reason,
-    })
+for fact in new_preferences:
+    ctx.tools.call("memory_save", {"memoryName": "preferences", "text": fact})
 
 # ❌ Wrong — read-concat-write. Concurrent writers clobber each other,
 #    fights the platform's append/dedup logic, and the next run starts
 #    from a stale snapshot.
 existing = ctx.tools.call("memory_read", {"memoryName": "preferences"})
-combined = existing["text"] + "\n" + "\n".join(p[0] for p in new_preferences)
-ctx.tools.call("memory_save", {
-    "memoryName": "preferences", "text": combined, "why": "rollup",
-})
+combined = existing["text"] + "\n" + "\n".join(new_preferences)
+ctx.tools.call("memory_save", {"memoryName": "preferences", "text": combined})
 ```
 
 **Footgun: `ToolCallError` on validation failure.** `ctx.tools.call`
@@ -195,9 +216,7 @@ the error through `err()` or let it propagate.
 from friday_agent_sdk import ToolCallError
 
 try:
-    ctx.tools.call("memory_save", {
-        "memoryName": "preferences", "text": fact, "why": "user just stated this preference",
-    })
+    ctx.tools.call("memory_save", {"memoryName": "preferences", "text": fact})
 except ToolCallError as e:
     return err(f"memory_save failed: {e}")
 ```
@@ -219,9 +238,34 @@ Emit progress _before_ expensive operations so the UI shows what's happening.
 
 ## Structured Input Handling
 
+### ctx.input — Runtime-provided action input
+
+For workspace jobs, prefer `ctx.input` over prompt scraping when consuming
+upstream `inputFrom` data. Producers may compact bulky outputs into summary +
+artifact refs; downstream Python agents should dereference those refs through
+host capabilities, not ask the producer to inline large payloads.
+
+```python
+payload = ctx.input.artifact_json("fetched-emails")
+emails = payload.get("emails", [])
+
+return ok({"count": len(emails), "firstId": emails[0]["id"] if emails else None})
+```
+
+Useful methods:
+
+- `ctx.input.get("doc-id")` — compact input payload for an `inputFrom` document.
+- `ctx.input.require("doc-id")` — same, but raises if missing.
+- `ctx.input.artifact_refs("doc-id")` — artifact refs attached to the input.
+- `ctx.input.artifact_json("doc-id")` — fetches via `artifacts_get` and parses JSON contents.
+
+`prompt` still exists for natural-language task instructions and backwards
+compatibility, but `parse_input(prompt)` is not the right abstraction for
+multi-step `outputTo`/`inputFrom` handoffs.
+
 Friday sends "enriched prompts" — markdown with embedded JSON containing task
-details, signal data, and context. Code agents need to extract structured data
-from these.
+details, signal data, and context. Code agents can still extract structured data
+from these for simple one-shot prompts.
 
 ### parse_input — Simple extraction
 
@@ -307,7 +351,7 @@ and audit logging centrally.
 
 - `ctx.http.fetch()` instead of `requests`/`httpx` — host manages TLS, logging, limits
 - `ctx.llm.generate()` instead of `anthropic`/`openai` — host manages API keys, routing
-- `ctx.tools.call()` instead of direct API calls — MCP servers run centrally
+- `ctx.tools.list()` + `ctx.tools.call()` instead of direct API/MCP HTTP calls — MCP servers run centrally and calls remain observable
 - `ctx.stream.progress()` instead of `print()` — UI integration, not stdout
 - `ctx.env` instead of `os.environ` — only declared variables are injected
 
@@ -339,7 +383,7 @@ curl -X POST http://localhost:8080/api/agents/register \
 into the agents registry (under `{FRIDAY_HOME}/agents/{id}@{version}/` — the
 home dir is mid-migration from `~/.atlas` to `~/.friday/local`), and reloads
 the registry. No compilation step — the agent process is spawned per
-invocation and communicates with the host via NATS request/reply.
+invocation and communicates with the host via NATS request/reply. The daemon sets `FRIDAY_NATS_URL` for registration and execution; agent code should not open its own NATS connection or assume `nats://localhost:4222`.
 
 The register response returns `agent.path` (the install dir). To look up the
 source path of an existing agent, query `GET /api/agents/:id` and read

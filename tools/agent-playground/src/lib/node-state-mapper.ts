@@ -8,7 +8,7 @@
  */
 
 import type { Topology } from "@atlas/config";
-import type { ActionEntry, StateTransition } from "./execution-context.svelte.ts";
+import type { ActionEntry, StateTransition } from "./types/execution-report.ts";
 
 // ---------------------------------------------------------------------------
 // Types

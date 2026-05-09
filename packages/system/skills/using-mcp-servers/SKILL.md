@@ -1,7 +1,6 @@
 ---
 name: using-mcp-servers
 description: Use when choosing between install, enable, disable, or delete for an MCP server; when an agent needs to discover or delegate to MCP servers; or when MCP tools fail with credential, connection, or prefixing issues.
-user-invocable: false
 ---
 
 # Using MCP Servers
@@ -80,9 +79,10 @@ servers to `workspace.yml`.
 
 ## Quick diagnostic
 
-1. User says "I don't see X" → `list_capabilities` (filter by
+1. An agent asks for a tool that fails as unknown → do **not** create a tool-access elicitation for the guessed name. Call `list_capabilities`, then `list_mcp_tools({ serverId })` for the chosen server, and use the exact runtime-visible tool name.
+2. User says "I don't see X" → `list_capabilities` (filter by
    `kind: "mcp_enabled" | "mcp_available"`). If it's there but
    `requiresConfig` is non-empty → `connect_service`.
-2. User says "Add X to workspace" → Check if X is in catalog. If yes, ask:
+3. User says "Add X to workspace" → Check if X is in catalog. If yes, ask:
    chat already sees it — do you mean enable for workspace YAML?
-3. Disable fails → Surface `willUnlinkFrom`, confirm, retry with `force: true`.
+4. Disable fails → Surface `willUnlinkFrom`, confirm, retry with `force: true`.

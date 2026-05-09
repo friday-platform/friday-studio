@@ -45,6 +45,9 @@ vi.mock("@atlas/core", async (importActual) => {
     getActiveExecutions() {
       return [];
     }
+    releaseSession() {
+      return Promise.resolve();
+    }
     shutdown() {
       return Promise.resolve();
     }

@@ -1,0 +1,99 @@
+- description: refs-over-data action output
+  vars:
+    scenarioId: refs-over-data-action-output
+
+- description: inputFrom ref resolution single
+  vars:
+    scenarioId: inputFrom-ref-resolution-single
+
+- description: compact job tool return
+  vars:
+    scenarioId: compact-job-tool-return
+
+- description: session artifacts created
+  vars:
+    scenarioId: session-artifacts-created
+
+- description: inputFrom ref resolution array
+  vars:
+    scenarioId: inputFrom-ref-resolution-array
+
+- description: validation output contract
+  vars:
+    scenarioId: validation-output-contract
+
+- description: LLM agent output contract
+  vars:
+    scenarioId: agent-output-contract
+
+- description: LLM agent inputFrom ref hydration
+  vars:
+    scenarioId: llm-agent-inputfrom-ref-hydration
+
+- description: Python user-agent ctx.tools observability
+  vars:
+    scenarioId: python-user-agent-ctx-tools-observability
+
+- description: Python user-agent inputFrom ref hydration
+  vars:
+    scenarioId: python-user-agent-inputfrom-ref-hydration
+
+- description: bundled type:atlas agent artifact output
+  vars:
+    scenarioId: atlas-agent-artifact-output
+
+- description: auto-triage report output contract
+  vars:
+    scenarioId: auto-triage-report-output-contract
+
+- description: ack-only fake inbox mutation
+  vars:
+    scenarioId: ack-only-mutation
+
+- description: unknown tool request guard
+  vars:
+    scenarioId: unknown-tool-request
+
+- description: blocking elicitation resume
+  vars:
+    scenarioId: blocking-elicitation
+
+- description: request user decision HITL
+  vars:
+    scenarioId: request-user-decision
+
+- description: request user decision decline HITL
+  vars:
+    scenarioId: request-user-decision-decline
+
+- description: request user decision expiry HITL
+  vars:
+    scenarioId: request-user-decision-expire
+
+- description: fan-out delegate compactness
+  vars:
+    scenarioId: fanout-no-fanin-delegate
+
+- description: chat follow-up compactness
+  vars:
+    scenarioId: chat-followup-compactness
+
+- description: chat human input inline/debug
+  vars:
+    scenarioId: chat-human-input-inline-debug
+
+- description: ambient artifact injection pruning
+  vars:
+    scenarioId: ambient-artifact-injection-pruning
+
+- description: review-choice memory learning
+  vars:
+    scenarioId: review-choice-memory-learning
+
+- description: session inflight cleanup
+  vars:
+    scenarioId: session-inflight-cleanup
+
+- description: workspace fix skill guidance
+  vars:
+    scenarioId: workspace-fix-skill-guidance

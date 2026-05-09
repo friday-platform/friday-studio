@@ -26,7 +26,7 @@ import {
   TelegramCredentialSecretSchema,
 } from "../services/communicator-wiring.ts";
 import { isClientSafeEvent } from "../stream-event-filter.ts";
-import type { StreamRegistry } from "../stream-registry.ts";
+import { isStreamBuffer, type StreamRegistry } from "../stream-registry.ts";
 import {
   buildChatSdkAdapters,
   type CommunicatorEntry,
@@ -878,14 +878,26 @@ export function createMessageHandler(
       : undefined;
 
     // Capture the buffer this turn owns so stale producers can't bleed into
-    // a follow-up turn's buffer. The web adapter creates the buffer in
-    // `handleWebhook` before dispatching here; non-web adapters (Slack etc.)
-    // never create one and `getStream` returns undefined — appendEvent then
-    // returns false silently for those, matching prior behavior. Without this
-    // capture, a late event from an aborted turn would land in the next
-    // turn's buffer (same chatId key) and arrive at the UI without a matching
-    // `text-start`, tripping the AI SDK validator with a "text delta error".
-    const ownBuffer = streamRegistry.getStream(chatId);
+    // a follow-up turn's buffer. The web adapter stashes the buffer it
+    // created on `Message.raw.turnBuffer` at dispatch time — reading it
+    // back here is deterministic. Calling `streamRegistry.getStream(chatId)`
+    // instead races with follow-up POSTs that land between the two awaits
+    // above (`thread.subscribe`, `ChatStorage.appendMessage`): the next
+    // turn's buffer would be captured under the current chatId, leaking
+    // late events from this turn into it. Non-web adapters don't set
+    // `turnBuffer`, so `ownBuffer` stays undefined and the `appendEvent`
+    // tap below short-circuits, matching prior behavior.
+    const rawTurnBuffer =
+      typeof message.raw === "object" && message.raw !== null && "turnBuffer" in message.raw
+        ? message.raw.turnBuffer
+        : undefined;
+    // `isStreamBuffer` validates the structural shape rather than relying on
+    // a `as StreamBuffer` assertion against an unknown-typed field. If a
+    // future adapter ever stuffs the wrong thing onto `raw.turnBuffer`,
+    // `ownBuffer` falls through to undefined and the tap short-circuits —
+    // strictly safer than asserting and trusting the identity check in
+    // `appendEvent` to silently drop every chunk.
+    const ownBuffer = isStreamBuffer(rawTurnBuffer) ? rawTurnBuffer : undefined;
 
     // signalToStream fans events two ways: the tap pushes ALL client-safe
     // events to StreamRegistry for the full web SSE stream, while the async
@@ -897,6 +909,12 @@ export function createMessageHandler(
       { chatId, userId, streamId, datetime, foregroundWorkspaceIds },
       streamId,
       (chunk: unknown) => {
+        // Non-web adapters (Slack, Telegram, Teams, etc.) never create a
+        // registry buffer — `appendEvent` would always return false and
+        // emit a `stream_event_dropped` warn for every chunk, drowning
+        // out the real drops the line is meant to flag. Skip the call
+        // entirely for those adapters.
+        if (!ownBuffer) return;
         if (isClientSafeEvent(chunk)) {
           const appended = streamRegistry.appendEvent(chatId, chunk, ownBuffer);
           if (!appended) {

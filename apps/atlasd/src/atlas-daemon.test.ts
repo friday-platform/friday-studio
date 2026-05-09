@@ -5,6 +5,7 @@
  */
 
 import process from "node:process";
+import type { WorkspaceRuntime } from "@atlas/workspace";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@atlas/core/users/storage", () => ({
@@ -174,6 +175,312 @@ describe("AtlasDaemon.maybeStartDiscordGateway", () => {
     const deps = (service as unknown as { deps: { credentials: Record<string, string> } }).deps;
     // First workspace wins; operators see the warn log but the bot still starts.
     expect(deps.credentials.botToken).toBe("bot-a");
+  });
+});
+
+describe("AtlasDaemon idle/session cleanup", () => {
+  it("does not idle-destroy a runtime that still has in-flight sessions", async () => {
+    const daemon = new AtlasDaemon({ port: 0, idleTimeoutMs: 60_000 });
+    const shutdown = vi.fn().mockResolvedValue(undefined);
+    const resetIdleTimeout = vi.spyOn(daemon, "resetIdleTimeout").mockImplementation(() => {});
+
+    daemon.runtimes.set("ws-1", {
+      getSessions: () => [],
+      hasInFlightSessions: () => true,
+      listInFlightSessionIds: () => ["sess-1"],
+      getOrchestrator: () => ({ hasActiveExecutions: () => false, getActiveExecutions: () => [] }),
+      shutdown,
+    } as unknown as WorkspaceRuntime);
+    (
+      daemon as unknown as {
+        workspaceManager: {
+          unregisterRuntime: (id: string) => Promise<void>;
+          updateWorkspaceStatus: (id: string, status: string) => Promise<void>;
+        };
+      }
+    ).workspaceManager = {
+      unregisterRuntime: vi.fn().mockResolvedValue(undefined),
+      updateWorkspaceStatus: vi.fn().mockResolvedValue(undefined),
+    };
+
+    await (
+      daemon as unknown as { checkAndDestroyIdleWorkspace: (id: string) => Promise<void> }
+    ).checkAndDestroyIdleWorkspace("ws-1");
+
+    expect(shutdown).not.toHaveBeenCalled();
+    expect(daemon.runtimes.has("ws-1")).toBe(true);
+    expect(resetIdleTimeout).toHaveBeenCalledWith("ws-1");
+  });
+
+  it("does not clean up stale platform MCP sessions while a request is in flight", async () => {
+    const daemon = new AtlasDaemon({ port: 0 });
+    const now = Date.now();
+    const stale = now - 16 * 60 * 1000;
+    const sessions = (
+      daemon as unknown as { platformMcpSessions: Map<string, Record<string, unknown>> }
+    ).platformMcpSessions;
+    const activeClose = vi.fn().mockResolvedValue(undefined);
+    const idleClose = vi.fn().mockResolvedValue(undefined);
+
+    sessions.set("active-hitl", {
+      server: {},
+      transport: { close: activeClose },
+      createdAt: stale,
+      lastUsed: stale,
+      activeRequests: 1,
+    });
+    sessions.set("idle-old", {
+      server: {},
+      transport: { close: idleClose },
+      createdAt: stale,
+      lastUsed: stale,
+      activeRequests: 0,
+    });
+
+    await (
+      daemon as unknown as { performPlatformSessionCleanup: () => Promise<void> }
+    ).performPlatformSessionCleanup();
+
+    expect(sessions.has("active-hitl")).toBe(true);
+    expect(sessions.has("idle-old")).toBe(false);
+    expect(activeClose).not.toHaveBeenCalled();
+    expect(idleClose).toHaveBeenCalledOnce();
+  });
+
+  it("does not clean up stale agent MCP sessions while a request is in flight", async () => {
+    const daemon = new AtlasDaemon({ port: 0 });
+    const now = Date.now();
+    const stale = now - 16 * 60 * 1000;
+    const sessions = (daemon as unknown as { agentSessions: Map<string, Record<string, unknown>> })
+      .agentSessions;
+    const activeClose = vi.fn().mockResolvedValue(undefined);
+    const activeStop = vi.fn().mockResolvedValue(undefined);
+    const idleClose = vi.fn().mockResolvedValue(undefined);
+    const idleStop = vi.fn().mockResolvedValue(undefined);
+
+    sessions.set("active-agent", {
+      server: { stop: activeStop },
+      transport: { close: activeClose },
+      createdAt: stale,
+      lastUsed: stale,
+      activeRequests: 1,
+    });
+    sessions.set("idle-agent", {
+      server: { stop: idleStop },
+      transport: { close: idleClose },
+      createdAt: stale,
+      lastUsed: stale,
+      activeRequests: 0,
+    });
+
+    await (
+      daemon as unknown as { performAgentSessionCleanup: () => Promise<void> }
+    ).performAgentSessionCleanup();
+
+    expect(sessions.has("active-agent")).toBe(true);
+    expect(sessions.has("idle-agent")).toBe(false);
+    expect(activeClose).not.toHaveBeenCalled();
+    expect(activeStop).not.toHaveBeenCalled();
+    expect(idleClose).toHaveBeenCalledOnce();
+    expect(idleStop).toHaveBeenCalledOnce();
+  });
+
+  it("keeps agent MCP requests active until streaming response bodies close", async () => {
+    const daemon = new AtlasDaemon({ port: 0 });
+    const sessions = (daemon as unknown as { agentSessions: Map<string, Record<string, unknown>> })
+      .agentSessions;
+    sessions.set("streaming-agent", {
+      server: { stop: vi.fn().mockResolvedValue(undefined) },
+      transport: {},
+      createdAt: Date.now(),
+      lastUsed: Date.now(),
+      activeRequests: 0,
+    });
+
+    const transport = {
+      handleRequest: vi.fn().mockResolvedValue(
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(new Uint8Array([1]));
+            },
+          }),
+          { headers: { "Content-Type": "text/event-stream" } },
+        ),
+      ),
+    };
+
+    const response = await (
+      daemon as unknown as {
+        handleAgentMcpRequest: (
+          sessionId: string,
+          transportArg: { handleRequest: () => Promise<Response> },
+          context: unknown,
+        ) => Promise<Response | undefined>;
+      }
+    ).handleAgentMcpRequest("streaming-agent", transport, {});
+
+    expect(sessions.get("streaming-agent")?.activeRequests).toBe(1);
+
+    await response?.body?.cancel();
+
+    expect(sessions.get("streaming-agent")?.activeRequests).toBe(0);
+  });
+
+  it("keeps platform MCP requests active until streaming response bodies close", async () => {
+    const daemon = new AtlasDaemon({ port: 0 });
+    const sessions = (
+      daemon as unknown as { platformMcpSessions: Map<string, Record<string, unknown>> }
+    ).platformMcpSessions;
+    sessions.set("streaming-platform", {
+      server: {},
+      transport: {},
+      createdAt: Date.now(),
+      lastUsed: Date.now(),
+      activeRequests: 0,
+    });
+
+    const transport = {
+      handleRequest: vi.fn().mockResolvedValue(
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(new Uint8Array([1]));
+            },
+          }),
+          { headers: { "Content-Type": "text/event-stream" } },
+        ),
+      ),
+    };
+
+    const response = await (
+      daemon as unknown as {
+        handlePlatformMcpRequest: (
+          sessionId: string,
+          transportArg: { handleRequest: () => Promise<Response> },
+          context: unknown,
+        ) => Promise<Response | undefined>;
+      }
+    ).handlePlatformMcpRequest("streaming-platform", transport, {});
+
+    expect(sessions.get("streaming-platform")?.activeRequests).toBe(1);
+
+    await response?.body?.cancel();
+
+    expect(sessions.get("streaming-platform")?.activeRequests).toBe(0);
+  });
+
+  it("releases MCP request tracking when streaming response bodies finish", async () => {
+    const daemon = new AtlasDaemon({ port: 0 });
+    const sessions = (daemon as unknown as { agentSessions: Map<string, Record<string, unknown>> })
+      .agentSessions;
+    sessions.set("closing-agent", {
+      server: { stop: vi.fn().mockResolvedValue(undefined) },
+      transport: {},
+      createdAt: Date.now(),
+      lastUsed: Date.now(),
+      activeRequests: 0,
+    });
+
+    const transport = {
+      handleRequest: vi.fn().mockResolvedValue(
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(new Uint8Array([1]));
+              controller.close();
+            },
+          }),
+          { headers: { "Content-Type": "text/event-stream" } },
+        ),
+      ),
+    };
+
+    const response = await (
+      daemon as unknown as {
+        handleAgentMcpRequest: (
+          sessionId: string,
+          transportArg: { handleRequest: () => Promise<Response> },
+          context: unknown,
+        ) => Promise<Response | undefined>;
+      }
+    ).handleAgentMcpRequest("closing-agent", transport, {});
+
+    expect(sessions.get("closing-agent")?.activeRequests).toBe(1);
+
+    await response?.arrayBuffer();
+
+    expect(sessions.get("closing-agent")?.activeRequests).toBe(0);
+  });
+
+  it("releases MCP request tracking immediately for no-body responses", async () => {
+    const daemon = new AtlasDaemon({ port: 0 });
+    const sessions = (daemon as unknown as { agentSessions: Map<string, Record<string, unknown>> })
+      .agentSessions;
+    sessions.set("empty-response-agent", {
+      server: { stop: vi.fn().mockResolvedValue(undefined) },
+      transport: {},
+      createdAt: Date.now(),
+      lastUsed: Date.now(),
+      activeRequests: 0,
+    });
+
+    const transport = {
+      handleRequest: vi.fn().mockResolvedValue(new Response(null, { status: 202 })),
+    };
+
+    await (
+      daemon as unknown as {
+        handleAgentMcpRequest: (
+          sessionId: string,
+          transportArg: { handleRequest: () => Promise<Response> },
+          context: unknown,
+        ) => Promise<Response | undefined>;
+      }
+    ).handleAgentMcpRequest("empty-response-agent", transport, {});
+
+    expect(sessions.get("empty-response-agent")?.activeRequests).toBe(0);
+  });
+
+  it("closes agent and platform MCP transports during explicit cleanup", async () => {
+    const daemon = new AtlasDaemon({ port: 0 });
+    const agentClose = vi.fn().mockResolvedValue(undefined);
+    const agentStop = vi.fn().mockResolvedValue(undefined);
+    const platformClose = vi.fn().mockResolvedValue(undefined);
+    const agentSessions = (
+      daemon as unknown as { agentSessions: Map<string, Record<string, unknown>> }
+    ).agentSessions;
+    const platformSessions = (
+      daemon as unknown as { platformMcpSessions: Map<string, Record<string, unknown>> }
+    ).platformMcpSessions;
+
+    agentSessions.set("agent-session", {
+      server: { stop: agentStop },
+      transport: { close: agentClose, onclose: () => undefined },
+      createdAt: Date.now(),
+      lastUsed: Date.now(),
+      activeRequests: 0,
+    });
+    platformSessions.set("platform-session", {
+      server: {},
+      transport: { close: platformClose, onclose: () => undefined },
+      createdAt: Date.now(),
+      lastUsed: Date.now(),
+      activeRequests: 0,
+    });
+
+    await (
+      daemon as unknown as { cleanupAgentSession: (sessionId: string) => Promise<void> }
+    ).cleanupAgentSession("agent-session");
+    await (
+      daemon as unknown as { cleanupPlatformSession: (sessionId: string) => Promise<void> }
+    ).cleanupPlatformSession("platform-session");
+
+    expect(agentClose).toHaveBeenCalledOnce();
+    expect(agentStop).toHaveBeenCalledOnce();
+    expect(platformClose).toHaveBeenCalledOnce();
+    expect(agentSessions.has("agent-session")).toBe(false);
+    expect(platformSessions.has("platform-session")).toBe(false);
   });
 });
 

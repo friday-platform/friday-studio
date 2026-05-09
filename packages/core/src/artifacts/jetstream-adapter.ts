@@ -29,11 +29,12 @@ import { createLogger } from "@atlas/logger";
 import { fail, type Result, stringifyError, success } from "@atlas/utils";
 import { encodeHex } from "@std/encoding/hex";
 import { fileTypeFromBuffer } from "file-type";
-import { dec, enc, isCASConflict } from "jetstream";
+import { dec, enc, isCASConflict, registerReconnectReset } from "jetstream";
 import type { KV, NatsConnection, ObjectStore } from "nats";
 import {
   type Artifact,
   type ArtifactDataInput,
+  type ArtifactLifecycle,
   ArtifactSchema,
   type ArtifactSummary,
   type CreateArtifactInput,
@@ -110,7 +111,15 @@ export class JetStreamArtifactStorageAdapter implements ArtifactStorageAdapter {
   private cachedKv: KV | null = null;
   private cachedOs: ObjectStore | null = null;
 
-  constructor(private readonly nc: NatsConnection) {}
+  constructor(private readonly nc: NatsConnection) {
+    // N6: invalidate cached KV/OS handles on NATS reconnect so the first
+    // post-bounce access re-fetches instead of using a handle bound to
+    // the prior connection's session.
+    registerReconnectReset(this.nc, () => {
+      this.cachedKv = null;
+      this.cachedOs = null;
+    });
+  }
 
   private async kv(): Promise<KV> {
     if (this.cachedKv) return this.cachedKv;
@@ -218,6 +227,7 @@ export class JetStreamArtifactStorageAdapter implements ArtifactStorageAdapter {
         ...(input.chatId ? { chatId: input.chatId } : {}),
         ...(input.slug ? { slug: input.slug } : {}),
         ...(input.source ? { source: input.source } : {}),
+        ...(input.lifecycle ? { lifecycle: input.lifecycle } : {}),
       };
 
       await this.writeMeta(artifact);
@@ -242,7 +252,9 @@ export class JetStreamArtifactStorageAdapter implements ArtifactStorageAdapter {
       const latest = await this.readLatestRevision(input.id);
       if (latest === null) return fail(`Artifact ${input.id} not found`);
       const current = await this.readMeta(input.id, latest);
-      if (!current) return fail(`Artifact ${input.id} revision ${latest} not found`);
+      if (!current) {
+        return fail(`Artifact ${input.id} revision ${latest} not found`);
+      }
 
       const { bytes, mimeType, originalName } = await materializeBlob(input.data);
       const contentRef = await sha256Hex(bytes);
@@ -329,6 +341,71 @@ export class JetStreamArtifactStorageAdapter implements ArtifactStorageAdapter {
     return this.listFiltered((a) => a.chatId === input.chatId, input.limit ?? 100);
   }
 
+  listBySession(input: {
+    sessionId: string;
+    limit?: number;
+    includeData?: boolean;
+  }): Promise<Result<ArtifactSummary[], string>> {
+    return this.listFiltered(
+      (a) =>
+        a.lifecycle?.kind === "ephemeral" &&
+        a.lifecycle.boundTo.scope === "session" &&
+        a.lifecycle.boundTo.sessionId === input.sessionId,
+      input.limit ?? 100,
+    );
+  }
+
+  /**
+   * Phase 6.B — list ephemeral artifacts whose `expiresAt` is at or
+   * before `now`. Sweeper invocation point. Excludes entries without
+   * `expiresAt` (ephemeral but un-stamped, e.g. process death between
+   * create and session-complete); a session-completion pass or a
+   * future startup-time backfill catches those.
+   */
+  listExpired(input: { now: Date; limit?: number }): Promise<Result<ArtifactSummary[], string>> {
+    const nowMs = input.now.getTime();
+    return this.listFiltered((a) => {
+      if (a.lifecycle?.kind !== "ephemeral") return false;
+      const exp = a.lifecycle.expiresAt;
+      if (!exp) return false;
+      const expMs = Date.parse(exp);
+      if (Number.isNaN(expMs)) return false;
+      return expMs <= nowMs;
+    }, input.limit ?? 1000);
+  }
+
+  /**
+   * Phase 6.B — in-place lifecycle update. Skips the
+   * blob-rehash path of {@link update} and does not bump revision.
+   *
+   * Promotion-by-reference flips ephemeral → durable; the runtime
+   * stamps `expiresAt` on the existing ephemeral lifecycle. Either
+   * mutation is bookkeeping only — no consumer needs revision history
+   * over it.
+   */
+  async updateLifecycle(input: {
+    id: string;
+    lifecycle: ArtifactLifecycle;
+  }): Promise<Result<Artifact, string>> {
+    try {
+      if (await this.isDeleted(input.id)) {
+        return fail(`Artifact ${input.id} has been deleted`);
+      }
+      const latest = await this.readLatestRevision(input.id);
+      if (latest === null) return fail(`Artifact ${input.id} not found`);
+      const current = await this.readMeta(input.id, latest);
+      if (!current) {
+        return fail(`Artifact ${input.id} revision ${latest} not found`);
+      }
+      const next: Artifact = { ...current, lifecycle: input.lifecycle };
+      const kv = await this.kv();
+      await kv.put(flatKey(next.id, next.revision), enc.encode(JSON.stringify(next)));
+      return success(next);
+    } catch (err) {
+      return fail(stringifyError(err));
+    }
+  }
+
   /**
    * Common list path: walk the KV's _latest pointers, fetch each
    * latest-revision metadata, filter, sort by createdAt desc, slice.
@@ -386,7 +463,9 @@ export class JetStreamArtifactStorageAdapter implements ArtifactStorageAdapter {
       if (!got.data) return fail("Artifact not found");
       const os = await this.os();
       const result = await os.get(got.data.data.contentRef);
-      if (!result) return fail(`Object Store entry missing for ${got.data.data.contentRef}`);
+      if (!result) {
+        return fail(`Object Store entry missing for ${got.data.data.contentRef}`);
+      }
       const reader = result.data.getReader();
       const chunks: Uint8Array[] = [];
       let total = 0;

@@ -39,13 +39,18 @@ vi.mock("@atlas/core/mcp-registry/upstream-client", () => ({
 
 // Mock createMCPTools for tool probe tests
 type MockTool = { description?: string };
+type MockDisconnected = { serverId: string; kind: string; message: string };
 const mockCreateMCPTools =
   vi.fn<
     (
       configs: Record<string, unknown>,
       logger: unknown,
       options?: { signal?: AbortSignal; toolPrefix?: string },
-    ) => Promise<{ tools: Record<string, MockTool>; dispose: () => Promise<void> }>
+    ) => Promise<{
+      tools: Record<string, MockTool>;
+      dispose: () => Promise<void>;
+      disconnected: MockDisconnected[];
+    }>
   >();
 
 vi.mock("@atlas/mcp", () => ({
@@ -78,10 +83,14 @@ beforeEach(() => {
   mockSearch.mockReset();
   mockCreateMCPTools.mockReset();
   mockStreamText.mockReset();
+  _resetCacheForTest();
 });
 
 // Import AFTER mock setup (vi.mock is hoisted, but this makes intent clear)
 const { mcpRegistryRouter } = await import("./mcp-registry.ts");
+const { _resetCacheForTest, _flushPrewarmsForTest, _setRaceCapForTest } = await import(
+  "./mcp-tool-cache.ts"
+);
 
 /** Build a Hono app that wraps the MCP registry router with a partial mock app context. */
 function createWrappedRouter(context: Record<string, unknown>) {
@@ -1933,6 +1942,7 @@ describe("MCP Registry Routes", () => {
           "send-data": { description: "Send data to the server" },
         },
         dispose: vi.fn().mockResolvedValue(undefined),
+        disconnected: [],
       });
 
       const res = await mcpRegistryRouter.request(`/${entry.id}/tools`);
@@ -2060,6 +2070,7 @@ describe("MCP Registry Routes", () => {
       mockCreateMCPTools.mockResolvedValue({
         tools: { "static-tool": { description: "A static tool" } },
         dispose: vi.fn().mockResolvedValue(undefined),
+        disconnected: [],
       });
 
       const res = await mcpRegistryRouter.request(`/${blessedId}/tools`);
@@ -2082,6 +2093,7 @@ describe("MCP Registry Routes", () => {
       mockCreateMCPTools.mockResolvedValue({
         tools: { "bare-tool": {} },
         dispose: vi.fn().mockResolvedValue(undefined),
+        disconnected: [],
       });
 
       const res = await mcpRegistryRouter.request(`/${entry.id}/tools`);
@@ -2090,6 +2102,453 @@ describe("MCP Registry Routes", () => {
       const body = ToolProbeSuccessSchema.parse(await res.json());
       expect(body.tools).toHaveLength(1);
       expect(body.tools[0]).toEqual({ name: "bare-tool", description: undefined });
+    });
+
+    it("serves cached tools — prewarm populates, GET is a hit, no second probe", async () => {
+      const entry = createTestEntry("probe-cache-hit");
+      mockCreateMCPTools.mockResolvedValue({
+        tools: { "cached-tool": { description: "cached" } },
+        dispose: vi.fn().mockResolvedValue(undefined),
+        disconnected: [],
+      });
+
+      await mcpRegistryRouter.request("/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entry }),
+      });
+      await _flushPrewarmsForTest();
+      // Prewarm probed exactly once.
+      expect(mockCreateMCPTools.mock.calls.length).toBe(1);
+
+      // First GET must be a cache hit — no new probe.
+      const first = await mcpRegistryRouter.request(`/${entry.id}/tools`);
+      expect(first.status).toBe(200);
+      const firstBody = ToolProbeSuccessSchema.parse(await first.json());
+      expect(firstBody.tools[0]?.name).toBe("cached-tool");
+      expect(mockCreateMCPTools.mock.calls.length).toBe(1);
+
+      // Second GET also a cache hit.
+      const second = await mcpRegistryRouter.request(`/${entry.id}/tools`);
+      expect(second.status).toBe(200);
+      const secondBody = ToolProbeSuccessSchema.parse(await second.json());
+      expect(secondBody.tools[0]?.name).toBe("cached-tool");
+      expect(mockCreateMCPTools.mock.calls.length).toBe(1);
+    });
+
+    it("does not cache failed probes — retry sees a fresh probe", async () => {
+      const entry = createTestEntry("probe-no-cache-on-fail");
+      // Prewarm fails (cold install timeout simulation).
+      mockCreateMCPTools.mockRejectedValueOnce(new Error("ECONNREFUSED 127.0.0.1:8080"));
+
+      await mcpRegistryRouter.request("/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entry }),
+      });
+      await _flushPrewarmsForTest();
+
+      // First foreground probe fails too.
+      mockCreateMCPTools.mockRejectedValueOnce(new Error("ECONNREFUSED 127.0.0.1:8080"));
+      const failed = await mcpRegistryRouter.request(`/${entry.id}/tools`);
+      const failedBody = ToolProbeErrorSchema.parse(await failed.json());
+      expect(failedBody.ok).toBe(false);
+
+      // Now succeed — cache must not contain the prior failure.
+      mockCreateMCPTools.mockResolvedValueOnce({
+        tools: { "recovered-tool": { description: "ok" } },
+        dispose: vi.fn().mockResolvedValue(undefined),
+        disconnected: [],
+      });
+      const ok = await mcpRegistryRouter.request(`/${entry.id}/tools`);
+      const okBody = ToolProbeSuccessSchema.parse(await ok.json());
+      expect(okBody.tools[0]?.name).toBe("recovered-tool");
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Prewarm — POST mutations populate the tool cache
+  // ═══════════════════════════════════════════════════════════════════════
+
+  describe("prewarm on add", () => {
+    it("populates the cache after POST / — follow-up GET is a hit", async () => {
+      mockCreateMCPTools.mockResolvedValue({
+        tools: { "warmed-tool": { description: "warmed" } },
+        dispose: vi.fn().mockResolvedValue(undefined),
+        disconnected: [],
+      });
+
+      const entry = createTestEntry("prewarm-create");
+      const res = await mcpRegistryRouter.request("/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entry }),
+      });
+      expect(res.status).toBe(201);
+      await _flushPrewarmsForTest();
+      expect(mockCreateMCPTools.mock.calls.length).toBe(1);
+
+      // The follow-up GET must be a cache hit — call count stays at 1.
+      const probe = await mcpRegistryRouter.request(`/${entry.id}/tools`);
+      expect(probe.status).toBe(200);
+      const body = ToolProbeSuccessSchema.parse(await probe.json());
+      expect(body.tools[0]?.name).toBe("warmed-tool");
+      expect(mockCreateMCPTools.mock.calls.length).toBe(1);
+    });
+
+    it("invalidates cache on DELETE /:id — same id+config re-add returns fresh tools", async () => {
+      const entry = createTestEntry("prewarm-delete");
+      mockCreateMCPTools.mockResolvedValue({
+        tools: { "v1-tool": { description: "v1" } },
+        dispose: vi.fn().mockResolvedValue(undefined),
+        disconnected: [],
+      });
+      await mcpRegistryRouter.request("/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entry }),
+      });
+      await _flushPrewarmsForTest();
+
+      const del = await mcpRegistryRouter.request(`/${entry.id}`, { method: "DELETE" });
+      expect(del.status).toBe(204);
+
+      // Re-add with the SAME configTemplate. configHash matches, so only
+      // invalidateCache(id) on DELETE can keep the cache from serving v1-tool
+      // (otherwise prewarmTools would short-circuit on the still-cached entry
+      // and skip probing — caller would see stale tools).
+      mockCreateMCPTools.mockResolvedValue({
+        tools: { "v2-tool": { description: "v2" } },
+        dispose: vi.fn().mockResolvedValue(undefined),
+        disconnected: [],
+      });
+      await mcpRegistryRouter.request("/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entry }),
+      });
+      await _flushPrewarmsForTest();
+
+      const probe = await mcpRegistryRouter.request(`/${entry.id}/tools`);
+      const body = ToolProbeSuccessSchema.parse(await probe.json());
+      expect(body.tools[0]?.name).toBe("v2-tool");
+    });
+
+    it("invalidates and reprewarms on POST /:id/update — old tools gone, new tools cached", async () => {
+      const canonicalName = "io.github.test/update-prewarm";
+      const v1 = createNpmStdioUpstreamEntry(canonicalName, "1.0.0");
+      mockFetchLatest.mockResolvedValueOnce(v1);
+
+      mockCreateMCPTools.mockResolvedValueOnce({
+        tools: { "v1-tool": { description: "v1" } },
+        dispose: vi.fn().mockResolvedValue(undefined),
+        disconnected: [],
+      });
+      const installRes = await mcpRegistryRouter.request("/install", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ registryName: canonicalName }),
+      });
+      expect(installRes.status).toBe(201);
+      const storedId = InstallResponseSchema.parse(await installRes.json()).server.id;
+      await _flushPrewarmsForTest();
+      // Confirm v1 tools cached.
+      const beforeUpdate = await mcpRegistryRouter.request(`/${storedId}/tools`);
+      expect(ToolProbeSuccessSchema.parse(await beforeUpdate.json()).tools[0]?.name).toBe(
+        "v1-tool",
+      );
+      const callsAfterInstall = mockCreateMCPTools.mock.calls.length;
+
+      // Pull update to v2 — handler must invalidateCache + prewarm with new config.
+      const v2 = createNpmStdioUpstreamEntry(canonicalName, "2.0.0");
+      mockFetchLatest.mockResolvedValueOnce(v2);
+      mockCreateMCPTools.mockResolvedValueOnce({
+        tools: { "v2-tool": { description: "v2" } },
+        dispose: vi.fn().mockResolvedValue(undefined),
+        disconnected: [],
+      });
+      const updateRes = await mcpRegistryRouter.request(`/${storedId}/update`, { method: "POST" });
+      expect(updateRes.status).toBe(200);
+      await _flushPrewarmsForTest();
+
+      // Reprewarm probed exactly once after install.
+      expect(mockCreateMCPTools.mock.calls.length).toBe(callsAfterInstall + 1);
+
+      // GET /tools must serve the new v2 tools and stay a cache hit.
+      const probe = await mcpRegistryRouter.request(`/${storedId}/tools`);
+      const body = ToolProbeSuccessSchema.parse(await probe.json());
+      expect(body.tools[0]?.name).toBe("v2-tool");
+      expect(mockCreateMCPTools.mock.calls.length).toBe(callsAfterInstall + 1);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // GET /:id/tools — in-flight prewarm dedup
+  // ═══════════════════════════════════════════════════════════════════════
+
+  describe("GET /:id/tools dedup", () => {
+    it("waits for in-flight prewarm instead of spawning a duplicate probe", async () => {
+      const entry = createTestEntry("dedup-wait");
+      // Defer the prewarm's createMCPTools so the GET races into the dedup branch.
+      let resolvePrewarm: (() => void) | undefined;
+      mockCreateMCPTools.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolvePrewarm = () =>
+              resolve({
+                tools: { "warmed-tool": { description: "warmed" } },
+                dispose: vi.fn().mockResolvedValue(undefined),
+                disconnected: [],
+              });
+          }),
+      );
+
+      // Add — prewarm starts but does not resolve yet.
+      await mcpRegistryRouter.request("/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entry }),
+      });
+
+      // Click "list tools" while prewarm is still pending.
+      const probePromise = mcpRegistryRouter.request(`/${entry.id}/tools`);
+
+      // Now resolve the prewarm. The pending GET awaits the same in-flight
+      // promise — must not have spawned its own probe.
+      resolvePrewarm!();
+      const probe = await probePromise;
+      await _flushPrewarmsForTest();
+
+      expect(probe.status).toBe(200);
+      const body = ToolProbeSuccessSchema.parse(await probe.json());
+      expect(body.tools[0]?.name).toBe("warmed-tool");
+      // Exactly one probe — no duplicate spawned by the GET.
+      expect(mockCreateMCPTools.mock.calls.length).toBe(1);
+    });
+
+    it("disconnected probe surfaces as auth phase, not cached as []", async () => {
+      const entry = createTestEntry("disconnected-probe");
+      mockCreateMCPTools.mockResolvedValue({
+        tools: {},
+        dispose: vi.fn().mockResolvedValue(undefined),
+        disconnected: [
+          {
+            serverId: entry.id,
+            kind: "credential_not_found",
+            message: "Credential 'github' was deleted. Reconnect to continue.",
+          },
+        ],
+      });
+
+      await mcpRegistryRouter.request("/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entry }),
+      });
+      await _flushPrewarmsForTest();
+
+      // Foreground GET — prewarm finished with auth error, surfaced via the dedup
+      // path or via foreground probe (both get classified as auth).
+      const probe = await mcpRegistryRouter.request(`/${entry.id}/tools`);
+      const body = ToolProbeErrorSchema.parse(await probe.json());
+      expect(body.ok).toBe(false);
+      expect(body.phase).toBe("auth");
+      // Error must be the entry.message verbatim — not the constructor's
+      // template wrapped around it (which would produce nested gibberish).
+      expect(body.error).toBe("Credential 'github' was deleted. Reconnect to continue.");
+    });
+
+    it("silently-failed probe (empty tools, no disconnected) surfaces as connect, not cached []", async () => {
+      // Mirrors the QA finding: createMCPTools warn-logs and silently drops
+      // servers that fail to start (typo'd npm package, MCPStartupError,
+      // connect error). No `disconnected` entry, just `tools: {}`. Without
+      // the empty-tools guard in probeAndExtract, the probe would cache `[]`
+      // and the user would see "no tools" instead of a real error.
+      const entry = createTestEntry("connect-failed-probe");
+      mockCreateMCPTools.mockResolvedValue({
+        tools: {},
+        dispose: vi.fn().mockResolvedValue(undefined),
+        disconnected: [],
+      });
+
+      await mcpRegistryRouter.request("/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entry }),
+      });
+      await _flushPrewarmsForTest();
+
+      const probe = await mcpRegistryRouter.request(`/${entry.id}/tools`);
+      const body = ToolProbeErrorSchema.parse(await probe.json());
+      expect(body.ok).toBe(false);
+      expect(body.phase).toBe("connect");
+      expect(body.error).toContain("failed to start");
+    });
+
+    it("dedup branch surfaces classified prewarm failure when GET arrives mid-prewarm", async () => {
+      const entry = createTestEntry("dedup-prewarm-error");
+      // Defer the prewarm so the GET enters the dedup branch BEFORE the
+      // prewarm settles. Resolves to disconnected — probeAndExtract throws
+      // inside prewarmTools, which classifies to auth and resolves the
+      // PrewarmResult with { ok: false, phase: "auth" }.
+      let resolveDisconnected: (() => void) | undefined;
+      mockCreateMCPTools.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveDisconnected = () =>
+              resolve({
+                tools: {},
+                dispose: vi.fn().mockResolvedValue(undefined),
+                disconnected: [
+                  {
+                    serverId: entry.id,
+                    kind: "credential_not_found",
+                    message: "Credential missing — reconnect to continue.",
+                  },
+                ],
+              });
+          }),
+      );
+
+      await mcpRegistryRouter.request("/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entry }),
+      });
+
+      // GET while prewarm is still pending — must enter the dedup branch.
+      const probePromise = mcpRegistryRouter.request(`/${entry.id}/tools`);
+      // Wait for the handler to advance past `await getMCPRegistryAdapter()`
+      // and `await adapter.get(id)` (in-memory KV, normally <1ms) and reach
+      // `await Promise.race(...)` BEFORE the prewarm settles. Otherwise the
+      // IIFE's microtasks (dispose → throw → catch → classify → finally →
+      // delete) finish first, evicting `inFlightPrewarm` before the handler
+      // consults it; the GET then falls through to the foreground probe
+      // path, which still classifies disconnect to "auth" via mockResolved
+      // carry-over OR fails on the exhausted `mockImplementationOnce`. Use
+      // 250ms to stay well clear of GC pauses / loaded-CI jitter — failure
+      // mode (`expected "auth" got "connect"`) doesn't point at timing.
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      resolveDisconnected!();
+      const probe = await probePromise;
+
+      const body = ToolProbeErrorSchema.parse(await probe.json());
+      expect(body.ok).toBe(false);
+      expect(body.phase).toBe("auth");
+      expect(body.error).toBe("Credential missing — reconnect to continue.");
+      // The dedup branch consumed the prewarm's classified result — no
+      // duplicate foreground probe was spawned.
+      expect(mockCreateMCPTools.mock.calls.length).toBe(1);
+    });
+
+    it("returns retryable hint when in-flight prewarm exceeds the race cap", async () => {
+      _setRaceCapForTest(50);
+      const entry = createTestEntry("dedup-retryable");
+      // Prewarm hangs forever — race cap will fire first. The pending IIFE
+      // is GC-eligible after `_resetCacheForTest` clears `inFlightPrewarm`
+      // in the next test's beforeEach (the map holds the only live ref).
+      mockCreateMCPTools.mockImplementationOnce(() => new Promise(() => {}));
+
+      await mcpRegistryRouter.request("/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entry }),
+      });
+
+      const probe = await mcpRegistryRouter.request(`/${entry.id}/tools`);
+      expect(probe.status).toBe(200);
+      const body = z
+        .object({ ok: z.literal(false), retryable: z.literal(true), error: z.string() })
+        .parse(await probe.json());
+      expect(body.retryable).toBe(true);
+      // The GET did not spawn its own probe — only the still-pending prewarm.
+      expect(mockCreateMCPTools.mock.calls.length).toBe(1);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // mcp-tool-cache.ts — direct unit tests
+  // ═══════════════════════════════════════════════════════════════════════
+
+  describe("mcp-tool-cache direct", () => {
+    it("invalidateCache(id) clears the entry — getCachedTools returns null", async () => {
+      const { putCachedTools, getCachedTools, invalidateCache } = await import(
+        "./mcp-tool-cache.ts"
+      );
+      const config = { transport: { type: "stdio" as const, command: "echo", args: ["x"] } };
+      putCachedTools("direct-id", config, [
+        { name: "t1", description: "first", inputSchema: null },
+      ]);
+      expect(getCachedTools("direct-id", config)?.[0]?.name).toBe("t1");
+      invalidateCache("direct-id");
+      expect(getCachedTools("direct-id", config)).toBeNull();
+    });
+
+    it("getCachedTools returns null when configHash differs", async () => {
+      const { putCachedTools, getCachedTools } = await import("./mcp-tool-cache.ts");
+      const v1 = { transport: { type: "stdio" as const, command: "echo", args: ["1"] } };
+      const v2 = { transport: { type: "stdio" as const, command: "echo", args: ["2"] } };
+      putCachedTools("hash-id", v1, [{ name: "t-v1", inputSchema: null }]);
+      expect(getCachedTools("hash-id", v1)?.[0]?.name).toBe("t-v1");
+      expect(getCachedTools("hash-id", v2)).toBeNull();
+    });
+
+    it("evicts the entry on TTL expiry — getCachedTools returns null and the map is clean", async () => {
+      vi.useFakeTimers();
+      try {
+        const { putCachedTools, getCachedTools } = await import("./mcp-tool-cache.ts");
+        const config = { transport: { type: "stdio" as const, command: "echo", args: ["x"] } };
+        putCachedTools("ttl-id", config, [{ name: "t1", inputSchema: null }]);
+        expect(getCachedTools("ttl-id", config)?.[0]?.name).toBe("t1");
+        // Advance past the 1h TTL.
+        vi.advanceTimersByTime(60 * 60 * 1000 + 1);
+        expect(getCachedTools("ttl-id", config)).toBeNull();
+        // The expired entry must actually be removed (not just returned-as-null).
+        // Re-put would prove the slot is reusable; checking again post-eviction
+        // confirms no stale entry lingers under the same id+hash.
+        expect(getCachedTools("ttl-id", config)).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("prewarmTools dedupes same-config callers but starts a fresh probe when config changes", async () => {
+      const { prewarmTools, getInFlightPrewarm, _resetCacheForTest } = await import(
+        "./mcp-tool-cache.ts"
+      );
+      _resetCacheForTest();
+
+      // Two never-resolving probes so we can inspect in-flight state without
+      // the IIFE settling between assertions.
+      mockCreateMCPTools.mockImplementation(() => new Promise(() => {}));
+
+      const fakeLogger = {
+        debug: vi.fn(),
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+      } as unknown as Parameters<typeof prewarmTools>[2];
+
+      const v1 = { transport: { type: "stdio" as const, command: "echo", args: ["v1"] } };
+      const v2 = { transport: { type: "stdio" as const, command: "echo", args: ["v2"] } };
+
+      const p1a = prewarmTools("race-id", v1, fakeLogger);
+      const p1b = prewarmTools("race-id", v1, fakeLogger);
+      // Same config → second caller dedupes onto the same in-flight promise.
+      expect(p1a).toBe(p1b);
+      expect(mockCreateMCPTools.mock.calls.length).toBe(1);
+
+      // Different config → must start a fresh probe, not return p1.
+      const p2 = prewarmTools("race-id", v2, fakeLogger);
+      expect(p2).not.toBe(p1a);
+      expect(mockCreateMCPTools.mock.calls.length).toBe(2);
+
+      // getInFlightPrewarm now returns the v2 promise for v2 callers, and
+      // undefined for v1 callers (the v1 prewarm is still running but its
+      // slot has been replaced — a v1-config GET would correctly fall
+      // through rather than wait on v2 tools).
+      expect(getInFlightPrewarm("race-id", v2)).toBe(p2);
+      expect(getInFlightPrewarm("race-id", v1)).toBeUndefined();
     });
   });
 
@@ -2171,6 +2630,7 @@ describe("MCP Registry Routes", () => {
       mockCreateMCPTools.mockResolvedValue({
         tools: { "fetch-data": { description: "Fetch data" } },
         dispose: vi.fn().mockResolvedValue(undefined),
+        disconnected: [],
       });
 
       mockStreamText.mockReturnValue(
@@ -2267,6 +2727,7 @@ describe("MCP Registry Routes", () => {
       mockCreateMCPTools.mockResolvedValue({
         tools: { "fetch-data": { description: "Fetch data" } },
         dispose: vi.fn().mockResolvedValue(undefined),
+        disconnected: [],
       });
 
       mockStreamText.mockReturnValue(
@@ -2353,6 +2814,7 @@ describe("MCP Registry Routes", () => {
       mockCreateMCPTools.mockResolvedValue({
         tools: { "fetch-data": { description: "Fetch data" } },
         dispose: vi.fn().mockResolvedValue(undefined),
+        disconnected: [],
       });
 
       mockStreamText.mockReturnValue(

@@ -41,8 +41,8 @@ Setup:
 Assertions:
 - state: Expected final state name
 - documents: Optional array of expected documents (partial match)
-- emittedEvents: Optional array of expected events
-- custom: Optional custom validation function code
+- emittedEvents: Optional array of { event, data? } expected events
+- custom: Optional custom validation TypeScript source for the test runner only (does not execute as part of the FSM)
 
 Example:
 {
@@ -57,18 +57,12 @@ Example:
           "APPROVE": {
             "target": "approved",
             "actions": [
-              {"type": "code", "function": "validateOrder"}
+              {"type": "emit", "event": "order.approved"}
             ]
           }
         }
       },
       "approved": {"type": "final"}
-    },
-    "functions": {
-      "validateOrder": {
-        "type": "action",
-        "code": "export function validateOrder(context, event) { const order = context.documents.find(d => d.id === 'order'); order.data.status = 'validated'; }"
-      }
     }
   },
   "setup": {
@@ -80,9 +74,7 @@ Example:
   "signal": {"type": "APPROVE", "data": {"approvedBy": "admin"}},
   "assertions": {
     "state": "approved",
-    "documents": [
-      {"id": "order", "data": {"status": "validated"}}
-    ]
+    "emittedEvents": [{"event": "order.approved"}]
   }
 }`,
       inputSchema: TestDefinitionSchema.shape,

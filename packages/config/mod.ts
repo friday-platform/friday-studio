@@ -18,6 +18,8 @@ export * from "./src/communicators.ts";
 export * from "./src/config-loader.ts";
 // Configuration adapter interface
 export type { ConfigurationAdapter } from "./src/configuration-adapter.ts";
+// Delegation budget schema (Phase 8)
+export * from "./src/delegation.ts";
 // Expand agent actions in FSM definitions
 export { expandAgentActions } from "./src/expand-agent-actions.ts";
 // NOTE: FilesystemAtlasConfigSource NOT exported here — uses node:fs.
@@ -28,6 +30,14 @@ export * from "./src/jobs.ts";
 export * from "./src/mcp.ts";
 // Notification configuration schemas
 export * from "./src/notifications.ts";
+// Permissions resolver (job > workspace > daemon precedence helper).
+// `PermissionsConfig` + `PermissionsConfigSchema` are re-exported via
+// workspace.ts; only the resolver helpers ship from here.
+export {
+  type ResolvedPermissions,
+  type ResolvePermissionsInput,
+  resolvePermissions,
+} from "./src/permissions.ts";
 // Agent indirection: workspace agent key → runtime agent ID
 export { resolveRuntimeAgentId } from "./src/resolve-runtime-agent.ts";
 // Signal schemas with tagged unions
@@ -38,6 +48,17 @@ export * from "./src/topology.ts";
 export type { Issue, Registry, ValidationReport } from "./src/validate-workspace.ts";
 // Workspace structural validator
 export { validateWorkspace } from "./src/validate-workspace.ts";
+// Validation defaults resolver (action > job > workspace > "auto"
+// classifier). `ValidationDefaults` + `ValidationDefaultsSchema` are
+// re-exported via workspace.ts; only the resolver helpers + constants
+// ship from here.
+export {
+  DEFAULT_VALIDATION_SKILL,
+  normalizeActionValidate,
+  type ResolvedValidation,
+  type ResolveValidationInput,
+  resolveValidation,
+} from "./src/validation.ts";
 export * from "./src/workspace.ts";
 
 // ==============================================================================

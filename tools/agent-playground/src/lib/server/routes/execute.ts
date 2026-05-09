@@ -19,7 +19,6 @@ import { z } from "zod";
 const DAEMON_BASE_URL = process.env.FRIDAYD_URL ?? "http://localhost:8080";
 import { PlaygroundContextAdapter } from "../lib/context.ts";
 import { createSSEStream } from "../lib/sse.ts";
-import { userAgentExists } from "../lib/user-agents.ts";
 
 const ExecuteBody = z.object({
   agentId: z.string().min(1),
@@ -39,9 +38,9 @@ export const executeRoute = new Hono().post("/", zValidator("json", ExecuteBody)
   const { agentId, input, env, workspaceId } = c.req.valid("json");
 
   // User agents proxy to daemon via NATS subprocess protocol
-  if (await userAgentExists(agentId)) {
-    const adapter = new UserAdapter(join(getFridayHome(), "agents"));
-    const agentSource = await adapter.loadAgent(agentId);
+  const userAdapter = new UserAdapter(join(getFridayHome(), "agents"));
+  if (await userAdapter.exists(agentId)) {
+    const agentSource = await userAdapter.loadAgent(agentId);
     if (!agentSource.metadata.entrypoint) {
       return c.json({ error: `Agent "${agentId}" has no entrypoint` }, 400);
     }

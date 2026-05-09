@@ -97,7 +97,7 @@ class DaemonClient {
       task: string;
       status: string;
       durationMs?: number;
-      output: unknown;
+      output?: unknown;
       error?: string;
     }>;
     results?: Record<string, unknown>;
