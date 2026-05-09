@@ -72,14 +72,20 @@ function effectiveDaemonUrl(): string {
 }
 const DAEMON_URL = effectiveDaemonUrl();
 
-// `EXTERNAL_DAEMON_URL` / `EXTERNAL_TUNNEL_URL` flow into the runtime
-// config the SvelteKit hook injects on the served HTML. When TLS is on
-// the page is https://, so any direct browser fetch to a plain http://
-// daemon would be blocked as mixed content (Chrome makes a localhost
-// exception, Firefox/Safari don't). Default to the resolved scheme; let
-// an explicit env value still win for split-host setups.
+// `EXTERNAL_DAEMON_URL` flows into the runtime config the SvelteKit hook
+// injects on the served HTML. When TLS is on the page is https://, so any
+// direct browser fetch to a plain http:// daemon would be blocked as mixed
+// content (Chrome makes a localhost exception, Firefox/Safari don't).
+// Default to the resolved daemon scheme; explicit env wins for split-host.
 process.env.EXTERNAL_DAEMON_URL ??= DAEMON_URL;
-process.env.EXTERNAL_TUNNEL_URL ??= `${scheme}://localhost:9090`;
+// `EXTERNAL_TUNNEL_URL` stays http:// regardless of TLS. The webhook-tunnel
+// (tools/webhook-tunnel/main.go) is a plain http.Server; auto-upgrading the
+// browser-facing URL to https:// when this side gains TLS would break
+// settings/signal-row's ${externalTunnelUrl()}/status fetch with a TLS
+// handshake against a non-TLS listener. Mixed-content from an https page
+// to http://localhost is allowed in Chrome; Firefox/Safari users will hit
+// the block until the tunnel itself learns TLS.
+process.env.EXTERNAL_TUNNEL_URL ??= "http://localhost:9090";
 
 console.log(`[vite] dev server scheme: ${scheme}://  daemon: ${DAEMON_URL}`);
 
