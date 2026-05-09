@@ -26,6 +26,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -37,6 +38,7 @@ import (
 	"github.com/friday-platform/friday-studio/tools/webhook-tunnel/tunnel"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/cors"
+	"github.com/joho/godotenv"
 )
 
 // maxBodySize caps request bodies for /hook and /platform routes.
@@ -56,6 +58,17 @@ var (
 )
 
 func main() {
+	// Load FRIDAY_HOME/.env so FRIDAY_TLS_CERT/_KEY (and any other
+	// caller-supplied env) land before loadConfig() reads them. Mirrors
+	// atlas-cli daemon-start; existing process env wins (Load doesn't
+	// overwrite). Tolerant — missing .env is fine on a fresh install.
+	envPath := filepath.Join(fridayHome(), ".env")
+	if _, err := os.Stat(envPath); err == nil {
+		if err := godotenv.Load(envPath); err != nil {
+			log.Warn(".env load failed; continuing with shell env", "path", envPath, "error", err)
+		}
+	}
+
 	conf, err := loadConfig()
 	if err != nil {
 		log.Fatal("config error", "error", err)
@@ -83,24 +96,38 @@ func main() {
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
+	tlsOn := cfg.TLSCert != "" && cfg.TLSKey != ""
+	scheme := "http"
+	if tlsOn {
+		scheme = "https"
+	}
 	log.Info("webhook listener starting",
 		"port", cfg.Port,
+		"scheme", scheme,
 		"atlasd_url", cfg.AtlasdURL,
 		"secret_configured", cfg.WebhookSecret != "")
 
 	serverErr := make(chan error, 1)
 	go func() {
-		err := srv.ListenAndServe()
+		var err error
+		if tlsOn {
+			// Both files supplied — speak HTTPS. cloudflared's local
+			// origin URL (tunnel/manager.go) follows the same scheme so
+			// the public path stays end-to-end TLS.
+			err = srv.ListenAndServeTLS(cfg.TLSCert, cfg.TLSKey)
+		} else {
+			err = srv.ListenAndServe()
+		}
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			serverErr <- err
 		}
 	}()
 
 	if !cfg.NoTunnel {
-		startTunnel()
+		startTunnel(tlsOn)
 	} else {
 		log.Info("tunnel disabled",
-			"local_url", fmt.Sprintf("http://localhost:%d/hook/{provider}/{workspaceId}/{signalId}", cfg.Port))
+			"local_url", fmt.Sprintf("%s://localhost:%d/hook/{provider}/{workspaceId}/{signalId}", scheme, cfg.Port))
 	}
 
 	stop := make(chan os.Signal, 1)
@@ -116,7 +143,7 @@ func main() {
 	}
 }
 
-func startTunnel() {
+func startTunnel(tlsOn bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	bin, err := cloudflared.Resolve(ctx)
@@ -129,6 +156,7 @@ func startTunnel() {
 		Port:           cfg.Port,
 		TunnelToken:    cfg.TunnelToken,
 		CloudflaredBin: bin,
+		TLS:            tlsOn,
 		Logger:         log.Child("subcomponent", "tunnel"),
 	})
 	if err := tunMgr.Start(ctx); err != nil {
@@ -379,4 +407,23 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 
 func writeJSONError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, map[string]string{"error": message})
+}
+
+// fridayHome resolves the per-user data dir, mirroring atlasd's
+// getFridayHome() resolution order: $FRIDAY_HOME wins, otherwise
+// ~/.atlas (legacy / dev) if it exists, falling back to
+// ~/.friday/local (new desktop / installer default).
+func fridayHome() string {
+	if v := os.Getenv("FRIDAY_HOME"); v != "" {
+		return v
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	atlas := filepath.Join(home, ".atlas")
+	if st, err := os.Stat(atlas); err == nil && st.IsDir() {
+		return atlas
+	}
+	return filepath.Join(home, ".friday", "local")
 }

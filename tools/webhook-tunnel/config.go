@@ -18,6 +18,11 @@ type Config struct {
 	Port          int
 	TunnelToken   string
 	NoTunnel      bool
+	// TLS cert/key paths (FRIDAY_TLS_CERT / FRIDAY_TLS_KEY). When both
+	// are set the server speaks HTTPS; cloudflared's local origin URL
+	// follows the same scheme. Empty in plain-HTTP mode.
+	TLSCert string
+	TLSKey  string
 }
 
 func loadConfig() (*Config, error) {
@@ -43,5 +48,7 @@ func loadConfig() (*Config, error) {
 		Port:          port,
 		TunnelToken:   os.Getenv("TUNNEL_TOKEN"),
 		NoTunnel:      os.Getenv("NO_TUNNEL") == "true",
+		TLSCert:       os.Getenv("FRIDAY_TLS_CERT"),
+		TLSKey:        os.Getenv("FRIDAY_TLS_KEY"),
 	}, nil
 }
