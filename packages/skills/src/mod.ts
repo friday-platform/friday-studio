@@ -14,7 +14,11 @@ export { computeSkillHash } from "./content-hash.ts";
 // Utilities
 export { formatAvailableSkills } from "./format.ts";
 // Storage
-export { JetStreamSkillAdapter } from "./jetstream-adapter.ts";
+export {
+  JetStreamSkillAdapter,
+  type SkillRecord,
+  type SkillReplayer,
+} from "./jetstream-adapter.ts";
 export type {
   CreateLoadSkillToolOptions,
   HardcodedSkill,

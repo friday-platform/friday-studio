@@ -1,7 +1,7 @@
 import { createLogger } from "@atlas/logger";
 import type { Result } from "@atlas/utils";
 import type { NatsConnection } from "nats";
-import { JetStreamSkillAdapter } from "./jetstream-adapter.ts";
+import { JetStreamSkillAdapter, type SkillReplayer } from "./jetstream-adapter.ts";
 import type { PublishSkillInput, Skill, SkillSort, SkillSummary, VersionInfo } from "./schemas.ts";
 
 const logger = createLogger({ name: "skill-storage" });
@@ -82,7 +82,15 @@ export interface SkillStorageAdapter {
  * shim would silently fork the skill catalog away from the broker
  * and lose every published skill on restart.
  */
-let _storage: SkillStorageAdapter | null = null;
+/**
+ * Production storage type bundles `SkillReplayer` because the singleton is
+ * always `JetStreamSkillAdapter`, which implements both. Bundle import + the
+ * SQLite migration accept this combined type so they can call `replayVersion`
+ * without wide-interface mock churn.
+ */
+type ProductionSkillStorage = SkillStorageAdapter & SkillReplayer;
+
+let _storage: ProductionSkillStorage | null = null;
 
 export function initSkillStorage(nc: NatsConnection): void {
   _storage = new JetStreamSkillAdapter(nc);
@@ -90,11 +98,11 @@ export function initSkillStorage(nc: NatsConnection): void {
 }
 
 /** Inject a custom adapter — tests only. */
-export function _setSkillStorageForTest(adapter: SkillStorageAdapter | null): void {
+export function _setSkillStorageForTest(adapter: ProductionSkillStorage | null): void {
   _storage = adapter;
 }
 
-function getStorage(): SkillStorageAdapter {
+function getStorage(): ProductionSkillStorage {
   if (!_storage) {
     throw new Error(
       "Skill storage not initialized — call initSkillStorage(nc) at daemon startup, " +
@@ -109,9 +117,10 @@ function getStorage(): SkillStorageAdapter {
  * Defers adapter creation until first method call, allowing tests to
  * configure environment variables before initialization.
  */
-export const SkillStorage: SkillStorageAdapter = {
+export const SkillStorage: ProductionSkillStorage = {
   create: (...args) => getStorage().create(...args),
   publish: (...args) => getStorage().publish(...args),
+  replayVersion: (...args) => getStorage().replayVersion(...args),
   get: (...args) => getStorage().get(...args),
   getById: (...args) => getStorage().getById(...args),
   getBySkillId: (...args) => getStorage().getBySkillId(...args),
