@@ -91,8 +91,8 @@
     "npm:@sveltejs/package@^2.5.7": "2.5.7_svelte@5.55.5_typescript@5.9.3",
     "npm:@sveltejs/vite-plugin-svelte@^6.2.4": "6.2.4_svelte@5.55.5_vite@7.3.2__@types+node@25.6.0__yaml@2.8.4_@types+node@25.6.0_yaml@2.8.4",
     "npm:@sveltejs/vite-plugin-svelte@~6.2.4": "6.2.4_svelte@5.55.5_vite@7.3.2__@types+node@25.6.0__yaml@2.8.4_@types+node@25.6.0_yaml@2.8.4",
-    "npm:@tanstack/query-core@^5.100.8": "5.100.8",
-    "npm:@tanstack/svelte-query@^6.1.27": "6.1.27_svelte@5.55.5",
+    "npm:@tanstack/query-core@^5.100.8": "5.100.9",
+    "npm:@tanstack/svelte-query@^6.1.28": "6.1.28_svelte@5.55.5",
     "npm:@tanstack/svelte-table@9.0.0-alpha.41": "9.0.0-alpha.41_svelte@5.55.5",
     "npm:@tanstack/svelte-table@^9.0.0-alpha.41": "9.0.0-alpha.41_svelte@5.55.5",
     "npm:@tauri-apps/api@2.11.0": "2.11.0",
@@ -2102,14 +2102,14 @@
         "tslib"
       ]
     },
-    "@tanstack/query-core@5.100.8": {
-      "integrity": "sha512-ceYwSFOqjPwET5TA6IOYxzxlGc0ekyH/gfOtWkP0PX43rzX9bxW48Iuw8KAduKCToi4rJAQ6nRy2kAe8gszdmg=="
+    "@tanstack/query-core@5.100.9": {
+      "integrity": "sha512-SJSFw1S8+kQ0+knv/XGfrbocWoAlT7vDKsSImtLx3ZPQmEcR46hkDjLSvynSy25N8Ms4tIEini1FuBd5k7IscQ=="
     },
     "@tanstack/store@0.11.0": {
       "integrity": "sha512-WlzzCt3xi0G6pCAJu1U+2jiECwabETDpQDi3hfkFZvJii9AuZqEKbOiVarX1/bWhTNjU486yQtJCCasi/0q+Cw=="
     },
-    "@tanstack/svelte-query@6.1.27_svelte@5.55.5": {
-      "integrity": "sha512-d/Hf8go6WmTGS40qU/1DWIfyUNLAbnaMN4guZ3PSas6FX3E3ahOFluxp4JSQPYeYfDXbCcKQ+oSvs4/Yk5rLVQ==",
+    "@tanstack/svelte-query@6.1.28_svelte@5.55.5": {
+      "integrity": "sha512-B4uh/fvn+t67LyWzY8Sb+yqyxJS2hc27Nwf+bfz7vy+ilzfJIHORoCm9/6Arsg4pdH8DCBMLMWZTvMgvSUd/pg==",
       "dependencies": [
         "@tanstack/query-core",
         "svelte"
@@ -6481,7 +6481,7 @@
             "npm:@sveltejs/kit@^2.59.0",
             "npm:@sveltejs/vite-plugin-svelte@~6.2.4",
             "npm:@tanstack/query-core@^5.100.8",
-            "npm:@tanstack/svelte-query@^6.1.27",
+            "npm:@tanstack/svelte-query@^6.1.28",
             "npm:@tanstack/svelte-table@9.0.0-alpha.41",
             "npm:@types/deno@2.5.0",
             "npm:ai@^6.0.174",
