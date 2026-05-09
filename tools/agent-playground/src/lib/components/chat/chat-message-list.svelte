@@ -706,17 +706,29 @@
     user-select: none;
   }
 
-  /* Per-bubble cache hit ratio mirrors the session bar — hidden by
-     default, revealed when the row is hovered. The UsageBadge owns
-     `.cache-text` in its own scoped style; reach in with `:global`
-     so the hover state on the parent .message-actions controls
-     visibility. */
+  /* Cache hit ratio collapses to zero width by default and slides
+     in (max-inline-size + opacity) when the row is hovered. Without
+     animating the width too, the cache element kept reserving its
+     `column-gap` space even when invisible — the ellipsis ended up
+     two gaps beyond the last visible stat and read as marooned.
+     Negative margin-inline cancels both surrounding column-gaps in
+     the collapsed state so the row tightens up; the negatives
+     return to `0` on hover and the gaps re-establish naturally. */
   .message-actions :global(.cache-text) {
+    margin-inline: calc(-1 * 1rem);
+    max-inline-size: 0;
     opacity: 0;
-    transition: opacity 120ms ease;
+    overflow: hidden;
+    transition:
+      max-inline-size 200ms ease,
+      margin-inline 200ms ease,
+      opacity 160ms ease 40ms;
+    white-space: nowrap;
   }
   .message:hover .message-actions :global(.cache-text),
   .message-actions:focus-within :global(.cache-text) {
+    margin-inline: 0;
+    max-inline-size: 5rem;
     opacity: 1;
   }
 
