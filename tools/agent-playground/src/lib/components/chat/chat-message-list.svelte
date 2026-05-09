@@ -676,12 +676,20 @@
      start edge (left); user rows hug the end edge (right). The
      ellipsis ends up at the trailing edge in both cases — to the
      right of the time/duration/usage on assistant, and to the right
-     of the time on user. */
+     of the time on user.
+
+     Inline padding matches the chat bubble's own inline padding
+     (`var(--size-3)` on `.message-content`) so the row's content
+     edge sits flush with the bubble's text edge: time-glyph aligns
+     with the first letter of an assistant message, ellipsis aligns
+     with the last letter of a user message. */
   .message-actions.assistant {
     justify-content: flex-start;
+    padding-inline-start: var(--size-3);
   }
   .message-actions.user {
     justify-content: flex-end;
+    padding-inline-end: var(--size-3);
   }
 
   .message-time {
