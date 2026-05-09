@@ -1,22 +1,14 @@
 /**
- * Bundle v2 export/import tests.
- *
- * Most cases drive the real `JetStreamSkillAdapter` via the shared NATS test
- * server in `vitest.setup.ts` — schema v2 round-trips through `replayVersion`,
- * which only the JetStream impl provides. The legacy v1-archive cases use a
- * minimal in-memory `SkillStorageAdapter` shim because the v1 import branch
- * calls only `publish`/`getBySkillId`/`setDisabled` — no `replayVersion`.
+ * Bundle v2 export/import tests — all driven against the real
+ * `JetStreamSkillAdapter` via the shared NATS test server in
+ * `vitest.setup.ts`. v1 backwards-compat is exercised by hand-building a
+ * v1-shaped JSONL archive (legacy `schemaVersion: 1`, `skills.jsonl`, row
+ * schema without `id` / `createdAt` / discriminated archive) and importing
+ * into a real adapter — same fixture-build pattern used in
+ * `m_20260503_110100_skills_to_jetstream.test.ts`.
  */
 
-import {
-  JetStreamSkillAdapter,
-  type PublishSkillInput,
-  type Skill,
-  type SkillReplayer,
-  type SkillStorageAdapter,
-  type SkillSummary,
-  type VersionInfo,
-} from "@atlas/skills";
+import { JetStreamSkillAdapter, type Skill, type SkillStorageAdapter } from "@atlas/skills";
 import type { Result } from "@atlas/utils";
 import { stringify as stringifyYaml } from "@std/yaml";
 import { createJetStreamFacade } from "jetstream";
@@ -32,7 +24,7 @@ import {
 } from "./global-skills.ts";
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Real-NATS harness — v2 round-trip cases
+// Shared NATS harness
 // ──────────────────────────────────────────────────────────────────────────────
 
 let nc: NatsConnection;
@@ -44,10 +36,18 @@ beforeAll(() => {
 afterEach(async () => {
   // SKILLS KV + SKILL_ARCHIVES Object Store are global — wipe between tests so
   // replayVersion's duplicate-rejection guard doesn't trip across cases.
+  await wipeBuckets();
+});
+
+async function wipeBuckets(): Promise<void> {
   const facade = createJetStreamFacade(nc);
   await facade.kv.delete("SKILLS");
   await facade.os.delete("SKILL_ARCHIVES");
-});
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Helpers
+// ──────────────────────────────────────────────────────────────────────────────
 
 async function seedVersion(
   adapter: SkillStorageAdapter,
@@ -83,6 +83,17 @@ function bytes(text: string): Uint8Array<ArrayBuffer> {
   out.set(src);
   return out;
 }
+
+async function sha256Hex(b: Uint8Array): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", b.slice());
+  return Array.from(new Uint8Array(digest))
+    .map((x) => x.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// v2 export
+// ──────────────────────────────────────────────────────────────────────────────
 
 describe("exportGlobalSkills (v2)", () => {
   it("emits v2 manifest + skills-history.jsonl with one row per (skillId, version)", async () => {
@@ -157,6 +168,10 @@ describe("exportGlobalSkills (v2)", () => {
   });
 });
 
+// ──────────────────────────────────────────────────────────────────────────────
+// v2 round-trip
+// ──────────────────────────────────────────────────────────────────────────────
+
 describe("importGlobalSkills (v2 round-trip)", () => {
   it("empty target + multi-version source: imports all 3, idempotent on re-import", async () => {
     const source = new JetStreamSkillAdapter(nc);
@@ -168,10 +183,7 @@ describe("importGlobalSkills (v2 round-trip)", () => {
     if (!exported.bytes) throw new Error("expected bytes");
     const zipBytes = exported.bytes;
 
-    // Wipe and re-import into a fresh "target" (same broker, fresh state).
-    const facade = createJetStreamFacade(nc);
-    await facade.kv.delete("SKILLS");
-    await facade.os.delete("SKILL_ARCHIVES");
+    await wipeBuckets();
 
     const target = new JetStreamSkillAdapter(nc);
     const first = await importGlobalSkills({ zipBytes, adapter: target });
@@ -213,9 +225,7 @@ describe("importGlobalSkills (v2 round-trip)", () => {
     if (!exported.bytes) throw new Error("expected bytes");
     const zipBytes = exported.bytes;
 
-    const facade = createJetStreamFacade(nc);
-    await facade.kv.delete("SKILLS");
-    await facade.os.delete("SKILL_ARCHIVES");
+    await wipeBuckets();
 
     const target = new JetStreamSkillAdapter(nc);
     const result = await importGlobalSkills({ zipBytes, adapter: target });
@@ -250,9 +260,7 @@ describe("importGlobalSkills (v2 round-trip)", () => {
     if (!exported.bytes) throw new Error("expected bytes");
     const zipBytes = exported.bytes;
 
-    const facade = createJetStreamFacade(nc);
-    await facade.kv.delete("SKILLS");
-    await facade.os.delete("SKILL_ARCHIVES");
+    await wipeBuckets();
 
     const target = new JetStreamSkillAdapter(nc);
     const result = await importGlobalSkills({ zipBytes, adapter: target });
@@ -326,9 +334,7 @@ describe("importGlobalSkills (v2 round-trip)", () => {
     if (!exported.bytes) throw new Error("expected bytes");
     const zipBytes = exported.bytes;
 
-    const facade = createJetStreamFacade(nc);
-    await facade.kv.delete("SKILLS");
-    await facade.os.delete("SKILL_ARCHIVES");
+    await wipeBuckets();
 
     const target = new JetStreamSkillAdapter(nc);
     const result = await importGlobalSkills({ zipBytes, adapter: target });
@@ -356,9 +362,7 @@ describe("importGlobalSkills (v2 round-trip)", () => {
     if (!exported.bytes) throw new Error("expected bytes");
     const zipBytes = exported.bytes;
 
-    const facade = createJetStreamFacade(nc);
-    await facade.kv.delete("SKILLS");
-    await facade.os.delete("SKILL_ARCHIVES");
+    await wipeBuckets();
 
     const target = new JetStreamSkillAdapter(nc);
     const result = await importGlobalSkills({ zipBytes, adapter: target });
@@ -406,9 +410,7 @@ describe("importGlobalSkills (v2 round-trip)", () => {
     if (!exported.bytes) throw new Error("expected bytes");
     const zipBytes = exported.bytes;
 
-    const facade = createJetStreamFacade(nc);
-    await facade.kv.delete("SKILLS");
-    await facade.os.delete("SKILL_ARCHIVES");
+    await wipeBuckets();
 
     const target = new JetStreamSkillAdapter(nc);
     const result = await importGlobalSkills({ zipBytes, adapter: target });
@@ -444,9 +446,7 @@ describe("importGlobalSkills (v2 round-trip)", () => {
     if (!exported.bytes) throw new Error("expected bytes");
     const zipBytes = exported.bytes;
 
-    const facade = createJetStreamFacade(nc);
-    await facade.kv.delete("SKILLS");
-    await facade.os.delete("SKILL_ARCHIVES");
+    await wipeBuckets();
 
     const target = new JetStreamSkillAdapter(nc);
     const result = await importGlobalSkills({ zipBytes, adapter: target });
@@ -474,9 +474,7 @@ describe("importGlobalSkills (v2 round-trip)", () => {
     zip.file("skills-history.jsonl", tampered);
     const tamperedZipBytes = await zip.generateAsync({ type: "uint8array" });
 
-    const facade = createJetStreamFacade(nc);
-    await facade.kv.delete("SKILLS");
-    await facade.os.delete("SKILL_ARCHIVES");
+    await wipeBuckets();
 
     const target = new JetStreamSkillAdapter(nc);
     const result = await importGlobalSkills({ zipBytes: tamperedZipBytes, adapter: target });
@@ -502,9 +500,7 @@ describe("importGlobalSkills (v2 round-trip)", () => {
     zip.file(archivePath, new TextEncoder().encode("garbage"));
     const tamperedZipBytes = await zip.generateAsync({ type: "uint8array" });
 
-    const facade = createJetStreamFacade(nc);
-    await facade.kv.delete("SKILLS");
-    await facade.os.delete("SKILL_ARCHIVES");
+    await wipeBuckets();
 
     const target = new JetStreamSkillAdapter(nc);
     const result = await importGlobalSkills({ zipBytes: tamperedZipBytes, adapter: target });
@@ -515,204 +511,8 @@ describe("importGlobalSkills (v2 round-trip)", () => {
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
-// v1-archive backwards-compat — uses an in-memory shim because the v1 import
-// branch only calls publish/getBySkillId/setDisabled. NO replayVersion lives
-// on this shim by design (lead constraint); the v1 path never calls it.
+// v1 backwards-compat — hand-built v1-shaped archive against real adapter
 // ──────────────────────────────────────────────────────────────────────────────
-
-interface SeedSkill {
-  skillId: string;
-  namespace: string;
-  name: string;
-  version?: number;
-  description?: string;
-  descriptionManual?: boolean;
-  disabled?: boolean;
-  frontmatter?: Record<string, unknown>;
-  instructions?: string;
-  archive?: Uint8Array | null;
-  createdBy: string;
-  createdAt?: Date;
-}
-
-function notImplemented(method: string): never {
-  throw new Error(`InMemorySkillAdapter: ${method} not implemented`);
-}
-
-class InMemorySkillAdapter implements SkillStorageAdapter {
-  private skills = new Map<string, Skill>();
-  /** When set, `getBySkillId` returns this Result instead of looking up. */
-  public getBySkillIdOverride: Result<Skill | null, string> | null = null;
-
-  seed(seed: SeedSkill): Skill {
-    let archive: Uint8Array<ArrayBuffer> | null = null;
-    if (seed.archive) {
-      const buf = new ArrayBuffer(seed.archive.byteLength);
-      archive = new Uint8Array(buf);
-      archive.set(seed.archive);
-    }
-    const skill: Skill = {
-      id: `id-${this.skills.size + 1}`,
-      skillId: seed.skillId,
-      namespace: seed.namespace,
-      name: seed.name,
-      version: seed.version ?? 1,
-      description: seed.description ?? "",
-      descriptionManual: seed.descriptionManual ?? false,
-      disabled: seed.disabled ?? false,
-      frontmatter: seed.frontmatter ?? {},
-      instructions: seed.instructions ?? "",
-      archive,
-      createdBy: seed.createdBy,
-      createdAt: seed.createdAt ?? new Date("2026-01-01T00:00:00.000Z"),
-    };
-    this.skills.set(skill.id, skill);
-    return skill;
-  }
-
-  list(): Promise<Result<SkillSummary[], string>> {
-    return notImplemented("list");
-  }
-
-  getById(): Promise<Result<Skill | null, string>> {
-    return notImplemented("getById");
-  }
-
-  getBySkillId(skillId: string): Promise<Result<Skill | null, string>> {
-    if (this.getBySkillIdOverride) return Promise.resolve(this.getBySkillIdOverride);
-    for (const s of this.skills.values()) {
-      if (s.skillId === skillId) return Promise.resolve({ ok: true, data: s });
-    }
-    return Promise.resolve({ ok: true, data: null });
-  }
-
-  publish(
-    namespace: string,
-    name: string,
-    createdBy: string,
-    input: PublishSkillInput,
-  ): Promise<Result<{ id: string; version: number; name: string; skillId: string }, string>> {
-    const skillId = input.skillId ?? `skill-${this.skills.size + 1}`;
-    let maxVersion = 0;
-    for (const s of this.skills.values()) {
-      if (s.skillId === skillId && s.version > maxVersion) maxVersion = s.version;
-    }
-    const version = maxVersion + 1;
-
-    let archive: Uint8Array<ArrayBuffer> | null = null;
-    if (input.archive) {
-      const buf = new ArrayBuffer(input.archive.byteLength);
-      archive = new Uint8Array(buf);
-      archive.set(input.archive);
-    }
-
-    const id = `id-${this.skills.size + 1}`;
-    const skill: Skill = {
-      id,
-      skillId,
-      namespace,
-      name,
-      version,
-      description: input.description ?? "",
-      descriptionManual: input.descriptionManual ?? false,
-      disabled: false,
-      frontmatter: input.frontmatter ?? {},
-      instructions: input.instructions,
-      archive,
-      createdBy,
-      createdAt: new Date(),
-    };
-    this.skills.set(id, skill);
-    return Promise.resolve({ ok: true, data: { id, version, name, skillId } });
-  }
-
-  setDisabled(skillId: string, disabled: boolean): Promise<Result<void, string>> {
-    for (const s of this.skills.values()) {
-      if (s.skillId === skillId) s.disabled = disabled;
-    }
-    return Promise.resolve({ ok: true, data: undefined });
-  }
-
-  // The remainder are unused by the v1 import branch — throw on access.
-  create(): Promise<Result<{ skillId: string }, string>> {
-    return notImplemented("create");
-  }
-  get(): Promise<Result<Skill | null, string>> {
-    return notImplemented("get");
-  }
-  listVersions(): Promise<Result<VersionInfo[], string>> {
-    return notImplemented("listVersions");
-  }
-  deleteVersion(): Promise<Result<void, string>> {
-    return notImplemented("deleteVersion");
-  }
-  deleteSkill(): Promise<Result<void, string>> {
-    return notImplemented("deleteSkill");
-  }
-  listAssigned(): Promise<Result<SkillSummary[], string>> {
-    return notImplemented("listAssigned");
-  }
-  assignSkill(): Promise<Result<void, string>> {
-    return notImplemented("assignSkill");
-  }
-  unassignSkill(): Promise<Result<void, string>> {
-    return notImplemented("unassignSkill");
-  }
-  listAssignments(): Promise<Result<string[], string>> {
-    return notImplemented("listAssignments");
-  }
-  assignToJob(): Promise<Result<void, string>> {
-    return notImplemented("assignToJob");
-  }
-  unassignFromJob(): Promise<Result<void, string>> {
-    return notImplemented("unassignFromJob");
-  }
-  listAssignmentsForJob(): Promise<Result<SkillSummary[], string>> {
-    return notImplemented("listAssignmentsForJob");
-  }
-  listJobOnlySkillIds(): Promise<Result<string[], string>> {
-    return notImplemented("listJobOnlySkillIds");
-  }
-}
-
-/**
- * Cast the in-memory shim to the importer's expected type. The v1 branch never
- * touches `replayVersion` — if a v2 archive ever lands at this shim, the
- * missing method throws TypeError loudly. Tripwire, not silent fake.
- */
-function asV1Target(shim: InMemorySkillAdapter): SkillStorageAdapter & SkillReplayer {
-  return shim as unknown as SkillStorageAdapter & SkillReplayer;
-}
-
-async function buildV1Archive(
-  rows: SkillRowV1[],
-  skillIdToArchiveBytes: Map<string, Uint8Array>,
-): Promise<Uint8Array> {
-  const zip = new JSZip();
-  for (const [skillId, archiveBytes] of skillIdToArchiveBytes) {
-    const row = rows.find((r) => r.skillId === skillId);
-    if (!row?.archive) continue;
-    zip.file(row.archive.path, archiveBytes);
-  }
-  const jsonl = rows.map((r) => JSON.stringify(r)).join("\n");
-  const jsonlBytes = new TextEncoder().encode(jsonl);
-  const sha = await sha256Hex(jsonlBytes);
-  const manifest = {
-    schemaVersion: 1,
-    kind: "global-skills",
-    source: { filename: "skills.jsonl", skillCount: rows.length, sha256: `sha256:${sha}` },
-  };
-  zip.file("manifest.yml", stringifyYaml(manifest));
-  zip.file("skills.jsonl", jsonlBytes);
-  return await zip.generateAsync({ type: "uint8array" });
-}
-
-async function sha256Hex(b: Uint8Array): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", b.slice());
-  return Array.from(new Uint8Array(digest))
-    .map((x) => x.toString(16).padStart(2, "0"))
-    .join("");
-}
 
 function v1Row(overrides: Partial<SkillRowV1> & Pick<SkillRowV1, "skillId" | "name">): SkillRowV1 {
   return {
@@ -731,54 +531,91 @@ function v1Row(overrides: Partial<SkillRowV1> & Pick<SkillRowV1, "skillId" | "na
   };
 }
 
-describe("importGlobalSkills — v1 backwards-compat", () => {
-  it("imports a v1-shaped archive into an empty target via publish()", async () => {
-    const target = new InMemorySkillAdapter();
-    const row = v1Row({ skillId: "abc", name: "alpha" });
-    const zipBytes = await buildV1Archive([row], new Map());
+async function buildV1Archive(rows: SkillRowV1[]): Promise<Uint8Array> {
+  const zip = new JSZip();
+  const jsonl = rows.map((r) => JSON.stringify(r)).join("\n");
+  const jsonlBytes = new TextEncoder().encode(jsonl);
+  const sha = await sha256Hex(jsonlBytes);
+  const manifest = {
+    schemaVersion: 1,
+    kind: "global-skills",
+    source: { filename: "skills.jsonl", skillCount: rows.length, sha256: `sha256:${sha}` },
+  };
+  zip.file("manifest.yml", stringifyYaml(manifest));
+  zip.file("skills.jsonl", jsonlBytes);
+  return await zip.generateAsync({ type: "uint8array" });
+}
 
-    const result = await importGlobalSkills({ zipBytes, adapter: asV1Target(target) });
+describe("importGlobalSkills — v1 backwards-compat", () => {
+  it("imports a v1-shaped archive into an empty target via publish", async () => {
+    const target = new JetStreamSkillAdapter(nc);
+    const zipBytes = await buildV1Archive([
+      v1Row({ skillId: "v1-abc", name: "alpha", instructions: "v1 ins" }),
+    ]);
+
+    const result = await importGlobalSkills({ zipBytes, adapter: target });
     expect(result.status).toEqual({ kind: "imported", skillsPublished: 1, skillsSkipped: 0 });
 
-    const post = await target.getBySkillId("abc");
+    const post = await target.getBySkillId("v1-abc");
     if (!post.ok || !post.data) throw new Error("missing post-import");
+    // publish() lands at version 1 because the target is empty.
     expect(post.data.version).toBe(1);
     expect(post.data.name).toBe("alpha");
   });
 
-  it("v1 presence-skip: any pre-existing skillId is left alone", async () => {
-    const target = new InMemorySkillAdapter();
-    target.seed({
-      skillId: "abc",
-      namespace: "user",
-      name: "alpha",
-      version: 2,
-      createdBy: "user-1",
-    });
-    const row = v1Row({ skillId: "abc", name: "alpha", version: 5 });
-    const zipBytes = await buildV1Archive([row], new Map());
+  it("v1 presence-skip: any pre-existing skillId is left alone on re-import", async () => {
+    const target = new JetStreamSkillAdapter(nc);
+    const zipBytes = await buildV1Archive([
+      v1Row({ skillId: "v1-pre", name: "alpha", instructions: "v1 ins" }),
+    ]);
 
-    const result = await importGlobalSkills({ zipBytes, adapter: asV1Target(target) });
-    expect(result.status).toEqual({ kind: "imported", skillsPublished: 0, skillsSkipped: 1 });
+    const first = await importGlobalSkills({ zipBytes, adapter: target });
+    expect(first.status).toEqual({ kind: "imported", skillsPublished: 1, skillsSkipped: 0 });
 
-    const post = await target.getBySkillId("abc");
+    const second = await importGlobalSkills({ zipBytes, adapter: target });
+    expect(second.status).toEqual({ kind: "imported", skillsPublished: 0, skillsSkipped: 1 });
+
+    // Version did not inflate.
+    const post = await target.getBySkillId("v1-pre");
     if (!post.ok || !post.data) throw new Error("missing");
-    expect(post.data.version).toBe(2);
+    expect(post.data.version).toBe(1);
+  });
+
+  it("v1 round-trips a disabled flag via setDisabled", async () => {
+    const target = new JetStreamSkillAdapter(nc);
+    const zipBytes = await buildV1Archive([
+      v1Row({ skillId: "v1-disabled", name: "disabled-skill", disabled: true }),
+    ]);
+
+    const result = await importGlobalSkills({ zipBytes, adapter: target });
+    expect(result.status.kind).toBe("imported");
+
+    const post = await target.getBySkillId("v1-disabled");
+    if (!post.ok || !post.data) throw new Error("missing");
+    expect(post.data.disabled).toBe(true);
   });
 
   it("v1 fail-loud on getBySkillId failure (review comment 2)", async () => {
-    const target = new InMemorySkillAdapter();
-    target.getBySkillIdOverride = { ok: false, error: "broker exploded" };
-    const row = v1Row({ skillId: "boom-skill", name: "boom" });
-    const zipBytes = await buildV1Archive([row], new Map());
+    // Wrap a real adapter; force the v1 branch's one `getBySkillId` call to
+    // surface a Result.fail, asserting the importer throws with the skillId
+    // and underlying error in the message instead of falling through.
+    class FailingGetBySkillId extends JetStreamSkillAdapter {
+      override getBySkillId(_skillId: string): Promise<Result<Skill | null, string>> {
+        return Promise.resolve({ ok: false, error: "broker exploded" });
+      }
+    }
+    const target = new FailingGetBySkillId(nc);
+    const zipBytes = await buildV1Archive([
+      v1Row({ skillId: "boom-skill", name: "boom", instructions: "i" }),
+    ]);
 
-    await expect(
-      importGlobalSkills({ zipBytes, adapter: asV1Target(target) }),
-    ).rejects.toThrowError(/boom-skill.*broker exploded/);
+    await expect(importGlobalSkills({ zipBytes, adapter: target })).rejects.toThrowError(
+      /boom-skill.*broker exploded/,
+    );
   });
 
   it("throws LegacyArchiveError when manifest source.filename is skills.db", async () => {
-    const target = new InMemorySkillAdapter();
+    const target = new JetStreamSkillAdapter(nc);
     const legacyManifest = {
       schemaVersion: 1,
       kind: "global-skills",
@@ -788,8 +625,8 @@ describe("importGlobalSkills — v1 backwards-compat", () => {
     zip.file("manifest.yml", stringifyYaml(legacyManifest));
     const zipBytes = await zip.generateAsync({ type: "uint8array" });
 
-    await expect(
-      importGlobalSkills({ zipBytes, adapter: asV1Target(target) }),
-    ).rejects.toBeInstanceOf(LegacyArchiveError);
+    await expect(importGlobalSkills({ zipBytes, adapter: target })).rejects.toBeInstanceOf(
+      LegacyArchiveError,
+    );
   });
 });
