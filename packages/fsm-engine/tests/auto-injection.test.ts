@@ -132,7 +132,10 @@ describe("FSM LLM action — forwards configured platform tools to LLM (Phase 5)
     let observedToolNames: string[] | undefined;
     const mockLLMProvider: LLMProvider = {
       call: async (params) => {
-        observedPrompt = params.prompt;
+        // Capture system + user-message body together so substring asserts
+        // work regardless of whether content lands in the cacheable system
+        // surface or the volatile user preface.
+        observedPrompt = `${params.system ?? ""}\n\n${params.prompt ?? ""}`;
         observedToolNames = Object.keys(params.tools as Record<string, Tool>);
 
         const tool = (params.tools as Record<string, Tool>)["memory_save"];

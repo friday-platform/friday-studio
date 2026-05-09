@@ -457,6 +457,16 @@ export interface LLMProvider {
     /** Registry provider key (e.g., "anthropic") from workspace YAML */
     provider?: string;
     model: string;
+    /**
+     * Static instruction surface — the byte-stable portion of the prompt
+     * that should sit at the cacheable prefix position. The adapter places
+     * this in a system message with a 1h ephemeral cache_control marker
+     * for Anthropic; for other providers it rides as a plain system
+     * message and the provider's automatic prefix cache decides what to
+     * cache. Pair with `messages` (or `prompt` for back-compat) for the
+     * volatile turn-local content that must NOT poison the cached prefix.
+     */
+    system?: string;
     prompt: string;
     /** Structured messages with mixed content types (e.g., text + images). When present, used instead of prompt. */
     messages?: Array<ModelMessage>;

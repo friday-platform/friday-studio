@@ -80,7 +80,10 @@ describe("complete tool injection for LLM actions", () => {
 
     const mockLLMProvider: LLMProvider = {
       call: (params) => {
-        capturedPrompts.push(params.prompt);
+        // Capture system + user-message body together so substring asserts
+        // work regardless of whether content lands in the cacheable system
+        // surface or the volatile user preface.
+        capturedPrompts.push(`${params.system ?? ""}\n\n${params.prompt ?? ""}`);
         const toolNames = Object.keys(params.tools ?? {});
         capturedTools.push(toolNames);
 
