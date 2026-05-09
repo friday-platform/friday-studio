@@ -12,9 +12,5 @@
     "jszip": "^3.10.1",
     "zod": "^4.3.5"
   },
-  "devDependencies": {
-    "jetstream": "workspace:*",
-    "nats": "^2.29.3",
-    "vitest": "^4.1.0"
-  }
+  "devDependencies": { "jetstream": "workspace:*", "nats": "^2.29.3", "vitest": "^4.1.0" }
 }
