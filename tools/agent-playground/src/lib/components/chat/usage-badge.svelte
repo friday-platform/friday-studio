@@ -102,32 +102,41 @@
   );
 </script>
 
-<span class="usage-badge" title={tooltip}>
-  <span class="pill">↑ {fmt(freshInputTokens)}</span>
-  <span class="pill">↓ {fmt(outputTokens)}</span>
+<span class="usage-badge">
+  <span class="pill" title={tooltip}>↑ {fmt(freshInputTokens)}</span>
+  <span class="pill" title={tooltip}>↓ {fmt(outputTokens)}</span>
   {#if showCachePill}
-    <span class="cache-text" class:hit={cacheHitRatio > 0.3}>
+    <span class="cache-text" class:hit={cacheHitRatio > 0.3} title={tooltip}>
       {pct(cacheHitRatio)}
     </span>
   {/if}
 </span>
 
 <style>
+  /* `display: contents` flattens the wrapper out of the box tree so
+     `.pill` / `.cache-text` children render as direct flex children
+     of the parent `.message-actions` row. That makes the row's
+     `column-gap` apply consistently between every stat — time,
+     duration, ↑, ↓, cache — instead of a tight 0.25rem gap inside
+     the badge bumping up against the parent's 1rem gap on the
+     outside. The title attribute still attaches for the hover
+     tooltip; modern browsers keep the element in the a11y tree. */
   .usage-badge {
-    align-items: center;
     color: var(--text-faded);
     cursor: default;
-    display: inline-flex;
+    display: contents;
     font-size: 0.7rem;
-    gap: 0.25rem;
     line-height: 1;
     user-select: none;
   }
   /* Plain text — no chip background — so the row reads as inline
      stats next to the message rather than a row of UI controls. The
      class is still named `.pill` for parity with similar widgets in
-     other components. */
+     other components. The wrapper uses `display: contents`, so each
+     pill carries its own faded color rather than inheriting through
+     a removed wrapper. */
   .pill {
+    color: var(--text-faded);
     font-variant-numeric: tabular-nums;
   }
   /* Duration sits at the trailing edge so the time-cost of the turn
