@@ -25,10 +25,9 @@ beforeEach(() => {
 });
 
 describe("memory_save", () => {
-  it("returns tool object with memory_save, memory_read, memory_remove", () => {
+  it("returns tool object with memory_save, memory_remove", () => {
     const tools = createMemorySaveTool("ws-1", logger);
     expect(tools).toHaveProperty("memory_save");
-    expect(tools).toHaveProperty("memory_read");
     expect(tools).toHaveProperty("memory_remove");
   });
 
@@ -67,48 +66,6 @@ describe("memory_save", () => {
     mockFetch.mockRejectedValueOnce(new Error("ECONNREFUSED"));
     const { memory_save } = createMemorySaveTool("ws-1", logger);
     const result = await memory_save!.execute!({ memoryName: "notes", text: "x" }, OPTS);
-    expect(result).toHaveProperty("error");
-  });
-});
-
-describe("memory_read", () => {
-  it("GETs correct URL with since/limit params", async () => {
-    mockFetch.mockResolvedValueOnce(new Response(JSON.stringify([]), { status: 200 }));
-
-    const { memory_read } = createMemorySaveTool("al-dente_vanilla", logger);
-    await memory_read!.execute!({ memoryName: "notes", since: "2026-01-01", limit: 10 }, OPTS);
-
-    const [url] = mockFetch.mock.calls[0] as [string];
-    expect(url).toContain("/api/memory/al-dente_vanilla/narrative/notes");
-    expect(url).toContain("since=2026-01-01");
-    expect(url).toContain("limit=10");
-  });
-
-  it("returns ReadResponse envelope with items + provenance", async () => {
-    const entries = [{ id: "e1", text: "a", createdAt: "2026-01-01T00:00:00Z" }];
-    mockFetch.mockResolvedValueOnce(new Response(JSON.stringify(entries), { status: 200 }));
-
-    const { memory_read } = createMemorySaveTool("ws-1", logger);
-    const result = (await memory_read!.execute!({ memoryName: "notes" }, OPTS)) as {
-      items?: unknown[];
-      provenance?: { source?: string; origin?: string };
-    };
-    expect(result.items).toEqual(entries);
-    expect(result.provenance?.source).toBe("user-authored");
-    expect(result.provenance?.origin).toBe("memory:notes");
-  });
-
-  it("returns error on HTTP failure", async () => {
-    mockFetch.mockResolvedValueOnce(new Response("error", { status: 500 }));
-    const { memory_read } = createMemorySaveTool("ws-1", logger);
-    const result = await memory_read!.execute!({ memoryName: "notes" }, OPTS);
-    expect(result).toHaveProperty("error");
-  });
-
-  it("returns error on network failure", async () => {
-    mockFetch.mockRejectedValueOnce(new Error("ECONNREFUSED"));
-    const { memory_read } = createMemorySaveTool("ws-1", logger);
-    const result = await memory_read!.execute!({ memoryName: "notes" }, OPTS);
     expect(result).toHaveProperty("error");
   });
 });

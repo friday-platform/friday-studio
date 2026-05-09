@@ -52,6 +52,10 @@ import {
   createRegisterAgentTool,
 } from "./tools/agent-registry-tools.ts";
 import { artifactTools, createArtifactsCreateTool } from "./tools/artifact-tools.ts";
+import {
+  createDescribeBundledAgentTool,
+  createListBundledAgentsTool,
+} from "./tools/bundled-agent-discovery-tools.ts";
 import { createAgentTool, rebindAgentTool } from "./tools/bundled-agent-tools.ts";
 import { createRunCodeTool } from "./tools/code-exec.ts";
 import { createConnectCommunicatorTool } from "./tools/connect-communicator.ts";
@@ -66,6 +70,22 @@ import {
   createDescribeIntegrationTool,
   createListIntegrationsTool,
 } from "./tools/integration-tools.ts";
+import {
+  createDescribeAgentTool,
+  createDescribeDraftTool,
+  createDescribeJobTool,
+  createDescribeMemoryStoreTool,
+  createDescribeSignalTool,
+  createDescribeUserIdentityTool,
+  createDescribeWorkspaceTool,
+  createListAgentsTool,
+  createListArtifactsTool,
+  createListCommunicatorsTool,
+  createListJobsTool,
+  createListMemoryStoresTool,
+  createListSignalsTool,
+  createListWorkspacesTool,
+} from "./tools/inventory-tools.ts";
 import { createJobTools } from "./tools/job-tools.ts";
 import { createListCapabilitiesTool } from "./tools/list-capabilities.ts";
 import { createListMcpToolsTool } from "./tools/list-mcp-tools.ts";
@@ -74,11 +94,20 @@ import {
   createListSkillsTool,
   createSearchSkillsTool,
 } from "./tools/list-skills.ts";
-import { createMcpDependenciesTool } from "./tools/mcp-dependencies.ts";
+import {
+  createDescribeMcpServerTool,
+  createDescribeMcpToolTool,
+  createListMcpServersTool,
+} from "./tools/mcp-discovery-tools.ts";
+import {
+  createDescribeMemoryEntryTool,
+  createListMemoryEntriesTool,
+} from "./tools/memory-entry-tools.ts";
 import { createMemorySaveTool } from "./tools/memory-save.ts";
 import { createPublishSkillTool } from "./tools/publish-skill.ts";
 import { createRequestToolAccessTool } from "./tools/request-tool-access.ts";
 import { createSearchMcpServersTool } from "./tools/search-mcp-servers.ts";
+import { createDescribeSessionTool, createListSessionsTool } from "./tools/session-tools.ts";
 import { createSetUserIdentityTool } from "./tools/set-user-identity.ts";
 import {
   createAssignWorkspaceSkillTool,
@@ -709,9 +738,16 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
         const listMcpToolsTool = createListMcpToolsTool(logger);
 
         // Workspace-scoped MCP management tools
-        const mcpDependenciesTool = createMcpDependenciesTool(workspaceId, logger);
         const enableMcpServerTool = createEnableMcpServerTool(workspaceId, logger);
         const disableMcpServerTool = createDisableMcpServerTool(workspaceId, logger);
+
+        // MCP discovery tools — list/describe servers and tools.
+        // describe_mcp_server (scope=workspace) subsumes the prior
+        // get_mcp_dependencies tool: it returns the wired config plus the
+        // agents/jobs that reference each enabled server.
+        const listMcpServersTool = createListMcpServersTool(workspaceId, logger);
+        const describeMcpServerTool = createDescribeMcpServerTool(workspaceId, logger);
+        const describeMcpToolTool = createDescribeMcpToolTool(logger);
 
         // Workspace skill management tools
         const publishSkillTool = createPublishSkillTool(logger);
@@ -740,6 +776,42 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
         // stable across connect_service calls.
         const listIntegrationsTool = createListIntegrationsTool(logger);
         const describeIntegrationTool = createDescribeIntegrationTool(logger);
+
+        // Per-domain inventory tools — workspaces, agents, jobs, signals,
+        // memory stores, communicators, drafts, user identity. Each
+        // surfaces a list_X / describe_X pair scoped to the current
+        // chat's workspace by default; scope opt-ins reach broader views.
+        const listWorkspacesTool = createListWorkspacesTool(logger);
+        const describeWorkspaceTool = createDescribeWorkspaceTool(workspaceId, logger);
+        const listAgentsTool = createListAgentsTool(workspaceId, logger);
+        const describeAgentTool = createDescribeAgentTool(workspaceId, logger);
+        const listJobsTool = createListJobsTool(workspaceId, logger);
+        const describeJobTool = createDescribeJobTool(workspaceId, logger);
+        const listSignalsTool = createListSignalsTool(workspaceId, logger);
+        const describeSignalTool = createDescribeSignalTool(workspaceId, logger);
+        const listMemoryStoresTool = createListMemoryStoresTool(workspaceId, logger);
+        const describeMemoryStoreTool = createDescribeMemoryStoreTool(workspaceId, logger);
+        const listCommunicatorsTool = createListCommunicatorsTool(workspaceId, logger);
+        const describeUserIdentityTool = createDescribeUserIdentityTool(logger);
+        const describeDraftTool = createDescribeDraftTool(workspaceId, logger);
+        const listArtifactsTool = createListArtifactsTool(workspaceId, logger);
+
+        // Bundled atlas agent discovery — distinct from the
+        // `agent_<id>` invocation wrappers; these list/describe the
+        // bundled-agent catalog with input/output schemas.
+        const listBundledAgentsTool = createListBundledAgentsTool(logger);
+        const describeBundledAgentTool = createDescribeBundledAgentTool(logger);
+
+        // Session observability — fills the audit-flagged gap (the
+        // chat couldn't answer "did my Slack signal fire?" without
+        // run_code curl).
+        const listSessionsTool = createListSessionsTool(workspaceId, logger);
+        const describeSessionTool = createDescribeSessionTool(logger);
+
+        // Memory-entry retrieval (replaces the old memory_read shape
+        // with rich substring + time + metadata filters and pagination).
+        const listMemoryEntriesTool = createListMemoryEntriesTool(workspaceId, logger);
+        const describeMemoryEntryTool = createDescribeMemoryEntryTool(workspaceId, logger);
 
         // Job tools — pass session.streamId so nested job sessions inherit
         // the chat thread ID. The daemon's broadcast hook reads it to skip
@@ -881,10 +953,12 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           ...searchMcpServersTool,
           ...installMcpServerTool,
           ...createMcpServerTool,
-          ...mcpDependenciesTool,
           ...enableMcpServerTool,
           ...disableMcpServerTool,
           ...listMcpToolsTool,
+          ...listMcpServersTool,
+          ...describeMcpServerTool,
+          ...describeMcpToolTool,
           ...publishSkillTool,
           ...assignSkillTool,
           ...unassignSkillTool,
@@ -895,6 +969,26 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           ...deleteAgentFromRegistryTool,
           ...listIntegrationsTool,
           ...describeIntegrationTool,
+          ...listWorkspacesTool,
+          ...describeWorkspaceTool,
+          ...listAgentsTool,
+          ...describeAgentTool,
+          ...listJobsTool,
+          ...describeJobTool,
+          ...listSignalsTool,
+          ...describeSignalTool,
+          ...listMemoryStoresTool,
+          ...describeMemoryStoreTool,
+          ...listCommunicatorsTool,
+          ...describeUserIdentityTool,
+          ...describeDraftTool,
+          ...listArtifactsTool,
+          ...listBundledAgentsTool,
+          ...describeBundledAgentTool,
+          ...listSessionsTool,
+          ...describeSessionTool,
+          ...listMemoryEntriesTool,
+          ...describeMemoryEntryTool,
           delegate: delegateTool,
           load_skill: loadSkillTool,
         };

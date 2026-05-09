@@ -3,7 +3,6 @@ import type { Logger } from "@atlas/logger";
 import { getAtlasDaemonUrl } from "@atlas/oapi-client";
 import { tool } from "ai";
 import { z } from "zod";
-import { envelope, type ReadResponse } from "./envelope.ts";
 
 const MemorySaveInput = z.object({
   memoryName: z
@@ -14,12 +13,6 @@ const MemorySaveInput = z.object({
   text: z.string().min(1),
   id: z.string().optional().describe("UUID; auto-generated if omitted"),
   metadata: z.record(z.string(), z.unknown()).optional(),
-});
-
-const MemoryReadInput = z.object({
-  memoryName: z.string(),
-  since: z.string().optional().describe("ISO 8601 — return entries after this timestamp"),
-  limit: z.number().int().positive().optional(),
 });
 
 const MemoryRemoveInput = z.object({
@@ -63,36 +56,6 @@ export function createMemorySaveTool(workspaceId: string, logger: Logger): Atlas
         } catch (err) {
           logger.error("memory_save fetch error", { workspaceId, memoryName, error: err });
           return { error: "Failed to save: network error" };
-        }
-      },
-    }),
-
-    memory_read: tool({
-      description:
-        "Read entries from a named memory store in this workspace, newest-first. " +
-        "Use for explicit lookup of prior preferences/notes/facts, time-filtered " +
-        "queries, or reading beyond the default auto-injection window. Returns " +
-        "a ReadResponse envelope: {items, provenance: 'user-authored', ...}.",
-      inputSchema: MemoryReadInput,
-      execute: async ({
-        memoryName,
-        since,
-        limit,
-      }): Promise<ReadResponse<unknown> | { error: string }> => {
-        const params = new URLSearchParams();
-        if (since) params.set("since", since);
-        if (limit !== undefined) params.set("limit", String(limit));
-        const query = params.toString();
-        const url = `${daemonUrl}/api/memory/${encodeURIComponent(workspaceId)}/narrative/${encodeURIComponent(memoryName)}${query ? `?${query}` : ""}`;
-        try {
-          const res = await fetch(url);
-          if (!res.ok) return { error: `Failed to read: HTTP ${res.status}` };
-          const raw: unknown = await res.json();
-          const items = Array.isArray(raw) ? raw : [];
-          return envelope({ items, source: "user-authored", origin: `memory:${memoryName}` });
-        } catch (err) {
-          logger.error("memory_read fetch error", { workspaceId, memoryName, error: err });
-          return { error: "Failed to read: network error" };
         }
       },
     }),
