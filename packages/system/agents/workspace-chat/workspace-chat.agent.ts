@@ -34,7 +34,7 @@ import {
   streamText,
 } from "ai";
 import { z } from "zod";
-import { fetchLinkSummary, formatIntegrationsSection } from "../link-context.ts";
+import { fetchLinkSummary } from "../link-context.ts";
 import { getBlock2Inputs } from "./block2-cache.ts";
 import {
   composeArtifactBlocks,
@@ -62,6 +62,10 @@ import { createBoundDraftTools } from "./tools/draft-tools.ts";
 import { createEnableMcpServerTool } from "./tools/enable-mcp-server.ts";
 import { createFileIOTools } from "./tools/file-io.ts";
 import { createInstallMcpServerTool } from "./tools/install-mcp-server.ts";
+import {
+  createDescribeIntegrationTool,
+  createListIntegrationsTool,
+} from "./tools/integration-tools.ts";
 import { createJobTools } from "./tools/job-tools.ts";
 import { createListCapabilitiesTool } from "./tools/list-capabilities.ts";
 import { createListMcpToolsTool } from "./tools/list-mcp-tools.ts";
@@ -370,7 +374,6 @@ export interface SystemBlocks {
 export function getSystemBlocks(
   workspaceSection: string,
   options?: {
-    integrations?: string;
     skills?: string;
     userIdentity?: string;
     onboarding?: string;
@@ -390,7 +393,6 @@ export function getSystemBlocks(
   const block2Parts: string[] = [];
   if (options?.cacheSaltTag) block2Parts.push(options.cacheSaltTag.trimEnd());
   block2Parts.push(workspaceSection);
-  if (options?.integrations) block2Parts.push(options.integrations);
   if (options?.skills) block2Parts.push(options.skills);
   if (options?.userIdentity) block2Parts.push(options.userIdentity);
 
@@ -664,9 +666,6 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           wsConfig,
         );
         const workspaceSection = composeWorkspaceSections(primaryWorkspaceSection, foregrounds);
-        const integrationsSection = linkSummary
-          ? formatIntegrationsSection(linkSummary)
-          : undefined;
 
         // Skills — scoped to this workspace (unassigned ∪ directly assigned), merged with foregrounds
         const primarySkills = await resolveVisibleSkills(workspaceId, SkillStorage);
@@ -733,6 +732,14 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
         // agent's on-disk artifacts.
         const registerAgentTool = createRegisterAgentTool(logger);
         const deleteAgentFromRegistryTool = createDeleteAgentFromRegistryTool(logger);
+
+        // Integration retrieval — the chat fetches Link credential status on
+        // demand instead of carrying a per-provider XML index in block 2.
+        // Connect/disconnect events used to bust the 1h workspace-stable
+        // cache; pulling the data per-turn-when-needed keeps the prefix
+        // stable across connect_service calls.
+        const listIntegrationsTool = createListIntegrationsTool(logger);
+        const describeIntegrationTool = createDescribeIntegrationTool(logger);
 
         // Job tools — pass session.streamId so nested job sessions inherit
         // the chat thread ID. The daemon's broadcast hook reads it to skip
@@ -886,6 +893,8 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           ...describeSkillTool,
           ...registerAgentTool,
           ...deleteAgentFromRegistryTool,
+          ...listIntegrationsTool,
+          ...describeIntegrationTool,
           delegate: delegateTool,
           load_skill: loadSkillTool,
         };
@@ -981,7 +990,6 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
         }
 
         const systemBlocks = getSystemBlocks(workspaceSection, {
-          integrations: integrationsSection,
           skills: skillsSection,
           userIdentity: userIdentitySection,
           onboarding: onboardingClause,

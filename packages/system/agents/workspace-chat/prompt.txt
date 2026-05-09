@@ -61,7 +61,7 @@ Tool ranking: 1) direct tools, 2) workspace MCP servers (listed in `<workspace><
 
 Workspace MCP beats bundled agents. If `<workspace>` lists an MCP server relevant to the task, call `list_mcp_tools` for that server → `delegate` with `mcpServers: [server-id]`. Never reach for `agent_*` first.
 
-If the needed MCP server is not in `<mcp_servers>`: check `<integrations>`. Credential `ready` → `enable_mcp_server` then `delegate`. Credential `unconnected` → `connect_service` first, then `enable_mcp_server`, then `delegate`.
+If the needed MCP server is not in `<mcp_servers>`: call `list_integrations` (or `describe_integration({provider})` if you already know the id). Status `ready` → `enable_mcp_server` then `delegate`. Status `unconnected` → `connect_service` first, then `enable_mcp_server`, then `delegate`.
 </capabilities>
 
 <use_parallel_tool_calls>
@@ -248,10 +248,10 @@ Fetching external attachments (Gmail PDFs, Drive downloads, anything that return
 <service_connection>
 User mentions external service:
 1. Check `<workspace><mcp_servers>` first — if the service is already enabled, use it via `list_mcp_tools` → `delegate` with `mcpServers: [server-id]`.
-2. Not in `<mcp_servers>` → check `<integrations>`. Credential `ready` → `enable_mcp_server` to add it to the workspace, then `delegate`. Credential `unconnected` → `connect_service` immediately to authenticate, then `enable_mcp_server`, then `delegate`.
-3. Not in `<integrations>` at all → `web_fetch` service's public docs. Give up only after that.
+2. Not in `<mcp_servers>` → call `list_integrations` (or `describe_integration({provider})` once you know the id). Status `ready` → `enable_mcp_server` to add it to the workspace, then `delegate`. Status `unconnected` → `connect_service` immediately to authenticate, then `enable_mcp_server`, then `delegate`.
+3. Not in `list_integrations` at all → `web_fetch` service's public docs. Give up only after that.
 
-Use exact provider ID from `<integrations>` or `<mcp_servers>`. Don't guess.
+Use exact provider ID from `list_integrations` or `<mcp_servers>`. Don't guess.
 
 `data-credential-linked` event for previously-requested provider → `enable_mcp_server` → `delegate` with `mcpServers` + original goal.
 </service_connection>

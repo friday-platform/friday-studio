@@ -89,6 +89,12 @@ describe("getSystemBlocks block-2 byte-stability", () => {
     return getSystemBlocks(workspaceSection, { skills: buildSkillsSection(skills) }).block2;
   }
 
+  it("does not include any <integrations> section regardless of options", () => {
+    const out = block2([skill("svelte", "core", "Patterns for Svelte 5.")]);
+    expect(out).not.toContain("<integrations");
+    expect(out).not.toContain("<service id=");
+  });
+
   it("is byte-equal when the skill summary stays the same but the full description changes", () => {
     const before = block2([skill("svelte", "core", "Patterns for Svelte 5 components.")]);
     const after = block2([

@@ -35,7 +35,6 @@ const mockGetDefaultProviderOpts = vi.hoisted(() => vi.fn());
 const mockValidateAtlasUIMessages = vi.hoisted(() => vi.fn());
 const mockPipeUIMessageStream = vi.hoisted(() => vi.fn());
 const mockFetchLinkSummary = vi.hoisted(() => vi.fn());
-const mockFormatIntegrationsSection = vi.hoisted(() => vi.fn());
 const mockFetchUserIdentitySection = vi.hoisted(() => vi.fn());
 const mockCreateConnectServiceTool = vi.hoisted(() => vi.fn());
 const mockCreateJobTools = vi.hoisted(() => vi.fn());
@@ -135,10 +134,7 @@ vi.mock("@atlas/skills", () => ({
   resolveVisibleSkills: mockResolveVisibleSkills,
 }));
 
-vi.mock("../link-context.ts", () => ({
-  fetchLinkSummary: mockFetchLinkSummary,
-  formatIntegrationsSection: mockFormatIntegrationsSection,
-}));
+vi.mock("../link-context.ts", () => ({ fetchLinkSummary: mockFetchLinkSummary }));
 
 vi.mock("../user-identity.ts", () => ({ fetchUserIdentitySection: mockFetchUserIdentitySection }));
 
@@ -282,7 +278,6 @@ function setupDefaultMocks(existingMessages: AtlasUIMessage[] = []): void {
 
   // Link / identity
   mockFetchLinkSummary.mockResolvedValue(null);
-  mockFormatIntegrationsSection.mockReturnValue("<integrations/>");
   mockFetchUserIdentitySection.mockResolvedValue(undefined);
 
   // Tools
@@ -378,7 +373,6 @@ describe("workspace-chat handler", () => {
     mockValidateAtlasUIMessages.mockReset();
     mockPipeUIMessageStream.mockReset();
     mockFetchLinkSummary.mockReset();
-    mockFormatIntegrationsSection.mockReset();
     mockFetchUserIdentitySection.mockReset();
     mockCreateConnectServiceTool.mockReset();
     mockCreateJobTools.mockReset();
