@@ -94,6 +94,8 @@ export async function exportGlobalSkills(
     const skill = skillResult.data;
     if (!skill) continue;
     if (skill.createdBy === SYSTEM_USER_ID) continue;
+    // Drafts (created via `create()` but never published) carry `name: null`
+    // and aren't part of the user's published library — silent-drop is correct.
     if (skill.name === null) continue;
 
     let archive: SkillRow["archive"] = null;
@@ -107,22 +109,21 @@ export async function exportGlobalSkills(
       };
     }
 
-    rows.push(
-      SkillRowSchema.parse({
-        skillId: skill.skillId,
-        namespace: skill.namespace,
-        name: skill.name,
-        version: skill.version,
-        description: skill.description,
-        descriptionManual: skill.descriptionManual,
-        disabled: skill.disabled,
-        frontmatter: skill.frontmatter,
-        instructions: skill.instructions,
-        createdBy: skill.createdBy,
-        createdAt: skill.createdAt.toISOString(),
-        archive,
-      }),
-    );
+    const row: SkillRow = {
+      skillId: skill.skillId,
+      namespace: skill.namespace,
+      name: skill.name,
+      version: skill.version,
+      description: skill.description,
+      descriptionManual: skill.descriptionManual,
+      disabled: skill.disabled,
+      frontmatter: skill.frontmatter,
+      instructions: skill.instructions,
+      createdBy: skill.createdBy,
+      createdAt: skill.createdAt.toISOString(),
+      archive,
+    };
+    rows.push(row);
   }
 
   if (rows.length === 0) {
@@ -149,13 +150,7 @@ export async function exportGlobalSkills(
 }
 
 function buildManifestYaml(manifest: GlobalSkillsManifest): string {
-  // Round-trip through JSON to drop any stray `undefined` values that @std/yaml
-  // can't serialize.
-  const safe = JSON.parse(JSON.stringify(GlobalSkillsManifestSchema.parse(manifest))) as Record<
-    string,
-    unknown
-  >;
-  return stringifyYaml(safe, { lineWidth: 100 });
+  return stringifyYaml(GlobalSkillsManifestSchema.parse(manifest), { lineWidth: 100 });
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
