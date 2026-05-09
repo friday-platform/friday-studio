@@ -1,11 +1,16 @@
 import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { FullManifestSchema, GlobalSkillsManifestSchema, SkillRowSchema } from "@atlas/bundle";
+import {
+  exportAll,
+  FullManifestSchema,
+  GlobalSkillsManifestSchema,
+  SkillRowSchema,
+} from "@atlas/bundle";
 import { createStubPlatformModels } from "@atlas/llm";
 import { SkillStorage } from "@atlas/skills";
 import type { WorkspaceManager } from "@atlas/workspace";
-import { parse as parseYaml } from "@std/yaml";
+import { parse as parseYaml, stringify as stringifyYaml } from "@std/yaml";
 import { Hono } from "hono";
 import JSZip from "jszip";
 import { afterEach, beforeEach, describe, expect, it, test, vi } from "vitest";
@@ -251,24 +256,24 @@ describe("bundle-all endpoints (end-to-end)", () => {
       instructions: "do thing 1",
       archive: archiveBytes,
     });
-    expect.assert(skill1.ok === true);
+    expect(skill1.ok).toBe(true);
     const skill2 = await SkillStorage.publish(namespace, `${prefix}skill-2`, userId, {
       description: "skill 2 (no archive)",
       instructions: "do thing 2",
     });
-    expect.assert(skill2.ok === true);
+    expect(skill2.ok).toBe(true);
     const skill3 = await SkillStorage.publish(namespace, `${prefix}skill-3`, userId, {
       description: "skill 3 (no archive)",
       instructions: "do thing 3",
     });
-    expect.assert(skill3.ok === true);
+    expect(skill3.ok).toBe(true);
 
     // System skill — must be filtered out by the export.
     const sysResult = await SkillStorage.publish(namespace, `${prefix}sys`, "system", {
       description: "system skill that must NOT export",
       instructions: "system",
     });
-    expect.assert(sysResult.ok === true);
+    expect(sysResult.ok).toBe(true);
 
     const { app } = createAppMulti({ workspaces: [], homeDir });
 
@@ -371,9 +376,51 @@ describe("bundle-all endpoints (end-to-end)", () => {
       const skillId = skillIdsByName.get(name);
       expect(skillId).toBeDefined();
       const after = await SkillStorage.getBySkillId(skillId ?? "");
-      expect.assert(after.ok === true);
+      expect(after.ok).toBe(true);
+      if (!after.ok) throw new Error(after.error);
       expect(after.data).not.toBeNull();
       expect(after.data?.version).toBe(1);
     }
+  });
+
+  // Guards the route's `instanceof LegacyArchiveError` branch at
+  // index.ts:925-928. Deleting that check would silently route the failure
+  // into the generic `errors[]` bucket — exactly the silent-failure pattern
+  // PR #242 is meant to kill. We construct a legacy-shaped inner zip
+  // (manifest with `source.filename: "skills.db"`, matching the unit test
+  // at packages/bundle/src/global-skills.test.ts:445-459), wrap it in a
+  // real outer envelope via `exportAll`, and POST through the route.
+  it("POST /import-bundle-all maps LegacyArchiveError to legacy-archive-rejected", async () => {
+    const legacyManifest = {
+      schemaVersion: 1,
+      kind: "global-skills",
+      source: { filename: "skills.db", sha256: `sha256:${"0".repeat(64)}` },
+    };
+    const innerZip = new JSZip();
+    innerZip.file("manifest.yml", stringifyYaml(legacyManifest));
+    const innerBytes = await innerZip.generateAsync({ type: "uint8array" });
+
+    const outerBytes = new Uint8Array(
+      await exportAll({
+        workspaces: [],
+        mode: "migration",
+        global: { skills: innerBytes },
+      }),
+    );
+
+    const { app } = createAppMulti({ workspaces: [], homeDir });
+    const form = new FormData();
+    form.set("bundle", new File([outerBytes], "full.zip", { type: "application/zip" }));
+    const response = await app.request("/import-bundle-all", { method: "POST", body: form });
+    expect(response.status).toBe(200);
+
+    const ResponseSchema = z.object({
+      globalSkills: z.object({ kind: z.literal("legacy-archive-rejected") }),
+      errors: z.array(z.object({ name: z.string(), error: z.string() })),
+    });
+    const body = ResponseSchema.parse(await response.json());
+    expect(body.globalSkills.kind).toBe("legacy-archive-rejected");
+    // The `instanceof` check must route the error AWAY from the generic bucket.
+    expect(body.errors.find((e) => e.name === "global.skills")).toBeUndefined();
   });
 });
