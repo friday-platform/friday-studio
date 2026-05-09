@@ -737,7 +737,14 @@
        the bottom of the time / usage labels instead of floating above
        them. The SVG fills the trigger; the dots sit at viewBox center,
        which now overlaps the text's mid-band rather than the row's
-       own taller bounding box. */
+       own taller bounding box.
+       `margin-inline-start: auto` parks the trigger at the trailing
+       edge of the row regardless of role — when the row has spare
+       horizontal space (assistant rows fill the full column width),
+       the auto-margin consumes it and pushes the trigger right; when
+       the row is content-width (user rows), the auto-margin
+       collapses to zero and the trigger sits adjacent to its
+       neighbor. Either way, ellipsis docks right. */
     align-items: center;
     background: transparent;
     block-size: 12px;
@@ -748,6 +755,7 @@
     display: inline-flex;
     inline-size: 16px;
     justify-content: center;
+    margin-inline-start: auto;
     padding: 0;
     transition: background-color 120ms ease, color 120ms ease;
   }
