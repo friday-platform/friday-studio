@@ -18,7 +18,7 @@
 </script>
 
 {#if visible}
-  <header class="update-banner" role="banner" aria-live="polite">
+  <header class="update-banner" aria-live="polite">
     <span class="message">
       A new version of Friday Studio ({updateStatus.latest}) is available.
     </span>

@@ -22,18 +22,22 @@
   }
 
   function shortJson(value: unknown, max = 600): string {
-    let s: string;
+    // JSON.stringify(undefined) returns undefined (not a string), which
+    // crashes the render of error-state tool parts that never received an
+    // `input` field. Coerce to "undefined" so callers always get a string.
+    let s: string | undefined;
     try {
       s = JSON.stringify(value, null, 2);
     } catch {
       s = String(value);
     }
+    if (s === undefined) return String(value);
     return s.length > max ? `${s.slice(0, max)}\n… (${s.length - max} more chars)` : s;
   }
 
   function fullJson(value: unknown): string {
     try {
-      return JSON.stringify(value, null, 2);
+      return JSON.stringify(value, null, 2) ?? String(value);
     } catch {
       return String(value);
     }

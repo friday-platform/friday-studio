@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { CreateDialogProps } from "@melt-ui/svelte";
-  import type { Snippet } from "svelte";
+  import { untrack, type Snippet } from "svelte";
   import type { Writable } from "svelte/store";
   import { createContext } from "./context";
 
@@ -8,7 +8,7 @@
 
   let { children, ...rest }: Props = $props();
 
-  const { open } = createContext(rest);
+  const { open } = createContext(untrack(() => rest));
 </script>
 
 {@render children(open)}

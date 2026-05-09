@@ -34,7 +34,7 @@
   let { workspaceId, kind, onConnected, onCancel }: Props = $props();
 
   const detailsQuery = createQuery(() => linkProviderQueries.providerDetails(kind));
-  const connect = useCredentialConnect(kind);
+  const connect = useCredentialConnect(() => kind);
   const connectMut = useConnectCommunicator();
 
   let wireError = $state<string | null>(null);
