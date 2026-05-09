@@ -135,7 +135,7 @@
     "npm:hono@4.12.18": "4.12.18",
     "npm:hono@^4.10.4": "4.12.18",
     "npm:hono@^4.11.1": "4.12.18",
-    "npm:immer@^11.1.4": "11.1.4",
+    "npm:immer@^11.1.8": "11.1.8",
     "npm:ink@^7.0.1": "7.0.1_@types+react@19.2.14_react@19.2.5",
     "npm:jira.js@^5.3.1": "5.3.1",
     "npm:jose@6.2.3": "6.2.3",
@@ -3725,8 +3725,8 @@
     "immediate@3.0.6": {
       "integrity": "sha512-XXOFtyqDjNDAQxVfYxuF7g9Il/IbWmmlQg2MYKOH8ExIT1qg6xc4zyS3HaEEATgs1btfzxq15ciUiY7gjSXRGQ=="
     },
-    "immer@11.1.4": {
-      "integrity": "sha512-XREFCPo6ksxVzP4E0ekD5aMdf8WMwmdNaz6vuvxgI40UaEiu6q3p8X52aU6GdyvLY3XXX/8R7JOTXStz/nBbRw=="
+    "immer@11.1.8": {
+      "integrity": "sha512-/tbkHMW7y10Lx6i1crLjD4/OhNkRG+Fo7byZHtah0547nIeXYcpIXaUh0IAQY6gO5459qpGGYapcEOHtFXkIuA=="
     },
     "imurmurhash@0.1.4": {
       "integrity": "sha512-JmXMZ6wuvDmLiHEml9ykzqO6lwFbof0GG4IkcGaENdCRDDmMVnny7s5HsIgHCbaq0w2MyPhDqkhTUgS2LU2PHA=="
@@ -6183,7 +6183,7 @@
           "dependencies": [
             "npm:@jsr/std__yaml@^1.0.10",
             "npm:cron-parser@^5.5.0",
-            "npm:immer@^11.1.4",
+            "npm:immer@^11.1.8",
             "npm:vitest@^4.1.0",
             "npm:zod@^4.3.5"
           ]
