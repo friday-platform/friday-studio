@@ -110,9 +110,6 @@
       {pct(cacheHitRatio)}
     </span>
   {/if}
-  {#if durationMs !== null}
-    <span class="pill duration">{fmtDuration(durationMs)}</span>
-  {/if}
 </span>
 
 <style>

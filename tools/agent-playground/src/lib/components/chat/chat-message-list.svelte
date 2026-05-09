@@ -33,6 +33,27 @@
     return DATETIME_FMT.format(new Date(timestamp));
   }
 
+  /** Per-turn wall-clock duration in ms, or `null` when either
+   *  endpoint is missing / malformed. */
+  function turnDurationMs(msg: ChatMessage): number | null {
+    const start = msg.metadata?.startTimestamp;
+    const end = msg.metadata?.endTimestamp;
+    if (!start || !end) return null;
+    const a = Date.parse(start);
+    const b = Date.parse(end);
+    if (Number.isNaN(a) || Number.isNaN(b) || b < a) return null;
+    return b - a;
+  }
+
+  /** 950ms / 4.2s / 1m 12s — kept terse to fit alongside the time. */
+  function formatDuration(ms: number): string {
+    if (ms < 1000) return `${ms}ms`;
+    if (ms < 60_000) return `${(ms / 1000).toFixed(ms < 10_000 ? 1 : 0)}s`;
+    const minutes = Math.floor(ms / 60_000);
+    const seconds = Math.floor((ms % 60_000) / 1000);
+    return seconds === 0 ? `${minutes}m` : `${minutes}m ${seconds}s`;
+  }
+
   // Global alt-key state. Held → time elements display the full
   // date + time format; released → back to compact HH:MM:SS. Single
   // listener pair on window keeps every message reactive to one
@@ -497,6 +518,7 @@
                System messages stay quiet (no menu, no time). -->
           {@const fullTime = formatDateTimeFull(message.timestamp)}
           {@const compactTime = formatTimeShort(message.timestamp)}
+          {@const duration = message.role === "assistant" ? turnDurationMs(message) : null}
           <div class="message-actions" class:assistant={message.role === "assistant"} class:user={message.role === "user"}>
             <DropdownMenu.Root positioning={{ placement: message.role === "user" ? "bottom-end" : "bottom-start" }}>
               {#snippet children()}
@@ -523,6 +545,9 @@
             <span class="message-time" title={fullTime}>
               {altPressed ? fullTime : compactTime}
             </span>
+            {#if duration !== null}
+              <span class="turn-duration" title="turn duration">{formatDuration(duration)}</span>
+            {/if}
             {#if message.role === "assistant" && message.metadata?.usage}
               <UsageBadge
                 usage={message.metadata.usage}
@@ -596,7 +621,11 @@
      above it. */
   .message-actions {
     align-items: flex-end;
-    column-gap: var(--size-2);
+    /* More breathing room between items so glyphs don't crowd each
+       other. Hidden items (like cache %) live at the trailing edge of
+       the row; this gap also keeps them from sticking to their
+       neighbor when they fade in. */
+    column-gap: 1rem;
     display: flex;
     flex-wrap: wrap;
     font-size: 0.7rem;
@@ -624,6 +653,13 @@
   }
 
   .message-time {
+    color: var(--text-faded);
+    cursor: default;
+    font-variant-numeric: tabular-nums;
+    user-select: none;
+  }
+
+  .turn-duration {
     color: var(--text-faded);
     cursor: default;
     font-variant-numeric: tabular-nums;

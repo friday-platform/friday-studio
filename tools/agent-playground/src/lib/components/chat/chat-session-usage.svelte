@@ -118,27 +118,55 @@
     {/if}
     <span class="metric turns">
       {fmt(totals.turnsWithUsage)}
-      {#if altPressed}<span class="alt-label">turn{totals.turnsWithUsage === 1 ? "" : "s"}</span>{/if}
+      <span class="turns-label">turn{totals.turnsWithUsage === 1 ? "" : "s"}</span>
     </span>
   </div>
 {/if}
 
 <style>
+  /* The session usage bar is hidden by default and reveals when the
+     chat surface is hovered. Triggering on a parent hover requires
+     the parent to opt in: this component sets `--session-usage-state`
+     via a data attribute on its root, but the actual show/hide rule
+     keys off the surrounding `.chat-main:hover` selector applied in
+     `user-chat.svelte`. Inside this scoped style block we only
+     declare the resting and revealed states; the chooser sits with
+     the parent layout so this component stays self-contained. */
   .session-usage {
     align-items: center;
     background: var(--surface-bright);
     border-block-end: 1px solid var(--border);
     color: var(--text-faded);
     display: flex;
-    /* All stats hug the right edge. Extra right padding clears the
-       chat surface's rounded corner so the digits don't kiss the
-       border. */
-    justify-content: flex-end;
     font-size: 0.7rem;
-    gap: 0.75rem;
-    padding-block: 0.3rem;
+    /* Right-anchored stats with generous spacing between items. */
+    gap: 1.25rem;
+    justify-content: flex-end;
+    /* Hidden state: collapse to zero height, transparent, but stay in
+       the DOM so the layout doesn't shift when it appears. The
+       parent layout file flips this open via a `:hover`-scoped rule
+       on `.chat-main`. */
+    max-block-size: 0;
+    opacity: 0;
+    overflow: hidden;
+    padding-block: 0;
     padding-inline-end: 1.5rem;
     padding-inline-start: 0.75rem;
+    pointer-events: none;
+    transition: max-block-size 200ms ease, opacity 160ms ease, padding-block 200ms ease;
+  }
+  /* Revealed: max-height generous enough for the row's intrinsic
+     height in any locale; opacity full; padding restored so the bar
+     has its breathing room when shown. The selector scopes the
+     reveal to a `.chat-main` ancestor that's hovered or focused-
+     within. */
+  :global(.chat-main:hover) .session-usage,
+  :global(.chat-main:focus-within) .session-usage,
+  .session-usage:hover {
+    max-block-size: 3rem;
+    opacity: 1;
+    padding-block: 0.3rem;
+    pointer-events: auto;
   }
   .metric {
     font-variant-numeric: tabular-nums;
@@ -150,28 +178,21 @@
     margin-inline-end: 0.2rem;
     text-transform: uppercase;
   }
-  /* Cache hit ratio is interesting only when something looks off, not
-     on every glance — fade to invisible by default and reveal when
-     the bar is hovered (or focused) so the operator can pull it up
-     deliberately. Removed the leading "cache" word since the hover
-     reveal carries the meaning; alt mode adds the label back for
-     learners. */
   .cache-text {
     color: var(--text-faded);
     font-variant-numeric: tabular-nums;
-    opacity: 0;
-    transition: opacity 120ms ease;
-  }
-  .session-usage:hover .cache-text,
-  .session-usage:focus-within .cache-text {
-    opacity: 1;
   }
   .cache-text.hit {
     /* Muted green: half green-primary, half body-text. Stays low-noise
-       in both themes; only visible on hover. */
+       in both themes. */
     color: color-mix(in srgb, var(--green-primary) 50%, var(--text));
   }
   .turns {
     color: var(--text-faded);
+  }
+  .turns-label {
+    color: var(--text-faded);
+    margin-inline-start: 0.2rem;
+    text-transform: lowercase;
   }
 </style>
