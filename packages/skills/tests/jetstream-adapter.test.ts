@@ -4,7 +4,6 @@
  * archive round-trip + assignments + delete.
  */
 
-import { createJetStreamKVStorage } from "@atlas/storage";
 import { startNatsTestServer, type TestNatsServer } from "@atlas/core/test-utils/nats-test-server";
 import { connect, type NatsConnection } from "nats";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -208,9 +207,6 @@ describe("JetStreamSkillAdapter", () => {
 });
 
 describe("JetStreamSkillAdapter.replayVersion", () => {
-  // Each test uses a unique skillId so we can `listVersions(ns, name)` against
-  // skills that publish() never wrote (replay does not maintain the by_name
-  // index — that's the migration/bundle caller's job once per skill).
   function buildRecord(overrides: Partial<SkillRecord> & Pick<SkillRecord, "skillId">): SkillRecord {
     return {
       id: overrides.id ?? `id-${overrides.skillId}-${overrides.version ?? 1}`,
@@ -229,20 +225,6 @@ describe("JetStreamSkillAdapter.replayVersion", () => {
     };
   }
 
-  // Replay does NOT write the by_name index, so `listVersions(ns, name)` —
-  // which resolves via by_name first — won't see replayed-only skills. Tests
-  // that need it set the index manually, mirroring what the migration/bundle
-  // caller will do after the per-skill replay loop.
-  async function setByNameIndex(
-    nc: NatsConnection,
-    namespace: string,
-    name: string,
-    skillId: string,
-  ): Promise<void> {
-    const kv = await createJetStreamKVStorage(nc, { bucket: "SKILLS", history: 1 });
-    await kv.set<string>(["index", "by_name", namespace, name], skillId);
-  }
-
   it("replays a record verbatim — version/id/createdAt/archive all honored", async () => {
     const adapter = new JetStreamSkillAdapter(nc);
     const skillId = "replay-happy-skill";
@@ -259,8 +241,6 @@ describe("JetStreamSkillAdapter.replayVersion", () => {
     const result = await adapter.replayVersion(record, archive);
     expect.assert(result.ok === true);
 
-    await setByNameIndex(nc, "user", "happy-replay", skillId);
-
     const byId = await adapter.getById("custom-id-happy");
     expect.assert(byId.ok === true);
     expect(byId.data?.skillId).toBe(skillId);
@@ -275,6 +255,10 @@ describe("JetStreamSkillAdapter.replayVersion", () => {
     expect.assert(bySkill.ok === true);
     expect(bySkill.data?.version).toBe(5);
     expect(Array.from(bySkill.data?.archive ?? [])).toEqual([10, 20, 30, 40]);
+
+    const byName = await adapter.get("user", "happy-replay");
+    expect.assert(byName.ok === true);
+    expect(byName.data?.skillId).toBe(skillId);
   });
 
   it("preserves version gaps — replaying [1, 3, 5] yields listVersions desc [5, 3, 1]", async () => {
@@ -286,11 +270,32 @@ describe("JetStreamSkillAdapter.replayVersion", () => {
       );
       expect.assert(r.ok === true);
     }
-    await setByNameIndex(nc, "user", "gap-replay", skillId);
 
     const versions = await adapter.listVersions("user", "gap-replay");
     expect.assert(versions.ok === true);
     expect(versions.data.map((v) => v.version)).toEqual([5, 3, 1]);
+  });
+
+  it("renamed-across-versions: each (ns, name) pair resolves the same skillId", async () => {
+    const adapter = new JetStreamSkillAdapter(nc);
+    const skillId = "replay-rename-skill";
+    // v1 under "old-name", v2 under "new-name" — both should listVersions the same skillId.
+    const v1 = await adapter.replayVersion(
+      buildRecord({ id: "rn-1", skillId, name: "old-name", version: 1 }),
+    );
+    expect.assert(v1.ok === true);
+    const v2 = await adapter.replayVersion(
+      buildRecord({ id: "rn-2", skillId, name: "new-name", version: 2 }),
+    );
+    expect.assert(v2.ok === true);
+
+    const oldVersions = await adapter.listVersions("user", "old-name");
+    expect.assert(oldVersions.ok === true);
+    expect(oldVersions.data.map((v) => v.version)).toEqual([2, 1]);
+
+    const newVersions = await adapter.listVersions("user", "new-name");
+    expect.assert(newVersions.ok === true);
+    expect(newVersions.data.map((v) => v.version)).toEqual([2, 1]);
   });
 
   it("omitting archive bytes leaves the version archive-less", async () => {

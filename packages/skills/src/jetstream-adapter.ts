@@ -298,10 +298,12 @@ export class JetStreamSkillAdapter implements SkillStorageAdapter, SkillReplayer
 
   /**
    * Write a historical skill version verbatim — version, id, createdAt,
-   * disabled, frontmatter, etc. are honored as supplied. Skips the
-   * by_name index and prior-version name propagation that `publish` performs;
-   * the caller (bundle import, migration) is responsible for setting the
-   * by_name index once after replaying every version for a skill.
+   * disabled, frontmatter, etc. are honored as supplied. Skips `publish`'s
+   * name-*propagation* loop (rewriting prior versions' name field, deleting
+   * the old by_name entry on rename) so each replayed `(namespace, name)`
+   * pair stays addressable independently. Still writes `(namespace, name)
+   * → skillId` into the by_name index so `get(ns, name)` and
+   * `listVersions(ns, name)` resolve replayed skills directly.
    *
    * Refuses to overwrite an existing row at `(skillId, version)`. Callers
    * should pre-filter via `listVersions()`; this guard exists to surface
@@ -330,6 +332,9 @@ export class JetStreamSkillAdapter implements SkillStorageAdapter, SkillReplayer
         skillId: record.skillId,
         version: record.version,
       });
+      if (record.name !== null) {
+        await kv.set<string>(["index", "by_name", record.namespace, record.name], record.skillId);
+      }
       return success(undefined);
     } catch (e) {
       return fail(stringifyError(e));
