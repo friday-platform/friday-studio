@@ -6,7 +6,7 @@
   "main": "./mod.ts",
   "dependencies": {
     "@ai-sdk/groq": "^3.0.39",
-    "@anthropic-ai/claude-agent-sdk": "^0.2.126",
+    "@anthropic-ai/claude-agent-sdk": "^0.2.137",
     "@atlas/logger": "workspace:*",
     "@ai-sdk/anthropic": "^3.0.76",
     "@ai-sdk/google": "^3.0.71",
