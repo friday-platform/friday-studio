@@ -192,15 +192,18 @@ describe("m_20260503_110100_skills_to_jetstream", () => {
 
   it("preserves version gaps — source [1, 3, 5] → listVersions [5, 3, 1]", async () => {
     const home = await freshHome();
-    writeSkillsDb(home, [1, 3, 5].map((version) => ({
-      id: `gap-${version}`,
-      skill_id: "skill-gap",
-      namespace: "user",
-      name: "gap-skill",
-      version,
-      instructions: `v${version}`,
-      created_at: `2025-12-0${version}T00:00:00.000Z`,
-    })));
+    writeSkillsDb(
+      home,
+      [1, 3, 5].map((version) => ({
+        id: `gap-${version}`,
+        skill_id: "skill-gap",
+        namespace: "user",
+        name: "gap-skill",
+        version,
+        instructions: `v${version}`,
+        created_at: `2025-12-0${version}T00:00:00.000Z`,
+      })),
+    );
 
     const facade = createJetStreamFacade(nc);
     await migration.run({ nc, js: facade, logger: noopLogger });

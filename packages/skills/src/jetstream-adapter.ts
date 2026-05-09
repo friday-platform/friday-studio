@@ -311,11 +311,7 @@ export class JetStreamSkillAdapter implements SkillStorageAdapter, SkillReplayer
    */
   async replayVersion(record: SkillRecord, archive?: Uint8Array): Promise<Result<void, string>> {
     const kv = await this.getKV();
-    const existing = await kv.get<SkillRecord>([
-      "skill",
-      record.skillId,
-      String(record.version),
-    ]);
+    const existing = await kv.get<SkillRecord>(["skill", record.skillId, String(record.version)]);
     if (existing) {
       return fail(
         `replayVersion: skill ${record.skillId} version ${record.version} already exists`,

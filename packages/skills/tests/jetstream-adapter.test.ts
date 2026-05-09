@@ -207,7 +207,9 @@ describe("JetStreamSkillAdapter", () => {
 });
 
 describe("JetStreamSkillAdapter.replayVersion", () => {
-  function buildRecord(overrides: Partial<SkillRecord> & Pick<SkillRecord, "skillId">): SkillRecord {
+  function buildRecord(
+    overrides: Partial<SkillRecord> & Pick<SkillRecord, "skillId">,
+  ): SkillRecord {
     return {
       id: overrides.id ?? `id-${overrides.skillId}-${overrides.version ?? 1}`,
       skillId: overrides.skillId,
