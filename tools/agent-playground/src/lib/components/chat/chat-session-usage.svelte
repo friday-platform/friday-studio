@@ -124,49 +124,22 @@
 {/if}
 
 <style>
-  /* The session usage bar is hidden by default and reveals when the
-     chat surface is hovered. Triggering on a parent hover requires
-     the parent to opt in: this component sets `--session-usage-state`
-     via a data attribute on its root, but the actual show/hide rule
-     keys off the surrounding `.chat-main:hover` selector applied in
-     `user-chat.svelte`. Inside this scoped style block we only
-     declare the resting and revealed states; the chooser sits with
-     the parent layout so this component stays self-contained. */
+  /* Session usage bar — always visible, no background. Sits inline
+     with the chat surface as a thin row of right-anchored stats. No
+     border-block-end either; the row is supposed to read as
+     overlay-style observability data, not a UI bar with its own
+     chrome. */
   .session-usage {
     align-items: center;
-    background: var(--surface-bright);
-    border-block-end: 1px solid var(--border);
     color: var(--text-faded);
     display: flex;
     font-size: 0.7rem;
     /* Right-anchored stats with generous spacing between items. */
     gap: 1.25rem;
     justify-content: flex-end;
-    /* Hidden state: collapse to zero height, transparent, but stay in
-       the DOM so the layout doesn't shift when it appears. The
-       parent layout file flips this open via a `:hover`-scoped rule
-       on `.chat-main`. */
-    max-block-size: 0;
-    opacity: 0;
-    overflow: hidden;
-    padding-block: 0;
+    padding-block: 0.3rem;
     padding-inline-end: 1.5rem;
     padding-inline-start: 0.75rem;
-    pointer-events: none;
-    transition: max-block-size 200ms ease, opacity 160ms ease, padding-block 200ms ease;
-  }
-  /* Revealed: max-height generous enough for the row's intrinsic
-     height in any locale; opacity full; padding restored so the bar
-     has its breathing room when shown. The selector scopes the
-     reveal to a `.chat-main` ancestor that's hovered or focused-
-     within. */
-  :global(.chat-main:hover) .session-usage,
-  :global(.chat-main:focus-within) .session-usage,
-  .session-usage:hover {
-    max-block-size: 3rem;
-    opacity: 1;
-    padding-block: 0.3rem;
-    pointer-events: auto;
   }
   .metric {
     font-variant-numeric: tabular-nums;
