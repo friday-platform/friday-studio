@@ -9,8 +9,8 @@
     "./shared-schemas": "./src/shared-schemas.ts"
   },
   "dependencies": {
-    "@ai-sdk/fireworks": "2.0.50",
-    "@ai-sdk/groq": "3.0.38",
+    "@ai-sdk/fireworks": "2.0.52",
+    "@ai-sdk/groq": "3.0.39",
     "@ai-sdk/provider": "^3.0.10",
     "@anthropic-ai/claude-agent-sdk": "^0.2.126",
     "@atlas/agent-sdk": "workspace:*",
@@ -22,7 +22,7 @@
     "@db/sqlite": "npm:@jsr/db__sqlite@^0.12.0",
     "@coderabbitai/bitbucket": "^1.1.4",
     "@hubspot/api-client": "^13.4.0",
-    "ai": "^6.0.174",
+    "ai": "^6.0.177",
     "jira.js": "^5.3.1",
     "markdown-it": "^14.1.1",
     "parallel-web": "0.4.1",

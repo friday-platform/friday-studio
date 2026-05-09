@@ -12,7 +12,7 @@
     "format": "prettier --write ."
   },
   "dependencies": {
-    "@ai-sdk/svelte": "^4.0.174",
+    "@ai-sdk/svelte": "^4.0.177",
     "@atlas/agent-sdk": "workspace:*",
     "@atlas/atlasd": "workspace:*",
     "@atlas/bundled-agents": "workspace:*",
@@ -39,7 +39,7 @@
     "@tanstack/svelte-query": "^6.1.27",
     "@tanstack/svelte-table": "9.0.0-alpha.41",
     "@types/deno": "2.5.0",
-    "ai": "^6.0.174",
+    "ai": "^6.0.177",
     "codemirror": "^6.0.2",
     "diff": "^9.0.0",
     "hono": "4.12.18",
