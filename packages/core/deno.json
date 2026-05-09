@@ -24,6 +24,7 @@
     "./errors": "./src/errors.ts",
     "./chat/chat-sdk-state-adapter": "./src/chat/chat-sdk-state-adapter.ts",
     "./chat/storage": "./src/chat/storage.ts",
+    "./chat/cache-salt-storage": "./src/chat/cache-salt-storage.ts",
     "./chat/sse-manager": "./src/chat/sse-manager.ts",
     "./users/storage": "./src/users/storage.ts",
     "./session/session-events": "./src/session/session-events.ts",

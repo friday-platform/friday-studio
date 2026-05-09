@@ -22,6 +22,7 @@ import { createDelegateTool } from "@atlas/core/delegate";
 import { createErrorCause, getErrorDisplayMessage } from "@atlas/core/errors";
 import { buildTemporalFacts, type PlatformModels, smallLLM } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
+import { getAtlasDaemonUrl } from "@atlas/oapi-client";
 import type { SkillSummary } from "@atlas/skills";
 import { createLoadSkillTool, resolveVisibleSkills, SkillStorage } from "@atlas/skills";
 import {
@@ -333,9 +334,21 @@ export function getSystemBlocks(
     userIdentity?: string;
     onboarding?: string;
     userProfile?: string;
+    /**
+     * Optional cache-salt tag prepended to block 2. The /debug page
+     * "force fresh next turn" button bumps a workspace-scoped salt;
+     * the chat handler reads it and threads the rendered tag here so
+     * a one-byte change at block 2's prefix invalidates the cached
+     * breakpoint for every chat in the workspace. Empty string when
+     * the workspace has never bumped — no behavior change in that
+     * case.
+     */
+    cacheSaltTag?: string;
   },
 ): SystemBlocks {
-  const block2Parts = [workspaceSection];
+  const block2Parts: string[] = [];
+  if (options?.cacheSaltTag) block2Parts.push(options.cacheSaltTag.trimEnd());
+  block2Parts.push(workspaceSection);
   if (options?.integrations) block2Parts.push(options.integrations);
   if (options?.skills) block2Parts.push(options.skills);
   if (options?.userIdentity) block2Parts.push(options.userIdentity);
@@ -879,12 +892,40 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
         const onboardingClause = buildOnboardingClause(profileState);
         const userProfileClause = buildUserProfileClause(profileState);
 
+        // Workspace prompt-cache salt — read once per turn from the
+        // daemon HTTP API. Embedding this at the start of block 2 lets
+        // the operator force a cache invalidation by bumping the salt
+        // (POST /_bump-cache-salt). When salt is 0 (never bumped) we
+        // omit the tag entirely so the prefix matches what it was
+        // before the salt mechanism existed — no behavior change for
+        // workspaces that never use the button. Failures fall through
+        // to "no salt"; a transient KV problem doesn't block a turn.
+        let cacheSaltTag = "";
+        try {
+          const saltRes = await fetch(
+            `${getAtlasDaemonUrl()}/api/workspaces/${encodeURIComponent(workspaceId)}/_cache-salt`,
+          );
+          if (saltRes.ok) {
+            const data = (await saltRes.json()) as { salt?: number };
+            const salt = typeof data.salt === "number" ? data.salt : 0;
+            if (salt > 0) {
+              cacheSaltTag = `<cache_salt workspace="${workspaceId}" version="${salt}"/>\n\n`;
+            }
+          }
+        } catch (err) {
+          logger.debug("cache-salt fetch failed; proceeding with no salt", {
+            workspaceId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+
         const systemBlocks = getSystemBlocks(workspaceSection, {
           integrations: integrationsSection,
           skills: skillsSection,
           userIdentity: userIdentitySection,
           onboarding: onboardingClause,
           userProfile: userProfileClause,
+          cacheSaltTag,
         });
         const systemPrompt = flattenSystemBlocks(systemBlocks);
 

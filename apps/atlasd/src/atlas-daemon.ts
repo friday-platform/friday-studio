@@ -83,6 +83,7 @@ import { createPlatformSignalRoutes } from "../routes/signals/platform.ts";
 import { skillsRoutes } from "../routes/skills.ts";
 import { userRoutes } from "../routes/user/index.ts";
 import { eventsRoutes, workspaceEventsRoutes } from "../routes/workspace-events.ts";
+import workspaceCacheSaltRoutes from "../routes/workspaces/cache-salt.ts";
 import workspaceChatRoutes from "../routes/workspaces/chat.ts";
 import workspaceChatDebugRoutes from "../routes/workspaces/chat-debug.ts";
 import { configRoutes as workspaceConfigRoutes } from "../routes/workspaces/config.ts";
@@ -1344,6 +1345,7 @@ export class AtlasDaemon {
     this.app.route("/api/workspaces/:workspaceId/config", workspaceConfigRoutes);
     this.app.route("/api/workspaces/:workspaceId/chat", workspaceChatRoutes);
     this.app.route("/api/workspaces/:workspaceId/chat", workspaceChatDebugRoutes);
+    this.app.route("/api/workspaces/:workspaceId", workspaceCacheSaltRoutes);
     this.app.route("/api/workspaces/:workspaceId/integrations", integrationRoutes);
     this.app.route("/api/workspaces/:workspaceId/mcp", mcpRoutes);
     this.app.route("/api/workspaces", workspaceEventsRoutes);

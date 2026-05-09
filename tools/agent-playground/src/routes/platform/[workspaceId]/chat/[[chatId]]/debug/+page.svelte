@@ -66,6 +66,37 @@
     }
   }
 
+  // Workspace prompt-cache salt — bumping invalidates the cache prefix
+  // from block 2 onward for every chat in this workspace. The chat
+  // handler reads the salt on the next turn and embeds it as a tiny
+  // `<cache_salt .../>` tag at the start of block 2; the one-byte
+  // change forces Anthropic to re-write the cached breakpoint. Block
+  // 1 (`prompt.txt`, weeks-stable) keeps its cross-workspace hit.
+  let bumping = $state(false);
+  async function bumpCacheSalt() {
+    bumping = true;
+    try {
+      const res = await fetch(
+        `/api/daemon/api/workspaces/${encodeURIComponent(data.workspaceId)}/_bump-cache-salt`,
+        { method: "POST" },
+      );
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        alert(`Bump failed: ${res.status} ${text}`);
+        return;
+      }
+      const body = (await res.json()) as { salt?: number };
+      const v = typeof body.salt === "number" ? body.salt : "?";
+      alert(
+        `Cache salt bumped to v${v}. Next turn in this workspace writes a fresh cache; turns after that hit the new prefix.`,
+      );
+    } catch (err) {
+      alert(`Bump failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      bumping = false;
+    }
+  }
+
   function download() {
     // Full server-load payload as one JSON blob — chat metadata, messages,
     // sub-sessions, and the JetStream/KV debug snapshot. The same shape the
@@ -189,6 +220,9 @@
       <div class="toolbar">
         <button type="button" onclick={refresh} disabled={refreshing}>
           {refreshing ? "refreshing…" : "↻ refresh"}
+        </button>
+        <button type="button" onclick={bumpCacheSalt} disabled={bumping} title="Bump the workspace cache salt — invalidates the prompt-cache prefix from block 2 onward for every chat in this workspace. Next turn writes fresh; subsequent turns hit the new cache.">
+          {bumping ? "bumping…" : "↻ force fresh cache"}
         </button>
         <button type="button" onclick={download}>↓ download json</button>
         {@render copyBtn(
