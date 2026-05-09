@@ -401,11 +401,7 @@ describe("bundle-all endpoints (end-to-end)", () => {
     const innerBytes = await innerZip.generateAsync({ type: "uint8array" });
 
     const outerBytes = new Uint8Array(
-      await exportAll({
-        workspaces: [],
-        mode: "migration",
-        global: { skills: innerBytes },
-      }),
+      await exportAll({ workspaces: [], mode: "migration", global: { skills: innerBytes } }),
     );
 
     const { app } = createAppMulti({ workspaces: [], homeDir });
