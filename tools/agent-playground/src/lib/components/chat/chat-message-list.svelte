@@ -510,38 +510,16 @@
             </div>
           {/if}
 
-          <!-- Compact actions row under the bubble: ellipsis menu, the
-               turn timestamp, and (assistant only) the inline usage
-               badge. Layout flips by role:
-                 • assistant — left-aligned: ellipsis · time · usage
+          <!-- Compact actions row under the bubble: timestamp, optional
+               turn duration + usage badge, then the ellipsis menu at
+               the trailing edge. Layout flips by role:
+                 • assistant — left-aligned: time · duration · usage · ellipsis
                  • user      — right-aligned: time · ellipsis
                System messages stay quiet (no menu, no time). -->
           {@const fullTime = formatDateTimeFull(message.timestamp)}
           {@const compactTime = formatTimeShort(message.timestamp)}
           {@const duration = message.role === "assistant" ? turnDurationMs(message) : null}
           <div class="message-actions" class:assistant={message.role === "assistant"} class:user={message.role === "user"}>
-            <DropdownMenu.Root positioning={{ placement: message.role === "user" ? "bottom-end" : "bottom-start" }}>
-              {#snippet children()}
-                <DropdownMenu.Trigger class="message-menu-trigger" aria-label="Message options">
-                  <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 16 16"
-                    fill="none"
-                    aria-hidden="true"
-                  >
-                    <circle cx="4" cy="8" r="1.25" fill="currentColor" />
-                    <circle cx="8" cy="8" r="1.25" fill="currentColor" />
-                    <circle cx="12" cy="8" r="1.25" fill="currentColor" />
-                  </svg>
-                </DropdownMenu.Trigger>
-                <DropdownMenu.Content>
-                  <DropdownMenu.Item onclick={() => void copyMessageText(message)}>
-                    Copy message
-                  </DropdownMenu.Item>
-                </DropdownMenu.Content>
-              {/snippet}
-            </DropdownMenu.Root>
             <span class="message-time" title={fullTime}>
               {altPressed ? fullTime : compactTime}
             </span>
@@ -556,6 +534,60 @@
                 endTimestamp={message.metadata.endTimestamp}
               />
             {/if}
+            <DropdownMenu.Root positioning={{ placement: message.role === "user" ? "bottom-end" : "bottom-start" }}>
+              {#snippet children()}
+                <DropdownMenu.Trigger class="message-menu-trigger" aria-label="Message options">
+                  <!-- Dots shifted toward the bottom of the viewBox so
+                       the ellipsis aligns with the bottom of the
+                       neighboring text rather than centering on its
+                       own taller bounding box. -->
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 16 16"
+                    fill="none"
+                    aria-hidden="true"
+                  >
+                    <circle cx="4" cy="13" r="1.25" fill="currentColor" />
+                    <circle cx="8" cy="13" r="1.25" fill="currentColor" />
+                    <circle cx="12" cy="13" r="1.25" fill="currentColor" />
+                  </svg>
+                </DropdownMenu.Trigger>
+                <DropdownMenu.Content>
+                  <!-- Convention: every dropdown item ships an icon
+                       via the `prepend` snippet. Keeps the column of
+                       items aligned to a consistent glyph rail. New
+                       items follow this shape:
+                         <DropdownMenu.Item onclick={...}>
+                           {#snippet prepend()}
+                             <svg class="menu-icon" .../>
+                           {/snippet}
+                           Label
+                         </DropdownMenu.Item>
+                       — see `Copy message` below. -->
+                  <DropdownMenu.Item onclick={() => void copyMessageText(message)}>
+                    {#snippet prepend()}
+                      <svg
+                        class="menu-icon"
+                        width="14"
+                        height="14"
+                        viewBox="0 0 16 16"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.4"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                      >
+                        <rect x="5" y="5" width="9" height="9" rx="1.5" />
+                        <path d="M11 5V3.5A1.5 1.5 0 0 0 9.5 2h-6A1.5 1.5 0 0 0 2 3.5v6A1.5 1.5 0 0 0 3.5 11H5" />
+                      </svg>
+                    {/snippet}
+                    Copy message
+                  </DropdownMenu.Item>
+                </DropdownMenu.Content>
+              {/snippet}
+            </DropdownMenu.Root>
           </div>
       {/if}
     </div>
@@ -639,17 +671,17 @@
   .message-actions:focus-within {
     opacity: 1;
   }
-  /* Assistant: ellipsis on the LEFT (already first in DOM order). */
+  /* DOM order is `[time, duration?, usage?, trigger]` for both
+     roles, so the ellipsis is always last. Assistant rows hug the
+     start edge (left); user rows hug the end edge (right). The
+     ellipsis ends up at the trailing edge in both cases — to the
+     right of the time/duration/usage on assistant, and to the right
+     of the time on user. */
   .message-actions.assistant {
     justify-content: flex-start;
   }
-  /* User: row right-aligned + reversed so the order in the DOM
-     (ellipsis → time) renders as (time → ellipsis) on screen — time
-     sits to the LEFT of the ellipsis, which itself anchors at the
-     right edge next to the user bubble. */
   .message-actions.user {
-    flex-direction: row-reverse;
-    justify-content: flex-start;
+    justify-content: flex-end;
   }
 
   .message-time {
