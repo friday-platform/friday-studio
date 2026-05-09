@@ -442,6 +442,59 @@ describe("importGlobalSkills", () => {
     expect(result.status.expected).not.toBe(result.status.actual);
   });
 
+  it("publishes rows into a fresh adapter and round-trips archive + disabled state", async () => {
+    const source = new InMemorySkillAdapter();
+    const alphaArchive = new TextEncoder().encode("alpha-archive-bytes");
+    source.seed({
+      skillId: "alpha",
+      namespace: "user",
+      name: "alpha",
+      instructions: "do alpha",
+      archive: alphaArchive,
+      createdBy: "user-1",
+    });
+    source.seed({
+      skillId: "beta",
+      namespace: "user",
+      name: "beta",
+      instructions: "do beta",
+      disabled: true,
+      createdBy: "user-1",
+    });
+    source.seed({
+      skillId: "gamma",
+      namespace: "user",
+      name: "gamma",
+      instructions: "do gamma",
+      archive: null,
+      createdBy: "user-1",
+    });
+    const { zipBytes } = await buildArchive(source);
+
+    const target = new InMemorySkillAdapter();
+    const result = await importGlobalSkills({ zipBytes, adapter: target });
+
+    expect(result.status).toEqual({ kind: "imported", skillsPublished: 3, skillsSkipped: 0 });
+
+    const alpha = await target.getBySkillId("alpha");
+    if (!alpha.ok || !alpha.data) throw new Error("alpha missing post-import");
+    expect(alpha.data.namespace).toBe("user");
+    expect(alpha.data.name).toBe("alpha");
+    expect(alpha.data.disabled).toBe(false);
+    if (!alpha.data.archive) throw new Error("alpha archive missing post-import");
+    expect(alpha.data.archive).toEqual(alphaArchive);
+
+    const beta = await target.getBySkillId("beta");
+    if (!beta.ok || !beta.data) throw new Error("beta missing post-import");
+    expect(beta.data.disabled).toBe(true);
+    expect(beta.data.archive).toBeNull();
+
+    const gamma = await target.getBySkillId("gamma");
+    if (!gamma.ok || !gamma.data) throw new Error("gamma missing post-import");
+    expect(gamma.data.disabled).toBe(false);
+    expect(gamma.data.archive).toBeNull();
+  });
+
   it("throws LegacyArchiveError when manifest source.filename is skills.db", async () => {
     const legacyManifest = {
       schemaVersion: 1,
