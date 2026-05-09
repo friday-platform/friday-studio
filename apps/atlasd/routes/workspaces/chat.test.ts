@@ -252,12 +252,7 @@ describe("GET /:workspaceId/chat/:chatId — get chat", () => {
   ])("decodes encoded chatId with $name", async ({ chatId }) => {
     mockChatStorage.getChat.mockResolvedValue({
       ok: true,
-      data: {
-        id: chatId,
-        workspaceId: "ws-1",
-        messages: [],
-        systemPromptContext: null,
-      },
+      data: { id: chatId, workspaceId: "ws-1", messages: [], systemPromptContext: null },
     });
     const { app } = createTestApp();
 
