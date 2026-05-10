@@ -1,0 +1,23 @@
+- description: Phase 1 — chat picks list_skills/search_skills/describe_skill/load_skill instead of guessing from inline names
+  vars:
+    scenarioId: skills-retrieval-via-tool
+
+- description: Phase 2 — chat calls register_agent (not run_code curl) to install a user agent
+  vars:
+    scenarioId: agent-registry-via-tool
+
+- description: Phase 3 — chat fetches connection status via list_integrations/describe_integration on demand
+  vars:
+    scenarioId: integrations-retrieval-via-tool
+
+- description: Phase 4 — inventory questions route to per-domain list_X tools, not list_capabilities
+  vars:
+    scenarioId: domain-list-tool-pick
+
+- description: Phase 5 — pinned foreground workspace surfaces via describe_workspace(id) instead of inline injection
+  vars:
+    scenarioId: foreground-via-describe
+
+- description: Phase 7 — cross-domain "where do I look?" questions reach for list_capabilities (router role)
+  vars:
+    scenarioId: router-vs-domain-list
