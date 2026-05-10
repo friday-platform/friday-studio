@@ -296,7 +296,7 @@ describe("createScrubber — text/JSON lifting", () => {
     // post-stream lift via the `lift` helper above.
     // Marker prefix + arbitrary padding above threshold to prove the
     // length check alone would otherwise trip the text-lift path.
-    const marker = `[attachment lifted to artifact art_prev (50 KB, application/pdf, from x/y) — use display_artifact or artifacts_get to read]${lorem(TEXT_THRESHOLD_CHARS)}`;
+    const marker = `[attachment lifted to artifact art_prev (50 KB, application/pdf, from x/y) — use display_artifact, get_artifact (chat), or artifacts_get (FSM/agent) to read]${lorem(TEXT_THRESHOLD_CHARS)}`;
     expect(marker.length).toBeGreaterThanOrEqual(TEXT_THRESHOLD_CHARS);
     const result = await lift({ content: [{ type: "text", text: marker }] }, TOOL_CTX);
     expect(result).toEqual({ content: [{ type: "text", text: marker }] });

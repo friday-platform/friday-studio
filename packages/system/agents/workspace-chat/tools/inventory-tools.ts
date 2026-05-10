@@ -17,7 +17,7 @@
  *   - list_communicators
  *   - describe_user_identity
  *   - describe_draft
- *   - list_artifacts (artifact listing — describe via `artifacts_get`)
+ *   - list_artifacts (artifact listing — describe via `get_artifact`)
  */
 
 import type { AtlasTools } from "@atlas/agent-sdk";
@@ -516,7 +516,7 @@ export function createDescribeDraftTool(defaultWorkspaceId: string, logger: Logg
 }
 
 // =============================================================================
-// Artifacts (list — describe is the existing artifacts_get)
+// Artifacts (list — describe is the existing get_artifact)
 // =============================================================================
 
 export function createListArtifactsTool(defaultWorkspaceId: string, logger: Logger): AtlasTools {
@@ -524,7 +524,7 @@ export function createListArtifactsTool(defaultWorkspaceId: string, logger: Logg
     list_artifacts: tool({
       description:
         "List artifacts on the current chat's workspace. Returns id + type + title + summary per " +
-        "artifact. To pull the full artifact body, use `artifacts_get(id)`. Optional `sessionId` " +
+        "artifact. To pull the full artifact body, use `get_artifact(id)`. Optional `sessionId` " +
         "filter scopes the list to a single session's outputs.",
       inputSchema: z.object({
         sessionId: z

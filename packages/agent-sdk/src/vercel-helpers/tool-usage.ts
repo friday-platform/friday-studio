@@ -49,6 +49,18 @@ export function collectToolUsageFromSteps<T extends ToolSet = AtlasTools>(res: {
   return { assembledToolCalls, assembledToolResults };
 }
 
+/**
+ * Tool names that emit a created-artifact ref envelope.
+ *
+ * Two surfaces produce artifact refs with the same output shape:
+ *   - chat surface: `create_artifact` (renamed for verb-first consistency)
+ *   - user-agent SDK / MCP server: `artifacts_create` (kept for
+ *     backwards compatibility with installed Python agents)
+ *
+ * Both write `{ id, type, summary }` JSON; treat them as one signal.
+ */
+const ARTIFACT_CREATE_TOOL_NAMES = new Set(["create_artifact", "artifacts_create"]);
+
 /** Extract artifact references from tool results */
 export function extractArtifactRefsFromToolResults(
   toolResults: ToolResult[],
@@ -57,7 +69,7 @@ export function extractArtifactRefsFromToolResults(
   const refs: ArtifactRef[] = [];
 
   for (const result of toolResults) {
-    if (result.toolName === "artifacts_create") {
+    if (ARTIFACT_CREATE_TOOL_NAMES.has(result.toolName)) {
       // Skip error results
       if (result.output.isError) {
         logger?.debug("skipping error tool result", { toolResult: result });

@@ -5,9 +5,22 @@ description: "How to read and write Friday memory stores correctly: store select
 
 # Writing to Memory
 
+## Tool names by surface
+
+Memory has two tool-name surfaces. **Pick the one that matches your caller:**
+
+| Caller | Save | Read | Remove |
+|---|---|---|---|
+| Workspace chat | `save_memory_entry` | `list_memory_entries` | `delete_memory_entry` |
+| FSM `type: llm` actions, `type: atlas`/`type: user` agents (`ctx.tools`) | `memory_save` | `memory_read` | `memory_remove` |
+
+The chat-surface names are verb-first; the agent/MCP-side names are kept for backwards compatibility with installed Python agents. Examples in this skill use the MCP-side names because the agent-authoring contexts (FSM, atlas, user) are the dominant audience; chat callers should mentally substitute the chat-surface names from the table above.
+
+Same split for artifacts: chat uses `get_artifact` / `create_artifact`; FSM/agent contexts use `artifacts_get` / `artifacts_create`. Other artifact verbs (`parse_artifact`, `display_artifact`) are unchanged.
+
 ## Narrative is the only memory strategy
 
-Friday memory is markdown narrative stores — append-only, auto-injected into agent prompts, queryable via `memory_read`. There is no separate retrieval, dedup, or kv backend; if a user asks for "vector search over my notes" or "KV-style lookup", surface the limitation instead.
+Friday memory is markdown narrative stores — append-only, auto-injected into agent prompts, queryable via `memory_read` (FSM/agent) or `list_memory_entries` (chat). There is no separate retrieval, dedup, or kv backend; if a user asks for "vector search over my notes" or "KV-style lookup", surface the limitation instead.
 
 For everything narrative covers — preferences, standing instructions, durable facts, working notes, anything you want the agent to remember and reference next turn — declare a narrative store and you're done.
 
@@ -142,7 +155,7 @@ narrowed away.
 
 | Context | Tool surface | Call shape |
 |---|---|---|
-| Workspace-chat / conversation | direct tool call | `memory_save({ memoryName, text })` |
+| Workspace-chat / conversation | direct tool call | `save_memory_entry({ memoryName, text })` |
 | `type: "llm"` workspace agents | LLM tool call | `memory_save({ memoryName, text })` |
 | `type: "atlas"` SDK agents | `tools.execute(...)` | `{ memoryName, text }` |
 | FSM LLM action steps | LLM tool call | `memory_save({ memoryName, text })` |
