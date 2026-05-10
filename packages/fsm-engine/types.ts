@@ -221,7 +221,12 @@ export interface FSMActionExecutionEvent {
     llmResult?: {
       toolCalls: Array<{ toolName: string; args: unknown }>;
       reasoning?: string;
-      output: unknown;
+      // Optional: success-path actions populate this with the structured
+      // `complete` args (or LLM text fallback). Failure-path early-captures
+      // (mid-action throws like "did not call complete") set toolCalls
+      // without an output, since the action never reached the point where
+      // an output is contracted.
+      output?: unknown;
       /**
        * Per-call LLM token usage. Optional; non-LLM (agent) paths leave this
        * absent. See

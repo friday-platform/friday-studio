@@ -2178,6 +2178,40 @@ export class FSMEngine {
                 this.emitToolEvents(result, action, sig, currentState);
               }
 
+              // Pre-populate the side-channel toolCalls before the
+              // validation-failure throws below (`failStep`, missing
+              // `complete`, empty output, empty response). Without this
+              // the catch handler at the bottom of executeInSpan sees
+              // `llmResultData === undefined` and
+              // `mapActionToStepComplete` writes `toolCalls: []` into
+              // the persisted `step:complete` event — even though
+              // `emitToolEvents` already streamed the calls to the UI
+              // in real time. Brings case-`llm` to parity with the
+              // case-`agent` path further down, which already captures
+              // tool calls before throwing on `!result.ok`.
+              const earlyResultsByCallId = new Map(
+                result.toolResults?.map((tr) => [tr.toolCallId, tr.output]) ?? [],
+              );
+              const rawObservedToolCalls = (result.toolCalls ?? []).map((tc) => ({
+                toolName: tc.toolName,
+                args: tc.input,
+                ...(earlyResultsByCallId.has(tc.toolCallId) && {
+                  result: earlyResultsByCallId.get(tc.toolCallId),
+                }),
+              }));
+              const earlyLiftWorkspaceId = sig._context?.workspaceId;
+              const earlyLiftSessionId = sig._context?.sessionId;
+              llmResultData = {
+                toolCalls:
+                  earlyLiftWorkspaceId && earlyLiftSessionId
+                    ? await liftToolResultsForPersist(rawObservedToolCalls, {
+                        workspaceId: earlyLiftWorkspaceId,
+                        chatId: earlyLiftSessionId,
+                        logger,
+                      })
+                    : rawObservedToolCalls,
+              };
+
               // Check if LLM called failStep (search toolCalls for multi-tool scenarios)
               const failArgs = findFailStepToolArgs(result);
               if (failArgs) {
@@ -2479,36 +2513,14 @@ export class FSMEngine {
                 );
               }
 
-              // Capture LLM result for session history side-channel
+              // Layer reasoning/output/usage/validation onto the
+              // tool-call manifest captured earlier (post-LLM, pre-throw).
+              // Lifting + result-pairing already happened up there — this
+              // block just enriches the side-channel envelope with the
+              // structured-output extraction that's only valid on the
+              // success path.
               if (result.ok) {
-                const resultsByCallId = new Map(
-                  result.toolResults?.map((tr) => [tr.toolCallId, tr.output]) ?? [],
-                );
-                const rawToolCalls = (result.toolCalls ?? []).map((tc) => ({
-                  toolName: tc.toolName,
-                  args: tc.input,
-                  ...(resultsByCallId.has(tc.toolCallId) && {
-                    result: resultsByCallId.get(tc.toolCallId),
-                  }),
-                }));
-                // Lift oversized tool results post-streamText so the
-                // persisted side-channel +
-                // session events stay compact while the producer LLM saw
-                // full bytes during the streamText loop. See
-                // `liftToolResultsForPersist` for the rationale. Skipped
-                // when context lacks workspaceId/sessionId (older test
-                // callers, internal invocations) — the artifact upload
-                // needs both for tagging.
-                const liftWorkspaceId = sig._context?.workspaceId;
-                const liftSessionId = sig._context?.sessionId;
-                const toolCalls =
-                  liftWorkspaceId && liftSessionId
-                    ? await liftToolResultsForPersist(rawToolCalls, {
-                        workspaceId: liftWorkspaceId,
-                        chatId: liftSessionId,
-                        logger,
-                      })
-                    : rawToolCalls;
+                const toolCalls = llmResultData?.toolCalls ?? [];
                 // Structured output = args from the "complete" tool call (the actual
                 // result the agent declared). Falls back to result.data (LLM text)
                 // when no complete tool call exists. Mirrors workspace-runtime logic.
