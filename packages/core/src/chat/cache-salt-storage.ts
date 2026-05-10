@@ -95,22 +95,22 @@ export async function bumpWorkspaceCacheSalt(
     const next = current + 1;
     const bytes = enc.encode(String(next));
 
-    if (entry === null) {
-      // No prior value — claim the key with create (compare-and-null-set).
-      // A racing creator wins the create; the loser falls through to the
-      // update path on the next loop iteration.
-      try {
-        await kv.create(key, bytes);
-        return next;
-      } catch {
-        continue;
-      }
-    }
-
-    try {
-      await kv.update(key, bytes, entry.revision);
-      return next;
-    } catch {}
+    // No prior value → compare-and-null-set via `create`. With a value →
+    // compare-and-swap via `update(revision)`. Both reject on contention
+    // (concurrent creator / stale revision); the loop re-reads and retries.
+    // .catch(() => false) keeps the contention path side-effect-free —
+    // an empty try/catch trips biome's no-empty rule.
+    const op =
+      entry === null
+        ? kv.create(key, bytes).then(
+            () => true,
+            () => false,
+          )
+        : kv.update(key, bytes, entry.revision).then(
+            () => true,
+            () => false,
+          );
+    if (await op) return next;
   }
 
   throw new Error(
