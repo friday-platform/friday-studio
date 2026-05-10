@@ -65,13 +65,17 @@ vi.mock("$app/navigation", () => ({
   invalidateAll: () => Promise.resolve(),
 }));
 
-// connect-service / connect-communicator are imported by tool-call-card but
-// only render under specific tool names; mock them with the icon stub so the
-// graph closes without dragging in `$app/*` virtual modules they depend on.
+// connect-service / connect-communicator / human-input-tool-card are imported
+// by tool-call-card but only render under specific tool names; mock them with
+// the icon stub so the graph closes without dragging in `$app/*` virtual
+// modules they depend on or `@tanstack/svelte-query` which vitest can't parse.
 vi.mock("$lib/components/chat/connect-service.svelte", async () => {
   return await import("$lib/components/chat/__test-stubs__/icon-stub.svelte");
 });
 vi.mock("$lib/components/chat/connect-communicator.svelte", async () => {
+  return await import("$lib/components/chat/__test-stubs__/icon-stub.svelte");
+});
+vi.mock("$lib/components/chat/human-input-tool-card.svelte", async () => {
   return await import("$lib/components/chat/__test-stubs__/icon-stub.svelte");
 });
 

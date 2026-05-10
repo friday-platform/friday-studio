@@ -1,7 +1,6 @@
 ---
 name: composing-emails
 description: General styling and tone guidelines for composing HTML emails. Use when writing email copy that will be rendered as HTML — covers the paragraph/heading/link block model, tone, subject lines, and how to handle data, URLs, and emphasis without markdown.
-user-invocable: false
 ---
 
 # Composing emails

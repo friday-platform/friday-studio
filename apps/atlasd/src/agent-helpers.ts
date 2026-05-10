@@ -6,14 +6,8 @@
 import type { AgentResult, AtlasAgentConfig } from "@atlas/agent-sdk";
 import type { LLMAgentConfig, SystemAgentConfig, WorkspaceAgentConfig } from "@atlas/config";
 import type { ArtifactStorageAdapter } from "@atlas/core/artifacts";
-import type { Context, JSONSchema, Signal } from "@atlas/fsm-engine";
-import { expandArtifactRefsInDocuments } from "@atlas/fsm-engine";
-import {
-  type HallucinationDetectorConfig,
-  SupervisionLevel,
-  ValidationFailedError,
-  validate as validateOutput,
-} from "@atlas/hallucination";
+import type { AgentAction, Context, JSONSchema, Signal } from "@atlas/fsm-engine";
+import { expandArtifactRefsInDocuments, interpolatePromptPlaceholders } from "@atlas/fsm-engine";
 import { buildTemporalFacts, type DatetimeContext, type PlatformModels } from "@atlas/llm";
 import { logger } from "@atlas/logger";
 
@@ -77,12 +71,16 @@ export function extractAgentConfigPrompt(agentConfig: WorkspaceAgentConfig | und
 }
 
 /**
- * Build the final prompt for an agent with correct precedence.
+ * Build the final prompt for an agent.
  *
- * Prompt precedence: action.prompt > agentConfig.prompt > context only
+ * The agent config prompt is treated as a system-style prompt for the agent
+ * (e.g. "always use a neon green background") and is concatenated before the
+ * action prompt (the per-step task). This matches how `type: llm` workspace
+ * agents are expanded in `packages/config/src/expand-agent-actions.ts`, where
+ * `${config.prompt}\n\n${action.prompt}` is built up.
  *
- * @param actionPrompt - Prompt from the FSM AgentAction (highest priority)
- * @param agentConfigPrompt - Prompt from workspace.yml agent config (fallback)
+ * @param actionPrompt - Prompt from the FSM AgentAction (per-step task)
+ * @param agentConfigPrompt - Prompt from workspace.yml agent config (agent-wide)
  * @param documentContext - Built context from FSM documents and signal data
  * @returns Final prompt to send to the agent
  *
@@ -93,9 +91,35 @@ export function buildFinalAgentPrompt(
   agentConfigPrompt: string,
   documentContext: string,
 ): string {
-  // Prompt precedence: action.prompt > agentConfig.prompt > context only
-  const taskPrompt = actionPrompt || agentConfigPrompt;
+  const taskPrompt = [agentConfigPrompt, actionPrompt].filter(Boolean).join("\n\n");
   return taskPrompt ? `${taskPrompt}\n\n${documentContext}` : documentContext;
+}
+
+/**
+ * End-to-end agent prompt composition. Pulls the agent's workspace-config
+ * prompt, interpolates `{{...}}` placeholders against the prepare result on
+ * both the config and action prompts, and concatenates them with the document
+ * context via {@link buildFinalAgentPrompt}.
+ *
+ * Exists as a single helper so the prompt assembled by `WorkspaceRuntime.executeAgent`
+ * can be tested directly — and so a regression that re-routes the call site
+ * around `buildFinalAgentPrompt` (dropping the agent config prompt) is caught
+ * by a unit test, not only by an end-to-end run.
+ *
+ * @internal Exported for testing
+ */
+export function composeAgentPrompt(
+  action: Pick<AgentAction, "prompt">,
+  agentConfig: WorkspaceAgentConfig | undefined,
+  prepareResult: Context["input"],
+  documentContext: string,
+): string {
+  const agentConfigPrompt = extractAgentConfigPrompt(agentConfig);
+  const interpolatedActionPrompt = action.prompt
+    ? interpolatePromptPlaceholders(action.prompt, prepareResult)
+    : action.prompt;
+  const interpolatedConfigPrompt = interpolatePromptPlaceholders(agentConfigPrompt, prepareResult);
+  return buildFinalAgentPrompt(interpolatedActionPrompt, interpolatedConfigPrompt, documentContext);
 }
 
 /**
@@ -161,23 +185,27 @@ export async function buildAgentPrompt(
 }
 
 /**
- * Validate agent output (extracted from SessionSupervisor lines 1825-1938)
+ * Validate agent output after execution.
  *
- * Checks:
- * - Hallucination detection (referencing non-existent data) - ONLY for LLM agents
- * - Schema validation if expected schema provided
- * - Output format validation
- *
- * Throws on invalid output (FSM will abort transition)
+ * Model-backed validation runs through the FSM engine's `runJudge` callback,
+ * gated by the resolved `validate:` decision. This helper keeps only local
+ * envelope/schema/document-reference checks before data enters FSM context.
  */
-export async function validateAgentOutput(
+export function validateAgentOutput(
   result: AgentResult,
   context: Context,
-  agentType: "llm" | "system" | "sdk",
-  platformModels?: PlatformModels,
+  _agentType: "llm" | "system" | "sdk",
+  _platformModels?: PlatformModels,
   expectedSchema?: JSONSchema,
-  supervisionLevel: SupervisionLevel = SupervisionLevel.STANDARD,
 ): Promise<void> {
+  return Promise.resolve().then(() => validateAgentOutputSync(result, context, expectedSchema));
+}
+
+function validateAgentOutputSync(
+  result: AgentResult,
+  context: Context,
+  expectedSchema?: JSONSchema,
+): void {
   // Skip validation for error results
   if (!result.ok) {
     logger.warn("Agent returned error, skipping validation", {
@@ -187,54 +215,15 @@ export async function validateAgentOutput(
     return;
   }
 
-  // Skip validation if no data
-  if (!result.data) {
-    logger.warn("Agent produced no output", { agentId: result.agentId });
-    return;
-  }
-
   if (result.data === "") {
     logger.error("Agent output is empty!", { agentId: result.agentId });
     throw new Error(`Agent ${result.agentId} produced empty output`);
   }
 
-  // Only run hallucination detection for ad-hoc LLM agents
-  // System agents and SDK agents are code-based and should not be checked
-  if (agentType === "llm" && platformModels) {
-    const hallucinationDetectorConfig: HallucinationDetectorConfig = {
-      platformModels,
-      logger: logger.child({ component: "hallucination-detector" }),
-    };
-
-    const verdict = await validateOutput(result, supervisionLevel, hallucinationDetectorConfig);
-
-    logger.info("Agent output validation", {
-      agentId: result.agentId,
-      status: verdict.status,
-      confidence: verdict.confidence,
-      threshold: verdict.threshold,
-      issuesCount: verdict.issues.length,
-      issues: verdict.issues,
-    });
-
-    if (verdict.status === "fail") {
-      logger.error("Agent output failed validation", {
-        agentId: result.agentId,
-        confidence: verdict.confidence,
-        retryGuidance: verdict.retryGuidance,
-        issues: verdict.issues,
-      });
-      throw new ValidationFailedError(verdict, result.agentId);
-    }
-  } else if (agentType === "llm") {
-    logger.debug("Skipping hallucination detection — no platformModels injected", {
-      agentId: result.agentId,
-    });
-  } else {
-    logger.debug("Skipping hallucination detection for non-LLM agent", {
-      agentId: result.agentId,
-      agentType,
-    });
+  // Skip validation if no data
+  if (!result.data) {
+    logger.warn("Agent produced no output", { agentId: result.agentId });
+    return;
   }
 
   // Validate against schema if provided

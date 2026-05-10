@@ -6,6 +6,7 @@ import type { MergedConfig } from "@atlas/config";
 import type { Logger } from "@atlas/logger";
 import type { WorkspaceRuntime } from "@atlas/workspace";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { NatsConnection } from "nats";
 
 /**
  * Provides access to workspace runtimes
@@ -42,4 +43,6 @@ export interface ToolContext {
    * route execution; absent → fall back to in-process execution.
    */
   toolDispatcher?: ToolDispatcher;
+  /** Optional raw NATS connection for tools that need to wait on JetStream events. */
+  natsConnection?: NatsConnection;
 }

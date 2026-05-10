@@ -67,6 +67,11 @@ export interface ToolCallDisplay {
    * falls back to client-side elapsed-time tracking.
    */
   durationMs?: number;
+  /** Workspace/session/action context observed from surrounding nested FSM chunks. */
+  workspaceId?: string;
+  sessionId?: string;
+  actionId?: string;
+  jobName?: string;
 }
 
 export interface ImageDisplay {

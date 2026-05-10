@@ -9,6 +9,7 @@ export type {
   ArtifactData,
   ArtifactDataInput,
   ArtifactDataInputWire,
+  ArtifactLifecycle,
   ArtifactRevisionSummary,
   ArtifactSummary,
   ArtifactType,
@@ -20,6 +21,7 @@ export {
   ArtifactDataInputSchema,
   ArtifactDataInputWireSchema,
   ArtifactDataSchema,
+  ArtifactLifecycleSchema,
   ArtifactSchema,
   ArtifactSummarySchema,
   ArtifactTypeSchema,
@@ -29,8 +31,22 @@ export {
 } from "./model.ts";
 
 // Primitives
-export type { FileData, FileDataInput, FileDataInputWire } from "./primitives.ts";
-export { FileDataInputSchema, FileDataInputWireSchema, FileDataSchema } from "./primitives.ts";
-
+export type {
+  FileData,
+  FileDataInput,
+  FileDataInputWire,
+} from "./primitives.ts";
+export {
+  FileDataInputSchema,
+  FileDataInputWireSchema,
+  FileDataSchema,
+} from "./primitives.ts";
+// NOTE: hasPromotionSignal lives in `./server.ts` — the Phase 6.B sweeper
+// (atlasd-internal) is the only consumer and uses the server-only path.
+// Tool-result scrubber: lifts oversized inline binary / large text out of
+// tool results into artifacts. Two entry points — `liftToolResultsForPersist`
+// at the persistence boundary, `scrubAssistantMessage` at chat pre-persist.
+export type { ScrubberOptions } from "./scrubber.ts";
+export { liftToolResultsForPersist, scrubAssistantMessage } from "./scrubber.ts";
 // Storage adapter types
 export type { ArtifactStorageAdapter } from "./types.ts";

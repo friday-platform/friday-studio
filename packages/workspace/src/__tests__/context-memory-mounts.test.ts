@@ -105,10 +105,9 @@ describe("ctx.memory.mounts[name]", () => {
     expect(asInterface.scopeTarget).toBe("planner");
   });
 
-  it("adapter and scratchpad are optional on AgentMemoryContext", () => {
+  it("adapter is optional on AgentMemoryContext", () => {
     const memory: AgentMemoryContext = { mounts: {} };
     expect(memory.adapter).toBeUndefined();
-    expect(memory.scratchpad).toBeUndefined();
   });
 
   it("adapter can be provided on AgentMemoryContext", () => {

@@ -1,7 +1,6 @@
 <script lang="ts">
   import { deriveAgentJobUsage } from "@atlas/config/agent-job-usage";
   import { humanizeStepName } from "@atlas/config/pipeline-utils";
-  import { deriveSignalDetails } from "@atlas/config/signal-details";
   import { deriveTopology } from "@atlas/config/topology";
   import { deriveWorkspaceAgents } from "@atlas/config/workspace-agents";
   import { Page } from "@atlas/ui";
@@ -86,6 +85,9 @@
   /** Jobs page renders job index sidebar. */
   const isJobs = $derived(page.route.id === "/platform/[workspaceId]/jobs");
 
+  /** Activity page needs full width for elicitation forms. */
+  const isActivity = $derived(page.route.id === "/platform/[workspaceId]/activity");
+
   /** Skills page renders skill index sidebar. */
   const isSkills = $derived(page.route.id === "/platform/[workspaceId]/skills");
 
@@ -126,8 +128,6 @@
     goto(`/platform/${workspaceId}/skills?addSkill=true`);
   }
 
-  const signalDetails = $derived(config ? deriveSignalDetails(config) : []);
-
   /** Escape key returns to idle sidebar. */
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === "Escape" && workspaceId && (selectedNode || selectedWorkspaceAgent)) {
@@ -143,12 +143,12 @@
   <Page.Content scrollable={!isChat} padded={false}>
     {@render children?.()}
   </Page.Content>
-  {#if !isSessionDetail && !isSignalDetail && !isOverview && !isEdit && !isChat && !isChatDebug}
+  {#if !isSessionDetail && !isSignalDetail && !isOverview && !isEdit && !isChat && !isChatDebug && !isActivity}
     <Page.Sidebar>
       {#if isAgents}
         <AgentIndexSidebar agents={workspaceAgents} {providerStatus} />
       {:else if isJobs}
-        <JobIndexSidebar jobs={jobEntries} {signalDetails} workspaceId={workspaceId ?? ""} />
+        <JobIndexSidebar jobs={jobEntries} workspaceId={workspaceId ?? ""} />
       {:else if isSkills}
         <SkillIndexSidebar onadd={openSkillPicker} skillCount={workspaceSkillCount} />
       {:else}

@@ -22,18 +22,22 @@
   }
 
   function shortJson(value: unknown, max = 600): string {
-    let s: string;
+    // JSON.stringify(undefined) returns undefined (not a string), which
+    // crashes the render of error-state tool parts that never received an
+    // `input` field. Coerce to "undefined" so callers always get a string.
+    let s: string | undefined;
     try {
       s = JSON.stringify(value, null, 2);
     } catch {
       s = String(value);
     }
+    if (s === undefined) return String(value);
     return s.length > max ? `${s.slice(0, max)}\n… (${s.length - max} more chars)` : s;
   }
 
   function fullJson(value: unknown): string {
     try {
-      return JSON.stringify(value, null, 2);
+      return JSON.stringify(value, null, 2) ?? String(value);
     } catch {
       return String(value);
     }
@@ -243,6 +247,17 @@
         value?: unknown;
         error?: string;
       };
+      activeStream?: {
+        exists: boolean;
+        active?: boolean;
+        replayDisabled?: boolean;
+        eventCount?: number;
+        subscriberCount?: number;
+        createdAt?: string;
+        lastEventAt?: string;
+        events?: unknown[];
+        error?: string;
+      };
       error?: string;
     }}
     <section>
@@ -304,6 +319,38 @@
                   {@render copyBtn(`copy:${dumpKey}`, fullJson(n.kv.value))}
                 </div>
                 <pre class="dump">{expanded[dumpKey] ? fullJson(n.kv.value) : shortJson(n.kv.value)}</pre>
+              </div>
+            {/if}
+          </article>
+
+          <article class="nats-card">
+            <header>
+              <h3>active stream</h3>
+              <code class="state">{n.activeStream?.exists ? "exists" : "absent"}</code>
+            </header>
+            <dl>
+              {#if n.activeStream?.exists}
+                <dt>active</dt><dd>{String(n.activeStream.active)}</dd>
+                <dt>events</dt><dd>{n.activeStream.eventCount ?? 0}</dd>
+                <dt>subscribers</dt><dd>{n.activeStream.subscriberCount ?? 0}</dd>
+                <dt>replay disabled</dt><dd>{String(n.activeStream.replayDisabled)}</dd>
+                <dt>created</dt><dd>{fmtTs(n.activeStream.createdAt)}</dd>
+                <dt>last event</dt><dd>{fmtTs(n.activeStream.lastEventAt)}</dd>
+              {/if}
+              {#if n.activeStream?.error}
+                <dt>error</dt><dd class="err">{n.activeStream.error}</dd>
+              {/if}
+            </dl>
+            {#if n.activeStream?.events}
+              {@const streamDumpKey = "active-stream-events-dump"}
+              <div class="kv">
+                <div class="kv-head">
+                  <button type="button" onclick={() => toggle(streamDumpKey)}>
+                    events {expanded[streamDumpKey] ? "▼" : "▶"}
+                  </button>
+                  {@render copyBtn(`copy:${streamDumpKey}`, fullJson(n.activeStream.events))}
+                </div>
+                <pre class="dump">{expanded[streamDumpKey] ? fullJson(n.activeStream.events) : shortJson(n.activeStream.events)}</pre>
               </div>
             {/if}
           </article>

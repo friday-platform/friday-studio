@@ -125,6 +125,18 @@ function createStore() {
   // General error
   let error = $state<string | null>(null);
 
+  // Dev-only knob: when set, the installer skips the production
+  // manifest fetch and synthesizes one targeting an explicit version.
+  // Artifacts are versioned + immutable on the CDN, so any past build
+  // is reachable by URL alone — synthesizeManifest() in installer.ts
+  // also fetches the matching `.sha256` sibling that studio-build.yml
+  // uploads, keeping checksum verification on. Set via the hidden
+  // 5-click-the-logo dev panel on the Welcome screen; never persisted
+  // (in-memory only) so end users can't accidentally pin a
+  // non-production version across launches. `null` means "use
+  // production manifest".
+  let devVersionOverride = $state<string | null>(null);
+
   return {
     get step() {
       return step;
@@ -275,6 +287,13 @@ function createStore() {
     },
     set error(v: string | null) {
       error = v;
+    },
+
+    get devVersionOverride() {
+      return devVersionOverride;
+    },
+    set devVersionOverride(v: string | null) {
+      devVersionOverride = v;
     },
 
     // Derived display values

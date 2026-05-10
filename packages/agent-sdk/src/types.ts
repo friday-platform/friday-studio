@@ -5,7 +5,6 @@ import { z } from "zod";
 import type { MemoryAdapter, NarrativeEntry } from "./memory-adapter.ts";
 import type { AtlasUIMessage, AtlasUIMessageChunk, AtlasUIMessagePart } from "./messages.ts";
 import type { AgentPayload } from "./result.ts";
-import type { ScratchpadAdapter } from "./scratchpad-adapter.ts";
 
 export type { AtlasUIMessage, AtlasUIMessageChunk, AtlasUIMessagePart };
 
@@ -296,6 +295,10 @@ export const AgentSessionDataSchema = z.object({
    * (chat, conversation, ad-hoc runs).
    */
   jobName: z.string().optional(),
+  /** FSM action id when an agent is invoked from a specific action. */
+  actionId: z.string().optional(),
+  /** Parent job timeout in milliseconds, used by blocking HITL tools. */
+  jobTimeoutMs: z.number().int().positive().optional(),
   datetime: z
     .object({
       timezone: z.string(),
@@ -342,7 +345,6 @@ export interface StoreMountBinding {
 export interface AgentMemoryContext {
   mounts: Record<string, StoreMountBinding>;
   adapter?: MemoryAdapter;
-  scratchpad?: ScratchpadAdapter;
 }
 
 /** Built by AtlasAgentsMCPServer before agent.execute() */
@@ -495,6 +497,25 @@ export const OutlineRefSchema = z.object({
 
 export type OutlineRef = z.infer<typeof OutlineRefSchema>;
 
+/**
+ * Per-call LLM token usage. All fields optional because the AI SDK's
+ * `LanguageModelUsage` reports each count as `number | undefined` (some
+ * providers report partial usage). `model` is the model id the call
+ * actually executed against — useful for retrospective cost grouping
+ * when a single agent supports per-call model overrides.
+ *
+ * Phase 11 of the fan-out-without-fan-in plan persists this on
+ * `step:complete` session events for crystallization data-layer needs.
+ */
+export const AgentExecutionUsageSchema = z.object({
+  inputTokens: z.number().optional(),
+  outputTokens: z.number().optional(),
+  cacheReadTokens: z.number().optional(),
+  cacheWriteTokens: z.number().optional(),
+  model: z.string().optional(),
+});
+export type AgentExecutionUsage = z.infer<typeof AgentExecutionUsageSchema>;
+
 export const AgentExecutionSuccessSchema = z.object({
   agentId: z.string().describe("Agent identifier"),
   timestamp: z.string().describe("ISO 8601 timestamp of execution"),
@@ -509,6 +530,8 @@ export const AgentExecutionSuccessSchema = z.object({
   artifactRefs: z.array(ArtifactRefSchema).optional().describe("Artifact references"),
   outlineRefs: z.array(OutlineRefSchema).optional().describe("Outline references for UI"),
   durationMs: z.number().describe("Execution duration in milliseconds"),
+  /** Optional LLM token usage. Populated by LLM provider adapters; absent for pure agent results. */
+  usage: AgentExecutionUsageSchema.optional().describe("Per-call LLM token usage when applicable"),
 });
 
 export const AgentExecutionErrorSchema = z.object({
@@ -517,6 +540,8 @@ export const AgentExecutionErrorSchema = z.object({
   input: z.unknown().describe("Input provided to the agent"),
   ok: z.literal(false).describe("Failure discriminant"),
   error: z.object({ reason: z.string() }).describe("Error information"),
+  toolCalls: z.array(z.any()).optional().describe("Tool calls made before failure"),
+  toolResults: z.array(z.any()).optional().describe("Tool results observed before failure"),
   durationMs: z.number().describe("Execution duration in milliseconds"),
 });
 
@@ -537,8 +562,8 @@ export type AgentExecutionSuccess<TInput = unknown, TOutput = unknown> = Omit<
 
 export type AgentExecutionError<TInput = unknown> = Omit<
   z.infer<typeof AgentExecutionErrorSchema>,
-  "input"
-> & { input: TInput };
+  "input" | "toolCalls" | "toolResults"
+> & { input: TInput; toolCalls?: ToolCall[]; toolResults?: ToolResult[] };
 
 /** Discriminated union on `ok` - typed version of AgentResultSchema */
 export type AgentResult<TInput = unknown, TOutput = unknown> =

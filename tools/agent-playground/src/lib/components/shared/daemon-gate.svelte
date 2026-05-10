@@ -16,11 +16,11 @@
   children during SSR. Without them, `daemonHealth.loading` starts true and
   only flips on a client-side fetch, leaving SSR stuck on "Connecting…".
 -->
-{#if browser && daemonHealth.loading}
+{#if browser && daemonHealth.loading && !daemonHealth.hasConnected}
   <div class="gate-state">
     <p class="gate-message">Connecting to daemon...</p>
   </div>
-{:else if browser && !daemonHealth.connected}
+{:else if browser && !daemonHealth.connected && !daemonHealth.hasConnected}
   <div class="gate-state">
     <p class="gate-icon">!</p>
     <p class="gate-title">Reconnecting to Friday Studio…</p>
@@ -31,7 +31,15 @@
     <Button size="small" variant="secondary" onclick={retry}>Retry Now</Button>
   </div>
 {:else}
-  {@render children()}
+  <div class="gate-content">
+    {#if !daemonHealth.connected}
+      <div class="gate-banner" role="status">
+        <span>Reconnecting to Friday Studio…</span>
+        <Button size="small" variant="secondary" onclick={retry}>Retry Now</Button>
+      </div>
+    {/if}
+    {@render children()}
+  </div>
 {/if}
 
 <style>
@@ -43,6 +51,21 @@
     gap: var(--size-3);
     justify-content: center;
     padding: var(--size-10);
+  }
+
+  .gate-content {
+    display: contents;
+  }
+
+  .gate-banner {
+    align-items: center;
+    background: color-mix(in srgb, var(--color-warning), transparent 85%);
+    border-block-end: 1px solid color-mix(in srgb, var(--color-warning), transparent 60%);
+    color: var(--color-text);
+    display: flex;
+    gap: var(--size-3);
+    justify-content: center;
+    padding: var(--size-2) var(--size-4);
   }
 
   .gate-icon {
@@ -68,15 +91,4 @@
     font-size: var(--font-size-3);
   }
 
-  .gate-command {
-    color: color-mix(in srgb, var(--color-text), transparent 30%);
-    font-size: var(--font-size-2);
-
-    code {
-      background-color: var(--color-surface-2);
-      border-radius: var(--radius-1);
-      font-size: var(--font-size-2);
-      padding: var(--size-0-5) var(--size-1);
-    }
-  }
 </style>

@@ -54,6 +54,56 @@ async function indexHtml(): Promise<string> {
   return CACHED_HTML;
 }
 
+function proxyAbortableBody(
+  body: ReadableStream<Uint8Array>,
+  requestSignal: AbortSignal,
+  abortUpstream: () => void,
+): ReadableStream<Uint8Array> {
+  let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+  let cancelled = false;
+
+  const cancelUpstream = () => {
+    if (cancelled) return;
+    cancelled = true;
+    abortUpstream();
+    void reader?.cancel().catch(() => {
+      // The upstream may already be gone.
+    });
+  };
+
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      reader = body.getReader();
+      requestSignal.addEventListener("abort", cancelUpstream, { once: true });
+      if (requestSignal.aborted) cancelUpstream();
+
+      void (async () => {
+        try {
+          while (!cancelled) {
+            const { done, value } = await reader!.read();
+            if (done) break;
+            controller.enqueue(value);
+          }
+          if (!cancelled) controller.close();
+        } catch (err) {
+          if (!cancelled) controller.error(err);
+        } finally {
+          requestSignal.removeEventListener("abort", cancelUpstream);
+          try {
+            reader?.releaseLock();
+          } catch {
+            // Reader may already be released after cancellation.
+          }
+          abortUpstream();
+        }
+      })();
+    },
+    cancel() {
+      cancelUpstream();
+    },
+  });
+}
+
 // Daemon proxy for /api/daemon/*. The SvelteKit dev server has this as
 // src/routes/api/daemon/[...path]/+server.ts, but adapter-static strips
 // all server routes — the production binary has no daemon proxy unless
@@ -82,19 +132,39 @@ const daemonProxy = new Hono().all("/api/daemon/*", async (c) => {
     body = new Uint8Array(await c.req.raw.arrayBuffer());
   }
 
+  const upstreamController = new AbortController();
+  const abortUpstream = () => upstreamController.abort();
+  c.req.raw.signal.addEventListener("abort", abortUpstream, { once: true });
+
   let res: Response;
   try {
-    res = await fetch(target, { method: c.req.method, headers, body });
+    res = await fetch(target, {
+      method: c.req.method,
+      headers,
+      body,
+      signal: upstreamController.signal,
+    });
   } catch (err) {
+    c.req.raw.signal.removeEventListener("abort", abortUpstream);
     const message = err instanceof Error ? err.message : String(err);
     return c.json({ error: `daemon proxy fetch failed: ${message}` }, 502);
   }
 
   // SSE: pass the body stream through unbuffered so live event streams
-  // don't get held up at our proxy boundary.
+  // don't get held up at our proxy boundary. Wrap the body so browser
+  // disconnects cancel the daemon fetch instead of leaving subscriptions
+  // and file descriptors open behind the static playground proxy.
   if (res.headers.get("content-type")?.includes("text/event-stream")) {
-    return new Response(res.body, { status: res.status, headers: res.headers });
+    if (!res.body) {
+      c.req.raw.signal.removeEventListener("abort", abortUpstream);
+      return new Response(null, { status: res.status, headers: res.headers });
+    }
+    c.req.raw.signal.removeEventListener("abort", abortUpstream);
+    const stream = proxyAbortableBody(res.body, c.req.raw.signal, abortUpstream);
+    return new Response(stream, { status: res.status, headers: res.headers });
   }
+
+  c.req.raw.signal.removeEventListener("abort", abortUpstream);
 
   // Strip content-encoding/length — fetch() decompressed the body, so
   // forwarding the original encoding header makes the browser try to

@@ -1,7 +1,6 @@
 ---
 name: writing-to-memory
 description: "How to read and write Friday memory stores correctly: store selection, terse entry format, large-content artifact pattern, and what's auto-injected into the system prompt."
-user-invocable: false
 ---
 
 # Writing to Memory
@@ -36,12 +35,14 @@ To remove a stale entry: `memory_remove(memoryName, entryId)`.
 
 Check `<memory_stores>` in your workspace context for what's available. Pick the store that best matches the content — do not default to `notes` without considering the alternatives.
 
-| Store | Type | Use for |
-|---|---|---|
-| `notes` | short_term | In-progress state, working context, things that will expire |
-| `memory` | long_term | Durable facts — what was built, decided, observed |
-| `preferences` | long_term | User standing instructions, formatting rules, explicit preferences |
-| custom | any | Domain-specific; declared via `upsert_memory_own` |
+| Store | Type | Default lifecycle | Use for |
+|---|---|---|---|
+| `notes` | short_term | **ephemeral, session-bound** — auto-deleted at session-complete | In-progress state, working context, things that don't need to persist |
+| `memory` | long_term | **durable** | Facts the agent should remember next turn / next session — what was built, decided, observed |
+| `preferences` | long_term | **durable** | User standing instructions, formatting rules, explicit preferences |
+| custom | any | follows `type:` default; override with `ttl:` | Domain-specific; declared via `upsert_memory_own` |
+
+`type: short_term` is genuinely short-term post-Phase-6: notes you write during a session don't survive past it unless you explicitly write the same content to a long_term store. `type: long_term` persists across sessions until explicitly removed via `memory_remove`. Override per-store via `memory.own[].ttl: <duration>` in workspace.yml when you want a specific TTL different from the type default.
 
 If the right store doesn't exist yet, call `upsert_memory_own` to declare it before writing. A store must exist in `workspace.yml` (or the active draft) before `memory_save` will accept it.
 
@@ -107,6 +108,22 @@ When you see `→ art_abc123` in an injected memory entry, call `artifacts_get(i
 
 This keeps the injection window lean while making large results durable across sessions.
 
+### Memory references promote artifacts to durable
+
+FSM-emitted artifacts default to **ephemeral** with a grace window (default 24h after job completion); a background sweeper deletes them once the window closes. **An artifact stays durable iff something references it before the sweep**: a `memory_save` text containing the artifact ID, a `display_artifact` call, or an `aiSummary.keyDetails[].url` pointing at it.
+
+So step 2 above isn't just bookkeeping — it's the durability decision. If you don't `memory_save` a reference (or surface the artifact some other way), it'll be gone in 24h.
+
+If you *want* something gone — intermediate working state — write the artifact and never reference it. The sweeper handles cleanup. Don't try to manage lifetimes manually.
+
+### Recent artifacts auto-inject into prompts
+
+Per-session artifact context auto-injects into LLM prompts as
+`<retrieved_content provenance="artifact:..." origin="..." fetched_at="...">`
+blocks at action start (chat: per-chat-session; FSM: per-FSM-session). The block carries each artifact's **summary**, not its content — the LLM sees a 1-line digest plus the artifactId. If a digest looks relevant, call `parse_artifact(artifactId)` to load the content.
+
+Practical implication for `summary` field: when you `artifacts_create`, write a useful 1-2 sentence summary. The LLM's later turns rely on it to decide whether to expand the artifact.
+
 ## Availability
 
 `memory_save`, `memory_read`, `memory_remove`, the `state_*` tools, the
@@ -114,6 +131,14 @@ This keeps the injection window lean while making large results durable across s
 `workspaceId` auto-injected from the runtime scope. You never pass
 `workspaceId` — the runtime overrides it (defense in depth: a foreign
 workspaceId in args is replaced before the tool runs).
+
+**Authoring rule for FSM `type: llm` actions: do NOT redeclare these in
+the action's `tools:` array.** They are auto-injected on top of any
+allowlist you provide. Listing `memory_save` or `artifacts_create` in
+`tools:` is harmless but adds noise. To genuinely lock an action down
+to "memory + artifacts only," declare `tools: []` (empty) — the
+auto-injected built-ins still work, the workspace MCP catalog gets
+narrowed away.
 
 | Context | Tool surface | Call shape |
 |---|---|---|

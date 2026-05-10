@@ -17,7 +17,6 @@
 import type { LanguageModelV3Middleware, LanguageModelV3StreamPart } from "@ai-sdk/provider";
 import { createLogger } from "@atlas/logger";
 import { SlackFormatConverter } from "@chat-adapter/slack";
-import { parseMarkdown } from "chat";
 import { z } from "zod";
 
 const logger = createLogger({ component: "slack-format-middleware" });
@@ -77,7 +76,7 @@ export function transformInput(rawInput: string): string {
   try {
     const original = data[bodyKey];
     if (typeof original !== "string" || original.length === 0) return rawInput;
-    data[bodyKey] = converter.fromAst(parseMarkdown(original));
+    data[bodyKey] = converter.toResponseUrlText({ markdown: original });
     data.content_type = "text/plain";
     logger.debug("slack_format_applied", { bodyKey });
     return JSON.stringify(data);

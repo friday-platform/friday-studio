@@ -246,6 +246,31 @@ describe("createJobTools execute", () => {
     expect(result).toEqual({ success: true, sessionId: "sess-1", status: "completed", output: [] });
   });
 
+  it("returns compact shape in JSON mode when artifactIds and summary are present", async () => {
+    mockParseResult.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        sessionId: "sess-compact",
+        status: "completed",
+        output: [{ id: "legacy", type: "Result", data: { large: "payload" } }],
+        artifactIds: ["art-1", "art-2"],
+        summary: "Two artifacts produced",
+      },
+    });
+
+    const { execute } = buildTool();
+    const result = await execute({ prompt: "deploy to prod" }, TOOL_CALL_OPTS);
+
+    expect(result).toEqual({
+      success: true,
+      sessionId: "sess-compact",
+      status: "completed",
+      artifactIds: ["art-1", "art-2"],
+      summary: "Two artifacts produced",
+    });
+    expect(result).not.toHaveProperty("output");
+  });
+
   it("surfaces structured signal-error body to the chat agent", async () => {
     // Hono's RPC client wraps non-OK responses in DetailedError with the
     // parsed body in `detail.data`. Job-tools must extract the structured
@@ -341,7 +366,7 @@ describe("createJobTools execute", () => {
 
     expect(mockSignalPost).toHaveBeenCalledWith({
       param: { workspaceId: "ws-test", signalId: "deploy-signal" },
-      json: { payload: { target: "production", force: true } },
+      json: { payload: { target: "production", force: true }, bypassConcurrency: true },
     });
     expect(result).toEqual({ success: true, sessionId: "sess-4", status: "completed", output: [] });
   });
@@ -456,7 +481,7 @@ describe("createJobTools execute (SSE streaming)", () => {
       expect.objectContaining({
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
-        body: JSON.stringify({ payload: { prompt: "deploy" } }),
+        body: JSON.stringify({ payload: { prompt: "deploy" }, bypassConcurrency: true }),
       }),
     );
   });
@@ -655,7 +680,11 @@ describe("createJobTools execute (SSE streaming)", () => {
     expect(globalThis.fetch).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({
-        body: JSON.stringify({ payload: { prompt: "go" }, streamId: "parent-stream-123" }),
+        body: JSON.stringify({
+          payload: { prompt: "go" },
+          bypassConcurrency: true,
+          streamId: "parent-stream-123",
+        }),
       }),
     );
   });
@@ -696,5 +725,104 @@ describe("createJobTools execute (SSE streaming)", () => {
 
     const callArgs = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(callArgs?.[1]).toHaveProperty("signal", abortController.signal);
+  });
+
+  // Phase 2.C — additive `artifactIds` + `summary` on `job-complete`. The
+  // chat-side consumer keeps reading `output` for now; these tests just
+  // Phase 2.C consumer-side flip: when both artifactIds + summary are
+  // present on job-complete, the tool returns the compact shape WITHOUT
+  // the full Document[] in `output` so the supervisor's next-turn input
+  // doesn't ingest it. This is the user-visible fan-in fix.
+  it("returns compact shape (drops output) when artifactIds + summary present", async () => {
+    globalThis.fetch = vi.fn(() =>
+      makeMockFetchResponse([
+        `data: ${JSON.stringify({
+          type: "job-complete",
+          data: {
+            success: true,
+            sessionId: "sess-2c-1",
+            status: "completed",
+            output: [{ id: "doc-1", type: "report", data: { ok: true } }],
+            artifactIds: ["art-abc", "art-def"],
+            summary: "Drafted report and emailed it.",
+          },
+        })}
+\n\n`,
+        "data: [DONE]\n\n",
+      ]),
+    ) as unknown as typeof fetch;
+
+    const { execute } = buildStreamingTool();
+    const result = await execute({ prompt: "report" }, TOOL_CALL_OPTS);
+
+    expect(result).toEqual({
+      success: true,
+      sessionId: "sess-2c-1",
+      status: "completed",
+      artifactIds: ["art-abc", "art-def"],
+      summary: "Drafted report and emailed it.",
+    });
+    // The full Document[] is intentionally absent — the supervisor sees
+    // refs + summary only; LLM can `parse_artifact(<id>)` for detail.
+    expect((result as Record<string, unknown>).output).toBeUndefined();
+  });
+
+  it("omits artifactIds and summary when the daemon doesn't emit them (back-compat)", async () => {
+    globalThis.fetch = vi.fn(() =>
+      makeMockFetchResponse([
+        `data: ${JSON.stringify({
+          type: "job-complete",
+          data: { success: true, sessionId: "sess-2c-2", status: "completed", output: [] },
+        })}
+\n\n`,
+        "data: [DONE]\n\n",
+      ]),
+    ) as unknown as typeof fetch;
+
+    const { execute } = buildStreamingTool();
+    const result = await execute({ prompt: "go" }, TOOL_CALL_OPTS);
+
+    expect(result).toEqual({
+      success: true,
+      sessionId: "sess-2c-2",
+      status: "completed",
+      output: [],
+    });
+    // Defensive: the consumer must not invent the fields.
+    expect(result).not.toHaveProperty("artifactIds");
+    expect(result).not.toHaveProperty("summary");
+  });
+
+  it("drops artifactIds when the shape is wrong (defensive parse)", async () => {
+    globalThis.fetch = vi.fn(() =>
+      makeMockFetchResponse([
+        `data: ${JSON.stringify({
+          type: "job-complete",
+          data: {
+            success: true,
+            sessionId: "sess-2c-3",
+            status: "completed",
+            output: [],
+            // Mixed types — must be rejected wholesale, not partially.
+            artifactIds: ["ok", 42, null],
+            summary: 123,
+          },
+        })}
+\n\n`,
+        "data: [DONE]\n\n",
+      ]),
+    ) as unknown as typeof fetch;
+
+    const { execute } = buildStreamingTool();
+    const result = await execute({ prompt: "go" }, TOOL_CALL_OPTS);
+
+    expect(result).toEqual({
+      success: true,
+      sessionId: "sess-2c-3",
+      status: "completed",
+      output: [],
+    });
+    expect(result).not.toHaveProperty("artifactIds");
+    expect(result).not.toHaveProperty("summary");
   });
 });

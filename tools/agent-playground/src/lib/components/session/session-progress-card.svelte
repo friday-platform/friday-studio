@@ -79,7 +79,9 @@
         ? ("active" as const)
         : session.status === "failed"
           ? ("failed" as const)
-          : ("completed" as const),
+          : session.status === "cancelled"
+            ? ("cancelled" as const)
+            : ("completed" as const),
   );
 </script>
 

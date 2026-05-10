@@ -1,44 +1,32 @@
 # FSM Engine
 
 Direct finite state machine execution engine for Atlas. Defines workflows as
-states, transitions, and actions. States store documents, transitions execute
-TypeScript functions, call LLMs, or emit events.
+states, transitions, and actions. States store documents; transitions execute
+LLM calls, invoke agents, send notifications, or emit events.
 
 ## Features
 
 - Load FSM definitions from YAML or build programmatically
-- Execute state transitions with guard conditions
+- Execute state transitions driven by signals
 - Store typed documents in states with JSON Schema validation
-- Execute actions: TypeScript functions, LLM calls, agent invocations, event
-  emission
+- Execute actions: LLM calls, agent invocations, notifications, event emission
 - Test transitions with before/after validation
 - Serialize/restore FSMs from persistent storage
 - MCP tools for FSM creation and testing
 
 ## Architecture
 
-FSM workflows are defined in YAML with TypeScript code for guards and actions.
-Queue-based signal processing with recursion protection. Documents persist
-across transitions using `@atlas/document-store`.
+FSM workflows are defined in YAML. Queue-based signal processing with recursion
+protection. Documents persist across transitions using `@atlas/document-store`.
 
 ### Components
 
-- **FSMEngine**: Main executor - loads FSM definitions, compiles TypeScript
-  functions, processes signals, manages documents
+- **FSMEngine**: Main executor - loads FSM definitions, processes signals,
+  executes actions, manages documents
 - **Serializer**: YAML ↔ FSM structure conversion with Zod validation
 - **TestRunner**: Executes transition tests with state/document assertions
 - **Validator**: Comprehensive structural validation with detailed error
   messages
-
-### Code Execution
-
-Guards and actions are defined as TypeScript code strings in the YAML
-definition. At initialization, FSMEngine compiles these strings into executable
-functions using dynamic imports via data URLs.
-
-**SECURITY WARNING**: Code execution is currently unsandboxed and runs with full
-process permissions. Only load FSM definitions from trusted sources. Sandboxing
-via Deno workers will be implemented in a future change.
 
 ## Core Concepts
 
@@ -58,12 +46,11 @@ Documents persist across state transitions unless explicitly removed.
 Triggered by signals. Each transition has:
 
 - **target**: Destination state
-- **guards**: Functions returning boolean (all must pass)
-- **actions**: Executed sequentially - LLM calls, code execution, event
-  emission, agent invocation
+- **actions**: Executed sequentially - LLM calls, agent invocations,
+  notifications, event emission
 
-Multiple transitions can handle the same event with different guards (first
-matching guard wins).
+Multiple transitions can handle the same event; the first matching transition
+wins.
 
 ### Signals
 
@@ -76,13 +63,6 @@ External inputs triggering transitions:
 Signals queue if FSM is processing. Executed in order.
 
 ### Actions
-
-**Code Actions**: Execute TypeScript functions
-
-```yaml
-type: code
-function: validateOrder # References functions.validateOrder
-```
 
 **LLM Actions**: Call language model with context and tools
 
@@ -103,6 +83,14 @@ agentId: weather-fetcher
 outputTo: weather-data
 ```
 
+**Notification Actions**: Broadcast to chat communicators
+
+```yaml
+type: notification
+message: "Order processed"
+communicators: ["slack"] # Optional allowlist; omit to broadcast to all
+```
+
 **Emit Actions**: Send events to external systems
 
 ```yaml
@@ -110,19 +98,6 @@ type: emit
 event: order.approved
 data: { orderId: "{{order.id}}" }
 ```
-
-### Guards
-
-Functions controlling transition execution:
-
-```typescript
-export function hasInventory(context, event) {
-  const order = context.documents.find((d) => d.id === "order");
-  return order.data.items.length > 0;
-}
-```
-
-Guards receive context (documents, state) and event. Return boolean.
 
 ## Usage
 
@@ -142,21 +117,6 @@ fsm:
         status: { type: string }
       required: [items, total]
 
-  tools:
-    get_address:
-      description: Get shipping address for an order
-      inputSchema:
-        type: object
-        properties:
-          orderId: { type: string }
-        required: [orderId]
-      code: |
-        export default async function get_address(args, context) {
-          // Fetch address from external service
-          const response = await fetch(`https://api.example.com/orders/${args.orderId}/address`);
-          return await response.json();
-        }
-
   states:
     pending:
       documents:
@@ -167,32 +127,18 @@ fsm:
       on:
         APPROVE:
           target: approved
-          guards: [hasInventory]
           actions:
-            - type: code
-              function: validateOrder
+            - type: llm
+              provider: anthropic
+              model: claude-sonnet-4-6
+              prompt: "Validate this order and mark its status."
+              outputTo: order-001
+              outputType: Order
             - type: emit
               event: order.approved
 
     approved:
       type: final
-
-  functions:
-    hasInventory:
-      type: guard
-      code: |
-        export default function hasInventory(context, event) {
-          const order = context.documents[0];
-          return order.data.items.length > 0;
-        }
-
-    validateOrder:
-      type: action
-      code: |
-        export default function validateOrder(context, event) {
-          const order = context.documents[0];
-          context.updateDoc(order.id, { status: 'validated' });
-        }
 ```
 
 ### Execute FSM
@@ -221,16 +167,13 @@ console.log(engine.getDocuments()); // [{ id: "order-001", ... }]
 
 ### Build Programmatically
 
-```typescript
-import {
-  codeAction,
-  createFSM,
-  emitAction,
-  state,
-  transition,
-} from "@atlas/fsm-engine";
+Construct an `FSMDefinition` object directly (the same shape the YAML
+loader produces) and hand it to `FSMEngine`:
 
-const fsm = createFSM({
+```typescript
+import { type FSMDefinition, FSMEngine } from "@atlas/fsm-engine";
+
+const fsm: FSMDefinition = {
   id: "order-processor",
   initial: "pending",
   documentTypes: {
@@ -245,34 +188,32 @@ const fsm = createFSM({
     },
   },
   states: {
-    pending: state({
+    pending: {
       documents: [{
         id: "order",
         type: "Order",
         data: { items: ["laptop"], total: 1200, status: "pending" },
       }],
-      transitions: {
-        APPROVE: transition("approved", [
-          codeAction("validateOrder"),
-          emitAction("order.approved", { orderId: "order-001" }),
-        ], ["hasInventory"]),
+      on: {
+        APPROVE: {
+          target: "approved",
+          actions: [
+            {
+              type: "llm",
+              provider: "anthropic",
+              model: "claude-sonnet-4-6",
+              prompt: "Validate this order and mark its status.",
+              outputTo: "order",
+              outputType: "Order",
+            },
+            { type: "emit", event: "order.approved", data: { orderId: "order" } },
+          ],
+        },
       },
-    }),
-    approved: state({ final: true }),
-  },
-  functions: {
-    hasInventory: {
-      type: "guard",
-      code:
-        "export default function hasInventory(context, event) { return context.documents[0].data.items.length > 0; }",
     },
-    validateOrder: {
-      type: "action",
-      code:
-        "export default function validateOrder(context, event) { context.updateDoc('order', { status: 'validated' }); }",
-    },
+    approved: { type: "final" },
   },
-});
+};
 
 const engine = new FSMEngine(fsm, { documentStore, scope });
 await engine.initialize();
@@ -373,33 +314,16 @@ actions:
 Documents are automatically injected into prompt. LLM can call tools defined in
 the FSM. Response stored in specified document.
 
-### Tool Definitions
+### Tool Allowlist
 
-Tools are TypeScript functions that the LLM can call during generation:
+The `tools:` array on an LLM action is a string allowlist of tool names —
+referencing MCP server tools or platform tools registered with the engine
+(e.g. `delegate`, `request_tool_access`, `get_<server>_<name>`). Tool
+implementations live outside the FSM definition; the engine resolves them at
+action execution time and narrows the LLM's tool surface to the listed names.
 
-```yaml
-tools:
-  get_customer_history:
-    description: Retrieve customer order history
-    inputSchema:
-      type: object
-      properties:
-        customerId: { type: string }
-      required: [customerId]
-    code: |
-      export default async function get_customer_history(args, context) {
-        const response = await fetch(`https://api.example.com/customers/${args.customerId}/orders`);
-        const history = await response.json();
-        return { orders: history.orders, totalSpent: history.total };
-      }
-```
-
-Tools receive:
-
-- `args`: Tool arguments from LLM (validated against inputSchema)
-- `context`: Current FSM context (documents, state)
-
-Tools return any JSON-serializable value that's passed back to the LLM.
+When `tools:` is omitted, the action gets the safe-by-default platform tool
+surface; an empty array opts out of every workspace-defined tool.
 
 Configure LLM provider:
 
@@ -424,8 +348,9 @@ FSM engine exposes MCP tools for LLM agents:
 
 ### `fsm_create`
 
-Create and validate an FSM definition. Accepts complete FSM structure with
-TypeScript code strings for guards and actions.
+Create and validate an FSM definition. Accepts the full structure: states,
+transitions, actions (`llm` / `agent` / `notification` / `emit`), and
+optional `documentTypes`.
 
 ```json
 {
@@ -435,17 +360,7 @@ TypeScript code strings for guards and actions.
       "id": "order-processor",
       "initial": "pending",
       "documentTypes": { "Order": {...} },
-      "states": { "pending": {...} },
-      "functions": {
-        "hasInventory": {
-          "type": "guard",
-          "code": "export default function hasInventory(context, event) { return context.documents[0].data.items.length > 0; }"
-        },
-        "validateOrder": {
-          "type": "action",
-          "code": "export default function validateOrder(context, event) { context.updateDoc('order', { status: 'validated' }); }"
-        }
-      }
+      "states": { "pending": {...}, "approved": { "type": "final" } }
     }
   }
 }
@@ -490,51 +405,35 @@ await engine2.signal({ type: "CONTINUE" });
 
 ## Recursion Protection
 
-Actions can emit signals that trigger more transitions. Recursion depth limited
-to 10 to prevent infinite loops:
-
-```typescript
-// Action emits signal
-export default function triggerNext(context, event) {
-  context.emit({ type: "NEXT" }); // Triggers transition
-}
-```
-
-Exceeding depth throws error.
+`emit` actions enqueue signals that trigger more transitions. Recursion depth
+is capped at 10 to prevent infinite loops; exceeding the cap throws.
 
 ## Entry Actions
 
-States can define entry actions executed when entering:
+States can define entry actions that execute when the state is entered:
 
 ```yaml
 states:
   processing:
     entry:
-      - type: code
-        function: logEntry
       - type: llm
         provider: anthropic
         model: claude-sonnet-4-6
         prompt: "Start processing"
+      - type: emit
+        event: PROCESSING_STARTED
 ```
 
-Entry actions execute after transition actions, before state becomes active.
+Entry actions execute after transition actions, before the state becomes
+active for further signal handling.
 
 ## Error Handling
 
-Failed actions abort transition - state doesn't change, error thrown. No
-automatic rollback or retry. Handle errors in action code:
-
-```typescript
-export default function risky(context, event) {
-  try {
-    // Risky operation
-  } catch (error) {
-    context.updateDoc("error-log", { error: error.message });
-    throw error; // Abort transition
-  }
-}
-```
+Failed actions abort the transition — state doesn't change, error is thrown.
+No automatic rollback or retry. LLM-action failures (provider error, schema
+validation failure on `outputType`, validation-judge blocking verdict) all
+surface as thrown errors that the workspace runtime catches and routes to the
+job's error handling.
 
 ## Validation
 
@@ -548,23 +447,20 @@ const result = validateFSMStructure(structure);
 if (!result.valid) {
   console.error(result.errors);
   // [
-  //   "State 'pending' references undefined guard 'hasInventory'",
-  //   "Undefined document type: OrderItem"
+  //   "Invalid transition in state \"pending\" on event \"APPROVE\": target \"approved\" does not exist.",
+  //   "Document type \"OrderItem\" is referenced but not defined in documentTypes."
   // ]
 }
-
-console.log(result.warnings);
-// ["No agent failure handling detected"]
 ```
 
 Checks:
 
 - Initial state exists
-- All states reachable
+- A final state is declared
+- All states reachable from `initial`
 - Transition targets exist
-- Guards and actions defined
-- Document types declared
-- Fields exist in schemas
+- No stuck non-final states
+- Referenced `documentTypes` are declared
 
 ## Dependencies
 
@@ -582,28 +478,22 @@ Checks:
 
 ## Security Considerations
 
-**IMPORTANT - Code Execution**: Guards and actions currently execute via dynamic
-import of user-provided strings. This runs in the same process with full
-permissions and represents a significant security risk. **Only load FSM
-definitions from trusted sources.** Arbitrary code execution will be addressed
-with Deno worker sandboxing in the next change before this is used in
-production.
-
 **Document Validation**: JSON Schema validation provides runtime type safety.
 Define strict schemas for all document types.
 
 **LLM Calls**: Prompt injection possible via document data interpolation.
 Sanitize sensitive documents before including in prompts.
 
+**Tool Allowlist**: An LLM action's `tools:` array narrows the LLM's tool
+surface. Use it to scope mutating tools (e.g. `send_email`) to actions that
+explicitly need them.
+
 ## Limitations
 
-- No transaction/rollback semantics - failed actions leave partial modifications
-- No concurrent signal handling - signals queue and execute sequentially
-- Code execution unsandboxed - full process access (will be addressed in next
-  change)
+- No transaction/rollback semantics — failed actions leave partial modifications
+- No concurrent signal handling — signals queue and execute sequentially
 - Recursion depth hardcoded to 10
 - No built-in timeout handling for long-running actions
-- Tool execution happens in main process (will be sandboxed with code execution)
 
 ## What This Enables
 

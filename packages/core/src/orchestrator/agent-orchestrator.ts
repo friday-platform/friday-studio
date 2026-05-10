@@ -2,7 +2,8 @@
  * Routes agent execution to MCP services (distributed).
  *
  * Session lifecycle: Each user session gets its own MCP client with SSE streaming.
- * Sessions auto-cleanup after 30min inactivity.
+ * Sessions release on terminal workspace-session completion, with idle cleanup
+ * as a fallback for abandoned sessions.
  */
 
 import {
@@ -23,6 +24,8 @@ import {
   type CancellationNotification,
   StreamContentNotificationSchema,
 } from "../streaming/stream-emitters.ts";
+
+const INACTIVE_SESSION_MAX_AGE_MS = 5 * 60 * 1000;
 
 // TODO(structured-output): Replace with proper agent result schema once agents produce structured output
 const MCPToolResultSchema = z.object({
@@ -66,6 +69,10 @@ export interface AgentExecutionContext {
   /** FSM job name — threaded across the MCP boundary so the agent-side
    *  context builder can resolve job-level skill assignments. */
   jobName?: string;
+  /** FSM action id for Activity correlation when an agent raises HITL. */
+  actionId?: string;
+  /** Parent job timeout in milliseconds for blocking HITL expiry. */
+  jobTimeoutMs?: number;
 }
 
 export interface AgentOrchestratorConfig {
@@ -109,6 +116,7 @@ export interface IAgentOrchestrator {
     prompt: string,
     context: AgentExecutionContext,
   ): Promise<AgentResult>;
+  releaseSession(sessionId: string): Promise<void>;
   shutdown(): Promise<void>;
 }
 
@@ -246,6 +254,17 @@ export class AgentOrchestrator implements IAgentOrchestrator {
     const startTime = Date.now();
     const logger = this.logger.child({ agentId, sessionId: context.sessionId });
 
+    let abortListener: (() => void) | undefined;
+    const buildCancelledResult = () =>
+      ({
+        agentId,
+        timestamp: new Date().toISOString(),
+        input: prompt,
+        ok: false,
+        error: { reason: "Session cancelled by user" },
+        durationMs: Date.now() - startTime,
+      }) satisfies AgentExecutionError<string>;
+
     const executionKey = `${context.sessionId}:${agentId}`;
     this.activeAgentExecutions.set(executionKey, {
       agentId,
@@ -281,7 +300,18 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         };
       }
 
+      if (context.abortSignal?.aborted) {
+        logger.info("Skipping agent execution because session is already cancelled");
+        return buildCancelledResult();
+      }
+
       const mcpSetup = await this.getOrCreateSessionClient(context.sessionId, context.workspaceId);
+
+      if (context.abortSignal?.aborted) {
+        logger.info("Closing MCP client created during session cancellation");
+        await this.releaseSession(context.sessionId);
+        return buildCancelledResult();
+      }
 
       logger.debug("Executing agent via MCP", {
         agentId,
@@ -296,18 +326,27 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         sessionId: context.sessionId,
       });
 
+      const sendCancellationNotification = async () => {
+        const notification: CancellationNotification = {
+          method: "notifications/cancelled",
+          params: { requestId, reason: "Session cancelled by user" },
+        };
+        try {
+          await mcpSetup.client.notification(notification);
+        } catch (error) {
+          logger.warn("Failed to send cancellation notification", { error, requestId });
+        }
+      };
+
       if (context.abortSignal) {
-        context.abortSignal.addEventListener("abort", async () => {
-          const notification: CancellationNotification = {
-            method: "notifications/cancelled",
-            params: { requestId, reason: "Session cancelled by user" },
-          };
-          try {
-            await mcpSetup.client.notification(notification);
-          } catch (error) {
-            logger.warn("Failed to send cancellation notification", { error, requestId });
-          }
-        });
+        abortListener = () => {
+          void sendCancellationNotification();
+        };
+        if (context.abortSignal.aborted) {
+          await sendCancellationNotification();
+        } else {
+          context.abortSignal.addEventListener("abort", abortListener, { once: true });
+        }
       }
 
       const toolCallArgs: AgentToolParams = {
@@ -326,6 +365,8 @@ export class AgentOrchestrator implements IAgentOrchestrator {
           memoryContextKey: context.memoryContextKey,
           foregroundWorkspaceIds: context.foregroundWorkspaceIds,
           jobName: context.jobName,
+          actionId: context.actionId,
+          jobTimeoutMs: context.jobTimeoutMs,
         },
         outputSchema: context.outputSchema,
         config: context.config,
@@ -381,6 +422,10 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         durationMs: Date.now() - startTime,
       } satisfies AgentExecutionError<string>;
     } finally {
+      if (abortListener) {
+        context.abortSignal?.removeEventListener("abort", abortListener);
+      }
+
       // Must cleanup here to avoid race with late-arriving notifications after finish
       if (context.onStreamEvent) {
         const handlerKey = this.getStreamHandlerKey(context.sessionId, agentId);
@@ -413,7 +458,9 @@ export class AgentOrchestrator implements IAgentOrchestrator {
       const client = new Client({ name: "atlas-agent-orchestrator", version: "1.0.0" });
 
       const transport = new StreamableHTTPClientTransport(new URL(this.config.agentsServerUrl), {
-        requestInit: { headers: { ...this.config.headers, "mcp-session-id": sessionId } },
+        requestInit: {
+          headers: { ...this.config.headers, "mcp-session-id": sessionId, Connection: "close" },
+        },
       });
 
       // Workaround for MCP SDK bug (typescript-sdk#731): when the SSE stream
@@ -435,13 +482,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
             sessionId,
             error: message,
           });
-          this.mcpSessions.delete(sessionId);
-          for (const key of this.activeStreamHandlers.keys()) {
-            if (key.startsWith(`${sessionId}:`)) {
-              this.activeStreamHandlers.delete(key);
-            }
-          }
-          transport.close().catch(() => {});
+          void this.releaseSession(sessionId);
         }
       };
 
@@ -498,29 +539,102 @@ export class AgentOrchestrator implements IAgentOrchestrator {
     return setup;
   }
 
-  /** Cleans up sessions inactive for >30 minutes. */
+  private sessionIdsForSetup(primarySessionId: string, setup: MCPSessionSetup): string[] {
+    const ids = new Set([primarySessionId]);
+    for (const [sessionId, candidate] of this.mcpSessions.entries()) {
+      if (candidate === setup) ids.add(sessionId);
+    }
+    return [...ids];
+  }
+
+  private removeSessionBookkeeping(sessionIds: string[]): void {
+    for (const sessionId of sessionIds) {
+      this.mcpSessions.delete(sessionId);
+    }
+
+    for (const key of this.activeStreamHandlers.keys()) {
+      if (sessionIds.some((sessionId) => key.startsWith(`${sessionId}:`))) {
+        this.activeStreamHandlers.delete(key);
+      }
+    }
+
+    for (const key of this.activeMCPRequests.keys()) {
+      if (sessionIds.some((sessionId) => key.startsWith(`${sessionId}:`))) {
+        this.activeMCPRequests.delete(key);
+      }
+    }
+  }
+
+  private hasActiveSessionWork(sessionIds: string[]): boolean {
+    for (const sessionId of sessionIds) {
+      for (const execution of this.activeAgentExecutions.values()) {
+        if (execution.sessionId === sessionId) return true;
+      }
+      for (const request of this.activeMCPRequests.values()) {
+        if (request.sessionId === sessionId) return true;
+      }
+    }
+    return false;
+  }
+
+  private async closeSessionSetup(
+    sessionId: string,
+    setup: MCPSessionSetup,
+    reason: "release" | "idle-cleanup" | "shutdown",
+  ): Promise<void> {
+    const sessionIds = this.sessionIdsForSetup(sessionId, setup);
+    this.removeSessionBookkeeping(sessionIds);
+
+    try {
+      await setup.transport.terminateSession();
+    } catch (error) {
+      this.logger.warn("Error terminating MCP server session", {
+        sessionId,
+        sessionIds,
+        reason,
+        error,
+      });
+    }
+
+    try {
+      await setup.transport.close();
+      this.logger.info("Closed MCP transport for session", { sessionId, sessionIds, reason });
+    } catch (error) {
+      this.logger.error("Error closing MCP transport for session", {
+        sessionId,
+        sessionIds,
+        reason,
+        error,
+      });
+    }
+  }
+
+  /** Release a session-scoped MCP client once its workspace session reaches a terminal state. */
+  async releaseSession(sessionId: string): Promise<void> {
+    const setup = this.mcpSessions.get(sessionId);
+    if (!setup) {
+      this.removeSessionBookkeeping([sessionId]);
+      return;
+    }
+    await this.closeSessionSetup(sessionId, setup, "release");
+  }
+
+  /** Cleans up abandoned sessions inactive for >5 minutes. */
   private async cleanupInactiveSessions(): Promise<void> {
     const now = Date.now();
-    const maxAge = 30 * 60 * 1000;
+    const closed = new Set<MCPSessionSetup>();
 
-    for (const [sessionId, setup] of this.mcpSessions.entries()) {
-      if (now - setup.lastActivity > maxAge) {
+    for (const [sessionId, setup] of Array.from(this.mcpSessions.entries())) {
+      if (closed.has(setup)) continue;
+      const sessionIds = this.sessionIdsForSetup(sessionId, setup);
+      if (this.hasActiveSessionWork(sessionIds)) {
+        setup.lastActivity = now;
+        continue;
+      }
+      if (now - setup.lastActivity > INACTIVE_SESSION_MAX_AGE_MS) {
         this.logger.info("Cleaning up inactive session", { sessionId });
-
-        try {
-          await setup.transport.close();
-        } catch (error) {
-          this.logger.error("Error closing transport for session", { sessionId, error });
-        }
-
-        this.mcpSessions.delete(sessionId);
-
-        // Clean up stream handlers for this session
-        for (const key of this.activeStreamHandlers.keys()) {
-          if (key.startsWith(`${sessionId}:`)) {
-            this.activeStreamHandlers.delete(key);
-          }
-        }
+        closed.add(setup);
+        await this.closeSessionSetup(sessionId, setup, "idle-cleanup");
       }
     }
   }
@@ -533,13 +647,11 @@ export class AgentOrchestrator implements IAgentOrchestrator {
       this.sessionCleanupInterval = undefined;
     }
 
-    for (const [sessionId, setup] of this.mcpSessions.entries()) {
-      try {
-        await setup.transport.close();
-        this.logger.info("Closed MCP transport for session", { sessionId });
-      } catch (error) {
-        this.logger.error("Error closing MCP transport for session", { sessionId, error });
-      }
+    const closed = new Set<MCPSessionSetup>();
+    for (const [sessionId, setup] of Array.from(this.mcpSessions.entries())) {
+      if (closed.has(setup)) continue;
+      closed.add(setup);
+      await this.closeSessionSetup(sessionId, setup, "shutdown");
     }
 
     this.mcpSessions.clear();

@@ -109,11 +109,6 @@ async function ensureNarrativeStream(
     storage: StorageType.File,
     max_msg_size: limits.maxMsgSize ?? DEFAULT_MAX_MSG_SIZE,
     duplicate_window: typeof dup === "bigint" ? Number(dup) : dup,
-    // Allow rollup compaction for the future tombstone-compaction primitive.
-    // Today nothing publishes a rollup; admins can `nats stream purge` until
-    // the explicit compact() helper lands. Setting allow_rollup at create
-    // time avoids a stream update later.
-    allow_rollup_hdrs: true,
   });
   logger.info("Created memory stream", { workspaceId, name, stream: sName });
 }

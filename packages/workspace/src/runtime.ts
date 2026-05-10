@@ -18,20 +18,24 @@ import {
   type NarrativeStore,
   PLATFORM_TOOL_NAMES,
   type ResolvedWorkspaceMemory,
+  repairToolCall,
   type StoreMountBinding,
+  type ToolCall,
+  type ToolResult,
 } from "@atlas/agent-sdk";
 import {
+  type DelegationBudget,
   expandAgentActions,
   type GlobalSkillRefConfig,
   type InlineSkillConfig,
   type MergedConfig,
+  parseDuration,
   parseSkillRef,
   resolveRuntimeAgentId,
   validateSignalPayload,
 } from "@atlas/config";
 import {
   AgentOrchestrator,
-  type AgentResultData,
   buildSessionView,
   type EphemeralChunk,
   extractPlannedSteps,
@@ -44,6 +48,7 @@ import {
   mapStateSkippedToStepSkipped,
   mapValidationAttemptToStepValidation,
   ReasoningResultStatus,
+  type SessionAISummary,
   SessionHistoryStorage,
   type SessionStreamEvent,
   type SessionSummary as SessionSummaryV2,
@@ -52,13 +57,16 @@ import {
   type WorkspaceSessionStatusType,
   wrapPlatformToolsWithScope,
 } from "@atlas/core";
-import { UserAdapter } from "@atlas/core/agent-loader";
+import { buildValidateDecisionConfig } from "@atlas/core/agent-context/validate-decision";
+import { getSystemAgentType, UserAdapter } from "@atlas/core/agent-loader";
+import type { ArtifactLifecycle } from "@atlas/core/artifacts";
 import { ArtifactStorage } from "@atlas/core/artifacts/storage";
 import { resolveEnvValues } from "@atlas/core/mcp-registry/credential-resolver";
 import { applyPlatformEnv } from "@atlas/core/mcp-registry/discovery";
 import { mcpServersRegistry } from "@atlas/core/mcp-registry/registry-consolidated";
 import { type DocumentStore, getDocumentStore } from "@atlas/document-store";
 import {
+  type Action,
   type AgentAction,
   type AgentExecutor,
   AtlasLLMProviderAdapter,
@@ -73,11 +81,10 @@ import {
   type FSMEngine,
   type FSMEvent,
   type FSMStateSkippedEvent,
-  interpolatePromptPlaceholders,
+  type LLMAction,
   type SignalWithContext,
   validateFSMStructure,
 } from "@atlas/fsm-engine";
-import { createFSMOutputValidator, SupervisionLevel } from "@atlas/hallucination";
 import {
   type GenerateSessionTitleInput,
   generateSessionTitle,
@@ -94,9 +101,8 @@ import { parse as parseYAML } from "@std/yaml";
 import { z } from "zod";
 import {
   buildAgentPrompt,
-  buildFinalAgentPrompt,
+  composeAgentPrompt,
   extractAgentConfig,
-  extractAgentConfigPrompt,
   validateAgentOutput,
 } from "../../../apps/atlasd/src/agent-helpers.ts";
 import { generateSessionSummary } from "../../../apps/atlasd/src/session-summarizer.ts";
@@ -156,6 +162,42 @@ function awaitWithAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T>
   });
 }
 
+/**
+ * Phase 8 — per-field merge of two delegation-budget blocks. Job-level
+ * override wins per field; unset fields fall through to workspace-level.
+ * Returns `undefined` when both inputs are absent so the caller can skip
+ * passing the option to FSMEngineOptions and let `createDelegateTool`'s
+ * built-in defaults apply (back-compat: no `delegation:` block ⇒ no
+ * change in behavior vs. pre-Phase-8 hardcoded constants).
+ *
+ * Exported for unit-test parity with the runtime path.
+ */
+export function mergeDelegationBudgets(
+  workspace: DelegationBudget | undefined,
+  job: DelegationBudget | undefined,
+): DelegationBudget | undefined {
+  if (!workspace && !job) return undefined;
+  const merged: DelegationBudget = {};
+  // Walk the union of keys so the output preserves only fields explicitly
+  // set somewhere — never synthesize defaults here (that's the delegate's
+  // job, where they're encoded once next to the runtime that consumes them).
+  const keys = new Set<keyof DelegationBudget>([
+    ...((workspace ? Object.keys(workspace) : []) as Array<keyof DelegationBudget>),
+    ...((job ? Object.keys(job) : []) as Array<keyof DelegationBudget>),
+  ]);
+  for (const key of keys) {
+    const jobVal = job?.[key];
+    const wsVal = workspace?.[key];
+    const value = jobVal !== undefined ? jobVal : wsVal;
+    if (value !== undefined) {
+      // Type-cast individual assignment — DelegationBudget is a union of
+      // optional fields with mixed numeric / nullable shapes.
+      (merged as Record<string, unknown>)[key] = value;
+    }
+  }
+  return merged;
+}
+
 function asAbortError(reason: unknown): Error {
   if (reason instanceof Error && reason.name === "AbortError") return reason;
   const err = new Error(
@@ -195,6 +237,13 @@ interface WorkspaceRuntimeSignal {
   data?: Record<string, unknown>;
   timestamp: Date;
   provider?: { id: string; name: string };
+  /**
+   * Parent session id when this signal was fired from inside another
+   * session (chat-spawned-job, signal-trigger-from-FSM). Forwarded to
+   * `SessionSummary.parentSessionId` at finalization. Phase 11
+   * provenance for crystallization. Absent for root sessions.
+   */
+  parentSessionId?: string;
 }
 
 /** Minimal workspace info needed by WorkspaceRuntimeInit (internal use only) */
@@ -282,6 +331,13 @@ interface SessionStream {
   emit(event: SessionStreamEvent): void;
   emitEphemeral(chunk: EphemeralChunk): void;
   finalize(summary: SessionSummaryV2): Promise<void>;
+  /**
+   * C2 — overwrite the persisted summary after finalize. Called by the
+   * detached `generateSessionSummary` flow once the LLM-generated aiSummary
+   * is ready. Optional so test stubs that don't care about post-finalize
+   * updates can omit it.
+   */
+  updateSummary?(summary: SessionSummaryV2): Promise<void>;
   getBufferedEvents(): SessionStreamEvent[];
 }
 
@@ -337,6 +393,15 @@ interface WorkspaceRuntimeOptions {
    * wraps `ChatSdkNotifier` + `broadcastDestinations` and supplies it here.
    */
   broadcastNotifier?: FSMBroadcastNotifier;
+  /**
+   * Judge agent runner injected by the daemon. The daemon owns the system-agent
+   * registry (workspace can't
+   * import `@atlas/system` without a layering violation) and supplies a
+   * function that delegates to `judgeAgent.execute(...)` (or the override
+   * named in `validate.agent`). When unset, FSM external-validation
+   * branches synthesize an advisory verdict so actions still emit.
+   */
+  runJudge?: import("@atlas/fsm-engine").JudgeAgentRunner;
 }
 
 /**
@@ -354,6 +419,53 @@ interface FSMJob {
   description?: string;
   /** Max LLM tool-calling steps for FSM actions */
   maxSteps?: number;
+  /**
+   * Per-job delegation override. Merged per-field over the workspace-level
+   * `delegation:` block at engine-construction time
+   * (job wins; unset fields fall through). Carried on the job record so
+   * the merge is local to `createJobEngine` and stays out of the
+   * signal-routing path.
+   */
+  delegationOverride?: import("@atlas/config").DelegationBudget;
+  /**
+   * Per-job permissions from `JobSpecification.permissions`. Forwarded into
+   * FSMEngine options so `request_tool_access` can resolve
+   * the effective `dangerouslySkipAllowlist` at LLM-call time. Optional;
+   * undefined = "no per-job override; fall through to workspace + daemon".
+   *
+   * `timeoutMs` is the parsed `JobSpecification.config.timeout` in
+   * milliseconds. Forwarded into FSMEngine options as `jobTimeoutMs` so
+   * scope-injected elicitation tools (`request_tool_access`) can derive
+   * `expiresAt = now + jobTimeoutMs`. Undefined when no timeout configured;
+   * elicitation tools fall back to their built-in default.
+   */
+  permissions?: import("@atlas/config").PermissionsConfig;
+  /** Parsed `jobSpec.config.timeout` in milliseconds. See doc above. */
+  timeoutMs?: number;
+  /**
+   * Per-job validation override from `JobSpecification.validation`. Forwarded
+   * into FSMEngineOptions so
+   * the engine resolves action-level `validate:` against this and the
+   * workspace-level default. Optional; undefined = "no per-job
+   * override; fall through to workspace then to "auto" classifier".
+   */
+  validation?: import("@atlas/config").ValidationDefaults;
+}
+
+/**
+ * Parse a job-config duration into milliseconds. Tolerates a malformed
+ * value with a warn-log so one typo doesn't block the entire workspace
+ * from loading. Returns undefined on parse failure (caller treats
+ * undefined as "no per-job timeout configured" — engine falls back to
+ * its built-in default).
+ */
+function parseJobTimeoutMs(jobName: string, value: string): number | undefined {
+  try {
+    return parseDuration(value);
+  } catch (err) {
+    logger.warn("Invalid job timeout — ignoring", { jobName, value, error: stringifyError(err) });
+    return undefined;
+  }
 }
 
 interface ActiveSession {
@@ -365,6 +477,29 @@ interface ActiveSession {
   waitForCompletion(): Promise<SessionSummary>; // Convenience method to avoid .session.waitForCompletion()
 }
 
+export interface WorkspaceSignalRunResult {
+  session: IWorkspaceSession;
+  output: Array<{ id: string; type: string; data: Record<string, unknown> }>;
+  artifactIds: string[];
+  summary: string;
+}
+
+/**
+ * Reference to an FSM document that was persisted as a real artifact in
+ * JetStream Object Store on session completion (Phase 2.B of the
+ * fan-out-without-fan-in plan). Parent supervisors will eventually consume
+ * this list instead of the full {@link IWorkspaceArtifact} payload — the
+ * job-tool result shape change is a follow-on iteration.
+ */
+export interface SessionArtifactRef {
+  /** FSM document id this artifact was synthesized from. */
+  documentId: string;
+  /** Artifact id assigned by {@link ArtifactStorage.create}. */
+  artifactId: string;
+  /** Artifact revision (always 1 for newly-created artifacts). */
+  revision: number;
+}
+
 interface SessionResult {
   id: string;
   workspaceId: string;
@@ -372,6 +507,24 @@ interface SessionResult {
   startedAt: Date;
   completedAt?: Date;
   artifacts: IWorkspaceArtifact[];
+  /**
+   * Persisted-artifact refs for non-plumbing FSM documents emitted during
+   * the session. Additive — `artifacts` (the labeled in-memory list) is
+   * preserved for existing consumers. Empty when artifact persistence
+   * fails or no eligible documents were emitted.
+   */
+  artifactRefs: SessionArtifactRef[];
+  /**
+   * AI-generated session summary from `generateSessionSummary` (used for
+   * `SessionSummary.aiSummary` finalization). Captured here so synchronous
+   * callers — like the cascade dispatcher feeding the SSE `job-complete`
+   * event — can surface the summary alongside `artifactRefs` without
+   * re-reading the persisted summary stream. Phase 2.C of the fan-in fix.
+   *
+   * Undefined when the summarizer was skipped (no agent blocks) or
+   * silently failed.
+   */
+  aiSummary?: SessionAISummary;
   error?: Error;
   /** User ID from signal data */
   userId?: string;
@@ -379,7 +532,585 @@ interface SessionResult {
   collectedFsmEvents?: FSMEvent[];
   /** Snapshot of the per-signal engine's documents at completion. */
   engineDocuments?: FSMDocument[];
+  /** FSM definition that produced this session; used to derive compact job results. */
+  definition?: FSMDefinition;
   finalState?: string;
+}
+
+/**
+ * FSM plumbing document types that never become artifacts. Exported so
+ * tests can assert filter parity with {@link WorkspaceRuntime.getSessionFsmDocuments}.
+ */
+export const PLUMBING_DOCUMENT_TYPES: ReadonlySet<string> = new Set([
+  "state-transition",
+  "fsm-state",
+  "ChatContext",
+  "signal-payload",
+]);
+
+/**
+ * Walk the FSM definition once and build a `documentId → action` lookup.
+ * Used so artifact persistence can pull the action-author's declared
+ * `summary` (Phase 2 schema addition, commit `d61be0f`) instead of
+ * synthesizing one from the document's `data`.
+ *
+ * Only `llm` and `agent` actions can declare `outputTo` + `summary`;
+ * other action kinds (`emit`, `notification`) are skipped. When two
+ * actions share the same `outputTo` document id (overwriting in a
+ * later state), the last one wins — matches FSM runtime semantics
+ * where successive writes replace prior data.
+ */
+export function buildDocumentActionIndex(
+  definition: FSMDefinition,
+): Map<string, LLMAction | AgentAction> {
+  const index = new Map<string, LLMAction | AgentAction>();
+  const visit = (actions: Action[] | undefined) => {
+    if (!actions) return;
+    for (const a of actions) {
+      if ((a.type === "llm" || a.type === "agent") && a.outputTo) {
+        index.set(a.outputTo, a);
+      }
+    }
+  };
+  for (const state of Object.values(definition.states)) {
+    visit(state.entry);
+    if (!state.on) continue;
+    for (const transition of Object.values(state.on)) {
+      const transitions = Array.isArray(transition) ? transition : [transition];
+      for (const t of transitions) visit(t.actions);
+    }
+  }
+  return index;
+}
+
+/**
+ * Build a `documentId → fromTerminalState` lookup. A document is "from
+ * a terminal state" if the action that emits it lives on a state whose
+ * `type === "final"`. Phase 6 default policy uses this to pick
+ * lifecycle: terminal-state outputs are durable (user-facing job
+ * outputs), non-terminal outputs are ephemeral.
+ *
+ * When two actions in different states write to the same `outputTo`
+ * document id, the runtime applies last-writer-wins — but for
+ * lifecycle classification we err on the durable side: if any
+ * contributing action is in a terminal state, the document is durable.
+ * This is the conservative choice (durable beats ephemeral on
+ * collision) and avoids deleting user-facing output a terminal state
+ * happened to share an id with a transient one.
+ */
+export function buildDocumentTerminalIndex(definition: FSMDefinition): Set<string> {
+  const terminal = new Set<string>();
+  for (const state of Object.values(definition.states)) {
+    if (state.type !== "final") continue;
+    const visit = (actions: Action[] | undefined) => {
+      if (!actions) return;
+      for (const a of actions) {
+        if ((a.type === "llm" || a.type === "agent") && a.outputTo) {
+          terminal.add(a.outputTo);
+        }
+      }
+    };
+    visit(state.entry);
+    if (!state.on) continue;
+    for (const transition of Object.values(state.on)) {
+      const transitions = Array.isArray(transition) ? transition : [transition];
+      for (const t of transitions) visit(t.actions);
+    }
+  }
+  return terminal;
+}
+
+/**
+ * Synthesize a structural summary of a document's `data` (~300 chars).
+ *
+ * I3: prefer a structural fingerprint over raw JSON — supervisors answer
+ * common queries (how many? what status?) from the summary alone, so
+ * counts and scalar status fields up front beat truncated JSON. We
+ * build a `key: value` digest of top-level fields:
+ *
+ *   - Arrays surface as `<key>: N items`.
+ *   - Scalar leaves (string/number/boolean) surface verbatim, with
+ *     long strings truncated to keep one field from hogging the budget.
+ *   - Nested objects/null/undefined are skipped (too noisy at-a-glance).
+ *
+ * Falls back to the document type name if the data is empty or a
+ * circular structure throws — preserves a non-empty summary so artifact
+ * creation doesn't fail Zod validation (`summary.min(1)`).
+ */
+export function synthesizeArtifactSummary(doc: FSMDocument): string {
+  const MAX = 300;
+  const parts: string[] = [];
+  try {
+    for (const [key, value] of Object.entries(doc.data ?? {})) {
+      if (value === null || value === undefined) continue;
+      if (Array.isArray(value)) {
+        parts.push(`${key}: ${value.length} item${value.length === 1 ? "" : "s"}`);
+      } else if (typeof value === "string") {
+        const trimmed = value.length > 80 ? `${value.slice(0, 79)}…` : value;
+        parts.push(`${key}: ${trimmed}`);
+      } else if (typeof value === "number" || typeof value === "boolean") {
+        parts.push(`${key}: ${String(value)}`);
+      }
+      // Nested objects intentionally skipped — see comment above.
+    }
+  } catch {
+    return `[${doc.type}]`;
+  }
+  if (parts.length > 0) {
+    const joined = parts.join("; ");
+    return joined.length > MAX ? `${joined.slice(0, MAX - 1)}…` : joined;
+  }
+  // No top-level scalar/array fields — fall back to truncated JSON for
+  // at least *some* structural hint of the doc shape.
+  let body: string;
+  try {
+    body = JSON.stringify(doc.data);
+  } catch {
+    return `[${doc.type}]`;
+  }
+  if (!body || body === "{}") return `[${doc.type}]`;
+  return body.length > MAX ? `${body.slice(0, MAX - 1)}…` : body;
+}
+
+/**
+ * Phase 2.C fallback when {@link generateSessionSummary} didn't produce a
+ * summary AND no terminal-state document has a declared
+ * (Phase 2.A) `summary`. Picks the last non-plumbing document and reuses
+ * the artifact-summary truncation. Returns an empty string when there's
+ * nothing summarizable — the caller decides what to do with that.
+ */
+export function synthesizeFallbackSummary(
+  docs: Array<{ id: string; type: string; data: Record<string, unknown> }>,
+): string {
+  const last = [...docs].reverse().find((d) => !PLUMBING_DOCUMENT_TYPES.has(d.type));
+  if (!last) return "";
+  return synthesizeArtifactSummary(last);
+}
+
+/**
+ * Identify the "terminal action" of an FSM — the last `llm`/`agent` entry
+ * action whose output reaches the final state. Used by the C1 aiSummary
+ * fast path to read a Phase 2.A `summary:` declaration without an LLM
+ * round-trip.
+ *
+ * Walk order:
+ *   1. The final state's own `entry` actions — most jobs put their last
+ *      LLM/agent step here.
+ *   2. If none, predecessor states (any state with a transition whose
+ *      `target` is the final state) and pick the last LLM/agent entry
+ *      action across them. Falls through to the transition's own
+ *      `actions` array if the predecessor has none.
+ *
+ * Returns `undefined` when no LLM/agent action can be tied to the
+ * terminal output (e.g. emit-only FSMs).
+ */
+export function findTerminalAction(definition: FSMDefinition): LLMAction | AgentAction | undefined {
+  const states = definition.states;
+  const finalStateIds = Object.entries(states)
+    .filter(([, s]) => s.type === "final")
+    .map(([id]) => id);
+  if (finalStateIds.length === 0) return undefined;
+
+  const lastLlmOrAgent = (actions: Action[] | undefined): LLMAction | AgentAction | undefined => {
+    if (!actions) return undefined;
+    for (let i = actions.length - 1; i >= 0; i--) {
+      const a = actions[i];
+      if (!a) continue;
+      if (a.type === "llm" || a.type === "agent") return a;
+    }
+    return undefined;
+  };
+
+  // Tier 1 — final state's own entry actions.
+  for (const id of finalStateIds) {
+    const found = lastLlmOrAgent(states[id]?.entry);
+    if (found) return found;
+  }
+
+  // Tier 2 — predecessor states whose transitions point to a final state.
+  // Pick the last LLM/agent entry action of any such predecessor; fall
+  // back to the transition's own `actions` if the predecessor has none.
+  let fromTransitionActions: LLMAction | AgentAction | undefined;
+  for (const state of Object.values(states)) {
+    if (!state.on) continue;
+    for (const transition of Object.values(state.on)) {
+      const transitions = Array.isArray(transition) ? transition : [transition];
+      for (const t of transitions) {
+        if (!finalStateIds.includes(t.target)) continue;
+        const fromEntry = lastLlmOrAgent(state.entry);
+        if (fromEntry) return fromEntry;
+        fromTransitionActions ??= lastLlmOrAgent(t.actions);
+      }
+    }
+  }
+  return fromTransitionActions;
+}
+
+/**
+ * C1 helper — derive `keyDetails` for {@link SessionAISummary} from the
+ * terminal action's structured output document. Walks the document's
+ * top-level `data` fields:
+ *
+ *   - String / number / boolean leaves become entries; URL-shaped
+ *     strings also populate the `url` field.
+ *   - Arrays surface as a count entry (`"N items"`) — I3: lets the
+ *     supervisor answer "how many?" from `keyDetails` without
+ *     `artifacts_get`. Empty arrays included (`"0 items"`) so consumers
+ *     can distinguish "no urgent" from "field missing".
+ *   - Nested objects are skipped (too noisy for an at-a-glance summary).
+ *
+ * Capped at 5 to match the existing aiSummary norm.
+ */
+export function deriveKeyDetailsFromOutputDoc(
+  doc: { data: Record<string, unknown> } | undefined,
+): Array<{ label: string; value: string; url?: string }> {
+  if (!doc?.data) return [];
+  const entries: Array<{ label: string; value: string; url?: string }> = [];
+  for (const [key, value] of Object.entries(doc.data)) {
+    if (entries.length >= 5) break;
+    if (value === null || value === undefined) continue;
+    let stringValue: string;
+    let urlValue: string | undefined;
+    if (typeof value === "string") {
+      stringValue = value;
+      if (isUrlShaped(value)) urlValue = value;
+    } else if (typeof value === "number" || typeof value === "boolean") {
+      stringValue = String(value);
+    } else if (Array.isArray(value)) {
+      stringValue = `${value.length} item${value.length === 1 ? "" : "s"}`;
+    } else {
+      continue; // skip nested objects
+    }
+    const entry: { label: string; value: string; url?: string } = {
+      label: humanizeFieldKey(key),
+      value: stringValue,
+    };
+    if (urlValue) entry.url = urlValue;
+    entries.push(entry);
+  }
+  return entries;
+}
+
+/**
+ * Turn `processedCount` → "Processed Count", `total_emails` → "Total
+ * Emails". Splits on snake_case underscores and camelCase boundaries,
+ * then title-cases each word.
+ */
+export function humanizeFieldKey(key: string): string {
+  return key
+    .replace(/_+/g, " ")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .split(/\s+/)
+    .filter((w) => w.length > 0)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
+function isUrlShaped(s: string): boolean {
+  return s.startsWith("http://") || s.startsWith("https://");
+}
+
+/**
+ * C1 fast path — produce a SessionAISummary from the terminal action's
+ * declared `summary:` (Phase 2.A) plus structured leaf fields of its
+ * `outputTo` document, without an LLM call. Returns `undefined` when
+ * no such terminal action is identified or its `summary:` is missing
+ * — caller falls back to the LLM-generated path.
+ */
+export function buildFastPathAiSummary(
+  definition: FSMDefinition,
+  documents: FSMDocument[],
+): SessionAISummary | undefined {
+  const terminalAction = findTerminalAction(definition);
+  if (!terminalAction) return undefined;
+  const declared = terminalAction.summary?.trim();
+  if (!declared) return undefined;
+  const outputDoc = terminalAction.outputTo
+    ? documents.find((d) => d.id === terminalAction.outputTo)
+    : undefined;
+  return { summary: declared, keyDetails: deriveKeyDetailsFromOutputDoc(outputDoc) };
+}
+
+/**
+ * C2 synchronous-fallback aiSummary — used when the C1 fast path produced
+ * nothing (no terminal action, or no declared `summary:`) but we still
+ * need *some* aiSummary to return immediately on SSE `job-complete`
+ * instead of waiting ~1-2s for `generateSessionSummary` to finish.
+ *
+ * Source preference for `summary` text:
+ *   1. Terminal action's declared `summary:` (same lookup as the C1 path —
+ *      lets actions without an `outputTo` still hit a fast answer).
+ *   2. Truncated `JSON.stringify` of the terminal-state document's data,
+ *      via {@link synthesizeFallbackSummary}. ~300 chars.
+ *
+ * `keyDetails` comes from {@link deriveKeyDetailsFromOutputDoc} when an
+ * `outputTo` doc is present; otherwise `[]`. The polished LLM summary
+ * (when generation completes out-of-band) overwrites this entry.
+ */
+export function buildSynchronousFallbackAiSummary(
+  definition: FSMDefinition,
+  documents: FSMDocument[],
+): SessionAISummary {
+  const terminalAction = findTerminalAction(definition);
+  const declared = terminalAction?.summary?.trim();
+  const outputDoc = terminalAction?.outputTo
+    ? documents.find((d) => d.id === terminalAction.outputTo)
+    : undefined;
+  const summary =
+    declared && declared.length > 0
+      ? declared
+      : synthesizeFallbackSummary(documents.filter((d) => !PLUMBING_DOCUMENT_TYPES.has(d.type)));
+  return { summary, keyDetails: deriveKeyDetailsFromOutputDoc(outputDoc) };
+}
+
+export function buildSessionJobResult(args: {
+  artifactRefs: SessionArtifactRef[];
+  aiSummary?: SessionAISummary;
+  definition?: FSMDefinition;
+  documents: Array<{ id: string; type: string; data: Record<string, unknown> }>;
+}): { artifactIds: string[]; summary: string } {
+  const artifactIds = args.artifactRefs.map((r) => r.artifactId);
+
+  if (args.aiSummary?.summary) {
+    return { artifactIds, summary: args.aiSummary.summary };
+  }
+
+  if (!args.definition) {
+    return { artifactIds, summary: synthesizeFallbackSummary(args.documents) };
+  }
+
+  const terminalIds = buildDocumentTerminalIndex(args.definition);
+  const actionIndex = buildDocumentActionIndex(args.definition);
+  for (const doc of args.documents) {
+    if (!terminalIds.has(doc.id)) continue;
+    const declared = actionIndex.get(doc.id)?.summary;
+    if (declared && declared.length > 0) {
+      return { artifactIds, summary: declared };
+    }
+    return { artifactIds, summary: synthesizeArtifactSummary(doc) };
+  }
+
+  return { artifactIds, summary: synthesizeFallbackSummary(args.documents) };
+}
+
+/**
+ * Persist non-plumbing FSM documents as real artifacts in JetStream
+ * Object Store. Phase 2.B of the fan-out-without-fan-in plan — the
+ * data-layer half of the universal ref-return change. Failures log a
+ * warning and continue; the session document store remains the source
+ * of truth. Artifact `source` is tagged "fsm-engine:..." so the
+ * runtime cleanup pass can correlate artifacts back to their session.
+ *
+ * Phase 6: each persisted artifact gets a `lifecycle`:
+ * - `lifecycleOverride === "ephemeral"` → ephemeral, session-bound
+ * - `lifecycleOverride === "durable"` → durable
+ * - Otherwise: terminal-state outputs durable; non-terminal outputs
+ *   ephemeral, bound to `sessionId` (when provided).
+ *
+ * `sessionId` is required to materialize an `ephemeral` lifecycle. If
+ * absent, ephemeral defaults to durable on persist (back-compat for
+ * callers that haven't been threaded yet).
+ */
+export async function persistFsmSessionArtifacts(args: {
+  documents: FSMDocument[];
+  definition: FSMDefinition;
+  jobName: string;
+  workspaceId: string;
+  sessionId?: string;
+  lifecycleOverride?: "ephemeral" | "durable";
+}): Promise<SessionArtifactRef[]> {
+  const { documents, definition, jobName, workspaceId, sessionId, lifecycleOverride } = args;
+  const refs: SessionArtifactRef[] = [];
+  const actionIndex = buildDocumentActionIndex(definition);
+  const terminalDocuments = buildDocumentTerminalIndex(definition);
+
+  for (const doc of documents) {
+    if (PLUMBING_DOCUMENT_TYPES.has(doc.type)) continue;
+
+    const action = actionIndex.get(doc.id);
+    const authorSummary = action?.summary?.trim();
+    const summary =
+      authorSummary && authorSummary.length > 0 ? authorSummary : synthesizeArtifactSummary(doc);
+
+    let content: string;
+    try {
+      content = JSON.stringify(doc.data, null, 2);
+    } catch (err) {
+      logger.warn("Skipping artifact persist: doc.data is not JSON-serializable", {
+        documentId: doc.id,
+        documentType: doc.type,
+        error: stringifyError(err),
+      });
+      continue;
+    }
+
+    // Phase 6 lifecycle decision. Job override > terminal-state default.
+    let lifecycle: ArtifactLifecycle;
+    if (lifecycleOverride === "durable") {
+      lifecycle = { kind: "durable" };
+    } else if (lifecycleOverride === "ephemeral" && sessionId) {
+      lifecycle = { kind: "ephemeral", boundTo: { scope: "session", sessionId } };
+    } else if (terminalDocuments.has(doc.id) || !sessionId) {
+      // Terminal-state outputs are durable user-facing results. We also
+      // fall back to durable when no sessionId is available, since an
+      // ephemeral entry without a binding can't be cleaned up safely.
+      lifecycle = { kind: "durable" };
+    } else {
+      lifecycle = { kind: "ephemeral", boundTo: { scope: "session", sessionId } };
+    }
+
+    let result: Awaited<ReturnType<typeof ArtifactStorage.create>>;
+    try {
+      result = await ArtifactStorage.create({
+        data: {
+          type: "file",
+          content,
+          contentEncoding: "utf-8",
+          originalName: `${doc.id}.json`,
+          mimeType: "application/json",
+        },
+        title: `${doc.type}: ${doc.id}`,
+        summary,
+        workspaceId,
+        source: `fsm-engine:${jobName}:${doc.id}`,
+        lifecycle,
+      });
+    } catch (err) {
+      // Defensive: ArtifactStorage.create returns a Result, but the
+      // facade throws if the adapter wasn't initialized. Convert the
+      // throw into a logged-and-continue failure so artifact
+      // persistence never crashes the session.
+      logger.warn("Artifact persist threw — skipping", {
+        documentId: doc.id,
+        documentType: doc.type,
+        error: stringifyError(err),
+      });
+      continue;
+    }
+
+    if (!result.ok) {
+      logger.warn("Failed to persist FSM document as artifact", {
+        documentId: doc.id,
+        documentType: doc.type,
+        error: result.error,
+      });
+      continue;
+    }
+
+    refs.push({ documentId: doc.id, artifactId: result.data.id, revision: result.data.revision });
+  }
+
+  return refs;
+}
+
+/**
+ * Phase 6.B — at session-complete, stamp `expiresAt` on each ephemeral
+ * artifact bound to this session and `forget()` each ephemeral memory
+ * entry bound to it.
+ *
+ * Replaces the Phase 6 synchronous-delete pass for artifacts. The
+ * artifact sweeper (`apps/atlasd/src/sweepers/artifacts-sweeper.ts`)
+ * walks `expiresAt`-past-now ephemeral artifacts on a timer and either
+ * deletes them or promotes them to durable based on inbound reference
+ * signals (memory_save text, aiSummary URL). The grace window between
+ * `completedAt` and `expiresAt` is what gives those signals time to
+ * land — the chat path's `memory_save` callbacks fire after
+ * session-complete in some shapes.
+ *
+ * Memory entries keep the synchronous-forget behavior: notes are
+ * supposed to be genuinely short-term, and there's no analogous
+ * promotion-by-reference signal on the memory side (memory IS the
+ * promotion signal for artifacts).
+ *
+ * Free function so tests can exercise it without spinning the full
+ * runtime. Failures are non-fatal: an artifact missed here gets
+ * picked up by the next sweep tick if its `expiresAt` is past.
+ *
+ * `graceMs` is the time window after `completedAt` before the artifact
+ * becomes eligible for sweeping. Caller computes from job/workspace
+ * config (`artifacts.default_grace`).
+ */
+export async function expireEphemeralForSession(args: {
+  sessionId: string;
+  jobName: string;
+  workspaceId: string;
+  completedAt: Date;
+  graceMs: number;
+  memoryAdapter?: MemoryAdapter;
+  memoryStoreNames: string[];
+}): Promise<void> {
+  const { sessionId, jobName, workspaceId, completedAt, graceMs, memoryAdapter, memoryStoreNames } =
+    args;
+
+  const expiresAtIso = new Date(completedAt.getTime() + graceMs).toISOString();
+
+  // 1) Stamp expiresAt on ephemeral artifacts bound to this session.
+  //    The sweeper picks them up at/after `expiresAt`. Use
+  //    `listBySession` so high-throughput jobs don't N²-scan every
+  //    workspace artifact per completion. ArtifactSummary keeps
+  //    `lifecycle` (omits only `data`), so no per-id refetch needed.
+  try {
+    const list = await ArtifactStorage.listBySession({ sessionId, includeData: false });
+    if (list.ok) {
+      for (const summary of list.data) {
+        const lc = summary.lifecycle;
+        if (
+          lc?.kind === "ephemeral" &&
+          lc.boundTo.scope === "session" &&
+          lc.boundTo.sessionId === sessionId
+        ) {
+          const upd = await ArtifactStorage.updateLifecycle({
+            id: summary.id,
+            lifecycle: { ...lc, expiresAt: expiresAtIso },
+          });
+          if (!upd.ok) {
+            logger.warn("Failed to stamp expiresAt on ephemeral artifact", {
+              artifactId: summary.id,
+              sessionId,
+              error: upd.error,
+            });
+          }
+        }
+      }
+    } else {
+      logger.warn("listBySession failed during ephemeral stamp", { sessionId, error: list.error });
+    }
+  } catch (err) {
+    logger.warn("Ephemeral artifact stamp threw", {
+      sessionId,
+      jobName,
+      error: stringifyError(err),
+    });
+  }
+
+  // 2) Ephemeral memory entries. Synchronous forget on session-
+  //    complete — same behavior as Phase 6. Memory entries don't
+  //    participate in the deferred-sweep model (notes are genuinely
+  //    short-term; promotion-by-reference applies only to artifacts).
+  if (memoryAdapter && memoryStoreNames.length > 0) {
+    for (const name of memoryStoreNames) {
+      try {
+        const store = await memoryAdapter.store(workspaceId, name);
+        const entries = await store.read();
+        for (const entry of entries) {
+          const lc = entry.lifecycle;
+          if (
+            lc?.kind === "ephemeral" &&
+            lc.boundTo.scope === "session" &&
+            lc.boundTo.sessionId === sessionId
+          ) {
+            await store.forget(entry.id);
+          }
+        }
+      } catch (err) {
+        logger.warn("Ephemeral memory cleanup failed for store", {
+          sessionId,
+          storeName: name,
+          error: stringifyError(err),
+        });
+      }
+    }
+  }
 }
 
 /**
@@ -438,20 +1169,12 @@ export class WorkspaceRuntime {
   private sessions = new Map<string, ActiveSession>();
   private sessionResults = new Map<string, SessionResult>();
   /**
-   * FSM document snapshots captured at `handleSessionCompletion`, keyed by
-   * sessionId. The live `sessions` map is cleared before the signal endpoint
-   * returns, but synchronous callers (`triggerWorkspaceSignal` in atlas-daemon)
-   * still need to read the final output docs afterward. The map is bounded
-   * naturally by the runtime's lifecycle — daemon idle eviction at 5min
-   * tears down the runtime and frees the map. The bounded-by-runtime
-   * guarantee is sufficient for the single-host model. Cross-worker
-   * access in a future per-worker model needs to read from the
-   * persistent session-history store instead.
+   * Per-action artifacts persisted before the FSM drains, keyed by session.
+   * These make refs available to downstream `inputFrom` actions in the same
+   * run and are merged into the final job-tool result instead of being
+   * re-persisted at session completion.
    */
-  private completedSessionDocuments = new Map<
-    string,
-    Array<{ id: string; type: string; data: Record<string, unknown> }>
-  >();
+  private midSessionArtifactRefs = new Map<string, SessionArtifactRef[]>();
   private sessionCompletionEmitter = new EventEmitter();
 
   /**
@@ -472,10 +1195,6 @@ export class WorkspaceRuntime {
    * find the engine for a given sessionId without closure access.
    */
   private sessionEngines = new Map<string, FSMEngine>();
-
-  // Agent result side-channel: sessionId → (sideChannelKey → AgentResultData)
-  // Populated by executeAgent, consumed by onEvent callback for step:complete events
-  private agentResultSideChannel = new Map<string, Map<string, AgentResultData>>();
 
   // Resolved store mount bindings, keyed by mount name
   private mountBindings = new Map<string, MountedStoreBinding>();
@@ -690,6 +1409,17 @@ export class WorkspaceRuntime {
         fsmDefinition,
         description: jobSpec.description,
         maxSteps: jobSpec.config?.max_steps,
+        delegationOverride: jobSpec.delegation,
+        ...(jobSpec.permissions && { permissions: jobSpec.permissions }),
+        ...(jobSpec.validation && { validation: jobSpec.validation }),
+        // Review N3 follow-up: parse `jobSpec.config.timeout` once at
+        // registration so the engine path doesn't re-parse on every signal.
+        // Becomes the source for FSMEngineOptions.jobTimeoutMs at engine
+        // construction. parseDuration throws on malformed input; tolerated
+        // with warn-log so a typo doesn't block the workspace from loading.
+        ...(jobSpec.config?.timeout && {
+          timeoutMs: parseJobTimeoutMs(jobName, jobSpec.config.timeout),
+        }),
       });
 
       // D.1: declarative `jobs.*.skills` field — warn when refs don't match
@@ -912,6 +1642,8 @@ export class WorkspaceRuntime {
         "WorkspaceRuntime requires platformModels to construct AtlasLLMProviderAdapter",
       );
     }
+    let definition!: FSMDefinition;
+
     const engineOptions = {
       documentStore,
       scope,
@@ -920,15 +1652,90 @@ export class WorkspaceRuntime {
       }),
       agentExecutor,
       mcpServerConfigs,
-      validateOutput: createFSMOutputValidator(
-        SupervisionLevel.STANDARD,
-        this.options.platformModels,
-      ),
+      // External validation calls `@friday/judge-agent` (or the per-action
+      // override). The
+      // daemon supplies the runner via `WorkspaceRuntimeOptions.runJudge`;
+      // when unset, fsm-engine synthesizes an advisory verdict so actions
+      // still emit on the no-judge path.
+      ...(this.options.runJudge ? { runJudge: this.options.runJudge } : {}),
       artifactStorage: ArtifactStorage,
       broadcastNotifier: this.options.broadcastNotifier,
+      // Wires the optional `delegate` tool for FSM type:llm actions.
+      // `platformModels` and `repairToolCall` are mandatory for
+      // the delegate child's streamText call; `delegationBudget` carries
+      // the workspace-level depth cap (default 1, matching today's chat
+      // hard cap). `linkSummary` is intentionally omitted today —
+      // populating it would require a daemon-side fetch on every job
+      // engine spawn; delegate tolerates the absence by surfacing a
+      // clean error if the LLM passes `mcpServers` without one.
+      platformModels,
+      repairToolCall,
+      // Per-field merge: workspace defaults, then job override wins per field.
+      // `mergeDelegationBudgets` returns `undefined` when
+      // both inputs are undefined, preserving back-compat (delegate falls
+      // back to its built-in defaults inside `createDelegateTool`).
+      delegationBudget: mergeDelegationBudgets(
+        this.config.workspace.delegation,
+        job.delegationOverride,
+      ),
+      // Forward raw permissions (unresolved) so `request_tool_access` can run
+      // `resolvePermissions` with the daemon
+      // env floor at call time. Job > workspace > daemon precedence. The
+      // engine also resolves these once at action-construction time and
+      // surfaces the result through scope as `resolvedPermissions`.
+      ...(job.permissions && { jobPermissions: job.permissions }),
+      ...(this.config.workspace.permissions && {
+        workspacePermissions: this.config.workspace.permissions,
+      }),
+      // Workspace + per-job validation defaults. Resolved at action-execution
+      // time inside `resolveValidateDecision` (action >
+      // job > workspace > "auto" classifier). No merge here: the engine
+      // itself walks the precedence chain, so unsetting one tier doesn't
+      // require the other to clone.
+      ...(this.config.workspace.validation && {
+        workspaceValidation: this.config.workspace.validation,
+      }),
+      ...(job.validation && { jobValidation: job.validation }),
+      // Resolve agent type for the FSM classifier's user/atlas → skip rule.
+      // Workspace-config-declared
+      // agents (`workspace.agents.<id>`) are the common case. Bundled
+      // system agents like `workspace-chat` and `judge-agent` don't appear
+      // in workspace config — they resolve through `SystemAgentAdapter`.
+      // Without this fall-through, `case "agent"` on `workspace-chat`
+      // produced `resolvedAgentType: undefined` → classifier hit
+      // `default-self` instead of `non-llm-agent-type:atlas`.
+      resolveAgentType: (agentId: string): "llm" | "user" | "atlas" | undefined => {
+        const declared = this.config.workspace.agents?.[agentId]?.type;
+        if (declared === "llm" || declared === "user" || declared === "atlas") {
+          return declared;
+        }
+        // `type: "system"` workspace-config entries (legacy SystemAgentConfig)
+        // are also fixed-prompt — same classifier semantics as "atlas".
+        if (declared === "system") {
+          return "atlas";
+        }
+        // Bundled system agents (workspace-chat, judge-agent) — see
+        // `getSystemAgentType` in `@atlas/core/agent-loader`.
+        const bundled = getSystemAgentType(agentId);
+        if (bundled) return bundled;
+        return undefined;
+      },
+      // Review N3 follow-up — surface job timeout so scope-injected
+      // elicitation tools derive `expiresAt = now + jobTimeoutMs`. Parsed
+      // once at job registration (see FSMJob.timeoutMs).
+      ...(job.timeoutMs !== undefined && { jobTimeoutMs: job.timeoutMs }),
+      persistFsmActionArtifact: async (input: {
+        doc: FSMDocument;
+        action: LLMAction | AgentAction;
+        workspaceId: string;
+        sessionId: string;
+        fromTerminalState: boolean;
+      }) => {
+        if (!definition) return;
+        await this.persistActionOutputAsRef(input, definition, job.name);
+      },
     };
 
-    let definition: FSMDefinition;
     if (job.fsmDefinition) {
       logger.debug("Loading FSM from inline definition", {
         workspaceId: this.workspace.id,
@@ -1009,6 +1816,23 @@ export class WorkspaceRuntime {
       }
     }
 
+    const result = await this.processSignalWithJobResult(
+      job,
+      signal,
+      onStreamEvent,
+      abortSignal,
+      skipStates,
+    );
+    return result.session;
+  }
+
+  private async processSignalWithJobResult(
+    job: FSMJob,
+    signal: WorkspaceRuntimeSignal,
+    onStreamEvent?: (chunk: AtlasUIMessageChunk) => void,
+    abortSignal?: AbortSignal,
+    skipStates?: string[],
+  ): Promise<WorkspaceSignalRunResult> {
     const sessionResult = await this.processSignalForJob(
       job,
       signal,
@@ -1016,7 +1840,9 @@ export class WorkspaceRuntime {
       abortSignal,
       skipStates,
     );
-    return this.finalizeSession(sessionResult, job, signal);
+    const output = this.buildCompletedSignalOutput(sessionResult);
+    const session = await this.finalizeSession(sessionResult, job, signal);
+    return { session, ...output };
   }
 
   private async processSignalForJob(
@@ -1082,13 +1908,11 @@ export class WorkspaceRuntime {
           status: WorkspaceSessionStatus.ACTIVE,
           startedAt: new Date(),
           artifacts: [],
+          artifactRefs: [],
           userId,
         };
 
-        // Session history v2: create stream + side-channel for this session
         const sessionStream = this.options.createSessionStream?.(sessionId);
-        const sideChannel = new Map<string, AgentResultData>();
-        this.agentResultSideChannel.set(sessionId, sideChannel);
         let stepCounter = 0;
         /** Tracks the FSM state where a non-agent action (code/emit) failed, so we
          *  can attribute the error to the correct planned step in the catch block. */
@@ -1176,21 +2000,8 @@ export class WorkspaceRuntime {
                   actionEvent.data.status === "completed" ||
                   actionEvent.data.status === "failed"
                 ) {
-                  // LLM actions carry result data directly on the event (populated by FSM engine).
-                  // Agent actions use the side-channel (populated by executeAgent callback).
-                  let agentResult: AgentResultData | undefined;
-                  if (actionEvent.data.llmResult) {
-                    agentResult = actionEvent.data.llmResult;
-                  } else {
-                    // Side-channel key must use job.name (workspace-level key) to match
-                    // what executeAgent stores — NOT actionEvent.data.jobName which is
-                    // the FSM definition's id (may differ from the workspace job key).
-                    const sideChannelKey = `${job.name}/${actionEvent.data.actionId}/${actionEvent.data.state}`;
-                    agentResult = sideChannel.get(sideChannelKey);
-                    sideChannel.delete(sideChannelKey);
-                  }
                   sessionStream.emit(
-                    mapActionToStepComplete(actionEvent, agentResult, stepCounter),
+                    mapActionToStepComplete(actionEvent, actionEvent.data.llmResult, stepCounter),
                   );
                 }
               }
@@ -1235,6 +2046,24 @@ export class WorkspaceRuntime {
           await awaitWithAbort(enginePromise, effectiveAbortSignal);
 
           session.artifacts = this.extractArtifacts(engine.documents);
+          // Phase 2.B — persist eligible FSM documents as real artifacts so a
+          // future job-tool result shape can return artifactIds + summary
+          // instead of the full Document[] payload. Non-blocking: failures
+          // log and are skipped, the in-memory `session.artifacts` list and
+          // the document store remain authoritative.
+          const midSessionRefs = this.midSessionArtifactRefs.get(session.id) ?? [];
+          const alreadyPersistedDocIds = new Set(midSessionRefs.map((r) => r.documentId));
+          const remainingDocuments = engine.documents.filter(
+            (d) => !alreadyPersistedDocIds.has(d.id),
+          );
+          const completionRefs = await this.persistSessionArtifacts(
+            remainingDocuments,
+            engine.definition,
+            job.name,
+            session.id,
+          );
+          session.artifactRefs = [...midSessionRefs, ...completionRefs];
+          this.midSessionArtifactRefs.delete(session.id);
           session.completedAt = new Date();
 
           // A cancelled agent call currently returns a successful-looking
@@ -1247,6 +2076,21 @@ export class WorkspaceRuntime {
           } else {
             session.status = WorkspaceSessionStatus.COMPLETED;
           }
+
+          // Phase 6.B — stamp `expiresAt` on ephemeral artifacts (sweeper
+          // picks them up later) and forget ephemeral memory entries
+          // (synchronous, same as Phase 6). Fire-and-forget: failures
+          // log a warning and are otherwise silent. The artifact
+          // sweeper (`apps/atlasd/src/sweepers/artifacts-sweeper.ts`)
+          // is the long-stop — it picks up any artifact past
+          // `expiresAt` regardless of which run stamped it.
+          this.expireEphemeralForSession(session.id, job.name, session.completedAt).catch((err) => {
+            logger.warn("Ephemeral expire pass failed", {
+              sessionId: session.id,
+              jobName: job.name,
+              error: stringifyError(err),
+            });
+          });
 
           logger.info("Signal processed successfully", {
             sessionId: session.id,
@@ -1308,6 +2152,26 @@ export class WorkspaceRuntime {
               currentState: engine.state,
               jobName: job.name,
             });
+          }
+
+          const failedMidSessionRefs = this.midSessionArtifactRefs.get(session.id) ?? [];
+          if (failedMidSessionRefs.length > 0) {
+            const existingDocIds = new Set(session.artifactRefs.map((r) => r.documentId));
+            session.artifactRefs = [
+              ...session.artifactRefs,
+              ...failedMidSessionRefs.filter((r) => !existingDocIds.has(r.documentId)),
+            ];
+            if (session.completedAt) {
+              this.expireEphemeralForSession(session.id, job.name, session.completedAt).catch(
+                (err) => {
+                  logger.warn("Ephemeral expire pass failed after failed session", {
+                    sessionId: session.id,
+                    jobName: job.name,
+                    error: stringifyError(err),
+                  });
+                },
+              );
+            }
           }
 
           // Emit synthetic step:start + step:complete(failed) for the agent action
@@ -1408,17 +2272,32 @@ export class WorkspaceRuntime {
             );
 
             const platformModels = this.options.platformModels;
-            // Skip AI summarization for code-only sessions (no agent blocks) —
-            // nothing meaningful to summarize and it adds ~2s of LLM latency per invocation.
-            const aiSummary =
-              platformModels && executedBlocks.length > 0
-                ? await generateSessionSummary(
-                    view,
-                    { platformModels },
-                    job.description,
-                    this.workspace.name,
-                  )
-                : undefined;
+            // C1 fast path — when the terminal LLM/agent action declared a
+            // Phase 2.A `summary:`, build SessionAISummary synchronously
+            // without the ~1-2s LLM round-trip.
+            const fastPathAiSummary = buildFastPathAiSummary(engine.definition, engine.documents);
+            // C2 — when the fast path is unavailable (no declared summary)
+            // we still want SSE `job-complete` to respond immediately. Build
+            // a synchronous fallback aiSummary now and detach the LLM-
+            // generated path; on resolution we update persisted KV and
+            // emit a follow-up session:summary event.
+            const eligibleForLlmSummary =
+              !fastPathAiSummary && platformModels !== undefined && executedBlocks.length > 0;
+            const synchronousFallback = fastPathAiSummary
+              ? undefined
+              : buildSynchronousFallbackAiSummary(engine.definition, engine.documents);
+            // Suppress the synchronous emission when there's literally
+            // nothing to say (no terminal action + no docs) AND we're going
+            // to detach a real LLM call that will emit later. Avoids a
+            // noisy empty-string `session:summary` followed by the polished
+            // one a beat later.
+            const synchronousFallbackHasContent = !!(
+              synchronousFallback &&
+              (synchronousFallback.summary.length > 0 || synchronousFallback.keyDetails.length > 0)
+            );
+            const aiSummary: SessionAISummary | undefined =
+              fastPathAiSummary ??
+              (synchronousFallbackHasContent ? synchronousFallback : undefined);
             if (aiSummary) {
               sessionStream.emit({
                 type: "session:summary",
@@ -1426,6 +2305,10 @@ export class WorkspaceRuntime {
                 summary: aiSummary.summary,
                 keyDetails: aiSummary.keyDetails,
               });
+              // Phase 2.C — capture on the in-memory SessionResult so the
+              // cascade dispatcher (which reads via getSessionAiSummary
+              // post-completion) can forward `summary` on `job-complete`.
+              session.aiSummary = aiSummary;
             }
             const summaryV2: SessionSummaryV2 = {
               sessionId,
@@ -1440,11 +2323,70 @@ export class WorkspaceRuntime {
               agentNames: executedBlocks.map((b) => b.agentName),
               error: session.error?.message,
               aiSummary,
+              // Phase 11 provenance: parent linkage when this session was
+              // spawned from inside another (chat→job, signal-trigger-from-
+              // FSM). Conditionally spread so root sessions stay free of the
+              // field on the wire — keeps existing SESSION_METADATA entries
+              // and round-trip schema parses unchanged.
+              ...(signal.parentSessionId && { parentSessionId: signal.parentSessionId }),
             };
 
             await sessionStream.finalize(summaryV2).catch((err) => {
               logger.warn("Failed to finalize session stream", { sessionId, error: String(err) });
             });
+
+            // C2 — detached LLM aiSummary generation. SSE `job-complete`
+            // fired above with the synchronous fallback; the polished
+            // summary writes to persisted session-history KV when the LLM
+            // round-trip resolves. Activity page picks it up on next read;
+            // live SSE subscribers see the follow-up `session:summary` event.
+            if (eligibleForLlmSummary && platformModels) {
+              const updateStream = sessionStream;
+              const llmSummaryV2Base = summaryV2;
+              void generateSessionSummary(
+                view,
+                { platformModels },
+                job.description,
+                this.workspace.name,
+              )
+                .then(async (llmSummary) => {
+                  if (!llmSummary) return;
+                  // 1. Emit a follow-up session:summary event for live SSE
+                  //    subscribers (cascade-stream forwards arbitrary
+                  //    session events; no allowlist update needed).
+                  try {
+                    updateStream.emit({
+                      type: "session:summary",
+                      timestamp: new Date().toISOString(),
+                      summary: llmSummary.summary,
+                      keyDetails: llmSummary.keyDetails,
+                    });
+                  } catch (emitErr) {
+                    logger.warn("Failed to emit follow-up session:summary", {
+                      sessionId,
+                      error: String(emitErr),
+                    });
+                  }
+                  // 2. Overwrite the persisted SessionSummary so Activity
+                  //    page (listByWorkspace) reflects the polished aiSummary.
+                  if (updateStream.updateSummary) {
+                    await updateStream
+                      .updateSummary({ ...llmSummaryV2Base, aiSummary: llmSummary })
+                      .catch((err) => {
+                        logger.warn("Failed to persist async aiSummary update", {
+                          sessionId,
+                          error: String(err),
+                        });
+                      });
+                  }
+                })
+                .catch((err) => {
+                  logger.warn("async aiSummary generation failed", {
+                    sessionId,
+                    error: String(err),
+                  });
+                });
+            }
 
             // Side-effect hook for the daemon to broadcast the final output
             // across chat communicators. Errors are isolated — a failed
@@ -1489,8 +2431,9 @@ export class WorkspaceRuntime {
           }
 
           session.engineDocuments = engine.documents;
+          session.definition = engine.definition;
           session.finalState = engine.state;
-          this.agentResultSideChannel.delete(sessionId);
+          this.midSessionArtifactRefs.delete(session.id);
           this.activeAbortControllers.delete(sessionId);
           this.sessionEngines.delete(sessionId);
         }
@@ -1527,6 +2470,7 @@ export class WorkspaceRuntime {
     this.sessions.set(sessionResult.id, activeSession);
 
     if (sessionResult.status !== WorkspaceSessionStatus.ACTIVE) {
+      await this.orchestrator.releaseSession(sessionResult.id);
       await this.persistSessionToHistory(sessionResult, job, signal);
     }
 
@@ -1581,8 +2525,18 @@ export class WorkspaceRuntime {
     fsmContext: Context,
     job: FSMJob,
     signal: SignalWithContext,
-    options?: { outputSchema?: Record<string, unknown> },
+    options?: {
+      outputSchema?: Record<string, unknown>;
+      validateDecision?: "skip" | "self" | "external";
+      validateSkill?: string;
+    },
   ): Promise<AgentResult> {
+    // When the FSM engine resolved an `outputSchema` for this action (i.e.
+    // the action declared an
+    // `outputType:`), thread that fact through `__atlas_validate` so the
+    // orchestrator's prompt-assembly site (`convertLLMToAgent`) can skip
+    // `record_validation` injection on the structured + self path.
+    const hasOutputType = !!options?.outputSchema;
     const agentId = action.agentId;
 
     logger.debug("Executing agent via orchestrator", {
@@ -1595,8 +2549,6 @@ export class WorkspaceRuntime {
     });
 
     const agentConfig = this.config.workspace.agents?.[agentId];
-
-    const agentConfigPrompt = extractAgentConfigPrompt(agentConfig);
     const agentCustomConfig = extractAgentConfig(agentConfig);
 
     const context = await buildAgentPrompt(
@@ -1608,26 +2560,7 @@ export class WorkspaceRuntime {
       ArtifactStorage,
     );
 
-    // Resolve `{{inputs.x}}` / `{{config.x}}` / `{{signal.payload.x}}` against
-    // the prepare-result payload before composing the final prompt. The LLM
-    // action path does this in `buildContextPrompt`; agent actions skipped it,
-    // so Friday workspaces (which exclusively use agent actions) saw literal
-    // `{{inputs.description}}` and the agent fell back to whatever it could
-    // glean from the appended `## Input` block instead. Interpolating here
-    // makes the convention work uniformly across both action types.
-    const prepareResult = fsmContext.input;
-    const interpolatedActionPrompt = action.prompt
-      ? interpolatePromptPlaceholders(action.prompt, prepareResult)
-      : action.prompt;
-    const interpolatedConfigPrompt = interpolatePromptPlaceholders(
-      agentConfigPrompt,
-      prepareResult,
-    );
-    const prompt = buildFinalAgentPrompt(
-      interpolatedActionPrompt,
-      interpolatedConfigPrompt,
-      context,
-    );
+    const prompt = composeAgentPrompt(action, agentConfig, fsmContext.input, context);
 
     let standingOrdersBlock = "";
     if (process.env.FRIDAY_STANDING_ORDERS_BOOTSTRAP === "1" && this.options.memoryAdapter) {
@@ -1706,9 +2639,27 @@ export class WorkspaceRuntime {
     // Prepare config (from FSM `return { task, config }`) takes precedence
     // so workspace.yml prepare functions can pass data like workDir to agents.
     const prepareConfig = fsmContext.input?.config;
-    const mergedConfig = prepareConfig
+    const baseMergedConfig = prepareConfig
       ? { ...agentCustomConfig, ...prepareConfig }
       : agentCustomConfig;
+
+    // Thread the resolved validation decision under the reserved
+    // `__atlas_validate` key so the agent
+    // orchestrator's prompt-assembly site (`convertLLMToAgent` in
+    // `@atlas/core/agent-conversion/from-llm.ts`) can compose the
+    // validating-llm-outputs skill body and inject the `record_validation`
+    // platform tool when the strategy is `self`. The reserved key prevents
+    // collisions with author-supplied `agents.<id>.config:` blocks.
+    const mergedConfig = options?.validateDecision
+      ? {
+          ...baseMergedConfig,
+          ...buildValidateDecisionConfig(
+            options.validateDecision,
+            options.validateSkill,
+            hasOutputType,
+          ),
+        }
+      : baseMergedConfig;
 
     // Resolve memory mounts scoped to this agent
     const agentMounts = this.getMountsForAgent(agentId, job.name);
@@ -1746,8 +2697,11 @@ export class WorkspaceRuntime {
                 workspaceId,
                 streamId,
                 onStreamEvent: signal._context?.onStreamEvent,
+                actionId: agentId,
+                jobTimeoutMs: job.timeoutMs,
                 config: mergedConfig,
                 outputSchema: options?.outputSchema,
+                input: fsmContext.input,
                 datetime,
                 agentEnv: agentConfig.env,
                 foregroundWorkspaceIds,
@@ -1761,6 +2715,8 @@ export class WorkspaceRuntime {
                 memoryContextKey: mountNames.length > 0 ? ctxKey : undefined,
                 foregroundWorkspaceIds,
                 jobName: job.name,
+                actionId: agentId,
+                jobTimeoutMs: job.timeoutMs,
                 // Agent UIMessageChunks flow through the dedicated onStreamEvent channel,
                 // keeping the FSM onEvent callback clean (FSMEvent types only)
                 onStreamEvent: signal._context?.onStreamEvent,
@@ -1791,37 +2747,6 @@ export class WorkspaceRuntime {
 
     logger.debug("Agent execution completed", { agentId, ok: result.ok });
 
-    const sideChannelSessionId = signal._context?.sessionId;
-    if (sideChannelSessionId) {
-      const sideChannel = this.agentResultSideChannel.get(sideChannelSessionId);
-      if (sideChannel) {
-        const key = `${job.name}/${action.agentId}/${fsmContext.state}`;
-        const resultsByCallId = new Map(
-          (result.ok ? result.toolResults : undefined)?.map((tr) => [tr.toolCallId, tr.output]) ??
-            [],
-        );
-        const toolCalls =
-          (result.ok ? result.toolCalls : undefined)?.map((tc) => ({
-            toolName: tc.toolName,
-            args: tc.input,
-            ...(resultsByCallId.has(tc.toolCallId) && {
-              result: resultsByCallId.get(tc.toolCallId),
-            }),
-          })) ?? [];
-        // Structured output = args from the "complete" tool call (the actual result
-        // stored in context.results). Falls back to result.data (LLM text) when no
-        // complete tool call exists.
-        const completeCall = toolCalls.find((tc) => tc.toolName === "complete");
-        const agentResultData: AgentResultData = {
-          toolCalls,
-          reasoning: result.ok ? result.reasoning : undefined,
-          output: completeCall?.args ?? (result.ok ? result.data : undefined),
-          artifactRefs: result.ok ? result.artifactRefs : undefined,
-        };
-        sideChannel.set(key, agentResultData);
-      }
-    }
-
     return result;
   }
 
@@ -1838,8 +2763,11 @@ export class WorkspaceRuntime {
       workspaceId: string;
       streamId?: string;
       onStreamEvent?: (event: AtlasUIMessageChunk) => void;
+      actionId?: string;
+      jobTimeoutMs?: number;
       config?: Record<string, unknown>;
       outputSchema?: Record<string, unknown>;
+      input?: Record<string, unknown>;
       datetime?: unknown;
       agentEnv?: Record<string, string | LinkCredentialRef>;
       foregroundWorkspaceIds?: string[];
@@ -2016,6 +2944,9 @@ export class WorkspaceRuntime {
     const mcpTools = wrapPlatformToolsWithScope(filteredTools, {
       workspaceId: opts.workspaceId,
       workspaceName: this.workspace.name,
+      sessionId: opts.sessionId,
+      ...(opts.actionId && { actionId: opts.actionId }),
+      ...(opts.jobTimeoutMs !== undefined && { jobTimeoutMs: opts.jobTimeoutMs }),
     });
 
     // Inject built-in bash tool so code agents can shell out (overrides
@@ -2038,8 +2969,12 @@ export class WorkspaceRuntime {
     if (!executor) {
       throw new Error("No agentExecutor configured — ProcessAgentExecutor required");
     }
+
+    const observedToolCalls: ToolCall[] = [];
+    const observedToolResults: ToolResult[] = [];
+
     try {
-      return await executor.execute(sourceLocation, prompt, {
+      const result = await executor.execute(sourceLocation, prompt, {
         env: opts.agentEnv
           ? await resolveEnvValues(opts.agentEnv, logger)
           : Object.fromEntries(
@@ -2055,9 +2990,44 @@ export class WorkspaceRuntime {
             }
           : undefined,
         mcpToolCall: async (name, args) => {
+          const toolCallId = crypto.randomUUID();
+          observedToolCalls.push({
+            type: "tool-call",
+            toolCallId,
+            toolName: name,
+            input: args,
+          } as ToolCall);
+
           const tool = mcpTools[name];
-          if (!tool?.execute) throw new Error(`Unknown tool: ${name}`);
-          return await tool.execute(args, { toolCallId: crypto.randomUUID(), messages: [] });
+          if (!tool?.execute) {
+            const error = `Unknown tool: ${name}`;
+            observedToolResults.push({
+              type: "tool-result",
+              toolCallId,
+              toolName: name,
+              output: { error },
+            } as ToolResult);
+            throw new Error(error);
+          }
+
+          try {
+            const output = await tool.execute(args, { toolCallId, messages: [] });
+            observedToolResults.push({
+              type: "tool-result",
+              toolCallId,
+              toolName: name,
+              output,
+            } as ToolResult);
+            return output;
+          } catch (error) {
+            observedToolResults.push({
+              type: "tool-result",
+              toolCallId,
+              toolName: name,
+              output: { error: stringifyError(error) },
+            } as ToolResult);
+            throw error;
+          }
         },
         mcpListTools: () =>
           Promise.resolve(
@@ -2075,6 +3045,7 @@ export class WorkspaceRuntime {
         agentConfig,
         agentLlmConfig: agentSource.metadata.llm,
         outputSchema: opts.outputSchema,
+        input: opts.input,
         skills: resolvedSkills?.map((s) => ({
           name: s.name,
           description: s.description,
@@ -2082,6 +3053,16 @@ export class WorkspaceRuntime {
         })),
         abortSignal: opts.abortSignal,
       });
+
+      if (observedToolCalls.length === 0 && observedToolResults.length === 0) {
+        return result;
+      }
+
+      return {
+        ...result,
+        toolCalls: [...(result.toolCalls ?? []), ...observedToolCalls],
+        toolResults: [...(result.toolResults ?? []), ...observedToolResults],
+      };
     } finally {
       await dispose();
       if (skillsTempDir) {
@@ -2112,6 +3093,144 @@ export class WorkspaceRuntime {
         createdAt: new Date(),
         createdBy: "fsm-engine",
       }));
+  }
+
+  private async persistActionOutputAsRef(
+    input: {
+      doc: FSMDocument;
+      action: LLMAction | AgentAction;
+      workspaceId: string;
+      sessionId: string;
+      fromTerminalState: boolean;
+    },
+    definition: FSMDefinition,
+    jobName: string,
+  ): Promise<void> {
+    if (PLUMBING_DOCUMENT_TYPES.has(input.doc.type)) return;
+    if (!this.activeAbortControllers.has(input.sessionId)) return;
+
+    let originalDoc: FSMDocument;
+    try {
+      originalDoc = {
+        id: input.doc.id,
+        type: input.doc.type,
+        data: JSON.parse(JSON.stringify(input.doc.data)) as Record<string, unknown>,
+      };
+    } catch (err) {
+      logger.warn("Skipping mid-session artifact persist: doc.data is not JSON-serializable", {
+        documentId: input.doc.id,
+        documentType: input.doc.type,
+        error: stringifyError(err),
+      });
+      return;
+    }
+
+    const refs = await this.persistSessionArtifacts(
+      [originalDoc],
+      definition,
+      jobName,
+      input.sessionId,
+    );
+    const ref = refs[0];
+    if (!ref) return;
+
+    const summary = input.action.summary?.trim() || synthesizeArtifactSummary(originalDoc);
+    const artifactRef = { id: ref.artifactId, type: originalDoc.type, summary };
+    input.doc.data = { summary, artifactRefs: [artifactRef] };
+
+    const existing = this.midSessionArtifactRefs.get(input.sessionId) ?? [];
+    const withoutPriorForDoc = existing.filter((r) => r.documentId !== ref.documentId);
+    withoutPriorForDoc.push(ref);
+    this.midSessionArtifactRefs.set(input.sessionId, withoutPriorForDoc);
+  }
+
+  private persistSessionArtifacts(
+    documents: FSMDocument[],
+    definition: FSMDefinition,
+    jobName: string,
+    sessionId: string,
+  ): Promise<SessionArtifactRef[]> {
+    // Phase 6 — per-job ephemeral override, if declared in workspace.yml.
+    const jobSpec = this.config.workspace.jobs?.[jobName];
+    const ephemeralOverride = jobSpec?.artifacts?.ephemeral;
+    const lifecycleOverride: "ephemeral" | "durable" | undefined =
+      ephemeralOverride === true
+        ? "ephemeral"
+        : ephemeralOverride === false
+          ? "durable"
+          : undefined;
+
+    return persistFsmSessionArtifacts({
+      documents,
+      definition,
+      jobName,
+      workspaceId: this.workspace.id,
+      sessionId,
+      lifecycleOverride,
+    });
+  }
+
+  /**
+   * Phase 6.B — at session-complete, stamp `expiresAt` on ephemeral
+   * artifacts (sweeper picks them up later) and forget ephemeral
+   * memory entries (synchronous, same as Phase 6). Called fire-and-
+   * forget from the session-completion path; failures log and
+   * continue. Lifecycle metadata is the source of truth — the sweeper
+   * picks up anything missed.
+   *
+   * Grace window resolves job-spec → workspace-config → 24h fallback.
+   * `parseDuration` from `@atlas/config` handles the format ("24h",
+   * "1h", "30m" — see {@link DurationSchema}).
+   */
+  private expireEphemeralForSession(
+    sessionId: string,
+    jobName: string,
+    completedAt: Date,
+  ): Promise<void> {
+    const jobSpec = this.config.workspace.jobs?.[jobName];
+    const graceStr =
+      jobSpec?.artifacts?.default_grace ?? this.config.workspace.artifacts?.default_grace ?? "24h";
+    let graceMs: number;
+    try {
+      graceMs = parseDuration(graceStr);
+    } catch {
+      // Schema already validates DurationSchema, but if a future field
+      // shape introduces an unparseable value, fall back to 24h
+      // rather than skipping the stamp entirely.
+      graceMs = 24 * 60 * 60 * 1000;
+    }
+    return expireEphemeralForSession({
+      sessionId,
+      jobName,
+      workspaceId: this.workspace.id,
+      completedAt,
+      graceMs,
+      memoryAdapter: this.options.memoryAdapter,
+      memoryStoreNames: (this.config.workspace.memory?.own ?? []).map((m) => m.name),
+    });
+  }
+
+  /**
+   * Phase 6.B — exposes a promotion-by-reference scan context for the
+   * artifacts sweeper. The sweeper lives in atlasd; runtime keeps the
+   * authoritative memory-adapter binding and configured store names,
+   * so it surfaces them through this accessor instead of the daemon
+   * reaching into private fields. aiSummary reference scans are backed
+   * by the daemon's durable session-history adapter, not by runtime
+   * completion caches.
+   */
+  getPromotionScanContext(): {
+    memoryAdapter?: MemoryAdapter;
+    memoryStoreNames: string[];
+    aiSummary?: () => Promise<Array<{ url?: string }>>;
+  } {
+    const ctx: {
+      memoryAdapter?: MemoryAdapter;
+      memoryStoreNames: string[];
+      aiSummary?: () => Promise<Array<{ url?: string }>>;
+    } = { memoryStoreNames: (this.config.workspace.memory?.own ?? []).map((m) => m.name) };
+    if (this.options.memoryAdapter) ctx.memoryAdapter = this.options.memoryAdapter;
+    return ctx;
   }
 
   private createSessionSummary(sessionResult: SessionResult): SessionSummary {
@@ -2220,7 +3339,35 @@ export class WorkspaceRuntime {
     onStreamEvent?: (chunk: AtlasUIMessageChunk) => void,
     skipStates?: string[],
     abortSignal?: AbortSignal,
+    /**
+     * Parent session id; threads through to
+     * `SessionSummary.parentSessionId` so chat→job and similar parent
+     * linkages are recoverable from session history. Phase 11 of the
+     * fan-out-without-fan-in plan.
+     */
+    parentSessionId?: string,
   ): Promise<IWorkspaceSession> {
+    const result = await this.triggerSignalWithResult(
+      signalName,
+      payload,
+      streamId,
+      onStreamEvent,
+      skipStates,
+      abortSignal,
+      parentSessionId,
+    );
+    return result.session;
+  }
+
+  async triggerSignalWithResult(
+    signalName: string,
+    payload?: Record<string, unknown>,
+    streamId?: string,
+    onStreamEvent?: (chunk: AtlasUIMessageChunk) => void,
+    skipStates?: string[],
+    abortSignal?: AbortSignal,
+    parentSessionId?: string,
+  ): Promise<WorkspaceSignalRunResult> {
     // Top-level `streamId` arg wins over any payload.streamId. The runtime
     // reads the merged value via `signal.data.streamId` (see processSignalForJob
     // ~line 1595 where streamId is derived). Both surfaces stay supported so
@@ -2234,9 +3381,35 @@ export class WorkspaceRuntime {
       type: signalName,
       data,
       timestamp: new Date(),
+      parentSessionId,
     };
 
-    return await this.processSignal(signal, onStreamEvent, abortSignal, skipStates);
+    await this.ensureInitialized();
+    const matchingJobs = Array.from(this.jobs.values()).filter((job) =>
+      job.signals.includes(signal.id),
+    );
+    const job = matchingJobs[0];
+    if (!job) {
+      throw new Error(
+        `No FSM job handles signal '${signal.id}' in workspace '${this.workspace.id}'`,
+      );
+    }
+
+    const signalConfig = this.config.workspace.signals?.[signal.id];
+    if (signalConfig) {
+      const validation = validateSignalPayload(signalConfig, signal.data);
+      if (!validation.success) {
+        throw new Error(`Signal payload validation failed for '${signal.id}': ${validation.error}`);
+      }
+    }
+
+    return await this.processSignalWithJobResult(
+      job,
+      signal,
+      onStreamEvent,
+      abortSignal,
+      skipStates,
+    );
   }
 
   /**
@@ -2256,7 +3429,7 @@ export class WorkspaceRuntime {
 
     this.sessions.clear();
     this.sessionResults.clear();
-    this.completedSessionDocuments.clear();
+    this.midSessionArtifactRefs.clear();
     this.activeAbortControllers.clear();
     this.jobs.clear();
     this.mountBindings.clear();
@@ -2308,40 +3481,32 @@ export class WorkspaceRuntime {
     return this.sessions.get(sessionId)?.session;
   }
 
+  private buildCompletedSignalOutput(
+    sessionResult: SessionResult,
+  ): Omit<WorkspaceSignalRunResult, "session"> {
+    const output = (sessionResult.engineDocuments ?? []).filter(
+      (doc) => !PLUMBING_DOCUMENT_TYPES.has(doc.type),
+    );
+    const result = buildSessionJobResult({
+      artifactRefs: sessionResult.artifactRefs,
+      aiSummary: sessionResult.aiSummary,
+      definition: sessionResult.definition,
+      documents: output,
+    });
+    return { output, ...result };
+  }
+
   /**
-   * Return the FSM engine's final documents for a session, filtered to the
-   * ones a caller is likely to care about: agent / LLM action `outputTo`
-   * results and document-typed docs declared in the workspace. Excludes
-   * FSM bookkeeping documents (state transitions, chat-context, etc).
-   *
-   * Exists so synchronous callers of `triggerWorkspaceSignal` (notably the
-   * workspace-chat job tool) can surface the actual agent output to whoever
-   * invoked the job. Without this, the job tool returns `{success, sessionId,
-   * status}` and the agent output evaporates between the FSM and the caller.
+   * Return live FSM documents for an in-flight session. Completed signal
+   * callers receive their final output directly from `triggerSignalWithResult`
+   * instead of reading a post-completion runtime cache.
    */
   getSessionFsmDocuments(
     sessionId: string,
   ): Array<{ id: string; type: string; data: Record<string, unknown> }> {
-    // Post-completion: `handleSessionCompletion` has already cleared the
-    // live `sessions` map and snapshotted the docs here. The synchronous
-    // signal endpoint hits this path.
-    const cached = this.completedSessionDocuments.get(sessionId);
-    if (cached) return cached;
-
-    // Pre-completion: still live — read from the per-signal engine.
     const engine = this.sessionEngines.get(sessionId);
     if (!engine) return [];
-
-    // FSM plumbing documents that are noise for most callers. Everything
-    // else is passed through — the caller's job to pick fields it cares
-    // about. Keeps this method useful for multiple consumers.
-    const plumbingTypes = new Set([
-      "state-transition",
-      "fsm-state",
-      "ChatContext",
-      "signal-payload",
-    ]);
-    return engine.documents.filter((d) => !plumbingTypes.has(d.type));
+    return engine.documents.filter((d) => !PLUMBING_DOCUMENT_TYPES.has(d.type));
   }
 
   /**
@@ -2372,6 +3537,14 @@ export class WorkspaceRuntime {
    */
   hasActiveSession(sessionId: string): boolean {
     return this.activeAbortControllers.has(sessionId);
+  }
+
+  hasInFlightSessions(): boolean {
+    return this.activeAbortControllers.size > 0;
+  }
+
+  listInFlightSessionIds(): string[] {
+    return Array.from(this.activeAbortControllers.keys());
   }
 
   listSignals(): Array<{ id: string; description?: string; provider: string }> {
@@ -2429,35 +3602,6 @@ export class WorkspaceRuntime {
       status,
       userId: userId ?? "NOT_SET",
     });
-
-    // Snapshot the job's FSM documents BEFORE `onSessionFinished` fires.
-    // That callback (atlas-daemon's `destroyWorkspaceRuntime`) calls
-    // `runtime.shutdown()`, which stops every job's engine and drops its
-    // documents — after that, there is nothing to snapshot. And the live
-    // `sessions` map is cleared a few lines down, so the signal endpoint's
-    // subsequent `getSessionFsmDocuments(sessionId)` call would return `[]`
-    // without this cache. Net effect of the bug: retrieval jobs run, save
-    // their result doc, then the HTTP response is `output: []`.
-    const active = this.sessions.get(sessionResult.id);
-    if (active) {
-      const plumbingTypes = new Set([
-        "state-transition",
-        "fsm-state",
-        "ChatContext",
-        "signal-payload",
-      ]);
-      const docs = (sessionResult.engineDocuments ?? []).filter((d) => !plumbingTypes.has(d.type));
-      this.completedSessionDocuments.set(sessionResult.id, docs);
-      // Bound the map so a long-running workspace doesn't accumulate doc
-      // snapshots forever. FIFO eviction at 100 entries — well above the
-      // synchronous HTTP-cascade window we care about, well below "leak".
-      const COMPLETED_DOCS_CAP = 100;
-      while (this.completedSessionDocuments.size > COMPLETED_DOCS_CAP) {
-        const oldest = this.completedSessionDocuments.keys().next().value;
-        if (oldest === undefined) break;
-        this.completedSessionDocuments.delete(oldest);
-      }
-    }
 
     if (this.options.onSessionFinished) {
       await this.options.onSessionFinished({

@@ -58,6 +58,7 @@ describe("filterWorkspaceAgentTools", () => {
       "artifacts_create",
       "convert_task_to_workspace",
       "workspace_signal_trigger",
+      "request_human_input",
     ]);
 
     const result = filterWorkspaceAgentTools(tools, stubLogger);
@@ -95,6 +96,7 @@ describe("filterWorkspaceAgentTools", () => {
     expect(PLATFORM_TOOL_NAMES.has("workspace_list")).toBe(true);
     expect(PLATFORM_TOOL_NAMES.has("bash")).toBe(true);
     expect(PLATFORM_TOOL_NAMES.has("webfetch")).toBe(true);
+    expect(PLATFORM_TOOL_NAMES.has("request_human_input")).toBe(true);
   });
 });
 
@@ -125,19 +127,22 @@ describe("allowlist/wrap-list invariant", () => {
     }
   });
 
-  it("SCOPE_INJECTED holds only tools that need workspace-id injection", () => {
+  it("SCOPE_INJECTED holds tools that need workspace-id injection (incl. fs_write_file post-N5)", () => {
     // These tools are scope-bound to a workspace at the runtime layer; the
-    // LLM never passes workspaceId. Other LLM-allowed tools (bash, fs_*,
-    // csv) operate on the host directly and don't carry
-    // workspace identity.
+    // LLM never passes workspaceId.
     expect(SCOPE_INJECTED_PLATFORM_TOOLS.has("memory_save")).toBe(true);
     expect(SCOPE_INJECTED_PLATFORM_TOOLS.has("artifacts_create")).toBe(true);
     expect(SCOPE_INJECTED_PLATFORM_TOOLS.has("state_append")).toBe(true);
     expect(SCOPE_INJECTED_PLATFORM_TOOLS.has("webfetch")).toBe(true);
-    // These are explicitly NOT scope-injected — they don't operate on
-    // workspace-scoped state.
-    expect(SCOPE_INJECTED_PLATFORM_TOOLS.has("fs_write_file")).toBe(false);
+    // N5 (melodic-strolling-seal-pt3): fs_write_file now scope-bound so
+    // relative paths resolve to the workspace working dir instead of
+    // the daemon's process.cwd(). Pre-N5 this was `false`.
+    expect(SCOPE_INJECTED_PLATFORM_TOOLS.has("fs_write_file")).toBe(true);
+    // bash + the fs_* read-side tools remain non-scope-injected. Reading
+    // is host-wide; bash is host-wide. N5-followup may add fs_read_file
+    // / fs_glob / fs_grep / fs_list_files for symmetry.
     expect(SCOPE_INJECTED_PLATFORM_TOOLS.has("bash")).toBe(false);
+    expect(SCOPE_INJECTED_PLATFORM_TOOLS.has("fs_read_file")).toBe(false);
   });
 });
 
@@ -235,5 +240,79 @@ describe("wrapPlatformToolsWithScope", () => {
     expect(SCOPE_INJECTED_PLATFORM_TOOLS.has("artifacts_create")).toBe(true);
     expect(SCOPE_INJECTED_PLATFORM_TOOLS.has("state_append")).toBe(true);
     expect(SCOPE_INJECTED_PLATFORM_TOOLS.has("webfetch")).toBe(true);
+    // HITL tools read sessionId/actionId from the wrapper so Activity can
+    // correlate the pending item and the blocked run can resume on answer.
+    expect(SCOPE_INJECTED_PLATFORM_TOOLS.has("request_tool_access")).toBe(true);
+    expect(SCOPE_INJECTED_PLATFORM_TOOLS.has("request_human_input")).toBe(true);
+  });
+
+  // Phase 12.C — sessionId, actionId, and permissions config flow through
+  // the wrapper into `request_tool_access` (and any future scope-injected
+  // tool that needs them). Other wrapped tools strip extras via Zod
+  // input parsing, so this is harmless surface widening.
+  it("injects sessionId when provided", async () => {
+    const capture: { args?: unknown } = {};
+    const tools: AtlasTools = { request_tool_access: makeExecutableTool("rta", capture) };
+    const wrapped = wrapPlatformToolsWithScope(
+      tools,
+      { workspaceId: "ws_1", sessionId: "sess_1" },
+      new Set(["request_tool_access"]),
+    );
+    await wrapped.request_tool_access?.execute?.(
+      { toolName: "x", reason: "y" },
+      { toolCallId: "t1", messages: [] },
+    );
+    expect((capture.args as { sessionId: string }).sessionId).toBe("sess_1");
+  });
+
+  it("injects actionId when provided", async () => {
+    const capture: { args?: unknown } = {};
+    const tools: AtlasTools = { request_tool_access: makeExecutableTool("rta", capture) };
+    const wrapped = wrapPlatformToolsWithScope(
+      tools,
+      { workspaceId: "ws_1", actionId: "drafting" },
+      new Set(["request_tool_access"]),
+    );
+    await wrapped.request_tool_access?.execute?.(
+      { toolName: "x", reason: "y" },
+      { toolCallId: "t1", messages: [] },
+    );
+    expect((capture.args as { actionId: string }).actionId).toBe("drafting");
+  });
+
+  it("injects jobPermissions and workspacePermissions when provided", async () => {
+    const capture: { args?: unknown } = {};
+    const tools: AtlasTools = { request_tool_access: makeExecutableTool("rta", capture) };
+    const wrapped = wrapPlatformToolsWithScope(
+      tools,
+      {
+        workspaceId: "ws_1",
+        jobPermissions: { dangerouslySkipAllowlist: false },
+        workspacePermissions: { dangerouslySkipAllowlist: true },
+      },
+      new Set(["request_tool_access"]),
+    );
+    await wrapped.request_tool_access?.execute?.(
+      { toolName: "x", reason: "y" },
+      { toolCallId: "t1", messages: [] },
+    );
+    const args = capture.args as Record<string, unknown>;
+    expect(args.jobPermissions).toEqual({ dangerouslySkipAllowlist: false });
+    expect(args.workspacePermissions).toEqual({ dangerouslySkipAllowlist: true });
+  });
+
+  it("omits sessionId/actionId/permissions fields when scope doesn't supply them", async () => {
+    const capture: { args?: unknown } = {};
+    const tools: AtlasTools = { memory_save: makeExecutableTool("memory_save", capture) };
+    const wrapped = wrapPlatformToolsWithScope(tools, { workspaceId: "ws_1" });
+    await wrapped.memory_save?.execute?.(
+      { memoryName: "notes", text: "hi" },
+      { toolCallId: "t1", messages: [] },
+    );
+    const args = capture.args as Record<string, unknown>;
+    expect("sessionId" in args).toBe(false);
+    expect("actionId" in args).toBe(false);
+    expect("jobPermissions" in args).toBe(false);
+    expect("workspacePermissions" in args).toBe(false);
   });
 });

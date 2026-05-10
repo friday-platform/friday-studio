@@ -1,0 +1,1206 @@
+version: "1.0"
+
+workspace:
+  name: "First Principles Refs"
+  description: "No-auth first-principles fixture for action-output refs over data."
+
+permissions:
+  dangerouslySkipAllowlist: false
+
+memory:
+  own:
+    - name: preferences
+      type: long_term
+
+tools:
+  mcp:
+    servers:
+      fake_inbox:
+        transport:
+          type: stdio
+          command: deno
+          args:
+            - run
+            - --allow-all
+            - "__FAKE_INBOX_MCP_PATH__"
+        skipResolverCheck: true
+        validation: "read-only"
+
+signals:
+  refs-event:
+    provider: http
+    description: "Trigger refs-over-data action-output scenario."
+    config:
+      path: "/refs-event"
+    schema:
+      type: object
+      properties:
+        query:
+          type: string
+      required: []
+  refs-array-event:
+    provider: http
+    description: "Trigger inputFrom array artifact-ref resolution scenario."
+    config:
+      path: "/refs-array-event"
+    schema:
+      type: object
+      properties:
+        query:
+          type: string
+      required: []
+  skill-repair-event:
+    provider: http
+    description: "Trigger minimal skill-guided workspace repair target."
+    config:
+      path: "/skill-repair-event"
+    schema:
+      type: object
+      properties: {}
+      required: []
+  validation-contract-event:
+    provider: http
+    description: "Trigger structured-output validation contract scenario."
+    config:
+      path: "/validation-contract-event"
+    schema:
+      type: object
+      properties:
+        query:
+          type: string
+      required: []
+  ack-mutation-event:
+    provider: http
+    description: "Trigger ack-only fake inbox mutation scenario."
+    config:
+      path: "/ack-mutation-event"
+    schema:
+      type: object
+      properties:
+        query:
+          type: string
+      required: []
+  unknown-tool-event:
+    provider: http
+    description: "Trigger unknown request_tool_access scenario."
+    config:
+      path: "/unknown-tool-event"
+    schema:
+      type: object
+      properties:
+        query:
+          type: string
+      required: []
+  blocking-elicitation-event:
+    provider: http
+    description: "Trigger blocking request_tool_access scenario."
+    config:
+      path: "/blocking-elicitation-event"
+    schema:
+      type: object
+      properties:
+        query:
+          type: string
+      required: []
+  user-decision-event:
+    provider: http
+    description: "Trigger generic request_human_input scenario."
+    config:
+      path: "/user-decision-event"
+    schema:
+      type: object
+      properties:
+        query:
+          type: string
+      required: []
+  user-decision-expire-event:
+    provider: http
+    description: "Trigger generic request_human_input expiry scenario."
+    config:
+      path: "/user-decision-expire-event"
+    schema:
+      type: object
+      properties:
+        query:
+          type: string
+      required: []
+  chat-user-decision-event:
+    provider: http
+    description: "Trigger LLM request_human_input scenario for workspace chat HITL coverage."
+    config:
+      path: "/chat-user-decision-event"
+    schema:
+      type: object
+      properties:
+        query:
+          type: string
+      required: []
+  agent-output-contract-event:
+    provider: http
+    description: "Trigger LLM-backed agent output contract scenario."
+    config:
+      path: "/agent-output-contract-event"
+    schema:
+      type: object
+      properties:
+        query:
+          type: string
+      required: []
+  llm-agent-inputfrom-event:
+    provider: http
+    description: "Trigger LLM-agent inputFrom artifact hydration scenario."
+    config:
+      path: "/llm-agent-inputfrom-event"
+    schema:
+      type: object
+      properties:
+        query:
+          type: string
+      required: []
+  auto-triage-report-event:
+    provider: http
+    description: "Trigger auto-triage report output contract scenario."
+    config:
+      path: "/auto-triage-report-event"
+    schema:
+      type: object
+      properties:
+        query:
+          type: string
+      required: []
+  review-choice-event:
+    provider: http
+    description: "Trigger review-choice memory learning scenario."
+    config:
+      path: "/review-choice-event"
+    schema:
+      type: object
+      properties:
+        query:
+          type: string
+      required: []
+  fanout-delegate-event:
+    provider: http
+    description: "Trigger delegate fan-out without parent fan-in scenario."
+    config:
+      path: "/fanout-delegate-event"
+    schema:
+      type: object
+      properties:
+        query:
+          type: string
+      required: []
+  python-user-agent-event:
+    provider: http
+    description: "Trigger Python user-agent ctx.tools scenario."
+    config:
+      path: "/python-user-agent-event"
+    schema:
+      type: object
+      properties:
+        query:
+          type: string
+      required: []
+  python-user-agent-inputfrom-event:
+    provider: http
+    description: "Trigger Python user-agent inputFrom ref hydration scenario."
+    config:
+      path: "/python-user-agent-inputfrom-event"
+    schema:
+      type: object
+      properties:
+        query:
+          type: string
+      required: []
+  atlas-agent-event:
+    provider: http
+    description: "Trigger bundled/type:atlas agent scenario."
+    config:
+      path: "/atlas-agent-event"
+    schema:
+      type: object
+      properties:
+        query:
+          type: string
+      required: []
+
+agents:
+  contract-writer:
+    type: llm
+    description: "LLM-backed agent used to prove agent outputTo has a mechanical output contract."
+    config:
+      provider: anthropic
+      model: claude-sonnet-4-6
+      temperature: 0
+      max_steps: 4
+      prompt: |
+        You are a deterministic contract writer. Return only the requested
+        final payload. Do not use tools unless the runtime requires a final
+        output tool.
+
+  inputfrom-reviewer:
+    type: llm
+    description: "LLM-backed agent used to prove type:agent inputFrom sees hydrated artifact contents."
+    config:
+      provider: anthropic
+      model: claude-sonnet-4-6
+      temperature: 0
+      max_steps: 6
+      prompt: |
+        You are a deterministic inputFrom reviewer. Use only the context and
+        input supplied by the FSM action. Do not fetch artifacts, parse
+        artifacts, display artifacts, delegate, or rerun any job. Return only
+        the requested final payload.
+
+  python-inbox-fetcher:
+    type: user
+    agent: fake-inbox-python-agent
+    description: "Python user-agent fixture that must call fake inbox MCP tools through ctx.tools."
+
+  atlas-summary-writer:
+    type: atlas
+    agent: get-summary
+    description: "Bundled Atlas summary agent fixture for first-principles coverage."
+    prompt: |
+      You are running inside the first-principles no-auth eval. Summarize only
+      the provided text and create exactly one summary artifact. Preserve the
+      marker BUILT_IN_ATLAS_AGENT_OK in the artifact text.
+
+jobs:
+  skill-repair-target:
+    description: "Original skill repair target."
+    triggers:
+      - signal: skill-repair-event
+    config:
+      timeout: "1m"
+      max_steps: 1
+    validation:
+      default: "skip"
+    fsm:
+      initial: done
+      states:
+        done:
+          type: final
+
+  refs-check:
+    description: "Fetch fake inbox messages, persist output, then consume it via inputFrom."
+    triggers:
+      - signal: refs-event
+    config:
+      timeout: "5m"
+      max_steps: 12
+    validation:
+      default: "skip"
+    fsm:
+      initial: idle
+      documentTypes:
+        EmailBatch:
+          type: object
+          properties:
+            marker: { type: string }
+            messages:
+              type: array
+              items:
+                type: object
+                properties:
+                  id: { type: string }
+                  subject: { type: string }
+                  body: { type: string }
+                required: ["id", "subject", "body"]
+          required: ["marker", "messages"]
+        ReviewResult:
+          type: object
+          properties:
+            marker: { type: string }
+            count: { type: number }
+            firstId: { type: string }
+          required: ["marker", "count", "firstId"]
+      states:
+        idle:
+          on:
+            refs-event: { target: seed }
+        seed:
+          entry:
+            - type: llm
+              provider: anthropic
+              model: claude-sonnet-4-6
+              summary: "Fetch fake inbox messages into an EmailBatch document."
+              outputTo: emails-result
+              outputType: EmailBatch
+              validate: skip
+              tools: []
+              prompt: |
+                Emit an EmailBatch object directly. Do not call tools.
+
+                The object MUST contain:
+                - marker: "FIRST_PRINCIPLES_EMAIL_BATCH"
+                - messages: exactly 12 synthetic messages.
+
+                Message ids must be fake-001 through fake-012. The first
+                message subject must be "Synthetic digest 1". Every message
+                body must include the sentinel text
+                "FIRST_PRINCIPLES_EMAIL_BODY" plus the message id.
+
+                This intentionally creates a bulky structured action output.
+                The eval asserts that the runtime stores that output as an
+                artifact ref instead of carrying the full messages array
+                inline in the FSM document store.
+            - type: emit
+              event: DONE
+          on:
+            DONE: { target: consume }
+        consume:
+          entry:
+            - type: llm
+              provider: anthropic
+              model: claude-sonnet-4-6
+              summary: "Consume EmailBatch via inputFrom and report count."
+              inputFrom: emails-result
+              outputTo: review-result
+              outputType: ReviewResult
+              validate: skip
+              tools: []
+              prompt: |
+                Read the EmailBatch document from Input.
+
+                Important: the previous document may be represented as a
+                compact artifact reference plus an `artifactContent` map. If
+                you see `artifactRefs`, use the matching entry in
+                `artifactContent` as the EmailBatch payload. The artifact body
+                is JSON for the original emails-result document; its
+                `messages` array is the source of truth.
+
+                Emit a ReviewResult object with:
+                - marker: "CONSUMED_EMAIL_BATCH"
+                - count: number of messages in the EmailBatch
+                - firstId: id of the first message.
+          type: final
+
+  refs-array-check:
+    description: "Produce two artifact-backed documents, then consume both via inputFrom array."
+    triggers:
+      - signal: refs-array-event
+    config:
+      timeout: "5m"
+      max_steps: 16
+    validation:
+      default: "skip"
+    fsm:
+      initial: idle
+      documentTypes:
+        EmailBatch:
+          type: object
+          properties:
+            marker: { type: string }
+            messages:
+              type: array
+              items:
+                type: object
+                properties:
+                  id: { type: string }
+                  subject: { type: string }
+                  body: { type: string }
+                required: ["id", "subject", "body"]
+          required: ["marker", "messages"]
+        ArrayReviewResult:
+          type: object
+          properties:
+            marker: { type: string }
+            totalCount: { type: number }
+            firstIds:
+              type: array
+              items: { type: string }
+          required: ["marker", "totalCount", "firstIds"]
+      states:
+        idle:
+          on:
+            refs-array-event: { target: seed-a }
+        seed-a:
+          entry:
+            - type: llm
+              provider: anthropic
+              model: claude-sonnet-4-6
+              summary: "Produce first EmailBatch for inputFrom array."
+              outputTo: batch-a
+              outputType: EmailBatch
+              validate: skip
+              tools: []
+              prompt: |
+                Emit an EmailBatch object directly. Do not call tools.
+                The object MUST contain marker "ARRAY_BATCH_A" and exactly
+                2 messages with ids a-001 and a-002. Every body must include
+                "FIRST_PRINCIPLES_EMAIL_BODY" plus its id.
+            - type: emit
+              event: NEXT
+          on:
+            NEXT: { target: seed-b }
+        seed-b:
+          entry:
+            - type: llm
+              provider: anthropic
+              model: claude-sonnet-4-6
+              summary: "Produce second EmailBatch for inputFrom array."
+              outputTo: batch-b
+              outputType: EmailBatch
+              validate: skip
+              tools: []
+              prompt: |
+                Emit an EmailBatch object directly. Do not call tools.
+                The object MUST contain marker "ARRAY_BATCH_B" and exactly
+                3 messages with ids b-001, b-002, and b-003. Every body must
+                include "FIRST_PRINCIPLES_EMAIL_BODY" plus its id.
+            - type: emit
+              event: NEXT
+          on:
+            NEXT: { target: consume-array }
+        consume-array:
+          entry:
+            - type: llm
+              provider: anthropic
+              model: claude-sonnet-4-6
+              summary: "Consume both batches via inputFrom array."
+              inputFrom: [batch-a, batch-b]
+              outputTo: array-review-result
+              outputType: ArrayReviewResult
+              validate: skip
+              tools: []
+              prompt: |
+                Read both EmailBatch documents from Input.
+
+                Important: each previous document may be represented as a
+                compact artifact reference plus an `artifactContent` map. For
+                each input item, if its data has `artifactRefs`, use the
+                matching entry in `artifactContent` as the EmailBatch payload.
+
+                Emit an ArrayReviewResult object with:
+                - marker: "CONSUMED_INPUTFROM_ARRAY"
+                - totalCount: total messages across both batches
+                - firstIds: first message id from each batch, in input order.
+          type: final
+
+  validation-contract-check:
+    description: "Ensure structured validate:self emits output, not a validation stub."
+    triggers:
+      - signal: validation-contract-event
+    config:
+      timeout: "5m"
+      max_steps: 8
+    validation:
+      default: "self"
+    fsm:
+      initial: idle
+      documentTypes:
+        ValidationContractResult:
+          type: object
+          properties:
+            marker: { type: string }
+            value: { type: number }
+            explanation: { type: string }
+          required: ["marker", "value", "explanation"]
+      states:
+        idle:
+          on:
+            validation-contract-event: { target: validated }
+        validated:
+          entry:
+            - type: llm
+              provider: anthropic
+              model: claude-sonnet-4-6
+              summary: "Emit structured validation contract output."
+              outputTo: validation-result
+              outputType: ValidationContractResult
+              validate: self
+              tools: []
+              prompt: |
+                Emit a ValidationContractResult object directly.
+                The object MUST contain:
+                - marker: "VALIDATION_CONTRACT_OK"
+                - value: 7
+                - explanation: "structured output survived validation"
+          type: final
+
+  agent-output-contract-check:
+    description: "LLM-backed agent action without outputType still emits a real output document."
+    triggers:
+      - signal: agent-output-contract-event
+    config:
+      timeout: "5m"
+      max_steps: 8
+    validation:
+      default: "self"
+    fsm:
+      initial: idle
+      states:
+        idle:
+          on:
+            agent-output-contract-event: { target: write }
+        write:
+          entry:
+            - type: agent
+              agentId: contract-writer
+              summary: "Emit agent output contract marker."
+              outputTo: agent-contract-result
+              validate: self
+              prompt: |
+                Produce the final action output. The stored output MUST be
+                exactly this non-empty JSON object:
+                {"marker":"AGENT_OUTPUT_CONTRACT_OK","value":11,"explanation":"llm agent outputTo used complete contract"}
+          type: final
+
+  llm-agent-inputfrom-check:
+    description: "LLM-backed agent action consumes a ref-backed inputFrom document without artifact fan-in tools."
+    triggers:
+      - signal: llm-agent-inputfrom-event
+    config:
+      timeout: "5m"
+      max_steps: 12
+    validation:
+      default: "skip"
+    fsm:
+      initial: idle
+      documentTypes:
+        EmailBatch:
+          type: object
+          properties:
+            marker: { type: string }
+            messages:
+              type: array
+              items:
+                type: object
+                properties:
+                  id: { type: string }
+                  subject: { type: string }
+                  body: { type: string }
+                required: ["id", "subject", "body"]
+          required: ["marker", "messages"]
+        AgentHydrationResult:
+          type: object
+          properties:
+            marker: { type: string }
+            count: { type: number }
+            firstId: { type: string }
+            sawBodySentinel: { type: boolean }
+          required: ["marker", "count", "firstId", "sawBodySentinel"]
+      states:
+        idle:
+          on:
+            llm-agent-inputfrom-event: { target: seed }
+        seed:
+          entry:
+            - type: llm
+              provider: anthropic
+              model: claude-sonnet-4-6
+              summary: "Produce bulky EmailBatch for LLM-agent inputFrom."
+              outputTo: agent-emails-result
+              outputType: EmailBatch
+              validate: skip
+              tools: []
+              prompt: |
+                Emit an EmailBatch object directly. Do not call tools.
+
+                The object MUST contain:
+                - marker: "LLM_AGENT_INPUTFROM_EMAIL_BATCH"
+                - messages: exactly 12 synthetic messages.
+
+                Message ids must be fake-001 through fake-012. The first
+                message subject must be "Synthetic digest 1". Every message
+                body must include the sentinel text
+                "FIRST_PRINCIPLES_EMAIL_BODY" plus the message id.
+            - type: emit
+              event: NEXT
+          on:
+            NEXT: { target: review }
+        review:
+          entry:
+            - type: agent
+              agentId: inputfrom-reviewer
+              summary: "Consume EmailBatch via type:agent inputFrom."
+              inputFrom: agent-emails-result
+              outputTo: agent-hydration-result
+              outputType: AgentHydrationResult
+              validate: skip
+              prompt: |
+                Read the EmailBatch document from the visible action input and
+                available documents. Do not call artifacts_get,
+                display_artifact, parse_artifact, delegate, or any job tool.
+
+                The previous document may be represented as compact
+                artifactRefs plus artifactContent. Use the hydrated
+                artifactContent as the source of truth. You must inspect the
+                message bodies, not only the summary.
+
+                Emit an AgentHydrationResult object with:
+                - marker: "LLM_AGENT_INPUTFROM_HYDRATED"
+                - count: number of messages in the EmailBatch
+                - firstId: id of the first message
+                - sawBodySentinel: true only if a message body contains
+                  "FIRST_PRINCIPLES_EMAIL_BODY"
+          type: final
+
+  auto-triage-report-contract-check:
+    description: "Report-writing triage job returns useful structured output, not a stub."
+    triggers:
+      - signal: auto-triage-report-event
+    config:
+      timeout: "5m"
+      max_steps: 10
+    validation:
+      default: "skip"
+    fsm:
+      initial: idle
+      states:
+        idle:
+          on:
+            auto-triage-report-event: { target: report }
+        report:
+          entry:
+            - type: llm
+              provider: anthropic
+              model: claude-sonnet-4-6
+              summary: "Review fake inbox and write a compact triage report."
+              outputTo: triage-report
+              validate: skip
+              tools:
+                - search_messages
+                - get_messages_content_batch
+                - fs_write_file
+              prompt: |
+                Run an autonomous triage report over the fake inbox.
+
+                Steps:
+                1. Call search_messages with query "is:unread" and limit 4.
+                2. Call get_messages_content_batch for the returned ids.
+                3. Write a markdown report to
+                   "triage-reports/first-principles-triage.md" with a concise
+                   summary. The report may mention ids and subjects but MUST
+                   NOT include full message bodies or FIRST_PRINCIPLES_EMAIL_BODY.
+                4. Finish with ONLY a JSON object containing:
+                   - marker: "AUTO_TRIAGE_REPORT_CONTRACT_OK"
+                   - reportPath: "triage-reports/first-principles-triage.md"
+                   - emailsReviewed: 4
+                   - actionsTaken: 0
+                   - skippedCount: 4
+                   - firstId: "fake-001"
+                   - reportSummary: a one-sentence summary of the report
+
+                The final output must contain the path and counts. Do not
+                return a one-line success stub.
+          type: final
+
+  ack-mutation-check:
+    description: "Mutate fake inbox labels and ensure mutation output stays ack-only."
+    triggers:
+      - signal: ack-mutation-event
+    config:
+      timeout: "5m"
+      max_steps: 8
+    validation:
+      default: "skip"
+    fsm:
+      initial: idle
+      documentTypes:
+        MutationAck:
+          type: object
+          properties:
+            marker: { type: string }
+            ok: { type: boolean }
+            modifiedCount: { type: number }
+            operation: { type: string }
+            receipt: { type: string }
+          required: ["marker", "ok", "modifiedCount", "operation", "receipt"]
+      states:
+        idle:
+          on:
+            ack-mutation-event: { target: mutate }
+        mutate:
+          entry:
+            - type: llm
+              provider: anthropic
+              model: claude-sonnet-4-6
+              summary: "Archive fake inbox messages with ack-only mutation."
+              outputTo: mutation-ack
+              validate: skip
+              tools:
+                - batch_modify_message_labels
+              prompt: |
+                Call batch_modify_message_labels exactly once with ids
+                ["fake-001", "fake-002", "fake-003"], addLabels ["archived"],
+                and removeLabels ["inbox"].
+
+                Then respond with ONLY a JSON MutationAck object with:
+                - marker: "ACK_ONLY_MUTATION_OK"
+                - ok: true if the tool result says ok
+                - modifiedCount from the tool result
+                - operation: "batch_modify_message_labels"
+                - receipt: copy the exact `receipt` string returned by the tool
+
+                Do not fetch message contents and do not include any message
+                bodies in the final output.
+          type: final
+
+  review-choice-memory-check:
+    description: "Interactive review choices mutate fake inbox and write preference memory."
+    triggers:
+      - signal: review-choice-event
+    config:
+      timeout: "5m"
+      max_steps: 10
+    validation:
+      default: "skip"
+    fsm:
+      initial: idle
+      states:
+        idle:
+          on:
+            review-choice-event: { target: apply-choices }
+        apply-choices:
+          entry:
+            - type: llm
+              provider: anthropic
+              model: claude-sonnet-4-6
+              summary: "Apply review choices and learn preferences."
+              outputTo: review-choice-result
+              validate: skip
+              tools:
+                - batch_modify_message_labels
+                - memory_save
+              prompt: |
+                Simulate the user entering review choices "1a 2a 3a 4k"
+                for the fake inbox:
+                - 1a, 2a, 3a mean archive fake-001, fake-002, fake-003.
+                - 4k means keep fake-004 unchanged.
+
+                First call batch_modify_message_labels exactly once with ids
+                ["fake-001", "fake-002", "fake-003"], addLabels
+                ["archived"], and removeLabels ["inbox", "unread"].
+
+                Then call memory_save exactly once with memoryName
+                "preferences" and this exact text:
+                "FIRST_PRINCIPLES_REVIEW_CHOICE learned: archive synthetic digest messages; keep action-required alerts for review"
+
+                Finish with ONLY a JSON object containing:
+                - marker: "REVIEW_CHOICE_MEMORY_LEARNED"
+                - archivedCount: 3
+                - keptCount: 1
+                - memorySaved: true
+                - learnedPreference: the exact memory text above
+          type: final
+
+  unknown-tool-check:
+    description: "Unknown tool access requests must not create elicitations."
+    triggers:
+      - signal: unknown-tool-event
+    config:
+      timeout: "5m"
+      max_steps: 8
+    validation:
+      default: "skip"
+    fsm:
+      initial: idle
+      states:
+        idle:
+          on:
+            unknown-tool-event: { target: request }
+        request:
+          entry:
+            - type: llm
+              provider: anthropic
+              model: claude-sonnet-4-6
+              summary: "Request access to a deliberately unknown tool."
+              outputTo: unknown-tool-result
+              validate: skip
+              tools:
+                - request_tool_access
+              prompt: |
+                Call request_tool_access exactly once with:
+                - toolName: "gmail_magic_delete_everything"
+                - reason: "first-principles unknown tool guard"
+
+                Then respond with ONLY a JSON object containing:
+                - marker: "UNKNOWN_TOOL_REQUEST_DONE"
+                - granted: the granted value returned by request_tool_access
+                - reason: the reason returned by request_tool_access
+                - discoveryTools: the discoveryTools array returned by request_tool_access, or []
+          type: final
+
+  blocking-elicitation-check:
+    description: "request_tool_access blocks until the user answers."
+    triggers:
+      - signal: blocking-elicitation-event
+    config:
+      timeout: "5m"
+      max_steps: 8
+    validation:
+      default: "skip"
+    fsm:
+      initial: idle
+      states:
+        idle:
+          on:
+            blocking-elicitation-event: { target: request }
+        request:
+          entry:
+            - type: llm
+              provider: anthropic
+              model: claude-sonnet-4-6
+              summary: "Request real tool access and continue after answer."
+              outputTo: blocking-elicitation-result
+              validate: skip
+              tools:
+                - request_tool_access
+              prompt: |
+                Call request_tool_access exactly once with:
+                - toolName: "fs_read_file"
+                - reason: "first-principles blocking elicitation guard"
+
+                Wait for the tool result. Then respond with ONLY a JSON object containing:
+                - marker: "BLOCKING_ELICITATION_RESUMED"
+                - granted: the granted value returned by request_tool_access
+                - reason: the reason returned by request_tool_access
+                - answer: the answer returned by request_tool_access
+          type: final
+
+  python-user-agent-decision-check:
+    description: "Python user-agent blocks on request_human_input and resumes with the answer."
+    triggers:
+      - signal: user-decision-event
+    config:
+      timeout: "5m"
+      max_steps: 8
+    validation:
+      default: "skip"
+    fsm:
+      initial: idle
+      documentTypes:
+        PythonUserDecisionResult:
+          type: object
+          properties:
+            marker: { type: string }
+            listedTools:
+              type: array
+              items: { type: string }
+            status: { type: string }
+            answer: { type: string }
+            elicitationId: { type: string }
+          required: ["marker", "listedTools", "status", "answer", "elicitationId"]
+      states:
+        idle:
+          on:
+            user-decision-event: { target: ask }
+        ask:
+          entry:
+            - type: agent
+              agentId: python-inbox-fetcher
+              summary: "Ask for a generic user decision from a Python user agent."
+              outputTo: python-user-decision-result
+              outputType: PythonUserDecisionResult
+              validate: skip
+              prompt: |
+                Use ctx.tools to call request_human_input. Wait for the answer
+                and return marker PY_USER_AGENT_HUMAN_INPUT_RESUMED, listed
+                tool names, status, answer, and elicitationId.
+          type: final
+
+  chat-user-decision-check:
+    description: "LLM job blocks on request_human_input so workspace chat can render inline HITL and debug active streams."
+    triggers:
+      - signal: chat-user-decision-event
+    config:
+      timeout: "5m"
+      max_steps: 8
+    validation:
+      default: "skip"
+    fsm:
+      initial: idle
+      documentTypes:
+        ChatHumanInputResult:
+          type: object
+          properties:
+            marker: { type: string }
+            status: { type: string }
+            answer: { type: string }
+            elicitationId: { type: string }
+          required: ["marker", "status", "answer", "elicitationId"]
+      states:
+        idle:
+          on:
+            chat-user-decision-event: { target: ask }
+        ask:
+          entry:
+            - type: llm
+              provider: anthropic
+              model: claude-sonnet-4-6
+              summary: "Ask for a generic user decision from an LLM action."
+              outputTo: chat-human-input-result
+              outputType: ChatHumanInputResult
+              validate: skip
+              tools:
+                - request_human_input
+              prompt: |
+                Call request_human_input exactly once with:
+                - question: "Choose chat HITL action"
+                - options: [{"label":"Archive the item","value":"archive"},{"label":"Keep the item","value":"keep"}]
+
+                Wait for the tool result. Then emit a ChatHumanInputResult object with:
+                - marker: "CHAT_HUMAN_INPUT_RESUMED"
+                - status: the status returned by request_human_input
+                - answer: the answer returned by request_human_input, or "" if absent
+                - elicitationId: the elicitationId returned by request_human_input
+          type: final
+
+  python-user-agent-decision-expire-check:
+    description: "Python user-agent request_human_input resumes when the open question expires."
+    triggers:
+      - signal: user-decision-expire-event
+    config:
+      timeout: "1s"
+      max_steps: 8
+    validation:
+      default: "skip"
+    fsm:
+      initial: idle
+      documentTypes:
+        PythonUserDecisionResult:
+          type: object
+          properties:
+            marker: { type: string }
+            listedTools:
+              type: array
+              items: { type: string }
+            status: { type: string }
+            answer: { type: string }
+            elicitationId: { type: string }
+          required: ["marker", "listedTools", "status", "answer", "elicitationId"]
+      states:
+        idle:
+          on:
+            user-decision-expire-event: { target: ask }
+        ask:
+          entry:
+            - type: agent
+              agentId: python-inbox-fetcher
+              summary: "Ask for a generic user decision and let it expire."
+              outputTo: python-user-decision-result
+              outputType: PythonUserDecisionResult
+              validate: skip
+              prompt: |
+                Use ctx.tools to call request_human_input. Wait for the result
+                and return marker PY_USER_AGENT_HUMAN_INPUT_RESUMED, listed
+                tool names, status, answer, and elicitationId.
+          type: final
+
+  python-user-agent-tool-check:
+    description: "Python user-agent uses ctx.tools for fake inbox access and records tool calls."
+    triggers:
+      - signal: python-user-agent-event
+    config:
+      timeout: "5m"
+      max_steps: 8
+    validation:
+      default: "skip"
+    fsm:
+      initial: idle
+      documentTypes:
+        PythonUserAgentResult:
+          type: object
+          properties:
+            marker: { type: string }
+            listedTools:
+              type: array
+              items: { type: string }
+            count: { type: number }
+            firstId: { type: string }
+            sawBodySentinel: { type: boolean }
+          required: [
+            "marker",
+            "listedTools",
+            "count",
+            "firstId",
+            "sawBodySentinel",
+          ]
+      states:
+        idle:
+          on:
+            python-user-agent-event: { target: fetch }
+        fetch:
+          entry:
+            - type: agent
+              agentId: python-inbox-fetcher
+              summary: "Fetch fake inbox messages from a Python user agent."
+              outputTo: python-user-agent-result
+              outputType: PythonUserAgentResult
+              validate: skip
+              prompt: |
+                Use ctx.tools only. List tools, call search_messages with
+                limit 4, then call get_messages_content_batch for those ids.
+                Return the marker PY_USER_AGENT_TOOL_OK, listed tool names,
+                count, firstId, and whether any body contained
+                FIRST_PRINCIPLES_EMAIL_BODY.
+          type: final
+
+  python-user-agent-inputfrom-check:
+    description: "Python user-agent consumes a compact inputFrom artifact ref through ctx.input."
+    triggers:
+      - signal: python-user-agent-inputfrom-event
+    config:
+      timeout: "5m"
+      max_steps: 8
+    validation:
+      default: "skip"
+    fsm:
+      initial: idle
+      documentTypes:
+        PythonInputFromSeed:
+          type: object
+          properties:
+            marker: { type: string }
+            messages:
+              type: array
+              items:
+                type: object
+                properties:
+                  id: { type: string }
+                  subject: { type: string }
+                  body: { type: string }
+                required: ["id", "subject", "body"]
+          required: ["marker", "messages"]
+        PythonInputFromResult:
+          type: object
+          properties:
+            marker: { type: string }
+            count: { type: number }
+            firstId: { type: string }
+            sawBodySentinel: { type: boolean }
+            artifactRefs:
+              type: array
+              items: { type: string }
+          required: ["marker", "count", "firstId", "sawBodySentinel", "artifactRefs"]
+      states:
+        idle:
+          on:
+            python-user-agent-inputfrom-event: { target: seed }
+        seed:
+          entry:
+            - type: llm
+              provider: anthropic
+              model: claude-sonnet-4-6
+              summary: "Produce bulky EmailBatch for Python user-agent inputFrom."
+              outputTo: python-emails-result
+              outputType: PythonInputFromSeed
+              validate: skip
+              tools: []
+              prompt: |
+                Emit a PythonInputFromSeed object directly. Do not call tools.
+
+                The object MUST contain:
+                - marker: "PYTHON_USER_AGENT_INPUTFROM_EMAIL_BATCH"
+                - messages: exactly 12 synthetic messages.
+
+                Message ids must be fake-001 through fake-012. The first
+                message subject must be "Synthetic digest 1". Every message
+                body must include the sentinel text
+                "FIRST_PRINCIPLES_EMAIL_BODY" plus the message id.
+            - type: emit
+              event: NEXT
+          on:
+            NEXT: { target: consume }
+        consume:
+          entry:
+            - type: agent
+              agentId: python-inbox-fetcher
+              summary: "Consume compact inputFrom artifact from Python user agent."
+              inputFrom: python-emails-result
+              outputTo: python-inputfrom-result
+              outputType: PythonInputFromResult
+              validate: skip
+              prompt: |
+                Consume Python inputFrom artifact through ctx.input. Do not
+                call fake inbox search/fetch tools. Use ctx.input.artifact_json
+                for python-emails-result, then return marker
+                PY_USER_AGENT_INPUTFROM_HYDRATED, count, firstId,
+                sawBodySentinel, and artifactRefs.
+          type: final
+
+  atlas-agent-check:
+    description: "Bundled type:atlas agent executes with artifact refs and observable tool calls."
+    triggers:
+      - signal: atlas-agent-event
+    config:
+      timeout: "5m"
+      max_steps: 8
+    validation:
+      default: "skip"
+    fsm:
+      initial: idle
+      states:
+        idle:
+          on:
+            atlas-agent-event: { target: summarize }
+        summarize:
+          entry:
+            - type: agent
+              agentId: atlas-summary-writer
+              summary: "Use bundled get-summary Atlas agent."
+              outputTo: atlas-agent-result
+              validate: skip
+              prompt: |
+                Summarize this deterministic no-auth fixture text:
+                BUILT_IN_ATLAS_AGENT_OK proves type: atlas wrappers can run as
+                FSM agent actions, create summary artifacts, and surface
+                tool-call metadata without direct MCP configuration.
+          type: final
+
+  fanout-delegate-check:
+    description: "Delegate to a child that sees bulky fake inbox data without feeding it back to the parent."
+    triggers:
+      - signal: fanout-delegate-event
+    config:
+      timeout: "5m"
+      max_steps: 10
+    validation:
+      default: "skip"
+    fsm:
+      initial: idle
+      states:
+        idle:
+          on:
+            fanout-delegate-event: { target: delegate }
+        delegate:
+          entry:
+            - type: llm
+              provider: anthropic
+              model: claude-sonnet-4-6
+              summary: "Delegate fake inbox review and keep parent output compact."
+              outputTo: delegate-result
+              validate: skip
+              tools:
+                - delegate
+                - search_messages
+                - get_messages_content_batch
+              prompt: |
+                Call delegate exactly once. Do NOT call search_messages or
+                get_messages_content_batch directly from this parent action.
+
+                Delegate goal:
+                "Use the fake inbox tools. First call search_messages with
+                query 'fanout delegate' and limit 4. Then call
+                get_messages_content_batch with the returned ids. You may see
+                message bodies containing FIRST_PRINCIPLES_EMAIL_BODY, but do
+                not include any body text or that sentinel in your final answer.
+                Finish with a concise JSON string containing marker
+                FANOUT_DELEGATE_CHILD_OK, messageCount 4, and firstId fake-001."
+
+                Delegate handoff:
+                "This is a fan-out compactness test. The child may inspect
+                bulky inbox contents; the parent must receive only the
+                delegate tool's compact answer and toolsUsed ledger."
+
+                After delegate returns, emit ONLY a JSON object containing:
+                - marker: "FANOUT_DELEGATE_PARENT_OK"
+                - childOk: delegate ok boolean
+                - childAnswer: delegate answer string
+                - toolsUsed: array of tool names from delegate toolsUsed
+
+                The parent final output MUST NOT include FIRST_PRINCIPLES_EMAIL_BODY
+                and MUST NOT include any message body text.
+          type: final

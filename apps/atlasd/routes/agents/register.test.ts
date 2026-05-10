@@ -226,20 +226,26 @@ describe("POST /register", () => {
     expect(body.phase).toBe("validate");
   });
 
-  it("passes FRIDAY_VALIDATE_ID and NATS_URL to spawned process", async () => {
+  it("passes FRIDAY_VALIDATE_ID and the active NATS_URL to spawned process", async () => {
     const app = makeApp({ id: "env-agent", version: "1.0.0", description: "Env test" });
-
-    await app.request("/register", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ entrypoint: "/agents/agent.py" }),
-    });
+    const original = process.env.FRIDAY_NATS_URL;
+    process.env.FRIDAY_NATS_URL = "nats://127.0.0.1:4555";
+    try {
+      await app.request("/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entrypoint: "/agents/agent.py" }),
+      });
+    } finally {
+      if (original === undefined) delete process.env.FRIDAY_NATS_URL;
+      else process.env.FRIDAY_NATS_URL = original;
+    }
 
     const spawnCall = mockSpawn.mock.calls[0];
     const env = spawnCall?.[2]?.env as Record<string, string>;
     expect(env).toMatchObject({
       FRIDAY_VALIDATE_ID: expect.any(String),
-      NATS_URL: "nats://localhost:4222",
+      NATS_URL: "nats://127.0.0.1:4555",
     });
   });
 

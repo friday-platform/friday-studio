@@ -13,8 +13,8 @@ describe("FSM Engine - Results Accumulator", () => {
     });
   });
 
-  describe("results clear on transition to initial state", () => {
-    it("clears results when transitioning back to initial state", async () => {
+  describe("results projection follows documents", () => {
+    it("keeps persisted document outputs visible when transitioning back to initial state", async () => {
       const fsm: FSMDefinition = {
         id: "results-clear-initial",
         initial: "idle",
@@ -51,10 +51,10 @@ describe("FSM Engine - Results Accumulator", () => {
       expect(engine.state).toEqual("working");
       expect(engine.results).toEqual({ analysis: { summary: "found stuff" } });
 
-      // Transition back to idle - results should clear
+      // Transition back to idle - document outputs remain the canonical source.
       await engine.signal({ type: "DONE" });
       expect(engine.state).toEqual("idle");
-      expect(engine.results).toEqual({});
+      expect(engine.results).toEqual({ analysis: { summary: "found stuff" } });
     });
   });
 
@@ -95,10 +95,10 @@ describe("FSM Engine - Results Accumulator", () => {
     });
   });
 
-  describe("agent output dual-write to results and documents", () => {
-    it("agent output with outputTo writes to engine.results and engine.documents", async () => {
+  describe("agent output document projection", () => {
+    it("agent output with outputTo writes to documents and projects through engine.results", async () => {
       const fsm: FSMDefinition = {
-        id: "agent-dual-write",
+        id: "agent-document-projection",
         initial: "idle",
         states: {
           idle: {
@@ -134,7 +134,7 @@ describe("FSM Engine - Results Accumulator", () => {
 
       // Results accumulator has the data
       expect(engine.results).toEqual({ analysis: { summary: "test summary", rowCount: 42 } });
-      // Documents also have the data (dual-write)
+      // Documents are the canonical source behind the projection.
       expect(engine.documents.find((d) => d.id === "analysis")).toBeDefined();
     });
 
@@ -248,7 +248,7 @@ describe("FSM Engine - Results Accumulator", () => {
       expect(engine.results).toEqual({});
     });
 
-    it("no outputType: merges without validation (backward compat)", async () => {
+    it("no outputType: stores untyped agent output", async () => {
       const fsm: FSMDefinition = {
         id: "agent-no-output-type",
         initial: "idle",
@@ -442,10 +442,10 @@ describe("FSM Engine - Results Accumulator", () => {
     });
   });
 
-  describe("LLM output dual-write to results", () => {
-    it("LLM output with outputTo writes to engine.results", async () => {
+  describe("LLM output document projection", () => {
+    it("LLM output with outputTo writes to documents and projects through engine.results", async () => {
       const fsm: FSMDefinition = {
-        id: "llm-dual-write",
+        id: "llm-document-projection",
         initial: "idle",
         documentTypes: {
           Report: {
@@ -498,7 +498,7 @@ describe("FSM Engine - Results Accumulator", () => {
       await engine.signal({ type: "START" });
 
       expect(engine.results).toEqual({ report: { title: "My Report", body: "Contents here" } });
-      // Documents also populated (dual-write)
+      // Documents are the canonical source behind the projection.
       expect(engine.documents.find((d) => d.id === "report")).toBeDefined();
     });
   });

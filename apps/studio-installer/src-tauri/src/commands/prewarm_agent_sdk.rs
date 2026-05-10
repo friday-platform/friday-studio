@@ -42,13 +42,15 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tokio::time::timeout;
 
+use crate::friday_home::friday_home_dir;
+
 /// Pinned PyPI version. MUST match all of:
 ///   - tools/friday-launcher/paths.go::bundledAgentSDKVersion
 ///   - Dockerfile::ENV FRIDAY_AGENT_SDK_VERSION
 ///
 /// Enforced by scripts/check-sdk-pin-sync.ts in CI and via lint-staged
 /// in the husky pre-commit hook for the three pin files.
-const BUNDLED_AGENT_SDK_VERSION: &str = "0.1.5";
+const BUNDLED_AGENT_SDK_VERSION: &str = "0.1.7";
 
 /// Wall-clock cap on the uv pre-warm. uv's network ops (cpython
 /// download + PyPI fetch) finish in 5–30s on a healthy connection.
@@ -192,24 +194,8 @@ fn locate_uv(install_dir: &Path) -> Option<PathBuf> {
     }
 }
 
-/// Resolve the friday home directory exactly the way the launcher does.
-/// Mirrors tools/friday-launcher/paths.go::friendlyHome() —
-/// FRIDAY_LAUNCHER_HOME wins; otherwise ~/.friday/local. NO ~/.atlas
-/// fallback (that's a daemon-side concern, not a launcher one).
-///
-/// Note: the launcher *emits* FRIDAY_HOME=<resolved> to its child
-/// processes (project.go:62). We must NOT read FRIDAY_HOME here — that
-/// would only ever be set inside a launcher-spawned process, never in
-/// the installer's parent shell.
-fn friday_home_dir() -> Result<PathBuf, String> {
-    if let Ok(v) = std::env::var("FRIDAY_LAUNCHER_HOME") {
-        if !v.is_empty() {
-            return Ok(PathBuf::from(v));
-        }
-    }
-    let home = dirs::home_dir().ok_or("could not resolve user home dir")?;
-    Ok(home.join(".friday").join("local"))
-}
+// `friday_home_dir()` lives in `crate::friday_home` (shared resolver).
+// See that module for `FRIDAY_LAUNCHER_HOME` semantics and tests.
 
 #[cfg(test)]
 mod tests {
@@ -232,23 +218,5 @@ mod tests {
         let tmp = tempfile::tempdir().expect("create tmp");
         std::fs::create_dir_all(tmp.path().join("bin")).unwrap();
         assert_eq!(locate_uv(tmp.path()), None);
-    }
-
-    #[test]
-    fn friday_home_honors_launcher_env_override() {
-        let tmp = tempfile::tempdir().expect("create tmp");
-        let override_path = tmp.path().to_path_buf();
-
-        // Snapshot + restore the env var to avoid leaking state to other
-        // tests if cargo test runs them in parallel within the same process.
-        let prior = std::env::var("FRIDAY_LAUNCHER_HOME").ok();
-        std::env::set_var("FRIDAY_LAUNCHER_HOME", &override_path);
-
-        assert_eq!(friday_home_dir().unwrap(), override_path);
-
-        match prior {
-            Some(v) => std::env::set_var("FRIDAY_LAUNCHER_HOME", v),
-            None => std::env::remove_var("FRIDAY_LAUNCHER_HOME"),
-        }
     }
 }

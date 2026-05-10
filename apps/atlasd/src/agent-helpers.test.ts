@@ -1,39 +1,34 @@
 /**
- * Tests for agent prompt precedence + output validation.
+ * Tests for agent prompt composition + output validation.
  *
  * These tests verify:
- * 1. action.prompt takes priority over agentConfig.prompt
- * 2. If no action.prompt, falls back to agentConfig.prompt
- * 3. If neither exists, returns context only
- * 4. validateAgentOutput hallucination-detection branching
+ * 1. agentConfig.prompt and action.prompt are concatenated (config first) by buildFinalAgentPrompt
+ * 2. composeAgentPrompt wires extract + interpolate + concat in the same order as runtime.executeAgent
+ * 3. validateAgentOutput hallucination-detection branching
  */
 
-import type { AgentResult } from "@atlas/agent-sdk";
+import type { AgentResult, AtlasAgentConfig } from "@atlas/agent-sdk";
 import type { Context } from "@atlas/fsm-engine";
-import {
-  ValidationFailedError,
-  type ValidationVerdict,
-  type VerdictStatus,
-} from "@atlas/hallucination";
-import type { PlatformModels } from "@atlas/llm";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   buildFinalAgentPrompt,
+  composeAgentPrompt,
   extractAgentConfigPrompt,
   validateAgentOutput,
 } from "./agent-helpers.ts";
 
+// `@atlas/fsm-engine`'s `mod.ts` transitively pulls in Deno-only modules, so
+// `vi.importActual` fails under vitest's Node runtime. Stub with a sentinel
+// wrapper so tests can check *that* interpolation ran without re-implementing
+// (and drifting from) the real regex. The substitution contract is pinned in
+// `packages/fsm-engine/tests/prompt-interpolation.test.ts`.
+// Pass-through on empty strings so `composeAgentPrompt`'s `extractAgentConfigPrompt() === ""`
+// branches behave the same as with the real impl (which returns "" for input "").
+const INTERPOLATED = (raw: string) => (raw ? `INTERP[${raw}]` : raw);
 vi.mock("@atlas/fsm-engine", () => ({
   expandArtifactRefsInDocuments: vi.fn((docs: unknown[]) => Promise.resolve(docs)),
+  interpolatePromptPlaceholders: (prompt: string): string => INTERPOLATED(prompt),
 }));
-
-const mockValidate = vi.hoisted(() => vi.fn<(...args: unknown[]) => Promise<ValidationVerdict>>());
-
-vi.mock("@atlas/hallucination", async () => {
-  const actual =
-    await vi.importActual<typeof import("@atlas/hallucination")>("@atlas/hallucination");
-  return { ...actual, validate: mockValidate };
-});
 
 describe("extractAgentConfigPrompt", () => {
   it("returns empty string for undefined config", () => {
@@ -121,29 +116,33 @@ describe("extractAgentConfigPrompt", () => {
 describe("buildFinalAgentPrompt", () => {
   const documentContext = "## Context Facts\n- Current Date: Monday, January 26, 2026";
 
-  describe("prompt precedence", () => {
-    it("uses action.prompt when both action.prompt and agentConfig.prompt exist", () => {
+  describe("prompt composition", () => {
+    it("concatenates agentConfig.prompt before action.prompt when both exist", () => {
       const result = buildFinalAgentPrompt(
         "Action task instructions",
-        "Config fallback prompt",
+        "Agent-wide guidance",
         documentContext,
       );
 
+      expect(result).toBe(`Agent-wide guidance\n\nAction task instructions\n\n${documentContext}`);
+    });
+
+    it("uses agentConfig.prompt alone when action.prompt is undefined", () => {
+      const result = buildFinalAgentPrompt(undefined, "Agent-wide guidance", documentContext);
+
+      expect(result).toBe(`Agent-wide guidance\n\n${documentContext}`);
+    });
+
+    it("uses agentConfig.prompt alone when action.prompt is empty string", () => {
+      const result = buildFinalAgentPrompt("", "Agent-wide guidance", documentContext);
+
+      expect(result).toBe(`Agent-wide guidance\n\n${documentContext}`);
+    });
+
+    it("uses action.prompt alone when agentConfig.prompt is empty", () => {
+      const result = buildFinalAgentPrompt("Action task instructions", "", documentContext);
+
       expect(result).toBe(`Action task instructions\n\n${documentContext}`);
-      expect(result).not.toContain("Config fallback prompt");
-    });
-
-    it("falls back to agentConfig.prompt when action.prompt is undefined", () => {
-      const result = buildFinalAgentPrompt(undefined, "Config fallback prompt", documentContext);
-
-      expect(result).toBe(`Config fallback prompt\n\n${documentContext}`);
-    });
-
-    it("falls back to agentConfig.prompt when action.prompt is empty string", () => {
-      // Empty string is falsy, so falls back to config prompt
-      const result = buildFinalAgentPrompt("", "Config fallback prompt", documentContext);
-
-      expect(result).toBe(`Config fallback prompt\n\n${documentContext}`);
     });
 
     it("returns context only when neither action.prompt nor agentConfig.prompt exist", () => {
@@ -175,21 +174,22 @@ describe("buildFinalAgentPrompt", () => {
   });
 
   describe("custom agent scenario", () => {
-    it("custom agent uses action.prompt over agentConfig.prompt", () => {
-      // Custom agents defined in workspace.yml have agentConfig.prompt
-      // But if the FSM action also specifies a prompt, it takes precedence
+    it("agentConfig.prompt is prepended as agent-wide guidance to action.prompt", () => {
+      // Custom agents defined in workspace.yml have agentConfig.prompt — this
+      // is treated as agent-wide guidance (e.g. "always use neon green bg")
+      // and is prepended to the per-step action.prompt so both apply.
       const result = buildFinalAgentPrompt(
-        "Override: specific task for this step",
-        "Default: general purpose for this agent",
+        "Specific task for this step",
+        "Agent-wide: always use neon green background",
         documentContext,
       );
 
-      expect(result).toBe(`Override: specific task for this step\n\n${documentContext}`);
-      expect(result).not.toContain("Default: general purpose");
+      expect(result).toBe(
+        `Agent-wide: always use neon green background\n\nSpecific task for this step\n\n${documentContext}`,
+      );
     });
 
-    it("custom agent uses agentConfig.prompt when no action.prompt", () => {
-      // Custom agent with config prompt, but FSM action doesn't override
+    it("custom agent uses agentConfig.prompt alone when no action.prompt", () => {
       const result = buildFinalAgentPrompt(
         undefined,
         "Default: general purpose for this agent",
@@ -241,9 +241,100 @@ describe("buildFinalAgentPrompt", () => {
   });
 });
 
+describe("composeAgentPrompt", () => {
+  // Pins the call-site composition in WorkspaceRuntime.executeAgent. If a
+  // future refactor drops the agent-config prompt from the pipeline, these
+  // tests fail.
+
+  const documentContext = "## Context Facts\n- Current Date: 2026-05-06";
+
+  const atlasAgent = (prompt: string): AtlasAgentConfig => ({
+    type: "atlas",
+    agent: "image-generation",
+    description: "test atlas agent",
+    prompt,
+  });
+
+  it("includes BOTH agentConfig.prompt and action.prompt in the final prompt", () => {
+    const prompt = composeAgentPrompt(
+      { prompt: "Generate a sprite of a noodle" },
+      atlasAgent("Background must be solid neon green"),
+      undefined,
+      documentContext,
+    );
+
+    expect(prompt).toContain("Background must be solid neon green");
+    expect(prompt).toContain("Generate a sprite of a noodle");
+    expect(prompt).toContain(documentContext);
+  });
+
+  it("places agentConfig.prompt before action.prompt", () => {
+    const prompt = composeAgentPrompt(
+      { prompt: "ACTION_TASK" },
+      atlasAgent("CONFIG_GUIDANCE"),
+      undefined,
+      documentContext,
+    );
+
+    expect(prompt.indexOf("CONFIG_GUIDANCE")).toBeLessThan(prompt.indexOf("ACTION_TASK"));
+  });
+
+  // The interpolation tests below verify the helper *invokes*
+  // interpolatePromptPlaceholders on each layer. They do NOT verify the
+  // substitution result — that contract is pinned in
+  // `packages/fsm-engine/tests/prompt-interpolation.test.ts`. The mock at the
+  // top of this file is a sentinel wrapper so we can detect "ran".
+  it("invokes interpolatePromptPlaceholders on the action prompt", () => {
+    const prompt = composeAgentPrompt(
+      { prompt: "Describe: {{inputs.subject}}" },
+      atlasAgent("Always be concise"),
+      { config: { subject: "neon mushroom" } },
+      documentContext,
+    );
+
+    expect(prompt).toContain("INTERP[Describe: {{inputs.subject}}]");
+  });
+
+  it("invokes interpolatePromptPlaceholders on the agentConfig prompt too", () => {
+    const prompt = composeAgentPrompt(
+      { prompt: "Make it pop" },
+      atlasAgent("Use {{inputs.color | default: 'red'}} background"),
+      { config: { color: "neon green" } },
+      documentContext,
+    );
+
+    expect(prompt).toContain("INTERP[Use {{inputs.color | default: 'red'}} background]");
+  });
+
+  it("falls back to agentConfig.prompt alone when action.prompt is undefined", () => {
+    const prompt = composeAgentPrompt(
+      { prompt: undefined },
+      atlasAgent("Solo guidance"),
+      undefined,
+      documentContext,
+    );
+
+    // Sentinel wrap from the interpolation mock — see top-of-file comment.
+    expect(prompt).toBe(`INTERP[Solo guidance]\n\n${documentContext}`);
+  });
+
+  it("returns just action.prompt + context when no agent config exists (bundled-agent path)", () => {
+    // Bundled agents invoked without a workspace.yml entry have no agentConfig.
+    // The action prompt must still reach the agent.
+    const prompt = composeAgentPrompt(
+      { prompt: "Bundled task instructions" },
+      undefined,
+      undefined,
+      documentContext,
+    );
+
+    // Sentinel wrap from the interpolation mock — see top-of-file comment.
+    expect(prompt).toBe(`INTERP[Bundled task instructions]\n\n${documentContext}`);
+  });
+});
+
 describe("validateAgentOutput", () => {
   const fsmContext: Context = { documents: [], state: "idle", results: {} };
-  const platformModels = {} as PlatformModels;
 
   function buildSuccessResult(data: unknown = "agent output"): AgentResult {
     return {
@@ -256,88 +347,33 @@ describe("validateAgentOutput", () => {
     };
   }
 
-  function buildVerdict(
-    status: VerdictStatus,
-    overrides: Partial<ValidationVerdict> = {},
-  ): ValidationVerdict {
-    return {
-      status,
-      confidence: status === "pass" ? 0.8 : status === "uncertain" ? 0.4 : 0.2,
-      threshold: 0.45,
-      issues: [],
-      retryGuidance: "",
-      ...overrides,
-    };
-  }
-
-  beforeEach(() => {
-    mockValidate.mockReset();
-  });
-
-  it("does not throw when verdict status is pass", async () => {
-    mockValidate.mockResolvedValue(buildVerdict("pass"));
-
-    await expect(
-      validateAgentOutput(buildSuccessResult(), fsmContext, "llm", platformModels),
-    ).resolves.toBeUndefined();
-
-    expect(mockValidate).toHaveBeenCalledTimes(1);
-  });
-
-  it("does not throw when verdict status is uncertain", async () => {
-    mockValidate.mockResolvedValue(buildVerdict("uncertain"));
-
-    await expect(
-      validateAgentOutput(buildSuccessResult(), fsmContext, "llm", platformModels),
-    ).resolves.toBeUndefined();
-
-    expect(mockValidate).toHaveBeenCalledTimes(1);
-  });
-
-  it("throws ValidationFailedError carrying the verdict when status is fail", async () => {
-    const verdict = buildVerdict("fail", {
-      retryGuidance: "agent fabricated data",
-      issues: [
-        {
-          category: "sourcing",
-          severity: "error",
-          claim: "company has 500 employees",
-          reasoning: "no tools called",
-          citation: null,
-        },
-      ],
-    });
-    mockValidate.mockResolvedValue(verdict);
-
-    let thrown: unknown;
-    try {
-      await validateAgentOutput(buildSuccessResult(), fsmContext, "llm", platformModels);
-    } catch (err) {
-      thrown = err;
-    }
-
-    expect(thrown).toBeInstanceOf(ValidationFailedError);
-    expect(thrown).toBeInstanceOf(Error);
-    if (thrown instanceof ValidationFailedError) {
-      expect(thrown.verdict).toBe(verdict);
-      expect(thrown.message).toContain("test-agent");
-      expect(thrown.message).toContain("agent fabricated data");
-    }
-  });
-
-  it("skips hallucination detection for non-LLM agents", async () => {
-    await expect(
-      validateAgentOutput(buildSuccessResult(), fsmContext, "system", platformModels),
-    ).resolves.toBeUndefined();
-
-    expect(mockValidate).not.toHaveBeenCalled();
-  });
-
-  it("skips hallucination detection when platformModels is missing", async () => {
+  it("does not throw on a normal successful result", async () => {
     await expect(
       validateAgentOutput(buildSuccessResult(), fsmContext, "llm"),
     ).resolves.toBeUndefined();
+  });
 
-    expect(mockValidate).not.toHaveBeenCalled();
+  it("throws when output is the empty string", async () => {
+    const empty = { ...buildSuccessResult(""), data: "" };
+    await expect(validateAgentOutput(empty, fsmContext, "llm")).rejects.toThrow(/empty output/i);
+  });
+
+  it("does not throw when the agent returned an error envelope", async () => {
+    const errResult: AgentResult = {
+      agentId: "test-agent",
+      timestamp: "2026-04-28T00:00:00Z",
+      input: "test input",
+      ok: false,
+      error: { reason: "boom" },
+      durationMs: 1,
+    };
+    await expect(validateAgentOutput(errResult, fsmContext, "llm")).resolves.toBeUndefined();
+  });
+
+  it("throws when output references a docId not present in fsmContext", async () => {
+    const result = buildSuccessResult({ docId: "missing-doc" });
+    await expect(validateAgentOutput(result, fsmContext, "llm")).rejects.toThrow(
+      /hallucinated document references/i,
+    );
   });
 });

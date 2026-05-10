@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Badge } from "@atlas/ui";
   import { onMount } from "svelte";
   import { z } from "zod";
 
@@ -184,6 +185,23 @@
     return `${mo}mo`;
   }
 
+  function sourceVariant(
+    source: ChatListEntry["source"],
+  ): "info" | "warning" | "status" | "success" {
+    switch (source) {
+      case "slack":
+        return "warning";
+      case "discord":
+        return "status";
+      case "whatsapp":
+        return "success";
+      case "atlas":
+      case "telegram":
+      default:
+        return "info";
+    }
+  }
+
   function sourceLabel(source: ChatListEntry["source"]): string {
     switch (source) {
       case "atlas":
@@ -247,10 +265,6 @@
   message is sent.
 -->
 <aside class="chat-list-panel">
-  <div class="chat-list-header">
-    <h3>Chats</h3>
-  </div>
-
   {#if error}
     <div class="list-error">{error}</div>
   {/if}
@@ -271,7 +285,7 @@
               <span class="item-time">{formatRelativeTime(chat.updatedAt)}</span>
             </div>
             <div class="item-meta">
-              <span class="source-badge source-{chat.source}">{sourceLabel(chat.source)}</span>
+              <Badge variant={sourceVariant(chat.source)}>{sourceLabel(chat.source)}</Badge>
             </div>
           </div>
         </button>
@@ -309,41 +323,23 @@
 
 <style>
   .chat-list-panel {
-    background-color: var(--surface);
-    border-inline-start: 1px solid var(--color-border-1);
     display: flex;
+    flex: 1;
     flex-direction: column;
-    inline-size: 280px;
-    min-inline-size: 280px;
+    min-block-size: 0;
     overflow: hidden;
   }
 
-  .chat-list-header {
-    align-items: center;
-    border-block-end: 1px solid var(--color-border-1);
-    display: flex;
-    flex-shrink: 0;
-    justify-content: space-between;
-    padding: var(--size-3);
-  }
-
-  .chat-list-header h3 {
-    color: var(--color-text);
-    font-size: var(--font-size-2);
-    font-weight: var(--font-weight-6);
-    margin: 0;
-  }
-
   .list-error {
-    color: var(--color-error);
+    color: var(--red-primary);
     font-size: var(--font-size-1);
-    padding: var(--size-3);
+    padding-block: var(--size-3);
   }
 
   .list-empty {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: var(--text-faded);
     font-size: var(--font-size-1);
-    padding: var(--size-4);
+    padding-block: var(--size-4);
     text-align: center;
   }
 
@@ -364,32 +360,32 @@
      also select the chat. */
   .chat-row {
     align-items: stretch;
-    border-block-end: 1px solid color-mix(in srgb, var(--color-border-1), transparent 50%);
+    border-block-end: 1px solid var(--border);
     display: flex;
     position: relative;
     transition: background-color 100ms ease;
   }
 
   .chat-row:hover {
-    background-color: color-mix(in srgb, var(--color-text), transparent 92%);
+    background-color: var(--highlight);
   }
 
   .chat-row.active {
-    background-color: color-mix(in srgb, var(--color-primary), transparent 85%);
+    background-color: var(--highlight-bright);
   }
 
   .chat-item {
     align-items: flex-start;
     background: transparent;
     border: none;
-    color: var(--color-text);
+    color: var(--text);
     cursor: pointer;
     display: flex;
     flex: 1;
     font: inherit;
     gap: var(--size-2);
     min-inline-size: 0;
-    padding: var(--size-2) var(--size-3);
+    padding-block: var(--size-2);
     text-align: start;
   }
 
@@ -398,21 +394,19 @@
     background: transparent;
     border: none;
     border-radius: var(--radius-2);
-    color: color-mix(in srgb, var(--color-text), transparent 60%);
+    color: var(--text-faded);
     cursor: pointer;
     display: flex;
     flex-shrink: 0;
     inline-size: 24px;
     justify-content: center;
     margin-block: 6px;
-    margin-inline-end: var(--size-2);
     /* Hidden until the row is hovered so quiet rows stay tidy; still
        keyboard-focusable for accessibility (see :focus-visible below). */
     opacity: 0;
     transition:
       opacity 100ms ease,
-      color 100ms ease,
-      background-color 100ms ease;
+      color 100ms ease;
   }
 
   .chat-row:hover .chat-delete,
@@ -422,8 +416,7 @@
 
   .chat-delete:hover,
   .chat-delete:focus-visible {
-    background-color: color-mix(in srgb, var(--color-error, #c93b3b), transparent 85%);
-    color: var(--color-error, #c93b3b);
+    color: var(--red-primary);
   }
 
   .item-dot {
@@ -437,17 +430,17 @@
 
   .chat-item.unread .item-dot {
     animation: unread-pulse 1.8s ease-in-out infinite;
-    background-color: var(--color-primary);
+    background-color: var(--blue-primary);
   }
 
   @keyframes unread-pulse {
     0%,
     100% {
-      box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-primary), transparent 60%);
+      box-shadow: 0 0 0 0 var(--blue-primary);
       opacity: 1;
     }
     50% {
-      box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-primary), transparent 100%);
+      box-shadow: 0 0 0 4px transparent;
       opacity: 0.7;
     }
   }
@@ -486,7 +479,7 @@
   }
 
   .item-time {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: var(--text-faded);
     flex-shrink: 0;
     font-size: var(--font-size-0);
   }
@@ -496,53 +489,19 @@
     gap: var(--size-1);
   }
 
-  .source-badge {
-    border-radius: var(--radius-1);
-    font-size: 10px;
-    font-weight: var(--font-weight-6);
-    letter-spacing: 0.02em;
-    padding: 1px 5px;
-    text-transform: uppercase;
-  }
-
-  .source-atlas {
-    background-color: light-dark(hsl(220 60% 90%), hsl(220 30% 20%));
-    color: light-dark(hsl(220 60% 35%), hsl(220 60% 75%));
-  }
-
-  .source-slack {
-    background-color: light-dark(hsl(330 60% 90%), hsl(330 30% 20%));
-    color: light-dark(hsl(330 60% 35%), hsl(330 60% 75%));
-  }
-
-  .source-discord {
-    background-color: light-dark(hsl(240 60% 90%), hsl(240 30% 20%));
-    color: light-dark(hsl(240 60% 35%), hsl(240 60% 75%));
-  }
-
-  .source-telegram {
-    background-color: light-dark(hsl(200 70% 90%), hsl(200 30% 22%));
-    color: light-dark(hsl(200 70% 35%), hsl(200 70% 75%));
-  }
-
-  .source-whatsapp {
-    background-color: light-dark(hsl(142 60% 90%), hsl(142 30% 20%));
-    color: light-dark(hsl(142 60% 30%), hsl(142 60% 70%));
-  }
-
   .load-more {
     background-color: transparent;
     border: none;
-    border-block-start: 1px solid var(--color-border-1);
-    color: var(--color-primary);
+    border-block-start: 1px solid var(--border);
+    color: var(--blue-primary);
     cursor: pointer;
     flex-shrink: 0;
     font-size: var(--font-size-1);
-    padding: var(--size-2);
+    padding-block: var(--size-2);
   }
 
   .load-more:disabled {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: var(--text-faded);
     cursor: default;
   }
 </style>

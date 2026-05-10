@@ -23,7 +23,7 @@
     enabled: shouldTest,
   }));
 
-  function phaseLabel(phase: string): string {
+  function phaseLabel(phase: string | undefined): string {
     switch (phase) {
       case "dns":
         return "DNS resolution failed";
@@ -34,11 +34,11 @@
       case "tools":
         return "Tool discovery timed out";
       default:
-        return phase;
+        return "Still starting up";
     }
   }
 
-  function phaseColor(phase: string): string {
+  function phaseColor(phase: string | undefined): string {
     switch (phase) {
       case "dns":
         return "var(--color-warning)";
@@ -49,7 +49,7 @@
       case "tools":
         return "var(--color-info)";
       default:
-        return "var(--color-text)";
+        return "var(--color-info)";
     }
   }
 

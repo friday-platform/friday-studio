@@ -86,7 +86,9 @@ export function ok(
 ): OkResult {
   const inner: Record<string, unknown> = { data };
   if (extras?.reasoning !== undefined) inner.reasoning = extras.reasoning;
-  if (extras?.artifactRefs !== undefined) inner.artifactRefs = extras.artifactRefs;
+  if (extras?.artifactRefs !== undefined) {
+    inner.artifactRefs = extras.artifactRefs;
+  }
   if (extras?.outlineRefs !== undefined) inner.outlineRefs = extras.outlineRefs;
   return { tag: "ok", val: JSON.stringify(inner) };
 }
@@ -116,6 +118,9 @@ async function _run(sessionId: string): Promise<void> {
 
   try {
     const sub = nc.subscribe(`agents.${sessionId}.execute`);
+    await nc.flush();
+    nc.publish(`agents.${sessionId}.ready`, sc.encode(""));
+    await nc.flush();
 
     // Single-shot: handle exactly one message then exit (spawn-per-call model)
     for await (const msg of sub) {

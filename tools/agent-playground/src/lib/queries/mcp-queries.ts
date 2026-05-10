@@ -1,5 +1,5 @@
 /**
- * Query option factories for MCP registry data.
+ * Query option factories and mutations for MCP registry data.
  *
  * Co-locates query key + queryFn + shared config per TKDodo's queryOptions pattern.
  * Consumers spread these into `createQuery` and add per-site config (enabled, select, etc.).
@@ -7,7 +7,7 @@
  * @module
  */
 import { MCPServerMetadataSchema } from "@atlas/core/mcp-registry/schemas";
-import { queryOptions, skipToken } from "@tanstack/svelte-query";
+import { createMutation, queryOptions, skipToken, useQueryClient } from "@tanstack/svelte-query";
 import { z } from "zod";
 import { getDaemonClient } from "../daemon-client.ts";
 
@@ -52,13 +52,64 @@ const ToolsProbeSuccessSchema = z.object({
 const ToolsProbeFailureSchema = z.object({
   ok: z.literal(false),
   error: z.string(),
-  phase: z.enum(["dns", "connect", "auth", "tools"]),
+  // `phase` is set on terminal probe failures (DNS, connect, auth, tools).
+  // `retryable: true` is set when the server is still warming up (cold
+  // npx/uvx install in progress) — the next click will most likely succeed.
+  // Exactly one of the two is set on a given failure response.
+  phase: z.enum(["dns", "connect", "auth", "tools"]).optional(),
+  retryable: z.boolean().optional(),
 });
 
 const ToolsProbeResponseSchema = z.union([ToolsProbeSuccessSchema, ToolsProbeFailureSchema]);
 
+const InstallResponseSchema = z.object({ server: MCPServerMetadataSchema });
+
+const InstallErrorSchema = z.object({
+  error: z.string(),
+  suggestion: z.string().optional(),
+  existingId: z.string().optional(),
+});
+
+const CheckUpdateResponseSchema = z.object({
+  hasUpdate: z.boolean(),
+  reason: z.string().optional(),
+  remote: z.object({ updatedAt: z.string(), version: z.string() }).optional(),
+});
+
+const PullUpdateResponseSchema = z.object({ server: MCPServerMetadataSchema });
+
+const DeleteErrorSchema = z.object({ error: z.string() });
+
+const AddCustomResponseSchema = z.object({
+  server: MCPServerMetadataSchema,
+  warning: z.string().optional(),
+});
+
+const AddCustomErrorSchema = z.object({ error: z.string() });
+
 export type SearchResult = z.infer<typeof SearchResultSchema>;
 export type ToolsProbeResponse = z.infer<typeof ToolsProbeResponseSchema>;
+
+export interface InstallMCPInput {
+  registryName: string;
+}
+
+export interface AddCustomMCPInput {
+  name: string;
+  id?: string;
+  description?: string;
+  httpUrl?: string;
+  configJson?: {
+    transport:
+      | { type: "stdio"; command: string; args?: string[] }
+      | { type: "http"; url: string };
+    envVars?: Array<{
+      key: string;
+      description?: string;
+      exampleValue?: string;
+    }>;
+  };
+}
 
 /**
  * Fetch and parse the MCP tool probe response for a server. Exported so tests
@@ -143,3 +194,135 @@ export const mcpQueries = {
       staleTime: 0,
     }),
 };
+
+// ==============================================================================
+// MUTATIONS
+// ==============================================================================
+
+/**
+ * Mutation for installing an MCP server from the registry.
+ * Wraps `POST /api/mcp-registry/install` via daemon client.
+ * Invalidates catalog query on success.
+ * Parses error response and throws with message for UI toast display.
+ */
+export function useInstallMCPServer() {
+  const client = getDaemonClient();
+  const queryClient = useQueryClient();
+
+  return createMutation(() => ({
+    mutationFn: async (input: InstallMCPInput) => {
+      const res = await client.mcp.install.$post({ json: { registryName: input.registryName } });
+      const body = await res.json();
+
+      if (!res.ok) {
+        const parsed = InstallErrorSchema.safeParse(body);
+        const msg = parsed.success ? parsed.data.error : `Install failed: ${res.status}`;
+        throw new Error(msg);
+      }
+
+      return InstallResponseSchema.parse(body);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: mcpQueries.all() });
+    },
+  }));
+}
+
+/**
+ * Mutation for checking if an MCP server has an available update.
+ * Wraps `GET /api/mcp-registry/:id/check-update` via daemon client.
+ * Takes the server ID as a mutation variable so one instance can service
+ * any registry-imported entry.
+ */
+export function useCheckMCPUpdate() {
+  const client = getDaemonClient();
+
+  return createMutation(() => ({
+    mutationFn: async (id: string) => {
+      const res = await client.mcp[":id"]["check-update"].$get({ param: { id } });
+      if (!res.ok) throw new Error(`Failed to check for update: ${res.status}`);
+      return CheckUpdateResponseSchema.parse(await res.json());
+    },
+  }));
+}
+
+/**
+ * Mutation for pulling an update for an MCP server.
+ * Wraps `POST /api/mcp-registry/:id/update` via daemon client.
+ * Invalidates catalog and detail queries on success.
+ * Takes the server ID as a mutation variable so one instance can service
+ * any registry-imported entry.
+ */
+export function usePullMCPUpdate() {
+  const client = getDaemonClient();
+  const queryClient = useQueryClient();
+
+  return createMutation(() => ({
+    mutationFn: async (id: string) => {
+      const res = await client.mcp[":id"].update.$post({ param: { id } });
+      if (!res.ok) throw new Error(`Failed to pull update: ${res.status}`);
+      return PullUpdateResponseSchema.parse(await res.json());
+    },
+    onSuccess: (_data, id) => {
+      queryClient.invalidateQueries({ queryKey: mcpQueries.all() });
+      queryClient.invalidateQueries({ queryKey: mcpQueries.detail(id).queryKey });
+    },
+  }));
+}
+
+/**
+ * Mutation for adding a custom MCP server.
+ * Wraps `POST /api/mcp-registry/custom` via daemon client.
+ * Invalidates catalog query on success.
+ * Parses error response and throws with message for UI toast display.
+ */
+export function useAddCustomMCPServer() {
+  const client = getDaemonClient();
+  const queryClient = useQueryClient();
+
+  return createMutation(() => ({
+    mutationFn: async (input: AddCustomMCPInput) => {
+      const res = await client.mcp.custom.$post({ json: input });
+      const body = await res.json();
+
+      if (!res.ok) {
+        const parsed = AddCustomErrorSchema.safeParse(body);
+        const msg = parsed.success
+          ? parsed.data.error
+          : `Add custom server failed: ${res.status}`;
+        throw new Error(msg);
+      }
+
+      return AddCustomResponseSchema.parse(body);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: mcpQueries.all() });
+    },
+  }));
+}
+
+/**
+ * Mutation for deleting an MCP registry entry.
+ * Wraps `DELETE /api/mcp-registry/:id` via daemon client.
+ * Invalidates catalog query on success.
+ * Built-in (static) entries are rejected by the server with 403.
+ */
+export function useDeleteMCPServer() {
+  const client = getDaemonClient();
+  const queryClient = useQueryClient();
+
+  return createMutation(() => ({
+    mutationFn: async (id: string) => {
+      const res = await client.mcp[":id"].$delete({ param: { id } });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        const parsed = DeleteErrorSchema.safeParse(body);
+        const msg = parsed.success ? parsed.data.error : `Delete failed: ${res.status}`;
+        throw new Error(msg);
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: mcpQueries.all() });
+    },
+  }));
+}

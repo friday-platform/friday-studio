@@ -4,13 +4,14 @@
   import type { AtlasUIMessage } from "@atlas/agent-sdk";
   import { toast } from "@atlas/ui";
   import { createQuery, useQueryClient } from "@tanstack/svelte-query";
-  import { goto } from "$app/navigation";
   import { page } from "$app/state";
+  import { browser } from "$app/environment";
+  import { ElicitationSchema, type Elicitation } from "@atlas/core/elicitations/model";
   import { workspaceQueries } from "$lib/queries";
+  import { mergeElicitationIntoCache } from "$lib/queries/elicitation-queries.ts";
   import { DefaultChatTransport } from "ai";
   import ChatInput, { type ImageAttachment } from "./chat-input.svelte";
   import ChatInspector from "./chat-inspector.svelte";
-  import ChatListPanel from "./chat-list-panel.svelte";
   import ChatMessageList from "./chat-message-list.svelte";
   import { createCursorTrackingFetch } from "./cursor-tracking-fetch.ts";
   import { nextQueueStep } from "./chat-queue.ts";
@@ -147,6 +148,36 @@
     onUnrecoverable: () => {
       unrecoverableStream = true;
     },
+  });
+
+  /**
+   * Keep the inline HITL cards in sync with Activity.  The card itself
+   * queries the replay list, but newly-created elicitations are delivered via
+   * NATS/SSE; without this subscription a fresh cached list can briefly render
+   * the "open Activity" fallback instead of the inline answer form.
+   */
+  $effect(() => {
+    if (!browser || !wsId) return;
+
+    const url = new URL("/api/daemon/api/elicitations/stream", globalThis.location.origin);
+    url.searchParams.set("workspaceId", wsId);
+
+    const es = new EventSource(url.toString());
+    es.addEventListener("message", (e) => {
+      let parsed: Elicitation;
+      try {
+        parsed = ElicitationSchema.parse(JSON.parse(e.data));
+      } catch (err) {
+        console.error("Failed to parse elicitation SSE event", err);
+        return;
+      }
+      mergeElicitationIntoCache(queryClient, parsed);
+    });
+    es.addEventListener("error", () => {
+      console.warn("Elicitations SSE feed errored (EventSource will retry)");
+    });
+
+    return () => es.close();
   });
 
   /**
@@ -348,9 +379,27 @@
   // before we know whether we're resuming or starting fresh.
   const chat = $derived(
     rehydrationDone && chatId.length > 0
-      ? new ChatImpl<AtlasUIMessage>({ id: chatId, messages: initialMessages, transport })
+      ? new ChatImpl<AtlasUIMessage>({
+          id: chatId,
+          // ChatImpl mutates its `messages` state during send/stream. Do not
+          // hand it our `$state` rehydration array directly, or a user send
+          // will mutate `initialMessages` and retrigger resume-effect cleanup.
+          messages: [...initialMessages],
+          transport,
+        })
       : null,
   );
+
+  // Route changes and component teardown must abort any active AI SDK stream.
+  // Otherwise a chat left waiting on HITL can keep its fetch/SSE connection
+  // alive behind the dev-server proxy after the UI moved elsewhere.
+  $effect(() => {
+    const instance = chat;
+    if (!instance) return;
+    return () => {
+      void instance.stop().catch(() => {});
+    };
+  });
 
   // Pick up an in-flight turn the user navigated away from. 204 = no live
   // stream; if the last loaded message was an unanswered user turn, surface
@@ -360,14 +409,17 @@
   // below can't queue a same-tick re-run whose cleanup would `instance.stop()`
   // the just-fired resumeStream. The chatId-change effect sets the flag true
   // BEFORE chat is created, so reading it untracked still observes the right
-  // value when this effect runs on the chat null→ChatImpl transition.
+  // value when this effect runs on the chat null→ChatImpl transition. The
+  // trailing-user check is also one-shot; tracking `initialMessages` here would
+  // make ChatImpl message pushes re-run this cleanup and abort fresh sends.
   $effect(() => {
     if (!chat) return;
     if (!untrack(() => shouldResumeStream)) return;
     shouldResumeStream = false;
     const instance = chat;
-    const hadUnansweredUser =
-      initialMessages.length > 0 && initialMessages.at(-1)?.role === "user";
+    const hadUnansweredUser = untrack(
+      () => initialMessages.length > 0 && initialMessages.at(-1)?.role === "user",
+    );
     instance.resumeStream().catch(() => {
       if (hadUnansweredUser) wasInterrupted = true;
     });
@@ -544,7 +596,7 @@
 
     (async () => {
       try {
-        for await (const event of sessionEventStream(sid)) {
+        for await (const event of sessionEventStream(sid, { signal: controller.signal })) {
           if (controller.signal.aborted) return;
           if ("type" in event && event.type === "step:validation") {
             untrack(() => {
@@ -906,17 +958,6 @@
     return chatMsgs;
   });
 
-  /** Navigate to a fresh chat. The loader generates the new chatId. */
-  function startNewChat() {
-    goto(`/platform/${encodeURIComponent(wsId)}/chat`);
-  }
-
-  /** Navigate to an existing chat (from the chat list panel). */
-  function switchToChat(targetChatId: string): void {
-    if (targetChatId === chatId) return;
-    goto(`/platform/${encodeURIComponent(wsId)}/chat/${encodeURIComponent(targetChatId)}`);
-  }
-
   /**
    * Trigger a chat export. Uses `fetch` + Blob + a programmatic anchor
    * click rather than `window.location.href = …` so non-2xx responses
@@ -1152,19 +1193,16 @@
     </div>
   {/if}
 
-  <header class="chat-header">
-    <h2>Chat</h2>
-    <span class="workspace-badge">{workspaceName}</span>
-    <span class="header-spacer"></span>
-    {#if chat && chat.messages.length > 0}
+  {#if chat && chat.messages.length > 0}
+    <header class="chat-header">
+      <span class="header-spacer"></span>
       <button
         class="new-chat-button"
         onclick={handleExportChat}
         disabled={exportInFlight}
       >{exportInFlight ? "Exporting…" : "Export chat"}</button>
-      <button class="new-chat-button" onclick={startNewChat}>New Chat</button>
-    {/if}
-  </header>
+    </header>
+  {/if}
 
   <div class="chat-body">
     <div class="chat-main">
@@ -1231,27 +1269,6 @@
       workspaceId={wsId}
       status={streaming ? "streaming" : (chat?.status ?? "idle")}
     />
-
-    <ChatListPanel
-      workspaceId={wsId}
-      currentChatId={chatId}
-      onSelect={switchToChat}
-      onDelete={(deletedId, nextChatId) => {
-        // Only react when the user nuked the chat they're currently
-        // viewing — otherwise the rest of the list stays put and there's
-        // nothing to do here. When it IS the current chat, jump to the
-        // neighbor the panel picked (older-first, falling back to newer)
-        // so browsing history stays fluid. If the list is empty now,
-        // start a fresh chat instead of leaving a dead id on screen.
-        if (deletedId !== chatId) return;
-        if (nextChatId) {
-          // switchToChat already persists and kicks off rehydration.
-          switchToChat(nextChatId);
-        } else {
-          startNewChat();
-        }
-      }}
-    />
   </div>
 </div>
 
@@ -1262,57 +1279,6 @@
     flex-direction: column;
     min-block-size: 0;
     overflow: hidden;
-  }
-
-  .chat-header {
-    align-items: center;
-    background-color: var(--surface);
-    border-block-end: 1px solid var(--color-border-1);
-    display: flex;
-    flex-shrink: 0;
-    gap: var(--size-3);
-    padding: var(--size-4) var(--size-5);
-    position: sticky;
-    inset-block-start: 0;
-    z-index: var(--layer-1, 10);
-  }
-
-  .chat-header h2 {
-    font-size: var(--font-size-4);
-    font-weight: var(--font-weight-6);
-  }
-
-  .workspace-badge {
-    background-color: var(--color-surface-3);
-    border-radius: var(--radius-2);
-    color: color-mix(in srgb, var(--color-text), transparent 20%);
-    font-size: var(--font-size-1);
-    padding: var(--size-0-5) var(--size-2);
-  }
-
-  .header-spacer {
-    flex: 1;
-  }
-
-  .new-chat-button {
-    background-color: var(--color-surface-3);
-    border: 1px solid var(--color-border-1);
-    border-radius: var(--radius-2);
-    color: var(--color-text);
-    cursor: pointer;
-    font-size: var(--font-size-1);
-    font-weight: var(--font-weight-5);
-    padding: var(--size-1) var(--size-2-5);
-    transition: background-color 150ms ease;
-  }
-
-  .new-chat-button:hover:not(:disabled) {
-    background-color: var(--color-surface-2);
-  }
-
-  .new-chat-button:disabled {
-    cursor: default;
-    opacity: 0.5;
   }
 
   .rehydrating-indicator {
@@ -1353,6 +1319,38 @@
     font-size: var(--font-size-2);
     margin-inline: var(--size-4);
     padding: var(--size-2) var(--size-3);
+  }
+
+  .chat-header {
+    align-items: center;
+    border-block-end: 1px solid var(--color-border-1);
+    display: flex;
+    flex-shrink: 0;
+    gap: var(--size-2);
+    padding: var(--size-2) var(--size-4);
+  }
+
+  .header-spacer {
+    flex: 1;
+  }
+
+  .new-chat-button {
+    background: none;
+    border: 1px solid var(--color-border-1);
+    border-radius: var(--radius-1);
+    color: inherit;
+    cursor: pointer;
+    font-size: var(--font-size-2);
+    padding: var(--size-1) var(--size-3);
+  }
+
+  .new-chat-button:hover:not(:disabled) {
+    background-color: color-mix(in srgb, var(--color-text), transparent 95%);
+  }
+
+  .new-chat-button:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
   }
 
   .chat-body {

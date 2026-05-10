@@ -10,6 +10,7 @@
  * legacy JSON-blocking mode.
  */
 
+import process from "node:process";
 import type { AtlasTools, AtlasUIMessage, AtlasUIMessageChunk } from "@atlas/agent-sdk";
 import { client, DetailedError, parseResult } from "@atlas/client/v2";
 import type { JobSpecification, WorkspaceSignalConfig } from "@atlas/config";
@@ -27,6 +28,13 @@ import { z } from "zod";
  * LLM step failed: {...}`) instead of just the HTTP status.
  */
 const SignalErrorBodySchema = z.object({ error: z.string() });
+const INTERNAL_SIGNAL_BYPASS_HEADER = "x-friday-internal-signal-bypass";
+const INTERNAL_SIGNAL_BYPASS_TOKEN_ENV = "FRIDAY_INTERNAL_SIGNAL_BYPASS_TOKEN";
+
+function internalSignalBypassHeaders(): Record<string, string> {
+  const token = process.env[INTERNAL_SIGNAL_BYPASS_TOKEN_ENV];
+  return token ? { [INTERNAL_SIGNAL_BYPASS_HEADER]: token } : {};
+}
 
 function describeJobFailure(err: unknown): { message: string; statusCode?: number } {
   if (err instanceof DetailedError) {
@@ -80,6 +88,14 @@ export function createJobTools(
   parentStreamId?: string,
   writer?: UIMessageStreamWriter<AtlasUIMessage>,
   abortSignal?: AbortSignal,
+  /**
+   * The parent chat session id. When set, gets forwarded as
+   * `parentSessionId` on the signal-trigger body so the spawned job's
+   * `SessionSummary` records its parent — Phase 11 provenance for
+   * crystallization. Pure plumbing here; absent for non-chat call sites
+   * (tests, headless triggers).
+   */
+  parentSessionId?: string,
 ): AtlasTools {
   const tools: AtlasTools = {};
 
@@ -121,6 +137,7 @@ export function createJobTools(
             abortSignal,
             logger,
             jobName,
+            parentSessionId,
           });
         }
 
@@ -131,6 +148,7 @@ export function createJobTools(
           streamId: parentStreamId,
           logger,
           jobName,
+          parentSessionId,
         });
       },
     });
@@ -154,6 +172,7 @@ interface ExecuteJobViaJSONDeps {
   streamId: string | undefined;
   logger: Logger;
   jobName: string;
+  parentSessionId?: string;
 }
 
 async function executeJobViaJSON(
@@ -163,17 +182,32 @@ async function executeJobViaJSON(
   sessionId?: string;
   status?: string;
   output?: unknown[];
+  artifactIds?: string[];
+  summary?: string;
   error?: string;
   statusCode?: number;
 }> {
-  const { workspaceId, signalId, input, streamId, logger, jobName } = deps;
+  const { workspaceId, signalId, input, streamId, logger, jobName, parentSessionId } = deps;
 
-  const result = await parseResult(
-    client.workspace[":workspaceId"].signals[":signalId"].$post({
-      param: { workspaceId, signalId },
-      json: streamId ? { payload: input, streamId } : { payload: input },
-    }),
-  );
+  // Phase 11: forward `parentSessionId` so the spawned job's
+  // `SessionSummary.parentSessionId` records the parent chat session.
+  // Schema field is optional on the route — undefined drops cleanly.
+  const json: {
+    payload: Record<string, unknown>;
+    streamId?: string;
+    parentSessionId?: string;
+    bypassConcurrency: true;
+  } = { payload: input, bypassConcurrency: true };
+  if (streamId !== undefined) json.streamId = streamId;
+  if (parentSessionId !== undefined) json.parentSessionId = parentSessionId;
+
+  const headers = internalSignalBypassHeaders();
+  const request = { param: { workspaceId, signalId }, json };
+  const response =
+    Object.keys(headers).length > 0
+      ? client.workspace[":workspaceId"].signals[":signalId"].$post(request, { headers })
+      : client.workspace[":workspaceId"].signals[":signalId"].$post(request);
+  const result = await parseResult(response);
 
   if (!result.ok) {
     const failure = describeJobFailure(result.error);
@@ -186,7 +220,7 @@ async function executeJobViaJSON(
     return { success: false, statusCode: failure.statusCode, error: failure.message };
   }
 
-  const { sessionId, status, output } = result.data;
+  const { sessionId, status, output, artifactIds, summary } = result.data;
 
   if (status === "completed") {
     logger.info("Job tool completed", {
@@ -194,7 +228,12 @@ async function executeJobViaJSON(
       sessionId,
       status,
       outputDocCount: Array.isArray(output) ? output.length : 0,
+      artifactIdCount: Array.isArray(artifactIds) ? artifactIds.length : 0,
+      hasSummary: typeof summary === "string" && summary.length > 0,
     });
+    if (Array.isArray(artifactIds) && typeof summary === "string") {
+      return { success: true, sessionId, status, artifactIds, summary };
+    }
     return { success: true, sessionId, status, output: output ?? [] };
   }
 
@@ -219,15 +258,26 @@ interface ExecuteJobViaSSEDeps {
   abortSignal: AbortSignal | undefined;
   logger: Logger;
   jobName: string;
+  parentSessionId?: string;
 }
 
-async function executeJobViaSSE(
-  deps: ExecuteJobViaSSEDeps,
-): Promise<{
+async function executeJobViaSSE(deps: ExecuteJobViaSSEDeps): Promise<{
   success: boolean;
   sessionId?: string;
   status?: string;
   output?: unknown[];
+  /**
+   * Phase 2.C — persisted-artifact ids surfaced on `job-complete`. Optional
+   * during the transition window: only callers that opt into the new
+   * shape need to read it. The supervisor still ingests `output` until
+   * the chat-side consumer flips.
+   */
+  artifactIds?: string[];
+  /**
+   * Phase 2.C — short session summary. Same transition-window optionality
+   * as `artifactIds`.
+   */
+  summary?: string;
   error?: string;
   statusCode?: number;
 }> {
@@ -241,19 +291,31 @@ async function executeJobViaSSE(
     abortSignal,
     logger,
     jobName,
+    parentSessionId,
   } = deps;
 
-  const url = `${getAtlasDaemonUrl()}/api/workspaces/${encodeURIComponent(workspaceId)}/signals/${encodeURIComponent(signalId)}`;
-  const body: Record<string, unknown> = { payload: input };
+  const url = `${getAtlasDaemonUrl()}/api/workspaces/${encodeURIComponent(
+    workspaceId,
+  )}/signals/${encodeURIComponent(signalId)}`;
+  const body: Record<string, unknown> = { payload: input, bypassConcurrency: true };
   if (streamId !== undefined) {
     body.streamId = streamId;
+  }
+  // Phase 11: forward parent chat session id so the spawned job's
+  // SessionSummary records its parent. Drops out cleanly when absent.
+  if (parentSessionId !== undefined) {
+    body.parentSessionId = parentSessionId;
   }
 
   let response: Response;
   try {
     response = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "text/event-stream",
+        ...internalSignalBypassHeaders(),
+      },
       body: JSON.stringify(body),
       signal: abortSignal,
     });
@@ -318,13 +380,37 @@ async function executeJobViaSSE(
         const sessionId = typeof d.sessionId === "string" ? d.sessionId : undefined;
         const status = typeof d.status === "string" ? d.status : "completed";
         const output = Array.isArray(d.output) ? d.output : [];
+        const artifactIds =
+          Array.isArray(d.artifactIds) && d.artifactIds.every((x) => typeof x === "string")
+            ? (d.artifactIds as string[])
+            : undefined;
+        const summary = typeof d.summary === "string" ? d.summary : undefined;
         logger.info("Job tool completed (SSE)", {
           jobName,
           sessionId,
           status,
           outputDocCount: output.length,
+          artifactIdCount: artifactIds?.length ?? 0,
+          hasSummary: Boolean(summary),
         });
-        return { success: true, sessionId, status, output };
+        // Supervisor flip (Phase 2.C consumer side): when the job
+        // returned artifactIds + a summary, return the COMPACT shape to
+        // the LLM so the supervisor's next-turn input doesn't ingest
+        // the full Document[]. The artifacts are still in JetStream;
+        // the LLM can `parse_artifact(<id>)` if it needs detail.
+        // Fall back to the legacy shape only when refs/summary aren't
+        // available (e.g. an older daemon emitting pre-2.C events).
+        if (artifactIds !== undefined && summary !== undefined) {
+          return { success: true, sessionId, status, artifactIds, summary };
+        }
+        return {
+          success: true,
+          sessionId,
+          status,
+          output,
+          ...(artifactIds !== undefined && { artifactIds }),
+          ...(summary !== undefined && { summary }),
+        };
       }
       return { success: true };
     }

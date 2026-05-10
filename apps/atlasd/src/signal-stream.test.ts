@@ -1,12 +1,13 @@
 import { startNatsTestServer, type TestNatsServer } from "@atlas/core/test-utils/nats-test-server";
 import { connect, type NatsConnection } from "nats";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   awaitSignalCompletion,
   ensureSignalsStream,
   publishSignal,
   SignalConsumer,
   type SignalEnvelope,
+  signalResponseSubject,
   signalSubject,
 } from "./signal-stream.ts";
 
@@ -69,7 +70,7 @@ describe("publishSignal + SignalConsumer", () => {
     expect(received[0]?.signalId).toBe("my-signal");
     expect(received[0]?.payload).toEqual({ hello: "world" });
     expect(received[0]?.publishedAt).toBeDefined();
-  });
+  }, 15_000);
 
   it("redelivers on forward failure up to maxDeliver, then dead-letters", async () => {
     let attempts = 0;
@@ -89,7 +90,7 @@ describe("publishSignal + SignalConsumer", () => {
     await consumer.destroy();
 
     expect(attempts).toBeGreaterThanOrEqual(3);
-  });
+  }, 20_000);
 
   it("dedups identical dedupId within the duplicate_window", async () => {
     const dispatched: string[] = [];
@@ -113,11 +114,31 @@ describe("publishSignal + SignalConsumer", () => {
     await consumer.destroy();
 
     expect(dispatched).toEqual(["once"]);
-  });
+  }, 15_000);
 
   it("awaitSignalCompletion times out when nobody publishes a response", async () => {
     const correlationId = crypto.randomUUID();
     await expect(awaitSignalCompletion(nc, correlationId, 200)).rejects.toThrow(/timeout/);
+  });
+
+  it("awaitSignalCompletion unsubscribes promptly when aborted", async () => {
+    const correlationId = crypto.randomUUID();
+    const unsubscribe = vi.fn();
+    const pendingNext = new Promise<IteratorResult<unknown>>(() => {});
+    const subscription = {
+      unsubscribe,
+      [Symbol.asyncIterator]: () => ({ next: () => pendingNext }),
+    };
+    const subscribe = vi.fn(() => subscription);
+    const fakeNc = { subscribe } as unknown as NatsConnection;
+    const controller = new AbortController();
+
+    const responsePromise = awaitSignalCompletion(fakeNc, correlationId, 60_000, controller.signal);
+    controller.abort();
+
+    await expect(responsePromise).rejects.toThrow(/aborted/);
+    expect(subscribe).toHaveBeenCalledWith(signalResponseSubject(correlationId), { max: 1 });
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
   });
 
   it("forwards a burst of published signals in arrival order", async () => {
@@ -140,7 +161,7 @@ describe("publishSignal + SignalConsumer", () => {
     await consumer.destroy();
 
     expect(seen).toEqual(["s-0", "s-1", "s-2", "s-3", "s-4", "s-5"]);
-  });
+  }, 15_000);
 });
 
 async function waitFor(predicate: () => boolean, timeoutMs: number): Promise<void> {

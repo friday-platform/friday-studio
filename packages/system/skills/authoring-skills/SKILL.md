@@ -53,6 +53,8 @@ description: I can help with PDFs.         # first person, no trigger
 description: Does stuff with files.        # meaningless
 ```
 
+**`user-invocable: false` is for runtime-composed system skills.** Author skills should leave this at its default (true) so `load_skill` and `@friday/...` references keep working. Marking your own skill `user-invocable: false` does *not* trigger auto-loading — the runtime auto-composes only specific named system skills (currently `@friday/validating-llm-outputs`, used when an FSM action's `validate:` strategy resolves to `self`).
+
 ## 3. Body
 
 Default assumption: the agent is already smart. Include only what it would otherwise get wrong.
