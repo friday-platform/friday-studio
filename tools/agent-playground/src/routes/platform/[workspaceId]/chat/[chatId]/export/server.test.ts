@@ -140,7 +140,7 @@ describe("GET /platform/:wsId/chat/:chatId/export — zip orchestrator", () => {
     vi.restoreAllMocks();
   });
 
-  it("packs preview HTML, chat JSON, favicon, and one artifact entry per successful byte fetch", async () => {
+  it("packs preview HTML, chat JSON, and one artifact entry per successful byte fetch; inlines favicon as data: URL", async () => {
     const a1 = sampleArtifact("art-aaaa", "a.txt");
     const a2 = sampleArtifact("art-bbbb", "b.txt");
     const event: FakeEvent = {
@@ -149,7 +149,8 @@ describe("GET /platform/:wsId/chat/:chatId/export — zip orchestrator", () => {
       fetch: makeFetch([
         {
           match: (u) => u.includes("/export/preview"),
-          respond: () => htmlResponse("<html><body>preview body</body></html>"),
+          respond: () =>
+            htmlResponse("<html><head><title>x</title></head><body>preview body</body></html>"),
         },
         {
           match: (u) => u.includes("/api/daemon/api/workspaces/") && u.includes("?full=true"),
@@ -161,9 +162,12 @@ describe("GET /platform/:wsId/chat/:chatId/export — zip orchestrator", () => {
         },
         { match: (u) => u.endsWith("/art-aaaa/content"), respond: () => bytesResponse("AAAA") },
         { match: (u) => u.endsWith("/art-bbbb/content"), respond: () => bytesResponse("BBBB") },
-        // The favicon entry name must match the chromeless layout's
-        // `<link rel="icon" href="favicon.png">` so the zip-relative
-        // reference resolves when the recipient opens index.html.
+        // Favicon bytes — the orchestrator base64-encodes these and
+        // inlines a `<link rel="icon" href="data:image/png;base64,...">`
+        // tag into <head> so the static HTML carries no external
+        // references (Chrome treats every file:// URL as a unique
+        // security origin and would otherwise log a same-origin warning
+        // when the recipient opens the page from disk).
         { match: (u) => u.includes("favicon"), respond: () => bytesResponse("PNGBYTES") },
       ]),
     };
@@ -179,12 +183,17 @@ describe("GET /platform/:wsId/chat/:chatId/export — zip orchestrator", () => {
     const zip = await decodeZip(res);
     expect(zip.file("index.html")).not.toBeNull();
     expect(zip.file("chat.json")).not.toBeNull();
-    expect(zip.file("favicon.png")).not.toBeNull();
     expect(zip.file("assets/artifacts/art-aaaa/a.txt")).not.toBeNull();
     expect(zip.file("assets/artifacts/art-bbbb/b.txt")).not.toBeNull();
+    // Favicon is intentionally NOT a sibling file — it lives inside
+    // index.html as a data: URL.
+    expect(zip.file("favicon.png")).toBeNull();
 
     const html = await zip.file("index.html")?.async("string");
     expect(html).toContain("preview body");
+    expect(html).toContain('<link rel="icon" href="data:image/png;base64,');
+    // The fixture body "PNGBYTES" base64-encodes to "UE5HQllURVM=".
+    expect(html).toContain("UE5HQllURVM=");
     // The preview is rendered with `csr=false` and `inlineStyleThreshold:
     // Infinity` so the exported HTML is portable — no external CSS link
     // tags, no client-side script tags. Lock that in: a regression that

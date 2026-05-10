@@ -239,11 +239,19 @@ export const GET: RequestHandler = async (event) => {
   // import works in dev (where `faviconUrl` is `/src/lib/...`) and in the
   // compiled binary (where it's `/_app/immutable/assets/favicon-<hash>.png`).
   // A miss is non-fatal — the export still ships, just without a favicon.
-  let faviconBytes: Uint8Array | undefined;
+  // Inlined as a data: URL rather than a sibling file because Chrome
+  // treats every file:// URL as a unique security origin, so a relative
+  // `<link rel="icon" href="favicon.png">` would log a cross-origin
+  // warning every time the recipient opens the standalone HTML.
+  let faviconLinkTag = "";
   try {
     const faviconRes = await event.fetch(faviconUrl, { signal: requestSignal });
     if (faviconRes.ok) {
-      faviconBytes = new Uint8Array(await faviconRes.arrayBuffer());
+      const bytes = new Uint8Array(await faviconRes.arrayBuffer());
+      let binary = "";
+      for (const b of bytes) binary += String.fromCharCode(b);
+      const base64 = btoa(binary);
+      faviconLinkTag = `<link rel="icon" href="data:image/png;base64,${base64}" sizes="32x32"/>`;
     } else {
       console.warn(`[chat-export] favicon fetch failed (${faviconRes.status})`);
     }
@@ -252,13 +260,16 @@ export const GET: RequestHandler = async (event) => {
     console.warn(`[chat-export] favicon fetch threw: ${message}`);
   }
 
+  // Inject the favicon link into <head> before serializing. A literal
+  // `</head>` insert is enough — the chromeless layout intentionally
+  // omits its own favicon link so there's no duplicate to dedupe, and
+  // the rendered head never contains a nested </head> token.
+  const htmlWithFavicon = faviconLinkTag
+    ? html.replace("</head>", `${faviconLinkTag}</head>`)
+    : html;
+
   const zip = new JSZip();
-  zip.file("index.html", scrubHomePaths(html));
-  if (faviconBytes) {
-    // The chromeless `+layout.svelte` head links `<link rel="icon"
-    // href="favicon.png">` so the entry name must match exactly.
-    zip.file("favicon.png", faviconBytes);
-  }
+  zip.file("index.html", scrubHomePaths(htmlWithFavicon));
   // Strip the top-level account-ownership ID from chat.json. The transcript,
   // system prompt context, and tool inputs/outputs are exported verbatim —
   // recipients see what the sender saw, minus absolute home-directory

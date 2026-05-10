@@ -73,15 +73,16 @@
 
 <svelte:head>
   <title>Friday Studio</title>
-  {#if isChromeless}
+  {#if !isChromeless}
     <!--
-      Chromeless routes (the export-preview) are packaged into a zip and
-      opened standalone, so absolute paths like `/src/lib/...` (dev) or
-      `/_app/...` (prod) 404. Reference the favicon by a relative name
-      that matches the zip entry the export orchestrator writes.
+      The chromeless export-preview omits the favicon link entirely; the
+      export orchestrator post-processes the rendered HTML and injects a
+      data: URL favicon directly into <head>. A relative `favicon.png`
+      sibling-file approach worked, but Chrome treats every file:// URL
+      as a unique security origin, so loading the icon from the page
+      logs a cross-origin warning to the console. Inlining as a data:
+      URL keeps the icon and removes the warning.
     -->
-    <link rel="icon" href="favicon.png" sizes="32x32" />
-  {:else}
     <link rel="icon" href={favicon} sizes="32x32" />
   {/if}
 </svelte:head>
