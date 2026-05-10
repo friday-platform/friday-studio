@@ -50,6 +50,8 @@ use crate::friday_home::friday_home_dir;
 ///
 /// Enforced by scripts/check-sdk-pin-sync.ts in CI and via lint-staged
 /// in the husky pre-commit hook for the three pin files.
+///
+/// To bump: see UPDATING-AGENT-SDK.md at the repo root.
 const BUNDLED_AGENT_SDK_VERSION: &str = "0.1.8";
 
 /// Wall-clock cap on the uv pre-warm. uv's network ops (cpython
