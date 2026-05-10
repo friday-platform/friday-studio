@@ -24,9 +24,10 @@ export function createMemorySaveTool(workspaceId: string, logger: Logger): Atlas
   const daemonUrl = getAtlasDaemonUrl();
 
   return {
-    memory_save: tool({
+    save_memory_entry: tool({
       description:
-        "Save an entry to a named memory store in this workspace. " + "Persists across sessions.",
+        "Save an entry to a named memory store in this workspace. Persists across sessions. " +
+        "Pairs with `list_memory_entries` (read) and `delete_memory_entry` (remove).",
       inputSchema: MemorySaveInput,
       execute: async ({ memoryName, text, id, metadata }) => {
         const url = `${daemonUrl}/api/memory/${encodeURIComponent(workspaceId)}/narrative/${encodeURIComponent(memoryName)}`;
@@ -43,7 +44,7 @@ export function createMemorySaveTool(workspaceId: string, logger: Logger): Atlas
           });
           if (!res.ok) {
             const body = await res.text();
-            logger.error("memory_save failed", {
+            logger.error("save_memory_entry failed", {
               workspaceId,
               memoryName,
               status: res.status,
@@ -51,27 +52,29 @@ export function createMemorySaveTool(workspaceId: string, logger: Logger): Atlas
             });
             return { error: `Failed to save: HTTP ${res.status}` };
           }
-          logger.info("memory_save succeeded", { workspaceId, memoryName });
+          logger.info("save_memory_entry succeeded", { workspaceId, memoryName });
           return { saved: true };
         } catch (err) {
-          logger.error("memory_save fetch error", { workspaceId, memoryName, error: err });
+          logger.error("save_memory_entry fetch error", { workspaceId, memoryName, error: err });
           return { error: "Failed to save: network error" };
         }
       },
     }),
 
-    memory_remove: tool({
-      description: "Remove a single entry from a named memory in this workspace by its id.",
+    delete_memory_entry: tool({
+      description:
+        "Remove a single entry from a named memory in this workspace by its id. Pairs with " +
+        "`save_memory_entry` and `list_memory_entries`.",
       inputSchema: MemoryRemoveInput,
       execute: async ({ memoryName, entryId }) => {
         const url = `${daemonUrl}/api/memory/${encodeURIComponent(workspaceId)}/narrative/${encodeURIComponent(memoryName)}/${encodeURIComponent(entryId)}`;
         try {
           const res = await fetch(url, { method: "DELETE" });
           if (!res.ok) return { error: `Failed to remove: HTTP ${res.status}` };
-          logger.info("memory_remove succeeded", { workspaceId, memoryName, entryId });
+          logger.info("delete_memory_entry succeeded", { workspaceId, memoryName, entryId });
           return { removed: true };
         } catch (err) {
-          logger.error("memory_remove fetch error", {
+          logger.error("delete_memory_entry fetch error", {
             workspaceId,
             memoryName,
             entryId,

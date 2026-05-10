@@ -50,7 +50,7 @@ import {
   createDeleteAgentFromRegistryTool,
   createRegisterAgentTool,
 } from "./tools/agent-registry-tools.ts";
-import { artifactTools, createArtifactsCreateTool } from "./tools/artifact-tools.ts";
+import { artifactTools, createCreateArtifactTool } from "./tools/artifact-tools.ts";
 import {
   createDescribeBundledAgentTool,
   createListBundledAgentsTool,
@@ -930,7 +930,7 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           ...connectCommunicatorTool,
           ...jobTools,
           ...artifactTools,
-          ...createArtifactsCreateTool({
+          ...createCreateArtifactTool({
             sessionId: adHocSessionId,
             workspaceId,
             streamId: session.streamId,

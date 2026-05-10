@@ -155,6 +155,41 @@ Minimum gates for a production repair:
 
 When external auth is unhealthy, use deterministic fake/no-auth tooling to prove the contract shape, then separately report the credential issue.
 
+## Tool renames — workspaces with hard-coded old names
+
+The chat-agent's tool surface was renamed for verb-first consistency.
+If a workspace's Python agent or `tools:` whitelist references an old
+name, the workspace will fail validation or the agent will get
+"unknown tool" at runtime. The fix is grep-and-replace.
+
+| Old name | New name | Applies to |
+|---|---|---|
+| `workspace_delete` | `delete_workspace` | tool calls in agents / `permissions.tools.allow` |
+| `remove_item({kind, id})` | `delete_agent({id})` / `delete_signal({id})` / `delete_job({id})` | per-kind delete; the union form is gone |
+| `memory_save` | `save_memory_entry` | chat-surface tool calls; user-agent SDK still uses the old name (the daemon's MCP `memory/save.ts` was not renamed) |
+| `memory_read` | `list_memory_entries` | chat surface only — same caveat as above. The new shape adds `query` / `since` / `until` / `metadata` filters and pagination; `since` and `limit` keep their meaning, the rest are additive. |
+| `memory_remove` | `delete_memory_entry` | chat surface only — same caveat as above |
+| `artifacts_get` | `get_artifact` | tool calls in agents / `permissions.tools.allow` |
+| `artifacts_create` | `create_artifact` | tool calls in agents / `permissions.tools.allow` |
+| `get_mcp_dependencies` | `describe_mcp_server({id})` (with `scope=workspace`, default) | folded into describe — output now includes `agentIds` / `jobIds` plus the wired config |
+
+Repair pattern:
+
+1. Grep the workspace dir for the old name(s):
+   `grep -RIn 'memory_read\|memory_save\|memory_remove\|workspace_delete\|remove_item\|artifacts_get\|artifacts_create\|get_mcp_dependencies' .`
+2. For each hit, replace with the new name using the table above. The
+   per-kind `delete_agent` / `delete_signal` / `delete_job` rename
+   from `remove_item` requires reading the call site to pick the
+   right kind.
+3. Re-validate the workspace and re-run the failing job/signal.
+
+User-agent caveat: the user-agent SDK (`ctx.tools.call(...)`) goes
+through the daemon's MCP server, which still exposes
+`memory_save` / `memory_read` / `memory_remove` for backwards
+compatibility with installed Python agents. Renaming inside a Python
+agent is therefore optional — the chat-surface renames don't break
+user agents — but flagged for consistency.
+
 ## Gotchas
 
 - **Do not preserve non-user-visible compatibility shims.** If an old generated pattern is wrong, remove it rather than wrapping it.

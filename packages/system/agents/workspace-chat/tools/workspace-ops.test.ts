@@ -104,13 +104,13 @@ describe("createWorkspaceOpsTools", () => {
   });
 
   // -------------------------------------------------------------------------
-  // workspace_delete
+  // delete_workspace
   // -------------------------------------------------------------------------
 
-  it("registers workspace_delete tool", () => {
+  it("registers delete_workspace tool", () => {
     const tools = createWorkspaceOpsTools(logger);
-    expect(tools).toHaveProperty("workspace_delete");
-    expect(tools.workspace_delete).toBeDefined();
+    expect(tools).toHaveProperty("delete_workspace");
+    expect(tools.delete_workspace).toBeDefined();
   });
 
   it("calls DELETE /api/workspaces/:id directly without force query", async () => {
@@ -120,7 +120,7 @@ describe("createWorkspaceOpsTools", () => {
     });
 
     const tools = createWorkspaceOpsTools(logger);
-    const result = await tools.workspace_delete!.execute!(
+    const result = await tools.delete_workspace!.execute!(
       { workspaceId: "ws-abc" },
       TOOL_CALL_OPTS,
     );
@@ -139,7 +139,7 @@ describe("createWorkspaceOpsTools", () => {
     });
 
     const tools = createWorkspaceOpsTools(logger);
-    const result = await tools.workspace_delete!.execute!(
+    const result = await tools.delete_workspace!.execute!(
       { workspaceId: "ws-def", force: true },
       TOOL_CALL_OPTS,
     );
@@ -155,7 +155,7 @@ describe("createWorkspaceOpsTools", () => {
     mockParseResult.mockResolvedValueOnce({ ok: false, error: "Workspace not found" });
 
     const tools = createWorkspaceOpsTools(logger);
-    const result = await tools.workspace_delete!.execute!(
+    const result = await tools.delete_workspace!.execute!(
       { workspaceId: "missing-ws" },
       TOOL_CALL_OPTS,
     );
@@ -176,25 +176,23 @@ describe("createBoundWorkspaceOpsTools", () => {
   });
 
   // -------------------------------------------------------------------------
-  // remove_item
+  // delete_agent / delete_signal / delete_job
   // -------------------------------------------------------------------------
 
-  it("registers remove_item tool", () => {
+  it("registers delete_agent / delete_signal / delete_job tools", () => {
     const tools = createBoundWorkspaceOpsTools(logger, "ws-1");
-    expect(tools).toHaveProperty("remove_item");
-    expect(tools.remove_item).toBeDefined();
+    expect(tools).toHaveProperty("delete_agent");
+    expect(tools).toHaveProperty("delete_signal");
+    expect(tools).toHaveProperty("delete_job");
   });
 
-  it("calls DELETE /items/:kind/:id and returns success", async () => {
+  it("calls DELETE /items/agent/:id and returns success", async () => {
     mockItemsDelete.mockResolvedValueOnce(
       mockResponse(true, 200, { ok: true, livePath: "/tmp/ws-1/workspace.yml" }),
     );
 
     const tools = createBoundWorkspaceOpsTools(logger, "ws-1");
-    const result = await tools.remove_item!.execute!(
-      { kind: "agent", id: "test-agent" },
-      TOOL_CALL_OPTS,
-    );
+    const result = await tools.delete_agent!.execute!({ id: "test-agent" }, TOOL_CALL_OPTS);
 
     expect(mockItemsDelete).toHaveBeenCalledWith({
       param: { workspaceId: "ws-1", kind: "agent", id: "test-agent" },
@@ -202,7 +200,29 @@ describe("createBoundWorkspaceOpsTools", () => {
     expect(result).toEqual({ ok: true, livePath: "/tmp/ws-1/workspace.yml" });
   });
 
-  it("returns structured error when remove_item fails", async () => {
+  it("delete_signal calls DELETE /items/signal/:id", async () => {
+    mockItemsDelete.mockResolvedValueOnce(mockResponse(true, 200, { ok: true }));
+
+    const tools = createBoundWorkspaceOpsTools(logger, "ws-1");
+    await tools.delete_signal!.execute!({ id: "my-signal" }, TOOL_CALL_OPTS);
+
+    expect(mockItemsDelete).toHaveBeenCalledWith({
+      param: { workspaceId: "ws-1", kind: "signal", id: "my-signal" },
+    });
+  });
+
+  it("delete_job calls DELETE /items/job/:id", async () => {
+    mockItemsDelete.mockResolvedValueOnce(mockResponse(true, 200, { ok: true }));
+
+    const tools = createBoundWorkspaceOpsTools(logger, "ws-1");
+    await tools.delete_job!.execute!({ id: "my-job" }, TOOL_CALL_OPTS);
+
+    expect(mockItemsDelete).toHaveBeenCalledWith({
+      param: { workspaceId: "ws-1", kind: "job", id: "my-job" },
+    });
+  });
+
+  it("returns structured error when delete fails", async () => {
     mockItemsDelete.mockResolvedValueOnce(
       mockResponse(false, 422, {
         ok: false,
@@ -211,10 +231,7 @@ describe("createBoundWorkspaceOpsTools", () => {
     );
 
     const tools = createBoundWorkspaceOpsTools(logger, "ws-1");
-    const result = await tools.remove_item!.execute!(
-      { kind: "agent", id: "test-agent" },
-      TOOL_CALL_OPTS,
-    );
+    const result = await tools.delete_agent!.execute!({ id: "test-agent" }, TOOL_CALL_OPTS);
 
     expect(result).toEqual({ ok: false, error: { code: "referenced", dependents: ["test-job"] } });
   });

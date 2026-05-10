@@ -160,7 +160,7 @@ vi.mock("./tools/list-capabilities.ts", () => ({
 
 vi.mock("./tools/artifact-tools.ts", () => ({
   artifactTools: {},
-  createArtifactsCreateTool: vi.fn(() => ({})),
+  createCreateArtifactTool: vi.fn(() => ({})),
 }));
 
 vi.mock("./prompt.txt", () => ({ default: "SYSTEM_PROMPT_PLACEHOLDER" }));
