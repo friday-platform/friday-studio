@@ -756,7 +756,7 @@ export function findTerminalAction(definition: FSMDefinition): LLMAction | Agent
  *     strings also populate the `url` field.
  *   - Arrays surface as a count entry (`"N items"`) — I3: lets the
  *     supervisor answer "how many?" from `keyDetails` without
- *     `artifacts_get`. Empty arrays included (`"0 items"`) so consumers
+ *     `get_artifact`. Empty arrays included (`"0 items"`) so consumers
  *     can distinguish "no urgent" from "field missing".
  *   - Nested objects are skipped (too noisy for an at-a-glance summary).
  *
@@ -1013,9 +1013,9 @@ export async function persistFsmSessionArtifacts(args: {
  * artifact sweeper (`apps/atlasd/src/sweepers/artifacts-sweeper.ts`)
  * walks `expiresAt`-past-now ephemeral artifacts on a timer and either
  * deletes them or promotes them to durable based on inbound reference
- * signals (memory_save text, aiSummary URL). The grace window between
+ * signals (save_memory_entry text, aiSummary URL). The grace window between
  * `completedAt` and `expiresAt` is what gives those signals time to
- * land — the chat path's `memory_save` callbacks fire after
+ * land — the chat path's `save_memory_entry` callbacks fire after
  * session-complete in some shapes.
  *
  * Memory entries keep the synchronous-forget behavior: notes are
@@ -2942,7 +2942,7 @@ export class WorkspaceRuntime {
     // Filter platform tools to LLM_AGENT_ALLOWED — same surface workspace LLM
     // agents see (memory, artifacts, state, fs, csv, bash, webfetch,
     // workspace_signal_trigger, convert_task_to_workspace). Workspace-management
-    // tools (workspace_delete, session_describe, etc.) stay blocked.
+    // tools (delete_workspace, session_describe, etc.) stay blocked.
     // External MCP server tools pass through unfiltered.
     const filteredTools: typeof rawMcpTools = {};
     for (const [name, tool] of Object.entries(rawMcpTools)) {

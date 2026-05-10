@@ -29,11 +29,11 @@ describe("createJudgeRunner", () => {
     mockState.execute.mockResolvedValue({ ok: true, data: verdict });
     mockState.createMCPTools.mockResolvedValue({
       tools: {
-        artifacts_get: { description: "get artifact", execute: vi.fn() },
+        get_artifact: { description: "get artifact", execute: vi.fn() },
         parse_artifact: { description: "parse artifact", execute: vi.fn() },
         unrelated: { description: "not for judge", execute: vi.fn() },
       },
-      toolsByServer: { "atlas-platform": ["artifacts_get", "parse_artifact", "unrelated"] },
+      toolsByServer: { "atlas-platform": ["get_artifact", "parse_artifact", "unrelated"] },
       disconnected: [],
       dispose: mockState.dispose,
     });
@@ -55,7 +55,7 @@ describe("createJudgeRunner", () => {
       tools: Record<string, unknown>;
       session: { workspaceId: string; sessionId: string; streamId: string };
     };
-    expect(Object.keys(ctx.tools).sort()).toEqual(["artifacts_get", "parse_artifact"]);
+    expect(Object.keys(ctx.tools).sort()).toEqual(["get_artifact", "parse_artifact"]);
     expect(ctx.session.workspaceId).toBe("ws_1");
     expect(ctx.session.sessionId).toBe("judge-sess_1");
     expect(ctx.session.streamId).toBe("judge-sess_1");

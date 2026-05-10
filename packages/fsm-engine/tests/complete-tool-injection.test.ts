@@ -704,15 +704,15 @@ describe("complete tool injection for LLM actions", () => {
       fsm,
       llmResponses: [
         {
-          // calledTool is the first tool (artifacts_get), NOT failStep
+          // calledTool is the first tool (get_artifact), NOT failStep
           content: "",
-          calledTool: { name: "artifacts_get", args: { id: "doc-1" } },
+          calledTool: { name: "get_artifact", args: { id: "doc-1" } },
           data: {
             toolCalls: [
               {
                 type: "tool-call",
                 toolCallId: "call-1",
-                toolName: "artifacts_get",
+                toolName: "get_artifact",
                 input: { id: "doc-1" },
               },
               {

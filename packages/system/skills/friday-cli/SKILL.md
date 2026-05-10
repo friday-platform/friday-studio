@@ -95,6 +95,8 @@ this for you.
 
 ### 4. Watch a running session's agent activity + read the outcome
 
+**From chat:** prefer `list_sessions(scope?)` + `describe_session(id)` — same data, no curl required. Use the CLI/HTTP recipes below from terminals or shell scripts.
+
 ```bash
 deno task atlas session list --json           # find the session
 deno task atlas session get <session-id> --json  # full SessionView

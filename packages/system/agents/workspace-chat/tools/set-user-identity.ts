@@ -7,7 +7,7 @@ import { z } from "zod";
 /**
  * `set_user_identity` writes to the USERS KV bucket. Supersedes the
  * legacy pattern where onboarding instructed the model to call
- * `memory_save` with `type: "user-name"` or `"name-declined"`.
+ * `save_memory_entry` with `type: "user-name"` or `"name-declined"`.
  *
  * Identity is user-scoped (cross-workspace), so the write target is
  * the `userId` resolved at request time — not the workspaceId.

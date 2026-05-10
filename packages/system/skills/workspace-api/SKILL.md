@@ -47,7 +47,7 @@ Create and manage Friday workspaces. This skill is where LLM judgment lives: whe
 **Key one-liners.**
 - Jobs must use `fsm:`, not `execution:` — the runtime silently skips jobs without `fsm:`.
 - `write_file` writes to scratch only; use `run_code` with an absolute path to edit `workspace.yml`.
-- Tool names in `agents.*.config.tools` resolve against `tools.mcp.servers.*` for workspace-scoped MCP servers. Atlas-platform built-ins (memory, artifacts, fs, `request_tool_access`, `request_human_input`) auto-inject everywhere and use bare names (`memory_save`, `fs_glob`, `request_human_input`); no `serverId/` prefix.
+- Tool names in `agents.*.config.tools` resolve against `tools.mcp.servers.*` for workspace-scoped MCP servers. Atlas-platform built-ins (memory, artifacts, fs, `request_tool_access`, `request_human_input`) auto-inject everywhere and use bare names (`save_memory_entry`, `fs_glob`, `request_human_input`); no `serverId/` prefix.
 - Jobs that return data need `outputTo`; LLM-backed `outputTo` actions must finish with the injected `complete` tool (`outputType` schema args, or `{ response }` for untyped output).
 
 ---
@@ -59,7 +59,7 @@ Friday workspaces have a fixed call chain:
 ```
 user message → workspace-chat (platform meta-agent)
                       │
-                      ├─ calls memory_save / memory_read (built-in)
+                      ├─ calls save_memory_entry / list_memory_entries (built-in)
                       │
                       └─ calls <job-name> tool → fires signal → FSM runs
                                                      │
@@ -70,7 +70,7 @@ user message → workspace-chat (platform meta-agent)
 **Chat interacts with your workspace through jobs. Nothing else.** Agents and MCP servers are internals of the jobs that wrap them. This is the single most important mental model to get right:
 
 - **An agent declared without a job that invokes it is unreachable.** Chat cannot call agents directly, only jobs. A lone `agents.kb-agent` with MCP tools attached will sit idle. The validator catches this as `orphan_agent`.
-- **Memory is accessed by agents, not signals or jobs directly.** Agents see narrative memory auto-injected into their prompts. Agents call `memory_save`, `memory_read`, `memory_remove` explicitly for older entries or specific filters.
+- **Memory is accessed by agents, not signals or jobs directly.** Agents see narrative memory auto-injected into their prompts. Agents call `save_memory_entry`, `list_memory_entries`, `delete_memory_entry` explicitly for older entries or specific filters.
 - **Tools belong to agents** (via the agent's `tools:` array), and the tools have to be enabled at workspace scope (in `tools.mcp.servers`) for the agent to use them.
 
 **What this means for authoring:** work backward from the trigger. What signal fires this? What job does that signal start? What agents does that job invoke? What tools do those agents need? Declare agents first, then jobs that reference them, then signals that trigger those jobs.
@@ -374,7 +374,7 @@ The cheat-sheet table covers the decision rule. These are worked examples for ea
     - **`delegation: { max_depth, max_steps_per_call, max_output_tokens, max_input_tokens, max_wall_time_ms, max_cost_usd }`** — bounds for the `delegate` tool when an agent uses it. Workspace-level + per-job override (`jobs.<name>.delegation`) — per-field merge, job wins. Default `max_depth: 1`.
     - **`validation: { default, skill }`** — default LLM-output validation strategy applied to `type: llm` / `type: agent` actions that don't set `validate:` themselves. See the dedicated `validation:` section below for the full precedence chain (action > job > workspace > `"auto"`).
     - **`memory.own[].ttl: <duration>`** — explicit TTL on a memory store. Without it, `type: short_term` (notes) defaults to ephemeral session-bound and `type: long_term` (memory) to durable.
-    - **`artifacts: { default_grace: <duration> }`** — workspace-level grace window after job completion before ephemeral artifacts are swept (default `24h`). Per-job override: `jobs.<name>.artifacts: { default_grace, ephemeral }`. Promotion-by-reference (a `memory_save` text containing the artifact id, a `display_artifact` call, or `aiSummary.keyDetails[].url`) keeps an artifact alive past the grace window with no author opt-in.
+    - **`artifacts: { default_grace: <duration> }`** — workspace-level grace window after job completion before ephemeral artifacts are swept (default `24h`). Per-job override: `jobs.<name>.artifacts: { default_grace, ephemeral }`. Promotion-by-reference (a `save_memory_entry` text containing the artifact id, a `display_artifact` call, or `aiSummary.keyDetails[].url`) keeps an artifact alive past the grace window with no author opt-in.
     - **`jobs.<name>.elicitations: { timeout: <duration> }`** — per-job elicitation timeout, independent of `config.timeout`. Useful for long batch jobs whose individual prompts shouldn't sit unanswered.
 
     Worked example showing every option in one workspace.yml. Comments
@@ -410,7 +410,7 @@ The cheat-sheet table covers the decision rule. These are worked examples for ea
     artifacts:
       # Workspace-level grace window after job completion before ephemeral
       # artifacts are swept. Default '24h'. Promotion-by-reference
-      # (memory_save text containing the id, display_artifact, or
+      # (save_memory_entry text containing the id, display_artifact, or
       # aiSummary.keyDetails[].url) keeps an artifact past the window.
       default_grace: 24h
 

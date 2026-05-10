@@ -807,7 +807,7 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
         const listSessionsTool = createListSessionsTool(workspaceId, logger);
         const describeSessionTool = createDescribeSessionTool(logger);
 
-        // Memory-entry retrieval (replaces the old memory_read shape
+        // Memory-entry retrieval (replaces the old list_memory_entries shape
         // with rich substring + time + metadata filters and pagination).
         const listMemoryEntriesTool = createListMemoryEntriesTool(workspaceId, logger);
         const describeMemoryEntryTool = createDescribeMemoryEntryTool(workspaceId, logger);

@@ -11,7 +11,7 @@ import { createErrorResponse, createSuccessResponse, stripArtifactFilePaths } fr
 /** Register MCP tool for creating artifacts */
 export function registerArtifactsCreateTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
-    "artifacts_create",
+    "create_artifact",
     {
       description:
         "Create a new file artifact. Pass file content directly (string for text, base64 for binary) and associate it with the current chat or workspace.",
@@ -45,7 +45,7 @@ export function registerArtifactsCreateTool(server: McpServer, ctx: ToolContext)
       },
     },
     async ({ data, title, summary, workspaceId, streamId }): Promise<CallToolResult> => {
-      ctx.logger.info("MCP artifacts_create called", { type: data.type, workspaceId, streamId });
+      ctx.logger.info("MCP create_artifact called", { type: data.type, workspaceId, streamId });
 
       const payload = { data, title, summary, workspaceId, chatId: streamId };
 

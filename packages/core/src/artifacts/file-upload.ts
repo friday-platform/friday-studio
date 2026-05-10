@@ -375,7 +375,7 @@ export function getValidatedMimeType(fileName: string): string | undefined {
 
 /**
  * Mime for any known extension, including agent-only ones. Used at
- * `artifacts_create` time so text/markup/source-code files persist
+ * `create_artifact` time so text/markup/source-code files persist
  * with a meaningful mime instead of falling through to the storage
  * layer's binary-only magic-byte sniff and ending up as
  * `application/octet-stream`. Returns `undefined` for unknown

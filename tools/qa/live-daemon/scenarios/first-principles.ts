@@ -916,7 +916,7 @@ async function runLlmAgentInputFromHydrationScenario(d: DaemonHandle): Promise<E
       ),
     );
   const artifactFanInTools = toolNames.filter((name) =>
-    ["artifacts_get", "parse_artifact", "display_artifact", "delegate"].includes(String(name)),
+    ["get_artifact", "parse_artifact", "display_artifact", "delegate"].includes(String(name)),
   );
 
   metrics.bucket = bucket;
@@ -1083,7 +1083,7 @@ async function runPythonUserAgentInputFromScenario(d: DaemonHandle): Promise<Eva
     .filter((ev) => ev.type === "step:complete" && Array.isArray(ev.toolCalls))
     .flatMap((ev) => (ev as { toolCalls?: Array<Record<string, unknown>> }).toolCalls ?? []);
   const toolNames = stepToolCalls.map((tc) => String(tc.toolName ?? ""));
-  const usedArtifactsGet = toolNames.includes("artifacts_get");
+  const usedGetArtifact = toolNames.includes("get_artifact");
   const avoidedFakeInboxFanIn =
     !toolNames.includes("search_messages") && !toolNames.includes("get_messages_content_batch");
   const seedCompact =
@@ -1109,7 +1109,7 @@ async function runPythonUserAgentInputFromScenario(d: DaemonHandle): Promise<Eva
     isTrue(payload?.sawBodySentinel) &&
     Array.isArray(payload?.artifactRefs) &&
     payload.artifactRefs.length === 1 &&
-    usedArtifactsGet &&
+    usedGetArtifact &&
     avoidedFakeInboxFanIn;
 
   return [
@@ -1123,7 +1123,7 @@ async function runPythonUserAgentInputFromScenario(d: DaemonHandle): Promise<Eva
         `count: ${String(payload?.count ?? "(missing)")}`,
         `firstId: ${String(payload?.firstId ?? "(missing)")}`,
         `saw body sentinel: ${String(payload?.sawBodySentinel ?? "(missing)")}`,
-        `used artifacts_get: ${usedArtifactsGet}`,
+        `used artifacts_get: ${usedGetArtifact}`,
         `avoided fake inbox fan-in: ${avoidedFakeInboxFanIn}`,
         `tool calls: ${toolNames.join(",") || "(missing)"}`,
       ],
@@ -1209,7 +1209,7 @@ async function runAtlasAgentScenario(d: DaemonHandle): Promise<EvalResult[]> {
   const pass =
     trigger.jobComplete?.success === true &&
     outputArtifactRefs.length > 0 &&
-    toolNames.includes("artifacts_create") &&
+    toolNames.includes("create_artifact") &&
     createdArtifactContents.length > 50 &&
     nonSkipValidationStrategies.length === 0;
 
@@ -1282,7 +1282,7 @@ async function runAutoTriageReportOutputContractScenario(d: DaemonHandle): Promi
     Object.keys(payload ?? {}).length <= 2 || /completed successfully\.?$/i.test(reportSummary);
   const containsBodySentinel = serialized.includes("FIRST_PRINCIPLES_EMAIL_BODY");
   const exploratoryTools = toolNames.filter((name) =>
-    ["bash", "fs_glob", "fs_list_files", "artifacts_get", "parse_artifact", "delegate"].includes(
+    ["bash", "fs_glob", "fs_list_files", "get_artifact", "parse_artifact", "delegate"].includes(
       String(name),
     ),
   );
@@ -1844,7 +1844,7 @@ async function runChatFollowupCompactnessScenario(d: DaemonHandle): Promise<Eval
   );
   const secondToolNames = second.toolCalls.map((tc) => tc.toolName);
   const fanInTools = new Set([
-    "artifacts_get",
+    "get_artifact",
     "display_artifact",
     "parse_artifact",
     "delegate",
@@ -2045,7 +2045,7 @@ async function runAmbientArtifactInjectionPruningScenario(d: DaemonHandle): Prom
   const promptHasStaleArtifactId = staleArtifactIds.some((id) => systemPrompt.includes(id));
   const toolNames = chat.toolCalls.map((tc) => tc.toolName);
   const fanInTools = toolNames.filter((name) =>
-    ["artifacts_get", "display_artifact", "parse_artifact", "delegate"].includes(name),
+    ["get_artifact", "display_artifact", "parse_artifact", "delegate"].includes(name),
   );
 
   metrics.seedSessionId = seed.sessionId;
@@ -2130,7 +2130,7 @@ async function runReviewChoiceMemoryLearningScenario(d: DaemonHandle): Promise<E
   const mutationCallCount = toolNames.filter(
     (name) => name === "batch_modify_message_labels",
   ).length;
-  const memorySaveCallCount = toolNames.filter((name) => name === "memory_save").length;
+  const memorySaveCallCount = toolNames.filter((name) => name === "save_memory_entry").length;
 
   metrics.bucket = bucket;
   metrics.data = data ?? null;
@@ -2163,7 +2163,7 @@ async function runReviewChoiceMemoryLearningScenario(d: DaemonHandle): Promise<E
         `memorySaved: ${String(payload?.memorySaved ?? "(missing)")}`,
         `memory contains learned preference: ${memoryContainsLearned}`,
         `mutation calls: ${mutationCallCount}`,
-        `memory_save calls: ${memorySaveCallCount}`,
+        `save_memory_entry calls: ${memorySaveCallCount}`,
       ],
       metrics,
     },

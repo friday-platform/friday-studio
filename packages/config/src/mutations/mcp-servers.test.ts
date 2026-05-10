@@ -245,7 +245,7 @@ describe("findServerReferences", () => {
           tools: [
             "google-gmail/search_gmail_messages",
             "google-gmail/draft_gmail_message",
-            "memory_read",
+            "list_memory_entries",
           ],
         }),
       },

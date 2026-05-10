@@ -11,7 +11,7 @@
  *     judge's resource use.
  *   - The child invocation can surface in session history via the parent
  *     writer's `data-delegate-chunk` envelopes.
- *   - `artifacts_get` / `parse_artifact` let the judge selectively inspect
+ *   - `get_artifact` / `parse_artifact` let the judge selectively inspect
  *     lifted bytes instead of relying on inline-quoted tool results.
  *
  * Structured-output contract: the child emits validation-verdict JSON via the
@@ -90,7 +90,7 @@ function buildHandoffMessage(input: JudgeInput): string {
         lines.push(
           `Result lifted to artifact ${tc.resultArtifactId} (${
             tc.resultSummary ?? "no summary"
-          }). Use artifacts_get only if a specific claim depends on the artifact's contents.`,
+          }). Use get_artifact only if a specific claim depends on the artifact's contents.`,
         );
       } else if (tc.resultInline) {
         lines.push("Result (inline):");
@@ -195,7 +195,7 @@ export const judgeAgent = createAgent<JudgeInput, ValidationVerdict>({
       const bridged = buildBridgedWriter(stream?.emit?.bind(stream));
 
       // The child inherits whichever tools the runner provided —
-      // notably `artifacts_get` for selective lifted-byte fetches. We
+      // notably `get_artifact` for selective lifted-byte fetches. We
       // pass the map by reference; `createDelegateTool` strips
       // `delegate` (the parent's tool) automatically, so a runner that
       // forwards its full chat-style tool set won't accidentally grant

@@ -2,7 +2,7 @@
  * Memory entry retrieval tools — list / describe over the per-store
  * narrative entries in this workspace.
  *
- * Replaces the older `memory_read` tool. The shape adds substring query,
+ * Replaces the older `list_memory_entries` tool. The shape adds substring query,
  * since/until time filters, exact-match metadata filters, pagination, and
  * a configurable truncation cap so big stores stay tractable. The
  * companion `describe_memory_entry` returns the full record without the
@@ -176,7 +176,7 @@ export function createListMemoryEntriesTool(
     list_memory_entries: tool({
       description:
         "Read entries from a named memory store in the current chat's workspace. Replaces the " +
-        "older `memory_read` tool. Filters: substring `query`, ISO `since` / `until` time " +
+        "older `list_memory_entries` tool. Filters: substring `query`, ISO `since` / `until` time " +
         "windows, exact-match `metadata`. Pagination: `limit` + `cursor` (opaque token). " +
         "Output: `truncate` caps entries' text at 500 chars by default — entries flag " +
         "`truncated: true` when cut. Use describe_memory_entry to pull a single entry's " +

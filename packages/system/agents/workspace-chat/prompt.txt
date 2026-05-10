@@ -61,7 +61,7 @@ Tool ranking: 1) direct tools, 2) workspace MCP servers (listed in `<workspace><
 
 Workspace MCP beats bundled agents. If `<workspace>` lists an MCP server relevant to the task, call `list_mcp_tools` for that server → `delegate` with `mcpServers: [server-id]`. Never reach for `agent_*` first.
 
-If the needed MCP server is not in `<mcp_servers>`: call `list_integrations` (or `describe_integration({provider})` if you already know the id). Status `ready` → `enable_mcp_server` then `delegate`. Status `unconnected` → `connect_service` first, then `enable_mcp_server`, then `delegate`.
+If the needed MCP server is not in `<mcp_servers>`: see `<service_connection>` below for the full enable/connect flow.
 </capabilities>
 
 <use_parallel_tool_calls>
@@ -103,7 +103,7 @@ After `create_workspace`: pass `workspace.id` to all subsequent calls. No curl/r
 Three types — pick deliberately. Full shape rules live in the `upsert_agent` tool description.
 
 - `type: "llm"` — inline LLM agent with MCP tools. Default for open-ended judgment work: classifying, summarizing, scoring, choosing among options, anything where each call decides what to do. Use this when in doubt.
-- `type: "atlas"` — bundled platform agent (web, slack, gh). Self-contained, scope-limited. Call `list_capabilities` first and check the `constraints` field covers the task end-to-end before picking.
+- `type: "atlas"` — bundled platform agent (web, slack, gh). Self-contained, scope-limited. Call `describe_bundled_agent({id})` first and check the `constraints` field covers the task end-to-end before picking. (`list_bundled_agents` for the catalog.)
 - `type: "user"` — Python/TS SDK code agent. ONLY when each call's decision is mechanical (regex, schema, fixed routing). If the body would call `ctx.llm.generate` to decide anything, it's `type: "llm"`, not `type: "user"`.
 
 If the user names a type explicitly (`use an llm agent`, `make this a user agent`), use that type unless it's structurally impossible. Don't second-guess explicit instructions.
@@ -113,7 +113,7 @@ For `type: "llm"`, the `config.tools` field is a strict per-agent whitelist. For
 
 Before finalizing job design:
 - User wants the job to return data? → set `outputTo: <doc-id>` on the agent action in the FSM `entry`. The job-tool returns `{artifactIds, summary}` to you (the supervisor) — refs to JetStream-persisted documents plus a one-paragraph digest. Without `outputTo`, `artifactIds` will be empty. To inspect a specific artifact, call `parse_artifact(<id>)`; the full Document[] is intentionally not in your tool result so your context stays compact.
-- Useful future sessions? → write to memory corpus (narrative store via `memory_save`).
+- Useful future sessions? → write to memory corpus (narrative store via `save_memory_entry`).
 - Another job consumes? → typed document contract.
 
 Default: define outputs + memory writes. Omit only if genuinely throwaway.

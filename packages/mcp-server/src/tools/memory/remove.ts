@@ -9,7 +9,7 @@ import { resolveStore } from "./resolve.ts";
 /** Register MCP tool for removing a specific entry from a memory store. */
 export function registerMemoryRemoveTool(server: McpServer, ctx: ToolContext): void {
   server.registerTool(
-    "memory_remove",
+    "delete_memory_entry",
     {
       description:
         "Remove a single entry from a named memory store by its id. " +
@@ -22,7 +22,7 @@ export function registerMemoryRemoveTool(server: McpServer, ctx: ToolContext): v
       },
     },
     async ({ workspaceId, memoryName, entryId }): Promise<CallToolResult> => {
-      ctx.logger.info("MCP memory_remove called", { workspaceId, memoryName, entryId });
+      ctx.logger.info("MCP delete_memory_entry called", { workspaceId, memoryName, entryId });
 
       const resolved = await resolveStore({
         daemonUrl: ctx.daemonUrl,
@@ -54,7 +54,7 @@ export function registerMemoryRemoveTool(server: McpServer, ctx: ToolContext): v
           entryId,
         });
       } catch (err) {
-        ctx.logger.error("memory_remove fetch error", {
+        ctx.logger.error("delete_memory_entry fetch error", {
           workspaceId,
           memoryName,
           entryId,

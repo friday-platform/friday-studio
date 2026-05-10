@@ -75,7 +75,7 @@ Two places declare tools, with different naming rules:
 - **FSM action `entry[].tools`** (per-action allowlist on `type: llm` /
   `type: agent`): same rule for workspace MCP tools — `serverId/toolName`.
   **Atlas-platform built-ins (`fs_glob`, `fs_read_file`, `fs_write_file`,
-  `memory_save`, `memory_read`, `artifacts_create`, `parse_artifact`,
+  `save_memory_entry`, `list_memory_entries`, `create_artifact`, `parse_artifact`,
   `display_artifact`, `request_tool_access`, etc.) use bare names** —
   atlas-platform is auto-injected, no prefix needed.
 
@@ -83,7 +83,7 @@ Two places declare tools, with different naming rules:
 |---|---|
 | `"search_gmail_messages"` (workspace MCP) | `"google-gmail/search_gmail_messages"` |
 | `"get_gmail_message_content"` (workspace MCP) | `"google-gmail/get_gmail_message_content"` |
-| Atlas-platform built-in | `"memory_save"`, `"fs_glob"`, etc. — no prefix |
+| Atlas-platform built-in | `"save_memory_entry"`, `"fs_glob"`, etc. — no prefix |
 
 ## Minimal valid job
 
@@ -353,7 +353,7 @@ jobs:
 
 `type: user` Python agents that call `parse_input(prompt, MyDataclass)` see the wrapped shape `{ "config": { ... } }` rather than the fields at the top level. Either keep `{{inputs.<field>}}` interpolation in the action prompt as above, or unwrap `config` in the agent before typing — see `writing-friday-python-agents` → `references/input-parsing.md` for the snippet.
 
-For large data **inside the same FSM session**, prefer `outputTo` → `inputFrom`; the runtime stores bulky documents as artifact refs and hydrates those refs before the next action runs. For data that must cross session boundaries, persist with the artifact + memory pattern — producer calls `artifacts_create` then `memory_save` to record the id; a later session reads the id from memory and calls `parse_artifact`. See the `writing-to-memory` skill.
+For large data **inside the same FSM session**, prefer `outputTo` → `inputFrom`; the runtime stores bulky documents as artifact refs and hydrates those refs before the next action runs. For data that must cross session boundaries, persist with the artifact + memory pattern — producer calls `create_artifact` then `save_memory_entry` to record the id; a later session reads the id from memory and calls `parse_artifact`. See the `writing-to-memory` skill.
 
 ## Single-action FSMs post-supervisor-flip
 
@@ -653,8 +653,8 @@ The `tools:` field narrows MCP-server tools (workspace-declared
 external integrations); platform tools are ambient and not subject to
 that narrowing.
 
-**Memory** — `memory_save`, `memory_read`, `memory_remove`.
-**Artifacts** — `artifacts_create`, `artifacts_get`, `artifacts_update`,
+**Memory** — `save_memory_entry`, `list_memory_entries`, `delete_memory_entry`.
+**Artifacts** — `create_artifact`, `get_artifact`, `artifacts_update`,
 `artifacts_delete`, `artifacts_get_by_chat`, `parse_artifact`,
 `display_artifact`.
 **Filesystem** — `fs_read_file`, `fs_write_file`, `fs_list_files`,
@@ -698,7 +698,7 @@ This is true even when `outputType` is omitted:
   first tool call to be `complete`.
 
 Do **not** end an `outputTo` action on `record_validation`, `fs_write_file`,
-`memory_save`, or any other non-`complete` tool. Those calls may be useful
+`save_memory_entry`, or any other non-`complete` tool. Those calls may be useful
 side effects, but they are not the output document. If `complete` is missing,
 the session fails with `LLM action with outputTo '<id>' did not call complete`
 rather than persisting an empty `{ response: "" }` stub.
@@ -733,13 +733,13 @@ The classifier (see `READ_ONLY_ALLOWLIST` and `MUTATING_VERB_RE` in
 picks:
 
 - **`skip`** when every declared tool is read-only (`gmail/get_*`,
-  `gmail/search_*`, `fs_read_file`, `web_fetch`, `memory_read`,
-  `artifacts_get`, etc.) **and** the action has structured
+  `gmail/search_*`, `fs_read_file`, `web_fetch`, `list_memory_entries`,
+  `get_artifact`, etc.) **and** the action has structured
   `outputType:`. Also picks `skip` for the pure-formatter case:
   no tools, has `inputFrom:`, has `outputType:`.
 - **`self`** when any declared or called tool is mutating (`send_*`,
   `create_*`, `delete_*`, `batch_modify_*`, `fs_write_*`,
-  `memory_save`, `memory_remove`, `publish_*`, etc.) **or** the
+  `save_memory_entry`, `delete_memory_entry`, `publish_*`, etc.) **or** the
   action emits free-form prose with no structured contract.
 - **`external`** is never auto-picked. Authors opt in explicitly.
 
@@ -1011,7 +1011,7 @@ automatically because they call `batch_modify_*` / `send_*` tools.
 ## Writing artifact summaries the supervisor can answer from
 
 The supervisor (workspace-chat) sees `{ artifactIds, summary }` for
-every job result and decides per turn whether to call `artifacts_get`
+every job result and decides per turn whether to call `get_artifact`
 to load the full body. **A thin `summary:` forces the supervisor to
 re-fetch on every follow-up question** — wasted tokens and a slower
 turn. A summary that carries the structural facts up front lets the
@@ -1047,7 +1047,7 @@ Include, in this priority order:
 
 ### Worked example: triage job
 
-Bad — supervisor must `artifacts_get` to answer anything:
+Bad — supervisor must `get_artifact` to answer anything:
 
 ```yaml
 - type: agent

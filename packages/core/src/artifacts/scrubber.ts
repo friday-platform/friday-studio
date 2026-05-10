@@ -17,9 +17,8 @@
  *
  * The replacement marker is short text describing what was lifted, the
  * resulting `artifactId`, byte size, and mime type. Downstream consumers
- * (chat-supervisor, cross-action `inputFrom`) call `display_artifact`,
- * `get_artifact` (chat surface), or `artifacts_get` (FSM/agent surface)
- * to recover the bytes when needed.
+ * (chat-supervisor, cross-action `inputFrom`) call `display_artifact` or
+ * `get_artifact` to recover the bytes when needed.
  *
  * Failures (network, storage) are swallowed and logged so a lift failure
  * never breaks tool execution.
@@ -189,7 +188,7 @@ function refMarker(r: UploadResult, toolCtx: { serverId: string; toolName: strin
   return (
     `[attachment lifted to artifact ${r.artifactId} ` +
     `(${kb} KB, ${r.mimeType}, from ${toolCtx.serverId}/${toolCtx.toolName}) — ` +
-    `use display_artifact, get_artifact (chat), or artifacts_get (FSM/agent) to read]`
+    `use display_artifact or get_artifact to read]`
   );
 }
 
