@@ -70,15 +70,50 @@ export async function getWorkspaceCacheSalt(
  * The caller (an HTTP route) surfaces the new value back to the UI so
  * the operator sees confirmation that the bump landed and can correlate
  * it with the next turn's cache_write.
+ *
+ * CAS-bounded: two concurrent operators clicking "Force fresh cache" used
+ * to read the same N and both write N+1, losing one increment. The bumps
+ * are idempotent for cache-correctness purposes (any salt change
+ * invalidates the prefix), but operators expect strictly-monotonic
+ * confirmation values. `kv.update(key, …, revision)` rejects on stale
+ * revision; we retry against the new value. Capped to keep a contended
+ * spin from running forever.
  */
+const BUMP_MAX_ATTEMPTS = 8;
+
 export async function bumpWorkspaceCacheSalt(
   nc: NatsConnection,
   workspaceId: string,
 ): Promise<number> {
   const kv = await ensureBucket(nc);
   const key = safeKey(workspaceId);
-  const current = decodeSalt(await kv.get(key));
-  const next = current + 1;
-  await kv.put(key, new TextEncoder().encode(String(next)));
-  return next;
+  const enc = new TextEncoder();
+
+  for (let attempt = 0; attempt < BUMP_MAX_ATTEMPTS; attempt++) {
+    const entry = await kv.get(key);
+    const current = decodeSalt(entry);
+    const next = current + 1;
+    const bytes = enc.encode(String(next));
+
+    if (entry === null) {
+      // No prior value — claim the key with create (compare-and-null-set).
+      // A racing creator wins the create; the loser falls through to the
+      // update path on the next loop iteration.
+      try {
+        await kv.create(key, bytes);
+        return next;
+      } catch {
+        continue;
+      }
+    }
+
+    try {
+      await kv.update(key, bytes, entry.revision);
+      return next;
+    } catch {}
+  }
+
+  throw new Error(
+    `bumpWorkspaceCacheSalt: ${BUMP_MAX_ATTEMPTS} CAS attempts exhausted for ${workspaceId}`,
+  );
 }

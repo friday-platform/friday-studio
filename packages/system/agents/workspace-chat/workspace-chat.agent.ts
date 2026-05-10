@@ -336,13 +336,27 @@ export function formatWorkspaceSection(
  */
 const SKILL_SUMMARY_MAX_CHARS = 80;
 
+/**
+ * Truncate by code points, not UTF-16 code units. `String#slice(n)` cuts at
+ * the n-th code unit and can split an astral-plane code point (emoji, some
+ * CJK, mathematical symbols) into a lone high surrogate that renders as a
+ * replacement character downstream. Iterating with `Array.from` yields one
+ * entry per code point, so the cap is grapheme-safe to a first
+ * approximation (combining marks remain code-point-pair-only, but we don't
+ * assemble graphemes).
+ */
+function sliceByCodePoints(s: string, n: number): string {
+  const points = Array.from(s);
+  return points.length <= n ? s : points.slice(0, n).join("");
+}
+
 export function summarizeSkillDescription(description: string): string {
   const collapsed = description.replace(/\s+/g, " ").trim();
   if (!collapsed) return "";
   const firstLine = collapsed.split(/(?<=[.!?])\s/)[0] ?? collapsed;
   const candidate = firstLine.length <= collapsed.length ? firstLine : collapsed;
-  if (candidate.length <= SKILL_SUMMARY_MAX_CHARS) return candidate;
-  const cut = candidate.slice(0, SKILL_SUMMARY_MAX_CHARS);
+  if (Array.from(candidate).length <= SKILL_SUMMARY_MAX_CHARS) return candidate;
+  const cut = sliceByCodePoints(candidate, SKILL_SUMMARY_MAX_CHARS);
   const lastSpace = cut.lastIndexOf(" ");
   const safe = lastSpace > SKILL_SUMMARY_MAX_CHARS / 2 ? cut.slice(0, lastSpace) : cut;
   return `${safe.replace(/[\s,;:.!?-]+$/, "")}…`;

@@ -675,7 +675,7 @@ const artifactsApp = daemonFactory
     if (!isParseableMimeType(mime)) {
       return c.json(
         {
-          error: `parse_artifact does not support mime type ${mime}. Supported: PDF, DOCX, PPTX. For text artifacts use artifacts_get; for images use display_artifact.`,
+          error: `parse_artifact does not support mime type ${mime}. Supported: PDF, DOCX, PPTX. For text artifacts use get_artifact; for images use display_artifact.`,
         },
         400,
       );

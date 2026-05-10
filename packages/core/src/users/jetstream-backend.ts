@@ -28,7 +28,7 @@ const NANOID_ALPHABET = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRS
 const NANOID_LENGTH = 12;
 const generateId = customAlphabet(NANOID_ALPHABET, NANOID_LENGTH);
 
-export const NameStatusSchema = z.enum(["unknown", "provided", "declined"]);
+const NameStatusSchema = z.enum(["unknown", "provided", "declined"]);
 export type NameStatus = z.infer<typeof NameStatusSchema>;
 
 export const UserIdentitySchema = z.object({
