@@ -937,8 +937,9 @@
     border-collapse: collapse;
     font-size: var(--font-size-1);
     margin-block: 0.5em;
-    max-inline-size: 100%;
-    overflow-x: auto;
+    /* Horizontal overflow lives on the .copyable-wrapper below.
+       `overflow-x` on a <table> itself is a no-op — tables size to
+       content and aren't scroll containers. */
   }
 
   .message-content.markdown-body :global(th),
@@ -973,6 +974,14 @@
 
   /* Copy button on code blocks and tables */
   .message-content.markdown-body :global(.copyable-wrapper) {
+    /* Wrap-rather-than-overflow is what gives `<table>` a horizontal
+       scrollbar when its content is wider than the chat bubble. The
+       wrapper is the scroll container; the table itself stays
+       naturally sized. `<pre>` blocks have their own
+       `overflow-x: auto` further up, so their wrapper just sits
+       transparently around them without producing a second scrollbar. */
+    max-inline-size: 100%;
+    overflow-x: auto;
     position: relative;
   }
 
