@@ -572,6 +572,69 @@ describe("GET /platform/:wsId/chat/:chatId/export — zip orchestrator", () => {
     }
   });
 
+  it("scrubs absolute home-directory prefixes in both the HTML and chat.json", async () => {
+    // Tools like `run_code` emit `scratch_dir: "/Users/<name>/.atlas/..."`
+    // in their output JSON, which lands verbatim in both surfaces. The
+    // export must rewrite those prefixes so a shared zip never reveals
+    // the sender's username or local layout.
+    const previewWithPath =
+      '<html><body><span>scratch_dir: /Users/alice/.atlas/scratch/abc123 done</span><span>cwd: /home/bob/work</span></body></html>';
+    const chatWithPath = {
+      chat: { ...sampleChatPayload.chat },
+      messages: [
+        {
+          id: "m1",
+          role: "assistant",
+          parts: [
+            {
+              type: "tool-run_code",
+              toolCallId: "tc",
+              state: "output-available",
+              output: { scratch_dir: "/Users/alice/.atlas/scratch/abc123" },
+            },
+          ],
+        },
+      ],
+      systemPromptContext: null,
+    };
+    const event: FakeEvent = {
+      params: { workspaceId: SAMPLE_WS_ID, chatId: SAMPLE_CHAT_ID },
+      request: makeRequest(),
+      fetch: makeFetch([
+        {
+          match: (u) => u.includes("/export/preview"),
+          respond: () => htmlResponse(previewWithPath),
+        },
+        {
+          match: (u) => u.includes("/api/daemon/api/workspaces/") && u.includes("?full=true"),
+          respond: () => jsonResponse(chatWithPath),
+        },
+        {
+          match: (u) => u.includes("/api/daemon/api/artifacts?chatId="),
+          respond: () => jsonResponse({ artifacts: [] }),
+        },
+      ]),
+    };
+
+    const res = await callGet(event);
+    expect(res.status).toBe(200);
+
+    const zip = await decodeZip(res);
+    const html = (await zip.file("index.html")?.async("string")) ?? "";
+    const chatJson = (await zip.file("chat.json")?.async("string")) ?? "";
+
+    // No raw username paths should survive in either surface.
+    expect(html).not.toMatch(/\/Users\/alice/);
+    expect(html).not.toMatch(/\/home\/bob/);
+    expect(chatJson).not.toMatch(/\/Users\/alice/);
+
+    // The path tail (the part after the username) is preserved so the
+    // recipient can still tell what the tool was doing.
+    expect(html).toContain("/Users/~/.atlas/scratch/abc123");
+    expect(html).toContain("/home/~/work");
+    expect(chatJson).toContain("/Users/~/.atlas/scratch/abc123");
+  });
+
   it("forwards a non-2xx preview status (e.g. 404 for missing chat) verbatim", async () => {
     const event: FakeEvent = {
       params: { workspaceId: SAMPLE_WS_ID, chatId: "missing-chat" },

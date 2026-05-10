@@ -17,6 +17,28 @@ const EXPORT_TIMEOUT_MS = 10_000;
 const ArtifactsResponseSchema = z.object({ artifacts: z.array(ArtifactSummarySchema) });
 
 /**
+ * Replace absolute home-directory prefixes with `~` so shared exports do
+ * not reveal the sender's username or local filesystem layout. Tools like
+ * `run_code` emit fields such as `scratch_dir: "/Users/<name>/.atlas/..."`
+ * in their output JSON, which lands verbatim in both the rendered HTML and
+ * the raw chat.json. The rewrite is intentionally narrow:
+ *
+ *   - `/Users/<name>/...`     (macOS)
+ *   - `/home/<name>/...`      (Linux)
+ *   - `C:\\Users\\<name>\\...` (Windows, escaped in JSON strings)
+ *
+ * Kept as a string transform rather than a deep-walk over the message
+ * tree so it covers both the SSR'd HTML (where paths appear inside Shiki
+ * highlight spans) and the JSON without two parallel implementations.
+ */
+function scrubHomePaths(input: string): string {
+  return input
+    .replace(/\/Users\/[^/\s"'<>\\]+/g, "/Users/~")
+    .replace(/\/home\/[^/\s"'<>\\]+/g, "/home/~")
+    .replace(/C:\\\\Users\\\\[^\\\\\s"'<>]+/g, "C:\\\\Users\\\\~");
+}
+
+/**
  * Orchestrate a chat export: render the preview HTML via the in-process
  * SvelteKit route, fetch the raw chat JSON and artifact byte payloads
  * from the daemon, and pack them into a downloadable zip.
@@ -213,23 +235,22 @@ export const GET: RequestHandler = async (event) => {
   }
 
   const zip = new JSZip();
-  zip.file("index.html", html);
+  zip.file("index.html", scrubHomePaths(html));
   // Strip the top-level account-ownership ID from chat.json. The transcript,
   // system prompt context, and tool inputs/outputs are exported verbatim —
-  // recipients see what the sender saw.
+  // recipients see what the sender saw, minus absolute home-directory
+  // prefixes that tools (e.g. run_code's `scratch_dir`) emit alongside.
   const { userId: _userId, ...chatWithoutUserId } = chatParsed.data.chat;
-  zip.file(
-    "chat.json",
-    JSON.stringify(
-      {
-        chat: chatWithoutUserId,
-        messages: chatParsed.data.messages,
-        systemPromptContext: chatParsed.data.systemPromptContext,
-      },
-      null,
-      2,
-    ),
+  const chatJson = JSON.stringify(
+    {
+      chat: chatWithoutUserId,
+      messages: chatParsed.data.messages,
+      systemPromptContext: chatParsed.data.systemPromptContext,
+    },
+    null,
+    2,
   );
+  zip.file("chat.json", scrubHomePaths(chatJson));
   byteResults.forEach((result, idx) => {
     if (result.status === "fulfilled") {
       zip.file(result.value.path, result.value.bytes);

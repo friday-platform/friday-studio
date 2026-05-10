@@ -73,7 +73,15 @@
 
 <svelte:head>
   <title>Friday Studio</title>
-  <link rel="icon" href={favicon} sizes="32x32" />
+  {#if !isChromeless}
+    <!--
+      The favicon is a Vite-imported asset that resolves to an absolute
+      `/src/lib/...` (dev) or hashed `/_app/...` (prod) path — both 404
+      when the export HTML is opened standalone from the zip. Skip it on
+      chromeless routes so shared exports don't carry a broken `<link>`.
+    -->
+    <link rel="icon" href={favicon} sizes="32x32" />
+  {/if}
 </svelte:head>
 
 {#if isChromeless}
