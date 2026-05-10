@@ -140,7 +140,7 @@ describe("GET /platform/:wsId/chat/:chatId/export — zip orchestrator", () => {
     vi.restoreAllMocks();
   });
 
-  it("packs preview HTML, chat JSON, and one artifact entry per successful byte fetch", async () => {
+  it("packs preview HTML, chat JSON, favicon, and one artifact entry per successful byte fetch", async () => {
     const a1 = sampleArtifact("art-aaaa", "a.txt");
     const a2 = sampleArtifact("art-bbbb", "b.txt");
     const event: FakeEvent = {
@@ -161,6 +161,10 @@ describe("GET /platform/:wsId/chat/:chatId/export — zip orchestrator", () => {
         },
         { match: (u) => u.endsWith("/art-aaaa/content"), respond: () => bytesResponse("AAAA") },
         { match: (u) => u.endsWith("/art-bbbb/content"), respond: () => bytesResponse("BBBB") },
+        // The favicon entry name must match the chromeless layout's
+        // `<link rel="icon" href="favicon.png">` so the zip-relative
+        // reference resolves when the recipient opens index.html.
+        { match: (u) => u.includes("favicon"), respond: () => bytesResponse("PNGBYTES") },
       ]),
     };
 
@@ -175,6 +179,7 @@ describe("GET /platform/:wsId/chat/:chatId/export — zip orchestrator", () => {
     const zip = await decodeZip(res);
     expect(zip.file("index.html")).not.toBeNull();
     expect(zip.file("chat.json")).not.toBeNull();
+    expect(zip.file("favicon.png")).not.toBeNull();
     expect(zip.file("assets/artifacts/art-aaaa/a.txt")).not.toBeNull();
     expect(zip.file("assets/artifacts/art-bbbb/b.txt")).not.toBeNull();
 

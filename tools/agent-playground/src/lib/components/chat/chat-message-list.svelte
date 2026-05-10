@@ -339,31 +339,37 @@
 
           <!-- Per-message overflow menu. Holds the timestamp today; later
                actions (branch, read aloud, copy, etc.) hang off the same
-               Content. User/assistant only — system messages stay quiet. -->
-          <div class="message-actions">
-            <DropdownMenu.Root positioning={{ placement: "bottom-start" }}>
-              {#snippet children()}
-                <DropdownMenu.Trigger class="message-menu-trigger" aria-label="Message options">
-                  <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 16 16"
-                    fill="none"
-                    aria-hidden="true"
-                  >
-                    <circle cx="4" cy="8" r="1.25" fill="currentColor" />
-                    <circle cx="8" cy="8" r="1.25" fill="currentColor" />
-                    <circle cx="12" cy="8" r="1.25" fill="currentColor" />
-                  </svg>
-                </DropdownMenu.Trigger>
-                <DropdownMenu.Content>
-                  <DropdownMenu.Label>
-                    {formatMessageTimestamp(message.metadata)}
-                  </DropdownMenu.Label>
-                </DropdownMenu.Content>
-              {/snippet}
-            </DropdownMenu.Root>
-          </div>
+               Content. User/assistant only — system messages stay quiet.
+               Suppressed in export mode: the trigger relies on JS to open
+               the menu, which the static HTML can't drive — recipients
+               would see a non-functional `…` next to every message. The
+               raw timestamp lives in chat.json for anyone who wants it. -->
+          {#if !isExport}
+            <div class="message-actions">
+              <DropdownMenu.Root positioning={{ placement: "bottom-start" }}>
+                {#snippet children()}
+                  <DropdownMenu.Trigger class="message-menu-trigger" aria-label="Message options">
+                    <svg
+                      width="16"
+                      height="16"
+                      viewBox="0 0 16 16"
+                      fill="none"
+                      aria-hidden="true"
+                    >
+                      <circle cx="4" cy="8" r="1.25" fill="currentColor" />
+                      <circle cx="8" cy="8" r="1.25" fill="currentColor" />
+                      <circle cx="12" cy="8" r="1.25" fill="currentColor" />
+                    </svg>
+                  </DropdownMenu.Trigger>
+                  <DropdownMenu.Content>
+                    <DropdownMenu.Label>
+                      {formatMessageTimestamp(message.metadata)}
+                    </DropdownMenu.Label>
+                  </DropdownMenu.Content>
+                {/snippet}
+              </DropdownMenu.Root>
+            </div>
+          {/if}
       {/if}
     </div>
   {/each}

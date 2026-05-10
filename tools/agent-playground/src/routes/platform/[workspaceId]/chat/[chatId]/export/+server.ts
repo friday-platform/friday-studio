@@ -2,6 +2,7 @@ import { ArtifactSummarySchema } from "@atlas/core/artifacts";
 import type { RequestHandler } from "@sveltejs/kit";
 import { artifactZipPath } from "$lib/export/artifact-zip-path";
 import { GetChatResponseSchema } from "$lib/components/chat/types";
+import faviconUrl from "$lib/assets/favicon.png";
 import JSZip from "jszip";
 import { z } from "zod";
 import { MAX_ARTIFACT_BYTES, MAX_TOTAL_ARTIFACT_BYTES } from "./limits";
@@ -234,8 +235,30 @@ export const GET: RequestHandler = async (event) => {
     );
   }
 
+  // Fetch the favicon through Vite/SvelteKit's asset pipeline so the same
+  // import works in dev (where `faviconUrl` is `/src/lib/...`) and in the
+  // compiled binary (where it's `/_app/immutable/assets/favicon-<hash>.png`).
+  // A miss is non-fatal — the export still ships, just without a favicon.
+  let faviconBytes: Uint8Array | undefined;
+  try {
+    const faviconRes = await event.fetch(faviconUrl, { signal: requestSignal });
+    if (faviconRes.ok) {
+      faviconBytes = new Uint8Array(await faviconRes.arrayBuffer());
+    } else {
+      console.warn(`[chat-export] favicon fetch failed (${faviconRes.status})`);
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn(`[chat-export] favicon fetch threw: ${message}`);
+  }
+
   const zip = new JSZip();
   zip.file("index.html", scrubHomePaths(html));
+  if (faviconBytes) {
+    // The chromeless `+layout.svelte` head links `<link rel="icon"
+    // href="favicon.png">` so the entry name must match exactly.
+    zip.file("favicon.png", faviconBytes);
+  }
   // Strip the top-level account-ownership ID from chat.json. The transcript,
   // system prompt context, and tool inputs/outputs are exported verbatim —
   // recipients see what the sender saw, minus absolute home-directory
