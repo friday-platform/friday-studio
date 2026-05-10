@@ -18,6 +18,6 @@
   vars:
     scenarioId: foreground-via-describe
 
-- description: cross-domain "where do I look?" questions reach for list_capabilities (router role)
+- description: cross-domain "where do I look?" questions either use list_capabilities or walk ≥2 distinct domains
   vars:
     scenarioId: router-vs-domain-list

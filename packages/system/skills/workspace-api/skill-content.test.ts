@@ -22,12 +22,19 @@ describe("workspace-api SKILL.md content", () => {
     expect(matches.length).toBeGreaterThanOrEqual(3);
   });
 
-  it("references the new 'list_capabilities' discovery tool", () => {
+  it("references the cross-domain 'list_capabilities' router tool", () => {
     expect(content).toContain("list_capabilities");
   });
 
-  it("does not reference the removed 'list_mcp_servers' tool", () => {
-    expect(content).not.toContain("list_mcp_servers");
+  it("references at least one per-domain discovery tool as the workspace inventory primary", () => {
+    // The skill positions per-domain list_X tools (list_mcp_servers,
+    // list_bundled_agents, list_skills) as the default for inventory
+    // questions, with list_capabilities reserved for cross-domain
+    // routing. A regression here would mean the recipe is back-pointing
+    // at the router for inventory — chat would over-call it and the
+    // per-domain assertion in the tool-suite-management eval would
+    // start failing intermittently.
+    expect(content).toMatch(/list_mcp_servers|list_bundled_agents|list_skills/);
   });
 });
 

@@ -20,7 +20,10 @@
  *   - foreground-via-describe         — pinned foreground workspaces
  *     surface via describe_workspace(id), not inline injection.
  *   - router-vs-domain-list           — cross-domain "where do I
- *     look?" questions reach for list_capabilities (router role).
+ *     look?" questions either reach for list_capabilities (router
+ *     role) or walk ≥2 distinct domains via per-domain discovery
+ *     tools. Both answers are correct; the assertion fails only when
+ *     the chat stays inside a single domain.
  *
  * Each scenario spins up a workspace from the shared fixture, sends a
  * chat message, and inspects the SSE tool-call trace.
@@ -519,6 +522,18 @@ async function runForegroundViaDescribe(d: DaemonHandle): Promise<EvalResult> {
   return { id: "foreground-via-describe", pass, notes, metrics };
 }
 
+// Cross-domain discovery surfaces. The router scenario passes if the
+// chat covers ≥2 of these domains (either via list_capabilities, which
+// trivially spans all of them, or via per-domain tools across at least
+// two of them). Single-domain answers still fail — the question is
+// genuinely cross-domain and a single-tool answer leaves a gap.
+const ROUTER_DOMAIN_TOOLS: Record<string, ReadonlySet<string>> = {
+  router: new Set(["list_capabilities"]),
+  agents: new Set(["list_bundled_agents", "list_agents"]),
+  mcp: new Set(["list_mcp_servers", "search_mcp_servers", "describe_mcp_server"]),
+  integrations: new Set(["list_integrations", "describe_integration"]),
+};
+
 async function runRouterVsDomainList(d: DaemonHandle): Promise<EvalResult> {
   const notes: string[] = [];
   const metrics: Record<string, unknown> = {};
@@ -526,7 +541,6 @@ async function runRouterVsDomainList(d: DaemonHandle): Promise<EvalResult> {
   const { workspaceId } = await setupWorkspace(d, "TSM Router vs Domain");
   notes.push(`workspace ${workspaceId} registered`);
 
-  // Cross-domain question — should reach for list_capabilities.
   const chatId = crypto.randomUUID();
   const result = await postChatMessage(
     d,
@@ -545,14 +559,32 @@ async function runRouterVsDomainList(d: DaemonHandle): Promise<EvalResult> {
   metrics.durationMs = result.durationMs;
 
   const usedRouter = names.includes("list_capabilities");
-  const pass = usedRouter;
+
+  const domainsHit = new Set<string>();
+  for (const call of result.toolCalls) {
+    for (const [domain, tools] of Object.entries(ROUTER_DOMAIN_TOOLS)) {
+      if (tools.has(call.toolName)) domainsHit.add(domain);
+    }
+  }
+  metrics.domainsHit = [...domainsHit];
+
+  // Either route is correct: list_capabilities (router) trivially
+  // covers all domains, or the per-domain walk hit ≥2 distinct ones.
+  const pass = usedRouter || domainsHit.size >= 2;
 
   if (!pass) {
     notes.push(
-      `expected list_capabilities for cross-domain routing; got [${names.join(", ") || "(none)"}]`,
+      `expected list_capabilities or ≥2 distinct domains via per-domain tools; ` +
+        `domains hit: [${[...domainsHit].join(", ") || "(none)"}], ` +
+        `tool calls: [${names.join(", ") || "(none)"}]`,
     );
+  } else if (usedRouter) {
+    notes.push(`tool-pick OK (router): [${names.join(", ")}]`);
   } else {
-    notes.push(`tool-pick OK: [${names.join(", ")}]`);
+    notes.push(
+      `tool-pick OK (per-domain walk across ${domainsHit.size} domains: ` +
+        `${[...domainsHit].join(", ")}): [${names.join(", ")}]`,
+    );
   }
 
   return { id: "router-vs-domain-list", pass, notes, metrics };
