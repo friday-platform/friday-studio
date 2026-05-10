@@ -2,17 +2,20 @@
  * Migration: backfill the USERS bucket from legacy memory-based identity.
  *
  * Pre-USERS, the workspace-chat onboarding script asked the model to
- * call `memory_save` with `metadata.type === "user-name"` /
+ * call `save_memory_entry` with `metadata.type === "user-name"` /
  * `"name-declined"` against the personal-workspace `notes` narrative.
  * Identity reads then derived state by scanning those entries.
  *
- * Phase 0.5 moves identity to the USERS KV bucket. This migration
- * ports any pre-existing identity entry forward into the local user's
- * USERS record so existing users don't get re-asked their name.
+ * Identity now lives in the USERS KV bucket. This migration ports any
+ * pre-existing identity entry forward into the local user's USERS
+ * record so existing users don't get re-asked their name.
  *
- * Idempotent: skip if the local user's `nameStatus` is already
- * non-"unknown" (someone already provided / declined since the last
- * run, or this migration already ran).
+ * Idempotent: skip if `nameStatus !== "unknown"` (already provided /
+ * declined) OR if `onboarding.version >= ONBOARDING_VERSION` (the
+ * onboarding marker landed on a prior run). The second guard recovers
+ * from a partial run that wrote `setUserIdentity` but crashed before
+ * `markOnboardingComplete` — without it, the rerun would re-derive
+ * from legacy memory and overwrite a possibly-already-edited identity.
  */
 
 import { JetStreamNarrativeStore } from "@atlas/adapters-md";
@@ -39,9 +42,13 @@ export const migration: Migration = {
     if (!userResult.ok) {
       throw new Error(`Failed to read local user: ${userResult.error}`);
     }
-    if (userResult.data?.identity.nameStatus !== "unknown") {
-      logger.debug("Local user already has identity — skipping backfill", {
+    if (
+      userResult.data?.identity.nameStatus !== "unknown" ||
+      (userResult.data?.onboarding.version ?? 0) >= ONBOARDING_VERSION
+    ) {
+      logger.debug("Local user already provisioned — skipping backfill", {
         nameStatus: userResult.data?.identity.nameStatus,
+        onboardingVersion: userResult.data?.onboarding.version,
       });
       return;
     }

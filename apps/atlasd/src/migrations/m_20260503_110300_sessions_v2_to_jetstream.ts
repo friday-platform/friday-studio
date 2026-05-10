@@ -107,14 +107,26 @@ export const migration: Migration = {
         continue;
       }
 
-      // Publish each event line to the stream.
+      // Publish each event line to the stream. Each publish carries a
+      // stable `Nats-Msg-Id` (sessionId + line index) so the broker
+      // silently dedups inside the stream's 24h duplicate window. The
+      // metadata-KV write at the end of this loop is the authoritative
+      // "this session migrated" marker, but it lands AFTER the publishes;
+      // a crash mid-loop on the first run leaves no metadata, so the
+      // rerun re-walks every line. Without msgID, the rerun would
+      // republish lines 1..N a second time. With msgID, the broker
+      // recognizes them and the rerun is a no-op at the stream layer.
       let eventCount = 0;
+      let lineIdx = 0;
       for (const line of eventsContent.split("\n")) {
+        const idx = lineIdx++;
         if (!line.trim()) continue;
         try {
           // We don't reparse — just trust + push the bytes back as-is.
           // The runtime adapter validates on read.
-          await js.publish(`${SUBJECT_PREFIX}.${sanitize(sessionId)}.events`, enc.encode(line));
+          await js.publish(`${SUBJECT_PREFIX}.${sanitize(sessionId)}.events`, enc.encode(line), {
+            msgID: `migrate-v2:${sessionId}:${idx}`,
+          });
           eventCount++;
         } catch (err) {
           logger.warn("Failed to publish session event during migration", {

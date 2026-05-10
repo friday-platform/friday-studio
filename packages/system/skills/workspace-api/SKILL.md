@@ -19,13 +19,13 @@ Create and manage Friday workspaces. This skill is where LLM judgment lives: whe
 | `llm` | Default for open-ended work — classifying, summarizing, scoring, choosing among options. Use when in doubt. | `type: llm, config: { prompt, tools }` |
 | `user` | ONLY when each call's decision is mechanical (regex, schema, fixed routing). If the agent body would call `ctx.llm.generate` to decide anything, this is wrong — use `llm`. User agents must use host capabilities (`ctx.tools`, `ctx.http`, `ctx.llm`) rather than direct local MCP/API calls. | `type: user, agent: "csv-parser"` |
 
-**Decision rule.** Call `list_capabilities` first. If a bundled agent's `constraints` cover the user's intent end-to-end, pick `atlas`. Otherwise default to `llm` with the right MCP tools wired. Reach for `user` only when you can name the deterministic decision the agent body makes — never as a fallback. If the user names a type explicitly (`use an llm agent`), respect it.
+**Decision rule.** Inspect what's available with the per-domain tools: `list_bundled_agents` for atlas-agent candidates (then `describe_bundled_agent({id})` to read `constraints`); `list_mcp_servers(scope=workspace)` for currently-wired MCP servers, or `scope=catalog` to see what could be enabled. Reach for `list_capabilities` only when the question genuinely spans both surfaces ("what could I use here?"). If a bundled agent's `constraints` cover the user's intent end-to-end, pick `atlas`. Otherwise default to `llm` with the right MCP tools wired. Reach for `user` only when you can name the deterministic decision the agent body makes — never as a fallback. If the user names a type explicitly (`use an llm agent`), respect it.
 
 **Bundled vs MCP-as-tool.** Bundled when the work is open-ended within a domain (you want a sub-agent that reasons). MCP server when the work is deterministic / single-call (you want a tool). A `web` bundled agent that browses, scrapes, and summarises beats `playwright-mcp` wired into a `type: llm` agent every time the work is open-ended; a single `slack_post_message` call is cleanest as an MCP tool.
 
 **7-step recipe.**
-1. `list_capabilities` once at session start to see bundled agents + enabled MCP servers + catalog.
-2. Wire capabilities by `kind`: `bundled` → straight into `upsert_agent`; `mcp_enabled` → already wired; `mcp_available` → `enable_mcp_server` first.
+1. Inventory: `list_bundled_agents` for atlas options, `list_mcp_servers(scope=all)` for wired + catalog MCP, `list_skills` for skills already attached to the workspace. Use `list_capabilities` only for the cross-domain "what can I do here?" rung when you don't yet know which surface you need.
+2. Wire by surface: bundled → straight into `upsert_agent` with `type: atlas`; MCP enabled → already wired; MCP available in catalog → `enable_mcp_server` first.
 3. For each provider needing credentials: `connect_service`.
 4. Decide direct vs draft: single atomic change → direct; multi-entity build → draft.
 5. If draft: `begin_draft` (pass `workspaceId` if targeting a newly created workspace). Then `upsert_agent` → `upsert_job` → `upsert_signal` in dependency order (agents before jobs, jobs before signals). **All draft/upsert tools accept an optional `workspaceId` parameter.** Use it after `create_workspace` so operations land on the new workspace, not the current session workspace.
@@ -37,7 +37,7 @@ Create and manage Friday workspaces. This skill is where LLM judgment lives: whe
 - Draft: upserts stage to `workspace.yml.draft`, permissive per-entity validation, cross-entity checks at `validate_workspace` + `publish_draft`. Best for new workspaces or pipelines.
 
 **Tool selection.**
-- Discovery: `list_capabilities` (bundled agents + MCP servers, single call).
+- Discovery: `list_bundled_agents` / `describe_bundled_agent` for atlas-agent inspection; `list_mcp_servers` / `describe_mcp_server` for MCP servers; `list_skills` / `describe_skill` for skills; `list_capabilities` only as a cross-domain router.
 - Workspace building: `create_workspace`, `begin_draft`, `upsert_agent`, `upsert_signal`, `upsert_job`, `upsert_memory_own`, `upsert_memory_mount`, `delete_agent` / `delete_signal` / `delete_job`, `validate_workspace`, `publish_draft`, `discard_draft`.
 - Skill management (persistent assignment, not ephemeral load): `assign_workspace_skill` attaches a global-catalog skill to a workspace so every agent and job sees it in `<available_skills>`. `unassign_workspace_skill` removes it. For one-time use in the current chat only, use `load_skill` instead.
 - Daemon CRUD (list, get, delete): `run_code` bash + curl to the daemon HTTP API.

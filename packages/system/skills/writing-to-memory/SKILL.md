@@ -56,7 +56,7 @@ Check `<memory_stores>` in your workspace context for what's available. Pick the
 | `preferences` | long_term | **durable** | User standing instructions, formatting rules, explicit preferences |
 | custom | any | follows `type:` default; override with `ttl:` | Domain-specific; declared via `upsert_memory_own` |
 
-`type: short_term` is genuinely short-term post-Phase-6: notes you write during a session don't survive past it unless you explicitly write the same content to a long_term store. `type: long_term` persists across sessions until explicitly removed via `delete_memory_entry`. Override per-store via `memory.own[].ttl: <duration>` in workspace.yml when you want a specific TTL different from the type default.
+`type: short_term` is genuinely short-term: notes you write during a session don't survive past it unless you explicitly write the same content to a long_term store. `type: long_term` persists across sessions until explicitly removed via `delete_memory_entry`. Override per-store via `memory.own[].ttl: <duration>` in workspace.yml when you want a specific TTL different from the type default.
 
 If the right store doesn't exist yet, call `upsert_memory_own` to declare it before writing. A store must exist in `workspace.yml` (or the active draft) before `save_memory_entry` will accept it.
 
