@@ -22,6 +22,12 @@ const ListCapabilitiesInput = z.object({
     .describe("Workspace to inspect. Defaults to the current session's workspace."),
 });
 
+const NextActionSchema = z.object({
+  verb: z.string(),
+  tool: z.string(),
+  args_hint: z.record(z.string(), z.unknown()).optional(),
+});
+
 const BundledCapabilitySchema = z.object({
   kind: z.literal("bundled"),
   id: z.string(),
@@ -29,6 +35,7 @@ const BundledCapabilitySchema = z.object({
   examples: z.array(z.string()),
   constraints: z.string().optional(),
   requiresConfig: z.array(z.string()),
+  next_actions: z.array(NextActionSchema),
 });
 
 const McpEnabledCapabilitySchema = z.object({
@@ -36,6 +43,7 @@ const McpEnabledCapabilitySchema = z.object({
   id: z.string(),
   description: z.string(),
   requiresConfig: z.array(z.string()),
+  next_actions: z.array(NextActionSchema),
 });
 
 const McpAvailableCapabilitySchema = z.object({
@@ -44,6 +52,7 @@ const McpAvailableCapabilitySchema = z.object({
   description: z.string(),
   provider: z.string(),
   requiresConfig: z.array(z.string()),
+  next_actions: z.array(NextActionSchema),
 });
 
 const CapabilitySchema = z.discriminatedUnion("kind", [
@@ -122,6 +131,10 @@ function buildBundledCapabilities(): Capability[] {
       description: agent.metadata.description,
       examples: agent.metadata.expertise.examples,
       requiresConfig,
+      next_actions: [
+        { verb: "inspect", tool: "describe_bundled_agent", args_hint: { id: agent.metadata.id } },
+        { verb: "invoke", tool: `agent_${agent.metadata.id}` },
+      ],
     };
 
     return BundledCapabilitySchema.parse(
@@ -148,6 +161,15 @@ function buildMCPCapabilities(
         id: c.metadata.id,
         description,
         requiresConfig,
+        next_actions: [
+          { verb: "list-tools", tool: "list_mcp_tools", args_hint: { serverId: c.metadata.id } },
+          {
+            verb: "inspect",
+            tool: "describe_mcp_server",
+            args_hint: { id: c.metadata.id, scope: "workspace" },
+          },
+          { verb: "disable", tool: "disable_mcp_server", args_hint: { serverId: c.metadata.id } },
+        ],
       });
     }
 
@@ -157,6 +179,14 @@ function buildMCPCapabilities(
       description,
       provider: mcpProvider(c),
       requiresConfig,
+      next_actions: [
+        {
+          verb: "inspect",
+          tool: "describe_mcp_server",
+          args_hint: { id: c.metadata.id, scope: "catalog" },
+        },
+        { verb: "enable", tool: "enable_mcp_server", args_hint: { serverId: c.metadata.id } },
+      ],
     });
   });
 }
@@ -190,12 +220,14 @@ export function createListCapabilitiesTool(
   return {
     list_capabilities: tool({
       description:
-        "List every capability available to this workspace: bundled atlas agents (web, " +
-        "slack, gh, etc.), enabled MCP servers, and MCP servers in the platform catalog. " +
-        "Output is bundled-first, alphabetical within each kind. Scan top-down and pick the " +
-        "first match — bundled agents are zero-config and should be your default when the " +
-        "domain fits. Each entry carries `requiresConfig` (env keys / credentials still needed " +
-        "to function); bundled entries also carry `examples` and `constraints`.",
+        "Cross-domain router — use when you don't yet know which domain to look in, or when " +
+        "the answer might span bundled agents + workspace MCP + catalog MCP. Each entry " +
+        "carries `next_actions` citing the specific tool to call next (describe_bundled_agent, " +
+        "describe_mcp_server, list_mcp_tools, enable_mcp_server, agent_<id>, etc.) so you " +
+        "can funnel from the router into the right domain-specific tool. " +
+        'Inventory questions ("what skills do I have?", "list my jobs", "what agents are ' +
+        'wired into this workspace?") go to the per-domain list_X tools instead — those ' +
+        "return richer per-domain shapes and avoid re-discovering MCP servers each turn.",
       inputSchema: ListCapabilitiesInput,
       execute: async ({
         workspaceId: overrideId,
