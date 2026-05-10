@@ -6153,7 +6153,6 @@
             "npm:@jsr/db__sqlite@0.12",
             "npm:@types/markdown-it@^14.1.2",
             "npm:ai@^6.0.177",
-            "npm:chat@4.28.1",
             "npm:jira.js@^5.3.1",
             "npm:markdown-it@^14.1.1",
             "npm:parallel-web@0.5.0",

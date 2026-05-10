@@ -18,7 +18,6 @@
     "@atlas/llm": "workspace:*",
     "@atlas/logger": "workspace:*",
     "@chat-adapter/slack": "4.28.1",
-    "chat": "4.28.1",
     "@db/sqlite": "npm:@jsr/db__sqlite@^0.12.0",
     "@coderabbitai/bitbucket": "^1.1.4",
     "@hubspot/api-client": "^13.4.0",
