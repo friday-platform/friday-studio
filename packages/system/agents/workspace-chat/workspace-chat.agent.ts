@@ -283,16 +283,13 @@ export function formatWorkspaceSection(
     section += `\n<agents>${details.agents.join(", ")}</agents>`;
   }
 
-  if (details.jobs.length > 0) {
-    const jobEntries = details.jobs.map((j) => {
-      const desc = j.description ? ` - ${j.description}` : "";
-      return `${j.name}${desc}`;
-    });
-    section += `\n<jobs>\n${jobEntries.join("\n")}\n</jobs>`;
-  }
+  // Jobs are already bound as callable tools by createJobTools — each job's
+  // name + description ride on the tool schema and are visible to the model
+  // through the AI SDK's tools array. The earlier per-job description block
+  // here was duplicate signal that mutated alongside `upsert_job`. Drop it.
 
   if (details.signals.length > 0) {
-    const signalConfigs = (config?.workspace as { signals?: Record<string, unknown> })?.signals;
+    const signalConfigs = config?.signals;
     const signalEntries = details.signals.map((s) => {
       const trigger = signalConfigs ? describeSignalTrigger(signalConfigs[s.name]) : "";
       return trigger ? `${s.name} (${trigger})` : s.name;
