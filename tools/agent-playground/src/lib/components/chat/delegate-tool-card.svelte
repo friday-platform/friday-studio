@@ -48,15 +48,15 @@
         return { icon: Icons.RectangleStack, label: "Delegating", color: "var(--color-accent)", category: "agent" };
       case "load_skill":
         return { icon: Icons.Bolt, label: "Loading skill", color: "var(--yellow-primary)", category: "memory" };
-      case "memory_save":
+      case "save_memory_entry":
         return { icon: Icons.Bookmark, label: "Saving memory", color: "var(--color-accent)", category: "memory" };
       case "connect_service":
         return { icon: Icons.Link, label: "Connecting", color: "var(--text-faded)", category: "connect" };
       case "display_artifact":
         return { icon: Icons.DocumentText, label: "Displaying", color: "var(--color-accent)", category: "file" };
-      case "artifacts_get":
+      case "get_artifact":
         return { icon: Icons.DocumentText, label: "Reading artifact", color: "var(--color-accent)", category: "file" };
-      case "artifacts_create":
+      case "create_artifact":
         return { icon: Icons.DocumentArrowUp, label: "Saving artifact", color: "var(--color-accent)", category: "file" };
       case "parse_artifact":
         return { icon: Icons.DocumentText, label: "Parsing", color: "var(--color-accent)", category: "file" };

@@ -1034,7 +1034,7 @@
                               {/if}
                             </dl>
 
-                          {:else if name === "memory_save"}
+                          {:else if name === "save_memory_entry"}
                             {@const text = typeof inp.text === "string" ? inp.text : ""}
                             {@const memType = typeof inp.type === "string" ? inp.type : "general"}
                             <div class="call-headline">{text.length > 60 ? `${text.slice(0, 60)}…` : text}</div>
@@ -1063,7 +1063,7 @@
                               {/if}
                             </dl>
 
-                          {:else if name === "artifacts_get"}
+                          {:else if name === "get_artifact"}
                             {@const artifactId = typeof inp.artifactId === "string" ? inp.artifactId : ""}
                             {@const revision = typeof inp.revision === "number" ? inp.revision : null}
                             <div class="call-headline mono-sm">{artifactId}{revision !== null ? ` @r${revision}` : ""}</div>

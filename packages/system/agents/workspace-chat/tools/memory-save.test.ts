@@ -1,11 +1,10 @@
 import type { Logger } from "@atlas/logger";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockFetch = vi.hoisted(() =>
   vi.fn<(input: string | URL | Request, init?: RequestInit) => Promise<Response>>(),
 );
 
-vi.stubGlobal("fetch", mockFetch);
 vi.mock("@atlas/oapi-client", () => ({ getAtlasDaemonUrl: () => "http://localhost:3000" }));
 
 import { createMemorySaveTool } from "./memory-save.ts";
@@ -22,6 +21,14 @@ const OPTS = { toolCallId: "tc-1", messages: [], abortSignal: new AbortControlle
 
 beforeEach(() => {
   mockFetch.mockReset();
+  // stub-per-test + unstub-per-test prevents this fetch mock from leaking
+  // into sibling test files when vitest schedules multiple suites in the
+  // same worker (see agent-registry-tools.test.ts for the same pattern).
+  vi.stubGlobal("fetch", mockFetch);
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 describe("save_memory_entry", () => {

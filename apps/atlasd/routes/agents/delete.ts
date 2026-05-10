@@ -13,7 +13,7 @@
  */
 
 import { readdir, rm, stat } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve, sep } from "node:path";
 import { stringifyError } from "@atlas/utils";
 import { getFridayHome } from "@atlas/utils/paths.server";
 import { z } from "zod";
@@ -83,6 +83,26 @@ deleteAgentRoute.delete("/:id", async (c) => {
           deleted: [] as string[],
         },
         404,
+      );
+    }
+  }
+
+  // Defense-in-depth: every target must resolve under agentsDir. The id /
+  // version came from the URL path; if a caller smuggles `..` segments
+  // past Hono's param parser, refuse to rm rather than escape the dir.
+  const agentsDirResolved = resolve(agentsDir);
+  for (const target of targets) {
+    const targetResolved = resolve(target);
+    if (
+      targetResolved !== agentsDirResolved &&
+      !targetResolved.startsWith(agentsDirResolved + sep)
+    ) {
+      return c.json(
+        {
+          ok: false as const,
+          error: `Refusing to delete ${target}: resolves outside ${agentsDir}.`,
+        },
+        400,
       );
     }
   }

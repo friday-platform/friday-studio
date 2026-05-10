@@ -94,7 +94,12 @@ function makeApp(subPayload: unknown = null) {
   app.use("*", async (c, next) => {
     const sub = subPayload !== null ? makeMockSub(subPayload) : null;
     c.set("app", {
-      daemon: { getNatsConnection: () => ({ subscribe: mockSubscribe.mockReturnValue(sub) }) },
+      daemon: {
+        getNatsConnection: () => ({
+          subscribe: mockSubscribe.mockReturnValue(sub),
+          flush: vi.fn().mockResolvedValue(undefined),
+        }),
+      },
       getAgentRegistry: () => ({ reload: vi.fn() }),
     } as never);
     await next();

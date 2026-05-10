@@ -2,7 +2,7 @@
  * Memory entry retrieval tools — list / describe over the per-store
  * narrative entries in this workspace.
  *
- * Replaces the older `list_memory_entries` tool. The shape adds substring query,
+ * Supersedes the prior `memory_read` tool. The shape adds substring query,
  * since/until time filters, exact-match metadata filters, pagination, and
  * a configurable truncation cap so big stores stay tractable. The
  * companion `describe_memory_entry` returns the full record without the
@@ -66,6 +66,7 @@ const ListMemoryEntriesInput = z.object({
   truncate: z
     .number()
     .int()
+    .refine((n) => n >= 1 || n === -1, { message: "truncate must be >= 1, or -1 to disable" })
     .default(500)
     .optional()
     .describe(
@@ -175,8 +176,8 @@ export function createListMemoryEntriesTool(
   return {
     list_memory_entries: tool({
       description:
-        "Read entries from a named memory store in the current chat's workspace. Replaces the " +
-        "older `list_memory_entries` tool. Filters: substring `query`, ISO `since` / `until` time " +
+        "Read entries from a named memory store in the current chat's workspace. " +
+        "Filters: substring `query`, ISO `since` / `until` time " +
         "windows, exact-match `metadata`. Pagination: `limit` + `cursor` (opaque token). " +
         "Output: `truncate` caps entries' text at 500 chars by default — entries flag " +
         "`truncated: true` when cut. Use describe_memory_entry to pull a single entry's " +
@@ -193,6 +194,22 @@ export function createListMemoryEntriesTool(
         order,
         truncate,
       }) => {
+        // Validate ISO time filters upfront. `new Date("garbage").getTime()`
+        // is NaN, and a comparison against NaN silently filters every entry
+        // out — the worst LLM failure mode (empty result with no signal).
+        if (since !== undefined && !Number.isFinite(new Date(since).getTime())) {
+          return {
+            ok: false as const,
+            error: `list_memory_entries: invalid \`since\` (expected ISO 8601, got ${JSON.stringify(since)})`,
+          };
+        }
+        if (until !== undefined && !Number.isFinite(new Date(until).getTime())) {
+          return {
+            ok: false as const,
+            error: `list_memory_entries: invalid \`until\` (expected ISO 8601, got ${JSON.stringify(until)})`,
+          };
+        }
+
         const url =
           `${getAtlasDaemonUrl()}/api/memory/${encodeURIComponent(defaultWorkspaceId)}/narrative/` +
           `${encodeURIComponent(memoryName)}`;

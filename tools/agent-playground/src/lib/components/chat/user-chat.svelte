@@ -1216,7 +1216,8 @@
   /**
    * Called when the user successfully connects a credential via an inline
    * connect_service card. Sends a lightweight user message so the agent
-   * retries on its next turn with the updated <integrations> state.
+   * retries on its next turn — the agent re-fetches credential status via
+   * `list_integrations` / `describe_integration` on demand.
    */
   function handleCredentialConnected(provider: string): void {
     if (!chat) return;

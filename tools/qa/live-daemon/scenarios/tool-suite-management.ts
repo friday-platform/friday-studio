@@ -1,25 +1,29 @@
 #!/usr/bin/env -S deno run --allow-all --unstable-worker-options --unstable-kv --unstable-raw-imports --env-file
 
 /**
- * Tool-suite management chat-driven evals.
+ * Workspace-chat retrieval-tool evals.
  *
- * Exercises the retrieval tools added by `plans/tool-suite-management.md`
- * by driving the workspace-chat handler through a real LLM and asserting
- * the chat picks the new per-domain tools instead of falling back to
+ * Drives the workspace-chat handler through a real LLM and asserts the
+ * chat picks the per-domain retrieval tools instead of falling back to
  * inline-prompt reading or run_code curl.
  *
- * Scenarios (one per phase that has behavior-changing surface):
- *   - skills-retrieval-via-tool          (Phase 1)
- *   - agent-registry-via-tool            (Phase 2)
- *   - integrations-retrieval-via-tool    (Phase 3)
- *   - domain-list-tool-pick              (Phase 4)
- *   - foreground-via-describe            (Phase 5)
- *   - router-vs-domain-list              (Phase 7)
+ * Scenarios:
+ *   - skills-retrieval-via-tool       — chat picks list_skills /
+ *     search_skills / describe_skill / load_skill instead of guessing
+ *     from the inline names index.
+ *   - agent-registry-via-tool         — chat calls register_agent
+ *     instead of run_code+curl.
+ *   - integrations-retrieval-via-tool — chat fetches Link credential
+ *     status via list_integrations / describe_integration on demand.
+ *   - domain-list-tool-pick           — inventory questions route to
+ *     per-domain list_X tools, not list_capabilities.
+ *   - foreground-via-describe         — pinned foreground workspaces
+ *     surface via describe_workspace(id), not inline injection.
+ *   - router-vs-domain-list           — cross-domain "where do I
+ *     look?" questions reach for list_capabilities (router role).
  *
  * Each scenario spins up a workspace from the shared fixture, sends a
- * chat message, and inspects the tool-call trace. Phase 6 is a
- * mechanical rename and reuses scenarios 1, 4, 5 as its regression
- * battery.
+ * chat message, and inspects the SSE tool-call trace.
  */
 
 import { ensureDir } from "jsr:@std/fs@1.0.13/ensure-dir";
