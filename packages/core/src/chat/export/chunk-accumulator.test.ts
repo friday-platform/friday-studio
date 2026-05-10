@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
 import type { AtlasUIMessageChunk } from "@atlas/agent-sdk";
+import { describe, expect, it } from "vitest";
 import { accumulateChunks } from "./chunk-accumulator.ts";
 
 // ---------------------------------------------------------------------------
@@ -31,11 +31,7 @@ function toolOutputAvailable(toolCallId: string, output: unknown): AtlasUIMessag
 }
 
 function toolOutputError(toolCallId: string, errorText: string): AtlasUIMessageChunk {
-  return {
-    type: "tool-output-error",
-    toolCallId,
-    errorText,
-  } as unknown as AtlasUIMessageChunk;
+  return { type: "tool-output-error", toolCallId, errorText } as unknown as AtlasUIMessageChunk;
 }
 
 // ---------------------------------------------------------------------------
@@ -226,11 +222,7 @@ describe("accumulateChunks", () => {
       const chunks = [
         {
           type: "data-session-start",
-          data: {
-            sessionId: "sess-1",
-            workspaceId: "ws-1",
-            jobName: "plan-trip",
-          },
+          data: { sessionId: "sess-1", workspaceId: "ws-1", jobName: "plan-trip" },
         } as unknown as AtlasUIMessageChunk,
         {
           type: "data-fsm-action-execution",
@@ -260,9 +252,7 @@ describe("accumulateChunks", () => {
 
     it("does not retroactively stamp tools that appeared before the session context", () => {
       const chunks = [
-        toolInputAvailable("early", "request_human_input", {
-          question: "Too soon?",
-        }),
+        toolInputAvailable("early", "request_human_input", { question: "Too soon?" }),
         {
           type: "data-fsm-action-execution",
           data: { sessionId: "sess-1", actionId: "a1" },

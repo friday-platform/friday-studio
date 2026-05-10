@@ -3,7 +3,7 @@
  * into a flat {@link Map} of {@link ToolCallDisplay} entries.
  *
  * This is the extracted, testable core of the chunk-reducer previously
- * embedded in {@link extractToolCalls}.  It knows nothing about message
+ * embedded in {@link extractToolCalls}. It knows nothing about message
  * structure, tree building, or reconciliation — it only handles state
  * transitions for individual tool calls.
  *
@@ -17,7 +17,7 @@ function stringOr<T>(value: unknown, fallback: T): string | T {
 }
 
 /** Accumulator entry shape with optional parent tagging. */
-type AccumulatedEntry = ToolCallDisplay & { parentToolCallId?: string };
+export type AccumulatedEntry = ToolCallDisplay & { parentToolCallId?: string };
 
 type ChunkContext = {
   workspaceId?: string;
@@ -34,7 +34,7 @@ function readStringField(source: Record<string, unknown>, key: string): string |
 /**
  * Apply a single chunk to the accumulator map.
  *
- * Unknown chunk types are silently ignored.  `tool-input-available`
+ * Unknown chunk types are silently ignored. `tool-input-available`
  * creates a new entry if no prior `tool-input-start` was seen.
  * `tool-output-available` and `tool-output-error` are no-ops when the
  * entry is missing.
@@ -49,15 +49,10 @@ function applyChunk(
   const type = chunk.type;
   if (typeof type !== "string") return;
   const toolCallId =
-    "toolCallId" in chunk && typeof chunk.toolCallId === "string"
-      ? chunk.toolCallId
-      : undefined;
+    "toolCallId" in chunk && typeof chunk.toolCallId === "string" ? chunk.toolCallId : undefined;
   if (!toolCallId) return;
 
-  const stamp = {
-    ...(parentToolCallId ? { parentToolCallId } : {}),
-    ...context,
-  };
+  const stamp = { ...(parentToolCallId ? { parentToolCallId } : {}), ...context };
 
   switch (type) {
     case "tool-input-start": {

@@ -2,12 +2,19 @@
   import { browser } from "$app/environment";
   import { stripMimeParams } from "@atlas/core/artifacts/file-upload";
   import { z } from "zod";
+  import { getExportContext } from "./export-context.ts";
 
   interface Props {
     artifactId: string;
   }
 
   const { artifactId }: Props = $props();
+
+  // Pulled at script init per Svelte's getContext rule. When defined, the
+  // card renders synchronously from prefetched data and the fetch +
+  // ResizeObserver effects are skipped — the live UI path is only taken
+  // when this is undefined.
+  const exportCtx = getExportContext();
 
   const ArtifactResponseSchema = z.object({
     artifact: z.object({
@@ -24,21 +31,40 @@
     contents: z.string().optional(),
   });
 
-  let resolvedTitle = $state("Artifact");
-  let resolvedSummary = $state<string | undefined>(undefined);
-  let mimeType = $state<string | undefined>(undefined);
+  // Initial state branches on `exportCtx`. With context, every field is
+  // populated synchronously from the prefetch map and `loading` is false
+  // out of the gate so the card never paints a spinner. The trust
+  // contract from `export-context.ts` says: if a referenced artifactId is
+  // missing from the map, surface a clear error rather than spin.
+  // `artifactId` doesn't change after mount (the parent re-keys to switch
+  // artifacts), so capturing its initial value here is intentional.
+  // svelte-ignore state_referenced_locally
+  const prefetched = exportCtx?.artifacts.get(artifactId);
+  const exportMissing = exportCtx !== undefined && prefetched === undefined;
+
+  let resolvedTitle = $state(prefetched?.title || "Artifact");
+  let resolvedSummary = $state<string | undefined>(prefetched?.summary);
+  let mimeType = $state<string | undefined>(prefetched?.mimeType);
   let contents = $state<string | undefined>(undefined);
-  let originalName = $state<string | undefined>(undefined);
-  let sizeBytes = $state<number | undefined>(undefined);
-  let loading = $state(true);
-  let fetchError = $state<string | null>(null);
+  let originalName = $state<string | undefined>(prefetched?.originalName);
+  let sizeBytes = $state<number | undefined>(prefetched?.size);
+  let loading = $state(exportCtx === undefined);
+  // svelte-ignore state_referenced_locally
+  let fetchError = $state<string | null>(
+    exportMissing ? `Artifact ${artifactId} missing from export context` : null,
+  );
 
   // Iframe scale — computed from container width vs assumed content width.
+  // In export mode the ResizeObserver path is skipped and we render at 1:1
+  // so iframes fill their container without runtime measurement.
   const IFRAME_CONTENT_WIDTH = 1200;
-  let iframeScale = $state(0.5);
+  let iframeScale = $state(exportCtx === undefined ? 0.5 : 1);
   let scalerEl = $state<HTMLDivElement | undefined>(undefined);
 
   $effect(() => {
+    // Skip in export mode — no JS runtime in the static HTML, and we
+    // already locked iframeScale to 1 so the iframe renders 1:1.
+    if (exportCtx !== undefined) return;
     if (!scalerEl) return;
     const observer = new ResizeObserver(([entry]) => {
       const w = entry.contentRect.width;
@@ -49,6 +75,10 @@
   });
 
   $effect(() => {
+    // In export mode, the prefetch map already populated state — no fetch
+    // is fired (and the daemon API isn't reachable from the static HTML
+    // anyway).
+    if (exportCtx !== undefined) return;
     if (!browser || !artifactId) return;
 
     let cancelled = false;
@@ -93,10 +123,15 @@
     };
   });
 
-  // Bytes come straight from the daemon's /:id/content endpoint, which
-  // streams the Object Store blob inline (image) or as attachment.
+  // Live UI hits the daemon's /:id/content endpoint; export mode rewrites
+  // the URL to a relative `assets/artifacts/<id>/<file>` path inside the
+  // zip via the context-supplied resolver.
   const serveUrl = $derived(
-    artifactId ? `/api/daemon/api/artifacts/${encodeURIComponent(artifactId)}/content` : null,
+    artifactId
+      ? exportCtx !== undefined
+        ? exportCtx.resolveUrl(artifactId)
+        : `/api/daemon/api/artifacts/${encodeURIComponent(artifactId)}/content`
+      : null,
   );
 
   // Storage adapters can round-trip text mimes with a charset parameter

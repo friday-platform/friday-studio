@@ -38,6 +38,19 @@ vi.mock("@atlas/agent-sdk", () => ({
   normalizeToUIMessages: (message: unknown) => [message],
 }));
 
+// Shrink the byte cap so the cap branch is testable without allocating
+// tens of megabytes per assertion. Hoisted so the `vi.mock` factory below
+// can reference it. 1 MiB sits well above the ~300 KiB serialised size of
+// the 5000-message boundary fixtures (so those tests still 200) but small
+// enough that one explicit oversize message can blow past it cheaply.
+const { TEST_MAX_FULL_EXPORT_BYTES } = vi.hoisted(() => ({
+  TEST_MAX_FULL_EXPORT_BYTES: 1024 * 1024,
+}));
+vi.mock("./chat-limits.ts", () => ({
+  MAX_FULL_EXPORT_MESSAGES: 5000,
+  MAX_FULL_EXPORT_BYTES: TEST_MAX_FULL_EXPORT_BYTES,
+}));
+
 // Import the routes after mocks are set up
 import workspaceChatRoutes from "./chat.ts";
 
@@ -237,6 +250,177 @@ describe("GET /:workspaceId/chat/:chatId — get chat", () => {
     expect(res.status).toBe(404);
     const body = (await res.json()) as JsonBody;
     expect(body.error).toBe("Chat not found");
+  });
+
+  // ?full controls the route-layer trim. Default behavior keeps the
+  // legacy last-100 slice for live UI rehydrate; ?full=true is the
+  // export preview path that needs every message.
+  describe("?full query parameter", () => {
+    function makeMessages(count: number): Array<{ id: string; role: string; content: string }> {
+      return Array.from({ length: count }, (_, i) => ({
+        id: `msg-${i}`,
+        role: i % 2 === 0 ? "user" : "assistant",
+        content: `message ${i}`,
+      }));
+    }
+
+    function makeChatData(messageCount: number): Record<string, unknown> {
+      return {
+        id: "chat-1",
+        workspaceId: "ws-1",
+        userId: "user-123",
+        title: "Test Chat",
+        messages: makeMessages(messageCount),
+        systemPromptContext: null,
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+      };
+    }
+
+    test("absent param trims to last 100 messages", async () => {
+      mockChatStorage.getChat.mockResolvedValue({ ok: true, data: makeChatData(150) });
+      const { app } = createTestApp();
+
+      const res = await app.request("/ws-1/chat/chat-1");
+
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { messages: Array<{ id: string }> };
+      expect(body.messages).toHaveLength(100);
+      // Slice keeps the tail — first returned message is index 50.
+      expect(body.messages[0]?.id).toBe("msg-50");
+      expect(body.messages.at(-1)?.id).toBe("msg-149");
+    });
+
+    test("?full=true returns every message without slicing", async () => {
+      mockChatStorage.getChat.mockResolvedValue({ ok: true, data: makeChatData(150) });
+      const { app } = createTestApp();
+
+      const res = await app.request("/ws-1/chat/chat-1?full=true");
+
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { messages: Array<{ id: string }> };
+      expect(body.messages).toHaveLength(150);
+      expect(body.messages[0]?.id).toBe("msg-0");
+      expect(body.messages.at(-1)?.id).toBe("msg-149");
+    });
+
+    test("?full=false trims to last 100 (only literal 'true' opts in)", async () => {
+      mockChatStorage.getChat.mockResolvedValue({ ok: true, data: makeChatData(150) });
+      const { app } = createTestApp();
+
+      const res = await app.request("/ws-1/chat/chat-1?full=false");
+
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { messages: Array<{ id: string }> };
+      expect(body.messages).toHaveLength(100);
+    });
+
+    test.each([
+      "1",
+      "yes",
+      "TRUE",
+      "",
+    ])("?full=%s passes through cleanly and falls back to last-100 trim", async (value) => {
+      mockChatStorage.getChat.mockResolvedValue({ ok: true, data: makeChatData(150) });
+      const { app } = createTestApp();
+
+      const res = await app.request(`/ws-1/chat/chat-1?full=${value}`);
+
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { messages: Array<{ id: string }> };
+      expect(body.messages).toHaveLength(100);
+    });
+
+    // `validateAtlasUIMessages` walks every message and sanitises HTML, so
+    // an unbounded array on `?full=true` lets a single pathological chat
+    // pin the daemon. The cap rejects with 413 *before* we hand the array
+    // to the validator. The trimmed view is bounded at 100 so it isn't
+    // affected.
+    test("?full=true with messages.length > 5000 returns 413 without invoking validator", async () => {
+      mockChatStorage.getChat.mockResolvedValue({ ok: true, data: makeChatData(5001) });
+      const { app } = createTestApp();
+
+      const res = await app.request("/ws-1/chat/chat-1?full=true");
+
+      expect(res.status).toBe(413);
+      const body = (await res.json()) as JsonBody;
+      expect(body.error).toBe("Chat too large to export");
+      expect(body.messageCount).toBe(5001);
+      expect(body.limit).toBe(5000);
+      expect(mockValidateMessages).not.toHaveBeenCalled();
+    });
+
+    test("?full=true with messages.length === 5000 succeeds at the boundary", async () => {
+      mockChatStorage.getChat.mockResolvedValue({ ok: true, data: makeChatData(5000) });
+      const { app } = createTestApp();
+
+      const res = await app.request("/ws-1/chat/chat-1?full=true");
+
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { messages: Array<{ id: string }> };
+      expect(body.messages).toHaveLength(5000);
+      expect(mockValidateMessages).toHaveBeenCalledOnce();
+    });
+
+    // The message-count cap bounds validator walk time but not per-message
+    // size. Without a byte cap, a 4-message chat with a 200 MB tool output
+    // would be sanitised, JSON-stringified, and shipped — pinning RAM on
+    // both the daemon and the orchestrator. The byte cap rejects the
+    // serialised payload before it leaves the daemon.
+    test("?full=true returns 413 when serialised payload exceeds MAX_FULL_EXPORT_BYTES", async () => {
+      // Within the 5000-message ceiling, but one message carries a string
+      // large enough that JSON-stringifying the whole response exceeds
+      // the test-only 1 MiB cap.
+      const fat = "x".repeat(TEST_MAX_FULL_EXPORT_BYTES + 1024);
+      mockChatStorage.getChat.mockResolvedValue({
+        ok: true,
+        data: {
+          id: "chat-1",
+          workspaceId: "ws-1",
+          userId: "user-123",
+          title: "Test Chat",
+          messages: [{ id: "msg-0", role: "user", content: fat }],
+          systemPromptContext: null,
+          createdAt: "2026-01-01T00:00:00Z",
+          updatedAt: "2026-01-01T00:00:00Z",
+        },
+      });
+      const { app } = createTestApp();
+
+      const res = await app.request("/ws-1/chat/chat-1?full=true");
+
+      expect(res.status).toBe(413);
+      const body = (await res.json()) as JsonBody;
+      expect(body.error).toBe("Chat too large to export");
+      expect(typeof body.payloadBytes).toBe("number");
+      expect(body.payloadBytes).toBeGreaterThan(TEST_MAX_FULL_EXPORT_BYTES);
+      expect(body.limit).toBe(TEST_MAX_FULL_EXPORT_BYTES);
+    });
+
+    test("default (live UI) path is unaffected by the byte cap", async () => {
+      // The trimmed view is bounded at 100 messages and uses `c.json` (not
+      // the byte-capped path), so a chat that would be 413 under
+      // `?full=true` still serves a normal 200 here.
+      const fat = "y".repeat(TEST_MAX_FULL_EXPORT_BYTES + 1024);
+      mockChatStorage.getChat.mockResolvedValue({
+        ok: true,
+        data: {
+          id: "chat-1",
+          workspaceId: "ws-1",
+          userId: "user-123",
+          title: "Test Chat",
+          messages: [{ id: "msg-0", role: "user", content: fat }],
+          systemPromptContext: null,
+          createdAt: "2026-01-01T00:00:00Z",
+          updatedAt: "2026-01-01T00:00:00Z",
+        },
+      });
+      const { app } = createTestApp();
+
+      const res = await app.request("/ws-1/chat/chat-1");
+
+      expect(res.status).toBe(200);
+    });
   });
 });
 

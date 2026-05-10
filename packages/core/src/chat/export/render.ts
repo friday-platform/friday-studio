@@ -1,37 +1,22 @@
 /**
- * Reducer that flattens an {@link AtlasUIMessage}'s `parts` array into a
- * tree of {@link ToolCallDisplay} entries for the chat UI.
+ * Pure render helpers shared between the live chat UI and the chat export
+ * route. Lifted out of `tools/agent-playground/.../user-chat.svelte` and
+ * `chat-message-list.svelte` so the export route in `apps/atlasd` can call
+ * them server-side and produce HTML that mirrors what the user saw.
  *
- * Two passes:
- *   1. First pass collects top-level tool calls from static `tool-<name>`
- *      parts and the `dynamic-tool` fallback, matching what the AI SDK's
- *      native stream processor emits into `msg.parts`.
- *   2. Second pass processes `data-delegate-chunk` and `data-nested-chunk`
- *      envelopes.  Delegate envelopes are grouped by `delegateToolCallId`,
- *      unwrapped recursively (including any double-wrapped `nested-chunk`
- *      inside), and fed through {@link accumulateChunks} →
- *      {@link buildToolCallTree}.  Top-level `data-nested-chunk` envelopes
- *      are accumulated directly with their `parentToolCallId`.
- *
- * After grouping, a single reconciliation rule finalises the tree:
- *   - **`delegate-end` blanket sentinel:** if a delegate's synthetic
- *     `{ type: "delegate-end" }` chunk is present, every child under that
- *     delegate still in a non-terminal state is promoted to `output-error`
- *     with `errorText: "interrupted"`.  Terminal children are never
- *     clobbered.
- *
- * `data-delegate-ledger` parts are intentionally filtered out — they exist
- * for a future reflection layer, not the UI tree.  `durationMap` is scoped
- * by `delegateToolCallId` so multiple delegates with identically-named
- * children do not collide.
+ * Helpers in this module never mutate their input message and never fall
+ * back to `Date.now()` — empty timestamps render as empty strings, leaving
+ * any "what time was that?" question to upstream callers.
  *
  * @module
  */
 
-import type { AtlasUIMessage } from "@atlas/agent-sdk";
+import type { AtlasUIMessage, MessageMetadata } from "@atlas/agent-sdk";
 import { accumulateChunks } from "./chunk-accumulator.ts";
 import { buildToolCallTree } from "./tree-builder.ts";
-import type { ToolCallDisplay } from "./types.ts";
+import type { ImageDisplay, Segment, ToolCallDisplay } from "./types.ts";
+
+export type { ImageDisplay, Segment, ToolCallDisplay };
 
 const TOOL_CALL_STATES = [
   "input-streaming",
@@ -53,6 +38,16 @@ function toToolCallState(value: unknown): ToolCallDisplay["state"] {
 
 function stringOr<T>(value: unknown, fallback: T): string | T {
   return typeof value === "string" ? value : fallback;
+}
+
+/**
+ * Type predicate that widens an unknown value to a plain
+ * `Record<string, unknown>` for structural field probing. Lets the helpers
+ * walk `msg.parts[]` defensively without the AI SDK discriminated union
+ * narrowing every adjacent check into dead code.
+ */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
 /**
@@ -123,9 +118,10 @@ function interruptSubtree(child: ToolCallDisplay): void {
  */
 function readNestedParentId(data: unknown): string | undefined {
   if (typeof data !== "object" || data === null) return undefined;
-  const id = "parentToolCallId" in data && typeof data.parentToolCallId === "string"
-    ? data.parentToolCallId
-    : undefined;
+  const id =
+    "parentToolCallId" in data && typeof data.parentToolCallId === "string"
+      ? data.parentToolCallId
+      : undefined;
   return id;
 }
 
@@ -134,8 +130,21 @@ function readNestedParentId(data: unknown): string | undefined {
  * reconstruct any nested delegate children, and reconcile their final
  * states using the `delegate-end` blanket rule.
  *
- * See module doc for pass semantics. `data-delegate-ledger` parts are
- * silently dropped — they surface via a separate reflection-layer path.
+ * Two passes:
+ *   1. First pass collects top-level tool calls from static `tool-<name>`
+ *      parts and the `dynamic-tool` fallback, matching what the AI SDK's
+ *      native stream processor emits into `msg.parts`.
+ *   2. Second pass processes `data-delegate-chunk` and `data-nested-chunk`
+ *      envelopes. Delegate envelopes are grouped by `delegateToolCallId`,
+ *      unwrapped recursively (including any double-wrapped `nested-chunk`
+ *      inside), and fed through {@link accumulateChunks} →
+ *      {@link buildToolCallTree}. Top-level `data-nested-chunk` envelopes
+ *      are accumulated directly with their `parentToolCallId`.
+ *
+ * `data-delegate-ledger` parts are intentionally filtered out — they exist
+ * for a future reflection layer, not the UI tree. `durationMap` is scoped
+ * by `delegateToolCallId` so multiple delegates with identically-named
+ * children do not collide.
  */
 export function extractToolCalls(msg: AtlasUIMessage): ToolCallDisplay[] {
   if (!Array.isArray(msg.parts)) return [];
@@ -314,7 +323,10 @@ export function extractToolCalls(msg: AtlasUIMessage): ToolCallDisplay[] {
   }
 
   // Pass 3b: Accumulate per-delegate / per-parent groups.
-  const delegateFlats = new Map<string, Map<string, ToolCallDisplay & { parentToolCallId?: string }>>();
+  const delegateFlats = new Map<
+    string,
+    Map<string, ToolCallDisplay & { parentToolCallId?: string }>
+  >();
   for (const [delegateToolCallId, parentMap] of delegateChunksByParent) {
     const flat = new Map<string, ToolCallDisplay & { parentToolCallId?: string }>();
     for (const [parentToolCallId, chunks] of parentMap) {
@@ -376,7 +388,9 @@ export function extractToolCalls(msg: AtlasUIMessage): ToolCallDisplay[] {
       const childId =
         "toolCallId" in entry && typeof entry.toolCallId === "string" ? entry.toolCallId : "";
       const dur =
-        "durationMs" in entry && typeof entry.durationMs === "number" ? entry.durationMs : undefined;
+        "durationMs" in entry && typeof entry.durationMs === "number"
+          ? entry.durationMs
+          : undefined;
       if (dId && childId && dur !== undefined && dur > 0) {
         let innerMap = durationMap.get(dId);
         if (!innerMap) {
@@ -416,7 +430,7 @@ export function extractToolCalls(msg: AtlasUIMessage): ToolCallDisplay[] {
 
 /**
  * Flatten a tree of {@link ToolCallDisplay} entries into a lookup map keyed
- * by `toolCallId`.  Useful for chronological renderers that need to find
+ * by `toolCallId`. Useful for chronological renderers that need to find
  * the enriched display (children, duration, reasoning, etc.) for a given
  * tool-call part while walking `msg.parts[]` in stream order.
  */
@@ -434,4 +448,147 @@ export function flattenToolCalls(calls: ToolCallDisplay[]): Map<string, ToolCall
   }
   walk(calls);
   return map;
+}
+
+/**
+ * Build chronological {@link Segment}s from an {@link AtlasUIMessage}'s
+ * `parts[]` array. Consecutive text parts coalesce into a single `text`
+ * segment; consecutive tool-call parts (and any reasoning that arrived
+ * between them) group into a `tool-burst` segment. This preserves the
+ * true stream order so the UI can render prose and tool activity exactly
+ * where they happened.
+ */
+export function buildSegments(msg: AtlasUIMessage): Segment[] {
+  if (!Array.isArray(msg.parts)) return [];
+  const allToolCalls = extractToolCalls(msg);
+  const toolMap = flattenToolCalls(allToolCalls);
+  // Walk parts as opaque records — the AI SDK discriminated union narrows
+  // each adjacent type check into dead code once we touch part.type.
+  const parts: readonly unknown[] = msg.parts;
+
+  const segments: Segment[] = [];
+  let textBuffer = "";
+  let toolBuffer: ToolCallDisplay[] = [];
+  let reasoningBuffer = "";
+  let burstIndex = 0;
+
+  function flushText() {
+    if (textBuffer.length > 0) {
+      segments.push({ type: "text", content: textBuffer });
+      textBuffer = "";
+    }
+  }
+
+  function flushBurst() {
+    if (toolBuffer.length > 0) {
+      segments.push({
+        type: "tool-burst",
+        id: `${msg.id}-burst-${burstIndex++}`,
+        calls: [...toolBuffer],
+        reasoning: reasoningBuffer || undefined,
+      });
+      toolBuffer = [];
+      reasoningBuffer = "";
+    }
+  }
+
+  for (const part of parts) {
+    if (!isRecord(part)) continue;
+    if (typeof part.type !== "string") continue;
+    const type = part.type;
+
+    if (type === "text" && typeof part.text === "string") {
+      flushBurst();
+      textBuffer += part.text;
+      continue;
+    }
+
+    if (type === "reasoning" || type === "reasoning-delta") {
+      const delta =
+        type === "reasoning"
+          ? typeof part.text === "string"
+            ? part.text
+            : ""
+          : typeof part.delta === "string"
+            ? part.delta
+            : "";
+      if (toolBuffer.length > 0) {
+        reasoningBuffer += delta;
+      } else {
+        textBuffer += delta;
+      }
+      continue;
+    }
+
+    if (type === "data-credential-linked") {
+      if (isRecord(part.data) && typeof part.data.displayName === "string") {
+        flushBurst();
+        textBuffer += `Connected ${part.data.displayName}.`;
+      }
+      continue;
+    }
+
+    const isTool = type.startsWith("tool-") || type === "dynamic-tool";
+    if (isTool) {
+      const toolCallId = typeof part.toolCallId === "string" ? part.toolCallId : "";
+      const display = toolMap.get(toolCallId);
+      if (display) {
+        flushText();
+        toolBuffer.push(display);
+      }
+    }
+  }
+
+  flushText();
+  flushBurst();
+  return segments;
+}
+
+/**
+ * Extract image parts from an {@link AtlasUIMessage}. Only `file` parts
+ * with a `mediaType` starting with `image/` (or no mediaType — defaults
+ * to `image/png`) are returned. Other file types are ignored.
+ */
+export function extractImages(msg: AtlasUIMessage): ImageDisplay[] {
+  if (!Array.isArray(msg.parts)) return [];
+  const imgs: ImageDisplay[] = [];
+  for (const part of msg.parts) {
+    if (typeof part !== "object" || part === null || !("type" in part)) continue;
+    if (part.type !== "file") continue;
+    if (!("url" in part) || typeof part.url !== "string") continue;
+    const mediaType =
+      "mediaType" in part && typeof part.mediaType === "string" ? part.mediaType : "image/png";
+    if (!mediaType.startsWith("image/")) continue;
+    const filename =
+      "filename" in part && typeof part.filename === "string" ? part.filename : undefined;
+    imgs.push({ url: part.url, mediaType, filename });
+  }
+  return imgs;
+}
+
+const DATETIME_FMT = new Intl.DateTimeFormat(undefined, {
+  month: "short",
+  day: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
+});
+
+/**
+ * Format a message's metadata timestamp for display in the per-message
+ * "…" menu. Reads `startTimestamp || timestamp || endTimestamp` in that
+ * order. Returns the empty string when no timestamp is present or when
+ * the value isn't a parseable ISO date — no `Date.now()` fallback, no
+ * borrowing from neighbors, no "Today, …" prefix.
+ *
+ * Always includes the date (e.g. `Apr 20, 11:31 PM`). The export is a
+ * snapshot of the sender's session, so a recipient opening it on a
+ * different day or in a different timezone still sees an unambiguous
+ * date — no same-day shortcut that hides it.
+ */
+export function formatMessageTimestamp(metadata: MessageMetadata | undefined): string {
+  const iso = metadata?.startTimestamp ?? metadata?.timestamp ?? metadata?.endTimestamp;
+  if (typeof iso !== "string" || iso.length === 0) return "";
+  const ms = new Date(iso).getTime();
+  if (Number.isNaN(ms)) return "";
+  return DATETIME_FMT.format(new Date(ms));
 }

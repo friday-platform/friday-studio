@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { ToolCallDisplay } from "./types.ts";
 import { buildToolCallTree } from "./tree-builder.ts";
+import type { ToolCallDisplay } from "./types.ts";
 
 function makeEntry(
   toolCallId: string,
@@ -81,10 +81,10 @@ describe("buildToolCallTree", () => {
     expect(ids).toContain("orphan-c1");
 
     const orphan = result.find((r) => r.toolCallId === "orphan-c1");
-    expect(orphan).toBeDefined();
-    expect(orphan?.toolName).toBe("web_fetch");
+    if (!orphan) throw new Error("expected orphan in result");
+    expect(orphan.toolName).toBe("web_fetch");
     // parentToolCallId is stripped from the output shape.
-    expect("parentToolCallId" in orphan!).toBe(false);
+    expect("parentToolCallId" in orphan).toBe(false);
   });
 
   it("circular parent pointers — break at first re-visit", () => {

@@ -23,6 +23,7 @@
     "./elicitations/storage": "./src/elicitations/storage.ts",
     "./errors": "./src/errors.ts",
     "./chat/chat-sdk-state-adapter": "./src/chat/chat-sdk-state-adapter.ts",
+    "./chat/export/render": "./src/chat/export/render.ts",
     "./chat/storage": "./src/chat/storage.ts",
     "./chat/sse-manager": "./src/chat/sse-manager.ts",
     "./session/session-events": "./src/session/session-events.ts",
