@@ -441,8 +441,15 @@
 
 <style>
   .tool-card {
+    /* Same browser-level skip as `.message` in chat-message-list:
+       off-screen tool cards don't paint or lay out their contents.
+       Heavy delegations stack dozens of these per assistant turn —
+       skipping layout for the ones below the fold drops streaming-
+       time main-thread cost on top of Svelte's keyed-each pruning. */
     background-color: var(--surface);
     border-radius: var(--radius-2);
+    contain-intrinsic-size: auto 80px;
+    content-visibility: auto;
     font-size: var(--font-size-2);
     overflow: hidden;
   }
