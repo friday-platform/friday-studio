@@ -1,4 +1,6 @@
 import { Buffer } from "node:buffer";
+import process from "node:process";
+import { logger } from "@atlas/logger";
 import { z } from "zod";
 import { defineOAuthProvider, type OAuthProvider } from "./types.ts";
 
@@ -25,6 +27,44 @@ import { defineOAuthProvider, type OAuthProvider } from "./types.ts";
 const GEMINI_CLIENT_ID = "338689075775-o75k922vn5fdl18qergr96rp8g63e4d7.apps.googleusercontent.com";
 const GEMINI_EXCHANGE_URI = "https://google-workspace-extension.geminicli.com";
 const GEMINI_REFRESH_URI = `${GEMINI_EXCHANGE_URI}/refreshToken`;
+
+interface DelegatedUris {
+  exchangeUri: string;
+  refreshUri: string;
+}
+
+let mockOverrideLogged = false;
+
+/**
+ * Resolves the exchange + refresh URIs at provider-registration time.
+ *
+ * In dev/QA mode the test launcher sets both `FRIDAY_OAUTH_MOCK_EXCHANGE_URI`
+ * and `FRIDAY_OAUTH_MOCK_REFRESH_URI` before starting the daemon to point
+ * the delegated OAuth flow at a local mock Cloud Function. Both must be
+ * set together — a half-configured override falls back to production so an
+ * operator can't accidentally exercise the mock exchange against the real
+ * refresh endpoint (or vice versa).
+ */
+function resolveDelegatedUris(): DelegatedUris {
+  const exchangeOverride = process.env.FRIDAY_OAUTH_MOCK_EXCHANGE_URI;
+  const refreshOverride = process.env.FRIDAY_OAUTH_MOCK_REFRESH_URI;
+  if (
+    typeof exchangeOverride === "string" &&
+    exchangeOverride.length > 0 &&
+    typeof refreshOverride === "string" &&
+    refreshOverride.length > 0
+  ) {
+    if (!mockOverrideLogged) {
+      logger.warn("oauth_mock_overrides_active", {
+        exchangeUri: exchangeOverride,
+        refreshUri: refreshOverride,
+      });
+      mockOverrideLogged = true;
+    }
+    return { exchangeUri: exchangeOverride, refreshUri: refreshOverride };
+  }
+  return { exchangeUri: GEMINI_EXCHANGE_URI, refreshUri: GEMINI_REFRESH_URI };
+}
 
 /**
  * Encodes the OAuth `state` parameter in the format the Gemini Cloud
@@ -91,6 +131,7 @@ function createGoogleProvider(
   displayName: string,
   description: string,
 ): OAuthProvider {
+  const { exchangeUri, refreshUri } = resolveDelegatedUris();
   return defineOAuthProvider({
     id: `google-${service}`,
     family: "google",
@@ -99,8 +140,8 @@ function createGoogleProvider(
     oauthConfig: {
       mode: "delegated",
       authorizationEndpoint: "https://accounts.google.com/o/oauth2/v2/auth",
-      delegatedExchangeUri: GEMINI_EXCHANGE_URI,
-      delegatedRefreshUri: GEMINI_REFRESH_URI,
+      delegatedExchangeUri: exchangeUri,
+      delegatedRefreshUri: refreshUri,
       clientId: GEMINI_CLIENT_ID,
       scopes: ["openid", "email", ...GOOGLE_SCOPES[service]],
       extraAuthParams: {

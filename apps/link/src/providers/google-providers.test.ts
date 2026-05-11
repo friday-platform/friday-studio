@@ -1,5 +1,6 @@
 import { Buffer } from "node:buffer";
-import { describe, expect, it } from "vitest";
+import process from "node:process";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 // Import all provider factories from consolidated module
 import {
   createGoogleCalendarProvider,
@@ -63,6 +64,83 @@ describe("Google providers", () => {
     // Sanity check: only providers that opt in carry a family; default callers
     // fall back to provider.id (no central change needed).
     expect(notionProvider.family).toBeUndefined();
+  });
+
+  describe("delegated URI env-var overrides", () => {
+    const ORIGINAL_EXCHANGE = process.env.FRIDAY_OAUTH_MOCK_EXCHANGE_URI;
+    const ORIGINAL_REFRESH = process.env.FRIDAY_OAUTH_MOCK_REFRESH_URI;
+
+    beforeEach(() => {
+      delete process.env.FRIDAY_OAUTH_MOCK_EXCHANGE_URI;
+      delete process.env.FRIDAY_OAUTH_MOCK_REFRESH_URI;
+    });
+
+    afterEach(() => {
+      if (ORIGINAL_EXCHANGE === undefined) {
+        delete process.env.FRIDAY_OAUTH_MOCK_EXCHANGE_URI;
+      } else {
+        process.env.FRIDAY_OAUTH_MOCK_EXCHANGE_URI = ORIGINAL_EXCHANGE;
+      }
+      if (ORIGINAL_REFRESH === undefined) {
+        delete process.env.FRIDAY_OAUTH_MOCK_REFRESH_URI;
+      } else {
+        process.env.FRIDAY_OAUTH_MOCK_REFRESH_URI = ORIGINAL_REFRESH;
+      }
+    });
+
+    it("uses production URIs when neither override env var is set", () => {
+      const provider = createGoogleCalendarProvider();
+      if (provider.oauthConfig.mode !== "delegated") throw new Error("expected delegated mode");
+      expect(provider.oauthConfig.delegatedExchangeUri).toBe(
+        "https://google-workspace-extension.geminicli.com",
+      );
+      expect(provider.oauthConfig.delegatedRefreshUri).toBe(
+        "https://google-workspace-extension.geminicli.com/refreshToken",
+      );
+    });
+
+    it("uses override URIs when both env vars are set", () => {
+      process.env.FRIDAY_OAUTH_MOCK_EXCHANGE_URI = "http://127.0.0.1:8081";
+      process.env.FRIDAY_OAUTH_MOCK_REFRESH_URI = "http://127.0.0.1:8081/refreshToken";
+
+      const provider = createGoogleGmailProvider();
+      if (provider.oauthConfig.mode !== "delegated") throw new Error("expected delegated mode");
+      expect(provider.oauthConfig.delegatedExchangeUri).toBe("http://127.0.0.1:8081");
+      expect(provider.oauthConfig.delegatedRefreshUri).toBe("http://127.0.0.1:8081/refreshToken");
+    });
+
+    it("falls back to production URIs when only the exchange override is set", () => {
+      process.env.FRIDAY_OAUTH_MOCK_EXCHANGE_URI = "http://127.0.0.1:8081";
+
+      const provider = createGoogleDriveProvider();
+      if (provider.oauthConfig.mode !== "delegated") throw new Error("expected delegated mode");
+      expect(provider.oauthConfig.delegatedExchangeUri).toMatch(/geminicli\.com$/);
+      expect(provider.oauthConfig.delegatedRefreshUri).toMatch(/geminicli\.com\/refreshToken$/);
+    });
+
+    it("falls back to production URIs when only the refresh override is set", () => {
+      process.env.FRIDAY_OAUTH_MOCK_REFRESH_URI = "http://127.0.0.1:8081/refreshToken";
+
+      const provider = createGoogleDriveProvider();
+      if (provider.oauthConfig.mode !== "delegated") throw new Error("expected delegated mode");
+      expect(provider.oauthConfig.delegatedExchangeUri).toMatch(/geminicli\.com$/);
+      expect(provider.oauthConfig.delegatedRefreshUri).toMatch(/geminicli\.com\/refreshToken$/);
+    });
+
+    it("resolves env vars at registration time, not module load", () => {
+      // Confirms that setting the env vars after import still takes effect on
+      // the next factory call — the property the test launcher relies on.
+      const before = createGoogleCalendarProvider();
+      if (before.oauthConfig.mode !== "delegated") throw new Error("expected delegated mode");
+      expect(before.oauthConfig.delegatedRefreshUri).toMatch(/geminicli\.com\/refreshToken$/);
+
+      process.env.FRIDAY_OAUTH_MOCK_EXCHANGE_URI = "http://127.0.0.1:9999";
+      process.env.FRIDAY_OAUTH_MOCK_REFRESH_URI = "http://127.0.0.1:9999/refreshToken";
+
+      const after = createGoogleCalendarProvider();
+      if (after.oauthConfig.mode !== "delegated") throw new Error("expected delegated mode");
+      expect(after.oauthConfig.delegatedRefreshUri).toBe("http://127.0.0.1:9999/refreshToken");
+    });
   });
 
   it("encodeState produces base64-encoded {uri, manual, csrf} payload", () => {
