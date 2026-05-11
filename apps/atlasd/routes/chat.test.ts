@@ -326,7 +326,13 @@ describe("GET /api/chat — list merges and deduplicates", () => {
 
 describe("PATCH /api/chat/:chatId/title — legacy fallback", () => {
   test("updates title in user workspace", async () => {
-    mockChatStorage.updateChatTitle.mockResolvedValue({
+    // resolveChat → getChat: found in USER_WORKSPACE_ID; route uses
+    // that resolved workspaceId for the update call.
+    mockChatStorage.getChat.mockResolvedValueOnce({
+      ok: true,
+      data: { id: "chat-1", workspaceId: "user", messages: [] },
+    });
+    mockChatStorage.updateChatTitle.mockResolvedValueOnce({
       ok: true,
       data: { id: "chat-1", title: "New" },
     });
@@ -338,29 +344,38 @@ describe("PATCH /api/chat/:chatId/title — legacy fallback", () => {
     expect(mockChatStorage.updateChatTitle).toHaveBeenCalledWith("chat-1", "New", "user");
   });
 
-  test("falls back to global path for legacy chat", async () => {
-    mockChatStorage.updateChatTitle
-      .mockResolvedValueOnce({ ok: false, error: "Chat not found" })
-      .mockResolvedValueOnce({ ok: true, data: { id: "chat-old", title: "Updated" } });
+  test("uses the chat's resolved workspaceId for legacy global chats", async () => {
+    // resolveChat: first try in USER_WORKSPACE_ID misses; second try
+    // (global) hits and surfaces the real workspaceId.
+    mockChatStorage.getChat
+      .mockResolvedValueOnce({ ok: true, data: null })
+      .mockResolvedValueOnce({
+        ok: true,
+        data: { id: "chat-old", workspaceId: "legacy-ws", messages: [] },
+      });
+    mockChatStorage.updateChatTitle.mockResolvedValueOnce({
+      ok: true,
+      data: { id: "chat-old", title: "Updated" },
+    });
     const { app } = createTestApp();
 
     const res = await patch(app, "/api/chat/chat-old/title", { title: "Updated" });
 
     expect(res.status).toBe(200);
-    expect(mockChatStorage.updateChatTitle).toHaveBeenCalledTimes(2);
-    expect(mockChatStorage.updateChatTitle).toHaveBeenNthCalledWith(
-      1,
+    // Single update call against the resolved workspaceId — cleaner
+    // than the previous two-call USER_WORKSPACE_ID-then-global fallback.
+    expect(mockChatStorage.updateChatTitle).toHaveBeenCalledTimes(1);
+    expect(mockChatStorage.updateChatTitle).toHaveBeenCalledWith(
       "chat-old",
       "Updated",
-      "user",
+      "legacy-ws",
     );
-    expect(mockChatStorage.updateChatTitle).toHaveBeenNthCalledWith(2, "chat-old", "Updated");
   });
 
-  test("returns 404 when not found in either path", async () => {
-    mockChatStorage.updateChatTitle
-      .mockResolvedValueOnce({ ok: false, error: "Chat not found" })
-      .mockResolvedValueOnce({ ok: false, error: "Chat not found" });
+  test("returns 404 when the chat isn't resolvable in either path", async () => {
+    mockChatStorage.getChat
+      .mockResolvedValueOnce({ ok: true, data: null })
+      .mockResolvedValueOnce({ ok: true, data: null });
     const { app } = createTestApp();
 
     const res = await patch(app, "/api/chat/nope/title", { title: "X" });
@@ -373,7 +388,11 @@ describe("PATCH /api/chat/:chatId/title — legacy fallback", () => {
 
 describe("DELETE /api/chat/:chatId — legacy fallback", () => {
   test("deletes from user workspace", async () => {
-    mockChatStorage.deleteChat.mockResolvedValue({ ok: true });
+    mockChatStorage.getChat.mockResolvedValueOnce({
+      ok: true,
+      data: { id: "chat-1", workspaceId: "user", messages: [] },
+    });
+    mockChatStorage.deleteChat.mockResolvedValueOnce({ ok: true });
     const { app } = createTestApp();
 
     const res = await del(app, "/api/chat/chat-1");
@@ -382,24 +401,27 @@ describe("DELETE /api/chat/:chatId — legacy fallback", () => {
     expect(mockChatStorage.deleteChat).toHaveBeenCalledWith("chat-1", "user");
   });
 
-  test("falls back to global path for legacy chat", async () => {
-    mockChatStorage.deleteChat
-      .mockResolvedValueOnce({ ok: false, error: "Chat not found" })
-      .mockResolvedValueOnce({ ok: true });
+  test("uses the chat's resolved workspaceId for legacy global chats", async () => {
+    mockChatStorage.getChat
+      .mockResolvedValueOnce({ ok: true, data: null })
+      .mockResolvedValueOnce({
+        ok: true,
+        data: { id: "chat-legacy", workspaceId: "legacy-ws", messages: [] },
+      });
+    mockChatStorage.deleteChat.mockResolvedValueOnce({ ok: true });
     const { app } = createTestApp();
 
     const res = await del(app, "/api/chat/chat-legacy");
 
     expect(res.status).toBe(200);
-    expect(mockChatStorage.deleteChat).toHaveBeenCalledTimes(2);
-    expect(mockChatStorage.deleteChat).toHaveBeenNthCalledWith(1, "chat-legacy", "user");
-    expect(mockChatStorage.deleteChat).toHaveBeenNthCalledWith(2, "chat-legacy");
+    expect(mockChatStorage.deleteChat).toHaveBeenCalledTimes(1);
+    expect(mockChatStorage.deleteChat).toHaveBeenCalledWith("chat-legacy", "legacy-ws");
   });
 
-  test("returns 404 when not found in either path", async () => {
-    mockChatStorage.deleteChat
-      .mockResolvedValueOnce({ ok: false, error: "Chat not found" })
-      .mockResolvedValueOnce({ ok: false, error: "Chat not found" });
+  test("returns 404 when the chat isn't resolvable in either path", async () => {
+    mockChatStorage.getChat
+      .mockResolvedValueOnce({ ok: true, data: null })
+      .mockResolvedValueOnce({ ok: true, data: null });
     const { app } = createTestApp();
 
     const res = await del(app, "/api/chat/nope");

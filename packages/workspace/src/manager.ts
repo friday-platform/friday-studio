@@ -232,7 +232,7 @@ export class WorkspaceManager {
 
     if (!this.isTestMode()) {
       try {
-        const imported = await this.importExistingWorkspaces();
+        const imported = await this.importExistingWorkspaces(opts?.defaultOwnerId);
         if (imported > 0) {
           logger.info(`Auto-imported ${imported} workspace(s)`);
         }
@@ -695,7 +695,7 @@ export class WorkspaceManager {
    * Searches a small depth for directories containing workspace.yml, de-dupes, validates
    * configs, logs and skips invalid ones. Never throws; returns import count.
    */
-  private async importExistingWorkspaces(): Promise<number> {
+  private async importExistingWorkspaces(defaultOwnerId?: string): Promise<number> {
     const workspaces: string[] = [];
     const atlasWorkspacesDir = join(getFridayHome(), "workspaces");
     const commonPaths = [atlasWorkspacesDir];
@@ -717,7 +717,9 @@ export class WorkspaceManager {
           if (await this.cleanupExpiredEphemeralConfig(workspacePath)) {
             continue;
           }
-          await this.registerWorkspace(workspacePath);
+          await this.registerWorkspace(workspacePath, {
+            ...(defaultOwnerId ? { createdBy: defaultOwnerId } : {}),
+          });
           imported++;
         } catch (error) {
           skipped++;

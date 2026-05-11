@@ -149,13 +149,15 @@ export async function openAccessibleWorkspaceWatch(
   const accessible = new Set<string>();
   const prefix = `${userId}.`;
 
+  // `kv.watch` resolves AFTER the ordered JetStream consumer is
+  // registered server-side — it's a request/response handshake over
+  // JetStream's control subject, not a fire-and-forget core sub. So
+  // the await itself is the synchronization point; no subscribe-then-
+  // flush dance needed. The snapshot below reads at a revision
+  // strictly ≥ the watch start, so any DEL/PUT that lands between the
+  // two is delivered to the watch iterator and applied later by the
+  // foreground loop.
   const iter = await kv.watch({ key: `${userId}.>`, include: KvWatchInclude.UpdatesOnly });
-  // Subscribe-then-flush — see `developing-with-nats` skill's Gotchas.
-  // `kv.watch` returns before the broker has fully registered the
-  // ordered consumer; without flushing, a PUT/DEL published in that
-  // window goes undelivered. Flush forces a PING/PONG round-trip; on
-  // resolution the watch is live server-side.
-  await nc.flush();
 
   const snapshot = await WorkspaceMemberStorage.listByUser(userId);
   if (snapshot.ok) {

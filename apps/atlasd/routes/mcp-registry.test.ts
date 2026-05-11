@@ -65,6 +65,27 @@ vi.mock("ai", async () => {
   return { ...actual, streamText: mockStreamText };
 });
 
+vi.mock("@atlas/core/workspace-members/storage", () => ({
+  WorkspaceMemberStorage: {
+    get: vi
+      .fn()
+      .mockImplementation((userId: string, wsId: string) =>
+        Promise.resolve({
+          ok: true,
+          data: { userId, wsId, role: "owner", addedAt: "2026-05-11T00:00:00.000Z" },
+        }),
+      ),
+    listByUser: vi.fn().mockResolvedValue({ ok: true, data: [] }),
+    listByWorkspace: vi.fn().mockResolvedValue({ ok: true, data: [] }),
+    put: vi.fn().mockResolvedValue({ ok: true, data: null }),
+    putIfAbsent: vi.fn().mockResolvedValue({ ok: true, data: null }),
+    delete: vi.fn().mockResolvedValue({ ok: true, data: undefined }),
+  },
+  ensureWorkspaceMembersKVBucket: vi.fn(),
+  initWorkspaceMemberStorage: vi.fn(),
+  resetWorkspaceMemberStorageForTests: vi.fn(),
+}));
+
 beforeAll(async () => {
   testKv = await Deno.openKv(":memory:");
   testAdapter = new LocalMCPRegistryAdapter(testKv);
@@ -98,6 +119,8 @@ function createWrappedRouter(context: Record<string, unknown>) {
   app.use("*", async (c, next) => {
     // @ts-expect-error - partial mock for tests
     c.set("app", context);
+    // @ts-expect-error - userId Variables not typed on bare Hono app
+    c.set("userId", "test-user");
     await next();
   });
   app.route("/", mcpRegistryRouter);

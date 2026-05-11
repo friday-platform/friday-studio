@@ -191,6 +191,11 @@ const chatRoutes = daemonFactory
     if (!chat) {
       return c.json({ error: "Chat not found" }, 404);
     }
+    // The middleware verified membership of USER_WORKSPACE_ID; gate
+    // the actual chat workspace too, otherwise a legacy chat in a
+    // different workspace is readable to anyone with USER_WORKSPACE_ID
+    // membership.
+    await requireWorkspaceMember(c, chat.workspaceId);
 
     const { messages, systemPromptContext, ...metadata } = chat;
     // Return last 100 messages in chronological order (oldest first)
@@ -223,6 +228,7 @@ const chatRoutes = daemonFactory
     if (!chat) {
       return c.json({ error: "Chat not found" }, 404);
     }
+    await requireWorkspaceMember(c, chat.workspaceId);
 
     // Validate the message format
     const [validatedMessage] = await validateAtlasUIMessages([message]);
@@ -255,23 +261,21 @@ const chatRoutes = daemonFactory
     const chatId = c.req.param("chatId");
     const { title } = c.req.valid("json");
 
-    const result = await ChatStorage.updateChatTitle(chatId, title, USER_WORKSPACE_ID);
+    // Resolve first so we can authz-check against the chat's actual
+    // workspaceId; legacy global chats may belong to a workspace the
+    // caller isn't a member of even when they're a member of
+    // USER_WORKSPACE_ID.
+    const chat = await resolveChat(chatId);
+    if (!chat) {
+      return c.json({ error: "Chat not found" }, 404);
+    }
+    await requireWorkspaceMember(c, chat.workspaceId);
+
+    const result = await ChatStorage.updateChatTitle(chatId, title, chat.workspaceId);
     if (result.ok) {
       return c.json({ chat: result.data }, 200);
     }
-
-    if (result.error === "Chat not found") {
-      const globalResult = await ChatStorage.updateChatTitle(chatId, title);
-      if (globalResult.ok) {
-        return c.json({ chat: globalResult.data }, 200);
-      }
-      return c.json(
-        { error: globalResult.error },
-        globalResult.error === "Chat not found" ? 404 : 500,
-      );
-    }
-
-    return c.json({ error: result.error }, 500);
+    return c.json({ error: result.error }, result.error === "Chat not found" ? 404 : 500);
   })
 
   /**
@@ -281,23 +285,17 @@ const chatRoutes = daemonFactory
   .delete("/:chatId", async (c) => {
     const chatId = c.req.param("chatId");
 
-    const result = await ChatStorage.deleteChat(chatId, USER_WORKSPACE_ID);
+    const chat = await resolveChat(chatId);
+    if (!chat) {
+      return c.json({ error: "Chat not found" }, 404);
+    }
+    await requireWorkspaceMember(c, chat.workspaceId);
+
+    const result = await ChatStorage.deleteChat(chatId, chat.workspaceId);
     if (result.ok) {
       return c.json({ success: true }, 200);
     }
-
-    if (result.error === "Chat not found") {
-      const globalResult = await ChatStorage.deleteChat(chatId);
-      if (globalResult.ok) {
-        return c.json({ success: true }, 200);
-      }
-      return c.json(
-        { error: globalResult.error },
-        globalResult.error === "Chat not found" ? 404 : 500,
-      );
-    }
-
-    return c.json({ error: result.error }, 500);
+    return c.json({ error: result.error }, result.error === "Chat not found" ? 404 : 500);
   });
 
 export default chatRoutes;

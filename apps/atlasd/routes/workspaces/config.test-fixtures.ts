@@ -24,22 +24,29 @@ import type { AppContext, AppVariables } from "../../src/factory.ts";
 // Mock the membership storage BEFORE importing the route (which pulls in
 // the authz helpers transitively). Default mock returns `owner` for every
 // (userId, wsId), which is what the test middleware below pretends.
+// Tests that want to exercise denial paths can import `membershipMocks`
+// from this file and call e.g.
+//   membershipMocks.get.mockResolvedValueOnce({ ok: true, data: { ...role: "member" } })
+// to override per case.
+const hoistedMocks = vi.hoisted(() => ({
+  get: vi
+    .fn()
+    .mockImplementation((userId: string, wsId: string) =>
+      Promise.resolve({
+        ok: true,
+        data: { userId, wsId, role: "owner", addedAt: "2026-05-11T00:00:00.000Z" },
+      }),
+    ),
+  listByUser: vi.fn().mockResolvedValue({ ok: true, data: [] }),
+  listByWorkspace: vi.fn().mockResolvedValue({ ok: true, data: [] }),
+  put: vi.fn().mockResolvedValue({ ok: true, data: null }),
+  putIfAbsent: vi.fn().mockResolvedValue({ ok: true, data: null }),
+  delete: vi.fn().mockResolvedValue({ ok: true, data: undefined }),
+}));
+export const membershipMocks = hoistedMocks;
+
 vi.mock("@atlas/core/workspace-members/storage", () => ({
-  WorkspaceMemberStorage: {
-    get: vi
-      .fn()
-      .mockImplementation((userId: string, wsId: string) =>
-        Promise.resolve({
-          ok: true,
-          data: { userId, wsId, role: "owner", addedAt: "2026-05-11T00:00:00.000Z" },
-        }),
-      ),
-    listByUser: vi.fn().mockResolvedValue({ ok: true, data: [] }),
-    listByWorkspace: vi.fn().mockResolvedValue({ ok: true, data: [] }),
-    put: vi.fn().mockResolvedValue({ ok: true, data: null }),
-    putIfAbsent: vi.fn().mockResolvedValue({ ok: true, data: null }),
-    delete: vi.fn().mockResolvedValue({ ok: true, data: undefined }),
-  },
+  WorkspaceMemberStorage: hoistedMocks,
   ensureWorkspaceMembersKVBucket: vi.fn(),
   initWorkspaceMemberStorage: vi.fn(),
   resetWorkspaceMemberStorageForTests: vi.fn(),

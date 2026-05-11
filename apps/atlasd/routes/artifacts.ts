@@ -41,6 +41,7 @@ import { fileTypeFromFile } from "file-type";
 import JSZip from "jszip";
 import { z } from "zod";
 import { daemonFactory } from "../src/factory.ts";
+import { requireWorkspaceMember } from "../src/workspace-authz.ts";
 
 const logger = createLogger({ name: "artifacts-upload" });
 
@@ -542,6 +543,9 @@ const artifactsApp = daemonFactory
   /** Create new artifact */
   .post("/", zValidator("json", CreateArtifactSchema), async (c) => {
     const data = c.req.valid("json");
+    if (data.workspaceId) {
+      await requireWorkspaceMember(c, data.workspaceId);
+    }
     const result = await ArtifactStorage.create(data);
 
     if (!result.ok) {
@@ -712,6 +716,7 @@ const artifactsApp = daemonFactory
     }
 
     if (query.workspaceId) {
+      await requireWorkspaceMember(c, query.workspaceId);
       const result = await ArtifactStorage.listByWorkspace({
         workspaceId: query.workspaceId,
         limit: query.limit,
@@ -898,6 +903,9 @@ const artifactsApp = daemonFactory
     }
     if (workspaceId && isInvalidChatId(workspaceId)) {
       return c.json({ error: "Invalid workspaceId" }, 400);
+    }
+    if (workspaceId) {
+      await requireWorkspaceMember(c, workspaceId);
     }
 
     // Legacy format check — reject .doc/.ppt with helpful message

@@ -75,7 +75,12 @@ export interface JetStreamWorkspaceMemberBackend {
 
 export async function ensureWorkspaceMembersKVBucket(nc: NatsConnection): Promise<KV> {
   const js = nc.jetstream();
-  return await js.views.kv(KV_BUCKET, { history: 1, storage: StorageType.File });
+  // `history: 5` matches the USERS bucket — membership writes are
+  // security-sensitive (who got revoked when?), and a small
+  // replay-history makes incident response possible without paying
+  // much storage. Bump if a recurrence problem motivates an
+  // audit-log surface, but 5 is the cheap default.
+  return await js.views.kv(KV_BUCKET, { history: 5, storage: StorageType.File });
 }
 
 export function createJetStreamWorkspaceMemberBackend(
