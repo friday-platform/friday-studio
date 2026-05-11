@@ -47,8 +47,8 @@ export async function fetchUserIdentitySection(
       const apiMe = await parseResult(client.me.index.$get());
       if (apiMe.ok && apiMe.data.user) {
         const u = apiMe.data.user;
-        apiMeName = u.display_name ?? u.full_name;
-        apiMeEmail = u.email;
+        apiMeName = u.display_name ?? u.full_name ?? undefined;
+        apiMeEmail = u.email ?? undefined;
         name = name ?? apiMeName;
         email = email ?? apiMeEmail;
       } else if (!apiMe.ok) {
