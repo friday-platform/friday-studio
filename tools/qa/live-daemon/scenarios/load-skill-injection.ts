@@ -224,10 +224,10 @@ async function runVariantA(turn: 1 | 3): Promise<string> {
   // skill's effect persists across turns without re-injection.
   const turn1 = await callAnthropic({ system: PARENT_SYSTEM_PROMPT, messages });
   messages.push({ role: "assistant", content: turn1 });
-  messages.push({ role: "user", content: TOPICS[1] });
+  messages.push({ role: "user", content: TOPICS[1]! });
   const turn2 = await callAnthropic({ system: PARENT_SYSTEM_PROMPT, messages });
   messages.push({ role: "assistant", content: turn2 });
-  messages.push({ role: "user", content: TOPICS[2] });
+  messages.push({ role: "user", content: TOPICS[2]! });
   return await callAnthropic({ system: PARENT_SYSTEM_PROMPT, messages });
 }
 
