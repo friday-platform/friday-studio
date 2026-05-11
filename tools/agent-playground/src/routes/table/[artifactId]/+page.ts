@@ -15,9 +15,9 @@ import type { PageLoad } from "./$types";
  * link to download the original.
  */
 export const load: PageLoad = async ({ params, fetch }) => {
-  const { workspaceId, artifactId } = params;
-  if (!workspaceId || !artifactId) {
-    throw error(400, "Missing workspaceId or artifactId");
+  const { artifactId } = params;
+  if (!artifactId) {
+    throw error(400, "Missing artifactId");
   }
 
   const contentUrl = `/api/daemon/api/artifacts/${encodeURIComponent(artifactId)}/content`;
@@ -40,7 +40,6 @@ export const load: PageLoad = async ({ params, fetch }) => {
   const text = await res.text();
 
   return {
-    workspaceId,
     artifactId,
     mimeType,
     filename,

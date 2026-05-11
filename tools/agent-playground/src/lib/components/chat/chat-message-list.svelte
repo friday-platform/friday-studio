@@ -13,7 +13,6 @@
   import { tableToMarkdown } from "./table-to-markdown";
   import { tableToCSV } from "./table-to-csv";
   import { snapshotTableToArtifact } from "./snapshot-table";
-  import { goto } from "$app/navigation";
 
   // Per-message timestamp formatters. Default is HH:MM:SS in the user's
   // locale; the alt-pressed view swaps in full date + time so the
@@ -373,6 +372,7 @@
     container.className = "table-actions";
 
     const trigger = document.createElement("button");
+    trigger.type = "button";
     trigger.className = "copy-btn";
     trigger.setAttribute("aria-haspopup", "true");
     trigger.setAttribute("aria-expanded", "false");
@@ -384,21 +384,9 @@
     menu.className = "table-actions-menu";
     menu.setAttribute("role", "menu");
     menu.hidden = true;
+    container.appendChild(menu);
 
-    const addItem = (label: string, onSelect: () => void): HTMLButtonElement => {
-      const item = document.createElement("button");
-      item.className = "table-actions-item";
-      item.setAttribute("role", "menuitem");
-      item.textContent = label;
-      item.addEventListener("click", () => {
-        close();
-        onSelect();
-      });
-      menu.appendChild(item);
-      return item;
-    };
-
-    // -- Item handlers ---------------------------------------------
+    // -- Item construction -----------------------------------------
 
     const flash = (label: string): void => {
       const previous = trigger.textContent;
@@ -406,6 +394,20 @@
       setTimeout(() => {
         trigger.textContent = previous ?? "Actions ▾";
       }, 1500);
+    };
+
+    const addItem = (label: string, onSelect: () => void): HTMLButtonElement => {
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = "table-actions-item";
+      item.setAttribute("role", "menuitem");
+      item.textContent = label;
+      item.addEventListener("click", () => {
+        closeMenu();
+        onSelect();
+      });
+      menu.appendChild(item);
+      return item;
     };
 
     addItem("Copy", () => {
@@ -426,17 +428,21 @@
       );
     });
 
-    // Open is omitted entirely when we don't have a workspace to
-    // route under — keeps the menu honest instead of showing a
-    // dead-end item.
+    // Open is omitted when we don't have a workspace to tag the
+    // snapshot artifact with (chat-replay tool, exported HTML, unit
+    // tests). The dedicated table view URL itself is workspace-
+    // agnostic, but the snapshot needs an owning workspace to be
+    // stored under.
     if (workspaceId) {
       addItem("Open in dedicated view", () => {
         flash("Opening…");
         void snapshotTableToArtifact(table, { workspaceId, chatId }).then(
-          (artifactId) =>
-            goto(
-              `/platform/${encodeURIComponent(workspaceId)}/table/${encodeURIComponent(artifactId)}`,
-            ),
+          (artifactId) => {
+            // New tab + no app chrome — the destination is its own
+            // standalone surface. See `isChromeless` in the root
+            // layout for the chrome opt-out.
+            window.open(`/table/${encodeURIComponent(artifactId)}`, "_blank", "noopener");
+          },
           (err) => {
             console.error("Failed to snapshot table:", err);
             flash("Open failed");
@@ -453,52 +459,46 @@
       downloadTable(table, tableToMarkdown(table), "text/markdown", "md");
     });
 
-    container.appendChild(menu);
-
     // -- Open/close state machine ----------------------------------
+    //
+    // `menu.hidden` is the source of truth — no shadow state. The
+    // outside-detection runs on capture-phase `pointerdown` (fires
+    // before `click`, in the capture pass so descendants can't stop
+    // it) which closes the menu the instant the user presses
+    // somewhere else on the page. The trigger's own click handler
+    // toggles after, and an interior click (e.g. the trigger itself
+    // to close) is recognized via `container.contains(e.target)`.
 
-    // Track which menu (if any) is currently open across every
-    // `.table-actions` injection so opening one closes the other.
-    // Lives on a module-level closure variable below; here we only
-    // poke it.
-    let isOpen = false;
-    const open = (): void => {
-      if (isOpen) return;
-      closeAnyOpenActionsMenu();
-      isOpen = true;
-      currentOpenClose = close;
-      menu.hidden = false;
-      trigger.setAttribute("aria-expanded", "true");
-      // Defer the global handlers to the next tick so the click that
-      // opened the menu doesn't immediately close it.
-      setTimeout(() => {
-        document.addEventListener("click", onDocClick);
-        document.addEventListener("keydown", onKeyDown);
-      }, 0);
-    };
-    const close = (): void => {
-      if (!isOpen) return;
-      isOpen = false;
-      menu.hidden = true;
-      trigger.setAttribute("aria-expanded", "false");
-      document.removeEventListener("click", onDocClick);
-      document.removeEventListener("keydown", onKeyDown);
-      if (currentOpenClose === close) currentOpenClose = null;
-    };
-    const onDocClick = (e: MouseEvent): void => {
-      if (!container.contains(e.target as Node)) close();
+    const onPointerDown = (e: PointerEvent): void => {
+      if (!container.contains(e.target as Node)) closeMenu();
     };
     const onKeyDown = (e: KeyboardEvent): void => {
       if (e.key === "Escape") {
-        close();
+        closeMenu();
         trigger.focus();
       }
     };
+    const openMenu = (): void => {
+      if (!menu.hidden) return;
+      closeAnyOpenActionsMenu();
+      menu.hidden = false;
+      trigger.setAttribute("aria-expanded", "true");
+      currentOpenClose = closeMenu;
+      document.addEventListener("pointerdown", onPointerDown, true);
+      document.addEventListener("keydown", onKeyDown);
+    };
+    const closeMenu = (): void => {
+      if (menu.hidden) return;
+      menu.hidden = true;
+      trigger.setAttribute("aria-expanded", "false");
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      document.removeEventListener("keydown", onKeyDown);
+      if (currentOpenClose === closeMenu) currentOpenClose = null;
+    };
 
-    trigger.addEventListener("click", (e) => {
-      e.stopPropagation();
-      if (isOpen) close();
-      else open();
+    trigger.addEventListener("click", () => {
+      if (menu.hidden) openMenu();
+      else closeMenu();
     });
 
     return container;

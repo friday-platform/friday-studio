@@ -2,7 +2,6 @@
   import { browser } from "$app/environment";
   import { stripMimeParams } from "@atlas/core/artifacts/file-upload";
   import { z } from "zod";
-  import { getChatWorkspaceContext } from "./chat-workspace-context.ts";
   import { getExportContext } from "./export-context.ts";
   import { parseTabular, type TableModel } from "./table-parsers.ts";
   import TableView from "./table-view.svelte";
@@ -212,15 +211,14 @@
 
   const isTabularMime = $derived(baseMime ? TABULAR_MIMES.has(baseMime) : false);
 
-  // Pulled at script init per Svelte's getContext rule. The workspace
-  // route's chat surface sets this so deep descendants can build in-app
-  // routes without prop-drilling. When absent (export mode, chat-replay
-  // outside a workspace, a unit test) the tabular Open button falls
-  // back to the raw-content tab.
-  const workspaceForRoute = getChatWorkspaceContext();
+  // Tabular artifacts open in the dedicated full-screen table viewer.
+  // The route is workspace-agnostic (the /content endpoint is global
+  // and the view doesn't need workspace chrome) so no prop drilling,
+  // no Svelte-context plumbing. Export mode skips this — the static
+  // HTML has no router.
   const tableRouteUrl = $derived(
-    workspaceForRoute && isTabularMime
-      ? `/platform/${encodeURIComponent(workspaceForRoute)}/table/${encodeURIComponent(artifactId)}`
+    isTabularMime && exportCtx === undefined
+      ? `/table/${encodeURIComponent(artifactId)}`
       : undefined,
   );
 
@@ -321,12 +319,17 @@
           Download
         </a>
         {#if tableRouteUrl}
-          <!-- Tabular artifacts open in the dedicated in-app table
-               view (sticky header, sortable headers later, copy /
-               download CSV / MD buttons) instead of a raw-content
-               browser tab. Same Open affordance, much better
-               destination for the shape. -->
-          <a class="open-btn" href={tableRouteUrl} title="Open in table view">
+          <!-- Tabular artifacts open in the dedicated full-screen
+               table view (sticky header, copy / download CSV / MD
+               buttons) in a new tab. The view runs without app
+               chrome — see `isChromeless` in the root layout. -->
+          <a
+            class="open-btn"
+            href={tableRouteUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Open table in new tab"
+          >
             Open
           </a>
         {:else}

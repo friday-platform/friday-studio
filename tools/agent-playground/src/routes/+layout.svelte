@@ -19,10 +19,15 @@
   const { children } = $props();
 
   // Routes that opt out of the playground app shell (sidebar, palette, etc.)
-  // and render their children directly. Today only the chat export preview
-  // uses this — the route is rendered with csr=false and packaged as a
-  // standalone HTML file, so the live-UI chrome is dead weight there.
-  const isChromeless = $derived(page.route.id?.endsWith("/export/preview") ?? false);
+  // and render their children directly. Two consumers today:
+  //   - `/export/preview`     — packaged into standalone HTML, no live UI.
+  //   - `/table/[artifactId]` — dedicated full-screen tabular artifact
+  //     viewer, opened in a new tab. The sidebar + workspace chrome
+  //     would just compete with the table for horizontal space.
+  const isChromeless = $derived(
+    page.route.id?.endsWith("/export/preview") === true ||
+      page.route.id?.startsWith("/table/") === true,
+  );
 
   if (browser) {
     void loadUpdateStatus();
