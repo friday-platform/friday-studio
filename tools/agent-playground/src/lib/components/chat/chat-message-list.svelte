@@ -670,18 +670,7 @@
 
 
 
-<div class="message-list" bind:this={containerEl} onscroll={handleScroll}>
-  {#if containerEl}
-  <div class="virtual-inner" style:block-size="{$virtualizer.getTotalSize()}px">
-  {#each $virtualizer.getVirtualItems() as vrow (vrow.key)}
-    {@const message = messages[vrow.index]}
-    {#if message}
-    <div
-      class="virtual-item"
-      data-index={vrow.index}
-      style:transform="translateY({vrow.start}px)"
-      use:$virtualizer.measureElement
-    >
+{#snippet messageBody(message: ChatMessage)}
     <div
       class="message"
       class:user={message.role === "user"}
@@ -891,6 +880,28 @@
           </div>
       {/if}
     </div>
+{/snippet}
+
+<div class="message-list" bind:this={containerEl} onscroll={handleScroll}>
+  {#if isExport}
+    <!-- Export mode (static HTML or SSR — `bind:this` never fires, no
+         scrolling): render every message eagerly. The virtualizer is a
+         live-UI affordance; an exported file is read top-to-bottom. -->
+    {#each messages as message (message.id)}
+      {@render messageBody(message)}
+    {/each}
+  {:else if containerEl}
+  <div class="virtual-inner" style:block-size="{$virtualizer.getTotalSize()}px">
+  {#each $virtualizer.getVirtualItems() as vrow (vrow.key)}
+    {@const message = messages[vrow.index]}
+    {#if message}
+    <div
+      class="virtual-item"
+      data-index={vrow.index}
+      style:transform="translateY({vrow.start}px)"
+      use:$virtualizer.measureElement
+    >
+      {@render messageBody(message)}
     </div>
     {/if}
   {/each}

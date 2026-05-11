@@ -35,5 +35,11 @@ export default defineConfig({
       "tools/agent-playground/src/lib/components/mcp/mcp-credentials-panel.test.ts",
     ],
     update: process.env.CI ? "none" : "new",
+    // `@tanstack/svelte-query` ships a `.svelte` file
+    // (`HydrationBoundary.svelte`) in its published dist. Vitest's
+    // default loader externalises node_modules and tries to import the
+    // file as JS, which dies on the first `<`. Inlining lets the svelte
+    // plugin compile it.
+    server: { deps: { inline: [/@tanstack\/svelte-query/] } },
   },
 });
