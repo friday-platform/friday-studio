@@ -10,6 +10,7 @@
   import type { ValidationAttemptDisplay } from "./validation-accumulator.ts";
   import UsageBadge from "./usage-badge.svelte";
   import { formatMessageTimestamp } from "@atlas/core/chat/export/render";
+  import { tableToMarkdown } from "./table-to-markdown";
 
   // Per-message timestamp formatters. Default is HH:MM:SS in the user's
   // locale; the alt-pressed view swaps in full date + time so the
@@ -261,38 +262,80 @@
     if (isExport) return;
     function injectButtons() {
       for (const el of node.querySelectorAll("pre, table")) {
-        // Skip if already wrapped
-        if (el.parentElement?.classList.contains("copyable-wrapper")) continue;
+        // Skip if already wrapped (closest handles either flat <pre>
+        // wrapping or the nested <table> wrapping introduced below).
+        if (el.closest(".copyable-wrapper")) continue;
 
+        // Outer wrapper is the positioning context for the copy
+        // button. For tables, we add an inner `.copyable-scroll` div
+        // that owns the horizontal-overflow so wide tables scroll
+        // without dragging the absolutely-positioned button along
+        // with the content. `<pre>` handles its own internal scroll
+        // (see the markdown-body :global(pre) rule below) so it sits
+        // directly inside the wrapper.
         const wrapper = document.createElement("div");
         wrapper.className = "copyable-wrapper";
         el.parentNode?.insertBefore(wrapper, el);
-        wrapper.appendChild(el);
+        if (el.tagName === "TABLE") {
+          const scroller = document.createElement("div");
+          scroller.className = "copyable-scroll";
+          wrapper.appendChild(scroller);
+          scroller.appendChild(el);
+        } else {
+          wrapper.appendChild(el);
+        }
 
         const btn = document.createElement("button");
         btn.className = "copy-btn";
         btn.setAttribute("aria-label", "Copy to clipboard");
         btn.textContent = "Copy";
         btn.addEventListener("click", () => {
-          let text: string;
+          // Show feedback as soon as the write resolves (or rejects).
+          // The browser-native clipboard.write API supports multiple
+          // MIME types per copy — different paste destinations pick
+          // the format they understand best:
+          //   text/html  → Excel, Sheets, Word, Notion render the
+          //                actual table structure (cells, headers)
+          //   text/plain → terminals, code editors, Slack, GitHub,
+          //                Linear paste a clean markdown table
+          // We only do the multi-format dance for tables; <pre>
+          // blocks have no useful HTML representation beyond their
+          // text content, so they stay single-format.
+          const flashFeedback = (label: string): void => {
+            btn.textContent = label;
+            setTimeout(() => {
+              btn.textContent = "Copy";
+            }, 1500);
+          };
+
           if (el.tagName === "TABLE") {
-            // Extract table as tab-separated text
-            const rows: string[] = [];
-            for (const tr of el.querySelectorAll("tr")) {
-              const cells: string[] = [];
-              for (const cell of tr.querySelectorAll("th, td")) {
-                cells.push((cell as HTMLElement).textContent?.trim() ?? "");
-              }
-              rows.push(cells.join("\t"));
-            }
-            text = rows.join("\n");
+            const md = tableToMarkdown(el as HTMLTableElement);
+            const html = (el as HTMLTableElement).outerHTML;
+            // Modern path: write both formats in a single ClipboardItem.
+            // The browser pasteboard holds both representations and the
+            // destination app picks one. Falls back to plain markdown
+            // via writeText on browsers without clipboard.write
+            // (pre-2024 Firefox, very old Safari).
+            const writeMulti =
+              typeof ClipboardItem !== "undefined" && navigator.clipboard.write
+                ? navigator.clipboard.write([
+                    new ClipboardItem({
+                      "text/plain": new Blob([md], { type: "text/plain" }),
+                      "text/html": new Blob([html], { type: "text/html" }),
+                    }),
+                  ])
+                : navigator.clipboard.writeText(md);
+            void writeMulti.then(
+              () => flashFeedback("Copied!"),
+              () => flashFeedback("Copy failed"),
+            );
           } else {
-            text = (el as HTMLElement).textContent ?? "";
+            const text = (el as HTMLElement).textContent ?? "";
+            void navigator.clipboard.writeText(text).then(
+              () => flashFeedback("Copied!"),
+              () => flashFeedback("Copy failed"),
+            );
           }
-          void navigator.clipboard.writeText(text).then(() => {
-            btn.textContent = "Copied!";
-            setTimeout(() => { btn.textContent = "Copy"; }, 1500);
-          });
         });
         wrapper.appendChild(btn);
       }
@@ -907,17 +950,22 @@
     text-decoration: underline;
   }
 
-  /* Copy button on code blocks and tables */
+  /* Copy button on code blocks and tables.
+     The outer .copyable-wrapper is the positioning context for the
+     button — it never scrolls itself, so the button stays anchored
+     to the trailing edge of the chat bubble while the user scrolls
+     a wide table inside the inner .copyable-scroll. `<pre>` blocks
+     have their own internal `overflow-x: auto` (see the
+     markdown-body :global(pre) rule above), so they sit directly
+     inside the wrapper with no inner scroll-div. */
   .message-content.markdown-body :global(.copyable-wrapper) {
-    /* Wrap-rather-than-overflow is what gives `<table>` a horizontal
-       scrollbar when its content is wider than the chat bubble. The
-       wrapper is the scroll container; the table itself stays
-       naturally sized. `<pre>` blocks have their own
-       `overflow-x: auto` further up, so their wrapper just sits
-       transparently around them without producing a second scrollbar. */
+    max-inline-size: 100%;
+    position: relative;
+  }
+
+  .message-content.markdown-body :global(.copyable-scroll) {
     max-inline-size: 100%;
     overflow-x: auto;
-    position: relative;
   }
 
   .message-content.markdown-body :global(.copy-btn) {
