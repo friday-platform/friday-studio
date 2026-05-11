@@ -42,21 +42,20 @@ async function buildLocalIdentity(userId: string): Promise<Result<UserIdentity |
   const now = new Date().toISOString();
   // Bare-bones identity for users that exist in SESSIONS but haven't
   // populated `UserStorage` yet (the page-driven onboarding flow lands
-  // their profile fields). `email`/`full_name` schema fields require
-  // non-empty strings, so fall back to a deterministic placeholder
-  // until the user fills them in.
+  // their profile fields). Surface `null` for unset fields — never the
+  // userId itself, since the workspace-chat auto-sync would otherwise
+  // round-trip the nanoid back into `identity.name` and leak it into
+  // the `<user_profile>` prompt block.
   const record = stored.data;
   const identity = record?.identity ?? { nameStatus: "unknown" as const };
-  const name = identity.name ?? userId;
-  const email = identity.email ?? `${userId}@local.friday`;
 
   const base: UserIdentity = {
     id: userId,
-    full_name: name,
-    email,
+    full_name: identity.name ?? null,
+    email: identity.email ?? null,
     created_at: record?.createdAt ?? now,
     updated_at: record?.updatedAt ?? now,
-    display_name: name,
+    display_name: identity.name ?? null,
     profile_photo: null,
     timezone: identity.timezone ?? null,
     locale: identity.locale ?? null,

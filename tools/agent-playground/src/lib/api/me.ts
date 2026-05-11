@@ -13,8 +13,8 @@ const PROXY_BASE = "/api/daemon";
 
 export const MeIdentitySchema = z.object({
   id: z.string(),
-  full_name: z.string(),
-  email: z.email(),
+  full_name: z.string().nullable(),
+  email: z.email().nullable(),
   display_name: z.string().nullable(),
   profile_photo: z.string().nullable(),
   timezone: z.string().nullable(),
