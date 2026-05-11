@@ -10,7 +10,11 @@ import { client, parseResult } from "@atlas/client/v2";
 import type { MCPServerConfig } from "@atlas/config";
 import type { PlatformModels } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
-import { createMCPTools, type DisconnectedIntegration } from "@atlas/mcp";
+import {
+  createMCPToolsWithRetry,
+  type DisconnectedIntegration,
+  type InteractiveContext as MCPInteractiveContext,
+} from "@atlas/mcp";
 import { getAtlasPlatformServerConfig } from "@atlas/oapi-client";
 import {
   createLoadSkillTool,
@@ -77,6 +81,7 @@ export function createAgentContextBuilder(deps: AgentContextBuilderDeps) {
           sessionId: sessionData.sessionId,
           actionId: sessionData.actionId,
           jobTimeoutMs: sessionData.jobTimeoutMs,
+          sessionInteractive: sessionData.sessionInteractive,
         },
       );
       allTools = fetched.tools;
@@ -262,7 +267,12 @@ async function fetchAllTools(
   agentMCPConfig: Record<string, MCPServerConfig> | undefined,
   logger: Logger,
   signal?: AbortSignal,
-  scope?: { sessionId?: string; actionId?: string; jobTimeoutMs?: number },
+  scope?: {
+    sessionId?: string;
+    actionId?: string;
+    jobTimeoutMs?: number;
+    sessionInteractive?: boolean;
+  },
 ): Promise<{
   tools: Record<string, AtlasTool>;
   release: () => Promise<void>;
@@ -322,9 +332,26 @@ async function fetchAllTools(
     serverIds: Object.keys(allServerConfigs),
   });
 
-  const { tools, dispose, disconnected } = await createMCPTools(allServerConfigs, logger, {
-    signal,
-  });
+  // v8 decision 18: user-agent (Python SDK) MCP setup uses the retry wrapper
+  // so a transient `credential_temporarily_unavailable` raises a Retry/Cancel
+  // elicitation in interactive sessions. Wrapper is pass-through when no
+  // transients are present or when `interactiveCtx` is omitted (cron/non-chat).
+  const interactiveCtx: MCPInteractiveContext | undefined =
+    scope?.sessionInteractive === true && scope.sessionId
+      ? {
+          workspaceId,
+          sessionId: scope.sessionId,
+          ...(scope.actionId && { actionId: scope.actionId }),
+          ...(scope.jobTimeoutMs !== undefined && { jobTimeoutMs: scope.jobTimeoutMs }),
+          ...(signal && { sessionAbortSignal: signal }),
+        }
+      : undefined;
+  const { tools, dispose, disconnected } = await createMCPToolsWithRetry(
+    allServerConfigs,
+    logger,
+    { signal },
+    interactiveCtx,
+  );
   const wrapped = wrapPlatformToolsWithScope(tools, {
     workspaceId,
     workspaceName,

@@ -93,7 +93,10 @@ import {
   provenanceForSignalProvider,
 } from "@atlas/llm";
 import { logger } from "@atlas/logger";
-import { createMCPTools } from "@atlas/mcp";
+import {
+  createMCPToolsWithRetry,
+  type InteractiveContext as MCPInteractiveContext,
+} from "@atlas/mcp";
 import { getAtlasPlatformServerConfig } from "@atlas/oapi-client";
 import { extractArchiveContents, SkillStorage, validateSkillReferences } from "@atlas/skills";
 import { stringifyError } from "@atlas/utils";
@@ -1994,6 +1997,18 @@ export class WorkspaceRuntime {
         // consumer reading the records. Source of truth for "what
         // happened in workspace X" is the SESSIONS JetStream stream.)
 
+        // v8 decision 17: classify session interactivity at the signal level
+        // so the fsm-engine LLM-action path can pass an InteractiveContext to
+        // createMCPToolsWithRetry. Same classifier the per-agent executor
+        // uses; safe to compute eagerly here since signal.id and the
+        // workspace's signal config are both known.
+        const sessionInteractive = computeSessionInteractive({
+          signalType: signal.id,
+          signalProvenance: provenanceForSignalProvider(
+            this.config.workspace.signals?.[signal.id]?.provider,
+          ),
+        });
+
         // Capture the engine.signal promise so we can race it against the
         // abort signal (see `awaitWithAbort`). If the engine is wedged on
         // non-cooperative work, the await rejects immediately on cancel,
@@ -2005,6 +2020,7 @@ export class WorkspaceRuntime {
             workspaceId: this.workspace.id,
             abortSignal: effectiveAbortSignal,
             skipStates,
+            sessionInteractive,
             // FSM lifecycle events only (state transitions, action executions, tool calls/results)
             onEvent: (event) => {
               // Drop events from an orphaned engine.signal that's still
@@ -2989,7 +3005,27 @@ export class WorkspaceRuntime {
       }
     }
 
-    const { tools: rawMcpTools, dispose } = await createMCPTools(mcpConfigs, logger);
+    // v8 decision 18: user-agent (NATS subprocess) ephemeral MCP setup uses
+    // the retry wrapper so a transient `credential_temporarily_unavailable`
+    // raises a Retry/Cancel elicitation in interactive sessions. Wrapper is
+    // pass-through when no transients are present or when interactiveCtx is
+    // omitted (cron/non-chat).
+    const interactiveCtx: MCPInteractiveContext | undefined =
+      opts.sessionInteractive === true
+        ? {
+            workspaceId: opts.workspaceId,
+            sessionId: opts.sessionId,
+            ...(opts.actionId && { actionId: opts.actionId }),
+            ...(opts.jobTimeoutMs !== undefined && { jobTimeoutMs: opts.jobTimeoutMs }),
+            ...(opts.abortSignal && { sessionAbortSignal: opts.abortSignal }),
+          }
+        : undefined;
+    const { tools: rawMcpTools, dispose } = await createMCPToolsWithRetry(
+      mcpConfigs,
+      logger,
+      {},
+      interactiveCtx,
+    );
 
     // Filter platform tools to LLM_AGENT_ALLOWED — same surface workspace LLM
     // agents see (memory, artifacts, state, fs, csv, bash, webfetch,

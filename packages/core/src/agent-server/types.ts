@@ -136,6 +136,12 @@ const AgentSessionDataSchema = z.object({
   actionId: z.string().optional(),
   /** Parent job timeout in milliseconds for blocking HITL expiry. */
   jobTimeoutMs: z.number().int().positive().optional(),
+  /** True when a human is attached to this session (direct chat /
+   *  chat-communicator). Threaded to the agent-context builder so
+   *  `createMCPToolsWithRetry` can raise an `auth-refresh` elicitation on
+   *  transient credential failures. Must stay in sync with
+   *  AgentSessionDataSchema in packages/agent-sdk/src/types.ts. */
+  sessionInteractive: z.boolean().optional(),
 });
 
 /**

@@ -18,7 +18,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { clearMountContextRegistry, setMountContext } from "../mount-context-registry.ts";
 import { createAgentContextBuilder } from "./index.ts";
 
-// Mock createMCPTools — default returns empty tools, no disconnected, noop dispose
+// Mock createMCPTools — default returns empty tools, no disconnected, noop dispose.
+// Production code calls `createMCPToolsWithRetry`; for the foreground non-transient
+// happy path it forwards straight through to `createMCPTools`. The test mock for
+// the wrapper drops the `interactiveCtx` arg and delegates to the same fake so
+// existing assertions on call args (configs, logger, options) still match.
 const mockDispose = vi.fn().mockResolvedValue(undefined);
 const mockCreateMCPTools = vi
   .fn()
@@ -26,6 +30,12 @@ const mockCreateMCPTools = vi
 
 vi.mock("@atlas/mcp", () => ({
   createMCPTools: (...args: unknown[]) => mockCreateMCPTools(...args),
+  createMCPToolsWithRetry: (
+    configs: unknown,
+    logger: unknown,
+    opts: unknown,
+    _interactiveCtx: unknown,
+  ) => mockCreateMCPTools(configs, logger, opts),
 }));
 
 // Mock discoverMCPServers — default returns empty candidate list

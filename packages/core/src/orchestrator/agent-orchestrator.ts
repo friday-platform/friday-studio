@@ -376,6 +376,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
           jobName: context.jobName,
           actionId: context.actionId,
           jobTimeoutMs: context.jobTimeoutMs,
+          sessionInteractive: context.sessionInteractive,
         },
         outputSchema: context.outputSchema,
         config: context.config,

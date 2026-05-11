@@ -38,7 +38,7 @@ vi.mock("ai", async () => {
 });
 
 vi.mock("../mcp-registry/discovery.ts", () => ({ discoverMCPServers: vi.fn() }));
-vi.mock("@atlas/mcp", () => ({ createMCPTools: vi.fn() }));
+vi.mock("@atlas/mcp", () => ({ createMCPTools: vi.fn(), createMCPToolsWithRetry: vi.fn() }));
 
 import { createDelegateTool, type DelegateResult } from "./index.ts";
 
