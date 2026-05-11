@@ -86,17 +86,11 @@ export async function rerank(
     const { object } = await generateObject({
       model: groq("meta-llama/llama-4-scout-17b-16e-instruct"),
       schema: RerankResponseSchema,
-      messages: [
-        {
-          role: "system",
-          content:
-            "You are a relevance scorer. Given a query and documents, rate each document 0-10. " +
-            "knowledge_base and confluence documents get a +2 bonus when they address the query topic. " +
-            "Respond in JSON with a rankings array.",
-        },
-        {
-          role: "user",
-          content: `<query>${escapeForPrompt(query)}</query>
+      system:
+        "You are a relevance scorer. Given a query and documents, rate each document 0-10. " +
+        "knowledge_base and confluence documents get a +2 bonus when they address the query topic. " +
+        "Respond in JSON with a rankings array.",
+      prompt: `<query>${escapeForPrompt(query)}</query>
 
 <documents>
 ${candidateXml}
@@ -105,8 +99,6 @@ ${candidateXml}
 Score every document's relevance to the query (0 = irrelevant, 10 = perfect match).
 
 Example output: {"rankings": [{"index": 0, "score": 8}, {"index": 1, "score": 3}]}`,
-        },
-      ],
       temperature: 0,
     });
 

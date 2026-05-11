@@ -6,7 +6,7 @@
  */
 import process from "node:process";
 import { createAgent, err, ok } from "@atlas/agent-sdk";
-import { getDefaultProviderOpts, registry, traceModel } from "@atlas/llm";
+import { getCachingRequestOpts, registry, traceModel } from "@atlas/llm";
 import { stringifyError } from "@atlas/utils";
 import { Database } from "@db/sqlite";
 import { generateText } from "ai";
@@ -284,16 +284,17 @@ export const knowledgeHybridAgent = createAgent<string, KnowledgeResult>({
       const systemPrompt = buildHybridPrompt(reranked, bm25Count, vecCount, guidelines);
       const llmStart = performance.now();
 
+      // No Anthropic cache_control here: `buildHybridPrompt` interpolates
+      // per-query search results into the system prompt, so the prefix
+      // changes every call — a cache breakpoint would pay write cost
+      // every turn with zero read hits. OpenAI's `promptCacheKey` is a
+      // routing hint and is harmless when the prefix doesn't actually
+      // cache, so keep it for the small "role" header that's stable.
       const result = await generateText({
         model: traceModel(registry.languageModel("anthropic:claude-sonnet-4-6")),
-        messages: [
-          {
-            role: "system",
-            content: systemPrompt,
-            providerOptions: getDefaultProviderOpts("anthropic"),
-          },
-          { role: "user", content: synthesisQuery },
-        ],
+        system: systemPrompt,
+        prompt: synthesisQuery,
+        providerOptions: getCachingRequestOpts({ cacheKey: "knowledge" }),
         temperature: 0,
         maxRetries: 2,
         abortSignal,

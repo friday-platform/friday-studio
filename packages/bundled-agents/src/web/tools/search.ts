@@ -1,7 +1,14 @@
 import process from "node:process";
 import type { AgentSessionData, StreamEmitter } from "@atlas/agent-sdk";
 import { createFailTool, repairToolCall } from "@atlas/agent-sdk";
-import { type PlatformModels, registry, temporalGroundingMessage, traceModel } from "@atlas/llm";
+import {
+  getCachingRequestOpts,
+  getDefaultProviderOpts,
+  type PlatformModels,
+  registry,
+  temporalGroundingMessage,
+  traceModel,
+} from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import { generateText, tool } from "ai";
 import { Parallel } from "parallel-web";
@@ -58,8 +65,8 @@ RECENCY (recencyDays):
 
 EXAMPLES:
 
-"Who is Parker Conrad?"
-→ analyzeQuery: {"complexity":"simple","searchQueries":["Parker Conrad","Parker Conrad CEO","Parker Conrad Rippling founder"]}
+"Who is Stephen Curry?"
+→ analyzeQuery: {"complexity":"simple","searchQueries":["Stephen Curry","Stephen Curry NBA","Stephen Curry Warriors point guard"]}
 
 "Compare IBM and Google quantum computing 2024"
 → analyzeQuery: {"complexity":"complex","searchQueries":["IBM quantum 2024","Google quantum AI 2024","IBM vs Google quantum","quantum error correction"],"recencyDays":365}
@@ -103,11 +110,17 @@ async function analyzeQuery(
   try {
     const response = await generateText({
       model: traceModel(registry.languageModel(ANALYSIS_MODEL)),
+      allowSystemInMessages: true,
       messages: [
-        { role: "system", content: QUERY_ANALYSIS_PROMPT },
+        {
+          role: "system",
+          content: QUERY_ANALYSIS_PROMPT,
+          providerOptions: getDefaultProviderOpts("anthropic"),
+        },
         temporalGroundingMessage(),
         { role: "user", content: objective },
       ],
+      providerOptions: getCachingRequestOpts({ cacheKey: "web-search-analyze" }),
       tools: {
         analyzeQuery: tool({
           description: "Produce the query analysis for the search",
@@ -270,9 +283,14 @@ export function createSearchTool(ctx: SearchToolContext) {
         })
         .join("\n\n---\n\n");
 
+      // No cache control on this call: the system prompt is ~70 tokens,
+      // well below both Anthropic's and OpenAI's 1024-token minimum for
+      // prompt caching. Attaching `cacheControl` or `promptCacheKey`
+      // would be inert and misleading.
       const synthesis = await generateText({
         model: traceModel(registry.languageModel(SYNTHESIS_MODEL)),
         abortSignal,
+        allowSystemInMessages: true,
         messages: [
           {
             role: "system",

@@ -1,7 +1,7 @@
 import { env } from "node:process";
 import { createAgent, err, ok, repairToolCall } from "@atlas/agent-sdk";
 import { collectToolUsageFromSteps, streamTextWithEvents } from "@atlas/agent-sdk/vercel-helpers";
-import { registry, traceModel } from "@atlas/llm";
+import { getCachingRequestOpts, getDefaultProviderOpts, registry, traceModel } from "@atlas/llm";
 import { stringifyError } from "@atlas/utils";
 import { Client, DEFAULT_LIMITER_OPTIONS } from "@hubspot/api-client";
 import { stepCountIs } from "ai";
@@ -632,14 +632,17 @@ export const hubspotAgent = createAgent<string, HubSpotOutput>({
       const result = await streamTextWithEvents({
         params: {
           model: traceModel(registry.languageModel("anthropic:claude-sonnet-4-6")),
-          messages: [
-            { role: "system", content: SYSTEM_PROMPT },
-            { role: "user", content: prompt },
-          ],
+          system: {
+            role: "system",
+            content: SYSTEM_PROMPT,
+            providerOptions: getDefaultProviderOpts("anthropic"),
+          },
+          prompt,
           tools,
           abortSignal,
           maxRetries: 3,
           stopWhen: stepCountIs(MAX_STEPS),
+          providerOptions: getCachingRequestOpts({ cacheKey: "hubspot" }),
           experimental_repairToolCall: repairToolCall,
         },
         stream,

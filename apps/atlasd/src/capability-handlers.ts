@@ -7,6 +7,7 @@
  */
 
 import type { AgentLLMConfig } from "@atlas/agent-sdk";
+import { enterUsageScope, type UsageCounter } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import { logger as rootLogger } from "@atlas/logger";
 import {
@@ -26,6 +27,15 @@ export interface CapabilityContext {
   agentLlmConfig?: AgentLLMConfig;
   logger: Logger;
   abortSignal?: AbortSignal;
+  /**
+   * Optional usage counter from the calling scope (e.g. a workspace-chat
+   * turn). When set, `handleLlm` re-enters this counter via
+   * `enterUsageScope` before invoking the LLM handler, so the
+   * traceModel-wrapped model bumps the same counter the caller is reading.
+   * Bridges the NATS subscriber boundary, which is otherwise its own ALS
+   * root.
+   */
+  usageCounter?: UsageCounter;
 }
 
 export class CapabilityHandlerRegistry {
@@ -96,7 +106,11 @@ export class CapabilityHandlerRegistry {
       logger: ctx.logger,
     });
 
-    handler(sc.decode(msg.data))
+    const run = ctx.usageCounter
+      ? () => enterUsageScope(ctx.usageCounter!, () => handler(sc.decode(msg.data)))
+      : () => handler(sc.decode(msg.data));
+
+    run()
       .then((result) => this.respond(nc, msg, result))
       .catch((e) =>
         this.respond(

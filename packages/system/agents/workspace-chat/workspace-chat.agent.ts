@@ -20,7 +20,13 @@ import { scrubAssistantMessage } from "@atlas/core/artifacts/scrubber";
 import { ChatStorage } from "@atlas/core/chat/storage";
 import { createDelegateTool } from "@atlas/core/delegate";
 import { createErrorCause, getErrorDisplayMessage } from "@atlas/core/errors";
-import { buildTemporalFacts, type PlatformModels, smallLLM } from "@atlas/llm";
+import {
+  buildTemporalFacts,
+  enterUsageScope,
+  type PlatformModels,
+  smallLLM,
+  type UsageCounter,
+} from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import { getAtlasDaemonUrl } from "@atlas/oapi-client";
 import type { SkillSummary } from "@atlas/skills";
@@ -528,9 +534,19 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
     }
 
     let finalText: string | undefined;
-    // Per-turn token + cache usage captured from streamText.onFinish so
-    // the assistant message metadata (and downstream UI badges +
-    // /usage aggregations) can read it without re-reading session events.
+    // Per-turn token + cache usage. Mutated in place by traceModel
+    // middleware on every wrapped LLM call inside `enterUsageScope`
+    // below — that includes the parent streamText (one entry per step),
+    // every nested call fired from a tool execute (bundled agents,
+    // from-llm agents, delegate, fsm, supervisor), and user-agent
+    // `ctx.llm` requests bridged via `CapabilityContext.usageCounter`.
+    // Read in `onFinish` and written to the persisted message metadata.
+    const usageCounter: UsageCounter = {
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+    };
     let turnUsage:
       | {
           inputTokens?: number;
@@ -1118,7 +1134,9 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           // operator can spot prefix drift by comparing block-by-block
           // across turns instead of squinting at a single 26K-char blob.
           const capturedSystemMessages: string[] = [systemBlocks.block1, systemBlocks.block2];
-          if (systemBlocks.block3) capturedSystemMessages.push(systemBlocks.block3);
+          if (systemBlocks.block3) {
+            capturedSystemMessages.push(systemBlocks.block3);
+          }
           capturedSystemMessages.push(block4Preface);
           ChatStorage.setSystemPromptContext(
             session.streamId,
@@ -1254,119 +1272,151 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           : [];
 
         try {
-          const result = streamText({
-            model: conversationalModel,
-            experimental_repairToolCall: repairToolCall,
-            system: isAnthropic ? undefined : systemPrompt,
-            messages: isAnthropic ? [...systemModelMessages, ...modelMessages] : modelMessages,
-            allowSystemInMessages: isAnthropic ? true : undefined,
-            tools: allTools,
-            toolChoice: "auto",
-            stopWhen: [stepCountIs(40), connectServiceSucceeded(), connectCommunicatorSucceeded()],
-            maxOutputTokens: 20000,
-            experimental_transform: smoothStream({ chunking: "word" }),
-            maxRetries: 3,
-            abortSignal,
-            // Provider-level cache controls.
-            //
-            // Anthropic — per-block `cacheControl` markers sit on the
-            //   system messages above. Setting a top-level
-            //   `cache_control` here would land on the messages block
-            //   AFTER block 3, violating Anthropic's non-increasing-
-            //   TTL rule (1h cannot come after 5m). Leave it off.
-            //
-            // OpenAI — caching is automatic for prefixes ≥1024 tokens;
-            //   no explicit markers are needed. The optional
-            //   `promptCacheKey` is a routing hint that pins requests
-            //   sharing a long common prefix to the same backend, which
-            //   improves cache hit rate when the serving fleet would
-            //   otherwise scatter them. Keying on `workspaceId` groups
-            //   every chat in the same workspace onto the same cache.
-            //
-            // Other providers (Gemini, Groq) auto-cache without any
-            // markers; their unused providerOptions are no-ops.
-            providerOptions: { openai: { promptCacheKey: workspaceId } },
-            onFinish: ({ text, steps, toolCalls, toolResults, reasoningText, totalUsage }) => {
-              finalText = text;
-              // J3: harvest internal tool calls from streamText's terminal
-              // event. `collectToolUsageFromSteps` flattens per-step calls
-              // (the AI SDK populates them under `steps[*].toolCalls` /
-              // `.toolResults`) and falls back to top-level arrays. Mirrors
-              // the canonical pattern in `from-llm.ts:195-211`.
-              const collected = collectToolUsageFromSteps({ steps, toolCalls, toolResults });
-              assembledToolCalls = collected.assembledToolCalls;
-              assembledToolResults = collected.assembledToolResults;
-              assembledReasoning = reasoningText || undefined;
-              // `totalUsage` aggregates across every step in the
-              // streamText loop. `result.usage` would be the last-step
-              // count and would undercount multi-tool turns. Cache token
-              // fields ride under `inputTokenDetails` in the SDK shape;
-              // flatten so consumers don't need to know the SDK layout.
-              turnUsage = {
-                inputTokens: totalUsage.inputTokens,
-                outputTokens: totalUsage.outputTokens,
-                cacheReadTokens: totalUsage.inputTokenDetails?.cacheReadTokens,
-                cacheWriteTokens: totalUsage.inputTokenDetails?.cacheWriteTokens,
-              };
-              // Emit a `data-usage` chunk so the UI can render the
-              // badge live for the in-flight assistant turn instead of
-              // waiting for a page reload to read the persisted
-              // metadata. The persisted message metadata (set just
-              // before append, below) is the source of truth on
-              // refresh; this chunk is a peer signal for the live
-              // render path.
-              if (stream) {
-                writer.write({ id: crypto.randomUUID(), type: "data-usage", data: turnUsage });
-              }
-            },
-            onError: ({ error }) => {
-              if (!error) return;
-
-              logger.error("Stream error in workspace-chat agent", { error });
-
-              const errorCause = createErrorCause(error);
-              const displayMessage = getErrorDisplayMessage(errorCause);
-
-              if (stream && !errorEmitted) {
-                writer.write({
-                  id: crypto.randomUUID(),
-                  type: "data-error",
-                  data: { error: displayMessage, errorCause },
-                });
-                errorEmitted = true;
-              }
-            },
-          });
-
-          // Start piping the UI message stream
-          let startTimestamp: string | undefined;
-          let endTimestamp: string | undefined;
-
-          writer.merge(
-            result.toUIMessageStream({
-              originalMessages: messages,
-              messageMetadata: (metadata) => {
-                if (!startTimestamp) {
-                  startTimestamp = new Date().toISOString();
-                }
-                if (metadata.part.type === "finish") {
-                  endTimestamp = new Date().toISOString();
-                }
-                return {
-                  startTimestamp,
-                  endTimestamp,
-                  provider: conversationalModel.provider,
-                  modelId: conversationalModel.modelId,
-                  agentId: "workspace-chat",
-                  // Usage is set by `onFinish` (above) once the stream
-                  // settles. On in-flight metadata frames this is
-                  // undefined — UI consumers treat absence as
-                  // "still streaming".
-                  ...(turnUsage ? { usage: turnUsage } : {}),
+          // Open the usage scope around streamText creation AND stream
+          // consumption. `traceModel`'s wrapStream middleware captures
+          // the counter reference at scope entry (during the first
+          // `model.doStream` invocation); the mutation happens later
+          // when the transform sees the `finish` chunk, by which point
+          // the captured closure does the work — ALS context at finish
+          // time doesn't matter. The await on `result.finishReason`
+          // keeps the scope alive until every nested call (tool
+          // executes, sub-agents) has settled. Nested in-process calls
+          // ride this same scope through async/await propagation;
+          // user-agent `ctx.llm` calls cross NATS, so they bridge via
+          // `CapabilityContext.usageCounter` (see
+          // ProcessAgentExecutor).
+          await enterUsageScope(usageCounter, async () => {
+            const result = streamText({
+              model: conversationalModel,
+              experimental_repairToolCall: repairToolCall,
+              system: isAnthropic ? undefined : systemPrompt,
+              messages: isAnthropic ? [...systemModelMessages, ...modelMessages] : modelMessages,
+              allowSystemInMessages: isAnthropic ? true : undefined,
+              tools: allTools,
+              toolChoice: "auto",
+              stopWhen: [
+                stepCountIs(40),
+                connectServiceSucceeded(),
+                connectCommunicatorSucceeded(),
+              ],
+              maxOutputTokens: 20000,
+              experimental_transform: smoothStream({ chunking: "word" }),
+              maxRetries: 3,
+              abortSignal,
+              // Provider-level cache controls.
+              //
+              // Anthropic — per-block `cacheControl` markers sit on the
+              //   system messages above. Setting a top-level
+              //   `cache_control` here would land on the messages block
+              //   AFTER block 3, violating Anthropic's non-increasing-
+              //   TTL rule (1h cannot come after 5m). Leave it off.
+              //
+              // OpenAI — caching is automatic for prefixes ≥1024 tokens;
+              //   no explicit markers are needed. The optional
+              //   `promptCacheKey` is a routing hint that pins requests
+              //   sharing a long common prefix to the same backend, which
+              //   improves cache hit rate when the serving fleet would
+              //   otherwise scatter them. Keying on `workspaceId` groups
+              //   every chat in the same workspace onto the same cache.
+              //
+              // Other providers (Gemini, Groq) auto-cache without any
+              // markers; their unused providerOptions are no-ops.
+              providerOptions: { openai: { promptCacheKey: workspaceId } },
+              onFinish: ({ text, steps, toolCalls, toolResults, reasoningText }) => {
+                finalText = text;
+                // J3: harvest internal tool calls from streamText's terminal
+                // event. `collectToolUsageFromSteps` flattens per-step calls
+                // (the AI SDK populates them under `steps[*].toolCalls` /
+                // `.toolResults`) and falls back to top-level arrays. Mirrors
+                // the canonical pattern in `from-llm.ts:195-211`.
+                const collected = collectToolUsageFromSteps({ steps, toolCalls, toolResults });
+                assembledToolCalls = collected.assembledToolCalls;
+                assembledToolResults = collected.assembledToolResults;
+                assembledReasoning = reasoningText || undefined;
+                // Snapshot the accumulator at turn-end. By the time
+                // onFinish fires the wrapStream middleware has already
+                // processed the parent's `finish` chunk, and every
+                // nested call's `wrapGenerate`/`wrapStream` has
+                // resolved, so the counter holds the full turn total
+                // (parent multi-step + all in-process nested calls +
+                // any cross-NATS user-agent LLM calls).
+                turnUsage = {
+                  inputTokens: usageCounter.inputTokens,
+                  outputTokens: usageCounter.outputTokens,
+                  cacheReadTokens: usageCounter.cacheReadTokens,
+                  cacheWriteTokens: usageCounter.cacheWriteTokens,
                 };
+                // Emit a `data-usage` chunk so the UI can render the
+                // badge live for the in-flight assistant turn instead of
+                // waiting for a page reload to read the persisted
+                // metadata. The persisted message metadata (set just
+                // before append, below) is the source of truth on
+                // refresh; this chunk is a peer signal for the live
+                // render path.
+                if (stream) {
+                  writer.write({ id: crypto.randomUUID(), type: "data-usage", data: turnUsage });
+                }
               },
-            }),
-          );
+              onError: ({ error }) => {
+                if (!error) return;
+
+                logger.error("Stream error in workspace-chat agent", { error });
+
+                const errorCause = createErrorCause(error);
+                const displayMessage = getErrorDisplayMessage(errorCause);
+
+                if (stream && !errorEmitted) {
+                  writer.write({
+                    id: crypto.randomUUID(),
+                    type: "data-error",
+                    data: { error: displayMessage, errorCause },
+                  });
+                  errorEmitted = true;
+                }
+              },
+            });
+
+            // Start piping the UI message stream
+            let startTimestamp: string | undefined;
+            let endTimestamp: string | undefined;
+
+            writer.merge(
+              result.toUIMessageStream({
+                originalMessages: messages,
+                messageMetadata: (metadata) => {
+                  if (!startTimestamp) {
+                    startTimestamp = new Date().toISOString();
+                  }
+                  if (metadata.part.type === "finish") {
+                    endTimestamp = new Date().toISOString();
+                  }
+                  return {
+                    startTimestamp,
+                    endTimestamp,
+                    provider: conversationalModel.provider,
+                    modelId: conversationalModel.modelId,
+                    agentId: "workspace-chat",
+                    // Usage is set by `onFinish` (above) once the stream
+                    // settles. On in-flight metadata frames this is
+                    // undefined — UI consumers treat absence as
+                    // "still streaming".
+                    ...(turnUsage ? { usage: turnUsage } : {}),
+                  };
+                },
+              }),
+            );
+
+            // Keep the usage scope alive until the stream actually
+            // completes. Awaiting any of `result.finishReason`,
+            // `result.usage`, etc. blocks here until the underlying
+            // stream settles — at which point every wrapStream
+            // middleware (parent + nested) has already mutated the
+            // counter and the onFinish snapshot above has fired. The
+            // outer pipeUIMessageStream consumer continues to pull
+            // chunks while we're parked here, so this await doesn't
+            // deadlock the merge.
+            await result.finishReason;
+          });
         } catch (error) {
           const errorCause = createErrorCause(error);
           const displayMessage = getErrorDisplayMessage(errorCause);
