@@ -34,29 +34,29 @@
   const resolvedTitle = $derived(
     exportCtx !== undefined
       ? prefetched?.title || "Artifact"
-      : $liveQuery.data?.artifact.title || "Artifact",
+      : liveQuery.data?.artifact.title || "Artifact",
   );
   const resolvedSummary = $derived(
-    exportCtx !== undefined ? prefetched?.summary : $liveQuery.data?.artifact.summary,
+    exportCtx !== undefined ? prefetched?.summary : liveQuery.data?.artifact.summary,
   );
   const mimeType = $derived(
-    exportCtx !== undefined ? prefetched?.mimeType : $liveQuery.data?.artifact.data.mimeType,
+    exportCtx !== undefined ? prefetched?.mimeType : liveQuery.data?.artifact.data.mimeType,
   );
   const originalName = $derived(
-    exportCtx !== undefined ? prefetched?.originalName : $liveQuery.data?.artifact.data.originalName,
+    exportCtx !== undefined ? prefetched?.originalName : liveQuery.data?.artifact.data.originalName,
   );
   const sizeBytes = $derived(
-    exportCtx !== undefined ? prefetched?.size : $liveQuery.data?.artifact.data.size,
+    exportCtx !== undefined ? prefetched?.size : liveQuery.data?.artifact.data.size,
   );
   const contents = $derived(
-    exportCtx !== undefined ? undefined : $liveQuery.data?.contents,
+    exportCtx !== undefined ? undefined : liveQuery.data?.contents,
   );
-  const loading = $derived(exportCtx === undefined && $liveQuery.isPending);
+  const loading = $derived(exportCtx === undefined && liveQuery.isPending);
   const fetchError = $derived(
     exportMissing
       ? `Artifact ${artifactId} missing from export context`
-      : exportCtx === undefined && $liveQuery.error
-        ? $liveQuery.error.message
+      : exportCtx === undefined && liveQuery.error
+        ? liveQuery.error.message
         : null,
   );
 
@@ -181,7 +181,7 @@
       exportCtx === undefined && isTabularMime && !contents ? artifactId : null,
     ),
   );
-  const tabularText = $derived(contents ?? $tabularContentQuery.data);
+  const tabularText = $derived(contents ?? tabularContentQuery.data);
 
   const tableModel = $derived<TableModel | null>(
     isTabularMime && tabularText && baseMime ? parseTabular(baseMime, tabularText) : null,
