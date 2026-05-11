@@ -47,6 +47,7 @@ import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
 import {
   AckPolicy,
+  type ConsumerMessages,
   DeliverPolicy,
   type JsMsg,
   type NatsConnection,
@@ -219,6 +220,7 @@ interface InFlightCascade {
 export class CascadeConsumer {
   private running = false;
   private loop: Promise<void> | null = null;
+  private currentBatch: ConsumerMessages | null = null;
   private readonly name: string;
   private readonly expiresMs: number;
   private readonly batchSize: number;
@@ -458,8 +460,17 @@ export class CascadeConsumer {
     );
   }
 
-  async stop(): Promise<void> {
+  /**
+   * Closes the in-flight fetch iterator so runLoop returns promptly. See
+   * `SignalConsumer.stop` for the canonical writeup of the between-batches
+   * race — same shape here, same firm bound (`nc.close()` in NatsManager).
+   */
+  async stop(signal?: AbortSignal): Promise<void> {
     this.running = false;
+    void this.currentBatch?.close();
+    if (signal && !signal.aborted) {
+      signal.addEventListener("abort", () => void this.currentBatch?.close(), { once: true });
+    }
     await this.stopCancelSubscription();
     if (this.loop) {
       try {
@@ -501,6 +512,7 @@ export class CascadeConsumer {
         await new Promise((r) => setTimeout(r, 1000));
         continue;
       }
+      this.currentBatch = batch;
       for await (const msg of batch) {
         // Critical: do NOT await — the whole point is to keep delivery
         // decoupled from cascade execution. handleMessage acks and
@@ -513,6 +525,7 @@ export class CascadeConsumer {
           });
         });
       }
+      this.currentBatch = null;
     }
   }
 
