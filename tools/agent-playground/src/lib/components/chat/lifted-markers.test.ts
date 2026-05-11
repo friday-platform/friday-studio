@@ -47,6 +47,33 @@ describe("extractLiftedArtifactIds", () => {
     ]);
   });
 
+  it("deduplicates the same artifact id across fields (first occurrence wins)", () => {
+    // Regression: tool results commonly mention the same artifact id in
+    // more than one field — once in the top-level summary, again in
+    // an `aiSummary.keyDetails[].url`, sometimes again in a nested
+    // content blob. The UI keys `{#each liftedArtifacts as ref
+    // (ref.artifactId)}` so a duplicate id crashes the render with
+    // `each_key_duplicate`. Order preserves first-occurrence so the
+    // visible artifact card still lines up with where the user expects.
+    const out = {
+      summary: `result lifted: ${marker("art_dup")}`,
+      aiSummary: {
+        keyDetails: [{ url: marker("art_dup", "application/pdf", "x", "y", 50) }],
+      },
+      details: marker("art_other"),
+      footer: marker("art_dup"),
+    };
+    expect(extractLiftedArtifactIds(out)).toEqual([
+      { artifactId: "art_dup" },
+      { artifactId: "art_other" },
+    ]);
+  });
+
+  it("deduplicates the same artifact id when it appears twice in one string", () => {
+    const out = `${marker("art_x")} mentioned again: ${marker("art_x")}`;
+    expect(extractLiftedArtifactIds(out)).toEqual([{ artifactId: "art_x" }]);
+  });
+
   it("ignores malformed marker shapes", () => {
     // No closing bracket — regex requires `]`.
     expect(extractLiftedArtifactIds("[attachment lifted to artifact bad ")).toEqual([]);
