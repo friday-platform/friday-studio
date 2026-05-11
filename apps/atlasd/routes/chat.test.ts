@@ -115,7 +115,7 @@ function createTestApp(
     sessionHistoryAdapter: {},
   };
 
-  const app = new Hono<{ Variables: { app: typeof mockContext } }>();
+  const app = new Hono<{ Variables: { app: typeof mockContext; userId?: string } }>();
   app.use("*", async (c, next) => {
     c.set("app", mockContext);
     c.set("userId", "test-user");

@@ -18,6 +18,36 @@ import { connect, type NatsConnection } from "nats";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import type { AppContext, AppVariables } from "../src/factory.ts";
+
+vi.mock("@atlas/core/workspace-members/storage", () => ({
+  WorkspaceMemberStorage: {
+    // Admit every (userId, wsId) so artifact-by-id checks pass.
+    get: vi
+      .fn()
+      .mockImplementation((userId: string, wsId: string) =>
+        Promise.resolve({
+          ok: true,
+          data: { userId, wsId, role: "owner", addedAt: "2026-05-11T00:00:00.000Z" },
+        }),
+      ),
+    // Empty `listByUser` would filter out workspace-stamped artifacts in
+    // batch-get; return a sentinel that allows any wsId via the route's
+    // `accessible.has(wsId)` check by listing a permissive set is awkward
+    // — instead the route's filter retains artifacts whose `workspaceId`
+    // is absent, AND those whose wsId we list here. The two known test
+    // wsIds get explicitly listed via `mockResolvedValueOnce` overrides
+    // in the cases that need them.
+    listByUser: vi.fn().mockResolvedValue({ ok: true, data: [] }),
+    listByWorkspace: vi.fn().mockResolvedValue({ ok: true, data: [] }),
+    put: vi.fn().mockResolvedValue({ ok: true, data: null }),
+    putIfAbsent: vi.fn().mockResolvedValue({ ok: true, data: null }),
+    delete: vi.fn().mockResolvedValue({ ok: true, data: undefined }),
+  },
+  ensureWorkspaceMembersKVBucket: vi.fn(),
+  initWorkspaceMemberStorage: vi.fn(),
+  resetWorkspaceMemberStorageForTests: vi.fn(),
+}));
+
 import {
   artifactsApp as rawArtifactsApp,
   replaceArtifactFromFile,
@@ -38,6 +68,7 @@ const mockAppContext = {
 const artifactsApp = new Hono<AppVariables>()
   .use("*", async (c, next) => {
     c.set("app", mockAppContext);
+    c.set("userId", "test-user");
     await next();
   })
   .route("/", rawArtifactsApp);

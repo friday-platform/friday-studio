@@ -31,6 +31,27 @@ async function resolveChat(chatId: string) {
   return null;
 }
 
+/**
+ * Legacy chats land in a "global" bucket whose `workspaceId` is one of
+ * the sentinel strings below (or absent). No membership rows exist
+ * for those — gating on `chat.workspaceId` directly would 403 every
+ * legacy chat for every user. Treat them as USER_WORKSPACE_ID-scoped,
+ * which the top-level `use("*")` middleware already verified.
+ * Mirrors `GLOBAL_WORKSPACE_IDS` in `@atlas/core/chat/storage`.
+ */
+const LEGACY_CHAT_WORKSPACE_IDS = new Set(["friday-conversation", "system"]);
+
+async function authorizeChatAccess(
+  c: Parameters<typeof requireWorkspaceMember>[0],
+  chatWorkspaceId: string,
+): Promise<void> {
+  if (LEGACY_CHAT_WORKSPACE_IDS.has(chatWorkspaceId)) {
+    // Already verified USER_WORKSPACE_ID membership in the use("*") chain.
+    return;
+  }
+  await requireWorkspaceMember(c, chatWorkspaceId);
+}
+
 const chatRoutes = daemonFactory
   .createApp()
   // Gate every `/api/chat/*` route on membership of the shared
@@ -123,9 +144,18 @@ const chatRoutes = daemonFactory
    * receiving events and the UI shows the conversation as complete.
    * Idempotent - safe to call multiple times.
    */
-  .delete("/:chatId/stream", (c) => {
+  .delete("/:chatId/stream", async (c) => {
     const ctx = c.get("app");
     const chatId = c.req.param("chatId");
+
+    // Resolve the chat first to gate on its actual workspaceId — the
+    // top-level USER_WORKSPACE_ID check alone would let any authed
+    // caller stop another tenant's in-flight stream.
+    const chat = await resolveChat(chatId);
+    if (!chat) {
+      return c.json({ error: "Chat not found" }, 404);
+    }
+    await authorizeChatAccess(c, chat.workspaceId);
 
     ctx.streamRegistry.finishStream(chatId);
 
@@ -139,9 +169,19 @@ const chatRoutes = daemonFactory
    * Returns 200 with SSE stream if active, replaying buffered events.
    * Returns 204 if stream doesn't exist or is finished.
    */
-  .get("/:chatId/stream", (c) => {
+  .get("/:chatId/stream", async (c) => {
     const ctx = c.get("app");
     const chatId = c.req.param("chatId");
+
+    // Resolve to gate on the chat's actual workspaceId — the
+    // streamRegistry is keyed by chatId alone, so without this check
+    // any authed USER_WORKSPACE_ID member could read another
+    // tenant's live stream just by guessing/leaking a chatId.
+    const chat = await resolveChat(chatId);
+    if (!chat) {
+      return c.body(null, 204);
+    }
+    await authorizeChatAccess(c, chat.workspaceId);
 
     const buffer = ctx.streamRegistry.getStream(chatId);
 
@@ -195,7 +235,7 @@ const chatRoutes = daemonFactory
     // the actual chat workspace too, otherwise a legacy chat in a
     // different workspace is readable to anyone with USER_WORKSPACE_ID
     // membership.
-    await requireWorkspaceMember(c, chat.workspaceId);
+    await authorizeChatAccess(c, chat.workspaceId);
 
     const { messages, systemPromptContext, ...metadata } = chat;
     // Return last 100 messages in chronological order (oldest first)
@@ -228,7 +268,7 @@ const chatRoutes = daemonFactory
     if (!chat) {
       return c.json({ error: "Chat not found" }, 404);
     }
-    await requireWorkspaceMember(c, chat.workspaceId);
+    await authorizeChatAccess(c, chat.workspaceId);
 
     // Validate the message format
     const [validatedMessage] = await validateAtlasUIMessages([message]);
@@ -269,7 +309,7 @@ const chatRoutes = daemonFactory
     if (!chat) {
       return c.json({ error: "Chat not found" }, 404);
     }
-    await requireWorkspaceMember(c, chat.workspaceId);
+    await authorizeChatAccess(c, chat.workspaceId);
 
     const result = await ChatStorage.updateChatTitle(chatId, title, chat.workspaceId);
     if (result.ok) {
@@ -289,7 +329,7 @@ const chatRoutes = daemonFactory
     if (!chat) {
       return c.json({ error: "Chat not found" }, 404);
     }
-    await requireWorkspaceMember(c, chat.workspaceId);
+    await authorizeChatAccess(c, chat.workspaceId);
 
     const result = await ChatStorage.deleteChat(chatId, chat.workspaceId);
     if (result.ok) {
