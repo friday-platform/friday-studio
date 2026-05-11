@@ -1248,6 +1248,40 @@ describe("Delegated OAuth refresh classifier integration", async () => {
     expect(body.credential.secret.access_token).toEqual("seed_access_token");
   });
 
+  it("transient Cloud Function failure surfaces refresh_unavailable, then recovers to refreshed on retry", async () => {
+    // Regression seal: a transient 5xx from the delegated refresh endpoint
+    // must NOT collapse into refresh_failed (which forces a reconnect prompt).
+    // It surfaces refresh_unavailable so the caller can retry, and a
+    // subsequent successful refresh transitions cleanly to refreshed with
+    // the original refresh_token preserved.
+    respondTo = () => new Response("upstream is on fire", { status: 500 });
+    registerProvider("test-classifier-transient-then-success", mockRefreshUrl());
+    const credId = await seedCredential("test-classifier-transient-then-success", 30);
+
+    const firstRes = await app.request(`/internal/v1/credentials/${credId}`);
+    expect(firstRes.status).toEqual(200);
+    const firstBody = InternalCredentialResponseSchema.parse(await firstRes.json());
+    expect(firstBody.status).toEqual("refresh_unavailable");
+    expect(firstBody.credential.secret.access_token).toEqual("seed_access_token");
+    expect(firstBody.credential.secret.refresh_token).toEqual("seed_refresh_token");
+
+    respondTo = () =>
+      Response.json({
+        access_token: "recovered_access_token",
+        expiry_date: 1900000000000,
+        scope: "openid email",
+        token_type: "Bearer",
+      });
+
+    const secondRes = await app.request(`/internal/v1/credentials/${credId}`);
+    expect(secondRes.status).toEqual(200);
+    const secondBody = InternalCredentialResponseSchema.parse(await secondRes.json());
+    expect(secondBody.status).toEqual("refreshed");
+    expect(secondBody.credential.secret.access_token).toEqual("recovered_access_token");
+    // Cloud Function never returns a new refresh_token — original preserved.
+    expect(secondBody.credential.secret.refresh_token).toEqual("seed_refresh_token");
+  });
+
   afterAll(async () => {
     if (mockController) mockController.abort();
     await rm(tempDir, { recursive: true });
