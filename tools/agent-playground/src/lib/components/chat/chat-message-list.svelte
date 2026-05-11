@@ -1,13 +1,15 @@
 <script lang="ts">
-  import { DropdownMenu, markdownToHTML } from "@atlas/ui";
-  import { tick, untrack } from "svelte";
-  import type { ChatMessage, ImageDisplay, ToolCallDisplay } from "./types";
+  import { DropdownMenu, markdownToHTMLSafe } from "@atlas/ui";
+  import { tick } from "svelte";
+  import type { ChatMessage } from "./types";
+  import { getExportContext } from "./export-context";
+  import ToolBurst from "./tool-burst.svelte";
   import ToolCallCard from "./tool-call-card.svelte";
-  import { isError, isInProgress, needsUserAction } from "./tool-call-utils";
-  import { IconSmall } from "@atlas/ui";
+  import { needsUserAction } from "./tool-call-utils";
   import ValidationPillRow from "./validation-pill-row.svelte";
   import type { ValidationAttemptDisplay } from "./validation-accumulator.ts";
   import UsageBadge from "./usage-badge.svelte";
+  import { formatMessageTimestamp } from "@atlas/core/chat/export/render";
 
   // Per-message timestamp formatters. Default is HH:MM:SS in the user's
   // locale; the alt-pressed view swaps in full date + time so the
@@ -243,54 +245,20 @@
   });
 
   /**
-   * Per-burst open/closed state.  `true` → explicitly open (user clicked or
-   * auto-expanded for action-needed tools).  `false` → explicitly closed.
-   * `undefined` → default: collapsed unless a call needs user action.
+   * Suppresses the markdown copy-button injection (which depends on JS)
+   * when the list renders inside an export. The markdown content still
+   * renders; only the per-block copy affordance is skipped.
    */
-  let burstOpenState: Map<string, boolean | undefined> = $state(new Map());
-
-  function isBurstOpen(burstId: string): boolean {
-    return burstOpenState.get(burstId) ?? false;
-  }
-
-  function toggleBurst(burstId: string) {
-    const current = isBurstOpen(burstId);
-    burstOpenState = new Map(burstOpenState).set(burstId, !current);
-  }
-
-  /**
-   * Auto-expand bursts that contain tools requiring user interaction,
-   * including nested HITL/tool cards under a running job. Runs once per
-   * burst when it first appears in the rendered list.
-   */
-  $effect(() => {
-    for (const msg of messages) {
-      for (const seg of msg.segments) {
-        if (seg.type !== "tool-burst") continue;
-        if (burstOpenState.has(seg.id)) continue;
-        const needsAction = seg.calls.some((c) => needsUserAction(c));
-        untrack(() => {
-          burstOpenState = new Map(burstOpenState).set(seg.id, needsAction ? true : undefined);
-        });
-      }
-    }
-  });
-
-  /**
-   * Build a short summary for a collapsed tool burst.  Only the count and
-   * the most recent tool name — status is conveyed by the left icon.
-   */
-  function toolBurstSummary(calls: ToolCallDisplay[]): string {
-    const lastName = calls.at(-1)?.toolName ?? "";
-    return `${calls.length} tool call${calls.length === 1 ? "" : "s"}${lastName ? ` · last: ${lastName}` : ""}`;
-  }
+  const isExport = getExportContext() !== undefined;
 
   /**
    * Svelte action: inject a "Copy" button on every <pre> and <table> inside
    * a `.markdown-body` container. Runs after initial render and re-scans
-   * when the DOM subtree changes (streaming content).
+   * when the DOM subtree changes (streaming content). No-ops in export
+   * mode so the static HTML is button-free.
    */
   function copyButtons(node: HTMLElement) {
+    if (isExport) return;
     function injectButtons() {
       for (const el of node.querySelectorAll("pre, table")) {
         // Skip if already wrapped
@@ -369,60 +337,19 @@
           {#each message.segments as segment}
             {#if segment.type === "text" && segment.content.length > 0}
               {#if message.role === "assistant"}
-                <div class="message-content markdown-body" use:copyButtons>{@html markdownToHTML(segment.content)}</div>
+                <div class="message-content markdown-body" use:copyButtons>{@html markdownToHTMLSafe(segment.content)}</div>
               {:else}
                 <div class="message-content">{segment.content}</div>
               {/if}
             {:else if segment.type === "tool-burst"}
-              {@const calls = segment.calls}
-              {@const regularCalls = calls.filter((c) => !needsUserAction(c))}
-              {@const actionCalls = calls.filter((c) => needsUserAction(c))}
-              {@const anyRunning = regularCalls.some((c) => isInProgress(c.state))}
-              {@const anyError = regularCalls.some((c) => isError(c.state))}
-              {@const isOpen = isBurstOpen(segment.id)}
+              {@const regularCalls = segment.calls.filter((c) => !needsUserAction(c))}
+              {@const actionCalls = segment.calls.filter((c) => needsUserAction(c))}
               {#if regularCalls.length > 0}
-                <div class="tool-burst" class:open={isOpen}>
-                  <div
-                    class="tool-burst-bar"
-                    role="button"
-                    tabindex="0"
-                    onclick={() => toggleBurst(segment.id)}
-                    onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") toggleBurst(segment.id); }}
-                  >
-                    <span class="burst-icon" aria-hidden="true">
-                      {#if anyRunning}
-                        <span class="burst-pulse"></span>
-                      {:else if anyError}
-                        <span class="burst-error-mark">!</span>
-                      {:else}
-                        <span class="burst-success-mark">✓</span>
-                      {/if}
-                    </span>
-                    <span class="burst-label">{toolBurstSummary(regularCalls)}</span>
-                    <span class="burst-chevron" aria-hidden="true">
-                      <IconSmall.ChevronRight />
-                    </span>
-                  </div>
-                  {#if isOpen}
-                    <div class="tool-burst-body">
-                      {#if segment.reasoning}
-                        <div class="burst-reasoning">
-                          {#each segment.reasoning.split("\n").filter((l) => l.trim()) as line}
-                            <div class="reasoning-line">
-                              <span class="reasoning-dot" aria-hidden="true"></span>
-                              <span class="reasoning-text">{line}</span>
-                            </div>
-                          {/each}
-                        </div>
-                      {/if}
-                      <div class="tool-call-list">
-                        {#each regularCalls as call (call.toolCallId || call.toolName)}
-                          <ToolCallCard {call} {onCredentialConnected} />
-                        {/each}
-                      </div>
-                    </div>
-                  {/if}
-                </div>
+                <ToolBurst
+                  calls={regularCalls}
+                  reasoning={segment.reasoning}
+                  {onCredentialConnected}
+                />
               {/if}
               {#if actionCalls.length > 0}
                 <div class="tool-call-list">
@@ -510,84 +437,92 @@
             </div>
           {/if}
 
-          <!-- Compact actions row under the bubble: timestamp, optional
-               turn duration + usage badge, then the ellipsis menu at
-               the trailing edge. Layout flips by role:
-                 • assistant — left-aligned: time · duration · usage · ellipsis
-                 • user      — right-aligned: time · ellipsis
+          <!-- Per-message actions row. Two shapes:
+                 • Live UI — compact (alt→full) timestamp + optional turn
+                   duration + UsageBadge + ellipsis menu. Layout flips by
+                   role: assistant left-aligned, user right-aligned.
+                 • Export mode — JS-driven affordances (dropdown, alt-key
+                   toggle, badges) are dead in static HTML, so we render
+                   just the message timestamp in main's full-date style,
+                   no cache/token info. The raw timestamp also lives in
+                   chat.json for anyone who wants it.
                System messages stay quiet (no menu, no time). -->
           {@const fullTime = formatDateTimeFull(message.timestamp)}
           {@const compactTime = formatTimeShort(message.timestamp)}
           {@const duration = message.role === "assistant" ? turnDurationMs(message) : null}
           <div class="message-actions" class:assistant={message.role === "assistant"} class:user={message.role === "user"}>
-            <span class="message-time" title={fullTime}>
-              {altPressed ? fullTime : compactTime}
-            </span>
-            {#if duration !== null}
-              <span class="turn-duration" title="turn duration">{formatDuration(duration)}</span>
+            {#if isExport}
+              <span class="message-time">{formatMessageTimestamp(message.metadata)}</span>
+            {:else}
+              <span class="message-time" title={fullTime}>
+                {altPressed ? fullTime : compactTime}
+              </span>
+              {#if duration !== null}
+                <span class="turn-duration" title="turn duration">{formatDuration(duration)}</span>
+              {/if}
+              {#if message.role === "assistant" && message.metadata?.usage}
+                <UsageBadge
+                  usage={message.metadata.usage}
+                  provider={message.metadata.provider}
+                  startTimestamp={message.metadata.startTimestamp}
+                  endTimestamp={message.metadata.endTimestamp}
+                />
+              {/if}
+              <DropdownMenu.Root positioning={{ placement: message.role === "user" ? "bottom-end" : "bottom-start" }}>
+                {#snippet children()}
+                  <DropdownMenu.Trigger class="message-menu-trigger" aria-label="Message options">
+                    <!-- Dots shifted toward the bottom of the viewBox so
+                         the ellipsis aligns with the bottom of the
+                         neighboring text rather than centering on its
+                         own taller bounding box. -->
+                    <svg
+                      width="16"
+                      height="16"
+                      viewBox="0 0 16 16"
+                      fill="none"
+                      aria-hidden="true"
+                    >
+                      <circle cx="4" cy="13" r="1.25" fill="currentColor" />
+                      <circle cx="8" cy="13" r="1.25" fill="currentColor" />
+                      <circle cx="12" cy="13" r="1.25" fill="currentColor" />
+                    </svg>
+                  </DropdownMenu.Trigger>
+                  <DropdownMenu.Content>
+                    <!-- Convention: every dropdown item ships an icon
+                         via the `prepend` snippet. Keeps the column of
+                         items aligned to a consistent glyph rail. New
+                         items follow this shape:
+                           <DropdownMenu.Item onclick={...}>
+                             {#snippet prepend()}
+                               <svg class="menu-icon" .../>
+                             {/snippet}
+                             Label
+                           </DropdownMenu.Item>
+                         — see `Copy message` below. -->
+                    <DropdownMenu.Item onclick={() => void copyMessageText(message)}>
+                      {#snippet prepend()}
+                        <svg
+                          class="menu-icon"
+                          width="14"
+                          height="14"
+                          viewBox="0 0 16 16"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="1.4"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          aria-hidden="true"
+                        >
+                          <rect x="5" y="5" width="9" height="9" rx="1.5" />
+                          <path d="M11 5V3.5A1.5 1.5 0 0 0 9.5 2h-6A1.5 1.5 0 0 0 2 3.5v6A1.5 1.5 0 0 0 3.5 11H5" />
+                        </svg>
+                      {/snippet}
+                      Copy message
+                    </DropdownMenu.Item>
+                  </DropdownMenu.Content>
+                {/snippet}
+              </DropdownMenu.Root>
             {/if}
-            {#if message.role === "assistant" && message.metadata?.usage}
-              <UsageBadge
-                usage={message.metadata.usage}
-                provider={message.metadata.provider}
-                startTimestamp={message.metadata.startTimestamp}
-                endTimestamp={message.metadata.endTimestamp}
-              />
-            {/if}
-            <DropdownMenu.Root positioning={{ placement: message.role === "user" ? "bottom-end" : "bottom-start" }}>
-              {#snippet children()}
-                <DropdownMenu.Trigger class="message-menu-trigger" aria-label="Message options">
-                  <!-- Dots shifted toward the bottom of the viewBox so
-                       the ellipsis aligns with the bottom of the
-                       neighboring text rather than centering on its
-                       own taller bounding box. -->
-                  <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 16 16"
-                    fill="none"
-                    aria-hidden="true"
-                  >
-                    <circle cx="4" cy="13" r="1.25" fill="currentColor" />
-                    <circle cx="8" cy="13" r="1.25" fill="currentColor" />
-                    <circle cx="12" cy="13" r="1.25" fill="currentColor" />
-                  </svg>
-                </DropdownMenu.Trigger>
-                <DropdownMenu.Content>
-                  <!-- Convention: every dropdown item ships an icon
-                       via the `prepend` snippet. Keeps the column of
-                       items aligned to a consistent glyph rail. New
-                       items follow this shape:
-                         <DropdownMenu.Item onclick={...}>
-                           {#snippet prepend()}
-                             <svg class="menu-icon" .../>
-                           {/snippet}
-                           Label
-                         </DropdownMenu.Item>
-                       — see `Copy message` below. -->
-                  <DropdownMenu.Item onclick={() => void copyMessageText(message)}>
-                    {#snippet prepend()}
-                      <svg
-                        class="menu-icon"
-                        width="14"
-                        height="14"
-                        viewBox="0 0 16 16"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="1.4"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        aria-hidden="true"
-                      >
-                        <rect x="5" y="5" width="9" height="9" rx="1.5" />
-                        <path d="M11 5V3.5A1.5 1.5 0 0 0 9.5 2h-6A1.5 1.5 0 0 0 2 3.5v6A1.5 1.5 0 0 0 3.5 11H5" />
-                      </svg>
-                    {/snippet}
-                    Copy message
-                  </DropdownMenu.Item>
-                </DropdownMenu.Content>
-              {/snippet}
-            </DropdownMenu.Root>
           </div>
       {/if}
     </div>
@@ -1044,137 +979,6 @@
     display: flex;
     flex-direction: column;
     gap: var(--size-1);
-  }
-
-  /* ─── Tool burst (collapsed bar + expanded body) ───────────────────── */
-
-  .tool-burst {
-    display: flex;
-    flex-direction: column;
-    margin-block: var(--size-2);
-  }
-
-  .tool-burst-bar {
-    align-items: center;
-    background-color: var(--surface-dark);
-    border-radius: var(--radius-3);
-    color: var(--text);
-    cursor: pointer;
-    display: flex;
-    font-size: var(--font-size-1);
-    gap: var(--size-2);
-    padding: var(--size-1-5) var(--size-2-5);
-    user-select: none;
-  }
-
-  .burst-icon {
-    display: inline-flex;
-    flex-shrink: 0;
-    inline-size: 14px;
-    block-size: 14px;
-    justify-content: center;
-    align-items: center;
-  }
-
-  .burst-pulse {
-    animation: burst-pulse 1.5s ease-in-out infinite;
-    background-color: var(--blue-primary);
-    border-radius: 50%;
-    display: inline-block;
-    inline-size: 6px;
-    block-size: 6px;
-  }
-
-  @keyframes burst-pulse {
-    0%, 100% { opacity: 0.3; }
-    50% { opacity: 1; }
-  }
-
-  .burst-error-mark {
-    color: var(--red-primary);
-    font-size: 12px;
-    font-weight: var(--font-weight-6);
-  }
-
-  .burst-success-mark {
-    color: var(--green-primary);
-    font-size: 12px;
-    font-weight: var(--font-weight-6);
-  }
-
-  .burst-label {
-    color: var(--text);
-    flex: 1;
-    font-family: var(--font-family-mono, ui-monospace, monospace);
-    font-size: var(--font-size-1);
-    min-inline-size: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .burst-chevron {
-    color: color-mix(in srgb, var(--text-faded), transparent 50%);
-    display: inline-flex;
-    flex-shrink: 0;
-    inline-size: 12px;
-    block-size: 12px;
-    transition: transform 150ms ease;
-  }
-
-  .burst-chevron :global(svg) {
-    inline-size: 100%;
-    block-size: 100%;
-  }
-
-  .tool-burst.open > .tool-burst-bar {
-    border-radius: var(--radius-3) var(--radius-3) 0 0;
-  }
-
-  .tool-burst.open > .tool-burst-bar .burst-chevron {
-    transform: rotate(90deg);
-  }
-
-  .tool-burst-body {
-    background-color: var(--surface-dark);
-    border-radius: 0 0 var(--radius-3) var(--radius-3);
-    display: flex;
-    flex-direction: column;
-    gap: var(--size-1-5);
-    padding: var(--size-1-5);
-  }
-
-  .burst-reasoning {
-    display: flex;
-    flex-direction: column;
-    gap: var(--size-1);
-    max-block-size: 200px;
-    overflow-y: auto;
-    padding-inline-end: var(--size-1);
-    mask-image: linear-gradient(to bottom, black 85%, transparent 100%);
-    -webkit-mask-image: linear-gradient(to bottom, black 85%, transparent 100%);
-  }
-
-  .reasoning-line {
-    align-items: baseline;
-    display: flex;
-    gap: var(--size-1-5);
-  }
-
-  .reasoning-dot {
-    background-color: var(--text-faded);
-    border-radius: 50%;
-    flex-shrink: 0;
-    inline-size: 3px;
-    block-size: 3px;
-    opacity: 0.35;
-  }
-
-  .reasoning-text {
-    color: var(--text-faded);
-    font-family: var(--font-family-mono, ui-monospace, monospace);
-    font-size: var(--font-size-0, 11px);
-    line-height: 1.45;
   }
 
   /* ─── Inline images ─────────────────────────────────────────────────── */

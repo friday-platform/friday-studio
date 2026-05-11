@@ -2,7 +2,7 @@
  * Pure accumulator that folds a stream of `SessionStreamEvent`s into a map of
  * validation-attempt displays keyed by parent `actionId`.
  *
- * The chunk accumulator in {@link ./chunk-accumulator.ts} handles tool-call
+ * The chunk accumulator in `@atlas/core/chat/export/render` handles tool-call
  * lifecycle keyed by `toolCallId`; this module handles the orthogonal
  * validation lifecycle keyed by `actionId`. They are kept separate because the
  * source streams (AI SDK chat chunks vs. session SSE events), keying schemes,

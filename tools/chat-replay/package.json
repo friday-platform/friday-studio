@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@atlas/agent-sdk": "workspace:*",
+    "@atlas/core": "workspace:*",
     "@atlas/ui": "workspace:*",
     "@sveltejs/adapter-static": "^3.0.10",
     "@sveltejs/kit": "^2.58.0",

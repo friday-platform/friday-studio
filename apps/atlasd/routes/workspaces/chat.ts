@@ -8,6 +8,7 @@
  * DELETE /:chatId/stream — Stop stream (cosmetic)
  */
 
+import { Buffer } from "node:buffer";
 import process from "node:process";
 import { normalizeToUIMessages, validateAtlasUIMessages } from "@atlas/agent-sdk";
 import { ChatStorage } from "@atlas/core/chat/storage";
@@ -18,10 +19,25 @@ import { logger } from "@atlas/logger";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { daemonFactory } from "../../src/factory.ts";
+import { MAX_FULL_EXPORT_BYTES, MAX_FULL_EXPORT_MESSAGES } from "./chat-limits.ts";
 
 const listChatsQuerySchema = z.object({
   limit: z.coerce.number().min(1).max(100).optional(),
   cursor: z.coerce.number().optional(),
+});
+
+/**
+ * Query schema for `GET /:chatId`. `?full=true` returns the entire message
+ * list; absent value or any other string preserves the legacy last-100 trim
+ * used by the live chat UI rehydrate path. The schema accepts an optional
+ * raw string and narrows to a boolean so callers branch on `full` without
+ * re-parsing — only the literal string "true" opts in.
+ */
+const getChatQuerySchema = z.object({
+  full: z
+    .string()
+    .optional()
+    .transform((value) => value === "true"),
 });
 
 /**
@@ -190,9 +206,10 @@ const workspaceChatRoutes = daemonFactory
     });
   })
 
-  .get("/:chatId", async (c) => {
+  .get("/:chatId", zValidator("query", getChatQuerySchema), async (c) => {
     const chatId = c.req.param("chatId");
     const workspaceId = c.req.param("workspaceId");
+    const { full } = c.req.valid("query");
 
     const chatResult = await ChatStorage.getChat(chatId, workspaceId);
     if (!chatResult.ok || !chatResult.data) {
@@ -200,13 +217,58 @@ const workspaceChatRoutes = daemonFactory
     }
 
     const { messages, systemPromptContext, ...chat } = chatResult.data;
-    const limitedMessages = messages.slice(-100);
-    const sanitized = await validateAtlasUIMessages(limitedMessages);
+    // Export preview (`?full=true`) needs the whole conversation; the live
+    // UI rehydrate path keeps the last-100 trim to bound payload size.
+    // Reject `?full=true` for chats above the export cap before sanitising
+    // — `validateAtlasUIMessages` is unbounded work per message, so a giant
+    // chat would otherwise pin the daemon. The trimmed view is always
+    // bounded at 100 so it doesn't need the guard.
+    if (full && messages.length > MAX_FULL_EXPORT_MESSAGES) {
+      return c.json(
+        {
+          error: "Chat too large to export",
+          messageCount: messages.length,
+          limit: MAX_FULL_EXPORT_MESSAGES,
+        },
+        413,
+      );
+    }
+    const selectedMessages = full ? messages : messages.slice(-100);
+    const sanitized = await validateAtlasUIMessages(selectedMessages);
 
-    return c.json(
-      { chat, messages: sanitized, systemPromptContext: systemPromptContext ?? null },
-      200,
-    );
+    const responseBody = {
+      chat,
+      messages: sanitized,
+      systemPromptContext: systemPromptContext ?? null,
+    };
+
+    if (full) {
+      // Cap the serialised payload before shipping. Stringify once for the
+      // size check; `c.json` re-stringifies for the response body, which is
+      // a small cost vs. preserving Hono RPC's response-type inference (a
+      // raw `c.body(string, …)` widens the return type to `string | {…}`
+      // and breaks downstream typed callers). The trimmed live-UI path is
+      // bounded at 100 messages so it skips this branch entirely.
+      //
+      // `Buffer.byteLength` measures the actual UTF-8 wire size, not the
+      // JS string length (UTF-16 code units). For ASCII content the two
+      // match; for emoji-heavy or CJK chats the wire bytes can be 3-4×
+      // the code-unit count, so the field name `payloadBytes` would be a
+      // lie if we kept the cheaper `.length`.
+      const serializedBytes = Buffer.byteLength(JSON.stringify(responseBody), "utf8");
+      if (serializedBytes > MAX_FULL_EXPORT_BYTES) {
+        return c.json(
+          {
+            error: "Chat too large to export",
+            payloadBytes: serializedBytes,
+            limit: MAX_FULL_EXPORT_BYTES,
+          },
+          413,
+        );
+      }
+    }
+
+    return c.json(responseBody, 200);
   })
 
   .delete("/:chatId", async (c) => {

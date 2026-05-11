@@ -1,5 +1,6 @@
 import type { TreeCursor } from "@lezer/common";
 import { parser, Table } from "@lezer/markdown";
+import DOMPurify from "isomorphic-dompurify";
 import { Marked } from "marked";
 
 // ─── marked configuration ──────────────────────────────────────────────
@@ -364,7 +365,7 @@ function normalizePipeTables(text: string): string {
   let i = 0;
 
   while (i < lines.length) {
-    const line = lines[i];
+    const line = lines[i] ?? "";
     const trimmed = line.trim();
 
     if (isPipeRow(trimmed) && !isGfmSeparator(trimmed)) {
@@ -501,4 +502,24 @@ export function markdownToHTML(markdown: string): string {
   const html = marked.parse(withTables) as string;
   // Strip trailing newline that marked adds
   return html.replace(/\n$/, "");
+}
+
+/**
+ * SSR-safe variant of {@link markdownToHTML}. Pipes the rendered HTML
+ * through DOMPurify (via `isomorphic-dompurify`, which transparently uses
+ * `jsdom` in Node and the native DOM in the browser — no `browser` check
+ * needed) so the output is sanitised at render time.
+ *
+ * Use this anywhere the rendered HTML may end up in a static file (e.g.
+ * the chat-export zip rendered with `csr=false`) or persisted somewhere a
+ * later renderer can't re-sanitise. Plain {@link markdownToHTML} is fine
+ * for live UI render where existing callsites already wrap with
+ * `DOMPurify.sanitize` inside a `browser` check — the browser re-runs
+ * after hydration and re-sanitises there.
+ *
+ * Uses DOMPurify defaults: strips `<script>`, inline event handlers, and
+ * `javascript:` hrefs.
+ */
+export function markdownToHTMLSafe(markdown: string): string {
+  return DOMPurify.sanitize(markdownToHTML(markdown));
 }
