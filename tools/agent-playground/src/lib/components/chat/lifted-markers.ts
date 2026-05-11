@@ -50,6 +50,31 @@ export interface LiftedArtifactRef {
  * `tool-call-card.svelte` (`each_key_duplicate`).
  */
 export function extractLiftedArtifactIds(value: unknown): LiftedArtifactRef[] {
+  // Cache by reference for non-primitive inputs. Tool-call outputs are
+  // typically deep JSON trees (`get_files` can return hundreds of KB),
+  // and the parent chat-message-list re-renders on every streaming
+  // delta, so the walker would otherwise re-recurse the same tree
+  // many times per second during a heavy delegation.
+  //
+  // The AI SDK's UI message merge produces a fresh `output` object
+  // ref when a tool transitions through state changes (input-streaming
+  // → input-available → output-available), but the reference is stable
+  // *within* a given state — so once `output-available` lands the
+  // cache holds for the lifetime of the conversation. WeakMap keys go
+  // away with the object so this never leaks.
+  if (value !== null && typeof value === "object") {
+    const cached = walkCache.get(value);
+    if (cached) return cached;
+    const result = walkFresh(value);
+    walkCache.set(value, result);
+    return result;
+  }
+  return walkFresh(value);
+}
+
+const walkCache = new WeakMap<object, LiftedArtifactRef[]>();
+
+function walkFresh(value: unknown): LiftedArtifactRef[] {
   const seen = new Set<string>();
   const refs: LiftedArtifactRef[] = [];
   walk(value, refs, seen, 0);

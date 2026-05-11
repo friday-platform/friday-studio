@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { browser } from "$app/environment";
   import { stripMimeParams } from "@atlas/core/artifacts/file-upload";
-  import { z } from "zod";
+  import { createQuery } from "@tanstack/svelte-query";
+  import { artifactQueries } from "$lib/queries";
   import { getExportContext } from "./export-context.ts";
   import { parseTabular, TABULAR_MIMES, type TableModel } from "./table-parsers.ts";
   import TableView from "./table-view.svelte";
@@ -18,42 +18,46 @@
   // when this is undefined.
   const exportCtx = getExportContext();
 
-  const ArtifactResponseSchema = z.object({
-    artifact: z.object({
-      id: z.string(),
-      title: z.string(),
-      summary: z.string().optional(),
-      data: z.object({
-        type: z.literal("file"),
-        mimeType: z.string(),
-        size: z.number().int().nonnegative(),
-        originalName: z.string().optional(),
-      }),
-    }),
-    contents: z.string().optional(),
-  });
-
-  // Initial state branches on `exportCtx`. With context, every field is
-  // populated synchronously from the prefetch map and `loading` is false
-  // out of the gate so the card never paints a spinner. The trust
-  // contract from `export-context.ts` says: if a referenced artifactId is
-  // missing from the map, surface a clear error rather than spin.
-  // `artifactId` doesn't change after mount (the parent re-keys to switch
-  // artifacts), so capturing its initial value here is intentional.
   // svelte-ignore state_referenced_locally
   const prefetched = exportCtx?.artifacts.get(artifactId);
   const exportMissing = exportCtx !== undefined && prefetched === undefined;
 
-  let resolvedTitle = $state(prefetched?.title || "Artifact");
-  let resolvedSummary = $state<string | undefined>(prefetched?.summary);
-  let mimeType = $state<string | undefined>(prefetched?.mimeType);
-  let contents = $state<string | undefined>(undefined);
-  let originalName = $state<string | undefined>(prefetched?.originalName);
-  let sizeBytes = $state<number | undefined>(prefetched?.size);
-  let loading = $state(exportCtx === undefined);
-  // svelte-ignore state_referenced_locally
-  let fetchError = $state<string | null>(
-    exportMissing ? `Artifact ${artifactId} missing from export context` : null,
+  // TanStack Query for the live UI path. Same artifactId across N
+  // cards shares one in-flight request and a process-wide cache, which
+  // is what makes the chat tree survive a heavy delegation that
+  // produces 30+ artifacts. In export mode the query is disabled
+  // (null id → skipToken) and the prefetched map drives the render.
+  const liveQuery = createQuery(() =>
+    artifactQueries.byId(exportCtx === undefined ? artifactId : null),
+  );
+
+  const resolvedTitle = $derived(
+    exportCtx !== undefined
+      ? prefetched?.title || "Artifact"
+      : $liveQuery.data?.artifact.title || "Artifact",
+  );
+  const resolvedSummary = $derived(
+    exportCtx !== undefined ? prefetched?.summary : $liveQuery.data?.artifact.summary,
+  );
+  const mimeType = $derived(
+    exportCtx !== undefined ? prefetched?.mimeType : $liveQuery.data?.artifact.data.mimeType,
+  );
+  const originalName = $derived(
+    exportCtx !== undefined ? prefetched?.originalName : $liveQuery.data?.artifact.data.originalName,
+  );
+  const sizeBytes = $derived(
+    exportCtx !== undefined ? prefetched?.size : $liveQuery.data?.artifact.data.size,
+  );
+  const contents = $derived(
+    exportCtx !== undefined ? undefined : $liveQuery.data?.contents,
+  );
+  const loading = $derived(exportCtx === undefined && $liveQuery.isPending);
+  const fetchError = $derived(
+    exportMissing
+      ? `Artifact ${artifactId} missing from export context`
+      : exportCtx === undefined && $liveQuery.error
+        ? $liveQuery.error.message
+        : null,
   );
 
   // Iframe scale — computed from container width vs assumed content width.
@@ -74,55 +78,6 @@
     });
     observer.observe(scalerEl);
     return () => observer.disconnect();
-  });
-
-  $effect(() => {
-    // In export mode, the prefetch map already populated state — no fetch
-    // is fired (and the daemon API isn't reachable from the static HTML
-    // anyway).
-    if (exportCtx !== undefined) return;
-    if (!browser || !artifactId) return;
-
-    let cancelled = false;
-    loading = true;
-    fetchError = null;
-
-    async function load() {
-      try {
-        const res = await fetch(`/api/daemon/api/artifacts/${encodeURIComponent(artifactId)}`);
-        if (cancelled) return;
-        if (!res.ok) {
-          fetchError = `Failed to load artifact (${res.status})`;
-          loading = false;
-          return;
-        }
-        const raw: unknown = await res.json();
-        if (cancelled) return;
-        const parsed = ArtifactResponseSchema.safeParse(raw);
-        if (!parsed.success) {
-          fetchError = "Unexpected artifact shape from server";
-          loading = false;
-          return;
-        }
-        const { artifact, contents: rawContents } = parsed.data;
-        resolvedTitle = artifact.title || "Artifact";
-        resolvedSummary = artifact.summary;
-        mimeType = artifact.data.mimeType;
-        sizeBytes = artifact.data.size;
-        originalName = artifact.data.originalName;
-        contents = rawContents;
-        loading = false;
-      } catch (e) {
-        if (cancelled) return;
-        fetchError = e instanceof Error ? e.message : String(e);
-        loading = false;
-      }
-    }
-
-    load();
-    return () => {
-      cancelled = true;
-    };
   });
 
   // Live UI hits the daemon's /:id/content endpoint; export mode rewrites
@@ -216,39 +171,17 @@
       : undefined,
   );
 
-  // Fetch raw text for tabular artifacts when the metadata endpoint
-  // didn't return `contents` inline. The /content endpoint is content-
-  // addressed + cacheable so re-fetching is cheap; we only do it when
-  // the mime says "tabular" and we don't already have the text.
-  let tabularText = $state<string | undefined>(undefined);
-  $effect(() => {
-    if (exportCtx !== undefined) return;
-    if (!browser) return;
-    if (!isTabularMime) {
-      tabularText = undefined;
-      return;
-    }
-    if (contents) {
-      tabularText = contents;
-      return;
-    }
-    let cancelled = false;
-    void fetch(`/api/daemon/api/artifacts/${encodeURIComponent(artifactId)}/content`).then(
-      async (res) => {
-        if (cancelled || !res.ok) return;
-        const text = await res.text();
-        if (!cancelled) tabularText = text;
-      },
-      () => {
-        // Silent — preview falls back to download tile when text never
-        // arrives. Network errors aren't worth a card-level error
-        // banner for what is itself a fallback affordance.
-      },
-    );
-    return () => {
-      cancelled = true;
-    };
-  });
+  // Raw text for tabular artifacts that didn't ship inline with the
+  // metadata response. Disabled (skipToken) when the mime isn't
+  // tabular, the metadata already supplied contents, or we're in
+  // export mode. Same TanStack cache as the metadata query — multiple
+  // cards for the same tabular artifact share one network request.
+  const tabularContentQuery = createQuery(() =>
+    artifactQueries.content(
+      exportCtx === undefined && isTabularMime && !contents ? artifactId : null,
+    ),
+  );
+  const tabularText = $derived(contents ?? $tabularContentQuery.data);
 
   const tableModel = $derived<TableModel | null>(
     isTabularMime && tabularText && baseMime ? parseTabular(baseMime, tabularText) : null,
