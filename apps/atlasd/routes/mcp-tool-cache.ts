@@ -2,6 +2,7 @@ import type { MCPServerConfig } from "@atlas/agent-sdk";
 import {
   LinkCredentialExpiredError,
   LinkCredentialNotFoundError,
+  LinkCredentialUnavailableError,
   NoDefaultCredentialError,
 } from "@atlas/core/mcp-registry/credential-resolver";
 import type { Logger } from "@atlas/logger";
@@ -30,7 +31,7 @@ export class MCPProbeNoToolsError extends Error {
   }
 }
 
-export type ProbePhase = "dns" | "connect" | "auth" | "tools";
+export type ProbePhase = "dns" | "connect" | "auth" | "tools" | "transient";
 
 export type PrewarmResult =
   | { ok: true; tools: CachedTool[] }
@@ -158,10 +159,15 @@ export async function probeAndExtract(
   if (result.disconnected.length > 0) {
     await result.dispose();
     const entry = result.disconnected[0]!;
-    // Throw a credential error so classifyProbeError routes this to phase:
-    // "auth". `entry.message` is already a complete user-facing sentence
-    // composed by buildDisconnectedEntry — preserve it verbatim instead of
-    // re-templating through the constructor.
+    // `entry.message` is already a complete user-facing sentence composed by
+    // buildDisconnectedEntry — preserve it verbatim instead of re-templating
+    // through the constructor. The kind drives which error class we throw,
+    // which classifyProbeError uses to pick the phase ("transient" vs "auth").
+    if (entry.kind === "credential_temporarily_unavailable") {
+      const err = new LinkCredentialUnavailableError({ credentialId: entry.serverId });
+      err.message = entry.message;
+      throw err;
+    }
     const err = new LinkCredentialNotFoundError(entry.serverId);
     err.message = entry.message;
     throw err;
@@ -249,6 +255,10 @@ export function classifyProbeError(error: unknown): { error: string; phase: Prob
 
   if (inner instanceof MCPProbeNoToolsError) {
     return { error: inner.message, phase: "connect" };
+  }
+
+  if (inner instanceof LinkCredentialUnavailableError) {
+    return { error: inner.message, phase: "transient" };
   }
 
   if (
