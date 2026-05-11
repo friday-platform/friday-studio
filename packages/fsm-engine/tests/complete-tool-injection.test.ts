@@ -314,92 +314,142 @@ describe("complete tool injection for LLM actions", () => {
     await expect(engine.signal({ type: "RUN" })).rejects.toThrow(/did not call complete/);
   });
 
-  it("preserves observed tool calls on the failed step:complete event when LLM does not call complete", async () => {
-    // Regression: when an LLM action with outputTo throws "did not call
-    // complete," the FSM engine used to drop the side-channel toolCalls
-    // because `llmResultData` was only populated on the success path.
-    // mapActionToStepComplete then wrote `toolCalls: []` into the persisted
-    // event, even though the LLM had clearly invoked tools mid-action.
-    // The early-capture restores parity with the case-`agent` path.
-    const fsm: FSMDefinition = {
-      id: "preserve-toolcalls-on-fail-test",
-      initial: "pending",
-      states: {
-        pending: {
-          documents: [{ id: "result", type: "TicketResult", data: {} }],
-          on: {
-            RUN: {
-              target: "done",
-              actions: [
-                {
-                  type: "llm",
-                  provider: "test",
-                  model: "test-model",
-                  prompt: "Look something up and report it",
-                  outputTo: "result",
-                },
-              ],
+  // Regression: when an LLM action with `outputTo` throws mid-action,
+  // the FSM engine used to drop the side-channel toolCalls because
+  // `llmResultData` was only populated on the success path.
+  // `mapActionToStepComplete` then wrote `toolCalls: []` into the
+  // persisted event, even though the LLM had clearly invoked tools
+  // mid-action. The early-capture (post-LLM, pre-validation) restores
+  // parity with the case-`agent` path.
+  //
+  // Four throw paths exist in the case-`llm` execution loop:
+  //   1. failStep      — LLM called the `failStep` tool
+  //   2. did not call complete — `outputTo` action with no `complete` tool call
+  //   3. emitted empty output — `complete({})` with zero keys
+  //   4. emitted an empty response — `complete({response: ""})` or whitespace
+  // Each must preserve the sidecar tool calls on the persisted step:complete.
+  describe.each<{ label: string; expectedError: RegExp; terminalCall: ToolCall | null }>([
+    { label: "did not call complete", expectedError: /did not call complete/, terminalCall: null },
+    {
+      label: "failStep terminates with sidecar tool calls preserved",
+      expectedError: /LLM step failed/,
+      terminalCall: {
+        type: "tool-call",
+        toolCallId: "tc-fail-1",
+        toolName: "failStep",
+        input: { reason: "couldn't find the record" },
+      },
+    },
+    {
+      label: "emitted empty output",
+      expectedError: /emitted empty output/,
+      terminalCall: {
+        type: "tool-call",
+        toolCallId: "tc-complete-empty",
+        toolName: "complete",
+        input: {},
+      },
+    },
+    {
+      label: "emitted an empty response",
+      expectedError: /emitted an empty response/,
+      terminalCall: {
+        type: "tool-call",
+        toolCallId: "tc-complete-blank",
+        toolName: "complete",
+        input: { response: "   " },
+      },
+    },
+  ])("preserves observed tool calls on failed step:complete event — $label", ({
+    expectedError,
+    terminalCall,
+  }) => {
+    it("captures the sidecar tools into llmResult.toolCalls before throwing", async () => {
+      const fsm: FSMDefinition = {
+        id: "preserve-toolcalls-on-fail-test",
+        initial: "pending",
+        states: {
+          pending: {
+            documents: [{ id: "result", type: "TicketResult", data: {} }],
+            on: {
+              RUN: {
+                target: "done",
+                actions: [
+                  {
+                    type: "llm",
+                    provider: "test",
+                    model: "test-model",
+                    prompt: "Look something up and report it",
+                    outputTo: "result",
+                  },
+                ],
+              },
             },
           },
+          done: { type: "final" },
         },
-        done: { type: "final" },
-      },
-      documentTypes: {
-        TicketResult: { type: "object", properties: { ticket_id: { type: "string" } } },
-      },
-    };
+        documentTypes: {
+          TicketResult: { type: "object", properties: { ticket_id: { type: "string" } } },
+        },
+      };
 
-    const { engine, scope } = await createLLMEngine({
-      fsm,
-      llmResponses: [
+      // Two sidecar tools the agent invokes before the terminal
+      // (or non-terminal, for the "did not call complete" case) call.
+      // These are what the regression watches for — pre-fix they
+      // never made it into the persisted event.
+      const sidecarCalls: ToolCall[] = [
         {
-          content: "looked it up",
-          skipAutoComplete: true,
-          data: {
-            toolCalls: [
-              {
-                type: "tool-call",
-                toolCallId: "tc-search-1",
-                toolName: "search_gmail_messages",
-                input: { query: "is:unread", maxResults: 10 },
-              },
-              {
-                type: "tool-call",
-                toolCallId: "tc-get-1",
-                toolName: "get_gmail_message_content",
-                input: { id: "abc123" },
-              },
-            ],
+          type: "tool-call",
+          toolCallId: "tc-search-1",
+          toolName: "search_gmail_messages",
+          input: { query: "is:unread", maxResults: 10 },
+        },
+        {
+          type: "tool-call",
+          toolCallId: "tc-get-1",
+          toolName: "get_gmail_message_content",
+          input: { id: "abc123" },
+        },
+      ];
+      const allCalls = terminalCall ? [...sidecarCalls, terminalCall] : sidecarCalls;
+
+      const { engine, scope } = await createLLMEngine({
+        fsm,
+        llmResponses: [
+          { content: "looked it up", skipAutoComplete: true, data: { toolCalls: allCalls } },
+        ],
+      });
+
+      const events: import("../types.ts").FSMEvent[] = [];
+      await expect(
+        engine.signal(
+          { type: "RUN" },
+          {
+            sessionId: scope.sessionId,
+            workspaceId: scope.workspaceId,
+            onEvent: (e) => events.push(e),
           },
-        },
-      ],
+        ),
+      ).rejects.toThrow(expectedError);
+
+      const failedAction = events
+        .filter(
+          (e): e is import("../types.ts").FSMActionExecutionEvent =>
+            e.type === "data-fsm-action-execution",
+        )
+        .find((e) => e.data.actionType === "llm" && e.data.status === "failed");
+
+      expect(failedAction).toBeDefined();
+      expect(failedAction?.data.error).toMatch(expectedError);
+      const persistedToolCalls = failedAction?.data.llmResult?.toolCalls ?? [];
+      const toolNames = persistedToolCalls.map((tc) => tc.toolName);
+      // The sidecar calls survive every throw path. The terminal tool
+      // (failStep / empty-input complete) may or may not appear in the
+      // manifest depending on stop semantics; we don't assert on it
+      // because the regression is about the sidecars.
+      expect(toolNames).toContain("search_gmail_messages");
+      expect(toolNames).toContain("get_gmail_message_content");
     });
-
-    const events: import("../types.ts").FSMEvent[] = [];
-    await expect(
-      engine.signal(
-        { type: "RUN" },
-        {
-          sessionId: scope.sessionId,
-          workspaceId: scope.workspaceId,
-          onEvent: (e) => events.push(e),
-        },
-      ),
-    ).rejects.toThrow(/did not call complete/);
-
-    const failedAction = events
-      .filter(
-        (e): e is import("../types.ts").FSMActionExecutionEvent =>
-          e.type === "data-fsm-action-execution",
-      )
-      .find((e) => e.data.actionType === "llm" && e.data.status === "failed");
-
-    expect(failedAction).toBeDefined();
-    expect(failedAction?.data.error).toMatch(/did not call complete/);
-    const persistedToolCalls = failedAction?.data.llmResult?.toolCalls ?? [];
-    const toolNames = persistedToolCalls.map((tc) => tc.toolName);
-    expect(toolNames).toContain("search_gmail_messages");
-    expect(toolNames).toContain("get_gmail_message_content");
   });
 
   it("augments prompt with complete tool instruction", async () => {

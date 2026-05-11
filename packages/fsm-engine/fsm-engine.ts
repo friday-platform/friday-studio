@@ -2515,33 +2515,40 @@ export class FSMEngine {
 
               // Layer reasoning/output/usage/validation onto the
               // tool-call manifest captured earlier (post-LLM, pre-throw).
-              // Lifting + result-pairing already happened up there — this
-              // block just enriches the side-channel envelope with the
-              // structured-output extraction that's only valid on the
-              // success path.
-              if (result.ok) {
-                const toolCalls = llmResultData?.toolCalls ?? [];
-                // Structured output = args from the "complete" tool call (the actual
-                // result the agent declared). Falls back to result.data (LLM text)
-                // when no complete tool call exists. Mirrors workspace-runtime logic.
-                const completeCall = toolCalls.find((tc) => tc.toolName === "complete");
-                llmResultData = {
-                  toolCalls,
-                  reasoning: result.reasoning,
-                  output: completeCall?.args ?? result.data,
-                  // Pass-through optional `usage` from the LLM provider so the
-                  // session event mapper can persist it on `step:complete`.
-                  // Provider adapters that don't set usage (e.g. tests with
-                  // stub providers) leave this undefined — handled downstream.
-                  ...(result.usage && { usage: result.usage }),
-                  // Ride the structured validation block on the same
-                  // side-channel `step:complete` mapping reads. Always set
-                  // for `type: llm` actions — the three resolved strategies
-                  // each have a non-empty shape; only pure-agent actions
-                  // (case "agent" → type: user/atlas) leave this absent.
-                  ...(validationOutput && { validation: validationOutput }),
-                };
+              // The early-capture block above runs unconditionally once
+              // `result.ok` is confirmed at the adapter-error guard, so
+              // `llmResultData` is guaranteed to be set here. Asserting
+              // rather than defaulting means a future refactor that
+              // moves the early-capture path fails loudly instead of
+              // silently dropping tool calls into an empty array.
+              if (!llmResultData) {
+                throw new Error(
+                  "FSM invariant: llmResultData must be set by the early-capture block " +
+                    "before the success-path envelope is built. This indicates a refactor " +
+                    "moved or removed the unconditional tool-call capture after the LLM call.",
+                );
               }
+              const toolCalls = llmResultData.toolCalls;
+              // Structured output = args from the "complete" tool call (the actual
+              // result the agent declared). Falls back to result.data (LLM text)
+              // when no complete tool call exists. Mirrors workspace-runtime logic.
+              const completeCall = toolCalls.find((tc) => tc.toolName === "complete");
+              llmResultData = {
+                toolCalls,
+                reasoning: result.reasoning,
+                output: completeCall?.args ?? result.data,
+                // Pass-through optional `usage` from the LLM provider so the
+                // session event mapper can persist it on `step:complete`.
+                // Provider adapters that don't set usage (e.g. tests with
+                // stub providers) leave this undefined — handled downstream.
+                ...(result.usage && { usage: result.usage }),
+                // Ride the structured validation block on the same
+                // side-channel `step:complete` mapping reads. Always set
+                // for `type: llm` actions — the three resolved strategies
+                // each have a non-empty shape; only pure-agent actions
+                // (case "agent" → type: user/atlas) leave this absent.
+                ...(validationOutput && { validation: validationOutput }),
+              };
 
               // Add tool call names to OTEL span for trace visibility
               if (span && llmResultData?.toolCalls?.length) {
