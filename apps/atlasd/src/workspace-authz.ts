@@ -25,10 +25,10 @@ import type { NatsConnection } from "nats";
  * the workspaces they're attached to exactly like a human member.
  * Admin-tier checks narrow further; see `requireWorkspaceAdmin`.
  */
-const MEMBER_ROLES: ReadonlySet<Role> = new Set(["owner", "admin", "member", "agent"]);
+const MEMBER_ROLES: ReadonlySet<Role> = new Set<Role>(["owner", "admin", "member", "agent"]);
 
 /** Roles that can edit config and manage non-owner members. */
-const ADMIN_ROLES: ReadonlySet<Role> = new Set(["owner", "admin"]);
+const ADMIN_ROLES: ReadonlySet<Role> = new Set<Role>(["owner", "admin"]);
 
 /**
  * Resolve the current request's userId, defending against the

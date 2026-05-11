@@ -27,6 +27,7 @@ import { generateText } from "ai";
 import type { Context } from "hono";
 import { z } from "zod";
 import { daemonFactory } from "../src/factory.ts";
+import { requireWorkspaceAdmin } from "../src/workspace-authz.ts";
 
 const skillsShClient = new SkillsShClient();
 
@@ -486,6 +487,15 @@ export const skillsRoutes = daemonFactory
       const { skillId } = c.req.valid("param");
       const { assignments } = c.req.valid("json");
 
+      // Require admin on every workspace the caller is trying to mutate
+      // before doing any writes. Throws HTTPException(403) on first miss
+      // — partial application would be worse than the all-or-nothing
+      // semantics callers already expect from a multi-assignment batch.
+      const uniqueWorkspaces = [...new Set(assignments.map((a) => a.workspaceId))];
+      for (const wsId of uniqueWorkspaces) {
+        await requireWorkspaceAdmin(c, wsId);
+      }
+
       // Try every assignment independently. The caller learns exactly which
       // succeeded and which failed instead of stopping at the first error and
       // leaving partial state with no signal.
@@ -517,6 +527,7 @@ export const skillsRoutes = daemonFactory
     zValidator("param", z.object({ skillId: z.string().min(1), workspaceId: z.string().min(1) })),
     async (c) => {
       const { skillId, workspaceId } = c.req.valid("param");
+      await requireWorkspaceAdmin(c, workspaceId);
       const result = await SkillStorage.unassignSkill(skillId, workspaceId);
       if (!result.ok) return c.json({ error: result.error }, 500);
       return c.body(null, 204);
@@ -534,6 +545,7 @@ export const skillsRoutes = daemonFactory
     ),
     async (c) => {
       const { skillId, workspaceId, jobName } = c.req.valid("param");
+      await requireWorkspaceAdmin(c, workspaceId);
       const result = await SkillStorage.unassignFromJob(skillId, workspaceId, jobName);
       if (!result.ok) return c.json({ error: result.error }, 500);
       return c.body(null, 204);

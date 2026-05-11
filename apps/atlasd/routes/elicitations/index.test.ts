@@ -37,6 +37,38 @@ vi.mock("@atlas/core", async (importOriginal) => {
   };
 });
 
+vi.mock("@atlas/core/workspace-members/storage", () => ({
+  WorkspaceMemberStorage: {
+    get: vi
+      .fn()
+      .mockImplementation((userId: string, wsId: string) =>
+        Promise.resolve({
+          ok: true,
+          data: { userId, wsId, role: "owner", addedAt: "2026-05-11T00:00:00.000Z" },
+        }),
+      ),
+    // listByUser drives the per-user accessible-workspaces filter on the
+    // global elicitation list. The fixture elicitations are all stamped
+    // with `ws_1`, so seed that as an owned workspace so the listing
+    // doesn't drop them.
+    listByUser: vi
+      .fn()
+      .mockResolvedValue({
+        ok: true,
+        data: [
+          { userId: "test-user", wsId: "ws_1", role: "owner", addedAt: "2026-05-11T00:00:00.000Z" },
+        ],
+      }),
+    listByWorkspace: vi.fn().mockResolvedValue({ ok: true, data: [] }),
+    put: vi.fn().mockResolvedValue({ ok: true, data: null }),
+    putIfAbsent: vi.fn().mockResolvedValue({ ok: true, data: null }),
+    delete: vi.fn().mockResolvedValue({ ok: true, data: undefined }),
+  },
+  ensureWorkspaceMembersKVBucket: vi.fn(),
+  initWorkspaceMemberStorage: vi.fn(),
+  resetWorkspaceMemberStorageForTests: vi.fn(),
+}));
+
 // Import AFTER the mock so the route binds to the mocked facade.
 import { elicitationApp as rawElicitationApp } from "./index.ts";
 
@@ -49,9 +81,10 @@ import { elicitationApp as rawElicitationApp } from "./index.ts";
 type MockContext = { daemon: { getNatsConnection: () => null } };
 
 function createTestApp() {
-  const app = new Hono<{ Variables: { app: MockContext } }>();
+  const app = new Hono<{ Variables: { app: MockContext; userId?: string } }>();
   app.use("*", async (c, next) => {
     c.set("app", { daemon: { getNatsConnection: () => null } });
+    c.set("userId", "test-user");
     await next();
   });
   app.route("/", rawElicitationApp);

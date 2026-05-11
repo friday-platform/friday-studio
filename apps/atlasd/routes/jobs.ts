@@ -5,6 +5,7 @@ import {
   type FSMAgentResponse,
 } from "@atlas/config/mutations";
 import { daemonFactory } from "../src/factory.ts";
+import { requireWorkspaceMember } from "../src/workspace-authz.ts";
 import { extractJobIntegrations } from "./workspaces/index.ts";
 
 /**
@@ -133,6 +134,7 @@ function resolveAgents(
 const jobsRoutes = daemonFactory.createApp().get("/:jobId/:workspaceId", async (c) => {
   const jobId = c.req.param("jobId");
   const workspaceId = c.req.param("workspaceId");
+  await requireWorkspaceMember(c, workspaceId);
 
   const ctx = c.get("app");
   const manager = ctx.getWorkspaceManager();

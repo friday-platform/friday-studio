@@ -63,7 +63,11 @@ import {
   wireCommunicator,
 } from "../../src/services/communicator-wiring.ts";
 import { awaitSignalCompletion, publishSignalCancellation } from "../../src/signal-stream.ts";
-import { requireWorkspaceAdmin, requireWorkspaceMember } from "../../src/workspace-authz.ts";
+import {
+  getAccessibleWorkspaceIds,
+  requireWorkspaceAdmin,
+  requireWorkspaceMember,
+} from "../../src/workspace-authz.ts";
 import {
   buildWorkspaceBundleBytes,
   isOnDiskWorkspace,
@@ -335,15 +339,20 @@ export { injectBundledAgentRefs } from "./inject-bundled-agents.ts";
 // Create and mount routes
 const workspacesRoutes = daemonFactory
   .createApp()
-  // List all workspaces
+  // List workspaces visible to the caller (membership-filtered).
   .get("/", async (c) => {
     try {
+      const userId = c.get("userId");
+      if (!userId) return c.json({ error: "Unauthorized" }, 401);
+
       const ctx = c.get("app");
       const manager = ctx.getWorkspaceManager();
+      const accessible = await getAccessibleWorkspaceIds(userId);
       const allWorkspaces = await manager.list({ includeSystem: true });
+      const visible = allWorkspaces.filter((w) => accessible.has(w.id));
       const workspaces = ctx.exposeKernel
-        ? allWorkspaces
-        : allWorkspaces.filter((w) => w.id !== KERNEL_WORKSPACE_ID);
+        ? visible
+        : visible.filter((w) => w.id !== KERNEL_WORKSPACE_ID);
       const response = workspaces
         .map((w) => ({
           ...w,

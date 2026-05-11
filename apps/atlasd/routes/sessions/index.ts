@@ -8,6 +8,7 @@ import { zValidator } from "@hono/zod-validator";
 import { consumerOpts } from "nats";
 import { z } from "zod";
 import { daemonFactory } from "../../src/factory.ts";
+import { getAccessibleWorkspaceIds, requireWorkspaceMember } from "../../src/workspace-authz.ts";
 
 const ListQuery = z.object({ workspaceId: z.string().optional() });
 
@@ -40,20 +41,31 @@ const sessionsRoutes = daemonFactory
   .createApp()
   /** List session summaries, optionally filtered by workspace. */
   .get("/", zValidator("query", ListQuery), async (c) => {
+    const userId = c.get("userId");
+    if (!userId) return c.json({ error: "Unauthorized" }, 401);
+
     const { workspaceId } = c.req.valid("query");
+    if (workspaceId !== undefined) {
+      await requireWorkspaceMember(c, workspaceId);
+    }
+
     const ctx = c.get("app");
     const { sessionStreamRegistry: registry, sessionHistoryAdapter: adapter } = ctx;
+    const accessible = workspaceId === undefined ? await getAccessibleWorkspaceIds(userId) : null;
+    const canSee = (wsId: string): boolean =>
+      accessible === null ? wsId === workspaceId : accessible.has(wsId);
 
-    // Completed sessions from adapter
-    const completedSummaries = await adapter.listByWorkspace(workspaceId);
+    // Completed sessions from adapter — filter to workspaces the caller
+    // is a member of when no explicit workspaceId filter is set.
+    const completedRaw = await adapter.listByWorkspace(workspaceId);
+    const completedSummaries = completedRaw.filter((s) => canSee(s.workspaceId));
 
     // Active sessions from registry — reduce in-memory buffers to summaries
     const activeSummaries: SessionSummary[] = [];
     for (const stream of registry.listActive()) {
       const view = buildSessionView(stream.getBufferedEvents());
-      if (!workspaceId || view.workspaceId === workspaceId) {
-        activeSummaries.push(viewToSummary(view));
-      }
+      if (!canSee(view.workspaceId)) continue;
+      activeSummaries.push(viewToSummary(view));
     }
 
     // Merge and sort by startedAt descending
@@ -82,6 +94,8 @@ const sessionsRoutes = daemonFactory
     // 1. Check registry — confirms the session is active or recently finalized
     const stream = registry.get(sessionId);
     if (stream) {
+      const view = buildSessionView(stream.getBufferedEvents());
+      await requireWorkspaceMember(c, view.workspaceId);
       const nc = ctx.daemon.getNatsConnection();
       const js = nc.jetstream();
       const encoder = new TextEncoder();
@@ -205,6 +219,7 @@ const sessionsRoutes = daemonFactory
     const stream = registry.get(sessionId);
     if (stream) {
       const view = buildSessionView(stream.getBufferedEvents());
+      await requireWorkspaceMember(c, view.workspaceId);
       return c.json(view, 200);
     }
 
@@ -212,6 +227,7 @@ const sessionsRoutes = daemonFactory
     const adapter = ctx.sessionHistoryAdapter;
     const view = await adapter.get(sessionId);
     if (view) {
+      await requireWorkspaceMember(c, view.workspaceId);
       return c.json(view, 200);
     }
 
@@ -227,7 +243,7 @@ const sessionsRoutes = daemonFactory
     return c.json({ error: `Session not found: ${sessionId}` }, 404);
   })
   /** Cancel a running session. */
-  .delete("/:id", zValidator("param", z.object({ id: z.string() })), (c) => {
+  .delete("/:id", zValidator("param", z.object({ id: z.string() })), async (c) => {
     const { id } = c.req.valid("param");
     const ctx = c.get("app");
 
@@ -236,6 +252,7 @@ const sessionsRoutes = daemonFactory
     // block. Check that explicitly so DELETE can hit currently-running work.
     for (const [workspaceId, runtime] of ctx.daemon.runtimes) {
       if (!runtime.hasActiveSession(id)) continue;
+      await requireWorkspaceMember(c, workspaceId);
       try {
         runtime.cancelSession(id);
         return c.json({ message: `Session ${id} cancelled`, workspaceId }, 200);

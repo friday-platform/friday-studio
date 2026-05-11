@@ -12,6 +12,7 @@ import { validator } from "hono-openapi";
 import type { NatsConnection } from "nats";
 import { z } from "zod";
 import { daemonFactory, KERNEL_WORKSPACE_ID } from "../../src/factory.ts";
+import { getAccessibleWorkspaceIds, requireWorkspaceMember } from "../../src/workspace-authz.ts";
 
 /** Relaxed request body for POST — only text is required. */
 const AppendBodySchema = z.object({
@@ -44,8 +45,12 @@ const memoryNarrativeRoutes = daemonFactory.createApp();
 // Reads MEMORY_INDEX KV bucket and dedupes by workspaceId prefix. Respects
 // FRIDAY_EXPOSE_KERNEL — hides the kernel workspace memory unless set.
 memoryNarrativeRoutes.get("/", async (c) => {
+  const userId = c.get("userId");
+  if (!userId) return c.json({ error: "Unauthorized" }, 401);
+
   const nc = c.get("app").daemon.getNatsConnection();
   const exposeKernel = c.get("app").exposeKernel;
+  const accessible = await getAccessibleWorkspaceIds(userId);
   const seen = new Set<string>();
   const kv = await ensureMemoryIndexBucket(nc);
   const it = await kv.keys();
@@ -54,6 +59,7 @@ memoryNarrativeRoutes.get("/", async (c) => {
     if (sep <= 0) continue;
     const wsId = key.slice(0, sep);
     if (!exposeKernel && wsId === KERNEL_WORKSPACE_ID) continue;
+    if (!accessible.has(wsId)) continue;
     seen.add(wsId);
   }
   return c.json([...seen]);
@@ -69,6 +75,7 @@ memoryNarrativeRoutes.get(
   validator("param", z.object({ workspaceId: z.string() })),
   async (c) => {
     const { workspaceId } = c.req.valid("param");
+    await requireWorkspaceMember(c, workspaceId);
     const manager = c.get("app").getWorkspaceManager();
     const config = await manager.getWorkspaceConfig(workspaceId);
     const memConfig = config?.workspace.memory;
@@ -121,6 +128,7 @@ memoryNarrativeRoutes.get(
   ),
   async (c) => {
     const { workspaceId, memoryName } = c.req.valid("param");
+    await requireWorkspaceMember(c, workspaceId);
     const { since, limit } = c.req.valid("query");
 
     try {
@@ -146,6 +154,7 @@ memoryNarrativeRoutes.post(
   validator("json", AppendBodySchema),
   async (c) => {
     const { workspaceId, memoryName } = c.req.valid("param");
+    await requireWorkspaceMember(c, workspaceId);
     const body = c.req.valid("json");
 
     const entry = NarrativeEntrySchema.parse({
@@ -174,6 +183,7 @@ memoryNarrativeRoutes.delete(
   validator("param", ForgetParamsSchema),
   async (c) => {
     const { workspaceId, memoryName, entryId } = c.req.valid("param");
+    await requireWorkspaceMember(c, workspaceId);
 
     try {
       const nc = c.get("app").daemon.getNatsConnection();

@@ -23,10 +23,12 @@ import {
 } from "@atlas/core";
 import { createLogger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
+import { HTTPException } from "hono/http-exception";
 import { describeRoute, resolver, validator } from "hono-openapi";
 import { z } from "zod";
 import { daemonFactory } from "../../src/factory.ts";
 import { errorResponseSchema } from "../../src/utils.ts";
+import { getAccessibleWorkspaceIds, requireWorkspaceMember } from "../../src/workspace-authz.ts";
 
 const elicitationApp = daemonFactory.createApp();
 const logger = createLogger({ component: "elicitation-routes" });
@@ -70,7 +72,16 @@ elicitationApp.get(
   validator("query", ListQuerySchema),
   async (c) => {
     try {
+      const userId = c.get("userId");
+      if (!userId) return c.json({ error: "Unauthorized" }, 401);
+
       const { workspaceId, sessionId, status, kind } = c.req.valid("query");
+
+      // Workspace-scoped explicit filter: gate on membership.
+      if (workspaceId !== undefined) {
+        await requireWorkspaceMember(c, workspaceId);
+      }
+
       const result = await ElicitationStorage.list({
         ...(workspaceId !== undefined ? { workspaceId } : {}),
         ...(sessionId !== undefined ? { sessionId } : {}),
@@ -79,12 +90,23 @@ elicitationApp.get(
       if (!result.ok) {
         return c.json({ error: result.error }, 500);
       }
+
+      // Global view (no explicit workspaceId): filter to elicitations
+      // the caller can see based on their workspace memberships. Keeps
+      // the listing semantically the same — "everything I'm allowed to
+      // see" — without exposing other tenants' rows.
+      const accessible = workspaceId === undefined ? await getAccessibleWorkspaceIds(userId) : null;
+      const visible =
+        accessible === null
+          ? result.data
+          : result.data.filter((e) => accessible.has(e.workspaceId));
+
       // The storage layer doesn't filter by `kind` (no direct support),
       // so apply the filter here for parity with the documented surface.
-      const elicitations =
-        kind === undefined ? result.data : result.data.filter((e) => e.kind === kind);
+      const elicitations = kind === undefined ? visible : visible.filter((e) => e.kind === kind);
       return c.json({ elicitations, count: elicitations.length });
     } catch (error) {
+      if (error instanceof HTTPException) throw error;
       return c.json({ error: stringifyError(error) }, 500);
     }
   },
@@ -123,8 +145,10 @@ elicitationApp.get(
       if (!result.data) {
         return c.json({ error: `Elicitation ${id} not found` }, 404);
       }
+      await requireWorkspaceMember(c, result.data.workspaceId);
       return c.json(result.data);
     } catch (error) {
+      if (error instanceof HTTPException) throw error;
       return c.json({ error: stringifyError(error) }, 500);
     }
   },
@@ -183,6 +207,9 @@ elicitationApp.post(
       if (!got.data) {
         return c.json({ error: `Elicitation ${id} not found` }, 404);
       }
+      // Workspace-scope authz: the elicitation carries its workspaceId;
+      // require the caller to be a member of that workspace.
+      await requireWorkspaceMember(c, got.data.workspaceId);
 
       const result = await ElicitationStorage.answer({
         id,
@@ -214,6 +241,7 @@ elicitationApp.post(
       }
       return c.json(result.data);
     } catch (error) {
+      if (error instanceof HTTPException) throw error;
       return c.json({ error: stringifyError(error) }, 500);
     }
   },
@@ -264,6 +292,7 @@ elicitationApp.post(
       if (!got.data) {
         return c.json({ error: `Elicitation ${id} not found` }, 404);
       }
+      await requireWorkspaceMember(c, got.data.workspaceId);
 
       const result = await ElicitationStorage.decline({
         id,
@@ -272,6 +301,7 @@ elicitationApp.post(
       if (!result.ok) return c.json({ error: result.error }, 500);
       return c.json(result.data);
     } catch (error) {
+      if (error instanceof HTTPException) throw error;
       return c.json({ error: stringifyError(error) }, 500);
     }
   },
