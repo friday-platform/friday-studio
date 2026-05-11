@@ -77,10 +77,6 @@ export const SkillRowV2Schema = z.object({
 });
 export type SkillRowV2 = z.infer<typeof SkillRowV2Schema>;
 
-/** @deprecated kept as an alias for the v1 row shape for backwards compatibility. */
-export const SkillRowSchema = SkillRowV1Schema;
-export type SkillRow = SkillRowV1;
-
 export interface ExportGlobalSkillsOptions {
   adapter: SkillStorageAdapter;
 }
@@ -417,9 +413,10 @@ async function importV2Rows(
     .map((line) => SkillRowV2Schema.parse(JSON.parse(line)));
 
   // Per-skillId map of version → archive bytes from rows already processed in
-  // THIS bundle. Used to resolve `inherited` rows by reaching back through the
-  // same archive. Same-bundle resolution is the contract; an `inherited` row
-  // pointing at a version that's neither here nor at the target is a hard
+  // THIS bundle. Used as the fast path when resolving `inherited` rows; if a
+  // prior version was skipped on presence (so its bytes never landed in the
+  // cache), we fall back to fetching from the target adapter. An `inherited`
+  // row pointing at a version that's neither here nor at the target is a hard
   // error, surfaced loudly below.
   const archivesBySkill = new Map<string, Map<number, Uint8Array<ArrayBuffer>>>();
   // Cache version-presence checks per skillId so each row's listVersions call
@@ -473,26 +470,39 @@ async function importV2Rows(
       }
       perSkill.set(row.version, archiveBytes);
     } else if (row.archive.kind === "inherited") {
-      const perSkill = archivesBySkill.get(row.skillId);
       // The exporter writes archives onto the version that introduced them
-      // and marks every successive same-bytes version `inherited`. The most
-      // recent recorded archive in this bundle is the inheritor's source.
+      // and marks every successive same-bytes version `inherited`. Resolve
+      // by walking DOWN from row.version - 1: in-bundle cache first (fast
+      // path, already in memory); fall back to the target adapter for
+      // versions skipped on presence (the realistic upgrade-export flow:
+      // target has [v1..v3], bundle ships [v1=bytes, v2=inherited, ...,
+      // v4=inherited], v1-v3 skip on presence so the cache is empty when
+      // v4 arrives).
       let inherited: Uint8Array<ArrayBuffer> | undefined;
-      if (perSkill) {
-        let bestVersion = -1;
-        for (const recordedVersion of perSkill.keys()) {
-          if (recordedVersion < row.version && recordedVersion > bestVersion) {
-            bestVersion = recordedVersion;
-          }
+      const perSkill = archivesBySkill.get(row.skillId);
+      for (let v = row.version - 1; v >= 1; v--) {
+        const cached = perSkill?.get(v);
+        if (cached) {
+          inherited = cached;
+          break;
         }
-        if (bestVersion >= 0) {
-          inherited = perSkill.get(bestVersion);
+        if (presentVersions.has(v)) {
+          const got = await adapter.get(row.namespace, row.name, v);
+          if (!got.ok) {
+            throw new Error(
+              `importGlobalSkills: get(${row.namespace}, ${row.name}, ${v}) failed while resolving inherited archive for skill ${row.skillId} version ${row.version}: ${got.error}`,
+            );
+          }
+          if (got.data?.archive) {
+            inherited = toArrayBufferBacked(got.data.archive);
+            break;
+          }
         }
       }
       if (!inherited) {
         throw new Error(
           `importGlobalSkills: inherited archive for skill ${row.skillId} version ${row.version} ` +
-            `references no prior version with bytes in this bundle`,
+            `could not be resolved from this bundle or the target`,
         );
       }
       archiveBytes = inherited;

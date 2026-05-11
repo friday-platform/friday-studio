@@ -28,8 +28,6 @@ export {
   type ImportStatus,
   importGlobalSkills,
   LegacyArchiveError,
-  type SkillRow,
-  SkillRowSchema,
   type SkillRowV1,
   SkillRowV1Schema,
   type SkillRowV2,

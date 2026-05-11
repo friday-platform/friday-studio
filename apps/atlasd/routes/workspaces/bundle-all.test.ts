@@ -366,11 +366,8 @@ describe("bundle-all endpoints (end-to-end)", () => {
       throw new Error("expected imported status");
     }
     // Every row in the bundle was already at version 1 in the bucket — the
-    // import is a full no-op for our prefix. `skillsPublished` counts only
-    // brand-new rows; `skillsSkipped` is the universe of (existing-and-up-to-
-    // date) rows the importer iterated, including other suites' leftovers.
-    // Floor: at least our 3 must be in the skipped bucket.
-    expect(body.globalSkills.skillsSkipped).toBeGreaterThanOrEqual(3);
+    // import is a full no-op for our prefix. `skillsPublished === 0` asserts
+    // the skip path was taken; per-skillId checks below pin the contract.
     expect(body.globalSkills.skillsPublished).toBe(0);
 
     // Idempotency: post-state versions match pre-state for our 3 rows.

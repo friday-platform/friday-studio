@@ -374,6 +374,47 @@ describe("importGlobalSkills (v2 round-trip)", () => {
     expect(Array.from(v2.data.archive)).toEqual(Array.from(archiveBytes));
   });
 
+  it("inherited archive resolves from target when prior version was skipped on presence", async () => {
+    // Realistic upgrade-export flow: target already has v1 from a prior
+    // import. User publishes v2 whose archive is the same as v1; re-export
+    // ships [v1=bytes, v2=inherited]. Re-import skips v1 on presence (so the
+    // in-bundle cache stays empty for v1), and v2's `inherited` lookup must
+    // fall back to the target adapter to materialize the bytes.
+    const source = new JetStreamSkillAdapter(nc);
+    const archiveBytes = bytes("inherited-from-target");
+
+    // Build bundle1: just v1 with bytes.
+    await seedVersion(source, { namespace: "user", name: "ihf", archive: archiveBytes });
+    const bundle1 = await exportGlobalSkills({ adapter: source });
+    if (!bundle1.bytes) throw new Error("expected bundle1 bytes");
+
+    // Extend source with v2 (no archive → publish copies forward → exporter
+    // marks v2 as `inherited`). Export again to get the 2-row bundle.
+    await seedVersion(source, { namespace: "user", name: "ihf", instructions: "v2" });
+    const bundle2 = await exportGlobalSkills({ adapter: source });
+    if (!bundle2.bytes) throw new Error("expected bundle2 bytes");
+
+    await wipeBuckets();
+
+    // Seed target with v1 (bytes).
+    const target = new JetStreamSkillAdapter(nc);
+    const first = await importGlobalSkills({ zipBytes: bundle1.bytes, adapter: target });
+    expect(first.status.kind).toBe("imported");
+    if (first.status.kind !== "imported") throw new Error("unreachable");
+    expect(first.status.skillsPublished).toBe(1);
+
+    // Import the 2-row bundle. v1 skips on presence, v2 must resolve via target.
+    const second = await importGlobalSkills({ zipBytes: bundle2.bytes, adapter: target });
+    expect(second.status.kind).toBe("imported");
+    if (second.status.kind !== "imported") throw new Error("unreachable");
+    expect(second.status.skillsPublished).toBe(1);
+    expect(second.status.skillsSkipped).toBe(1);
+
+    const v2 = await target.get("user", "ihf", 2);
+    if (!v2.ok || !v2.data?.archive) throw new Error("v2 archive missing");
+    expect(Array.from(v2.data.archive)).toEqual(Array.from(archiveBytes));
+  });
+
   it("rename across versions — both old and new names resolve same skillId", async () => {
     const source = new JetStreamSkillAdapter(nc);
     await source.replayVersion({
@@ -425,7 +466,13 @@ describe("importGlobalSkills (v2 round-trip)", () => {
     expect(barVersions.data.map((v) => v.version).sort()).toEqual([1, 2]);
   });
 
-  it("disabled state preserved on initial import", async () => {
+  it("disabled state on skip is preserved from target — source's flag does NOT reconcile", async () => {
+    // Pins the documented intentional skip-leak from
+    // docs/plans/2026-05-09-global-skills-import-idempotency-fix.md §3 case 7.
+    // The skip predicate is presence-based on (skillId, version); on skip the
+    // importer never reaches setDisabled / replayVersion, so the source row's
+    // `disabled` flag is intentionally NOT reconciled onto an existing target
+    // row. Future work: reconcile on skip if the product wants sync semantics.
     const source = new JetStreamSkillAdapter(nc);
     await source.replayVersion({
       id: "d-1",
@@ -449,13 +496,37 @@ describe("importGlobalSkills (v2 round-trip)", () => {
 
     await wipeBuckets();
 
+    // First import: target is empty, so replayVersion writes the row verbatim
+    // including disabled: true.
     const target = new JetStreamSkillAdapter(nc);
-    const result = await importGlobalSkills({ zipBytes, adapter: target });
-    expect(result.status.kind).toBe("imported");
+    const first = await importGlobalSkills({ zipBytes, adapter: target });
+    expect(first.status.kind).toBe("imported");
+    {
+      const got = await target.getBySkillId("d-skill");
+      if (!got.ok || !got.data) throw new Error("missing post-first-import");
+      expect(got.data.disabled).toBe(true);
+    }
 
+    // User toggles target to enabled.
+    const toggled = await target.setDisabled("d-skill", false);
+    if (!toggled.ok) throw new Error(toggled.error);
+    {
+      const got = await target.getBySkillId("d-skill");
+      if (!got.ok || !got.data) throw new Error("missing post-toggle");
+      expect(got.data.disabled).toBe(false);
+    }
+
+    // Re-import the SAME archive. (skillId, version) is present → skip path.
+    const second = await importGlobalSkills({ zipBytes, adapter: target });
+    expect(second.status.kind).toBe("imported");
+    if (second.status.kind !== "imported") throw new Error("unreachable");
+    expect(second.status.skillsPublished).toBe(0);
+    expect(second.status.skillsSkipped).toBeGreaterThanOrEqual(1);
+
+    // Skip did NOT reconcile the source's `disabled: true` onto the target.
     const got = await target.getBySkillId("d-skill");
-    if (!got.ok || !got.data) throw new Error("missing");
-    expect(got.data.disabled).toBe(true);
+    if (!got.ok || !got.data) throw new Error("missing post-second-import");
+    expect(got.data.disabled).toBe(false);
   });
 
   it("returns integrity-failed when manifest sha doesn't match jsonl bytes", async () => {
