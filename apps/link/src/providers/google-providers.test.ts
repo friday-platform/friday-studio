@@ -8,6 +8,7 @@ import {
   createGoogleGmailProvider,
   createGoogleSheetsProvider,
 } from "./google-providers.ts";
+import { notionProvider } from "./notion.ts";
 
 // Provider factories with expected metadata
 const PROVIDERS = [
@@ -49,6 +50,19 @@ describe("Google providers", () => {
         `${id} should include ${scope} scope`,
       ).toBe(true);
     }
+  });
+
+  it('tags every Google provider with family: "google" for elicitation dedup', () => {
+    for (const { factory, id } of PROVIDERS) {
+      const provider = factory();
+      expect(provider.family, `${id} should have family: "google"`).toBe("google");
+    }
+  });
+
+  it("leaves family undefined on non-Google OAuth providers", () => {
+    // Sanity check: only providers that opt in carry a family; default callers
+    // fall back to provider.id (no central change needed).
+    expect(notionProvider.family).toBeUndefined();
   });
 
   it("encodeState produces base64-encoded {uri, manual, csrf} payload", () => {

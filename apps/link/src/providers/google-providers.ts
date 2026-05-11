@@ -93,6 +93,7 @@ function createGoogleProvider(
 ): OAuthProvider {
   return defineOAuthProvider({
     id: `google-${service}`,
+    family: "google",
     displayName,
     description,
     oauthConfig: {

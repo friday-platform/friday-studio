@@ -127,6 +127,14 @@ type BaseProviderDefinition = {
   description: string;
   iconUrl?: string;
   docsUrl?: string;
+  /**
+   * Optional grouping key for providers that share an identity/credential
+   * lifecycle (e.g. all `google-*` providers ride on the same refresh token).
+   * Used by elicitation dedup to coalesce per-family prompts so one Google
+   * refresh covers Calendar + Gmail + Drive in a single user interaction.
+   * When absent, callers should treat the provider's `id` as its family.
+   */
+  family?: string;
 };
 
 /**
