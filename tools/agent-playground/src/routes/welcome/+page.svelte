@@ -34,6 +34,7 @@
     type MeIdentity,
     type OnboardingState,
   } from "$lib/api/me.ts";
+  import Combobox from "./combobox.svelte";
 
   let loading = $state(true);
   let submitting = $state(false);
@@ -63,6 +64,144 @@
     if (typeof navigator === "undefined") return "";
     return navigator.languages?.[0] ?? navigator.language ?? "";
   }
+
+  // Curated short list — covers most users without dumping the full
+  // ~430-entry IANA matrix into a popover. Datalist gives us typeahead
+  // filtering for free, so the list only needs to be long enough that
+  // a user who doesn't type sees a useful default set. The auto-
+  // detected value is added if absent so a less-common tz still
+  // shows up.
+  const COMMON_TIMEZONES = [
+    "Pacific/Honolulu",
+    "America/Anchorage",
+    "America/Los_Angeles",
+    "America/Denver",
+    "America/Phoenix",
+    "America/Chicago",
+    "America/New_York",
+    "America/Toronto",
+    "America/Vancouver",
+    "America/Mexico_City",
+    "America/Bogota",
+    "America/Lima",
+    "America/Santiago",
+    "America/Buenos_Aires",
+    "America/Sao_Paulo",
+    "Atlantic/Azores",
+    "UTC",
+    "Europe/London",
+    "Europe/Dublin",
+    "Europe/Lisbon",
+    "Europe/Paris",
+    "Europe/Madrid",
+    "Europe/Amsterdam",
+    "Europe/Brussels",
+    "Europe/Berlin",
+    "Europe/Zurich",
+    "Europe/Rome",
+    "Europe/Vienna",
+    "Europe/Stockholm",
+    "Europe/Oslo",
+    "Europe/Copenhagen",
+    "Europe/Helsinki",
+    "Europe/Warsaw",
+    "Europe/Prague",
+    "Europe/Athens",
+    "Europe/Istanbul",
+    "Europe/Moscow",
+    "Europe/Kyiv",
+    "Africa/Cairo",
+    "Africa/Lagos",
+    "Africa/Nairobi",
+    "Africa/Johannesburg",
+    "Asia/Jerusalem",
+    "Asia/Dubai",
+    "Asia/Tehran",
+    "Asia/Karachi",
+    "Asia/Kolkata",
+    "Asia/Bangkok",
+    "Asia/Jakarta",
+    "Asia/Singapore",
+    "Asia/Kuala_Lumpur",
+    "Asia/Manila",
+    "Asia/Hong_Kong",
+    "Asia/Shanghai",
+    "Asia/Taipei",
+    "Asia/Seoul",
+    "Asia/Tokyo",
+    "Australia/Perth",
+    "Australia/Sydney",
+    "Pacific/Auckland",
+  ];
+
+  function timezoneLabel(tz: string): string {
+    // "America/New_York" -> "New York, America"; "UTC" stays "UTC".
+    if (!tz.includes("/")) return tz;
+    const [region, ...rest] = tz.split("/");
+    const city = rest.join("/").replaceAll("_", " ");
+    return `${city}, ${region}`;
+  }
+
+  function getTimezoneOptions(): { value: string; label: string }[] {
+    const tags = new Set(COMMON_TIMEZONES);
+    const detected = detectTimezone();
+    if (detected) tags.add(detected);
+    return [...tags]
+      .sort()
+      .map((tz) => ({ value: tz, label: timezoneLabel(tz) }));
+  }
+
+  // Curated locale list — top ~20 most common BCP-47 tags. Same
+  // datalist+typeahead pattern as timezone.
+  const COMMON_LOCALES = [
+    "en-US",
+    "en-GB",
+    "en-CA",
+    "en-AU",
+    "es-ES",
+    "es-MX",
+    "fr-FR",
+    "fr-CA",
+    "de-DE",
+    "it-IT",
+    "pt-BR",
+    "pt-PT",
+    "nl-NL",
+    "ja-JP",
+    "ko-KR",
+    "zh-CN",
+    "zh-TW",
+    "ru-RU",
+    "ar-SA",
+    "hi-IN",
+  ];
+
+  function localeLabel(tag: string): string {
+    try {
+      const [lang, region] = tag.split("-");
+      if (!lang) return tag;
+      const langDN = new Intl.DisplayNames(["en"], { type: "language" });
+      const langName = langDN.of(lang) ?? lang;
+      if (region) {
+        const regionDN = new Intl.DisplayNames(["en"], { type: "region" });
+        const regionName = regionDN.of(region) ?? region;
+        return `${langName} (${regionName})`;
+      }
+      return langName;
+    } catch {
+      return tag;
+    }
+  }
+
+  function getLocaleOptions(): { value: string; label: string }[] {
+    const tags = new Set(COMMON_LOCALES);
+    const detected = detectLocale();
+    if (detected) tags.add(detected);
+    return [...tags].sort().map((tag) => ({ value: tag, label: localeLabel(tag) }));
+  }
+
+  const timezoneOptions = $derived(browser ? getTimezoneOptions() : []);
+  const localeOptions = $derived(browser ? getLocaleOptions() : []);
 
   $effect(() => {
     if (!browser) return;
@@ -168,22 +307,27 @@
           />
         </label>
 
-        <label class="field">
+        <div class="field">
           <span class="label">Timezone</span>
-          <input
-            type="text"
+          <Combobox
             bind:value={timezone}
-            placeholder="America/New_York"
+            options={timezoneOptions}
+            placeholder="Start typing…"
             disabled={submitting}
           />
-          <span class="hint">Auto-detected from your browser. IANA name.</span>
-        </label>
+          <span class="hint">Auto-detected from your browser.</span>
+        </div>
 
-        <label class="field">
+        <div class="field">
           <span class="label">Locale</span>
-          <input type="text" bind:value={locale} placeholder="en-US" disabled={submitting} />
-          <span class="hint">Auto-detected from your browser. BCP-47 tag.</span>
-        </label>
+          <Combobox
+            bind:value={locale}
+            options={localeOptions}
+            placeholder="Start typing…"
+            disabled={submitting}
+          />
+          <span class="hint">Auto-detected from your browser.</span>
+        </div>
 
         {#if error}
           <p class="error" role="alert">{error}</p>
@@ -211,40 +355,42 @@
 
 <style>
   .welcome {
-    background-color: var(--surface-dark);
-    color: var(--text-primary);
-    block-size: 100dvh;
-    display: flex;
     align-items: center;
+    background-color: var(--surface-dark);
+    block-size: 100dvh;
+    color: var(--text);
+    display: flex;
     justify-content: center;
     padding: 2rem;
   }
 
   .card {
     background-color: var(--surface);
+    border: 1px solid var(--border);
     border-radius: 12px;
-    padding: 2.5rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 4px 12px rgba(0, 0, 0, 0.06);
     inline-size: min(28rem, 100%);
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+    padding: 2.5rem;
   }
 
   .hero {
+    align-items: center;
     display: flex;
     flex-direction: column;
-    align-items: center;
     gap: 0.75rem;
     margin-block-end: 2rem;
     text-align: center;
   }
 
   .hero h1 {
+    color: var(--text-bright);
     font-size: 1.5rem;
     font-weight: 600;
     margin: 0;
   }
 
   .lede {
-    color: var(--text-secondary);
+    color: var(--text-faded);
     margin: 0;
   }
 
@@ -261,73 +407,82 @@
   }
 
   .label {
+    color: var(--text-bright);
     font-size: 0.875rem;
     font-weight: 500;
   }
 
   .required {
-    color: var(--accent, #1171df);
+    color: var(--blue-primary);
     margin-inline-start: 0.25rem;
   }
 
   input[type="text"],
   input[type="email"] {
-    padding: 0.625rem 0.75rem;
+    background-color: var(--surface-bright);
+    block-size: 2.5rem;
+    border: 1px solid var(--border);
     border-radius: 6px;
-    border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
-    background-color: var(--surface-input, rgba(0, 0, 0, 0.2));
-    color: inherit;
+    color: var(--text-bright);
     font: inherit;
+    line-height: 1.2;
+    padding-block: 0;
+    padding-inline: 0.75rem;
   }
 
   input:focus {
-    outline: 2px solid var(--accent, #1171df);
-    outline-offset: 1px;
+    border-color: var(--blue-primary);
+    outline: 2px solid color-mix(in oklab, var(--blue-primary) 30%, transparent);
+    outline-offset: 0;
   }
 
   .hint {
-    color: var(--text-secondary);
+    color: var(--text-faded);
     font-size: 0.75rem;
   }
 
   .actions {
     display: flex;
-    justify-content: flex-end;
     gap: 0.75rem;
+    justify-content: flex-end;
     margin-block-start: 0.5rem;
   }
 
   .btn {
-    padding: 0.625rem 1rem;
-    border-radius: 6px;
     border: 1px solid transparent;
-    font: inherit;
+    border-radius: 6px;
     cursor: pointer;
+    font: inherit;
+    padding: 0.5rem 1rem;
   }
 
   .btn:disabled {
-    opacity: 0.6;
     cursor: not-allowed;
+    opacity: 0.6;
   }
 
   .btn-primary {
-    background-color: var(--accent, #1171df);
-    color: white;
+    background-color: var(--blue-primary);
+    color: var(--surface);
   }
 
   .btn-ghost {
     background-color: transparent;
-    color: var(--text-secondary);
-    border-color: var(--border, rgba(255, 255, 255, 0.12));
+    border-color: var(--border);
+    color: var(--text);
+  }
+
+  .btn-ghost:hover:not(:disabled) {
+    background-color: var(--highlight);
   }
 
   .error {
-    color: var(--danger, #ef4444);
-    margin: 0;
+    color: var(--red-primary);
     font-size: 0.875rem;
+    margin: 0;
   }
 
   .muted {
-    color: var(--text-secondary);
+    color: var(--text-faded);
   }
 </style>
