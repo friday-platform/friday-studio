@@ -149,6 +149,46 @@ describe("m_20260504_025000_provision_users_bucket", () => {
     expect(got.ok && got.data?.identity.name).toBe("Existing");
   });
 
+  it("is a no-op when onboarding.version is already at target (partial-rerun crash recovery)", async () => {
+    // Crash-recovery scenario: a prior run successfully called
+    // `markOnboardingComplete` (bumping `onboarding.version` to the
+    // current value) but the identity write either crashed or was
+    // never reached for this user, so `nameStatus` is still
+    // `"unknown"`. Without clause (b) of the idempotency guard, the
+    // migration would re-derive identity from legacy memory on the
+    // rerun and clobber whatever state the operator may have edited
+    // manually since the crash. Clause (b) protects against that.
+    const localResult = await UserStorage.resolveLocalUserId();
+    expect(localResult.ok).toBe(true);
+    const localUserId = localResult.ok ? localResult.data : "";
+
+    // Pre-seed onboarding.version at target without touching identity.
+    // (`nameStatus` stays at the default "unknown" from `resolveLocalUserId`.)
+    const mark = await UserStorage.markOnboardingComplete(localUserId, ONBOARDING_VERSION);
+    expect(mark.ok).toBe(true);
+
+    // Seed a legacy memory entry the migration WOULD pick up if it ran.
+    const store = new JetStreamNarrativeStore({ nc, workspaceId: "user", name: "notes" });
+    await store.append({
+      id: crypto.randomUUID(),
+      text: "name is StaleLegacy",
+      createdAt: new Date().toISOString(),
+      metadata: { type: "user-name" },
+    });
+
+    const facade = createJetStreamFacade(nc);
+    await migration.run({ nc, js: facade, logger: noopLogger });
+
+    // Identity must remain `unknown` — the migration short-circuited.
+    const got = await UserStorage.getUser(localUserId);
+    expect(got.ok).toBe(true);
+    if (got.ok && got.data) {
+      expect(got.data.identity.nameStatus).toBe("unknown");
+      expect(got.data.identity.name).toBeUndefined();
+      expect(got.data.onboarding.version).toBe(ONBOARDING_VERSION);
+    }
+  });
+
   it("is a no-op when no legacy identity entries exist", async () => {
     const localResult = await UserStorage.resolveLocalUserId();
     expect(localResult.ok).toBe(true);
