@@ -480,10 +480,11 @@ export class AtlasDaemon {
     // (FRIDAY_CASCADE_QUEUE_TIMEOUT, default 5min).
     await ensureCascadesStream(nc);
 
-    // INSTANCE_EVENTS — instance-wide operational feed, consumed via SSE
-    // by /api/instance/events. Used today for cascade backlog / replace /
-    // queue-timeout signals; intentionally open to other instance-level
-    // event types (daemon, health, …) without a stream split.
+    // INSTANCE_EVENTS — instance-wide operational feed. Live updates
+    // ride the per-user firehose at /api/me/stream; /api/instance/events
+    // is the paginated replay endpoint. Used today for cascade backlog /
+    // replace / queue-timeout signals; intentionally open to other
+    // instance-level event types (daemon, health, …) without a split.
     await ensureInstanceEventsStream(nc);
 
     // Wire chat storage to JetStream + eagerly create the CHATS KV bucket

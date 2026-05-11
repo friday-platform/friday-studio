@@ -4,10 +4,10 @@
 
   Two-column: filtered list on the left, detail panel on the right.
 
-  Workspace pages receive full-envelope live updates via
-  `/api/elicitations/stream?workspaceId=...`. The global page is refreshed by
-  the sanitized app-root stream at `/api/elicitations/stream/global`, avoiding
-  both full-envelope global leakage and per-workspace EventSource fanout.
+  Live updates ride the per-user firehose via the SharedWorker client —
+  one EventSource per browser, fanned out by channel. The daemon does
+  workspace-scope authz before publishing, so workspace and global views
+  consume the same full-envelope frames.
 
   @component
 -->

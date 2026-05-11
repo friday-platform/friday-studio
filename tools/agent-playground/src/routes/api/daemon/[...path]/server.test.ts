@@ -35,10 +35,8 @@ describe("daemon proxy route", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const response = await GET({
-      params: { path: "api/elicitations/stream" },
-      request: new Request(
-        "http://localhost/api/daemon/api/elicitations/stream?workspaceId=leak_probe",
-      ),
+      params: { path: "api/me/stream" },
+      request: new Request("http://localhost/api/daemon/api/me/stream"),
     } as unknown as Parameters<typeof GET>[0]);
 
     expect(response.status).toBe(200);

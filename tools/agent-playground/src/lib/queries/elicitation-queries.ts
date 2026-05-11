@@ -1,8 +1,9 @@
 /**
  * Query option factories + mutations for elicitations (Activity surface).
  *
- * Backend lives at `/api/elicitations` (HTTP) and `/api/elicitations/stream`
- * (SSE). Routes are in `apps/atlasd/routes/elicitations/index.ts`.
+ * Backend lives at `/api/elicitations` (HTTP). Live updates ride the
+ * per-user firehose via the SharedWorker `subscribeTo*Elicitations`
+ * wrappers — there is no per-feed SSE endpoint.
  *
  * The route file mounts handlers via non-chained `daemonFactory.createApp()`
  * calls, so the Hono RPC client can't infer types — fall back to raw fetch
@@ -80,8 +81,7 @@ export const elicitationQueries = {
         return ListResponseSchema.parse(data).elicitations;
       },
       staleTime: 5_000,
-      // Live updates come from workspace-scoped full SSE streams and the
-      // sanitized global summary stream mounted at the app root.
+      // Live updates flow through the per-user firehose; no polling.
       refetchInterval: false,
       refetchIntervalInBackground: false,
     }),
