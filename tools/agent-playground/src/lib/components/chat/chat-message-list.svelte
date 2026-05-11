@@ -1,6 +1,7 @@
 <script lang="ts">
   import { DropdownMenu, markdownToHTMLSafe } from "@atlas/ui";
-  import { tick } from "svelte";
+  import { createVirtualizer } from "@tanstack/svelte-virtual";
+  import { tick, untrack } from "svelte";
   import type { ChatMessage } from "./types";
   import { getExportContext } from "./export-context";
   import ToolBurst from "./tool-burst.svelte";
@@ -190,6 +191,44 @@
 
   let containerEl: HTMLDivElement | undefined = $state();
 
+  // Virtualizer for the message list. svelte-virtual v3.x is store-
+  // backed (Svelte 4 contract), so consumers read `$virtualizer.*` in
+  // template. `count` is set initially to the messages array length
+  // and pushed reactively via `setOptions` below. `getScrollElement`
+  // is a closure on the reactive `containerEl` — null at first render
+  // (the `bind:this` hasn't fired yet), non-null on subsequent renders;
+  // the template gates `$virtualizer` access behind `{#if containerEl}`
+  // so the virtualizer's `_didMount` only runs once the scroll element
+  // exists.
+  // Virtualize only the messages array — thinking bubble stays as a
+  // natural sibling outside the virtualizer (its content animates on a
+  // timer, which would otherwise re-trigger measureElement; and the
+  // count flicker when thinking flips false right as a new message
+  // arrives would cause a one-frame layout shift).
+  const virtualCount = $derived(messages.length);
+  const virtualizer = createVirtualizer<HTMLDivElement, HTMLDivElement>({
+    count: virtualCount,
+    getScrollElement: () => containerEl ?? null,
+    estimateSize: () => 200,
+    overscan: 5,
+  });
+
+  // Push count updates to the virtualizer. `untrack` keeps this effect
+  // from subscribing to the store value when calling `setOptions` —
+  // otherwise the store's internal `writable.set(virtualizer)` (which
+  // fires on every `setOptions`) would re-trigger this effect, looping.
+  $effect(() => {
+    const count = virtualCount;
+    untrack(() => {
+      $virtualizer.setOptions({
+        count,
+        getScrollElement: () => containerEl ?? null,
+        estimateSize: () => 200,
+        overscan: 5,
+      });
+    });
+  });
+
   // Auto-scroll to bottom as new messages or tool updates arrive. We watch
   // both the length of the outer list and the total tool-call count so mid-
   // stream tool activity (no new messages, just updated tool cards on the
@@ -227,9 +266,33 @@
 
   async function scrollToBottom() {
     await tick();
-    if (containerEl) {
-      containerEl.scrollTop = containerEl.scrollHeight;
+    if (!containerEl) return;
+    // Two complications drive the multi-pass:
+    //  1. The virtualizer reports `getTotalSize()` from a mix of
+    //     measured + estimated item heights. On first paint after a
+    //     rehydration, most items are still at `estimateSize` and the
+    //     reported total is far smaller than reality.
+    //  2. `measureElement` reads `offsetHeight` inside a ResizeObserver
+    //     callback, which is async to the render pass. Between
+    //     "messages are in the DOM" and "the virtualizer knows their
+    //     real sizes" there's at least one animation frame.
+    // The scroll passes below catch each settling step. Plain
+    // `scrollTop = scrollHeight` works once the virtualizer's total
+    // size is accurate; until then we use `scrollToIndex` which
+    // self-corrects to the last item as measurements arrive.
+    if (virtualCount > 0) {
+      $virtualizer.scrollToIndex(virtualCount - 1, { align: "end" });
     }
+    containerEl.scrollTop = containerEl.scrollHeight;
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    if (!containerEl) return;
+    if (virtualCount > 0) {
+      $virtualizer.scrollToIndex(virtualCount - 1, { align: "end" });
+    }
+    containerEl.scrollTop = containerEl.scrollHeight;
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    if (!containerEl) return;
+    containerEl.scrollTop = containerEl.scrollHeight;
   }
 
   $effect(() => {
@@ -244,6 +307,26 @@
     if (followBottom) {
       void scrollToBottom();
     }
+  });
+
+  // Re-anchor to bottom whenever the virtualizer's inner spacer grows.
+  // `measureElement` is ResizeObserver-backed and async, so the total
+  // size after a rehydration or a streaming delta keeps growing for a
+  // few frames after the each-loop renders. Without this, the initial
+  // `scrollToBottom` calls land mid-scroll because they fire before
+  // the final measurements arrive. Tied to `followBottom` so we don't
+  // hijack a user who has scrolled up.
+  $effect(() => {
+    if (!containerEl) return;
+    const inner = containerEl.querySelector(".virtual-inner");
+    if (!inner) return;
+    const observer = new ResizeObserver(() => {
+      if (followBottom && containerEl) {
+        containerEl.scrollTop = containerEl.scrollHeight;
+      }
+    });
+    observer.observe(inner);
+    return () => observer.disconnect();
   });
 
   const BRAILLE_FRAMES = ["⠀", "⠁", "⠉", "⠙", "⠚", "⠛", "⠟", "⠿", "⠟", "⠛", "⠚", "⠙", "⠉", "⠁"];
@@ -564,7 +647,17 @@
 
 
 <div class="message-list" bind:this={containerEl} onscroll={handleScroll}>
-  {#each messages as message (message.id)}
+  {#if containerEl}
+  <div class="virtual-inner" style:block-size="{$virtualizer.getTotalSize()}px">
+  {#each $virtualizer.getVirtualItems() as vrow (vrow.key)}
+    {@const message = messages[vrow.index]}
+    {#if message}
+    <div
+      class="virtual-item"
+      data-index={vrow.index}
+      style:transform="translateY({vrow.start}px)"
+      use:$virtualizer.measureElement
+    >
     <div
       class="message"
       class:user={message.role === "user"}
@@ -774,7 +867,11 @@
           </div>
       {/if}
     </div>
+    </div>
+    {/if}
   {/each}
+  </div>
+  {/if}
 
   {#if thinking}
     <!-- Placeholder assistant bubble shown between send and first-token.
@@ -810,6 +907,37 @@
     overflow-y: auto;
     padding: var(--size-4);
     scrollbar-width: thin;
+  }
+
+  /* The virtualizer's inner spacer. Reserves total scroll height
+     (sum of measured + estimated item sizes) and serves as the
+     positioning context for absolutely-placed virtual items.
+     Thinking-bubble + empty-state live OUTSIDE this — they're flex
+     siblings of `.virtual-inner` so the existing gap rule still
+     applies between the last measured message and the thinking
+     placeholder. */
+  .virtual-inner {
+    /* `.message-list` is a flex column; absolute children inside
+       `.virtual-inner` don't contribute to its content size, so
+       without `flex-shrink: 0` the flex layout collapses the
+       container to 0 (or to whatever min equalization assigns)
+       and `block-size` set inline becomes a no-op. The virtualizer
+       still positions items at correct translateY offsets, but the
+       scrollable area is wrong and the page rubberbands. */
+    flex-shrink: 0;
+    inline-size: 100%;
+    position: relative;
+  }
+
+  .virtual-item {
+    inset-block-start: 0;
+    inset-inline: 0;
+    /* The flex `gap` doesn't reach absolute children, so the
+       between-message spacing has to live on each item. Bottom
+       padding is included in the `measureElement` size, so the
+       virtualizer's offset math accounts for it correctly. */
+    padding-block-end: var(--size-4);
+    position: absolute;
   }
 
   .message {

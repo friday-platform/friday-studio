@@ -38,6 +38,7 @@
     "@tanstack/query-core": "^5.100.8",
     "@tanstack/svelte-query": "^6.1.28",
     "@tanstack/svelte-table": "9.0.0-alpha.41",
+    "@tanstack/svelte-virtual": "~3.13.24",
     "@types/deno": "2.5.0",
     "ai": "^6.0.177",
     "codemirror": "^6.0.2",
