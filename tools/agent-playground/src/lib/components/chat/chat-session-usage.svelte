@@ -124,22 +124,16 @@
 {/if}
 
 <style>
-  /* Session usage bar — always visible, no background. Sits inline
-     with the chat surface as a thin row of right-anchored stats. No
-     border-block-end either; the row is supposed to read as
-     overlay-style observability data, not a UI bar with its own
-     chrome. */
+  /* Session usage bar — inlined into the chat header alongside the
+     Export button. The parent .chat-header owns padding + border; this
+     component just lays its own glyphs out in a row. Spacing between
+     items stays generous so the at-a-glance stats stay scannable. */
   .session-usage {
     align-items: center;
     color: var(--text-faded);
     display: flex;
     font-size: 0.7rem;
-    /* Right-anchored stats with generous spacing between items. */
     gap: 1.25rem;
-    justify-content: flex-end;
-    padding-block: 0.3rem;
-    padding-inline-end: 1.5rem;
-    padding-inline-start: 0.75rem;
   }
   .metric {
     font-variant-numeric: tabular-nums;

@@ -1279,7 +1279,14 @@
 
   {#if chat && chat.messages.length > 0}
     <header class="chat-header">
-      <span class="header-spacer"></span>
+      <!-- Session stats sit at the leading edge of the header; the
+           Export button auto-pushes to the trailing edge via its own
+           `margin-inline-start: auto`. When the chat has no recorded
+           usage yet (legacy chats from before the metric existed),
+           `ChatSessionUsage` renders nothing and the button sits alone
+           against the leading edge — wrapping in `header-spacer` would
+           waste a flex item for the same effect. -->
+      <ChatSessionUsage messages={displayedMessages} />
       <button
         class="new-chat-button"
         onclick={handleExportChat}
@@ -1290,8 +1297,6 @@
 
   <div class="chat-body">
     <div class="chat-main">
-      <ChatSessionUsage messages={displayedMessages} />
-
       {#if rehydrating}
         <div class="rehydrating-indicator">Loading conversation...</div>
       {/if}
@@ -1416,10 +1421,6 @@
     padding: var(--size-2) var(--size-4);
   }
 
-  .header-spacer {
-    flex: 1;
-  }
-
   .new-chat-button {
     background: none;
     border: 1px solid var(--color-border-1);
@@ -1427,6 +1428,10 @@
     color: inherit;
     cursor: pointer;
     font-size: var(--font-size-2);
+    /* Pushes to the trailing edge regardless of how wide the leading-
+       edge ChatSessionUsage row is (or whether it rendered at all,
+       for legacy chats with no recorded usage). */
+    margin-inline-start: auto;
     padding: var(--size-1) var(--size-3);
   }
 
