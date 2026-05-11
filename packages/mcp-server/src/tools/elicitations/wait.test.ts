@@ -1,6 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import process from "node:process";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ToolContext } from "../types.ts";
-import { waitForTerminalElicitation } from "./wait.ts";
+import { deriveElicitationExpiresAt, waitForTerminalElicitation } from "./wait.ts";
 
 const mockState = vi.hoisted(() => ({
   status: "pending" as "pending" | "answered",
@@ -202,5 +203,53 @@ describe("waitForTerminalElicitation", () => {
     expect(Date.now() - abortAt).toBeLessThan(750);
     // Sweeper must not run on abort — only on expiry.
     expect(mockState.expireCalls).toBe(0);
+  });
+});
+
+describe("deriveElicitationExpiresAt — FRIDAY_ELICITATION_TTL_MS_OVERRIDE", () => {
+  const ORIGINAL = process.env.FRIDAY_ELICITATION_TTL_MS_OVERRIDE;
+  afterEach(() => {
+    if (ORIGINAL === undefined) {
+      delete process.env.FRIDAY_ELICITATION_TTL_MS_OVERRIDE;
+    } else {
+      process.env.FRIDAY_ELICITATION_TTL_MS_OVERRIDE = ORIGINAL;
+    }
+  });
+
+  it("returns the base ttl unchanged when the override is unset", () => {
+    delete process.env.FRIDAY_ELICITATION_TTL_MS_OVERRIDE;
+    const now = new Date("2026-05-11T00:00:00Z");
+    const result = deriveElicitationExpiresAt(60_000, now);
+    expect(result).toEqual(new Date(now.getTime() + 60_000).toISOString());
+  });
+
+  it("caps the ttl when the override is shorter than jobTimeoutMs", () => {
+    process.env.FRIDAY_ELICITATION_TTL_MS_OVERRIDE = "5000";
+    const now = new Date("2026-05-11T00:00:00Z");
+    const result = deriveElicitationExpiresAt(60_000, now);
+    expect(result).toEqual(new Date(now.getTime() + 5_000).toISOString());
+  });
+
+  it("leaves the ttl alone when the override is longer than jobTimeoutMs", () => {
+    process.env.FRIDAY_ELICITATION_TTL_MS_OVERRIDE = "9_999_999";
+    const now = new Date("2026-05-11T00:00:00Z");
+    const result = deriveElicitationExpiresAt(60_000, now);
+    expect(result).toEqual(new Date(now.getTime() + 60_000).toISOString());
+  });
+
+  it("falls back to the default TTL when jobTimeoutMs is undefined, capped by override", () => {
+    process.env.FRIDAY_ELICITATION_TTL_MS_OVERRIDE = "1000";
+    const now = new Date("2026-05-11T00:00:00Z");
+    const result = deriveElicitationExpiresAt(undefined, now);
+    expect(result).toEqual(new Date(now.getTime() + 1_000).toISOString());
+  });
+
+  it("ignores malformed overrides (non-numeric, zero, negative, empty)", () => {
+    const now = new Date("2026-05-11T00:00:00Z");
+    for (const bad of ["", "abc", "0", "-1000", "NaN"]) {
+      process.env.FRIDAY_ELICITATION_TTL_MS_OVERRIDE = bad;
+      const result = deriveElicitationExpiresAt(60_000, now);
+      expect(result).toEqual(new Date(now.getTime() + 60_000).toISOString());
+    }
   });
 });

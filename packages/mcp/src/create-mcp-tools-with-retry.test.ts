@@ -1,3 +1,4 @@
+import process from "node:process";
 import type { MCPServerConfig } from "@atlas/config";
 import { ElicitationStorage, initElicitationStorage } from "@atlas/core/elicitations";
 import type { Logger } from "@atlas/logger";
@@ -19,7 +20,7 @@ vi.mock("./create-mcp-tools.ts", async (importOriginal) => {
 });
 
 // Import wrapper AFTER vi.mock so it picks up the mocked createMCPTools.
-const { createMCPToolsWithRetry, questionForFamily } = await import(
+const { createMCPToolsWithRetry, expiresAtFromJobTimeout, questionForFamily } = await import(
   "./create-mcp-tools-with-retry.ts"
 );
 
@@ -344,5 +345,61 @@ describe("createMCPToolsWithRetry", () => {
 
     await expect(promise).rejects.toMatchObject({ name: "AbortError" });
     expect(Date.now() - start).toBeLessThan(500);
+  });
+});
+
+describe("expiresAtFromJobTimeout — FRIDAY_ELICITATION_TTL_MS_OVERRIDE", () => {
+  const ORIGINAL = process.env.FRIDAY_ELICITATION_TTL_MS_OVERRIDE;
+  beforeEach(() => {
+    if (ORIGINAL === undefined) {
+      delete process.env.FRIDAY_ELICITATION_TTL_MS_OVERRIDE;
+    } else {
+      process.env.FRIDAY_ELICITATION_TTL_MS_OVERRIDE = ORIGINAL;
+    }
+  });
+
+  it("caps the auth-refresh TTL at the 2-minute hard cap when no override is set", () => {
+    delete process.env.FRIDAY_ELICITATION_TTL_MS_OVERRIDE;
+    const now = new Date("2026-05-11T00:00:00Z");
+    expect(expiresAtFromJobTimeout(undefined, now)).toEqual(
+      new Date(now.getTime() + 2 * 60 * 1000).toISOString(),
+    );
+  });
+
+  it("respects jobTimeoutMs when shorter than the 2-minute cap", () => {
+    delete process.env.FRIDAY_ELICITATION_TTL_MS_OVERRIDE;
+    const now = new Date("2026-05-11T00:00:00Z");
+    expect(expiresAtFromJobTimeout(30_000, now)).toEqual(
+      new Date(now.getTime() + 30_000).toISOString(),
+    );
+  });
+
+  it("caps the TTL by the override when set shorter than both jobTimeoutMs and the 2-min cap", () => {
+    process.env.FRIDAY_ELICITATION_TTL_MS_OVERRIDE = "5000";
+    const now = new Date("2026-05-11T00:00:00Z");
+    expect(expiresAtFromJobTimeout(60_000, now)).toEqual(
+      new Date(now.getTime() + 5_000).toISOString(),
+    );
+    expect(expiresAtFromJobTimeout(undefined, now)).toEqual(
+      new Date(now.getTime() + 5_000).toISOString(),
+    );
+  });
+
+  it("falls back to the existing min(jobTimeoutMs, 2min) when the override is longer", () => {
+    process.env.FRIDAY_ELICITATION_TTL_MS_OVERRIDE = "9_999_999";
+    const now = new Date("2026-05-11T00:00:00Z");
+    expect(expiresAtFromJobTimeout(30_000, now)).toEqual(
+      new Date(now.getTime() + 30_000).toISOString(),
+    );
+  });
+
+  it("ignores malformed override values", () => {
+    const now = new Date("2026-05-11T00:00:00Z");
+    for (const bad of ["", "abc", "0", "-100", "NaN"]) {
+      process.env.FRIDAY_ELICITATION_TTL_MS_OVERRIDE = bad;
+      expect(expiresAtFromJobTimeout(60_000, now)).toEqual(
+        new Date(now.getTime() + 60_000).toISOString(),
+      );
+    }
   });
 });

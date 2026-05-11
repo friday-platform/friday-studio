@@ -1,3 +1,4 @@
+import process from "node:process";
 import { ElicitationStorage } from "@atlas/core/elicitations";
 import type { ToolContext } from "../types.ts";
 
@@ -28,8 +29,34 @@ function sanitizeSubjectToken(s: string): string {
   return s.replace(SAFE_TOKEN_RE, "_");
 }
 
+/**
+ * Read `FRIDAY_ELICITATION_TTL_MS_OVERRIDE` as a positive integer. Returns
+ * undefined when the env var is missing, blank, non-numeric, or ≤ 0. Dev/QA
+ * only — production runs leave this unset and behave as before.
+ *
+ * The first call that observes an active override emits a single warning to
+ * stderr so an operator who accidentally leaves the env var set in a real
+ * environment has a chance to spot it.
+ */
+let warnedAboutTtlOverride = false;
+export function readElicitationTtlOverrideMs(): number | undefined {
+  const raw = process.env.FRIDAY_ELICITATION_TTL_MS_OVERRIDE;
+  if (raw === undefined || raw === "") return undefined;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) return undefined;
+  if (!warnedAboutTtlOverride) {
+    warnedAboutTtlOverride = true;
+    console.warn(
+      `[elicitation] FRIDAY_ELICITATION_TTL_MS_OVERRIDE=${raw} is active — TTLs are capped at this value (dev/QA only).`,
+    );
+  }
+  return parsed;
+}
+
 export function deriveElicitationExpiresAt(jobTimeoutMs?: number, now = new Date()): string {
-  const ttlMs = jobTimeoutMs ?? DEFAULT_ELICITATION_TTL_MS;
+  const baseTtl = jobTimeoutMs ?? DEFAULT_ELICITATION_TTL_MS;
+  const override = readElicitationTtlOverrideMs();
+  const ttlMs = override !== undefined ? Math.min(baseTtl, override) : baseTtl;
   return new Date(now.getTime() + ttlMs).toISOString();
 }
 

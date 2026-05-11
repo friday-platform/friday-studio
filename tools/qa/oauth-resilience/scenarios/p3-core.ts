@@ -22,13 +22,15 @@
  *   - The stub MCP servers from `tools/qa/fixtures/stub-mcp-google/`
  *     spun up on 8001/8002 by the runner.
  *
- * Known prereq gaps that gate live UI drive on three scenarios:
- *   - P3-05 needs the daemon to read `FRIDAY_ELICITATION_TTL_MS_OVERRIDE`
- *     (filed as task #27). Falls back to unit-precheck only.
+ * Known prereq gaps that gate live UI drive on two scenarios:
  *   - P3-08 needs a non-Google family wired into the fixture
  *     (filed as task #28). Falls back to unit-precheck only.
  *   - P3-09 needs a Python user-agent in the fixture
  *     (filed as task #28). Falls back to unit-precheck only.
+ *
+ * P3-05 (expiration) was unblocked by task #27: the wrapper now reads
+ * `FRIDAY_ELICITATION_TTL_MS_OVERRIDE`, so the live UI drive completes
+ * within the QA-default 10s TTL.
  *
  * Testids used by the UI drives (added in Phase 3 implementation):
  *   - `auth-refresh-inline-card` — the chip itself.
@@ -396,32 +398,35 @@ register({
 });
 
 // ──────────────────────────────────────────────────────────────────────────
-// P3-05 — Elicitation expires → turn fails (PREREQ GATE: task #27)
+// P3-05 — Elicitation expires → turn fails
 // ──────────────────────────────────────────────────────────────────────────
 
 register({
   id: "P3-05",
   description: "elicitation expires → turn fails + expired counter",
-  run: async (_ctx) => {
-    // Unit-precheck stands in for the full UI drive until task #27 wires
-    // FRIDAY_ELICITATION_TTL_MS_OVERRIDE into the daemon. Without that
-    // override the live test waits ~2 minutes per run, which is too slow
-    // for the runner's normal sweep.
-    //
-    // Coverage at the unit layer:
-    //  - The JetStream adapter sweeps pending rows past their `expiresAt`
-    //    and flips status to `expired` (asserted in jetstream-adapter.test.ts).
-    //  - The wrapper's wait loop maps `status === "expired"` to the
-    //    `failed` family outcome and increments the expired counter —
-    //    covered indirectly by the "answered_cancel" telemetry test
-    //    which exercises the same recordAnswerLatency + failed-family
-    //    branch path.
+  run: async (ctx) => {
+    // Unit pre-check: the JetStream adapter's expirePending sweep is the
+    // primitive that flips a stale pending row to `expired`; the wrapper
+    // routes the expired status to the failed-family outcome (asserted
+    // via the answer-latency telemetry test which exercises the same
+    // recordAnswerLatency branch). Both must hold for the live drive to
+    // produce the expected user-visible failure.
     await assertUnitPasses(
       "P3-05",
       "packages/core/src/elicitations/jetstream-adapter.test.ts",
       "expirePending sweep",
     );
     await assertUnitPasses("P3-05", TELEMETRY_TEST_PATH, "when the user clicks Cancel");
+
+    // Live UI drive — the QA daemon sets FRIDAY_ELICITATION_TTL_MS_OVERRIDE
+    // to DEFAULT_ELICITATION_TTL_MS (10s) by default. After task #27 wired
+    // that override into the wrapper, the elicitation auto-expires inside
+    // the timeout window below.
+    await prepareChatScenario(ctx, { scenarioId: "P3-05", mockMode: "http_500_text" });
+    await waitForAuthRefreshCard(ctx.browser);
+    // Don't click — wait for the chip to clear on expiration. Budget 25s
+    // to cover the 10s TTL + storage sweep + UI render.
+    await waitForAuthRefreshCardCleared(ctx.browser, { timeoutMs: 25_000 });
   },
 });
 

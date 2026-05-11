@@ -22,6 +22,7 @@
  * @module
  */
 
+import process from "node:process";
 import type { MCPServerConfig } from "@atlas/config";
 import type { Elicitation, ElicitationOption } from "@atlas/core/elicitations";
 import { ElicitationStorage } from "@atlas/core/elicitations";
@@ -434,8 +435,31 @@ function abortError(reason: unknown): Error {
   return err;
 }
 
-function expiresAtFromJobTimeout(jobTimeoutMs?: number, now: Date = new Date()): string {
-  const ttlMs = Math.min(jobTimeoutMs ?? Number.POSITIVE_INFINITY, ELICITATION_TTL_CAP_MS);
+/**
+ * Read `FRIDAY_ELICITATION_TTL_MS_OVERRIDE` as a positive integer. Returns
+ * undefined when missing, blank, non-numeric, or ≤ 0. Dev/QA only — emits a
+ * one-shot stderr warning the first time it observes the override so an
+ * operator who accidentally left it set notices.
+ */
+let warnedAboutTtlOverride = false;
+export function readElicitationTtlOverrideMs(): number | undefined {
+  const raw = process.env.FRIDAY_ELICITATION_TTL_MS_OVERRIDE;
+  if (raw === undefined || raw === "") return undefined;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) return undefined;
+  if (!warnedAboutTtlOverride) {
+    warnedAboutTtlOverride = true;
+    console.warn(
+      `[mcp-retry] FRIDAY_ELICITATION_TTL_MS_OVERRIDE=${raw} is active — auth-refresh elicitation TTLs are capped at this value (dev/QA only).`,
+    );
+  }
+  return parsed;
+}
+
+export function expiresAtFromJobTimeout(jobTimeoutMs?: number, now: Date = new Date()): string {
+  const baseTtlMs = Math.min(jobTimeoutMs ?? Number.POSITIVE_INFINITY, ELICITATION_TTL_CAP_MS);
+  const override = readElicitationTtlOverrideMs();
+  const ttlMs = override !== undefined ? Math.min(baseTtlMs, override) : baseTtlMs;
   return new Date(now.getTime() + ttlMs).toISOString();
 }
 
