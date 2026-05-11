@@ -813,21 +813,6 @@
   }
 
   .message {
-    /* Browser-level "virtualization": skip style/layout/paint for
-       messages outside the viewport. `contain-intrinsic-size` reserves
-       vertical space so the scrollbar position is stable while
-       off-screen content is unrendered; `0 200px` means width is auto
-       but height is treated as 200px until the element scrolls in and
-       its real size measures out. Width-auto matters here — the
-       assistant column is 100% wide, so a fixed inline-size would
-       collapse it.
-
-       Combined with Svelte's keyed `{#each}` (which already prevents
-       re-evaluation of unchanged items), this gives most of the
-       virtualization win for long chat histories with none of the
-       virtualizer / sticky-scroll / measureElement complexity. */
-    content-visibility: auto;
-    contain-intrinsic-size: auto 200px;
     display: flex;
     flex-direction: column;
     gap: var(--size-1);
