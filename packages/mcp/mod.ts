@@ -17,6 +17,11 @@ export type {
   ScrubToolResult,
 } from "./src/create-mcp-tools.ts";
 export { createMCPTools, MCPStartupError } from "./src/create-mcp-tools.ts";
+export type { InteractiveContext } from "./src/create-mcp-tools-with-retry.ts";
+export {
+  createMCPToolsWithRetry,
+  questionForFamily,
+} from "./src/create-mcp-tools-with-retry.ts";
 export type {
   ProcessRegistry,
   ProcessRegistryDeps,
