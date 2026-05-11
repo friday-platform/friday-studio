@@ -39,7 +39,12 @@ export async function snapshotTableToArtifact(
   // by tableToMarkdown above; the duplicate walk here lets the
   // summary stay independent of the serializer's internals.
   const rowCount = Math.max(0, table.querySelectorAll("tr").length - 1);
-  const colCount = table.querySelectorAll("tr:first-child > *").length;
+  // `tr:first-child` matches the first <tr> inside EVERY parent — so
+  // for a table with both <thead> and <tbody>, both leading rows
+  // qualify and `colCount` doubles. Walk the first <tr> in document
+  // order instead and count its cells.
+  const firstRow = table.querySelector("tr");
+  const colCount = firstRow ? firstRow.querySelectorAll("th, td").length : 0;
 
   // Title preference order:
   //   1. explicit opts.title — caller-provided override

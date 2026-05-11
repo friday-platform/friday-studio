@@ -307,7 +307,14 @@ function sniffTextMime(s: string): string {
  * view consumer, not in a "is this tabular at all" sniff.
  */
 function looksLikeDelimited(text: string, sep: "," | "\t"): boolean {
-  const sampleLines = text.split("\n", 12).filter((l) => l.trim().length > 0);
+  // `split("\n", limit)` caps the return-array length but `split`
+  // still scans the entire input for every `\n`. Lift candidates can
+  // be multi-MB (Gmail batches, scraped HTML, big JSON exports) so
+  // bound the scan to a 64KB head — more than enough for 12 lines of
+  // any realistic dataset, and trivially fast for the prose case
+  // where we'd be scanning prose for delimiters that aren't there.
+  const head = text.length > 64 * 1024 ? text.slice(0, 64 * 1024) : text;
+  const sampleLines = head.split("\n", 12).filter((l) => l.trim().length > 0);
   if (sampleLines.length < 3) return false;
   let expected = -1;
   for (const raw of sampleLines) {

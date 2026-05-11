@@ -81,14 +81,20 @@ describe("extractLiftedArtifactIds", () => {
     expect(extractLiftedArtifactIds("[file lifted to artifact bad]")).toEqual([]);
   });
 
-  it("does not infinitely recurse on deeply nested objects", () => {
-    // 20 levels deep — beyond the depth cap of 16; the tail marker is dropped
-    // but the function still returns rather than blowing the stack.
+  it("respects the depth cap and drops markers below it", () => {
+    // 20 levels of wrap — beyond the depth cap of 16. The string
+    // (and its marker) sits at depth 20, so the walker bails before
+    // ever reaching it and the returned list is empty.
     let v: unknown = marker("art_deep");
     for (let i = 0; i < 20; i++) v = { wrap: v };
-    // Either an empty list (cap hit before string) or a single id — both are
-    // acceptable; the assertion is that the call returns synchronously.
-    const refs = extractLiftedArtifactIds(v);
-    expect(Array.isArray(refs)).toBe(true);
+    expect(extractLiftedArtifactIds(v)).toEqual([]);
+  });
+
+  it("extracts markers exactly at the depth cap", () => {
+    // 16 wraps puts the string at depth 16. The cap is inclusive
+    // (depth > 16 returns), so the marker should still be picked up.
+    let v: unknown = marker("art_at_cap");
+    for (let i = 0; i < 16; i++) v = { wrap: v };
+    expect(extractLiftedArtifactIds(v)).toEqual([{ artifactId: "art_at_cap" }]);
   });
 });

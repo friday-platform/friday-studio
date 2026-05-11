@@ -98,8 +98,6 @@ describe("DATA_URL_RE", () => {
 
 describe("post-stream lift (liftToolResultsForPersist)", () => {
   it("passes through small string results untouched", async () => {
-    // O1 (review-2): MCP-boundary createScrubber removed; tests use the
-    // post-stream lift via the `lift` helper above.
     const result = await lift({ content: [{ type: "text", text: "hello world" }] }, TOOL_CTX);
     expect(result).toEqual({ content: [{ type: "text", text: "hello world" }] });
     expect(mockFetch).not.toHaveBeenCalled();
@@ -107,8 +105,6 @@ describe("post-stream lift (liftToolResultsForPersist)", () => {
 
   it("lifts oversized data URL strings to artifacts and replaces with marker", async () => {
     mockArtifactCreate("art_42", 50_000, "image/png");
-    // O1 (review-2): MCP-boundary createScrubber removed; tests use the
-    // post-stream lift via the `lift` helper above.
     const dataUrl = `data:image/png;base64,${bigBase64(SIZE_THRESHOLD_CHARS + 100)}`;
     const result = (await lift(
       { content: [{ type: "image", data: dataUrl, mimeType: "image/png" }] },
@@ -124,8 +120,6 @@ describe("post-stream lift (liftToolResultsForPersist)", () => {
 
   it("lifts a base64 block embedded inside a Gmail-style envelope", async () => {
     mockArtifactCreate("art_pdf", 24_000, "application/pdf");
-    // O1 (review-2): MCP-boundary createScrubber removed; tests use the
-    // post-stream lift via the `lift` helper above.
     const blob = bigBase64(SIZE_THRESHOLD_CHARS + 200);
     const text = `Attachment downloaded successfully!\nMessage ID: 123\nSize: 24.4 KB (24942 bytes)\n\nBase64-encoded content:\n${blob}\n\nDone.`;
     const result = (await lift({ content: [{ type: "text", text }] }, TOOL_CTX)) as {
@@ -143,8 +137,6 @@ describe("post-stream lift (liftToolResultsForPersist)", () => {
 
   it("recurses into nested objects and arrays", async () => {
     mockArtifactCreate("art_1", 100_000, "application/pdf");
-    // O1 (review-2): MCP-boundary createScrubber removed; tests use the
-    // post-stream lift via the `lift` helper above.
     const result = (await lift(
       {
         outer: {
@@ -162,8 +154,6 @@ describe("post-stream lift (liftToolResultsForPersist)", () => {
     mockFetch.mockResolvedValueOnce(
       new Response(JSON.stringify({ error: "boom" }), { status: 500 }),
     );
-    // O1 (review-2): MCP-boundary createScrubber removed; tests use the
-    // post-stream lift via the `lift` helper above.
     const dataUrl = `data:image/png;base64,${bigBase64(SIZE_THRESHOLD_CHARS + 100)}`;
     const result = (await lift({ content: [{ type: "image", data: dataUrl }] }, TOOL_CTX)) as {
       content: Array<{ type: string; data: string }>;
@@ -176,8 +166,6 @@ describe("post-stream lift (liftToolResultsForPersist)", () => {
     // the first upload's artifactId without hitting the endpoint again.
     mockArtifactCreate("art_dedup", 24_000, "application/pdf");
 
-    // O1 (review-2): MCP-boundary createScrubber removed; tests use the
-    // post-stream lift via the `lift` helper above.
     const blob = bigBase64(SIZE_THRESHOLD_CHARS + 200);
     // FastMCP shape: same payload in `content[].text` and `structuredContent.result`.
     const result = (await lift(
@@ -198,8 +186,6 @@ describe("post-stream lift (liftToolResultsForPersist)", () => {
   });
 
   it("leaves short base64 fragments alone", async () => {
-    // O1 (review-2): MCP-boundary createScrubber removed; tests use the
-    // post-stream lift via the `lift` helper above.
     // Below threshold — no lift, no rewrite.
     const text = `Here's a small chunk: ${bigBase64(SIZE_THRESHOLD_CHARS - 1)} that fits inline.`;
     const result = await lift({ content: [{ type: "text", text }] }, TOOL_CTX);
@@ -217,8 +203,6 @@ describe("createScrubber — text/JSON lifting", () => {
 
   it("lifts a 10 KB JSON object with application/json mime", async () => {
     mockArtifactCreate("art_json", 10 * 1024, "application/json");
-    // O1 (review-2): MCP-boundary createScrubber removed; tests use the
-    // post-stream lift via the `lift` helper above.
     // Build a parseable JSON document just above the threshold.
     const body = lorem(200);
     const json = JSON.stringify({ items: Array.from({ length: 50 }, (_, i) => ({ id: i, body })) });
@@ -236,8 +220,6 @@ describe("createScrubber — text/JSON lifting", () => {
 
   it("lifts a 10 KB HTML page with text/html mime", async () => {
     mockArtifactCreate("art_html", 10 * 1024, "text/html");
-    // O1 (review-2): MCP-boundary createScrubber removed; tests use the
-    // post-stream lift via the `lift` helper above.
     const html = `<!DOCTYPE html>\n<html><body>${lorem(TEXT_THRESHOLD_CHARS + 256)}</body></html>`;
     const result = (await lift({ content: [{ type: "text", text: html }] }, TOOL_CTX)) as {
       content: Array<{ type: string; text: string }>;
@@ -252,8 +234,6 @@ describe("createScrubber — text/JSON lifting", () => {
 
   it("lifts a 10 KB markdown document with text/markdown mime", async () => {
     mockArtifactCreate("art_md", 10 * 1024, "text/markdown");
-    // O1 (review-2): MCP-boundary createScrubber removed; tests use the
-    // post-stream lift via the `lift` helper above.
     const md = `# Report\n\n${lorem(TEXT_THRESHOLD_CHARS + 256)}`;
     const result = (await lift({ content: [{ type: "text", text: md }] }, TOOL_CTX)) as {
       content: Array<{ type: string; text: string }>;
@@ -268,8 +248,6 @@ describe("createScrubber — text/JSON lifting", () => {
 
   it("lifts a 10 KB plain text blob with text/plain mime", async () => {
     mockArtifactCreate("art_txt", 10 * 1024, "text/plain");
-    // O1 (review-2): MCP-boundary createScrubber removed; tests use the
-    // post-stream lift via the `lift` helper above.
     const text = lorem(TEXT_THRESHOLD_CHARS + 1024);
     const result = (await lift({ content: [{ type: "text", text }] }, TOOL_CTX)) as {
       content: Array<{ type: string; text: string }>;
@@ -347,8 +325,6 @@ describe("createScrubber — text/JSON lifting", () => {
   });
 
   it("does NOT lift text below the text threshold", async () => {
-    // O1 (review-2): MCP-boundary createScrubber removed; tests use the
-    // post-stream lift via the `lift` helper above.
     const text = lorem(5 * 1024); // 5 KB — well below 8 KB threshold.
     const result = await lift({ content: [{ type: "text", text }] }, TOOL_CTX);
     expect(result).toEqual({ content: [{ type: "text", text }] });
@@ -356,8 +332,6 @@ describe("createScrubber — text/JSON lifting", () => {
   });
 
   it("does NOT re-lift an already-lifted refMarker string above threshold", async () => {
-    // O1 (review-2): MCP-boundary createScrubber removed; tests use the
-    // post-stream lift via the `lift` helper above.
     // Marker prefix + arbitrary padding above threshold to prove the
     // length check alone would otherwise trip the text-lift path.
     const marker = `[attachment lifted to artifact art_prev (50 KB, application/pdf, from x/y) — use display_artifact or get_artifact to read]${lorem(TEXT_THRESHOLD_CHARS)}`;

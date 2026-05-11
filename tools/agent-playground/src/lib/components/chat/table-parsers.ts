@@ -18,6 +18,22 @@ export interface TableModel {
 }
 
 /**
+ * Mime types this parser knows how to project into a TableModel.
+ * Exported for the artifact-route dispatcher's "is this tabular?"
+ * decision so both surfaces agree on the answer without duplicating
+ * the list. Add a new branch to `parseTabular` AND this set in lock-
+ * step; a mime in the set with no `parseTabular` case is a runtime
+ * promise we can't keep.
+ */
+export const TABULAR_MIMES: ReadonlySet<string> = new Set([
+  "text/csv",
+  "text/tab-separated-values",
+  "application/json",
+  "text/html",
+  "text/markdown",
+]);
+
+/**
  * Pick the right parser for a mimeType + raw text payload and return
  * `null` when the content isn't recognizably tabular. Callers branch on
  * `null` to fall back to a generic file viewer.
@@ -25,21 +41,21 @@ export interface TableModel {
  * Strips any `; charset=...` parameter before matching.
  */
 export function parseTabular(mimeType: string, text: string): TableModel | null {
+  // Only the canonical mimes the scrubber actually emits. Speculative
+  // aliases (text/tsv, text/json, application/xhtml+xml,
+  // text/x-markdown) were dropped — re-add with a test when a real
+  // producer surfaces them.
   const base = mimeType.split(";")[0]?.trim().toLowerCase() ?? "";
   switch (base) {
     case "text/csv":
       return parseDelimited(text, ",");
     case "text/tab-separated-values":
-    case "text/tsv":
       return parseDelimited(text, "\t");
     case "application/json":
-    case "text/json":
       return parseJSON(text);
     case "text/html":
-    case "application/xhtml+xml":
       return parseHTML(text);
     case "text/markdown":
-    case "text/x-markdown":
       return parseMarkdown(text);
     default:
       return null;
@@ -88,8 +104,19 @@ export function parseDelimited(text: string, sep: "," | "\t"): TableModel | null
       continue;
     }
     if (ch === "\r") {
-      // Handled by the \n branch — \r\n collapses to one row break.
+      // Three cases:
+      //   \r\n  → row break (Windows / RFC-4180). Consume both as one.
+      //   \r    → row break (classic Mac, some CSV tools). Consume one.
+      //   \r"…  inside a quoted field is handled by the `inQuotes` branch
+      //         above, not here.
+      // Skipping `\r` without pushing was the prior bug — CR-only files
+      // collapsed the whole document into a single ragged row.
+      row.push(field);
+      field = "";
+      if (row.some((c) => c.length > 0)) rows.push(row);
+      row = [];
       i++;
+      if (text[i] === "\n") i++; // swallow paired \n in \r\n
       continue;
     }
     if (ch === "\n") {

@@ -1,6 +1,6 @@
 <!--
   Read-only fullscreen table renderer used by the dedicated
-  `/platform/[workspaceId]/table/[artifactId]` route and by any
+  `/artifacts/[id]/table` route and by any
   ArtifactCard preview that wants the same table chrome inline.
 
   Props:

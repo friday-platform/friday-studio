@@ -61,6 +61,26 @@ describe("parseDelimited (CSV/TSV)", () => {
     const out = parseDelimited("a,b\n1,2\n\n\n", ",");
     expect(out?.rows).toEqual([["1", "2"]]);
   });
+
+  it("treats classic-Mac \\r-only line endings as row breaks", () => {
+    // Regression: prior version consumed \r and continued, expecting a
+    // following \n. CR-only files (legacy macOS, some CSV exporters)
+    // collapsed the whole document into one ragged row.
+    const out = parseDelimited("a,b\r1,Alice\r2,Bob", ",");
+    expect(out?.columns).toEqual(["a", "b"]);
+    expect(out?.rows).toEqual([
+      ["1", "Alice"],
+      ["2", "Bob"],
+    ]);
+  });
+
+  it("collapses \\r\\n to a single row break", () => {
+    const out = parseDelimited("a,b\r\n1,Alice\r\n2,Bob\r\n", ",");
+    expect(out?.rows).toEqual([
+      ["1", "Alice"],
+      ["2", "Bob"],
+    ]);
+  });
 });
 
 describe("parseJSON", () => {
@@ -188,6 +208,19 @@ describe("parseMarkdown", () => {
     expect(parseMarkdown("# heading\n\nplain prose")).toBeNull();
   });
 
+  it("currently matches pipe-shaped lines INSIDE fenced code blocks (limitation pin)", () => {
+    // Pins current behavior: the parser is line-based and doesn't
+    // track code-fence state. A markdown chat response that wraps a
+    // table example in ``` will still be matched as a real table.
+    // If/when we add fence tracking, this test should flip to assert
+    // null and rename — until then the pin keeps a regression
+    // observable rather than hidden inside agent output.
+    const md = ["```", "| a | b |", "| --- | --- |", "| 1 | 2 |", "```"].join("\n");
+    const out = parseMarkdown(md);
+    expect(out?.columns).toEqual(["a", "b"]);
+    expect(out?.rows).toEqual([["1", "2"]]);
+  });
+
   it("stops body extraction at the first non-pipe line", () => {
     const md = [
       "| a | b |",
@@ -209,5 +242,17 @@ describe("parseTabular (dispatcher)", () => {
   it("returns null for unsupported mime types", () => {
     expect(parseTabular("image/png", "ignored")).toBeNull();
     expect(parseTabular("application/pdf", "ignored")).toBeNull();
+  });
+
+  it("normalizes mime-type casing before dispatch", () => {
+    // `Text/CSV` and ` text/csv ` should both route to parseDelimited.
+    expect(parseTabular("Text/CSV", "a,b\n1,2")).toEqual({
+      columns: ["a", "b"],
+      rows: [["1", "2"]],
+    });
+    expect(parseTabular(" text/csv ", "a,b\n1,2")).toEqual({
+      columns: ["a", "b"],
+      rows: [["1", "2"]],
+    });
   });
 });
