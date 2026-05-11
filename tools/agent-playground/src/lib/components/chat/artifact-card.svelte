@@ -2,7 +2,10 @@
   import { browser } from "$app/environment";
   import { stripMimeParams } from "@atlas/core/artifacts/file-upload";
   import { z } from "zod";
+  import { getChatWorkspaceContext } from "./chat-workspace-context.ts";
   import { getExportContext } from "./export-context.ts";
+  import { parseTabular, type TableModel } from "./table-parsers.ts";
+  import TableView from "./table-view.svelte";
 
   interface Props {
     artifactId: string;
@@ -187,6 +190,91 @@
 
   const sizeLabel = $derived(sizeBytes !== undefined ? formatBytes(sizeBytes) : undefined);
 
+  // -- Tabular preview -----------------------------------------------
+  // When an artifact's mime is one the dedicated table view can parse
+  // (csv/tsv/json/html/markdown), render the first N rows inline as a
+  // real table, and route the existing Open button to the table view
+  // instead of a raw-content tab. Falls back to the generic preview/
+  // download tile when the bytes don't actually parse as tabular.
+
+  const TABULAR_MIMES = new Set([
+    "text/csv",
+    "text/tab-separated-values",
+    "text/tsv",
+    "application/json",
+    "text/json",
+    "text/html",
+    "application/xhtml+xml",
+    "text/markdown",
+    "text/x-markdown",
+  ]);
+  const PREVIEW_ROW_LIMIT = 8;
+
+  const isTabularMime = $derived(baseMime ? TABULAR_MIMES.has(baseMime) : false);
+
+  // Pulled at script init per Svelte's getContext rule. The workspace
+  // route's chat surface sets this so deep descendants can build in-app
+  // routes without prop-drilling. When absent (export mode, chat-replay
+  // outside a workspace, a unit test) the tabular Open button falls
+  // back to the raw-content tab.
+  const workspaceForRoute = getChatWorkspaceContext();
+  const tableRouteUrl = $derived(
+    workspaceForRoute && isTabularMime
+      ? `/platform/${encodeURIComponent(workspaceForRoute)}/table/${encodeURIComponent(artifactId)}`
+      : undefined,
+  );
+
+  // Fetch raw text for tabular artifacts when the metadata endpoint
+  // didn't return `contents` inline. The /content endpoint is content-
+  // addressed + cacheable so re-fetching is cheap; we only do it when
+  // the mime says "tabular" and we don't already have the text.
+  let tabularText = $state<string | undefined>(undefined);
+  $effect(() => {
+    if (exportCtx !== undefined) return;
+    if (!browser) return;
+    if (!isTabularMime) {
+      tabularText = undefined;
+      return;
+    }
+    if (contents) {
+      tabularText = contents;
+      return;
+    }
+    let cancelled = false;
+    void fetch(`/api/daemon/api/artifacts/${encodeURIComponent(artifactId)}/content`).then(
+      async (res) => {
+        if (cancelled || !res.ok) return;
+        const text = await res.text();
+        if (!cancelled) tabularText = text;
+      },
+      () => {
+        // Silent — preview falls back to download tile when text never
+        // arrives. Network errors aren't worth a card-level error
+        // banner for what is itself a fallback affordance.
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  });
+
+  const tableModel = $derived<TableModel | null>(
+    isTabularMime && tabularText && baseMime ? parseTabular(baseMime, tabularText) : null,
+  );
+
+  const tablePreview = $derived<TableModel | null>(
+    tableModel
+      ? {
+          columns: tableModel.columns,
+          rows: tableModel.rows.slice(0, PREVIEW_ROW_LIMIT),
+        }
+      : null,
+  );
+
+  const tableHiddenRows = $derived(
+    tableModel ? Math.max(0, tableModel.rows.length - PREVIEW_ROW_LIMIT) : 0,
+  );
+
   function previewContents(raw: string | undefined, mt: string | undefined): string {
     if (!raw) return "";
     const text =
@@ -232,9 +320,26 @@
         <a class="download-btn" href={serveUrl} download title="Download">
           Download
         </a>
-        <a class="open-btn" href={serveUrl} target="_blank" rel="noopener noreferrer" title="Open in new tab">
-          Open
-        </a>
+        {#if tableRouteUrl}
+          <!-- Tabular artifacts open in the dedicated in-app table
+               view (sticky header, sortable headers later, copy /
+               download CSV / MD buttons) instead of a raw-content
+               browser tab. Same Open affordance, much better
+               destination for the shape. -->
+          <a class="open-btn" href={tableRouteUrl} title="Open in table view">
+            Open
+          </a>
+        {:else}
+          <a
+            class="open-btn"
+            href={serveUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Open in new tab"
+          >
+            Open
+          </a>
+        {/if}
       </div>
     {/if}
   </div>
@@ -282,6 +387,28 @@
       class="artifact-pdf"
       loading="lazy"
     ></iframe>
+  {:else if tablePreview}
+    <!-- First N rows rendered with the same shared TableView the
+         dedicated route uses. Cap the height so the preview stays
+         in chat-bubble scale; users wanting the full grid click
+         Open in the header above. -->
+    <div class="artifact-table-preview">
+      <TableView
+        columns={tablePreview.columns}
+        rows={tablePreview.rows}
+        maxBlockSize="240px"
+      />
+      {#if tableHiddenRows > 0}
+        <div class="artifact-table-footer">
+          + {tableHiddenRows} more row{tableHiddenRows === 1 ? "" : "s"} —
+          {#if tableRouteUrl}
+            <a href={tableRouteUrl}>open the full table</a>
+          {:else}
+            open the full table
+          {/if}
+        </div>
+      {/if}
+    </div>
   {:else if contents && isTextPreviewable(baseMime)}
     <pre class="artifact-preview">{previewContents(contents, baseMime)}</pre>
   {/if}
@@ -491,6 +618,25 @@
     padding: var(--size-2);
     white-space: pre-wrap;
     word-break: break-word;
+  }
+
+  .artifact-table-preview {
+    border: 1px solid var(--color-border-1);
+    border-radius: var(--radius-1);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .artifact-table-footer {
+    background: var(--surface-bright, var(--surface));
+    border-block-start: 1px solid var(--color-border-1);
+    color: var(--text-faded);
+    font-size: var(--font-size-1);
+    padding: var(--size-1) var(--size-2);
+  }
+  .artifact-table-footer a {
+    color: var(--color-primary);
+    text-decoration: underline;
   }
 
   .artifact-error {

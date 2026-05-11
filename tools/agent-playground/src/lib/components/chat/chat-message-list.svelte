@@ -11,6 +11,9 @@
   import UsageBadge from "./usage-badge.svelte";
   import { formatMessageTimestamp } from "@atlas/core/chat/export/render";
   import { tableToMarkdown } from "./table-to-markdown";
+  import { tableToCSV } from "./table-to-csv";
+  import { snapshotTableToArtifact } from "./snapshot-table";
+  import { goto } from "$app/navigation";
 
   // Per-message timestamp formatters. Default is HH:MM:SS in the user's
   // locale; the alt-pressed view swaps in full date + time so the
@@ -129,6 +132,16 @@
      * session. Empty / undefined → no pills render.
      */
     validationAttemptsBySession?: Map<string, Map<string, ValidationAttemptDisplay[]>>;
+    /**
+     * Workspace + chat ids for the inline-table Actions menu's "Open in
+     * dedicated view" path. The handler auto-snapshots the rendered
+     * <table> to a markdown artifact tagged with these ids, then
+     * navigates to `/platform/<workspaceId>/table/<artifactId>`. Both
+     * are optional — when missing the menu omits the Open option but
+     * Copy / Download CSV / Download MD still work without round-tripping.
+     */
+    workspaceId?: string;
+    chatId?: string;
   }
 
   const {
@@ -136,6 +149,8 @@
     onCredentialConnected,
     thinking = false,
     validationAttemptsBySession,
+    workspaceId,
+    chatId,
   }: Props = $props();
 
   /**
@@ -285,59 +300,11 @@
           wrapper.appendChild(el);
         }
 
-        const btn = document.createElement("button");
-        btn.className = "copy-btn";
-        btn.setAttribute("aria-label", "Copy to clipboard");
-        btn.textContent = "Copy";
-        btn.addEventListener("click", () => {
-          // Show feedback as soon as the write resolves (or rejects).
-          // The browser-native clipboard.write API supports multiple
-          // MIME types per copy — different paste destinations pick
-          // the format they understand best:
-          //   text/html  → Excel, Sheets, Word, Notion render the
-          //                actual table structure (cells, headers)
-          //   text/plain → terminals, code editors, Slack, GitHub,
-          //                Linear paste a clean markdown table
-          // We only do the multi-format dance for tables; <pre>
-          // blocks have no useful HTML representation beyond their
-          // text content, so they stay single-format.
-          const flashFeedback = (label: string): void => {
-            btn.textContent = label;
-            setTimeout(() => {
-              btn.textContent = "Copy";
-            }, 1500);
-          };
-
-          if (el.tagName === "TABLE") {
-            const md = tableToMarkdown(el as HTMLTableElement);
-            const html = (el as HTMLTableElement).outerHTML;
-            // Modern path: write both formats in a single ClipboardItem.
-            // The browser pasteboard holds both representations and the
-            // destination app picks one. Falls back to plain markdown
-            // via writeText on browsers without clipboard.write
-            // (pre-2024 Firefox, very old Safari).
-            const writeMulti =
-              typeof ClipboardItem !== "undefined" && navigator.clipboard.write
-                ? navigator.clipboard.write([
-                    new ClipboardItem({
-                      "text/plain": new Blob([md], { type: "text/plain" }),
-                      "text/html": new Blob([html], { type: "text/html" }),
-                    }),
-                  ])
-                : navigator.clipboard.writeText(md);
-            void writeMulti.then(
-              () => flashFeedback("Copied!"),
-              () => flashFeedback("Copy failed"),
-            );
-          } else {
-            const text = (el as HTMLElement).textContent ?? "";
-            void navigator.clipboard.writeText(text).then(
-              () => flashFeedback("Copied!"),
-              () => flashFeedback("Copy failed"),
-            );
-          }
-        });
-        wrapper.appendChild(btn);
+        if (el.tagName === "TABLE") {
+          wrapper.appendChild(buildTableActionsMenu(el as HTMLTableElement));
+        } else {
+          wrapper.appendChild(buildPreCopyButton(el as HTMLElement));
+        }
       }
     }
 
@@ -351,6 +318,223 @@
         observer.disconnect();
       },
     };
+  }
+
+  /**
+   * Simple Copy button for `<pre>` blocks — no MD / CSV / Open
+   * affordances apply, so we keep the pre-existing single-button
+   * UX rather than wrapping a one-item dropdown.
+   */
+  function buildPreCopyButton(el: HTMLElement): HTMLButtonElement {
+    const btn = document.createElement("button");
+    btn.className = "copy-btn";
+    btn.setAttribute("aria-label", "Copy to clipboard");
+    btn.textContent = "Copy";
+    btn.addEventListener("click", () => {
+      const flash = (label: string): void => {
+        btn.textContent = label;
+        setTimeout(() => {
+          btn.textContent = "Copy";
+        }, 1500);
+      };
+      const text = el.textContent ?? "";
+      void navigator.clipboard.writeText(text).then(
+        () => flash("Copied!"),
+        () => flash("Copy failed"),
+      );
+    });
+    return btn;
+  }
+
+  /**
+   * Actions dropdown for `<table>` blocks. Four items:
+   *
+   *   Copy                  — multi-format clipboard write (markdown
+   *                           text/plain + original outerHTML text/html)
+   *                           so Sheets/Excel pasting works alongside
+   *                           code-editor / Slack / GitHub paste.
+   *   Open in dedicated view — auto-snapshots the table to a markdown
+   *                            artifact, then navigates to
+   *                            /platform/<wsId>/table/<artifactId>.
+   *                            Hidden when workspaceId is unknown
+   *                            (component used outside a workspace
+   *                            context, e.g. ephemeral preview).
+   *   Download CSV           — RFC-4180 file download.
+   *   Download MD            — GitHub-flavored markdown download.
+   *
+   * Implemented as a vanilla-DOM popover rather than the Svelte
+   * DropdownMenu because the chat body is `{@html ...}` (no Svelte
+   * children inside the rendered markdown). Click-outside + ESC
+   * close. Only one menu open at a time across the page — clicking
+   * another Actions button closes any existing one first.
+   */
+  function buildTableActionsMenu(table: HTMLTableElement): HTMLDivElement {
+    const container = document.createElement("div");
+    container.className = "table-actions";
+
+    const trigger = document.createElement("button");
+    trigger.className = "copy-btn";
+    trigger.setAttribute("aria-haspopup", "true");
+    trigger.setAttribute("aria-expanded", "false");
+    trigger.setAttribute("aria-label", "Table actions");
+    trigger.textContent = "Actions ▾";
+    container.appendChild(trigger);
+
+    const menu = document.createElement("div");
+    menu.className = "table-actions-menu";
+    menu.setAttribute("role", "menu");
+    menu.hidden = true;
+
+    const addItem = (label: string, onSelect: () => void): HTMLButtonElement => {
+      const item = document.createElement("button");
+      item.className = "table-actions-item";
+      item.setAttribute("role", "menuitem");
+      item.textContent = label;
+      item.addEventListener("click", () => {
+        close();
+        onSelect();
+      });
+      menu.appendChild(item);
+      return item;
+    };
+
+    // -- Item handlers ---------------------------------------------
+
+    const flash = (label: string): void => {
+      const previous = trigger.textContent;
+      trigger.textContent = label;
+      setTimeout(() => {
+        trigger.textContent = previous ?? "Actions ▾";
+      }, 1500);
+    };
+
+    addItem("Copy", () => {
+      const md = tableToMarkdown(table);
+      const html = table.outerHTML;
+      const writeMulti =
+        typeof ClipboardItem !== "undefined" && navigator.clipboard.write
+          ? navigator.clipboard.write([
+              new ClipboardItem({
+                "text/plain": new Blob([md], { type: "text/plain" }),
+                "text/html": new Blob([html], { type: "text/html" }),
+              }),
+            ])
+          : navigator.clipboard.writeText(md);
+      void writeMulti.then(
+        () => flash("Copied!"),
+        () => flash("Copy failed"),
+      );
+    });
+
+    // Open is omitted entirely when we don't have a workspace to
+    // route under — keeps the menu honest instead of showing a
+    // dead-end item.
+    if (workspaceId) {
+      addItem("Open in dedicated view", () => {
+        flash("Opening…");
+        void snapshotTableToArtifact(table, { workspaceId, chatId }).then(
+          (artifactId) =>
+            goto(
+              `/platform/${encodeURIComponent(workspaceId)}/table/${encodeURIComponent(artifactId)}`,
+            ),
+          (err) => {
+            console.error("Failed to snapshot table:", err);
+            flash("Open failed");
+          },
+        );
+      });
+    }
+
+    addItem("Download CSV", () => {
+      downloadTable(table, tableToCSV(table), "text/csv", "csv");
+    });
+
+    addItem("Download Markdown", () => {
+      downloadTable(table, tableToMarkdown(table), "text/markdown", "md");
+    });
+
+    container.appendChild(menu);
+
+    // -- Open/close state machine ----------------------------------
+
+    // Track which menu (if any) is currently open across every
+    // `.table-actions` injection so opening one closes the other.
+    // Lives on a module-level closure variable below; here we only
+    // poke it.
+    let isOpen = false;
+    const open = (): void => {
+      if (isOpen) return;
+      closeAnyOpenActionsMenu();
+      isOpen = true;
+      currentOpenClose = close;
+      menu.hidden = false;
+      trigger.setAttribute("aria-expanded", "true");
+      // Defer the global handlers to the next tick so the click that
+      // opened the menu doesn't immediately close it.
+      setTimeout(() => {
+        document.addEventListener("click", onDocClick);
+        document.addEventListener("keydown", onKeyDown);
+      }, 0);
+    };
+    const close = (): void => {
+      if (!isOpen) return;
+      isOpen = false;
+      menu.hidden = true;
+      trigger.setAttribute("aria-expanded", "false");
+      document.removeEventListener("click", onDocClick);
+      document.removeEventListener("keydown", onKeyDown);
+      if (currentOpenClose === close) currentOpenClose = null;
+    };
+    const onDocClick = (e: MouseEvent): void => {
+      if (!container.contains(e.target as Node)) close();
+    };
+    const onKeyDown = (e: KeyboardEvent): void => {
+      if (e.key === "Escape") {
+        close();
+        trigger.focus();
+      }
+    };
+
+    trigger.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (isOpen) close();
+      else open();
+    });
+
+    return container;
+  }
+
+  /** Coordinates "only one Actions menu open at a time across the
+   *  whole list" — opening a new menu calls back into the previous
+   *  one's close(). Reset to null whenever a menu closes. */
+  let currentOpenClose: (() => void) | null = null;
+  function closeAnyOpenActionsMenu(): void {
+    currentOpenClose?.();
+  }
+
+  function downloadTable(
+    table: HTMLTableElement,
+    text: string,
+    mime: string,
+    ext: string,
+  ): void {
+    const blob = new Blob([text], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    // Derive a filename from the first header cell (or fall back).
+    const firstHeader = table.querySelector("th, td")?.textContent?.trim() ?? "table";
+    const slug =
+      firstHeader
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .slice(0, 40) || "table";
+    a.download = `${slug}.${ext}`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
   }
 
 
@@ -992,6 +1176,55 @@
   .message-content.markdown-body :global(.copy-btn:hover) {
     background-color: light-dark(hsl(220 12% 82%), hsl(220 10% 28%));
     color: var(--color-text);
+  }
+
+  /* Table Actions dropdown — the trigger inherits .copy-btn chrome via
+     the markup. .table-actions is the positioning anchor for the
+     popover menu so the menu doesn't clip when the table scrolls. */
+  .message-content.markdown-body :global(.table-actions) {
+    inset-block-start: var(--size-1);
+    inset-inline-end: var(--size-1);
+    position: absolute;
+    z-index: 1;
+  }
+  .message-content.markdown-body :global(.copyable-wrapper:hover .table-actions .copy-btn) {
+    opacity: 1;
+  }
+  .message-content.markdown-body :global(.table-actions .copy-btn) {
+    /* Keep the absolute positioning off the trigger itself — the
+       wrapper above is now the positioned element. */
+    inset-block-start: auto;
+    inset-inline-end: auto;
+    position: static;
+  }
+
+  .message-content.markdown-body :global(.table-actions-menu) {
+    background-color: light-dark(hsl(0 0% 100%), hsl(220 12% 14%));
+    border: 1px solid var(--color-border-1);
+    border-radius: var(--radius-2);
+    box-shadow: 0 4px 12px color-mix(in srgb, black, transparent 75%);
+    display: flex;
+    flex-direction: column;
+    inset-block-start: calc(100% + 4px);
+    inset-inline-end: 0;
+    min-inline-size: 12rem;
+    padding: 4px;
+    position: absolute;
+    z-index: 2;
+  }
+  .message-content.markdown-body :global(.table-actions-item) {
+    background: none;
+    border: 0;
+    border-radius: var(--radius-1);
+    color: var(--color-text);
+    cursor: pointer;
+    font: inherit;
+    font-size: var(--font-size-2);
+    padding: 6px 10px;
+    text-align: start;
+  }
+  .message-content.markdown-body :global(.table-actions-item:hover) {
+    background-color: color-mix(in srgb, var(--color-text), transparent 92%);
   }
 
   .message.user .message-content {

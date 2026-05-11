@@ -14,6 +14,7 @@
   import ChatInspector from "./chat-inspector.svelte";
   import ChatMessageList from "./chat-message-list.svelte";
   import ChatSessionUsage from "./chat-session-usage.svelte";
+  import { setChatWorkspaceContext } from "./chat-workspace-context.ts";
   import { createCursorTrackingFetch } from "./cursor-tracking-fetch.ts";
   import { nextQueueStep } from "./chat-queue.ts";
   import { nextResumeBudgetStep } from "./resume-budget.ts";
@@ -35,6 +36,11 @@
   import { sessionEventStream } from "$lib/utils/session-event-stream";
 
   const wsId = $derived(page.params.workspaceId ?? "user");
+  // Stash the workspace id in a Svelte context so deep descendants
+  // (ArtifactCard's "Open in table view" link, future per-chat
+  // surfaces) can build `/platform/<wsId>/...` URLs without prop-
+  // drilling. Set unconditionally; readers fall back to undefined.
+  setChatWorkspaceContext(wsId);
   const queryClient = useQueryClient();
   const configQuery = createQuery(() => workspaceQueries.config(wsId));
   const workspaceName = $derived(
@@ -1306,6 +1312,8 @@
         onCredentialConnected={handleCredentialConnected}
         {thinking}
         {validationAttemptsBySession}
+        workspaceId={wsId}
+        {chatId}
       />
 
       {#if wasInterrupted}
