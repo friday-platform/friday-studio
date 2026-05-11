@@ -80,7 +80,15 @@
     border-collapse: separate;
     border-spacing: 0;
     font-size: var(--font-size-2);
-    inline-size: max-content;
+    /* Expand to fill the available width when content is narrower
+       than the viewport — wide-margin tables (few columns) look like
+       sparse data and the dead horizontal space hurts more than the
+       expanded column widths. min-inline-size: max-content preserves
+       the horizontal-scroll behavior when content is WIDER than the
+       viewport — content "wants" max-content, but can grow to the
+       container's full width. */
+    inline-size: 100%;
+    min-inline-size: max-content;
     /* Borderless edges; cell borders below own the grid lines so
        sticky-header positioning doesn't get a doubled top border. */
   }

@@ -1212,6 +1212,14 @@
     position: absolute;
     z-index: 2;
   }
+  /* Explicit override of `display: flex` above — without this, the
+     [hidden] attribute (which we toggle via JS to open/close the
+     menu) has no effect because the UA stylesheet's
+     `[hidden] { display: none }` has equal specificity AND loses to
+     a later-declared rule. Higher-specificity selector wins. */
+  .message-content.markdown-body :global(.table-actions-menu[hidden]) {
+    display: none;
+  }
   .message-content.markdown-body :global(.table-actions-item) {
     background: none;
     border: 0;

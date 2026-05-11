@@ -40,7 +40,27 @@ export async function snapshotTableToArtifact(
   // summary stay independent of the serializer's internals.
   const rowCount = Math.max(0, table.querySelectorAll("tr").length - 1);
   const colCount = table.querySelectorAll("tr:first-child > *").length;
-  const title = opts.title?.trim() || "Table from chat";
+
+  // Title preference order:
+  //   1. explicit opts.title — caller-provided override
+  //   2. originating chat's own title — most meaningful for the
+  //      operator browsing /artifacts later ("Table from Wide Table"
+  //      reads better than "Table from chat" repeated forever)
+  //   3. timestamp fallback — uniqueness when no chat title is
+  //      available (anonymous chats, snapshots before titles land)
+  let title = opts.title?.trim();
+  if (!title) {
+    const chatTitle = opts.chatId ? await fetchChatTitle(opts.workspaceId, opts.chatId) : null;
+    if (chatTitle) {
+      title = `Table from ${chatTitle}`;
+    } else {
+      const ts = new Date()
+        .toISOString()
+        .slice(0, 16)
+        .replace("T", " ");
+      title = `Table — ${ts}`;
+    }
+  }
   const summary =
     `Snapshot of an inline chat table — ${colCount} ` +
     `column${colCount === 1 ? "" : "s"} × ${rowCount} row${rowCount === 1 ? "" : "s"}.`;
@@ -81,4 +101,23 @@ function slugifyTitle(title: string): string {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 60) || "table";
+}
+
+/**
+ * Best-effort chat-title lookup. Network failure or 404 returns null
+ * so the caller falls through to its timestamp fallback — we never
+ * want a missing title to block the snapshot.
+ */
+async function fetchChatTitle(workspaceId: string, chatId: string): Promise<string | null> {
+  try {
+    const res = await fetch(
+      `/api/daemon/api/workspaces/${encodeURIComponent(workspaceId)}/chat/${encodeURIComponent(chatId)}`,
+    );
+    if (!res.ok) return null;
+    const body = (await res.json()) as { chat?: { title?: string } };
+    const title = body.chat?.title?.trim();
+    return title && title.length > 0 ? title : null;
+  } catch {
+    return null;
+  }
 }

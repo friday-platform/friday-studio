@@ -7,6 +7,12 @@ import type { PageLoad } from "./$types";
  * `DOMParser` (browser-only) is available — Sveltekit's universal
  * loader runs on both server and client and we want one code path.
  *
+ * Also resolves provenance: the artifact's owning workspace name and
+ * the chat it was snapshotted from (if any), so the page can render
+ * "From <chat> in <workspace>" links back to the originating surfaces.
+ * Both lookups are best-effort — a stale workspace id or a deleted
+ * chat reduces to a missing name, never a page failure.
+ *
  * Errors that should leave the user stranded (missing artifact, daemon
  * unreachable) throw via `error()` to surface SvelteKit's error page.
  * Parsing failures (the bytes are well-formed but not tabular in any
@@ -20,46 +26,95 @@ export const load: PageLoad = async ({ params, fetch }) => {
     throw error(400, "Missing artifactId");
   }
 
-  const contentUrl = `/api/daemon/api/artifacts/${encodeURIComponent(artifactId)}/content`;
-  const res = await fetch(contentUrl);
-  if (res.status === 404) {
+  // Single round-trip: artifact metadata endpoint returns the file's
+  // mimeType, originalName, workspaceId, chatId AND inlines the text
+  // contents on the same response. /content endpoint would need a
+  // second fetch with no advantage for our text-only consumer.
+  const metaUrl = `/api/daemon/api/artifacts/${encodeURIComponent(artifactId)}`;
+  const metaRes = await fetch(metaUrl);
+  if (metaRes.status === 404) {
     throw error(404, "Artifact not found");
   }
-  if (!res.ok) {
-    throw error(res.status, `Failed to load artifact: ${res.status}`);
+  if (!metaRes.ok) {
+    throw error(metaRes.status, `Failed to load artifact: ${metaRes.status}`);
+  }
+  const body = (await metaRes.json()) as {
+    artifact?: {
+      title?: string;
+      data?: { mimeType?: string; originalName?: string };
+      workspaceId?: string;
+      chatId?: string;
+    };
+    contents?: string;
+  };
+  const artifact = body.artifact;
+  if (!artifact) {
+    throw error(500, "Artifact response missing metadata");
   }
 
-  const mimeType = res.headers.get("content-type") ?? "application/octet-stream";
-  // Pull the original filename out of `Content-Disposition: ...
-  // filename="foo.csv"` so the page header can show what was uploaded.
-  // The `filename*` form (`filename*=UTF-8''foo.csv`) takes priority
-  // when present.
-  const disposition = res.headers.get("content-disposition") ?? "";
-  const filename = parseFilenameFromDisposition(disposition) ?? "artifact";
+  const mimeType = artifact.data?.mimeType ?? "application/octet-stream";
+  const filename = artifact.data?.originalName ?? artifact.title ?? "artifact";
+  const text = body.contents ?? "";
+  const workspaceId = artifact.workspaceId;
+  const chatId = artifact.chatId;
 
-  const text = await res.text();
+  // Resolve display names for the provenance row in parallel — a
+  // failure on either side leaves the link out of the rendered row
+  // rather than wedging the page. The /content URL is preserved for
+  // the "this isn't tabular" fallback's raw download link.
+  const [workspaceName, chatTitle] = await Promise.all([
+    workspaceId ? fetchWorkspaceName(workspaceId, fetch) : Promise.resolve(null),
+    workspaceId && chatId ? fetchChatTitle(workspaceId, chatId, fetch) : Promise.resolve(null),
+  ]);
 
   return {
     artifactId,
     mimeType,
     filename,
     text,
-    contentUrl,
+    contentUrl: `/api/daemon/api/artifacts/${encodeURIComponent(artifactId)}/content`,
+    workspaceId: workspaceId ?? null,
+    workspaceName,
+    chatId: chatId ?? null,
+    chatTitle,
   };
 };
 
-function parseFilenameFromDisposition(disposition: string): string | null {
-  // RFC 5987 filename* (UTF-8 encoded) takes priority over plain filename.
-  const star = /filename\*\s*=\s*([^']+)'([^']*)'([^;\n]+)/i.exec(disposition);
-  if (star?.[3]) {
-    try {
-      return decodeURIComponent(star[3].trim().replace(/^"|"$/g, ""));
-    } catch {
-      // fall through to the plain form
-    }
+async function fetchWorkspaceName(
+  workspaceId: string,
+  fetchFn: typeof fetch,
+): Promise<string | null> {
+  try {
+    const res = await fetchFn(`/api/daemon/api/workspaces/${encodeURIComponent(workspaceId)}`);
+    if (!res.ok) return null;
+    const body = (await res.json()) as {
+      name?: string;
+      config?: { workspace?: { name?: string } };
+    };
+    // Workspace.yml's `workspace.name` is the user-edited display
+    // name; daemon's top-level `name` is the registration label.
+    // Prefer the config-side name when present so renames in
+    // workspace.yml are reflected without a daemon restart.
+    return body.config?.workspace?.name?.trim() || body.name?.trim() || null;
+  } catch {
+    return null;
   }
-  const plain = /filename\s*=\s*("([^"]+)"|([^;\n]+))/i.exec(disposition);
-  if (plain?.[2]) return plain[2].trim();
-  if (plain?.[3]) return plain[3].trim();
-  return null;
+}
+
+async function fetchChatTitle(
+  workspaceId: string,
+  chatId: string,
+  fetchFn: typeof fetch,
+): Promise<string | null> {
+  try {
+    const res = await fetchFn(
+      `/api/daemon/api/workspaces/${encodeURIComponent(workspaceId)}/chat/${encodeURIComponent(chatId)}`,
+    );
+    if (!res.ok) return null;
+    const body = (await res.json()) as { chat?: { title?: string } };
+    const title = body.chat?.title?.trim();
+    return title && title.length > 0 ? title : null;
+  } catch {
+    return null;
+  }
 }
