@@ -1,6 +1,7 @@
 import {
   LinkCredentialExpiredError,
   LinkCredentialNotFoundError,
+  LinkCredentialUnavailableError,
   UserConfigurationError,
 } from "@atlas/core";
 import { describe, expect, it } from "vitest";
@@ -49,6 +50,30 @@ describe("classifySessionError", () => {
       name: "wrapped credential error in cause chain",
       error: wrappedCredentialError,
       expected: "skipped",
+    },
+    {
+      // v8 design decision 9 — transient unavailable is NOT in the unusable
+      // set, so cron sessions surface as FAILED (alertable platform failure)
+      // rather than SKIPPED (user reconnect needed).
+      name: "LinkCredentialUnavailableError",
+      error: new LinkCredentialUnavailableError({
+        credentialId: "cred_unavailable",
+        serverName: "google-gmail",
+      }),
+      expected: "failed",
+    },
+    {
+      name: "wrapped LinkCredentialUnavailableError in cause chain",
+      error: (() => {
+        const inner = new LinkCredentialUnavailableError({
+          credentialId: "cred_unavailable",
+          serverName: "google-calendar",
+        });
+        const wrapper = new Error("wrapper around transient");
+        wrapper.cause = inner;
+        return wrapper;
+      })(),
+      expected: "failed",
     },
     { name: "generic Error", error: new Error("Something went wrong"), expected: "failed" },
     {
