@@ -18,11 +18,13 @@
 import { bumpWorkspaceCacheSalt, getWorkspaceCacheSalt } from "@atlas/core/chat/cache-salt-storage";
 import { Hono } from "hono";
 import type { AppVariables } from "../../src/factory.ts";
+import { requireWorkspaceAdmin, requireWorkspaceMember } from "../../src/workspace-authz.ts";
 
 const workspaceCacheSaltRoutes: Hono<AppVariables> = new Hono<AppVariables>()
   .get("/_cache-salt", async (c) => {
     const workspaceId = c.req.param("workspaceId");
     if (!workspaceId) return c.json({ error: "Missing workspaceId" }, 400);
+    await requireWorkspaceMember(c, workspaceId);
     const ctx = c.get("app");
     let nc: ReturnType<typeof ctx.daemon.getNatsConnection>;
     try {
@@ -36,6 +38,7 @@ const workspaceCacheSaltRoutes: Hono<AppVariables> = new Hono<AppVariables>()
   .post("/_bump-cache-salt", async (c) => {
     const workspaceId = c.req.param("workspaceId");
     if (!workspaceId) return c.json({ error: "Missing workspaceId" }, 400);
+    await requireWorkspaceAdmin(c, workspaceId);
     const ctx = c.get("app");
     let nc: ReturnType<typeof ctx.daemon.getNatsConnection>;
     try {

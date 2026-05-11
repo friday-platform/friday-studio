@@ -24,10 +24,13 @@
  * Higher-level helpers (`apps/atlasd/src/workspace-authz.ts`) own those.
  */
 
+import { createLogger } from "@atlas/logger";
 import { fail, type Result, stringifyError, success } from "@atlas/utils";
 import { dec, enc, isCASConflict } from "jetstream";
 import { type KV, type NatsConnection, StorageType } from "nats";
 import { z } from "zod";
+
+const logger = createLogger({ component: "workspace-members-storage" });
 
 const KV_BUCKET = "WORKSPACE_MEMBERS";
 
@@ -105,17 +108,27 @@ export function createJetStreamWorkspaceMemberBackend(
     async listByUser(userId) {
       try {
         const k = await kv();
-        const prefix = `${userId}.`;
-        const it = await k.keys();
+        // Server-side prefix filter via NATS subject wildcards. `<userId>.>`
+        // matches every key under this user — the broker drops the rest
+        // rather than streaming the full bucket to the client.
+        const it = await k.keys(`${userId}.>`);
         const matches: string[] = [];
-        for await (const key of it) {
-          if (key.startsWith(prefix)) matches.push(key);
-        }
+        for await (const key of it) matches.push(key);
         const rows: WorkspaceMembership[] = [];
         for (const key of matches) {
           const entry = await k.get(key);
           if (!entry || entry.operation !== "PUT") continue;
-          rows.push(WorkspaceMembershipSchema.parse(JSON.parse(dec.decode(entry.value))));
+          const parsed = WorkspaceMembershipSchema.safeParse(JSON.parse(dec.decode(entry.value)));
+          if (!parsed.success) {
+            // One malformed row must not fail-closed for the whole user.
+            // Skip + log; an operator can grep the bucket and fix it.
+            logger.warn("Skipping malformed workspace membership row", {
+              key,
+              error: parsed.error.message,
+            });
+            continue;
+          }
+          rows.push(parsed.data);
         }
         return success(rows);
       } catch (error) {
@@ -126,6 +139,11 @@ export function createJetStreamWorkspaceMemberBackend(
     async listByWorkspace(wsId) {
       try {
         const k = await kv();
+        // The key shape is `<userId>.<wsId>`. NATS subject wildcards don't
+        // support trailing-token matches (`*.<wsId>` only matches one
+        // token); the user-prefix is variable. Full-bucket enumeration
+        // + client-side filter is fine for admin "list members of
+        // workspace" surfaces, which are not in the request hot path.
         const suffix = `.${wsId}`;
         const it = await k.keys();
         const matches: string[] = [];
@@ -136,7 +154,15 @@ export function createJetStreamWorkspaceMemberBackend(
         for (const key of matches) {
           const entry = await k.get(key);
           if (!entry || entry.operation !== "PUT") continue;
-          rows.push(WorkspaceMembershipSchema.parse(JSON.parse(dec.decode(entry.value))));
+          const parsed = WorkspaceMembershipSchema.safeParse(JSON.parse(dec.decode(entry.value)));
+          if (!parsed.success) {
+            logger.warn("Skipping malformed workspace membership row", {
+              key,
+              error: parsed.error.message,
+            });
+            continue;
+          }
+          rows.push(parsed.data);
         }
         return success(rows);
       } catch (error) {

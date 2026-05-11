@@ -10,6 +10,7 @@
 
 import { Hono } from "hono";
 import type { AppVariables } from "../../src/factory.ts";
+import { requireWorkspaceMember } from "../../src/workspace-authz.ts";
 
 type StreamDebug = {
   name: string;
@@ -71,6 +72,7 @@ const workspaceChatDebugRoutes: Hono<AppVariables> = new Hono<AppVariables>().ge
     if (!chatId || !workspaceId) {
       return c.json({ error: "Missing workspaceId or chatId" }, 400);
     }
+    await requireWorkspaceMember(c, workspaceId);
     const ctx = c.get("app");
 
     const sanitize = (s: string) => s.replace(/[^A-Za-z0-9_-]/g, "_");

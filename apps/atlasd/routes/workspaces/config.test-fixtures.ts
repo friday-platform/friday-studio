@@ -20,6 +20,31 @@ import type { WorkspaceManager } from "@atlas/workspace";
 import { Hono } from "hono";
 import { afterEach, beforeEach, vi } from "vitest";
 import type { AppContext, AppVariables } from "../../src/factory.ts";
+
+// Mock the membership storage BEFORE importing the route (which pulls in
+// the authz helpers transitively). Default mock returns `owner` for every
+// (userId, wsId), which is what the test middleware below pretends.
+vi.mock("@atlas/core/workspace-members/storage", () => ({
+  WorkspaceMemberStorage: {
+    get: vi
+      .fn()
+      .mockImplementation((userId: string, wsId: string) =>
+        Promise.resolve({
+          ok: true,
+          data: { userId, wsId, role: "owner", addedAt: "2026-05-11T00:00:00.000Z" },
+        }),
+      ),
+    listByUser: vi.fn().mockResolvedValue({ ok: true, data: [] }),
+    listByWorkspace: vi.fn().mockResolvedValue({ ok: true, data: [] }),
+    put: vi.fn().mockResolvedValue({ ok: true, data: null }),
+    putIfAbsent: vi.fn().mockResolvedValue({ ok: true, data: null }),
+    delete: vi.fn().mockResolvedValue({ ok: true, data: undefined }),
+  },
+  ensureWorkspaceMembersKVBucket: vi.fn(),
+  initWorkspaceMemberStorage: vi.fn(),
+  resetWorkspaceMemberStorageForTests: vi.fn(),
+}));
+
 import { configRoutes } from "./config.ts";
 
 /**
@@ -113,6 +138,7 @@ export function createTestApp(options: {
   // Add middleware to set context
   app.use("*", async (c, next) => {
     c.set("app", mockContext);
+    c.set("userId", "test-user");
     await next();
   });
 

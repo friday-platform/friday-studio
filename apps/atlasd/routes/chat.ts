@@ -6,6 +6,7 @@ import { logger } from "@atlas/logger";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { daemonFactory, USER_WORKSPACE_ID } from "../src/factory.ts";
+import { requireWorkspaceMember } from "../src/workspace-authz.ts";
 
 const appendMessageSchema = z.object({ message: z.unknown() });
 const updateTitleSchema = z.object({ title: z.string() });
@@ -32,6 +33,18 @@ async function resolveChat(chatId: string) {
 
 const chatRoutes = daemonFactory
   .createApp()
+  // Gate every `/api/chat/*` route on membership of the shared
+  // user-workspace (`USER_WORKSPACE_ID = "user"`). Local mode: the
+  // first-run bootstrap stamps the local user as owner, so the check
+  // is a no-op pass. Cloud mode: today the user-workspace is a single
+  // shared "user" key — the gate gives every authenticated caller
+  // access (still via membership rows), and the multi-user
+  // personal-workspace refactor (per-user wsId) is tracked separately.
+  // Either way, an unauthenticated request 401s here.
+  .use("*", async (c, next) => {
+    await requireWorkspaceMember(c, USER_WORKSPACE_ID);
+    await next();
+  })
   /**
    * GET /api/chat
    * List recent chats with cursor-based pagination.

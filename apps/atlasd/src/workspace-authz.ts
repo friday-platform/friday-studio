@@ -17,7 +17,7 @@ import {
 } from "@atlas/core/workspace-members/storage";
 import type { Context } from "hono";
 import { HTTPException } from "hono/http-exception";
-import type { NatsConnection } from "nats";
+import { KvWatchInclude, type NatsConnection } from "nats";
 
 /**
  * Roles that count as "any active member" for read/act-on-workspace
@@ -116,19 +116,24 @@ export async function getAccessibleWorkspaceIds(userId: string): Promise<Set<str
 /**
  * Open a live-watched accessible-workspaces set for one user.
  *
- * Two NATS round-trips run in parallel: a one-shot prefix scan of
- * `WORKSPACE_MEMBERS` and a `KvWatchInclude.UpdatesOnly` subscription
- * for live mutations under the same prefix. The returned `accessible`
- * Set reflects the snapshot by the time this resolves; the underlying
- * watcher keeps mutating it as membership rows are added or removed
- * for the lifetime of the returned handle.
+ * Sequence matters here, in this order:
+ *   1. Attach the `UpdatesOnly` watch — establishes the boundary so
+ *      every mutation from this point is delivered to the iterator.
+ *   2. `nc.flush()` — round-trips with the broker so the watch's
+ *      JetStream consumer is registered server-side. Without it, a
+ *      PUT/DEL published in the subscribe-returns-but-broker-not-ready
+ *      window is silently dropped.
+ *   3. Snapshot via `listByUser` — reads at a revision strictly
+ *      ≥ the watch start. Any add/delete between the two is delivered
+ *      to the watch iterator (already attached) and applied after the
+ *      foreground loop kicks in.
  *
- * Race window: between the snapshot read and the watch attaching,
- * a row could be added or removed. With a single writer (local mode)
- * this is essentially impossible; cloud mitigates it by serializing
- * invites through the daemon. The watch's `UpdatesOnly` mode means
- * any mutation that lands after the watch attaches is delivered, so
- * the steady-state convergence is correct.
+ * That ordering closes the snapshot/watch race entirely: stale rows
+ * from the snapshot get overridden by later DEL events from the
+ * watch; new rows missed by the snapshot show up via the watch's
+ * UpdatesOnly stream. The previous parallelized variant left a
+ * window where a DEL could land before the watch attached and after
+ * the snapshot's read revision, producing a permanently-stale entry.
  *
  * Failure mode is fail-closed: if either side fails the user sees
  * an empty set rather than wildcard access.
@@ -144,15 +149,15 @@ export async function openAccessibleWorkspaceWatch(
   const accessible = new Set<string>();
   const prefix = `${userId}.`;
 
-  // KvWatchInclude.UpdatesOnly = "updates" — `kv.watch` is typed
-  // against the enum but a string literal is accepted at the wire
-  // level. Imported as a string to avoid pulling the enum just for
-  // this one constant.
-  const [iter, snapshot] = await Promise.all([
-    kv.watch({ key: `${userId}.>`, include: "updates" as never }),
-    WorkspaceMemberStorage.listByUser(userId),
-  ]);
+  const iter = await kv.watch({ key: `${userId}.>`, include: KvWatchInclude.UpdatesOnly });
+  // Subscribe-then-flush — see `developing-with-nats` skill's Gotchas.
+  // `kv.watch` returns before the broker has fully registered the
+  // ordered consumer; without flushing, a PUT/DEL published in that
+  // window goes undelivered. Flush forces a PING/PONG round-trip; on
+  // resolution the watch is live server-side.
+  await nc.flush();
 
+  const snapshot = await WorkspaceMemberStorage.listByUser(userId);
   if (snapshot.ok) {
     for (const m of snapshot.data) accessible.add(m.wsId);
   }

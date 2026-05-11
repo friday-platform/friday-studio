@@ -27,7 +27,7 @@ import { generateText } from "ai";
 import type { Context } from "hono";
 import { z } from "zod";
 import { daemonFactory } from "../src/factory.ts";
-import { requireWorkspaceAdmin } from "../src/workspace-authz.ts";
+import { getAccessibleWorkspaceIds, requireWorkspaceAdmin } from "../src/workspace-authz.ts";
 
 const skillsShClient = new SkillsShClient();
 
@@ -459,13 +459,23 @@ export const skillsRoutes = daemonFactory
   // These must be registered before /:namespace/:name routes to avoid
   // Hono matching "scoping" as a namespace param.
   .get("/scoping/:skillId/assignments", zValidator("param", SkillIdParam), async (c) => {
+    const userId = c.get("userId");
+    if (!userId) return c.json({ error: "Unauthorized" }, 401);
+
     const { skillId } = c.req.valid("param");
     const result = await SkillStorage.listAssignments(skillId);
     if (!result.ok) return c.json({ error: result.error }, 500);
+    // Filter to workspaces the caller is a member of. Skills are
+    // cross-tenant catalog entries; the assignment list reveals which
+    // workspaces use the skill, and leaking the full set across tenants
+    // exposes other organizations' tool topology.
+    //
     // `workspaceIds` is DISTINCT across layers — the same workspace can have
     // both a workspace-level row and one or more job-level rows. Callers that
     // need the per-job breakdown should hit the job detail endpoint.
-    return c.json({ workspaceIds: result.data });
+    const accessible = await getAccessibleWorkspaceIds(userId);
+    const visible = result.data.filter((wsId) => accessible.has(wsId));
+    return c.json({ workspaceIds: visible });
   })
   .post(
     "/scoping/:skillId/assignments",

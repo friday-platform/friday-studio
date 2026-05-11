@@ -14,7 +14,7 @@
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { daemonFactory } from "../src/factory.ts";
-import { requireWorkspaceMember } from "../src/workspace-authz.ts";
+import { getAccessibleWorkspaceIds, requireWorkspaceMember } from "../src/workspace-authz.ts";
 import {
   listAllWorkspaceEvents,
   listWorkspaceEvents,
@@ -91,12 +91,21 @@ export const workspaceEventsRoutes = daemonFactory
 export const eventsRoutes = daemonFactory
   .createApp()
   .get("/", zValidator("query", QuerySchema), async (c) => {
+    const userId = c.get("userId");
+    if (!userId) return c.json({ error: "Unauthorized" }, 401);
+
     const { limit } = c.req.valid("query");
     const ctx = c.get("app");
     const nc = ctx.daemon.getNatsConnection();
     if (!nc) return c.json({ error: "NATS connection not ready" }, 503);
 
-    const events = await listAllWorkspaceEvents(nc, { ...(limit !== undefined ? { limit } : {}) });
+    // Filter the global events list to workspaces the caller is a
+    // member of. `listAllWorkspaceEvents` enumerates every workspace
+    // in the bucket; without the filter the response leaks
+    // `schedule.missed` event metadata across tenants.
+    const accessible = await getAccessibleWorkspaceIds(userId);
+    const all = await listAllWorkspaceEvents(nc, { ...(limit !== undefined ? { limit } : {}) });
+    const events = all.filter((e) => accessible.has(e.workspaceId));
     return c.json({ events }, 200);
   })
   /**

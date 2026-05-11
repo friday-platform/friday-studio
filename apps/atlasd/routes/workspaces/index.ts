@@ -710,6 +710,8 @@ const workspacesRoutes = daemonFactory
   // Add multiple workspaces by paths (batch operation)
   .post("/add-batch", zValidator("json", addWorkspaceBatchSchema), async (c) => {
     const ctx = c.get("app");
+    const userId = c.get("userId");
+    if (!userId) return c.json({ error: "Unauthorized" }, 401);
     try {
       const { paths } = c.req.valid("json");
 
@@ -734,7 +736,9 @@ const workspacesRoutes = daemonFactory
         const batch = paths.slice(i, i + batchSize);
         const batchPromises = batch.map(async (path) => {
           try {
-            const { workspace: entry, created } = await manager.registerWorkspace(path);
+            const { workspace: entry, created } = await manager.registerWorkspace(path, {
+              createdBy: userId,
+            });
 
             results.added.push({
               id: entry.id,
@@ -861,6 +865,8 @@ const workspacesRoutes = daemonFactory
   // preserved, mirroring /import-bundle.
   .post("/import-bundle-all", async (c) => {
     const importLogger = createLogger({ component: "workspace-bundle-all-import" });
+    const userId = c.get("userId");
+    if (!userId) return c.json({ error: "Unauthorized" }, 401);
     try {
       const form = await c.req.formData();
       const file = form.get("bundle");
@@ -899,7 +905,10 @@ const workspacesRoutes = daemonFactory
             });
             continue;
           }
-          const registered = await manager.registerWorkspace(entry.path, { name: entry.name });
+          const registered = await manager.registerWorkspace(entry.path, {
+            name: entry.name,
+            createdBy: userId,
+          });
           const memory = await materializeImportedMemory({
             importedWorkspaceDir: entry.path,
             atlasHome,
@@ -1109,6 +1118,8 @@ const workspacesRoutes = daemonFactory
   // Body: multipart/form-data with a single "bundle" file field.
   .post("/import-bundle", async (c) => {
     const importLogger = createLogger({ component: "workspace-bundle-import" });
+    const userId = c.get("userId");
+    if (!userId) return c.json({ error: "Unauthorized" }, 401);
     try {
       const form = await c.req.formData();
       const file = form.get("bundle");
@@ -1135,6 +1146,7 @@ const workspacesRoutes = daemonFactory
       const manager = ctx.getWorkspaceManager();
       const registered = await manager.registerWorkspace(targetDir, {
         name: result.lockfile.workspace.name,
+        createdBy: userId,
       });
 
       // If the bundle carried migration-mode memory, relocate it from the

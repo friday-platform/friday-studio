@@ -38,6 +38,27 @@ vi.mock("@atlas/agent-sdk", () => ({
   normalizeToUIMessages: (message: unknown) => [message],
 }));
 
+vi.mock("@atlas/core/workspace-members/storage", () => ({
+  WorkspaceMemberStorage: {
+    get: vi
+      .fn()
+      .mockImplementation((userId: string, wsId: string) =>
+        Promise.resolve({
+          ok: true,
+          data: { userId, wsId, role: "owner", addedAt: "2026-05-11T00:00:00.000Z" },
+        }),
+      ),
+    listByUser: vi.fn().mockResolvedValue({ ok: true, data: [] }),
+    listByWorkspace: vi.fn().mockResolvedValue({ ok: true, data: [] }),
+    put: vi.fn().mockResolvedValue({ ok: true, data: null }),
+    putIfAbsent: vi.fn().mockResolvedValue({ ok: true, data: null }),
+    delete: vi.fn().mockResolvedValue({ ok: true, data: undefined }),
+  },
+  ensureWorkspaceMembersKVBucket: vi.fn(),
+  initWorkspaceMemberStorage: vi.fn(),
+  resetWorkspaceMemberStorageForTests: vi.fn(),
+}));
+
 // Shrink the byte cap so the cap branch is testable without allocating
 // tens of megabytes per assertion. Hoisted so the `vi.mock` factory below
 // can reference it. 1 MiB sits well above the ~300 KiB serialised size of
@@ -119,6 +140,7 @@ function createTestApp(
   const app = new Hono<{ Variables: { app: typeof mockContext } }>();
   app.use("*", async (c, next) => {
     c.set("app", mockContext);
+    c.set("userId", "test-local-user");
     await next();
   });
   app.route("/:workspaceId/chat", workspaceChatRoutes);

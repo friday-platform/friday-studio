@@ -17,6 +17,7 @@ import { logger } from "@atlas/logger";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { daemonFactory } from "../../src/factory.ts";
+import { requireWorkspaceMember } from "../../src/workspace-authz.ts";
 import { MAX_FULL_EXPORT_BYTES, MAX_FULL_EXPORT_MESSAGES } from "./chat-limits.ts";
 
 const listChatsQuerySchema = z.object({
@@ -45,6 +46,11 @@ const workspaceChatRoutes = daemonFactory
     if (!workspaceId) {
       return c.json({ error: "Missing workspaceId" }, 400);
     }
+    // Gate every chat route on workspace membership before the
+    // existence check — fail-closed for non-members even if the
+    // workspace is real. requireWorkspaceMember throws HTTPException;
+    // Hono's outer handler maps it to 401/403 cleanly.
+    await requireWorkspaceMember(c, workspaceId);
     const ctx = c.get("app");
     const manager = ctx.getWorkspaceManager();
     const workspace = await manager.find({ id: workspaceId });

@@ -20,6 +20,7 @@ import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import type { AppVariables } from "../../src/factory.ts";
 import { daemonFactory } from "../../src/factory.ts";
+import { requireWorkspaceAdmin, requireWorkspaceMember } from "../../src/workspace-authz.ts";
 import { applyDraftAwareMutation, getEditableConfig } from "./draft-helpers.ts";
 import { mapMutationError } from "./mutation-errors.ts";
 
@@ -53,6 +54,7 @@ const handleGetMCPStatus = async (c: import("hono").Context<AppVariables>) => {
   if (!workspaceId) {
     return c.json({ success: false, error: "bad_request", message: "Missing workspaceId" }, 400);
   }
+  await requireWorkspaceMember(c, workspaceId);
   const ctx = c.get("app");
 
   try {
@@ -113,6 +115,7 @@ const handleEnableMCPServer = async (c: import("hono").Context<AppVariables>) =>
       400,
     );
   }
+  await requireWorkspaceAdmin(c, workspaceId);
   const ctx = c.get("app");
 
   try {
@@ -213,6 +216,7 @@ const handleDisableMCPServer = async (c: import("hono").Context<AppVariables>) =
       400,
     );
   }
+  await requireWorkspaceAdmin(c, workspaceId);
   const ctx = c.get("app");
 
   try {
