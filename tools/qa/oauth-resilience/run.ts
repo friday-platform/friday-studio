@@ -36,6 +36,7 @@ import {
 // Add new phases by appending another import — order matches Phase number.
 import "./scenarios/p1.ts";
 import "./scenarios/p2.ts";
+import "./scenarios/p3-core.ts";
 
 export type {
   Scenario,
