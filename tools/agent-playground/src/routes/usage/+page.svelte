@@ -20,7 +20,7 @@
 <script lang="ts">
   import { tokensToCost } from "@atlas/llm/pricing";
   import { PageLayout } from "@atlas/ui";
-  import { createQuery } from "@tanstack/svelte-query";
+  import { createQuery, useQueryClient } from "@tanstack/svelte-query";
   import { workspaceQueries } from "$lib/queries";
 
   interface ChatSummary {
@@ -77,8 +77,18 @@
   let totalChats = $state(0);
   let workspaceFilter = $state<string>("all");
 
+  const queryClient = useQueryClient();
   const workspacesQuery = createQuery(() => workspaceQueries.enriched());
   const workspaceOptions = $derived(workspacesQuery.data ?? []);
+
+  // How many per-chat detail fetches to run in parallel inside `loadAll`.
+  // The list-chats fan-out across workspaces (`Promise.all` at the top
+  // of the rollup) already saturates the connection; per-chat fetches
+  // then dominate page-load cost for users with many chats. A fixed-
+  // width window keeps total wall-clock low without piling up enough
+  // in-flight requests to torch the daemon's HTTP pool or starve
+  // unrelated UI fetches that share the same browser connection limit.
+  const CHAT_FETCH_CONCURRENCY = 8;
 
   // Display label for a workspace ID — `Name (id)`. Falls back to the
   // ID alone when no enriched record exists (e.g. legacy chats whose
@@ -186,6 +196,92 @@
     return (data.chats ?? []).map((c) => ({ ...c, workspaceId: c.workspaceId ?? wsId }));
   }
 
+  // Fetch a single chat's message bundle, walk its assistant turns,
+  // and return both a per-chat row (or null if the chat has no
+  // assistant turns) and a list of `(modelId, perModelDelta)` pairs the
+  // caller folds into the rollup map. Pure-ish — does NOT mutate
+  // module state, so it's safe to run in parallel batches and merge
+  // deterministically.
+  async function summarizeChat(
+    chat: ChatSummary,
+  ): Promise<{
+    row: PerChatRow | null;
+    modelDeltas: Array<{ modelId: string; workspaceId: string; usage: NonNullable<UIMessage["metadata"]>["usage"]; cost: number; pricingResolved: boolean }>;
+  }> {
+    const wsId = chat.workspaceId ?? "";
+    if (!wsId) return { row: null, modelDeltas: [] };
+
+    let messages: UIMessage[] = [];
+    try {
+      const msgsRes = await fetch(
+        `/api/daemon/api/workspaces/${encodeURIComponent(wsId)}/chat/${encodeURIComponent(chat.id)}`,
+      );
+      if (!msgsRes.ok) return { row: null, modelDeltas: [] };
+      const msgsData = (await msgsRes.json()) as { messages?: UIMessage[] };
+      messages = msgsData.messages ?? [];
+    } catch {
+      // Per-chat fetch failures don't block the rest of the roll-up.
+      return { row: null, modelDeltas: [] };
+    }
+
+    let chatTurns = 0;
+    let chatInput = 0;
+    let chatOutput = 0;
+    let chatCacheRead = 0;
+    let chatCacheWrite = 0;
+    let chatCost = 0;
+    let chatPricingResolved = true;
+    const modelDeltas: Array<{
+      modelId: string;
+      workspaceId: string;
+      usage: NonNullable<UIMessage["metadata"]>["usage"];
+      cost: number;
+      pricingResolved: boolean;
+    }> = [];
+
+    for (const msg of messages) {
+      if (msg.role !== "assistant") continue;
+      const usage = msg.metadata?.usage;
+      const modelId = msg.metadata?.modelId;
+      if (!usage || !modelId) continue;
+
+      chatTurns++;
+      const breakdown = tokensToCost(usage, modelId);
+      chatInput += usage.inputTokens ?? 0;
+      chatOutput += usage.outputTokens ?? 0;
+      chatCacheRead += usage.cacheReadTokens ?? 0;
+      chatCacheWrite += usage.cacheWriteTokens ?? 0;
+      chatCost += breakdown.total;
+      if (!breakdown.pricingResolved) chatPricingResolved = false;
+
+      modelDeltas.push({
+        modelId,
+        workspaceId: wsId,
+        usage,
+        cost: breakdown.total,
+        pricingResolved: breakdown.pricingResolved,
+      });
+    }
+
+    if (chatTurns === 0) return { row: null, modelDeltas };
+
+    return {
+      row: {
+        chatId: chat.id,
+        title: chat.title ?? "(untitled)",
+        workspaceId: wsId,
+        turns: chatTurns,
+        inputTokens: chatInput,
+        outputTokens: chatOutput,
+        cacheReadTokens: chatCacheRead,
+        cacheWriteTokens: chatCacheWrite,
+        cost: chatCost,
+        pricingResolved: chatPricingResolved,
+      },
+      modelDeltas,
+    };
+  }
+
   async function loadAll(): Promise<void> {
     try {
       loading = true;
@@ -195,14 +291,13 @@
       scannedChats = 0;
       totalChats = 0;
 
-      // Wait for the workspace list query to settle so the fan-out
-      // sees every workspace, not just the cached ones. `enriched()`
-      // returns the daemon-visible workspaces — including the `user`
-      // single-tenant workspace, which appears as a real entry.
-      while (workspacesQuery.isLoading) {
-        await new Promise((r) => setTimeout(r, 50));
-      }
-      const allWorkspaceIds = (workspacesQuery.data ?? []).map((w) => w.id);
+      // Resolve the workspace list via the query client so the fan-out
+      // sees every workspace at the moment loadAll runs — no need to
+      // poll the reactive `workspacesQuery.isLoading` state. The
+      // `enriched()` queryOptions are shared with the dropdown so this
+      // hits the same cache and dedupes against an in-flight fetch.
+      const workspaces = await queryClient.fetchQuery(workspaceQueries.enriched());
+      const allWorkspaceIds = workspaces.map((w) => w.id);
 
       // Fan out chat-list fetches across workspaces. Per-workspace
       // failures don't block the rollup — a workspace that's been
@@ -227,55 +322,26 @@
       const perChatRows: PerChatRow[] = [];
       const perModelMap = new Map<string, PerModelRow>();
 
-      for (const chat of chats) {
-        const wsId = chat.workspaceId ?? "";
-        if (!wsId) {
-          scannedChats++;
-          continue;
-        }
-        try {
-          const wsPath = wsId;
-          const msgsRes = await fetch(
-            `/api/daemon/api/workspaces/${encodeURIComponent(wsPath)}/chat/${encodeURIComponent(chat.id)}`,
-          );
-          if (!msgsRes.ok) {
-            scannedChats++;
-            continue;
-          }
-          const msgsData = (await msgsRes.json()) as { messages?: UIMessage[] };
-          const messages = msgsData.messages ?? [];
-
-          let chatTurns = 0;
-          let chatInput = 0;
-          let chatOutput = 0;
-          let chatCacheRead = 0;
-          let chatCacheWrite = 0;
-          let chatCost = 0;
-          let chatPricingResolved = true;
-
-          for (const msg of messages) {
-            if (msg.role !== "assistant") continue;
-            const usage = msg.metadata?.usage;
-            const modelId = msg.metadata?.modelId;
-            if (!usage || !modelId) continue;
-
-            chatTurns++;
-            const breakdown = tokensToCost(usage, modelId);
-            chatInput += usage.inputTokens ?? 0;
-            chatOutput += usage.outputTokens ?? 0;
-            chatCacheRead += usage.cacheReadTokens ?? 0;
-            chatCacheWrite += usage.cacheWriteTokens ?? 0;
-            chatCost += breakdown.total;
-            if (!breakdown.pricingResolved) chatPricingResolved = false;
-
+      // Process chats in fixed-width parallel windows. Each window
+      // resolves via `Promise.all`, then we fold its deltas into the
+      // rollup before launching the next. This keeps total wall-clock
+      // close to the slowest chat-fetch in each window (~1 RTT) without
+      // exceeding `CHAT_FETCH_CONCURRENCY` in-flight requests.
+      for (let i = 0; i < chats.length; i += CHAT_FETCH_CONCURRENCY) {
+        const batch = chats.slice(i, i + CHAT_FETCH_CONCURRENCY);
+        const summaries = await Promise.all(batch.map((c) => summarizeChat(c)));
+        for (const summary of summaries) {
+          if (summary.row) perChatRows.push(summary.row);
+          for (const delta of summary.modelDeltas) {
+            if (!delta.usage) continue;
             // Per-model rollup is keyed by `(workspaceId, modelId)` so
             // the per-workspace slice stays disjoint when filtering.
             // The "all" view re-collapses on `modelId` in
             // `visibleModelRows` so totals sum correctly.
-            const modelKey = `${wsId}:${modelId}`;
+            const modelKey = `${delta.workspaceId}:${delta.modelId}`;
             const existing = perModelMap.get(modelKey) ?? {
-              modelId,
-              workspaceId: wsId,
+              modelId: delta.modelId,
+              workspaceId: delta.workspaceId,
               turns: 0,
               inputTokens: 0,
               outputTokens: 0,
@@ -285,34 +351,16 @@
               pricingResolved: true,
             };
             existing.turns++;
-            existing.inputTokens += usage.inputTokens ?? 0;
-            existing.outputTokens += usage.outputTokens ?? 0;
-            existing.cacheReadTokens += usage.cacheReadTokens ?? 0;
-            existing.cacheWriteTokens += usage.cacheWriteTokens ?? 0;
-            existing.cost += breakdown.total;
-            if (!breakdown.pricingResolved) existing.pricingResolved = false;
+            existing.inputTokens += delta.usage.inputTokens ?? 0;
+            existing.outputTokens += delta.usage.outputTokens ?? 0;
+            existing.cacheReadTokens += delta.usage.cacheReadTokens ?? 0;
+            existing.cacheWriteTokens += delta.usage.cacheWriteTokens ?? 0;
+            existing.cost += delta.cost;
+            if (!delta.pricingResolved) existing.pricingResolved = false;
             perModelMap.set(modelKey, existing);
           }
-
-          if (chatTurns > 0) {
-            perChatRows.push({
-              chatId: chat.id,
-              title: chat.title ?? "(untitled)",
-              workspaceId: wsId,
-              turns: chatTurns,
-              inputTokens: chatInput,
-              outputTokens: chatOutput,
-              cacheReadTokens: chatCacheRead,
-              cacheWriteTokens: chatCacheWrite,
-              cost: chatCost,
-              pricingResolved: chatPricingResolved,
-            });
-          }
-        } catch {
-          // Per-chat fetch failures don't block the rest of the roll-up.
-        } finally {
-          scannedChats++;
         }
+        scannedChats += batch.length;
       }
 
       perChat = perChatRows;
