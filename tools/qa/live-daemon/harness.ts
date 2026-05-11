@@ -195,8 +195,8 @@ export async function startDaemon(opts: StartDaemonOptions = {}): Promise<Daemon
   }
   await waitForTcp(natsPort);
 
-  // Construct env: clone process.env, override FRIDAY_HOME, set
-  // FRIDAY_LOCAL_ONLY so credential fetch is skipped, set OTEL flags
+  // Construct env: clone process.env, override FRIDAY_HOME, force
+  // FRIDAY_ENV=dev so credential fetch is skipped, set OTEL flags
   // present so the CLI doesn't re-exec itself.
   //
   // Critical: `FRIDAYD_URL` MUST point at the daemon's actual listen
@@ -210,7 +210,7 @@ export async function startDaemon(opts: StartDaemonOptions = {}): Promise<Daemon
   const env: Record<string, string> = {
     ...Deno.env.toObject(),
     FRIDAY_HOME: fridayHome,
-    FRIDAY_LOCAL_ONLY: "true",
+    FRIDAY_ENV: "dev",
     FRIDAYD_URL: `http://127.0.0.1:${port}`,
     FRIDAY_PORT_FRIDAY: String(port),
     FRIDAY_NATS_URL: natsUrl,

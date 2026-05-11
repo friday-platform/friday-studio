@@ -1,7 +1,7 @@
 import type { Context } from "hono";
 import { z } from "zod";
 import { daemonFactory } from "../../src/factory.ts";
-import { getCurrentUser, getCurrentUserId, updateCurrentUser } from "./adapter.ts";
+import { getCurrentUser, updateCurrentUser } from "./adapter.ts";
 import { deletePhoto, getPhoto, savePhoto, validatePhoto } from "./photo-storage.ts";
 
 /** Derive the external-facing origin, respecting reverse-proxy headers. */
@@ -20,16 +20,19 @@ const UpdateMeSchema = z.object({
 /**
  * /api/me - user identity and profile management.
  *
- * Uses adapter pattern for local/remote switching:
- * - Local (default when no PERSONA_URL): Extracts user from FRIDAY_KEY JWT
- * - Remote (when PERSONA_URL is set): Fetches from persona service
+ * Identity is sourced via the request's `ctx.userId` (set by the
+ * session middleware) — never by decoding FRIDAY_KEY.
+ *
+ * - Local (default): builds identity from `UserStorage.getUser(userId)`
+ *   merged with `~/.atlas/profile.json` overrides.
+ * - Remote (when PERSONA_URL is set): Fetches from persona service.
  *
  * Set USER_IDENTITY_ADAPTER=local to force local mode.
  */
 const meRoutes = daemonFactory
   .createApp()
   .get("/", async (c) => {
-    const result = await getCurrentUser();
+    const result = await getCurrentUser(c.get("userId"));
 
     if (!result.ok) {
       return c.json({ error: result.error }, 503);
@@ -99,7 +102,7 @@ const meRoutes = daemonFactory
         return c.json({ error: validation.error }, 400);
       }
 
-      const userId = await getCurrentUserId();
+      const userId = c.get("userId");
       if (!userId) {
         return c.json({ error: "User identity unavailable" }, 503);
       }
@@ -115,14 +118,14 @@ const meRoutes = daemonFactory
 
     // Handle explicit photo removal (profile_photo: null in fields)
     if (fields.profile_photo === null) {
-      const userId = await getCurrentUserId();
+      const userId = c.get("userId");
       if (userId) {
         await deletePhoto(userId);
       }
     }
 
     // Proxy field updates to persona (or local storage)
-    const result = await updateCurrentUser({
+    const result = await updateCurrentUser(c.get("userId"), {
       full_name: fields.full_name,
       display_name: fields.display_name,
       profile_photo: fields.profile_photo,
@@ -144,7 +147,7 @@ const meRoutes = daemonFactory
     return c.json({ user: updated });
   })
   .get("/photo", async (c) => {
-    const userId = await getCurrentUserId();
+    const userId = c.get("userId");
     if (!userId) {
       return c.json({ error: "User identity unavailable" }, 503);
     }

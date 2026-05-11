@@ -24,9 +24,9 @@ import { PublishSkillInputSchema, SkillSortSchema } from "@atlas/skills/schemas"
 import { makeTempDir } from "@atlas/utils/temp.server";
 import { zValidator } from "@hono/zod-validator";
 import { generateText } from "ai";
+import type { Context } from "hono";
 import { z } from "zod";
 import { daemonFactory } from "../src/factory.ts";
-import { getCurrentUser } from "./me/adapter.ts";
 
 const skillsShClient = new SkillsShClient();
 
@@ -79,10 +79,10 @@ const IncludeQuery = z.object({ include: z.literal("archive").optional() });
 // Auth helper
 // ==============================================================================
 
-async function requireUser(): Promise<{ ok: true; userId: string } | { ok: false; error: string }> {
-  const result = await getCurrentUser();
-  if (!result.ok || !result.data) return { ok: false, error: "Unauthorized" };
-  return { ok: true, userId: result.data.id };
+function requireUser(c: Context): { ok: true; userId: string } | { ok: false; error: string } {
+  const userId = c.get("userId");
+  if (!userId) return { ok: false, error: "Unauthorized" };
+  return { ok: true, userId };
 }
 
 /**
@@ -182,7 +182,7 @@ export const skillsRoutes = daemonFactory
       if (!remoteInstallEnabled()) {
         return c.json({ error: "Remote skill install is disabled" }, 403);
       }
-      const auth = await requireUser();
+      const auth = requireUser(c);
       if (!auth.ok) return c.json({ error: auth.error }, 401);
 
       const { source, workspaceId, targetNamespace } = c.req.valid("json");
@@ -369,7 +369,7 @@ export const skillsRoutes = daemonFactory
       }),
     ),
     async (c) => {
-      const auth = await requireUser();
+      const auth = requireUser(c);
       if (!auth.ok) return c.json({ error: auth.error }, 401);
 
       const { namespace, name, targetNamespace, targetName, workspaceId } = c.req.valid("json");
@@ -447,7 +447,7 @@ export const skillsRoutes = daemonFactory
   )
   // ─── CREATE BLANK SKILL ────────────────────────────────────────────────────
   .post("/", async (c) => {
-    const auth = await requireUser();
+    const auth = requireUser(c);
     if (!auth.ok) return c.json({ error: auth.error }, 401);
 
     const result = await SkillStorage.create("friday", auth.userId);
@@ -548,7 +548,7 @@ export const skillsRoutes = daemonFactory
   // Must be registered before /:namespace/... so Hono doesn't match
   // "import-archive" as a namespace param.
   .post("/import-archive", async (c) => {
-    const auth = await requireUser();
+    const auth = requireUser(c);
     if (!auth.ok) return c.json({ error: auth.error }, 401);
 
     const formData = await c.req.formData();
@@ -752,7 +752,7 @@ export const skillsRoutes = daemonFactory
       }),
     ),
     async (c) => {
-      const auth = await requireUser();
+      const auth = requireUser(c);
       if (!auth.ok) return c.json({ error: auth.error }, 401);
       const { namespace, name } = c.req.valid("param");
       const { rule, dryRun } = c.req.valid("json");
@@ -890,7 +890,7 @@ export const skillsRoutes = daemonFactory
     if (!remoteInstallEnabled()) {
       return c.json({ error: "Remote skill install is disabled" }, 403);
     }
-    const auth = await requireUser();
+    const auth = requireUser(c);
     if (!auth.ok) return c.json({ error: auth.error }, 401);
 
     const { namespace, name } = c.req.valid("param");
@@ -1017,7 +1017,7 @@ export const skillsRoutes = daemonFactory
   })
   // ─── UPDATE ARCHIVE FILE CONTENT ───────────────────────────────────────────
   .put("/:namespace/:name/files/*", async (c) => {
-    const auth = await requireUser();
+    const auth = requireUser(c);
     if (!auth.ok) return c.json({ error: auth.error }, 401);
 
     const params = NamespacedParams.safeParse({
@@ -1099,7 +1099,7 @@ export const skillsRoutes = daemonFactory
     zValidator("param", NamespacedParams),
     zValidator("json", PublishSkillInputSchema),
     async (c) => {
-      const auth = await requireUser();
+      const auth = requireUser(c);
       if (!auth.ok) return c.json({ error: auth.error }, 401);
 
       const { namespace, name } = c.req.valid("param");
@@ -1201,7 +1201,7 @@ export const skillsRoutes = daemonFactory
   )
   // ─── PUBLISH (multipart) ────────────────────────────────────────────────
   .post("/:namespace/:name/upload", zValidator("param", NamespacedParams), async (c) => {
-    const auth = await requireUser();
+    const auth = requireUser(c);
     if (!auth.ok) return c.json({ error: auth.error }, 401);
 
     const { namespace, name } = c.req.valid("param");
@@ -1295,7 +1295,7 @@ export const skillsRoutes = daemonFactory
   })
   // ─── DELETE VERSION ────────────────────────────────────────────────────────
   .delete("/:namespace/:name/:version", zValidator("param", VersionedParams), async (c) => {
-    const auth = await requireUser();
+    const auth = requireUser(c);
     if (!auth.ok) return c.json({ error: auth.error }, 401);
 
     const { namespace, name, version } = c.req.valid("param");
@@ -1323,7 +1323,7 @@ export const skillsRoutes = daemonFactory
     zValidator("json", z.object({ disabled: z.boolean() })),
     async (c) => {
       // Single-tenant: auth check is sufficient. Add createdBy ownership check if multi-tenant.
-      const auth = await requireUser();
+      const auth = requireUser(c);
       if (!auth.ok) return c.json({ error: auth.error }, 401);
 
       const { skillId } = c.req.valid("param");
@@ -1337,7 +1337,7 @@ export const skillsRoutes = daemonFactory
   // ─── DELETE SKILL (all versions) ─────────────────────────────────────────
   .delete("/:skillId", zValidator("param", SkillIdParam), async (c) => {
     // Single-tenant: auth check is sufficient. Add createdBy ownership check if multi-tenant.
-    const auth = await requireUser();
+    const auth = requireUser(c);
     if (!auth.ok) return c.json({ error: auth.error }, 401);
 
     const { skillId } = c.req.valid("param");

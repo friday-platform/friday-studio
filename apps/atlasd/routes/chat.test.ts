@@ -28,10 +28,6 @@ const { mockChatStorage, mockValidateMessages } = vi.hoisted(() => ({
     .mockImplementation((msgs: unknown[]) => Promise.resolve(msgs)),
 }));
 
-vi.mock("@atlas/core/credentials", () => ({
-  extractTempestUserId: vi.fn().mockReturnValue("user-123"),
-}));
-
 vi.mock("@atlas/core/chat/storage", () => ({ ChatStorage: mockChatStorage }));
 
 vi.mock("@atlas/core/users/storage", () => ({

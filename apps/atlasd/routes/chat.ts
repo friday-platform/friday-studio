@@ -1,7 +1,5 @@
-import process from "node:process";
 import { validateAtlasUIMessages } from "@atlas/agent-sdk";
 import { ChatStorage } from "@atlas/core/chat/storage";
-import { extractTempestUserId } from "@atlas/core/credentials";
 import { WorkspaceNotFoundError } from "@atlas/core/errors/workspace-not-found";
 import { UserStorage } from "@atlas/core/users/storage";
 import { logger } from "@atlas/logger";
@@ -15,17 +13,6 @@ const listChatsQuerySchema = z.object({
   limit: z.coerce.number().min(1).max(100).optional(),
   cursor: z.coerce.number().optional(),
 });
-
-/**
- * Extract userId from FRIDAY_KEY JWT.
- * Falls back to the daemon's resolved local-tenant user id (a nanoid
- * generated on first daemon start, cached after `resolveLocalUserId()`
- * runs in atlas-daemon.ts startup).
- */
-function getUserId(): string {
-  const atlasKey = process.env.FRIDAY_KEY;
-  return (atlasKey && extractTempestUserId(atlasKey)) || UserStorage.getCachedLocalUserId();
-}
 
 /**
  * Resolve a chat by trying the user workspace first, then the global (legacy) path.
@@ -110,7 +97,7 @@ const chatRoutes = daemonFactory
     }
 
     const headers = new Headers(c.req.raw.headers);
-    headers.set("X-Atlas-User-Id", getUserId());
+    headers.set("X-Atlas-User-Id", c.get("userId") ?? UserStorage.getCachedLocalUserId());
     const request = new Request(c.req.raw, { headers });
     return handler(request);
   })

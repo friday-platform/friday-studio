@@ -28,6 +28,7 @@
     "./chat/cache-salt-storage": "./src/chat/cache-salt-storage.ts",
     "./chat/sse-manager": "./src/chat/sse-manager.ts",
     "./users/storage": "./src/users/storage.ts",
+    "./sessions/storage": "./src/sessions/storage.ts",
     "./session/session-events": "./src/session/session-events.ts",
     "./session/session-reducer": "./src/session/session-reducer.ts",
     "./mcp-registry/discovery": "./src/mcp-registry/discovery.ts",

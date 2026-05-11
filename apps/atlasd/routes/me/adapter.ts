@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import process from "node:process";
-import { decodeJwtPayload } from "@atlas/core/credentials";
+import { UserStorage } from "@atlas/core/users/storage";
 import { createLogger } from "@atlas/logger";
 import { fail, type Result, stringifyError, success } from "@atlas/utils";
 import { getFridayHome } from "@atlas/utils/paths.server";
@@ -11,89 +11,56 @@ import { type UserIdentity, UserIdentitySchema } from "./schemas.ts";
 const logger = createLogger({ name: "user-identity" });
 const TIMEOUT_MS = 10_000;
 
-// Cached user ID - extracted from FRIDAY_KEY, constant for daemon lifetime
-let cachedUserId: string | null = null;
-let userIdResolved = false;
-
 /**
- * Get user identity from configured source.
+ * Get user identity for the request's user.
  *
- * - Remote (default when PERSONA_URL set): Fetches from persona service
- * - Local (fallback or USER_IDENTITY_ADAPTER=local): Extracts from FRIDAY_KEY JWT
- *   and merges any saved profile overrides from profile.json
+ * - Remote (PERSONA_URL set): Fetches from persona service. FRIDAY_KEY
+ *   is used as the daemon-to-persona Bearer credential — that's an
+ *   outbound-auth concern, not an identity-bearing one.
+ * - Local: Reads the canonical `UserStorage` record for the given
+ *   userId (set by the session middleware) and merges any local
+ *   profile.json overrides on top. No JWT decode anywhere.
  */
-export async function getCurrentUser(): Promise<Result<UserIdentity | null, string>> {
+export function getCurrentUser(
+  userId: string | undefined,
+): Promise<Result<UserIdentity | null, string>> {
   const personaUrl = process.env.PERSONA_URL;
   const atlasKey = process.env.FRIDAY_KEY;
 
-  // Remote mode: when PERSONA_URL is set (unless forced local)
   if (personaUrl && atlasKey && process.env.USER_IDENTITY_ADAPTER !== "local") {
     return fetchFromPersonaService(personaUrl, atlasKey);
   }
 
-  // Local mode: extract from JWT and merge saved overrides
-  const base = extractFromJwt(atlasKey);
-  if (!base.ok || !base.data) return base;
-
-  return success(await mergeLocalOverrides(base.data));
+  if (!userId) return Promise.resolve(success(null));
+  return buildLocalIdentity(userId);
 }
 
-/**
- * Get just the user ID, cached for efficiency.
- * Use this for analytics where only the ID is needed.
- * Only caches successful results - errors allow retry.
- */
-export async function getCurrentUserId(): Promise<string | undefined> {
-  if (userIdResolved) {
-    return cachedUserId ?? undefined;
-  }
+async function buildLocalIdentity(userId: string): Promise<Result<UserIdentity | null, string>> {
+  const stored = await UserStorage.getUser(userId);
+  if (!stored.ok) return fail(stored.error);
 
-  const result = await getCurrentUser();
-  if (result.ok) {
-    userIdResolved = true;
-    cachedUserId = result.data?.id ?? null;
-  }
-  return result.ok ? (result.data?.id ?? undefined) : undefined;
-}
+  const now = new Date().toISOString();
+  // Bare-bones identity for users that exist in SESSIONS but haven't
+  // populated `UserStorage` yet (the page-driven onboarding flow lands
+  // their profile fields). `email`/`full_name` schema fields require
+  // non-empty strings, so fall back to a deterministic placeholder
+  // until the user fills them in.
+  const record = stored.data;
+  const identity = record?.identity ?? { nameStatus: "unknown" as const };
+  const name = identity.name ?? userId;
+  const email = identity.email ?? `${userId}@local.friday`;
 
-/**
- * Clear the cached userId so the next `getCurrentUserId()` reads fresh
- * from FRIDAY_KEY. Daemon startup calls this after rewriting the
- * local-mode JWT to embed the canonical UserStorage nanoid — without
- * an invalidation, the cache could capture the pre-rewrite placeholder
- * (`local-user`) for the rest of the daemon's lifetime.
- */
-export function invalidateUserIdCache(): void {
-  userIdResolved = false;
-  cachedUserId = null;
-}
-
-function extractFromJwt(atlasKey: string | undefined): Result<UserIdentity | null, string> {
-  if (!atlasKey) return success(null);
-
-  try {
-    const payload = decodeJwtPayload(atlasKey) as
-      | { email?: string; sub?: string; user_metadata?: { tempest_user_id?: string } }
-      | undefined;
-    if (!payload?.email) return success(null);
-
-    const name = payload.email.split("@")[0] ?? "unknown";
-    const now = new Date().toISOString();
-
-    return success({
-      id: payload.user_metadata?.tempest_user_id ?? payload.sub ?? name,
-      full_name: name,
-      email: payload.email,
-      created_at: now,
-      updated_at: now,
-      display_name: name,
-      profile_photo: null,
-      usage: 0,
-    });
-  } catch (error) {
-    logger.error("Failed to decode FRIDAY_KEY JWT", { error: stringifyError(error) });
-    return fail(`Failed to decode JWT: ${stringifyError(error)}`);
-  }
+  const base: UserIdentity = {
+    id: userId,
+    full_name: name,
+    email,
+    created_at: record?.createdAt ?? now,
+    updated_at: record?.updatedAt ?? now,
+    display_name: name,
+    profile_photo: null,
+    usage: 0,
+  };
+  return success(await mergeLocalOverrides(base));
 }
 
 async function fetchFromPersonaService(
@@ -150,12 +117,14 @@ export interface UpdateProfileFields {
 }
 
 /**
- * Update user profile via configured source.
+ * Update user profile.
  *
- * - Remote (PERSONA_URL set): PATCHes persona service
- * - Local (fallback): Updates local JSON file
+ * - Remote (PERSONA_URL set): PATCHes persona service.
+ * - Local: writes to ~/.atlas/profile.json overrides and returns the
+ *   merged identity.
  */
 export function updateCurrentUser(
+  userId: string | undefined,
   fields: UpdateProfileFields,
 ): Promise<Result<UserIdentity | null, string>> {
   const personaUrl = process.env.PERSONA_URL;
@@ -165,7 +134,7 @@ export function updateCurrentUser(
     return patchPersonaService(personaUrl, atlasKey, fields);
   }
 
-  return updateLocalProfile(atlasKey, fields);
+  return updateLocalProfile(userId, fields);
 }
 
 async function patchPersonaService(
@@ -181,7 +150,6 @@ async function patchPersonaService(
     if (fields.full_name !== undefined) body.full_name = fields.full_name;
     if (fields.display_name !== undefined) body.display_name = fields.display_name;
     if (fields.profile_photo !== undefined) {
-      // null -> clear photo (send empty string to persona), string -> set URL
       body.profile_photo = fields.profile_photo ?? "";
     }
 
@@ -258,25 +226,19 @@ async function mergeLocalOverrides(base: UserIdentity): Promise<UserIdentity> {
 }
 
 async function updateLocalProfile(
-  atlasKey: string | undefined,
+  userId: string | undefined,
   fields: UpdateProfileFields,
 ): Promise<Result<UserIdentity | null, string>> {
-  // Get base identity from JWT
-  const base = extractFromJwt(atlasKey);
-  if (!base.ok || !base.data) return base;
+  if (!userId) return success(null);
 
-  // Read existing overrides
   const overrides = await readLocalProfile();
-
-  // Apply new fields
   if (fields.full_name !== undefined) overrides.full_name = fields.full_name;
   if (fields.display_name !== undefined) overrides.display_name = fields.display_name;
   if (fields.profile_photo !== undefined) overrides.profile_photo = fields.profile_photo;
 
-  // Save overrides
   const dir = getFridayHome();
   await mkdir(dir, { recursive: true });
   await writeFile(getLocalProfilePath(), JSON.stringify(overrides, null, 2));
 
-  return success(await mergeLocalOverrides(base.data));
+  return buildLocalIdentity(userId);
 }

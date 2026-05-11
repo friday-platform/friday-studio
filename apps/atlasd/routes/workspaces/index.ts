@@ -63,7 +63,6 @@ import {
   wireCommunicator,
 } from "../../src/services/communicator-wiring.ts";
 import { awaitSignalCompletion, publishSignalCancellation } from "../../src/signal-stream.ts";
-import { getCurrentUser } from "../me/adapter.ts";
 import {
   buildWorkspaceBundleBytes,
   isOnDiskWorkspace,
@@ -597,9 +596,7 @@ const workspacesRoutes = daemonFactory
 
         await workspaceAdapter.writeWorkspaceFiles(workspacePath, yamlConfig, { ephemeral });
 
-        // Get current user for metadata
-        const userResult = await getCurrentUser();
-        const userId = userResult.ok ? userResult.data?.id : undefined;
+        const userId = c.get("userId");
 
         // Register workspace with manager
         const ctx = c.get("app");
@@ -669,9 +666,7 @@ const workspacesRoutes = daemonFactory
     try {
       const { path, name, description } = c.req.valid("json");
 
-      // Get current user for metadata
-      const userResult = await getCurrentUser();
-      const userId = userResult.ok ? userResult.data?.id : undefined;
+      const userId = c.get("userId");
 
       const manager = ctx.daemon.getWorkspaceManager();
 
