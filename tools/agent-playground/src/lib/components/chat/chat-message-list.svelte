@@ -794,14 +794,29 @@
             <!-- Non-fatal info chip: an MCP integration's credential is dead so
                  its tools were skipped this session. The session still ran;
                  the user just needs to reconnect the integration to use those
-                 tools again. -->
-            <div class="message-notice" role="status">
+                 tools again.
+                 `credential_temporarily_unavailable` is a transient-refresh
+                 variant — the elicitation chip provides the Retry button so
+                 the chip itself stays Reconnect-free. -->
+            <div
+              class="message-notice"
+              role="status"
+              data-integration-disconnected="true"
+            >
               <span class="message-notice-icon" aria-hidden="true">⚠</span>
               <div class="message-notice-body">
                 {#each message.disconnectedIntegrations as integration (integration.serverId)}
-                  <div class="message-notice-row">
-                    <strong>{integration.provider ?? integration.serverId}</strong>
-                    is disconnected — reconnect in Settings → Connections to use those tools.
+                  <div
+                    class="message-notice-row"
+                    data-testid={`integration-chip-${integration.kind}`}
+                  >
+                    {#if integration.kind === "credential_temporarily_unavailable"}
+                      Friday couldn't reach
+                      <strong>{integration.provider ?? integration.serverId}</strong>. Retry?
+                    {:else}
+                      <strong>{integration.provider ?? integration.serverId}</strong>
+                      is disconnected — reconnect in Settings → Connections to use those tools.
+                    {/if}
                   </div>
                 {/each}
               </div>
