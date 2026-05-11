@@ -216,6 +216,17 @@
       : undefined,
   );
 
+  // text/markdown gets the same direct-link treatment as tabular mimes —
+  // the dispatcher redirects there too, but linking from the Open button
+  // skips the round-trip. Without this, Open falls through to `serveUrl`
+  // (the raw /content endpoint) which the daemon serves with attachment
+  // disposition — i.e. a download, not a viewer.
+  const markdownRouteUrl = $derived(
+    baseMime === "text/markdown" && exportCtx === undefined
+      ? `/artifacts/${encodeURIComponent(artifactId)}/markdown`
+      : undefined,
+  );
+
   // Fetch raw text for tabular artifacts when the metadata endpoint
   // didn't return `contents` inline. The /content endpoint is content-
   // addressed + cacheable so re-fetching is cheap; we only do it when
@@ -323,6 +334,19 @@
             target="_blank"
             rel="noopener noreferrer"
             title="Open table in new tab"
+          >
+            Open
+          </a>
+        {:else if markdownRouteUrl}
+          <!-- Markdown artifacts open in the dedicated /markdown
+               viewer (prose render + inline TableView for embedded
+               GFM tables) in a new tab. -->
+          <a
+            class="open-btn"
+            href={markdownRouteUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Open markdown in new tab"
           >
             Open
           </a>
