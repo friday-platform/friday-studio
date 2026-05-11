@@ -1,7 +1,8 @@
 /**
  * Integration test for `/api/me/stream`. Covers the per-event authz
- * filter (workspace the user owns vs one they don't) and the
- * discriminated-union frame shape.
+ * filter (workspaces the user is a member of vs ones they aren't),
+ * the discriminated-union frame shape, and live membership updates
+ * propagating via the WORKSPACE_MEMBERS KV watch.
  *
  * Skips heartbeat timing — the interval is a guarded `setInterval`
  * that fires on its own clock; covering it would need fake timers
@@ -10,16 +11,17 @@
  */
 
 import { startNatsTestServer, type TestNatsServer } from "@atlas/core/test-utils/nats-test-server";
+import {
+  ensureWorkspaceMembersKVBucket,
+  initWorkspaceMemberStorage,
+  resetWorkspaceMemberStorageForTests,
+  WorkspaceMemberStorage,
+} from "@atlas/core/workspace-members/storage";
 import { Hono } from "hono";
 import { connect, type NatsConnection } from "nats";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { AppContext, AppVariables } from "../../src/factory.ts";
 import { meStreamRoutes } from "./stream.ts";
-
-interface WorkspaceLike {
-  id: string;
-  metadata?: { createdBy?: string };
-}
 
 let server: TestNatsServer;
 let nc: NatsConnection;
@@ -27,28 +29,38 @@ let nc: NatsConnection;
 beforeAll(async () => {
   server = await startNatsTestServer();
   nc = await connect({ servers: server.url });
+  initWorkspaceMemberStorage(nc);
+  await ensureWorkspaceMembersKVBucket(nc);
 }, 30_000);
 
 afterAll(async () => {
   await nc.drain();
   await server.stop();
+  resetWorkspaceMemberStorageForTests();
 });
 
 const enc = new TextEncoder();
 
-function makeApp(opts: { userId: string; workspaces: WorkspaceLike[] }): Hono<AppVariables> {
-  const ctx = {
-    daemon: { getNatsConnection: () => nc },
-    getWorkspaceManager: () =>
-      ({
-        list: () => Promise.resolve(opts.workspaces),
-      }) as unknown as AppContext["getWorkspaceManager"] extends () => infer R ? R : never,
-  } as unknown as AppContext;
+/** Distinct userId per test so KV state doesn't bleed across cases. */
+const uid = () => `u_${crypto.randomUUID().slice(0, 8)}`;
+
+async function grantMembership(userId: string, wsId: string): Promise<void> {
+  const res = await WorkspaceMemberStorage.put({
+    userId,
+    wsId,
+    role: "owner",
+    addedAt: new Date().toISOString(),
+  });
+  if (!res.ok) throw new Error(`grantMembership failed: ${res.error}`);
+}
+
+function makeApp(userId: string): Hono<AppVariables> {
+  const ctx = { daemon: { getNatsConnection: () => nc } } as unknown as AppContext;
 
   return new Hono<AppVariables>()
     .use("*", async (c, next) => {
       c.set("app", ctx);
-      c.set("userId", opts.userId);
+      c.set("userId", userId);
       await next();
     })
     .route("/", meStreamRoutes);
@@ -95,12 +107,12 @@ async function collectFrames(
 }
 
 describe("GET /api/me/stream", () => {
-  it("emits a tagged frame for an elicitation in an accessible workspace", async () => {
-    const app = makeApp({
-      userId: "user-A",
-      workspaces: [{ id: "ws-mine", metadata: { createdBy: "user-A" } }],
-    });
+  it("emits a tagged frame for an elicitation in a workspace the user is a member of", async () => {
+    const userId = uid();
+    const wsId = `ws_${crypto.randomUUID().slice(0, 8)}`;
+    await grantMembership(userId, wsId);
 
+    const app = makeApp(userId);
     const res = await app.request("/stream");
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toBe("text/event-stream");
@@ -110,8 +122,8 @@ describe("GET /api/me/stream", () => {
     // loop by the time the test microtask yields — give it a beat.
     await new Promise((r) => setTimeout(r, 50));
     nc.publish(
-      "elicitations.ws-mine.sess-1.elic-1",
-      enc.encode(JSON.stringify({ id: "elic-1", workspaceId: "ws-mine", kind: "text" })),
+      `elicitations.${wsId}.sess-1.elic-1`,
+      enc.encode(JSON.stringify({ id: "elic-1", workspaceId: wsId, kind: "text" })),
     );
 
     const frames = await collectFrames(res, (f) => f.length >= 1, 1500);
@@ -123,49 +135,80 @@ describe("GET /api/me/stream", () => {
       payload?: unknown;
     };
     expect(parsed.kind).toBe("elicitation");
-    expect(parsed.workspaceId).toBe("ws-mine");
-    expect(parsed.subject).toBe("elicitations.ws-mine.sess-1.elic-1");
+    expect(parsed.workspaceId).toBe(wsId);
+    expect(parsed.subject).toBe(`elicitations.${wsId}.sess-1.elic-1`);
     expect(parsed.payload).toMatchObject({ id: "elic-1", kind: "text" });
   });
 
-  it("drops events from a workspace the user cannot access", async () => {
-    const app = makeApp({
-      userId: "user-A",
-      workspaces: [{ id: "ws-mine", metadata: { createdBy: "user-A" } }],
-    });
+  it("drops events from a workspace the user is not a member of", async () => {
+    const userId = uid();
+    const mine = `ws_${crypto.randomUUID().slice(0, 8)}`;
+    const foreign = `ws_${crypto.randomUUID().slice(0, 8)}`;
+    await grantMembership(userId, mine);
 
+    const app = makeApp(userId);
     const res = await app.request("/stream");
     expect(res.status).toBe(200);
 
     await new Promise((r) => setTimeout(r, 50));
     // Foreign workspace → must NOT reach the wire.
     nc.publish(
-      "elicitations.ws-other.sess-1.elic-2",
-      enc.encode(JSON.stringify({ id: "elic-2", workspaceId: "ws-other" })),
+      `elicitations.${foreign}.sess-1.elic-2`,
+      enc.encode(JSON.stringify({ id: "elic-2", workspaceId: foreign })),
     );
     // Own workspace → MUST reach the wire. We use this to bound the
     // test instead of waiting for the timeout — once we see the own
-    // frame, we know the daemon has finished processing the foreign
-    // one too (Core NATS dispatches serially per subscription).
+    // frame, the daemon has dispatched the foreign one too (Core
+    // NATS serializes per-subscription delivery).
     nc.publish(
-      "elicitations.ws-mine.sess-1.elic-3",
-      enc.encode(JSON.stringify({ id: "elic-3", workspaceId: "ws-mine" })),
+      `elicitations.${mine}.sess-1.elic-3`,
+      enc.encode(JSON.stringify({ id: "elic-3", workspaceId: mine })),
     );
 
     const frames = await collectFrames(res, (f) => f.length >= 1, 1500);
     expect(frames.length).toBe(1);
-    const parsed = JSON.parse(frames[0] ?? "{}") as {
-      kind?: string;
-      workspaceId?: string;
-      subject?: string;
-      payload?: unknown;
-    };
-    expect(parsed.workspaceId).toBe("ws-mine");
+    const parsed = JSON.parse(frames[0] ?? "{}") as { workspaceId?: string };
+    expect(parsed.workspaceId).toBe(mine);
+  });
+
+  it("propagates a newly-stamped membership row live (no reconnect)", async () => {
+    const userId = uid();
+    const futureWs = `ws_${crypto.randomUUID().slice(0, 8)}`;
+    // No initial membership — the user starts with an empty set.
+
+    const app = makeApp(userId);
+    const res = await app.request("/stream");
+    expect(res.status).toBe(200);
+
+    // Let the handshake settle.
+    await new Promise((r) => setTimeout(r, 50));
+
+    // An event published before membership lands MUST be dropped.
+    nc.publish(
+      `elicitations.${futureWs}.sess-pre.elic-pre`,
+      enc.encode(JSON.stringify({ id: "elic-pre" })),
+    );
+
+    // Grant membership while the stream is open.
+    await grantMembership(userId, futureWs);
+
+    // Give the KV watch a moment to deliver the PUT into the
+    // accessible set.
+    await new Promise((r) => setTimeout(r, 150));
+
+    nc.publish(
+      `elicitations.${futureWs}.sess-post.elic-post`,
+      enc.encode(JSON.stringify({ id: "elic-post" })),
+    );
+
+    const frames = await collectFrames(res, (f) => f.length >= 1, 2000);
+    expect(frames.length).toBe(1);
+    const parsed = JSON.parse(frames[0] ?? "{}") as { payload?: { id?: string } };
+    expect(parsed.payload?.id).toBe("elic-post");
   });
 
   it("emits instance events with no workspaceId scoping", async () => {
-    const app = makeApp({ userId: "user-A", workspaces: [] });
-
+    const app = makeApp(uid());
     const res = await app.request("/stream");
     expect(res.status).toBe(200);
 
@@ -177,24 +220,13 @@ describe("GET /api/me/stream", () => {
 
     const frames = await collectFrames(res, (f) => f.length >= 1, 1500);
     expect(frames.length).toBeGreaterThanOrEqual(1);
-    const parsed = JSON.parse(frames[0] ?? "{}") as {
-      kind?: string;
-      workspaceId?: string;
-      subject?: string;
-      payload?: unknown;
-    };
+    const parsed = JSON.parse(frames[0] ?? "{}") as { kind?: string; workspaceId?: string };
     expect(parsed.kind).toBe("instance");
     expect(parsed.workspaceId).toBeUndefined();
   });
 
   it("401s when no userId is set on the context", async () => {
-    const ctx = {
-      daemon: { getNatsConnection: () => nc },
-      getWorkspaceManager: () =>
-        ({
-          list: () => Promise.resolve([]),
-        }) as unknown as AppContext["getWorkspaceManager"] extends () => infer R ? R : never,
-    } as unknown as AppContext;
+    const ctx = { daemon: { getNatsConnection: () => nc } } as unknown as AppContext;
     const app = new Hono<AppVariables>()
       .use("*", async (c, next) => {
         c.set("app", ctx);

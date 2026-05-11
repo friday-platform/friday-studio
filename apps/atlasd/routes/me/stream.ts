@@ -19,14 +19,11 @@
  * `ElicitationSchema`) on the worker side.
  *
  * Authz: per-event filter against the user's accessible-workspaces
- * set. The set is built once at stream start from
- * `WorkspaceManager.list()` filtered by `metadata.createdBy ===
- * ctx.userId` and refreshed on each NATS frame that announces a
- * workspace lifecycle change (`events.<wsid>.workspace.created` etc.).
- * Events whose subject implies a workspaceId not in the set are
- * dropped before reaching the wire — the cross-workspace leak the
- * old `/elicitations/stream/global` route had (it sanitized to a
- * summary but still emitted every workspace) is closed here.
+ * set. Initial set is a prefix-scan of `WORKSPACE_MEMBERS` keyed
+ * `<userId>.<wsId>`. A KV watch on that same prefix runs for the
+ * connection's lifetime — membership adds and removals propagate
+ * live, no reconnect required. Events whose subject implies a
+ * workspaceId not in the set are dropped before reaching the wire.
  *
  * Heartbeat: `: keepalive\n\n` every 15s so intermediate proxies
  * don't time the connection out. SSE comments (`:` prefix) are
@@ -41,6 +38,7 @@
  */
 
 import { daemonFactory } from "../../src/factory.ts";
+import { openAccessibleWorkspaceWatch } from "../../src/workspace-authz.ts";
 
 /** Subjects the user-firehose subscribes to. Order doesn't matter. */
 const SUBJECTS = [
@@ -100,17 +98,12 @@ export const meStreamRoutes = daemonFactory.createApp().get("/stream", async (c)
   const nc = ctx.daemon.getNatsConnection();
   if (!nc) return c.json({ error: "NATS connection not ready" }, 503);
 
-  // Build accessible-workspaces set. Local-mode: every workspace the
-  // user owns. Single-user-local makes this list ≤100 in practice —
-  // a single `list()` call is fine. Multi-tenant cloud will eventually
-  // want a KV-watched set so newly-shared workspaces appear without
-  // reconnecting; today's owner-only model doesn't need that.
-  const accessible = new Set<string>();
-  const manager = ctx.getWorkspaceManager();
-  const allWorkspaces = await manager.list();
-  for (const ws of allWorkspaces) {
-    if (ws.metadata?.createdBy === userId) accessible.add(ws.id);
-  }
+  // Accessible-workspaces set, fused snapshot-and-watch in one
+  // subscription. The returned set is fully populated by the time
+  // this resolves and keeps mutating live as membership rows are
+  // added/removed during the connection's lifetime — no reconnect
+  // required to see a newly-shared workspace.
+  const { accessible, stop: stopMembershipWatch } = await openAccessibleWorkspaceWatch(nc, userId);
 
   // Subscribe to every subject under one connection — one subscription
   // object per subject pattern, sharing the daemon's NATS connection.
@@ -135,6 +128,7 @@ export const meStreamRoutes = daemonFactory.createApp().get("/stream", async (c)
             // already gone
           }
         }
+        void stopMembershipWatch();
         try {
           controller.close();
         } catch {
@@ -211,6 +205,7 @@ export const meStreamRoutes = daemonFactory.createApp().get("/stream", async (c)
           // already gone
         }
       }
+      void stopMembershipWatch();
     },
   });
 
