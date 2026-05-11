@@ -13,6 +13,7 @@ const mockValidatePhoto = vi.hoisted(() => vi.fn());
 const mockSavePhoto = vi.hoisted(() => vi.fn());
 const mockGetPhoto = vi.hoisted(() => vi.fn());
 const mockDeletePhoto = vi.hoisted(() => vi.fn());
+const mockUserStorage = vi.hoisted(() => ({ getUser: vi.fn(), markOnboardingComplete: vi.fn() }));
 
 vi.mock("./adapter.ts", () => ({
   getCurrentUser: mockGetCurrentUser,
@@ -24,6 +25,11 @@ vi.mock("./photo-storage.ts", () => ({
   savePhoto: mockSavePhoto,
   getPhoto: mockGetPhoto,
   deletePhoto: mockDeletePhoto,
+}));
+
+vi.mock("@atlas/core/users/storage", () => ({
+  UserStorage: mockUserStorage,
+  ONBOARDING_VERSION: 1,
 }));
 
 // Import after mocks
@@ -210,5 +216,134 @@ describe("GET /photo", () => {
     const res = await testApp.request("/photo");
 
     expect(res.status).toBe(503);
+  });
+});
+
+describe("GET /onboarding", () => {
+  it("returns completed=false with empty requiredFields when the user record is unset (local mode default)", async () => {
+    mockUserStorage.getUser.mockResolvedValue({ ok: true, data: null });
+
+    const res = await testApp.request("/onboarding");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      version: number;
+      completed: boolean;
+      requiredFields: string[];
+      missingRequired: string[];
+    };
+    expect(body.version).toBe(1);
+    expect(body.completed).toBe(false);
+    expect(body.requiredFields).toEqual([]);
+    expect(body.missingRequired).toEqual([]);
+  });
+
+  it("returns completed=true when the user record matches the current ONBOARDING_VERSION", async () => {
+    mockUserStorage.getUser.mockResolvedValue({
+      ok: true,
+      data: {
+        userId: "test-user-123",
+        identity: { nameStatus: "provided", name: "T", email: "t@example.com" },
+        preferences: {},
+        onboarding: { version: 1, completedAt: "2026-05-11T00:00:00.000Z" },
+        createdAt: "2026-05-11T00:00:00.000Z",
+        updatedAt: "2026-05-11T00:00:00.000Z",
+      },
+    });
+
+    const res = await testApp.request("/onboarding");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { completed: boolean };
+    expect(body.completed).toBe(true);
+  });
+
+  it("returns 503 when user identity unavailable", async () => {
+    currentUserId = undefined;
+
+    const res = await testApp.request("/onboarding");
+    expect(res.status).toBe(503);
+  });
+});
+
+describe("POST /onboarding/complete", () => {
+  it("marks onboarding complete at the current version", async () => {
+    mockUserStorage.markOnboardingComplete.mockResolvedValue({
+      ok: true,
+      data: {
+        userId: "test-user-123",
+        identity: { nameStatus: "provided", name: "T" },
+        preferences: {},
+        onboarding: { version: 1, completedAt: "2026-05-11T00:00:00.000Z" },
+        createdAt: "2026-05-11T00:00:00.000Z",
+        updatedAt: "2026-05-11T00:00:00.000Z",
+      },
+    });
+
+    const res = await testApp.request("/onboarding/complete", { method: "POST" });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { version: number; completed: boolean };
+    expect(body.version).toBe(1);
+    expect(body.completed).toBe(true);
+    expect(mockUserStorage.markOnboardingComplete).toHaveBeenCalledWith("test-user-123", 1);
+  });
+
+  it("propagates 503 when the storage write fails", async () => {
+    mockUserStorage.markOnboardingComplete.mockResolvedValue({ ok: false, error: "kv down" });
+
+    const res = await testApp.request("/onboarding/complete", { method: "POST" });
+    expect(res.status).toBe(503);
+  });
+
+  it("returns 503 when user identity unavailable", async () => {
+    currentUserId = undefined;
+
+    const res = await testApp.request("/onboarding/complete", { method: "POST" });
+    expect(res.status).toBe(503);
+  });
+});
+
+describe("PATCH / onboarding fields (email / timezone / locale)", () => {
+  it("accepts and forwards the new identity fields", async () => {
+    mockUpdateCurrentUser.mockResolvedValue({
+      ok: true,
+      data: { ...fakeUser, email: "new@example.com" },
+    });
+
+    const res = await testApp.request("/", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: "new@example.com",
+        timezone: "America/New_York",
+        locale: "en-US",
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(mockUpdateCurrentUser).toHaveBeenCalledWith("test-user-123", {
+      full_name: undefined,
+      display_name: undefined,
+      profile_photo: undefined,
+      email: "new@example.com",
+      timezone: "America/New_York",
+      locale: "en-US",
+    });
+  });
+
+  it("rejects malformed email", async () => {
+    const res = await testApp.request("/", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "not-an-email" }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects malformed locale tag", async () => {
+    const res = await testApp.request("/", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ locale: "not a locale!" }),
+    });
+    expect(res.status).toBe(400);
   });
 });

@@ -1,3 +1,5 @@
+import process from "node:process";
+import { ONBOARDING_VERSION, UserStorage } from "@atlas/core/users/storage";
 import type { Context } from "hono";
 import { z } from "zod";
 import { daemonFactory } from "../../src/factory.ts";
@@ -15,7 +17,32 @@ const UpdateMeSchema = z.object({
   full_name: z.string().min(1).optional(),
   display_name: z.string().optional(),
   profile_photo: z.string().nullable().optional(),
+  email: z.email().optional(),
+  // IANA timezone strings ("America/New_York", "Europe/Berlin") have a
+  // shape that's painful to schema; we trust browser-provided values
+  // from `Intl.DateTimeFormat().resolvedOptions().timeZone`. Minimal
+  // sanity gate: non-empty, no whitespace.
+  timezone: z.string().min(1).regex(/^\S+$/).optional(),
+  // BCP-47 locale tag — same trust-the-browser stance via
+  // `navigator.language`. Loose-pattern guard against junk input.
+  locale: z
+    .string()
+    .min(2)
+    .max(35)
+    .regex(/^[A-Za-z0-9-]+$/)
+    .optional(),
 });
+
+/**
+ * Required-fields contract: which keys the playground onboarding flow
+ * MUST collect before letting the user dismiss the welcome page.
+ * Local mode is permissive (the user already has a working session);
+ * cloud and other future deployments tighten this list.
+ */
+function requiredOnboardingFields(): string[] {
+  const env = process.env.FRIDAY_ENV ?? "dev";
+  return env === "dev" ? [] : ["email"];
+}
 
 /**
  * /api/me - user identity and profile management.
@@ -129,6 +156,9 @@ const meRoutes = daemonFactory
       full_name: fields.full_name,
       display_name: fields.display_name,
       profile_photo: fields.profile_photo,
+      email: fields.email,
+      timezone: fields.timezone,
+      locale: fields.locale,
     });
 
     if (!result.ok) {
@@ -164,6 +194,92 @@ const meRoutes = daemonFactory
       "Content-Type": photo.contentType,
       "Cache-Control": "private, max-age=31536000, immutable",
     });
+  })
+  /**
+   * GET /api/me/onboarding
+   *
+   * Returns the onboarding state the playground app-shell gates on:
+   *   - `version`           — the onboarding-flow version the daemon
+   *                           expects. Bumped when the wizard adds a
+   *                           new step.
+   *   - `completed`         — true iff the user has marked completion
+   *                           at the current version.
+   *   - `requiredFields`    — fields that MUST be populated before the
+   *                           user can dismiss the welcome page.
+   *                           Empty in local mode; `["email"]` in
+   *                           cloud. The wizard surfaces a "skip"
+   *                           affordance only when the array is empty.
+   *   - `missingRequired`   — subset of `requiredFields` that are
+   *                           still empty on the user record.
+   */
+  .get("/onboarding", async (c) => {
+    const userId = c.get("userId");
+    if (!userId) {
+      return c.json({ error: "User identity unavailable" }, 503);
+    }
+
+    const stored = await UserStorage.getUser(userId);
+    if (!stored.ok) return c.json({ error: stored.error }, 503);
+
+    const record = stored.data;
+    const completed = (record?.onboarding.version ?? 0) >= ONBOARDING_VERSION;
+    const required = requiredOnboardingFields();
+    const missingRequired = required.filter((field) => {
+      // The identity record can hold `email`/`timezone`/`locale`.
+      // Any other field in `required` would be a schema drift caught
+      // at review time — we narrow to known keys here.
+      if (field === "email") return !record?.identity.email;
+      if (field === "timezone") return !record?.identity.timezone;
+      if (field === "locale") return !record?.identity.locale;
+      return true;
+    });
+
+    return c.json({
+      version: ONBOARDING_VERSION,
+      completed,
+      requiredFields: required,
+      missingRequired,
+    });
+  })
+  /**
+   * POST /api/me/onboarding/complete
+   *
+   * Mark onboarding done at the current ONBOARDING_VERSION. Idempotent
+   * — subsequent calls with the same version are no-ops at the storage
+   * layer. The playground hits this once at the end of the wizard
+   * (and when the user clicks "Skip" if `requiredFields` is empty).
+   */
+  .post("/onboarding/complete", async (c) => {
+    const userId = c.get("userId");
+    if (!userId) {
+      return c.json({ error: "User identity unavailable" }, 503);
+    }
+
+    // Enforce the required-fields contract on the server too — the
+    // wizard hides the skip button when fields are missing, but a
+    // direct POST shouldn't be able to bypass that gate.
+    const required = requiredOnboardingFields();
+    if (required.length > 0) {
+      const stored = await UserStorage.getUser(userId);
+      if (!stored.ok) return c.json({ error: stored.error }, 503);
+      const identity = stored.data?.identity;
+      const missing = required.filter((field) => {
+        if (field === "email") return !identity?.email;
+        if (field === "timezone") return !identity?.timezone;
+        if (field === "locale") return !identity?.locale;
+        return true;
+      });
+      if (missing.length > 0) {
+        return c.json(
+          { error: "Required onboarding fields are missing", missingRequired: missing },
+          400,
+        );
+      }
+    }
+
+    const result = await UserStorage.markOnboardingComplete(userId, ONBOARDING_VERSION);
+    if (!result.ok) return c.json({ error: result.error }, 503);
+    return c.json({ version: ONBOARDING_VERSION, completed: true });
   });
 
 export { meRoutes };

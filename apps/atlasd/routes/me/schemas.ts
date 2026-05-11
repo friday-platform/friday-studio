@@ -20,6 +20,14 @@ export const UserIdentitySchema = z.object({
     .string()
     .nullable()
     .meta({ description: "Profile photo URL or relative path, null if not set" }),
+  timezone: z
+    .string()
+    .nullable()
+    .meta({ description: "IANA timezone (e.g. America/New_York), null if not set" }),
+  locale: z
+    .string()
+    .nullable()
+    .meta({ description: "BCP-47 locale tag (e.g. en-US), null if not set" }),
   usage: z
     .number()
     .min(0)

@@ -58,6 +58,8 @@ async function buildLocalIdentity(userId: string): Promise<Result<UserIdentity |
     updated_at: record?.updatedAt ?? now,
     display_name: name,
     profile_photo: null,
+    timezone: identity.timezone ?? null,
+    locale: identity.locale ?? null,
     usage: 0,
   };
   return success(await mergeLocalOverrides(base));
@@ -114,6 +116,9 @@ export interface UpdateProfileFields {
   full_name?: string;
   display_name?: string;
   profile_photo?: string | null;
+  email?: string;
+  timezone?: string;
+  locale?: string;
 }
 
 /**
@@ -152,6 +157,9 @@ async function patchPersonaService(
     if (fields.profile_photo !== undefined) {
       body.profile_photo = fields.profile_photo ?? "";
     }
+    if (fields.email !== undefined) body.email = fields.email;
+    if (fields.timezone !== undefined) body.timezone = fields.timezone;
+    if (fields.locale !== undefined) body.locale = fields.locale;
 
     const response = await fetch(`${baseUrl.replace(/\/+$/, "")}/api/me`, {
       method: "PATCH",
@@ -231,6 +239,12 @@ async function updateLocalProfile(
 ): Promise<Result<UserIdentity | null, string>> {
   if (!userId) return success(null);
 
+  // profile_photo + display_name + full_name live in the profile.json
+  // overrides file (cheap to mutate, easy to inspect). email/timezone/
+  // locale live in the canonical UserStorage record — they're the
+  // structured identity fields that drive prompt context, scheduling,
+  // and (eventually) cloud auth, so they belong with the bucket-stored
+  // identity, not with the local-only override.
   const overrides = await readLocalProfile();
   if (fields.full_name !== undefined) overrides.full_name = fields.full_name;
   if (fields.display_name !== undefined) overrides.display_name = fields.display_name;
@@ -239,6 +253,28 @@ async function updateLocalProfile(
   const dir = getFridayHome();
   await mkdir(dir, { recursive: true });
   await writeFile(getLocalProfilePath(), JSON.stringify(overrides, null, 2));
+
+  // Patch identity fields that live on the User record. `full_name`
+  // flows here too so the canonical `identity.name` stays in sync
+  // with the playground UI — the override copy is kept for the
+  // local-profile.json contract documented above.
+  if (
+    fields.full_name !== undefined ||
+    fields.email !== undefined ||
+    fields.timezone !== undefined ||
+    fields.locale !== undefined
+  ) {
+    const patch: Parameters<typeof UserStorage.setUserIdentity>[1] = {};
+    if (fields.full_name !== undefined) {
+      patch.name = fields.full_name;
+      patch.nameStatus = "provided";
+    }
+    if (fields.email !== undefined) patch.email = fields.email;
+    if (fields.timezone !== undefined) patch.timezone = fields.timezone;
+    if (fields.locale !== undefined) patch.locale = fields.locale;
+    const result = await UserStorage.setUserIdentity(userId, patch);
+    if (!result.ok) return fail(result.error);
+  }
 
   return buildLocalIdentity(userId);
 }
