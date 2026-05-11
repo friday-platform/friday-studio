@@ -71,6 +71,7 @@ import { jobsRoutes } from "../routes/jobs.ts";
 import { linkRoutes } from "../routes/link.ts";
 import { mcpRegistryRouter } from "../routes/mcp-registry.ts";
 import { meRoutes } from "../routes/me/index.ts";
+import { meStreamRoutes } from "../routes/me/stream.ts";
 import { memoryNarrativeRoutes } from "../routes/memory/index.ts";
 import reportRoutes from "../routes/report.ts";
 // O5 (review-2): scratchpad route deleted alongside the rest of the
@@ -1374,6 +1375,10 @@ export class AtlasDaemon {
     this.app.route("/api/link", linkRoutes);
     this.app.route("/api/mcp-registry", mcpRegistryRouter);
     this.app.route("/api/me", meRoutes);
+    // Mount the user-firehose under the same prefix. Kept as its own
+    // route module because the long-lived SSE handling is distinct
+    // from the request/response shape of the rest of /api/me.
+    this.app.route("/api/me", meStreamRoutes);
     this.app.route("/api/jobs", jobsRoutes);
     this.app.route("/api/skills", skillsRoutes);
     this.app.route("/api/report", reportRoutes);
