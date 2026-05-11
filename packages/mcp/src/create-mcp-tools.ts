@@ -19,6 +19,7 @@ import type { MCPServerConfig, MCPServerToolFilter } from "@atlas/config";
 import {
   LinkCredentialExpiredError,
   LinkCredentialNotFoundError,
+  LinkCredentialUnavailableError,
   NoDefaultCredentialError,
   resolveEnvValues,
 } from "@atlas/core/mcp-registry/credential-resolver";
@@ -48,6 +49,7 @@ export type DisconnectedIntegrationKind =
   | "credential_not_found"
   | "credential_expired"
   | "credential_refresh_failed"
+  | "credential_temporarily_unavailable"
   | "no_default_credential";
 
 /** A skipped MCP server whose credentials are unusable. Carries enough info for the UI to prompt a reconnect. */
@@ -311,11 +313,29 @@ export async function createMCPTools(
  * names the integration the user recognises (matches the prior re-throw
  * enrichment).
  */
-function buildDisconnectedEntry(
-  error: LinkCredentialNotFoundError | LinkCredentialExpiredError | NoDefaultCredentialError,
+export function buildDisconnectedEntry(
+  error:
+    | LinkCredentialNotFoundError
+    | LinkCredentialExpiredError
+    | LinkCredentialUnavailableError
+    | NoDefaultCredentialError,
   serverId: string,
   config: MCPServerConfig,
 ): DisconnectedIntegration {
+  if (error instanceof LinkCredentialUnavailableError) {
+    const enriched = error.serverName
+      ? error
+      : new LinkCredentialUnavailableError({
+          credentialId: error.credentialId,
+          serverName: serverId,
+        });
+    return {
+      serverId,
+      provider: extractProviderFromConfig(config),
+      kind: "credential_temporarily_unavailable",
+      message: enriched.message,
+    };
+  }
   if (error instanceof NoDefaultCredentialError) {
     return {
       serverId,

@@ -416,4 +416,36 @@ describe("validateAtlasUIMessages", () => {
       expect(dataPart.data.warnings[0]?.rule).toEqual("body-lines");
     }
   });
+
+  it("accepts integration-disconnected with credential_temporarily_unavailable kind", async () => {
+    const messages = [
+      {
+        id: "1",
+        role: "assistant",
+        parts: [
+          {
+            type: "data-integration-disconnected",
+            data: {
+              integrations: [
+                {
+                  serverId: "google-calendar",
+                  provider: "google-calendar",
+                  kind: "credential_temporarily_unavailable",
+                  message: "Credential is temporarily unavailable. Try again in a moment.",
+                },
+              ],
+            },
+          },
+        ],
+        metadata: {},
+      },
+    ];
+
+    const validated = await validateAtlasUIMessages(messages);
+    const dataPart = validated[0]?.parts[0];
+    expect(dataPart?.type).toEqual("data-integration-disconnected");
+    if (dataPart?.type === "data-integration-disconnected") {
+      expect(dataPart.data.integrations[0]?.kind).toEqual("credential_temporarily_unavailable");
+    }
+  });
 });
