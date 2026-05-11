@@ -2,11 +2,14 @@ import type { MCPServerConfig } from "@atlas/config";
 import { ElicitationStorage, initElicitationStorage } from "@atlas/core/elicitations";
 import type { Logger } from "@atlas/logger";
 import { type Tool, tool } from "ai";
-import type { NatsConnection } from "nats";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { getTestNc } from "../../../vitest.setup.ts";
 import type { DisconnectedIntegration, MCPToolsResult } from "./create-mcp-tools.ts";
+
+// `nats` is not in `packages/mcp/deno.json`'s import map; derive the connection
+// type from the test helper instead of importing it.
+type NatsConnection = ReturnType<typeof getTestNc>;
 
 const { mockCreateMCPTools } = vi.hoisted(() => ({ mockCreateMCPTools: vi.fn() }));
 
