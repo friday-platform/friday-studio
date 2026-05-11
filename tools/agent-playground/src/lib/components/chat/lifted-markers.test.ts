@@ -23,27 +23,27 @@ describe("extractLiftedArtifactIds", () => {
   });
 
   it("extracts one id from a single-marker string", () => {
-    const out = `prefix ${marker("art_001")} suffix`;
-    expect(extractLiftedArtifactIds(out)).toEqual([{ artifactId: "art_001" }]);
+    const out = `prefix ${marker("aaaaaaaa-aaaa-aaaa-aaaa-000000000001")} suffix`;
+    expect(extractLiftedArtifactIds(out)).toEqual([{ artifactId: "aaaaaaaa-aaaa-aaaa-aaaa-000000000001" }]);
   });
 
   it("extracts ids from a string with multiple markers in source order", () => {
-    const out = `${marker("art_a")} between ${marker("art_b")} more ${marker("art_c")}`;
+    const out = `${marker("aaaaaaaa-aaaa-aaaa-aaaa-00000000000a")} between ${marker("bbbbbbbb-bbbb-bbbb-bbbb-00000000000b")} more ${marker("cccccccc-cccc-cccc-cccc-00000000000c")}`;
     expect(extractLiftedArtifactIds(out)).toEqual([
-      { artifactId: "art_a" },
-      { artifactId: "art_b" },
-      { artifactId: "art_c" },
+      { artifactId: "aaaaaaaa-aaaa-aaaa-aaaa-00000000000a" },
+      { artifactId: "bbbbbbbb-bbbb-bbbb-bbbb-00000000000b" },
+      { artifactId: "cccccccc-cccc-cccc-cccc-00000000000c" },
     ]);
   });
 
   it("walks object values and collects markers from nested string fields", () => {
     const out = {
       summary: "ok",
-      content: [{ text: marker("art_nested_1") }, { text: marker("art_nested_2") }],
+      content: [{ text: marker("11111111-1111-1111-1111-111111111111") }, { text: marker("22222222-2222-2222-2222-222222222222") }],
     };
     expect(extractLiftedArtifactIds(out)).toEqual([
-      { artifactId: "art_nested_1" },
-      { artifactId: "art_nested_2" },
+      { artifactId: "11111111-1111-1111-1111-111111111111" },
+      { artifactId: "22222222-2222-2222-2222-222222222222" },
     ]);
   });
 
@@ -56,22 +56,22 @@ describe("extractLiftedArtifactIds", () => {
     // `each_key_duplicate`. Order preserves first-occurrence so the
     // visible artifact card still lines up with where the user expects.
     const out = {
-      summary: `result lifted: ${marker("art_dup")}`,
+      summary: `result lifted: ${marker("dddddddd-dddd-dddd-dddd-dddddddddddd")}`,
       aiSummary: {
-        keyDetails: [{ url: marker("art_dup", "application/pdf", "x", "y", 50) }],
+        keyDetails: [{ url: marker("dddddddd-dddd-dddd-dddd-dddddddddddd", "application/pdf", "x", "y", 50) }],
       },
-      details: marker("art_other"),
-      footer: marker("art_dup"),
+      details: marker("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"),
+      footer: marker("dddddddd-dddd-dddd-dddd-dddddddddddd"),
     };
     expect(extractLiftedArtifactIds(out)).toEqual([
-      { artifactId: "art_dup" },
-      { artifactId: "art_other" },
+      { artifactId: "dddddddd-dddd-dddd-dddd-dddddddddddd" },
+      { artifactId: "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee" },
     ]);
   });
 
   it("deduplicates the same artifact id when it appears twice in one string", () => {
-    const out = `${marker("art_x")} mentioned again: ${marker("art_x")}`;
-    expect(extractLiftedArtifactIds(out)).toEqual([{ artifactId: "art_x" }]);
+    const out = `${marker("ffffffff-ffff-ffff-ffff-ffffffffffff")} mentioned again: ${marker("ffffffff-ffff-ffff-ffff-ffffffffffff")}`;
+    expect(extractLiftedArtifactIds(out)).toEqual([{ artifactId: "ffffffff-ffff-ffff-ffff-ffffffffffff" }]);
   });
 
   it("ignores malformed marker shapes", () => {
@@ -85,7 +85,7 @@ describe("extractLiftedArtifactIds", () => {
     // 20 levels of wrap — beyond the depth cap of 16. The string
     // (and its marker) sits at depth 20, so the walker bails before
     // ever reaching it and the returned list is empty.
-    let v: unknown = marker("art_deep");
+    let v: unknown = marker("99999999-9999-9999-9999-999999999999");
     for (let i = 0; i < 20; i++) v = { wrap: v };
     expect(extractLiftedArtifactIds(v)).toEqual([]);
   });
@@ -93,8 +93,8 @@ describe("extractLiftedArtifactIds", () => {
   it("extracts markers exactly at the depth cap", () => {
     // 16 wraps puts the string at depth 16. The cap is inclusive
     // (depth > 16 returns), so the marker should still be picked up.
-    let v: unknown = marker("art_at_cap");
+    let v: unknown = marker("cccccccc-cccc-cccc-cccc-ccccccccccca");
     for (let i = 0; i < 16; i++) v = { wrap: v };
-    expect(extractLiftedArtifactIds(v)).toEqual([{ artifactId: "art_at_cap" }]);
+    expect(extractLiftedArtifactIds(v)).toEqual([{ artifactId: "cccccccc-cccc-cccc-cccc-ccccccccccca" }]);
   });
 });
