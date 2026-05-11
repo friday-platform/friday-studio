@@ -1,88 +1,63 @@
-import type { Buffer } from "node:buffer";
-import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
+import { readFileSync } from "node:fs";
 import process from "node:process";
 import { sveltekit } from "@sveltejs/kit/vite";
 import { defineConfig } from "vite";
+import { resolveBrowserTlsPaths } from "./tls-paths.ts";
 
-// HTTP/2 + TLS resolution. Vite 7's `server.https` switches the underlying
-// dev server from `node:http` (HTTP/1.1) to `node:http2.createSecureServer`
-// with `allowHTTP1: true` fallback — so once we hand it cert+key bytes,
-// the browser negotiates h2 over ALPN and the 6-socket-per-origin HTTP/1.1
-// limit (which deadlocks once the playground's 3 SSE feeds × multiple tabs
-// run out of sockets) goes away.
+// HTTP/2 + TLS for the playground origin. Vite 7's `server.https` switches
+// the dev server from `node:http` (HTTP/1.1) to `node:http2.createSecureServer`
+// with `allowHTTP1: true` fallback — once we hand it cert+key bytes, the
+// browser negotiates h2 over ALPN and the 6-socket-per-origin HTTP/1.1
+// limit (which deadlocks once the playground's 3 SSE feeds × multiple
+// tabs run out of sockets) goes away.
 //
-// Resolution order: env vars → ~/.friday/local/tls → ~/.atlas/tls. The
-// first pair where both files exist wins; otherwise we run plain HTTP and
-// the dev cycle is unchanged. Run `bash scripts/setup-tls.sh` to populate.
-function resolveTls(): { cert: Buffer; key: Buffer } | null {
-  const candidates: Array<[string, string]> = [];
-  const envCert = process.env.FRIDAY_TLS_CERT;
-  const envKey = process.env.FRIDAY_TLS_KEY;
-  if (envCert && envKey) candidates.push([envCert, envKey]);
-  const home = homedir();
-  candidates.push([
-    join(home, ".friday", "local", "tls", "localhost.crt"),
-    join(home, ".friday", "local", "tls", "localhost.key"),
-  ]);
-  candidates.push([
-    join(home, ".atlas", "tls", "localhost.crt"),
-    join(home, ".atlas", "tls", "localhost.key"),
-  ]);
-  for (const [c, k] of candidates) {
-    if (existsSync(c) && existsSync(k)) {
-      return { cert: readFileSync(c), key: readFileSync(k) };
-    }
-  }
-  return null;
-}
-
-const tls = resolveTls();
+// This origin's cert must be browser-trusted: `FRIDAY_BROWSER_TLS_CERT/_KEY`
+// (mkcert-signed, system trust store installed by `scripts/setup-tls.sh`).
+// The s2s `FRIDAY_TLS_CERT/_KEY` pair is for daemon + tunnel listeners and
+// is intentionally NOT browser-trusted — browser traffic to those services
+// flows through this origin's `/api/{daemon,tunnel}/*` proxies instead.
+const tlsPaths = resolveBrowserTlsPaths();
+const tls = tlsPaths
+  ? { cert: readFileSync(tlsPaths.certPath), key: readFileSync(tlsPaths.keyPath) }
+  : null;
 const scheme = tls ? "https" : "http";
 
-// Trust for the mkcert root CA has to be plumbed in via `NODE_EXTRA_CA_CERTS`
-// *before* Node starts — Node 25 reads it once when the default secure
+// S2S TLS: daemon and tunnel run on https when FRIDAY_TLS_CERT/_KEY is set
+// in their environments. NODE_EXTRA_CA_CERTS must point at the private CA
+// before Node starts — Node 25 reads it once when the default secure
 // context is created, which happens before our config evaluates. The
-// `scripts/run-playground-vite.sh` wrapper sets it from `mkcert -CAROOT`
-// before exec'ing node. Without it, the SvelteKit dev proxy's fetch to
-// https://daemon errors with `fetch failed`.
-if (tls && !process.env.NODE_EXTRA_CA_CERTS) {
+// `scripts/run-playground-vite.sh` wrapper sets it before exec'ing node.
+// Without it, the SvelteKit dev proxy's fetch to https://daemon errors
+// with `fetch failed`.
+const s2sTls = Boolean(process.env.FRIDAY_TLS_CERT && process.env.FRIDAY_TLS_KEY);
+if (s2sTls && !process.env.NODE_EXTRA_CA_CERTS) {
   console.warn(
-    "[vite] TLS cert found but NODE_EXTRA_CA_CERTS unset — SSR proxy fetches to https daemon will fail. Launch via `deno task playground` (uses scripts/run-playground-vite.sh wrapper).",
+    "[vite] S2S TLS env set but NODE_EXTRA_CA_CERTS unset — SSR proxy fetches to https daemon will fail. Launch via `deno task playground` (uses scripts/run-playground-vite.sh wrapper).",
   );
 }
 
 // Effective daemon URL for SSR-side proxy + Hono route fetches. Honors
 // FRIDAYD_URL (launcher / wizard / FAST_DEVELOPMENT mode set this — port
-// 18080 is the FAST default), falling back to localhost:8080. When TLS
-// is on but the configured URL is http://, upgrade the scheme: the
-// daemon's listener is TLS-only, so cleartext requests would fail with
-// HTTPParserError. We deliberately do NOT downgrade https→http: a user
-// with explicit https config knows their setup.
+// 18080 is the FAST default), falling back to localhost:8080. When the
+// daemon is listening on TLS but the configured URL is http://, upgrade
+// the scheme: the daemon's listener is TLS-only, so cleartext requests
+// would fail with HTTPParserError. We deliberately do NOT downgrade
+// https→http: a user with explicit https config knows their setup.
 function effectiveDaemonUrl(): string {
+  const s2sScheme = s2sTls ? "https" : "http";
   const explicit = process.env.FRIDAYD_URL;
   if (explicit) {
-    if (tls && explicit.startsWith("http://")) {
+    if (s2sTls && explicit.startsWith("http://")) {
       return "https://" + explicit.slice("http://".length);
     }
     return explicit;
   }
-  return `${scheme}://localhost:8080`;
+  return `${s2sScheme}://localhost:8080`;
 }
 const DAEMON_URL = effectiveDaemonUrl();
+const TUNNEL_URL = `${s2sTls ? "https" : "http"}://localhost:9090`;
 
-// `EXTERNAL_DAEMON_URL` / `EXTERNAL_TUNNEL_URL` flow into the runtime
-// config the SvelteKit hook injects on the served HTML. When TLS is on
-// the page is https://, so any direct browser fetch to a plain http://
-// origin would be blocked as mixed content (Chrome makes a localhost
-// exception, Firefox/Safari don't). Default both to the resolved scheme;
-// webhook-tunnel reads FRIDAY_TLS_CERT/_KEY itself and binds TLS so the
-// browser→tunnel hop matches. Explicit env wins for split-host setups.
-process.env.EXTERNAL_DAEMON_URL ??= DAEMON_URL;
-process.env.EXTERNAL_TUNNEL_URL ??= `${scheme}://localhost:9090`;
-
-console.log(`[vite] dev server scheme: ${scheme}://  daemon: ${DAEMON_URL}`);
+console.log(`[vite] dev server scheme: ${scheme}://  daemon: ${DAEMON_URL}  tunnel: ${TUNNEL_URL}`);
 
 export default defineConfig({
   plugins: [sveltekit()],
@@ -96,6 +71,7 @@ export default defineConfig({
   define: {
     "process.env": "{}",
     __FRIDAY_DAEMON_BASE_URL__: JSON.stringify(DAEMON_URL),
+    __FRIDAY_TUNNEL_BASE_URL__: JSON.stringify(TUNNEL_URL),
   },
   resolve: {
     alias: {

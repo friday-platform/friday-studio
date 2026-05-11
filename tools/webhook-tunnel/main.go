@@ -77,7 +77,11 @@ func main() {
 	if err := provider.Init(); err != nil {
 		log.Fatal("provider init", "error", err)
 	}
-	fwd = forwarder.New(cfg.AtlasdURL)
+	f, err := forwarder.New(cfg.AtlasdURL, cfg.AtlasdCA)
+	if err != nil {
+		log.Fatal("forwarder init", "error", err)
+	}
+	fwd = f
 
 	r := newRouter()
 

@@ -11,12 +11,16 @@ package forwarder
 
 import (
 	"bytes"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -26,16 +30,53 @@ import (
 // Forwarder bundles the atlasd URL + an HTTP client.
 type Forwarder struct {
 	atlasdURL string
+	transport http.RoundTripper
 	client    *http.Client
 }
 
 // New returns a Forwarder pointing at the given atlasd base URL
-// (e.g. "http://localhost:8080").
-func New(atlasdURL string) *Forwarder {
+// (e.g. "http://localhost:8080"). When caCertPath is non-empty, the
+// file at that path is loaded as a PEM-encoded root CA and added to
+// the transport's RootCAs — required when atlasd serves the private-CA
+// s2s cert (see scripts/setup-tls.sh), since the system trust store
+// has no knowledge of that CA.
+func New(atlasdURL, caCertPath string) (*Forwarder, error) {
+	transport, err := buildTransport(caCertPath)
+	if err != nil {
+		return nil, err
+	}
 	return &Forwarder{
 		atlasdURL: strings.TrimRight(atlasdURL, "/"),
-		client:    &http.Client{Timeout: 30 * time.Second},
+		transport: transport,
+		client:    &http.Client{Timeout: 30 * time.Second, Transport: transport},
+	}, nil
+}
+
+// buildTransport clones http.DefaultTransport (preserves keepalive /
+// idle-pool / proxy-env defaults) and, when given a CA path, swaps in
+// a TLSClientConfig that trusts that CA in addition to the system roots.
+func buildTransport(caCertPath string) (http.RoundTripper, error) {
+	if caCertPath == "" {
+		return http.DefaultTransport, nil
 	}
+	pem, err := os.ReadFile(caCertPath)
+	if err != nil {
+		return nil, fmt.Errorf("read FRIDAY_TLS_CA %q: %w", caCertPath, err)
+	}
+	roots, err := x509.SystemCertPool()
+	if err != nil || roots == nil {
+		roots = x509.NewCertPool()
+	}
+	if !roots.AppendCertsFromPEM(pem) {
+		return nil, errors.New("FRIDAY_TLS_CA contains no valid PEM certificates")
+	}
+	base, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		return nil, errors.New("http.DefaultTransport is not *http.Transport — refusing to silently drop pool defaults")
+	}
+	t := base.Clone()
+	t.TLSClientConfig = &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12}
+	return t, nil
 }
 
 // SignalResponse is the parsed atlasd signal response. We only care
@@ -98,6 +139,7 @@ func (f *Forwarder) ProxyHandler() http.Handler {
 		})
 	}
 	rp := &httputil.ReverseProxy{
+		Transport: f.transport,
 		Director: func(r *http.Request) {
 			provider := chi.URLParam(r, "provider")
 			// Chi exposes the wildcard tail as URL param "*".

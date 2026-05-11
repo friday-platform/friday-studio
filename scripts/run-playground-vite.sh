@@ -6,15 +6,15 @@
 #      `node:http2` polyfill is missing `setupConnectionsTracking`,
 #      which `Http2SecureServer`'s constructor calls when vite serves
 #      HTTPS. Real Node 22+ has it.
-#   2. Sets `NODE_EXTRA_CA_CERTS` to mkcert's root CA *before* Node
+#   2. Sets `NODE_EXTRA_CA_CERTS` to the private s2s CA *before* Node
 #      starts. Node 25 reads this only at startup; setting it from
 #      inside `vite.config.ts` is too late — the default secure context
 #      is created before our config runs, and the SvelteKit dev proxy's
 #      fetch to https://daemon then fails with `fetch failed` because
-#      the mkcert leaf chains to an untrusted CA.
+#      the s2s leaf chains to a CA no system trust store knows about.
 #
-# Without TLS / mkcert this still works — `NODE_EXTRA_CA_CERTS` simply
-# isn't set, vite serves HTTP, and the proxy fetches HTTP. No-op cost.
+# Without s2s TLS this still works — `NODE_EXTRA_CA_CERTS` simply isn't
+# set, daemon/tunnel serve HTTP, and the proxy fetches HTTP. No-op cost.
 
 set -euo pipefail
 
@@ -28,14 +28,18 @@ if [[ ! -f "$VITE_BIN" ]]; then
     exit 1
 fi
 
-# Resolve mkcert's root CA so Node trusts the (mkcert-signed) daemon. Only
-# set NODE_EXTRA_CA_CERTS if we actually have a usable CA file — passing
-# a missing path silently triggers a Node warning and breaks every TLS
-# handshake.
-if [[ -z "${NODE_EXTRA_CA_CERTS:-}" ]] && command -v mkcert >/dev/null 2>&1; then
-    ca_path="$(mkcert -CAROOT 2>/dev/null)/rootCA.pem"
-    if [[ -f "$ca_path" ]]; then
-        export NODE_EXTRA_CA_CERTS="$ca_path"
+# Resolve the private s2s CA so Node trusts the (private-CA-signed) daemon
+# + tunnel. Source: FRIDAY_TLS_CA in <friday-home>/.env, written by
+# scripts/setup-tls.sh. Only set NODE_EXTRA_CA_CERTS if we have a real
+# file — pointing at a missing path triggers a Node warning and breaks
+# every TLS handshake.
+if [[ -z "${NODE_EXTRA_CA_CERTS:-}" ]]; then
+    env_file="${FRIDAY_HOME:-$HOME/.atlas}/.env"
+    if [[ -f "$env_file" ]]; then
+        ca_path="$(grep "^FRIDAY_TLS_CA=" "$env_file" | head -1 | sed -E 's/^FRIDAY_TLS_CA=//')"
+        if [[ -n "$ca_path" && -f "$ca_path" ]]; then
+            export NODE_EXTRA_CA_CERTS="$ca_path"
+        fi
     fi
 fi
 

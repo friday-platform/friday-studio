@@ -31,7 +31,7 @@
   import PipelineDiagram from "$lib/components/workspace/pipeline-diagram.svelte";
   import SignalInputForm from "$lib/components/workspace/signal-input-form.svelte";
   import WorkspaceJobSelector from "$lib/components/workspace/workspace-job-selector.svelte";
-  import { externalDaemonUrl } from "$lib/daemon-url";
+  import { daemonUrl } from "$lib/daemon-url";
   import { createInspectorState, type ResolvedStepAgent } from "$lib/inspector-state.svelte";
   import {
     AGENT_TYPE_LABELS,
@@ -340,7 +340,7 @@
       "curl -X POST",
       `-H 'Content-Type: application/json'`,
       `-d '${escaped}'`,
-      `${externalDaemonUrl()}/api/workspaces/${workspaceId}/signals/${primarySignal.name}`,
+      `${daemonUrl()}/api/workspaces/${workspaceId}/signals/${primarySignal.name}`,
     ].join(" \\\n  ");
     navigator.clipboard.writeText(curl);
   }

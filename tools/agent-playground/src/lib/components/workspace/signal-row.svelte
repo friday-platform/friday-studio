@@ -15,7 +15,7 @@
   import { Dialog, DropdownMenu, Icons } from "@atlas/ui";
   import InlineBadge from "$lib/components/shared/inline-badge.svelte";
   import { goto } from "$app/navigation";
-  import { externalDaemonUrl, externalTunnelUrl } from "$lib/daemon-url";
+  import { daemonUrl, tunnelUrl } from "$lib/daemon-url";
 
   type Signal = {
     id: string;
@@ -147,7 +147,7 @@
     if (tunnelFetched) return;
     tunnelFetched = true;
     try {
-      const res = await fetch(`${externalTunnelUrl()}/status`);
+      const res = await fetch(`${tunnelUrl()}/status`);
       if (res.ok) {
         const data = await res.json();
         cachedTunnelUrl = data.url ?? null;
@@ -164,7 +164,7 @@
   });
 
   function copySignalUrl() {
-    const url = `${externalDaemonUrl()}/api/workspaces/${workspaceId}/signals/${signal.id}`;
+    const url = `${daemonUrl()}/api/workspaces/${workspaceId}/signals/${signal.id}`;
     copyToClipboard(url);
   }
 
