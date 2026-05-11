@@ -3,6 +3,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
 import { startNatsTestServer, type TestNatsServer } from "@atlas/core/test-utils/nats-test-server";
+import {
+  ensureWorkspaceMembersKVBucket,
+  initWorkspaceMemberStorage,
+  resetWorkspaceMemberStorageForTests,
+  WorkspaceMemberStorage,
+} from "@atlas/core/workspace-members/storage";
 import { initSkillStorage } from "@atlas/skills";
 import { Hono } from "hono";
 import { connect, type NatsConnection } from "nats";
@@ -112,9 +118,16 @@ beforeAll(async () => {
   natsServer = await startNatsTestServer();
   nc = await connect({ servers: natsServer.url });
   initSkillStorage(nc);
+  // Skill install/fork routes call requireWorkspaceAdmin when a
+  // `workspaceId` is supplied; bring the member storage online so those
+  // gates can read the KV bucket (otherwise they throw "not
+  // initialized" before the auth check even runs).
+  await ensureWorkspaceMembersKVBucket(nc);
+  initWorkspaceMemberStorage(nc);
 }, 30_000);
 
 afterAll(async () => {
+  resetWorkspaceMemberStorageForTests();
   await nc.drain();
   await natsServer.stop();
   rmSync(testDir, { recursive: true, force: true });
@@ -1062,5 +1075,52 @@ describe("Skills API Routes - Unauthorized Access", () => {
     } finally {
       currentUserId = saved;
     }
+  });
+});
+
+describe("Skills API Routes - Workspace Admin Gate", () => {
+  // The fork route's workspaceId reassignment is privileged write
+  // territory. Without the admin check a fork POST with someone
+  // else's workspace would unassign the source skill from / assign
+  // the fork to a workspace the caller doesn't admin.
+  it("POST /fork returns 403 when caller is not admin of the requested workspaceId", async () => {
+    // No membership has been provisioned for `currentUserId` on
+    // `ws-not-mine`. requireWorkspaceAdmin reads from the live KV
+    // bucket and short-circuits with 403.
+    const response = await testApp.request("/fork", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ namespace: "friday", name: "some-skill", workspaceId: "ws-not-mine" }),
+    });
+
+    expect(response.status).toBe(403);
+  });
+
+  it("POST /fork still admits an admin caller (smoke)", async () => {
+    // Provision admin membership for the test user on `ws-mine`. The
+    // fork still 404s afterwards because the source skill doesn't
+    // exist — what we're verifying is that the admin gate doesn't
+    // short-circuit *legitimate* requests.
+    await WorkspaceMemberStorage.put({
+      userId: currentUserId ?? "system",
+      wsId: "ws-mine",
+      role: "admin",
+      addedAt: new Date().toISOString(),
+    });
+
+    const response = await testApp.request("/fork", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        namespace: "friday",
+        name: "nonexistent-source-skill",
+        workspaceId: "ws-mine",
+      }),
+    });
+
+    // 404 ("Source skill not found") proves the admin gate let the
+    // request through to the source lookup. The negative test above
+    // would return 403 instead.
+    expect(response.status).toBe(404);
   });
 });

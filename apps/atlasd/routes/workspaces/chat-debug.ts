@@ -8,6 +8,7 @@
  * Path under daemon mount: GET /api/workspaces/:workspaceId/chat/:chatId/_debug
  */
 
+import { ChatStorage } from "@atlas/core/chat/storage";
 import { Hono } from "hono";
 import type { AppVariables } from "../../src/factory.ts";
 import { requireWorkspaceMember } from "../../src/workspace-authz.ts";
@@ -73,6 +74,17 @@ const workspaceChatDebugRoutes: Hono<AppVariables> = new Hono<AppVariables>().ge
       return c.json({ error: "Missing workspaceId or chatId" }, 400);
     }
     await requireWorkspaceMember(c, workspaceId);
+    // Membership on the path workspace isn't enough — the active
+    // stream registry is keyed by `chatId` only, so without this
+    // chat-belongs-to-workspace check a member of A could read B's
+    // in-flight tool events by guessing the chat id. The JetStream
+    // stream name + KV key below are workspace-scoped and naturally
+    // won't materialise for the wrong workspace, but `streamRegistry`
+    // would.
+    const chatCheck = await ChatStorage.getChat(chatId);
+    if (!chatCheck.ok || !chatCheck.data || chatCheck.data.workspaceId !== workspaceId) {
+      return c.json({ error: "Chat not found" }, 404);
+    }
     const ctx = c.get("app");
 
     const sanitize = (s: string) => s.replace(/[^A-Za-z0-9_-]/g, "_");

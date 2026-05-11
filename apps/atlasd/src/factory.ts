@@ -95,7 +95,14 @@ export const createApp = (context: AppContext, options: CreateAppOptions = {}) =
 
   // Stamp `ctx.userId` from the opaque session cookie (or Bearer header).
   // Local mode auto-mints; non-local 401s on missing/invalid token.
-  app.use("*", createSessionMiddleware());
+  //
+  // Scoped to `/api/*` so the public + signed + side-channel surfaces
+  // mounted at root — `/health` (liveness probes), `/signals/*` (signed
+  // provider webhooks like Slack / Discord), `/mcp` and `/agents`
+  // (MCP transports that authenticate via `Mcp-Session-Id` headers,
+  // not Friday session cookies) — keep working in non-dev where the
+  // middleware would otherwise 401 anything without a browser cookie.
+  app.use("/api/*", createSessionMiddleware());
 
   return app;
 };

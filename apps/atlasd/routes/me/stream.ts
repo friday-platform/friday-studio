@@ -38,6 +38,7 @@
  */
 
 import { daemonFactory } from "../../src/factory.ts";
+import { filterCascadeForUser, type InstanceEvent } from "../../src/instance-events.ts";
 import { openAccessibleWorkspaceWatch } from "../../src/workspace-authz.ts";
 
 /** Subjects the user-firehose subscribes to. Order doesn't matter. */
@@ -177,6 +178,17 @@ export const meStreamRoutes = daemonFactory.createApp().get("/stream", async (c)
               // workspaceId isn't in the user's accessible set.
               if (frame.workspaceId !== undefined && !accessible.has(frame.workspaceId)) {
                 continue;
+              }
+              // Instance cascade events ride on `instance.>` without a
+              // subject-level workspaceId, but their payloads carry
+              // workspace-internal data (`workspaceId`, `signalId`,
+              // session ids, `deepestSignal`). Apply the same filter
+              // the replay endpoint uses — drop or redact based on
+              // membership.
+              if (frame.kind === "instance") {
+                const filtered = filterCascadeForUser(frame.payload as InstanceEvent, accessible);
+                if (!filtered) continue;
+                frame.payload = filtered;
               }
               if (!writeFrame(frame)) {
                 // Stream closed mid-write — stop pumping; the abort

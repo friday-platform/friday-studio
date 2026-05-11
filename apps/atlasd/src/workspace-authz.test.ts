@@ -165,3 +165,50 @@ describe("workspace-authz cross-user denial", () => {
     }
   });
 });
+
+describe("daemon-shaped onError preserves HTTPException status", () => {
+  // The route-level tests catch HTTPException via Hono's default
+  // handler — which means a regression in the daemon's *global*
+  // `app.onError()` (the one that previously flattened every thrown
+  // error to 500) wouldn't show up unless we also exercise that
+  // handler. This rebuilds the daemon's installed pattern in
+  // isolation: a Hono app with an onError that lets HTTPException
+  // self-respond and falls through to 500 otherwise.
+  function buildAppWithDaemonOnError(): Hono {
+    const app = new Hono();
+    app.onError((err, c) => {
+      if (err instanceof HTTPException) return err.getResponse();
+      return c.json({ error: "Internal server error" }, 500);
+    });
+    app.get("/forbid", () => {
+      throw new HTTPException(403, { message: "Forbidden" });
+    });
+    app.get("/unauth", () => {
+      throw new HTTPException(401, { message: "Unauthorized" });
+    });
+    app.get("/oops", () => {
+      throw new Error("oops");
+    });
+    return app;
+  }
+
+  it("returns 403 when a route throws HTTPException(403)", async () => {
+    const app = buildAppWithDaemonOnError();
+    const res = await app.request("/forbid");
+    expect(res.status).toBe(403);
+  });
+
+  it("returns 401 when a route throws HTTPException(401)", async () => {
+    const app = buildAppWithDaemonOnError();
+    const res = await app.request("/unauth");
+    expect(res.status).toBe(401);
+  });
+
+  it("still flattens non-HTTPException throws to 500", async () => {
+    const app = buildAppWithDaemonOnError();
+    const res = await app.request("/oops");
+    expect(res.status).toBe(500);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("Internal server error");
+  });
+});

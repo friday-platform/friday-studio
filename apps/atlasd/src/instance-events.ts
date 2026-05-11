@@ -132,6 +132,52 @@ export async function publishInstanceEvent(
 }
 
 /**
+ * Apply the accessible-workspaces filter to a single cascade event.
+ *
+ * Cascade events ride on `instance.>` rather than `events.<wsId>.…` so
+ * the `me/stream` per-subject filter sees them as "no workspaceId,
+ * pass to everyone." The payload itself names the workspace though:
+ *
+ *   - `cascade.queue_timeout` / `cascade.replaced` carry `workspaceId`
+ *     directly. Drop the event entirely if the user isn't a member —
+ *     the metadata (signal id, session ids, correlation id) is
+ *     workspace-internal.
+ *   - `cascade.queue_saturated` is a daemon-wide aggregate, but the
+ *     optional `deepestSignal` field encodes `<workspaceId>:<signalId>`
+ *     of the most-backed-up entry. Redact it when the user isn't a
+ *     member of the named workspace, but still surface the aggregate
+ *     numbers (inFlight / cap / backlog).
+ *   - `cascade.queue_drained` is pure aggregate; no per-workspace data
+ *     to filter.
+ *
+ * Returns `null` when the event should be dropped entirely, or the
+ * (possibly redacted) event when it should be forwarded. Used by both
+ * the live `me/stream` firehose and the `instance-events` replay
+ * endpoint so the two surfaces stay consistent.
+ */
+export function filterCascadeForUser(
+  event: InstanceEvent,
+  accessible: ReadonlySet<string>,
+): InstanceEvent | null {
+  switch (event.type) {
+    case "cascade.queue_timeout":
+    case "cascade.replaced":
+      return accessible.has(event.workspaceId) ? event : null;
+    case "cascade.queue_saturated": {
+      if (!event.deepestSignal) return event;
+      const wsId = event.deepestSignal.split(":")[0];
+      if (wsId && !accessible.has(wsId)) {
+        const { deepestSignal: _drop, ...rest } = event;
+        return rest;
+      }
+      return event;
+    }
+    case "cascade.queue_drained":
+      return event;
+  }
+}
+
+/**
  * Read the most recent instance events, optionally filtered by event type
  * subject (e.g. `cascade.queue_saturated` or `cascade.`). Backwards walk by
  * sequence using direct-get — same pattern as `workspace-events.ts`. Drives

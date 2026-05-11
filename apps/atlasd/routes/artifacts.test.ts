@@ -1710,6 +1710,68 @@ describe("resolveFileType", () => {
   });
 });
 
+describe("workspace membership gates on the upload path", () => {
+  // The default mock in this file admits every (userId, wsId) so the
+  // existing tests can ignore membership. These tests override the
+  // mock to deny a specific workspace and verify the two gates added
+  // for replace-by-id: a stamped artifact may only be replaced by a
+  // member of the artifact's owning workspace, regardless of any
+  // `workspaceId` field the caller posts.
+  it("replace-by-id returns 403 when caller is not a member of the existing artifact's workspace", async () => {
+    const { WorkspaceMemberStorage } = await import("@atlas/core/workspace-members/storage");
+    const original = vi.mocked(WorkspaceMemberStorage.get).getMockImplementation();
+    vi.mocked(WorkspaceMemberStorage.get).mockImplementation((userId, wsId) =>
+      Promise.resolve(
+        wsId === "ws-tenant-A"
+          ? {
+              ok: true,
+              data: { userId, wsId, role: "owner" as const, addedAt: "2026-05-11T00:00:00.000Z" },
+            }
+          : { ok: true, data: null },
+      ),
+    );
+
+    // First create an artifact stamped to ws-tenant-A (caller is a
+    // member there, so the create branch's gate is satisfied).
+    const seedFile = new File(["seed"], "seed.txt", { type: "text/plain" });
+    const seedForm = new FormData();
+    seedForm.set("file", seedFile);
+    seedForm.set("workspaceId", "ws-tenant-A");
+    const seedResp = await artifactsApp.request("/upload", { method: "POST", body: seedForm });
+    expect(seedResp.status).toEqual(201);
+    const seedBody = ArtifactResponseSchema.parse(await seedResp.json());
+    const tenantArtifactId = seedBody.artifact.id;
+
+    // Now flip membership: caller is only a member of ws-tenant-B,
+    // not the artifact's owning workspace.
+    vi.mocked(WorkspaceMemberStorage.get).mockImplementation((userId, wsId) =>
+      Promise.resolve(
+        wsId === "ws-tenant-B"
+          ? {
+              ok: true,
+              data: { userId, wsId, role: "owner" as const, addedAt: "2026-05-11T00:00:00.000Z" },
+            }
+          : { ok: true, data: null },
+      ),
+    );
+
+    // Attempt to replace the ws-tenant-A artifact while posting
+    // `workspaceId: ws-tenant-B` (the value the user CAN claim
+    // membership for). Without the replace-side gate, this would let a
+    // member of B overwrite A's data.
+    const evilFile = new File(["overwritten"], "evil.txt", { type: "text/plain" });
+    const evilForm = new FormData();
+    evilForm.set("file", evilFile);
+    evilForm.set("artifactId", tenantArtifactId);
+    evilForm.set("workspaceId", "ws-tenant-B");
+    const evilResp = await artifactsApp.request("/upload", { method: "POST", body: evilForm });
+    expect(evilResp.status).toEqual(403);
+
+    // Restore the permissive default so later tests aren't affected.
+    if (original) vi.mocked(WorkspaceMemberStorage.get).mockImplementation(original);
+  });
+});
+
 // Cleanup temp directory after all tests complete
 afterAll(async () => {
   await nc.drain();

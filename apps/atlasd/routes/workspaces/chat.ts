@@ -103,6 +103,11 @@ const workspaceChatRoutes = daemonFactory
         if (!found) {
           return c.json({ error: `Unknown foreground workspace: ${fgId}` }, 400);
         }
+        // Foreground context is fed into the prompt builder; without
+        // this check a member of workspace A could ask the model to
+        // see workspace B's config / chats by passing B as a
+        // foreground id.
+        await requireWorkspaceMember(c, fgId);
       }
     }
 
@@ -113,6 +118,16 @@ const workspaceChatRoutes = daemonFactory
         ? body.id
         : undefined;
     if (chatId) {
+      // If the chat already exists in storage it has to belong to the
+      // path workspace — chatTurnRegistry is keyed by chatId globally
+      // and `.replace` would otherwise let a member of workspace A
+      // abort an in-flight turn on a chatId they happen to know from
+      // workspace B. A first-time chatId (not yet persisted) is fine;
+      // it'll be created as a new chat under this workspace.
+      const existing = await ChatStorage.getChat(chatId);
+      if (existing.ok && existing.data && existing.data.workspaceId !== workspaceId) {
+        return c.json({ error: "Chat not found" }, 404);
+      }
       ctx.chatTurnRegistry.replace(chatId);
     }
 
@@ -136,9 +151,21 @@ const workspaceChatRoutes = daemonFactory
     return handler(request);
   })
 
-  .delete("/:chatId/stream", (c) => {
+  .delete("/:chatId/stream", async (c) => {
     const ctx = c.get("app");
     const chatId = c.req.param("chatId");
+    const workspaceId = c.req.param("workspaceId");
+    if (!workspaceId) {
+      return c.json({ error: "Missing workspaceId" }, 400);
+    }
+
+    // Stream + turn registries are keyed by chatId globally — without
+    // verifying the chat belongs to this workspace a member of A could
+    // stop B's in-flight turn by guessing/leaking the chatId.
+    const chat = await ChatStorage.getChat(chatId);
+    if (!chat.ok || !chat.data || chat.data.workspaceId !== workspaceId) {
+      return c.json({ error: "Chat not found" }, 404);
+    }
 
     // abort() stops the FSM/model server-side; finishStream() alone would
     // let it keep running and persist a partial message after cancel.
@@ -148,9 +175,20 @@ const workspaceChatRoutes = daemonFactory
     return c.json({ success: true }, 200);
   })
 
-  .get("/:chatId/stream", (c) => {
+  .get("/:chatId/stream", async (c) => {
     const ctx = c.get("app");
     const chatId = c.req.param("chatId");
+    const workspaceId = c.req.param("workspaceId");
+    if (!workspaceId) {
+      return c.json({ error: "Missing workspaceId" }, 400);
+    }
+
+    // Same chatId-belongs-to-workspace gate as the DELETE above —
+    // streamRegistry.getStream is keyed by chatId only.
+    const chat = await ChatStorage.getChat(chatId);
+    if (!chat.ok || !chat.data || chat.data.workspaceId !== workspaceId) {
+      return c.json({ error: "Chat not found" }, 404);
+    }
 
     const buffer = ctx.streamRegistry.getStream(chatId);
 

@@ -14,7 +14,8 @@
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { daemonFactory } from "../src/factory.ts";
-import { listInstanceEvents } from "../src/instance-events.ts";
+import { filterCascadeForUser, listInstanceEvents } from "../src/instance-events.ts";
+import { getAccessibleWorkspaceIds } from "../src/workspace-authz.ts";
 
 const QuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(500).optional(),
@@ -29,6 +30,9 @@ const QuerySchema = z.object({
 export const instanceEventsRoutes = daemonFactory
   .createApp()
   .get("/events", zValidator("query", QuerySchema), async (c) => {
+    const userId = c.get("userId");
+    if (!userId) return c.json({ error: "Unauthorized" }, 401);
+
     const { limit, type } = c.req.valid("query");
     const ctx = c.get("app");
     const nc = ctx.daemon.getNatsConnection();
@@ -38,5 +42,14 @@ export const instanceEventsRoutes = daemonFactory
       ...(limit !== undefined ? { limit } : {}),
       ...(type !== undefined ? { typeFilter: type } : {}),
     });
-    return c.json({ events }, 200);
+    // Workspace-aware cascade filter (drops or redacts events whose
+    // payload references workspaces the caller isn't a member of) —
+    // see `filterCascadeForUser` for the per-type rules. The live
+    // firehose at `/api/me/stream` applies the same filter; both
+    // surfaces need to stay in lockstep.
+    const accessible = await getAccessibleWorkspaceIds(userId);
+    const visible = events
+      .map((event) => filterCascadeForUser(event, accessible))
+      .filter((event): event is NonNullable<typeof event> => event !== null);
+    return c.json({ events: visible }, 200);
   });

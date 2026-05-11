@@ -33,6 +33,7 @@ import {
   stripMimeParams,
 } from "@atlas/core/artifacts/file-upload";
 import { ArtifactStorage } from "@atlas/core/artifacts/server";
+import { ChatStorage } from "@atlas/core/chat/storage";
 import { type PlatformModels, smallLLM } from "@atlas/llm";
 import { createLogger } from "@atlas/logger";
 import { stringifyError, truncateUnicode } from "@atlas/utils";
@@ -736,6 +737,8 @@ const artifactsApp = daemonFactory
   /** List artifacts - optionally filter by workspace or chat */
   .get("/", zValidator("query", ListArtifactsQuery), async (c) => {
     const query = c.req.valid("query");
+    const userId = c.get("userId");
+    if (!userId) return c.json({ error: "Unauthorized" }, 401);
 
     if (query.workspaceId && query.chatId) {
       return c.json({ error: "Cannot specify both workspaceId and chatId" }, 400);
@@ -757,6 +760,14 @@ const artifactsApp = daemonFactory
     }
 
     if (query.chatId) {
+      // Resolve the chat's owning workspace and gate on membership —
+      // a `chatId` is just an opaque string the client guesses at,
+      // not a proof of access. ChatStorage indexes by chatId so the
+      // workspaceId argument is optional here.
+      const chat = await ChatStorage.getChat(query.chatId);
+      if (!chat.ok) return c.json({ error: chat.error }, 500);
+      if (!chat.data) return c.json({ error: "Chat not found" }, 404);
+      await requireWorkspaceMember(c, chat.data.workspaceId);
       const result = await ArtifactStorage.listByChat({
         chatId: query.chatId,
         limit: query.limit,
@@ -770,7 +781,11 @@ const artifactsApp = daemonFactory
       return c.json({ artifacts: result.data }, 200);
     }
 
-    // No filter - return all artifacts
+    // No filter — return artifacts only from workspaces the caller
+    // belongs to. Workspaceless / legacy artifacts (no workspaceId)
+    // stay visible, mirroring the convention `batch-get` uses below
+    // and the PUT branch above for ungated mutations.
+    const accessible = await getAccessibleWorkspaceIds(userId);
     const result = await ArtifactStorage.listAll({
       limit: query.limit,
       includeData: query.includeData,
@@ -780,7 +795,8 @@ const artifactsApp = daemonFactory
       return c.json({ error: result.error }, 500);
     }
 
-    return c.json({ artifacts: result.data }, 200);
+    const visible = result.data.filter((a) => !a.workspaceId || accessible.has(a.workspaceId));
+    return c.json({ artifacts: visible }, 200);
   })
   /** Soft delete artifact */
   .delete("/:id", zValidator("param", z.object({ id: z.string() })), async (c) => {
@@ -1001,6 +1017,23 @@ const artifactsApp = daemonFactory
     const platformModels = c.get("app").daemon.getPlatformModels();
 
     if (artifactId) {
+      // Replace-by-id is "overwrite an existing artifact" — authorize
+      // against the *existing* artifact's workspace, not whatever
+      // `workspaceId` the caller posted in the form. The membership
+      // check on the supplied `workspaceId` above is what gates the
+      // create path; for replace we have to fetch and inspect.
+      const existing = await ArtifactStorage.get({ id: artifactId });
+      if (!existing.ok) {
+        await unlink(filePath).catch(() => {});
+        return c.json({ error: existing.error }, 500);
+      }
+      if (!existing.data) {
+        await unlink(filePath).catch(() => {});
+        return c.json({ error: "Artifact not found" }, 404);
+      }
+      if (existing.data.workspaceId) {
+        await requireWorkspaceMember(c, existing.data.workspaceId);
+      }
       const result = await replaceArtifactFromFile({
         artifactId,
         filePath,

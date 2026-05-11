@@ -174,13 +174,34 @@ function del(app: ReturnType<typeof createTestApp>["app"], path: string) {
 
 // Hoisted mocks share state across tests — reset call history and any
 // queued mockResolvedValueOnce values between cases.
-beforeEach(() => {
+beforeEach(async () => {
   mockChatStorage.listChatsByWorkspace.mockReset();
   mockChatStorage.getChat.mockReset();
   mockChatStorage.appendMessage.mockReset();
   mockChatStorage.updateChatTitle.mockReset();
   mockValidateMessages.mockReset();
   mockValidateMessages.mockImplementation((msgs: unknown[]) => Promise.resolve(msgs));
+  // Default chat lookup — covers the routes that now consult
+  // ChatStorage to prove a chatId belongs to the path workspace
+  // (POST `/` with existing chatId, GET/DELETE `:chatId/stream`).
+  // Tests that need a 404 / cross-workspace miss override this with
+  // `mockResolvedValue` / `mockResolvedValueOnce`.
+  mockChatStorage.getChat.mockResolvedValue({
+    ok: true,
+    data: { id: "chat-1", workspaceId: "ws-1", messages: [] },
+  });
+  // Reset the WorkspaceMemberStorage mock back to the permissive
+  // default. Individual tests override per-case (see the
+  // foreground-cross-tenant case below), and without this reset the
+  // override would leak into subsequent tests and 403 routes that
+  // were never meant to exercise the gate.
+  const { WorkspaceMemberStorage } = await import("@atlas/core/workspace-members/storage");
+  vi.mocked(WorkspaceMemberStorage.get).mockImplementation((userId, wsId) =>
+    Promise.resolve({
+      ok: true,
+      data: { userId, wsId, role: "owner" as const, addedAt: "2026-05-11T00:00:00.000Z" },
+    }),
+  );
 });
 
 describe("GET /:workspaceId/chat — list chats", () => {
@@ -689,6 +710,92 @@ describe("POST /:workspaceId/chat — foreground workspace validation", () => {
 
     expect(res.status).toBe(200);
     expect(mockWebhooksAtlas).toHaveBeenCalledTimes(1);
+  });
+
+  // Regression for the foreground-context cross-tenant leak: the path
+  // workspace's member check is no longer enough — every
+  // `foreground_workspace_ids` entry has to pass requireWorkspaceMember
+  // for the caller, otherwise a member of `ws-1` could read `ws-2`'s
+  // config / chats by stuffing `ws-2` into the foreground list.
+  test("returns 403 when caller is not a member of a foreground workspace", async () => {
+    const { WorkspaceMemberStorage } = await import("@atlas/core/workspace-members/storage");
+    const memberGet = vi.mocked(WorkspaceMemberStorage.get);
+    memberGet.mockImplementation((userId, wsId) =>
+      Promise.resolve({
+        ok: true,
+        data:
+          wsId === "ws-1"
+            ? { userId, wsId, role: "owner" as const, addedAt: "2026-05-11T00:00:00.000Z" }
+            : null,
+      }),
+    );
+    const { app, mockContext } = createTestApp();
+    const manager = mockContext.getWorkspaceManager();
+    manager.find.mockImplementation(({ id }: { id: string }) =>
+      Promise.resolve({ id, name: `ws-${id}` }),
+    );
+
+    const res = await post(app, "/ws-1/chat", {
+      id: "chat-fg-leak",
+      message: { role: "user", parts: [{ type: "text", text: "hello" }] },
+      foreground_workspace_ids: ["ws-2"],
+    });
+
+    expect(res.status).toBe(403);
+  });
+});
+
+describe("stream routes — chatId must belong to path workspace", () => {
+  // `streamRegistry` is keyed by `chatId` globally; without the
+  // `chat.workspaceId === path workspaceId` check a member of A could
+  // act on B's in-flight stream by guessing the chat id.
+  test("GET /:chatId/stream returns 404 when chat belongs to another workspace", async () => {
+    mockChatStorage.getChat.mockResolvedValue({
+      ok: true,
+      data: { id: "chat-x", workspaceId: "ws-OTHER", messages: [] },
+    });
+    const { app } = createTestApp({
+      streamRegistry: {
+        getStream: vi.fn().mockReturnValue({ active: true, createdAt: Date.now() }),
+      },
+    });
+
+    const res = await app.request("/ws-1/chat/chat-x/stream");
+
+    expect(res.status).toBe(404);
+  });
+
+  test("DELETE /:chatId/stream returns 404 when chat belongs to another workspace", async () => {
+    mockChatStorage.getChat.mockResolvedValue({
+      ok: true,
+      data: { id: "chat-x", workspaceId: "ws-OTHER", messages: [] },
+    });
+    const { app, mockStreamRegistry } = createTestApp();
+
+    const res = await del(app, "/ws-1/chat/chat-x/stream");
+
+    expect(res.status).toBe(404);
+    expect(mockStreamRegistry.finishStream).not.toHaveBeenCalled();
+  });
+
+  test("POST / refuses an existing chatId owned by a different workspace", async () => {
+    mockChatStorage.getChat.mockResolvedValue({
+      ok: true,
+      data: { id: "chat-foreign", workspaceId: "ws-OTHER", messages: [] },
+    });
+    const { app, mockContext } = createTestApp();
+    const chatTurnReplace = vi.mocked(mockContext.chatTurnRegistry.replace);
+
+    const res = await post(app, "/ws-1/chat", {
+      id: "chat-foreign",
+      message: { role: "user", parts: [{ type: "text", text: "hi" }] },
+    });
+
+    expect(res.status).toBe(404);
+    // Crucial side-effect check: the global chatTurnRegistry mustn't
+    // see a `.replace(chat-foreign)` from a non-owner — that would
+    // abort the legitimate turn running on the foreign workspace.
+    expect(chatTurnReplace).not.toHaveBeenCalled();
   });
 });
 

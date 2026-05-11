@@ -773,6 +773,8 @@ const workspacesRoutes = daemonFactory
   //
   // Declared BEFORE `/:workspaceId` so the static path wins the Hono match.
   .get("/bundle-all", async (c) => {
+    const userId = c.get("userId");
+    if (!userId) return c.json({ error: "Unauthorized" }, 401);
     const modeParam = c.req.query("mode");
     const mode: "definition" | "migration" = modeParam === "migration" ? "migration" : "definition";
     const includeParam = c.req.query("include") ?? "";
@@ -784,7 +786,14 @@ const workspacesRoutes = daemonFactory
     try {
       const ctx = c.get("app");
       const manager = ctx.getWorkspaceManager();
-      const all = await manager.list({ includeSystem: false });
+      // Filter to workspaces the caller is a member of. Without this
+      // any authenticated user could download every on-disk workspace's
+      // config + memory + skills, which defeats the per-workspace
+      // membership gates the rest of the API enforces.
+      const accessible = await getAccessibleWorkspaceIds(userId);
+      const all = (await manager.list({ includeSystem: false })).filter((ws) =>
+        accessible.has(ws.id),
+      );
       const bundles: Array<{ id: string; name: string; bundleBytes: Uint8Array }> = [];
       const skipped: Array<{ id: string; name: string; reason: string }> = [];
 

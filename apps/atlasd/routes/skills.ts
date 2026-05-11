@@ -187,6 +187,15 @@ export const skillsRoutes = daemonFactory
       if (!auth.ok) return c.json({ error: auth.error }, 401);
 
       const { source, workspaceId, targetNamespace } = c.req.valid("json");
+
+      // Auto-assignment to a workspace is a privileged write on that
+      // workspace — without this gate, any authenticated user could
+      // install a community skill and attach it to a workspace they
+      // don't admin. Check before doing the download / publish work so
+      // we don't half-execute an unauthorized request.
+      if (workspaceId !== undefined) {
+        await requireWorkspaceAdmin(c, workspaceId);
+      }
       const parts = source.split("/").filter((p) => p.length > 0);
       if (parts.length < 3) {
         return c.json({ error: "source must be owner/repo/slug" }, 400);
@@ -374,6 +383,15 @@ export const skillsRoutes = daemonFactory
       if (!auth.ok) return c.json({ error: auth.error }, 401);
 
       const { namespace, name, targetNamespace, targetName, workspaceId } = c.req.valid("json");
+
+      // Reassigning a workspace from the source skill to the fork is a
+      // privileged write on that workspace. Gate before the source
+      // lookup so we don't even hint at whether the source skill
+      // exists for callers who aren't a workspace admin.
+      if (workspaceId !== undefined) {
+        await requireWorkspaceAdmin(c, workspaceId);
+      }
+
       const source = await SkillStorage.get(namespace, name);
       if (!source.ok) return c.json({ error: source.error }, 500);
       if (!source.data) return c.json({ error: "Source skill not found" }, 404);

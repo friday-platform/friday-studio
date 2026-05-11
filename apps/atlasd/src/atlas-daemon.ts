@@ -55,6 +55,7 @@ import type {
 import { StreamableHTTPTransport } from "@hono/mcp";
 import type { Context, Next } from "hono";
 import { cors } from "hono/cors";
+import { HTTPException } from "hono/http-exception";
 import { type RunMigrationsResult, readJetStreamConfig, runMigrations } from "jetstream";
 import type { NatsConnection } from "nats";
 import { agents as agentsRoutes } from "../routes/agents/index.ts";
@@ -1422,8 +1423,19 @@ export class AtlasDaemon {
     // Platform signal routes (Discord/Slack via Signal Gateway)
     this.app.route("/signals", createPlatformSignalRoutes(this));
 
-    // Global error handler - catches all uncaught errors from all routes
+    // Global error handler - catches all uncaught errors from all routes.
+    // `HTTPException`s (e.g. `requireWorkspaceMember` → 403, missing
+    // session → 401) carry their own status + body; let them flow through
+    // instead of flattening every thrown error to a 500. Otherwise the
+    // route-level tests pass (they call the handler directly and see the
+    // throw) but production turns every authz failure into "Internal
+    // server error" — which both leaks the wrong status to the client
+    // and stops clients from distinguishing "you don't have access" from
+    // "the daemon is broken".
     this.app.onError((err, c) => {
+      if (err instanceof HTTPException) {
+        return err.getResponse();
+      }
       logger.error("API error", { error: err, path: c.req.path, method: c.req.method });
       return c.json({ error: "Internal server error" }, 500);
     });
