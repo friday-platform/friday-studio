@@ -111,12 +111,8 @@ function buildAdapter(creds: PlatformCredentials): Adapter {
         appId: creds.appId,
         privateKey: creds.privateKey,
         webhookSecret: creds.webhookSecret,
-        // Strip the `[bot]` suffix that GitHub stores on bot accounts. The
-        // chat-sdk's `detectMention` regex compares `userName` literally
-        // against the comment body; humans type `@slug` (no `[bot]`), so the
-        // stored slug `foo[bot]` would never match. Self-filtering uses the
-        // numeric `botUserId`, so dropping `[bot]` here is safe.
-        userName: creds.botUserSlug.replace(/\[bot\]$/, ""),
+        // userName drives chat-sdk's @mention detection regex (chat@4.27.0:3528).
+        userName: creds.botUserSlug,
         botUserId: creds.botUserId,
       });
   }

@@ -104,6 +104,108 @@ describe("GitHub chat-adapter integration: webhook HMAC verification", () => {
     const response = await githubAdapter.handleWebhook(request);
     expect(response.status).toBe(401);
   });
+
+  /**
+   * Closes the gap left by the `ping`-only tests: `ping` short-circuits in
+   * `handleWebhook` right after `verifySignature` (adapter index.js:391-394),
+   * so neither JSON parsing, installation extraction, nor `handleIssueComment`
+   * (with its `encodeThreadId` + `parseIssueComment` chain) are exercised.
+   *
+   * This test fires a signed `issue_comment.created` payload and asserts a 200
+   * response. To reach `handleIssueComment`'s thread-construction path
+   * (`encodeThreadId` → `parseIssueComment` → `chat.processMessage`), the
+   * adapter needs `chat` wired (line 448 early-returns otherwise). We attach a
+   * minimal stub via `initialize()` and assert `processMessage` was called
+   * with the expected `github:owner/repo:issue:42` threadId.
+   *
+   * Regression guard: if the payload Zod schema tightens or `parseIssueComment`
+   * starts requiring a new field, this test will fail loudly — either the
+   * outer 200 flips (JSON/parse error) or `processMessage` won't be invoked.
+   */
+  it("routes a signed issue_comment.created webhook to handleIssueComment with the right threadId", async () => {
+    const adapters = buildChatSdkAdapters({
+      workspaceId: "ws-1",
+      signals: githubSignals,
+      credentials: githubCreds,
+      streamRegistry: new StreamRegistry(),
+    });
+
+    const githubAdapter = adapters.github;
+    expect(githubAdapter).toBeDefined();
+    if (!githubAdapter) return;
+
+    // Minimal Chat surface — `processMessage` is fire-and-forget in the
+    // adapter (handleIssueComment doesn't await it), and `getState` is only
+    // touched by `storeInstallationId` in multi-tenant mode. Both are spies
+    // so we can assert handleIssueComment actually reached its chat dispatch.
+    const processMessage = vi.fn();
+    const chatStub = {
+      processMessage,
+      getState: () => ({
+        get: vi.fn().mockResolvedValue(undefined),
+        set: vi.fn().mockResolvedValue(undefined),
+        subscribe: vi.fn().mockResolvedValue(undefined),
+      }),
+    };
+    await githubAdapter.initialize?.(chatStub as never);
+
+    // Synthetic issue_comment.created payload — fields chosen by reading
+    // adapter source: handleIssueComment (line 447) destructures
+    // `comment, issue, repository, sender`; encodeThreadId needs
+    // `repository.owner.login`, `repository.name`, `issue.number`;
+    // parseIssueComment touches comment.{id,body,user,created_at,updated_at};
+    // parseAuthor (line 570) touches comment.user.{id,login,type};
+    // sender.id is compared to _botUserId for self-filter.
+    const issueCommentPayload = {
+      action: "created",
+      installation: { id: 67890 },
+      issue: {
+        number: 42,
+        html_url: "https://github.com/acme/widgets/issues/42",
+        // No `pull_request` field → adapter treats this as an issue thread,
+        // producing the "issue:" threadId form.
+      },
+      repository: {
+        id: 1,
+        name: "widgets",
+        full_name: "acme/widgets",
+        owner: { login: "acme", id: 100, type: "Organization" },
+      },
+      comment: {
+        id: 555,
+        body: "hey @friday-bot can you take a look?",
+        user: { id: 200, login: "alice", type: "User" },
+        created_at: "2026-05-09T12:00:00Z",
+        updated_at: "2026-05-09T12:00:00Z",
+        html_url: "https://github.com/acme/widgets/issues/42#issuecomment-555",
+      },
+      sender: { id: 200, login: "alice", type: "User" },
+    };
+    const body = JSON.stringify(issueCommentPayload);
+
+    const request = new Request("http://localhost/signals/github", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-GitHub-Event": "issue_comment",
+        "X-GitHub-Delivery": "delivery-issue-comment-1",
+        "X-Hub-Signature-256": signBody(body, githubCreds.webhookSecret),
+      },
+      body,
+    });
+
+    const response = await githubAdapter.handleWebhook(request);
+    expect(response.status).toBe(200);
+
+    // Pin the threadId format — the adapter's encodeThreadId for issues is
+    // `github:{owner}/{repo}:issue:{issueNumber}`. Workspace routing in
+    // chat-sdk keys off this string; a regression here would silently fan
+    // every comment into a fresh thread.
+    expect(processMessage).toHaveBeenCalledOnce();
+    const [adapterArg, threadIdArg] = processMessage.mock.calls[0] ?? [];
+    expect(adapterArg).toBe(githubAdapter);
+    expect(threadIdArg).toBe("github:acme/widgets:issue:42");
+  });
 });
 
 describe("resolveGithubFromLink: snake_case → camelCase secret mapping", () => {

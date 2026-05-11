@@ -128,7 +128,7 @@ export const handler = async (argv: ChatArgs): Promise<void> => {
 
   const daemonUrl = getAtlasDaemonUrl();
   const response = await fetch(
-    `${daemonUrl}/api/workspaces/${encodeURIComponent(argv.workspace)}/chat/${argv.id}`,
+    `${daemonUrl}/api/workspaces/${encodeURIComponent(argv.workspace)}/chat/${encodeURIComponent(argv.id)}`,
   );
 
   if (!response.ok) {

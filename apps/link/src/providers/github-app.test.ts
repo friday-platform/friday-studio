@@ -106,7 +106,7 @@ describe("githubAppProvider.health", () => {
     });
   }
 
-  it("captures bot_user_slug (with [bot] suffix) and bot_user_id on ok health", async () => {
+  it("captures bot_user_slug and bot_user_id on ok health", async () => {
     fetchMock.mockResolvedValueOnce(mockJsonResponse(200, { slug: "friday-bot" }));
     fetchMock.mockResolvedValueOnce(mockJsonResponse(200, { id: 99001 }));
     fetchMock.mockResolvedValueOnce(
@@ -123,7 +123,7 @@ describe("githubAppProvider.health", () => {
 
     expect(result).toEqual({
       healthy: true,
-      metadata: { bot_user_slug: "friday-bot[bot]", bot_user_id: 12345678 },
+      metadata: { bot_user_slug: "friday-bot", bot_user_id: 12345678 },
     });
 
     // Verify the 3-call sequence

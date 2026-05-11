@@ -27,13 +27,10 @@ import { defineApiKeyProvider, type HealthResult } from "./types.ts";
  * point users at `<callbackBaseUrl>/platform/github` with no per-installation
  * segment — the routing key lives in the payload, not the path.
  *
- * **Bot-user capture (`[bot]` suffix and `bot_user_id`):** GitHub webhook
- * payloads carry `comment.user.login` in `<slug>[bot]` form for App-authored
- * comments (literal four-character `[bot]` suffix). We store `bot_user_slug`
- * with the suffix so it matches webhook payloads byte-for-byte. `bot_user_id`
- * is the numeric user ID and is rename-immune — if the App is renamed on
- * github.com, the slug goes stale (re-save in Link to refresh) but the ID
- * remains the durable identifier.
+ * **Bot-user capture:** `bot_user_slug` stores the bare App slug (e.g.,
+ * `friday-bot`). It's used by chat-sdk for `@mention` detection
+ * (`@friday-bot` regex). Bot self-detection uses the rename-immune numeric
+ * `bot_user_id`.
  */
 export const GithubAppSecretSchema = z.object({
   app_id: z.number().int().positive(),
@@ -138,6 +135,7 @@ export const githubAppProvider = defineApiKeyProvider({
 7. From the App's **General** page, copy the **App ID** (numeric)
 8. Paste \`app_id\`, the contents of the \`.pem\` file as \`private_key\`, the \`webhook_secret\` you chose, and the \`installation_id\` below — Friday will validate the credentials and capture the App's bot user identity automatically
 9. After saving, return to the GitHub App settings and confirm the webhook URL is still \`<callbackBaseUrl>/platform/github\`. Friday does not register the URL upstream — pasting it once during App creation is the simplest contract.
+10. **Troubleshooting:** If webhooks aren't reaching Friday after setup, open the App's **Advanced → Recent Deliveries** in GitHub's settings. A \`401\` response there means \`webhook_secret\` in Friday doesn't match the secret you set on the App; re-paste the credential in Friday to fix it.
 `,
   health: async (secret): Promise<HealthResult> => {
     try {
@@ -178,7 +176,7 @@ export const githubAppProvider = defineApiKeyProvider({
       }
       const botBody = GithubBotUserResponseSchema.parse(await botRes.json());
 
-      return { healthy: true, metadata: { bot_user_slug: botSlug, bot_user_id: botBody.id } };
+      return { healthy: true, metadata: { bot_user_slug: appBody.slug, bot_user_id: botBody.id } };
     } catch (e) {
       return { healthy: false, error: stringifyError(e) };
     }

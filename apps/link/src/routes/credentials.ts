@@ -111,6 +111,8 @@ export function createCredentialsRoutes(storage: StorageAdapter, _oauthService: 
           //      random `webhook_secret` for telegram/whatsapp.
           //   2. health() metadata — values derived from external APIs during
           //      validation, e.g. github-app's bot_user_slug / bot_user_id.
+          // Note: when a provider supplies both, healthMetadata wins on key collision —
+          // providers must not set the same key in both autoFields() and health() metadata.
           const storedSecret: Record<string, unknown> = {
             ...secretResult.data,
             ...(providerDef.autoFields ? providerDef.autoFields() : {}),
