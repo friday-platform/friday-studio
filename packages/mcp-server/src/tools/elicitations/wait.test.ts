@@ -130,4 +130,77 @@ describe("waitForTerminalElicitation", () => {
     expect(terminal).toEqual({ status: "answered", value: "yes" });
     expect(mockState.expireCalls).toBe(0);
   });
+
+  it("rejects immediately with AbortError when signal is already aborted at entry", async () => {
+    const controller = new AbortController();
+    controller.abort();
+
+    const ctx: ToolContext = {
+      daemonUrl: "http://localhost:8080",
+      logger: {
+        trace: vi.fn(),
+        debug: vi.fn(),
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+        fatal: vi.fn(),
+        child: vi.fn(),
+      } as unknown as ToolContext["logger"],
+      server: {} as ToolContext["server"],
+    };
+
+    await expect(
+      waitForTerminalElicitation(ctx, {
+        id: "elc-1",
+        workspaceId: "ws-1",
+        sessionId: "sess-1",
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        signal: controller.signal,
+      }),
+    ).rejects.toMatchObject({ name: "AbortError" });
+
+    // No NATS subscription or KV polling before the abort check.
+    expect(mockState.getCalls).toBe(0);
+    expect(mockState.expireCalls).toBe(0);
+  });
+
+  it("rejects with AbortError within one poll interval when signal aborts mid-wait", async () => {
+    const controller = new AbortController();
+    const ctx: ToolContext = {
+      daemonUrl: "http://localhost:8080",
+      logger: {
+        trace: vi.fn(),
+        debug: vi.fn(),
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+        fatal: vi.fn(),
+        child: vi.fn(),
+      } as unknown as ToolContext["logger"],
+      server: {} as ToolContext["server"],
+    };
+
+    // Stays pending so the KV-only polling loop keeps spinning.
+    mockState.status = "pending";
+
+    const waitPromise = waitForTerminalElicitation(ctx, {
+      id: "elc-1",
+      workspaceId: "ws-1",
+      sessionId: "sess-1",
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      signal: controller.signal,
+    });
+
+    // Abort after the first poll has started; the next poll iteration
+    // checks signal.aborted within WAIT_POLL_MS (~250ms).
+    const abortAt = Date.now() + 50;
+    setTimeout(() => controller.abort(), 50);
+
+    await expect(waitPromise).rejects.toMatchObject({ name: "AbortError" });
+
+    // One poll interval is ~250ms; budget 750ms for CI jitter.
+    expect(Date.now() - abortAt).toBeLessThan(750);
+    // Sweeper must not run on abort — only on expiry.
+    expect(mockState.expireCalls).toBe(0);
+  });
 });

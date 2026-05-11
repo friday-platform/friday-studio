@@ -15,6 +15,15 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function abortError(reason: unknown): Error {
+  if (reason instanceof Error && reason.name === "AbortError") return reason;
+  const err = new Error(
+    reason instanceof Error ? reason.message : typeof reason === "string" ? reason : "Aborted",
+  );
+  err.name = "AbortError";
+  return err;
+}
+
 function sanitizeSubjectToken(s: string): string {
   return s.replace(SAFE_TOKEN_RE, "_");
 }
@@ -57,8 +66,16 @@ async function readTerminalElicitation(id: string): Promise<TerminalElicitationR
 
 export async function waitForTerminalElicitation(
   ctx: ToolContext,
-  input: { id: string; workspaceId: string; sessionId: string; expiresAt: string },
+  input: {
+    id: string;
+    workspaceId: string;
+    sessionId: string;
+    expiresAt: string;
+    signal?: AbortSignal;
+  },
 ): Promise<TerminalElicitationResult> {
+  const { signal } = input;
+  if (signal?.aborted) throw abortError(signal.reason);
   const deadlineMs = new Date(input.expiresAt).getTime();
   const nc = ctx.natsConnection;
   if (nc) {
@@ -72,6 +89,7 @@ export async function waitForTerminalElicitation(
     const iter = (sub as AsyncIterable<{ data: Uint8Array }>)[Symbol.asyncIterator]();
     try {
       await nc.flush();
+      if (signal?.aborted) throw abortError(signal.reason);
       // Close the read-before-subscribe race: an answer can land after the
       // caller created/read the pending row but before the broker registers
       // this subscriber. Once the subscription is flushed, re-read KV before
@@ -80,6 +98,7 @@ export async function waitForTerminalElicitation(
       if (current) return current;
       let nextMessage: Promise<IteratorResult<{ data: Uint8Array }>> | undefined;
       while (Date.now() < deadlineMs) {
+        if (signal?.aborted) throw abortError(signal.reason);
         const remainingMs = Math.max(1, deadlineMs - Date.now());
         nextMessage ??= iter.next();
         const next = await Promise.race([
@@ -87,6 +106,7 @@ export async function waitForTerminalElicitation(
           sleep(Math.min(WAIT_POLL_MS, remainingMs)).then(() => null),
         ]);
         if (!next) {
+          if (signal?.aborted) throw abortError(signal.reason);
           const polled = await readTerminalElicitation(input.id);
           if (polled) return polled;
           continue;
@@ -110,6 +130,7 @@ export async function waitForTerminalElicitation(
   if (initial) return initial;
 
   while (Date.now() < deadlineMs) {
+    if (signal?.aborted) throw abortError(signal.reason);
     const current = await readTerminalElicitation(input.id);
     if (current) return current;
     await sleep(WAIT_POLL_MS);
