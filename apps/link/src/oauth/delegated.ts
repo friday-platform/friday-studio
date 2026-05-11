@@ -8,6 +8,7 @@
  */
 
 import { logger } from "@atlas/logger";
+import { getOAuthMetrics } from "@atlas/logger/oauth-metrics";
 import { z } from "zod";
 import type { OAuthConfig } from "../providers/types.ts";
 
@@ -283,6 +284,15 @@ async function classifyRefreshAttempt(
 }
 
 /**
+ * Caller context used for telemetry only. Both fields are optional so the
+ * function remains usable in isolated tests; production callers pass both.
+ */
+export interface RefreshClassifyMeta {
+  provider?: string;
+  credentialId?: string;
+}
+
+/**
  * Refresh an access token via the delegated endpoint, returning a typed
  * outcome rather than throwing.
  *
@@ -294,15 +304,83 @@ async function classifyRefreshAttempt(
  * Trust contract: only `kind === "token_dead"` means the refresh_token is
  * provably revoked. Everything else is either usable (`success`) or a
  * non-actionable platform/transport failure (`transient`).
+ *
+ * Telemetry:
+ *   - `link.oauth.refresh.outcome` counter per attempt with `{kind, reason,
+ *     provider, retry_attempt}` attributes.
+ *   - `link.oauth.refresh.retry_saved` counter when attempt 2 produces a
+ *     non-transient outcome (success OR token_dead) after attempt 1 was
+ *     transient. Recording on `token_dead` too keeps the counter aligned
+ *     with "the retry produced a definitive answer."
+ *   - `link.oauth.refresh.platform_bug` counter for every transient with
+ *     `reason === "platform_bug"`.
+ *   - `oauth.refresh.outcome` structured log line per attempt with
+ *     `{credentialId, provider, outcome.kind, outcome.reason, retry_count,
+ *     latency_ms}`.
  */
 export async function refreshDelegatedTokenClassified(
   config: Extract<OAuthConfig, { mode: "delegated" }>,
   refreshToken: string,
+  meta: RefreshClassifyMeta = {},
 ): Promise<RefreshOutcome> {
+  const provider = meta.provider ?? "unknown";
+  const metrics = getOAuthMetrics();
+
+  const firstStartedAt = Date.now();
   const first = await classifyRefreshAttempt(config, refreshToken);
+  recordAttemptTelemetry({
+    outcome: first,
+    provider,
+    retryAttempt: 1,
+    latencyMs: Date.now() - firstStartedAt,
+    credentialId: meta.credentialId,
+  });
+
   if (first.kind !== "transient") return first;
   await sleep(REFRESH_RETRY_DELAY_MS);
-  return await classifyRefreshAttempt(config, refreshToken);
+
+  const secondStartedAt = Date.now();
+  const second = await classifyRefreshAttempt(config, refreshToken);
+  recordAttemptTelemetry({
+    outcome: second,
+    provider,
+    retryAttempt: 2,
+    latencyMs: Date.now() - secondStartedAt,
+    credentialId: meta.credentialId,
+  });
+
+  if (second.kind !== "transient") {
+    metrics.recordRetrySaved({ provider, first_reason: first.reason });
+  }
+  return second;
+}
+
+function recordAttemptTelemetry(input: {
+  outcome: RefreshOutcome;
+  provider: string;
+  retryAttempt: 1 | 2;
+  latencyMs: number;
+  credentialId?: string;
+}): void {
+  const { outcome, provider, retryAttempt, latencyMs, credentialId } = input;
+  const metrics = getOAuthMetrics();
+  const reason = outcome.kind === "transient" ? outcome.reason : undefined;
+  metrics.recordRefreshOutcome({
+    kind: outcome.kind,
+    ...(reason !== undefined ? { reason } : {}),
+    provider,
+    retry_attempt: retryAttempt,
+  });
+  if (outcome.kind === "transient" && outcome.reason === "platform_bug") {
+    metrics.recordPlatformBug({ provider, reason: outcome.detail.slice(0, 80) });
+  }
+  logger.info("oauth.refresh.outcome", {
+    ...(credentialId !== undefined ? { credentialId } : {}),
+    provider,
+    outcome: { kind: outcome.kind, ...(reason !== undefined ? { reason } : {}) },
+    retry_count: retryAttempt,
+    latency_ms: latencyMs,
+  });
 }
 
 /**
@@ -320,8 +398,9 @@ export async function refreshDelegatedTokenClassified(
 export async function refreshDelegatedToken(
   config: Extract<OAuthConfig, { mode: "delegated" }>,
   refreshToken: string,
+  meta: RefreshClassifyMeta = {},
 ): Promise<DelegatedTokens> {
-  const outcome = await refreshDelegatedTokenClassified(config, refreshToken);
+  const outcome = await refreshDelegatedTokenClassified(config, refreshToken, meta);
   switch (outcome.kind) {
     case "success":
       return outcome.tokens;

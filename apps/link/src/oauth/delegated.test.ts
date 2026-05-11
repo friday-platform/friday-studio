@@ -1,5 +1,9 @@
 import { Buffer } from "node:buffer";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  InMemoryOAuthMetricsSink,
+  setOAuthMetricsSinkForTesting,
+} from "@atlas/logger/oauth-metrics";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import type { OAuthConfig } from "../providers/types.ts";
 import {
@@ -401,5 +405,146 @@ describe("refreshDelegatedTokenClassified", () => {
       expect(outcome.reason).toBe("http_5xx");
     }
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("refreshDelegatedTokenClassified telemetry", () => {
+  let restoreSink: (() => void) | null = null;
+  let sink: InMemoryOAuthMetricsSink;
+
+  beforeEach(() => {
+    sink = new InMemoryOAuthMetricsSink();
+    restoreSink = setOAuthMetricsSinkForTesting(sink);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+    if (restoreSink) {
+      restoreSink();
+      restoreSink = null;
+    }
+  });
+
+  it("records refresh.outcome counter for success on attempt 1", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          access_token: "at-1",
+          expiry_date: 1800000000000,
+          scope: "openid",
+          token_type: "Bearer",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    await refreshDelegatedTokenClassified(config, "rt-1", { provider: "google-calendar" });
+
+    expect(sink.getCount("link.oauth.refresh.outcome")).toEqual(1);
+    expect(
+      sink.getCount("link.oauth.refresh.outcome", {
+        kind: "success",
+        provider: "google-calendar",
+        retry_attempt: "1",
+      }),
+    ).toEqual(1);
+  });
+
+  it("records refresh.outcome twice on a transient → success retry path and increments retry_saved", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response("upstream 500", { status: 500 }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            access_token: "at-2",
+            expiry_date: 1800000000000,
+            scope: "openid",
+            token_type: "Bearer",
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+
+    const promise = refreshDelegatedTokenClassified(config, "rt-1", {
+      provider: "google-calendar",
+    });
+    await vi.advanceTimersByTimeAsync(500);
+    await promise;
+
+    expect(sink.getCount("link.oauth.refresh.outcome")).toEqual(2);
+    expect(
+      sink.getCount("link.oauth.refresh.outcome", {
+        kind: "transient",
+        reason: "http_5xx",
+        retry_attempt: "1",
+      }),
+    ).toEqual(1);
+    expect(
+      sink.getCount("link.oauth.refresh.outcome", { kind: "success", retry_attempt: "2" }),
+    ).toEqual(1);
+    expect(sink.getCount("link.oauth.refresh.retry_saved")).toEqual(1);
+    expect(
+      sink.getCount("link.oauth.refresh.retry_saved", {
+        provider: "google-calendar",
+        first_reason: "http_5xx",
+      }),
+    ).toEqual(1);
+  });
+
+  it("does NOT increment retry_saved when both attempts are transient", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response("rate limited", { status: 429 }))
+      .mockResolvedValueOnce(new Response("upstream 500", { status: 500 }));
+
+    const promise = refreshDelegatedTokenClassified(config, "rt-1", {
+      provider: "google-calendar",
+    });
+    await vi.advanceTimersByTimeAsync(500);
+    await promise;
+
+    expect(sink.getCount("link.oauth.refresh.outcome")).toEqual(2);
+    expect(sink.getCount("link.oauth.refresh.retry_saved")).toEqual(0);
+  });
+
+  it("does NOT retry on token_dead and records only attempt 1", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ error: "invalid_grant" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    await refreshDelegatedTokenClassified(config, "rt-1", { provider: "google-calendar" });
+
+    expect(sink.getCount("link.oauth.refresh.outcome")).toEqual(1);
+    expect(
+      sink.getCount("link.oauth.refresh.outcome", { kind: "token_dead", retry_attempt: "1" }),
+    ).toEqual(1);
+    expect(sink.getCount("link.oauth.refresh.retry_saved")).toEqual(0);
+  });
+
+  it("emits the platform_bug counter for platform_bug transients", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ error: "invalid_client" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const promise = refreshDelegatedTokenClassified(config, "rt-1", {
+      provider: "google-calendar",
+    });
+    await vi.advanceTimersByTimeAsync(500);
+    await promise;
+
+    // Both attempts surface platform_bug — counter should tick twice.
+    expect(sink.getCount("link.oauth.refresh.platform_bug")).toEqual(2);
+    expect(
+      sink.getCount("link.oauth.refresh.platform_bug", { provider: "google-calendar" }),
+    ).toEqual(2);
   });
 });

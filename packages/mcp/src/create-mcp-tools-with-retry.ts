@@ -27,6 +27,7 @@ import type { Elicitation, ElicitationOption } from "@atlas/core/elicitations";
 import { ElicitationStorage } from "@atlas/core/elicitations";
 import { LinkCredentialUnavailableError } from "@atlas/core/mcp-registry/credential-resolver";
 import type { Logger } from "@atlas/logger";
+import { getOAuthMetrics, type OAuthMetricsSink } from "@atlas/logger/oauth-metrics";
 import {
   type CreateMCPToolsOptions,
   createMCPTools,
@@ -131,6 +132,33 @@ export async function createMCPToolsWithRetry(
     });
 
     const next = await createMCPTools(retryConfigs, logger, opts);
+
+    // Classify each retried family. A family is `retry_succeeded` iff none of
+    // its serverIds reappears as a transient in `next.disconnected`. Otherwise
+    // it's `retry_failed`. Other disconnect kinds (e.g. `credential_not_found`
+    // surfacing on the retry pass) aren't part of this distinction — the v8
+    // counters track recovery from the transient state specifically.
+    const nextTransientServerIds = new Set(
+      next.disconnected
+        .filter((entry) => entry.kind === "credential_temporarily_unavailable")
+        .map((entry) => entry.serverId),
+    );
+    const metrics = getOAuthMetrics();
+    for (const fo of familyOutcomes) {
+      if (fo.outcome !== "retry") continue;
+      const labels = {
+        family: fo.family,
+        workspaceId: interactiveCtx.workspaceId,
+        sessionId: interactiveCtx.sessionId,
+      };
+      const stillTransient = fo.entries.some((e) => nextTransientServerIds.has(e.serverId));
+      if (stillTransient) {
+        metrics.recordElicitationRetryFailed(labels);
+      } else {
+        metrics.recordElicitationRetrySucceeded(labels);
+      }
+    }
+
     acc = mergeResults(acc, next, new Set(retryServerIds));
     // Loop again — fresh transients in `next` (if any) re-enter the retry path.
   }
@@ -189,21 +217,38 @@ function resolveFamilies(input: {
 }): Promise<FamilyOutcome[]> {
   const { families, logger, interactiveCtx } = input;
   const expiresAt = expiresAtFromJobTimeout(interactiveCtx.jobTimeoutMs);
+  const metrics = getOAuthMetrics();
 
   return Promise.all(
     Array.from(families.entries()).map(async ([family, entries]) => {
-      const elicitation = await findOrCreateElicitation({
+      const { elicitation } = await findOrCreateElicitation({
         family,
         expiresAt,
         interactiveCtx,
         logger,
       });
 
-      const terminal = await waitForElicitationTerminal({
-        id: elicitation.id,
-        expiresAt: elicitation.expiresAt,
-        signal: interactiveCtx.sessionAbortSignal,
-      });
+      const createdAtMs = Date.parse(elicitation.createdAt);
+      const labels = {
+        family,
+        workspaceId: interactiveCtx.workspaceId,
+        sessionId: interactiveCtx.sessionId,
+      };
+
+      let terminal: TerminalAnswer;
+      try {
+        terminal = await waitForElicitationTerminal({
+          id: elicitation.id,
+          expiresAt: elicitation.expiresAt,
+          signal: interactiveCtx.sessionAbortSignal,
+        });
+      } catch (err) {
+        if (err instanceof Error && err.name === "AbortError") {
+          metrics.recordElicitationAborted(labels);
+          recordAnswerLatency(metrics, createdAtMs, { ...labels, status: "aborted" });
+        }
+        throw err;
+      }
 
       logger.info("createMCPToolsWithRetry elicitation answered", {
         operation: "mcp_retry",
@@ -216,11 +261,44 @@ function resolveFamilies(input: {
       });
 
       if (terminal.status === "answered" && terminal.value === "retry") {
+        metrics.recordElicitationAnsweredRetry(labels);
+        recordAnswerLatency(metrics, createdAtMs, { ...labels, status: "answered_retry" });
         return { family, outcome: "retry", entries };
       }
+      if (terminal.status === "answered" && terminal.value === "cancel") {
+        metrics.recordElicitationAnsweredCancel(labels);
+        recordAnswerLatency(metrics, createdAtMs, { ...labels, status: "answered_cancel" });
+      } else if (terminal.status === "expired") {
+        metrics.recordElicitationExpired(labels);
+        recordAnswerLatency(metrics, createdAtMs, { ...labels, status: "expired" });
+      }
+      // `declined` is a back-door state from the storage layer; treat as
+      // "failed" without a dedicated counter (not in the v8 list).
       return { family, outcome: "failed", entries };
     }),
   );
+}
+
+function recordAnswerLatency(
+  metrics: OAuthMetricsSink,
+  createdAtMs: number,
+  attrs: {
+    family: string;
+    workspaceId: string;
+    sessionId: string;
+    status: "answered_retry" | "answered_cancel" | "expired" | "aborted";
+  },
+): void {
+  if (!Number.isFinite(createdAtMs)) return;
+  const elapsed = Date.now() - createdAtMs;
+  if (elapsed < 0) return;
+  metrics.recordAnswerLatencyMs(elapsed, attrs);
+}
+
+interface FindOrCreateResult {
+  elicitation: Elicitation;
+  /** True when we joined an existing pending row instead of creating a fresh one. */
+  deduped: boolean;
 }
 
 async function findOrCreateElicitation(input: {
@@ -228,9 +306,10 @@ async function findOrCreateElicitation(input: {
   expiresAt: string;
   interactiveCtx: InteractiveContext;
   logger: Logger;
-}): Promise<Elicitation> {
+}): Promise<FindOrCreateResult> {
   const { family, expiresAt, interactiveCtx, logger } = input;
   const question = questionForFamily(family);
+  const metrics = getOAuthMetrics();
 
   const listed = await ElicitationStorage.list({
     workspaceId: interactiveCtx.workspaceId,
@@ -249,7 +328,12 @@ async function findOrCreateElicitation(input: {
         family,
         elicitationId: reusable.id,
       });
-      return reusable;
+      metrics.recordElicitationDeduped({
+        family,
+        workspaceId: interactiveCtx.workspaceId,
+        sessionId: interactiveCtx.sessionId,
+      });
+      return { elicitation: reusable, deduped: true };
     }
   } else {
     logger.warn("createMCPToolsWithRetry: pending elicitation list failed; proceeding to create", {
@@ -281,7 +365,12 @@ async function findOrCreateElicitation(input: {
     family,
     elicitationId: created.data.id,
   });
-  return created.data;
+  metrics.recordElicitationCreated({
+    family,
+    workspaceId: interactiveCtx.workspaceId,
+    sessionId: interactiveCtx.sessionId,
+  });
+  return { elicitation: created.data, deduped: false };
 }
 
 type TerminalAnswer = { status: "answered"; value: string } | { status: "declined" | "expired" };
