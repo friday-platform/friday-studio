@@ -184,6 +184,66 @@ describe("createMCPTools", () => {
     expect(result.disconnected[1]?.kind).toBe("credential_expired");
   });
 
+  it("skips server with LinkCredentialUnavailableError and emits credential_temporarily_unavailable", async () => {
+    mockResolveEnvValues.mockRejectedValueOnce(
+      new LinkCredentialUnavailableError({
+        credentialId: "cred_transient",
+        serverName: "needs-cred",
+        provider: "google-gmail",
+      }),
+    );
+
+    const configs: Record<string, MCPServerConfig> = {
+      "needs-cred": {
+        transport: { type: "stdio", command: "echo", args: [] },
+        env: { TOKEN: { from: "link" as const, id: "cred_transient", key: "token" } },
+      },
+    };
+
+    const result = await createMCPTools(configs, fakeLogger);
+
+    expect(Object.keys(result.tools)).toHaveLength(0);
+    expect(result.disconnected).toHaveLength(1);
+    expect(result.disconnected[0]).toMatchObject({
+      serverId: "needs-cred",
+      kind: "credential_temporarily_unavailable",
+    });
+  });
+
+  it("isolates LinkCredentialUnavailableError per server — others still connect", async () => {
+    mockResolveEnvValues
+      .mockRejectedValueOnce(
+        new LinkCredentialUnavailableError({
+          credentialId: "cred_transient",
+          serverName: "transient-server",
+        }),
+      )
+      .mockResolvedValueOnce({});
+
+    mockCreateMCPClient.mockResolvedValueOnce({
+      tools: vi.fn().mockResolvedValue({ "healthy-tool": { description: "ok" } }),
+      close: vi.fn().mockResolvedValue(undefined),
+    });
+
+    const configs: Record<string, MCPServerConfig> = {
+      "transient-server": {
+        transport: { type: "stdio", command: "echo", args: [] },
+        env: { TOKEN: { from: "link" as const, id: "cred_transient", key: "token" } },
+      },
+      "healthy-server": { transport: { type: "stdio", command: "echo", args: [] } },
+    };
+
+    const result = await createMCPTools(configs, fakeLogger);
+
+    expect(result.tools).toHaveProperty("healthy-tool");
+    expect(result.disconnected).toHaveLength(1);
+    expect(result.disconnected[0]).toMatchObject({
+      serverId: "transient-server",
+      kind: "credential_temporarily_unavailable",
+    });
+    expect(mockCreateMCPClient).toHaveBeenCalledTimes(1);
+  });
+
   it("applies allow filter to server tools", async () => {
     mockCreateMCPClient.mockResolvedValue({
       tools: vi

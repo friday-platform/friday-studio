@@ -191,6 +191,7 @@ export async function createMCPTools(
         if (
           error instanceof LinkCredentialNotFoundError ||
           error instanceof LinkCredentialExpiredError ||
+          error instanceof LinkCredentialUnavailableError ||
           error instanceof NoDefaultCredentialError
         ) {
           const entry = buildDisconnectedEntry(error, serverId, config);
