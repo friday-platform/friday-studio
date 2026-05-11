@@ -282,6 +282,70 @@ describe("createScrubber — text/JSON lifting", () => {
     expect(sentBody.data.mimeType).toBe("text/plain");
   });
 
+  it("lifts a 10 KB CSV blob with text/csv mime", async () => {
+    mockArtifactCreate("art_csv", 10 * 1024, "text/csv");
+    // 3+ columns, many rows, consistent comma counts — the sniff
+    // identifies it as CSV so the artifact + the lift marker carry
+    // the right mime, and the dedicated table-view route picks it up
+    // when the operator opens it.
+    const header = "id,first_name,last_name,city";
+    const row = `1,Alice,Smith-Worthington,"Seattle, WA"`;
+    const csv = [header, ...Array(300).fill(row)].join("\n");
+    expect(csv.length).toBeGreaterThanOrEqual(TEXT_THRESHOLD_CHARS);
+    const result = (await lift({ content: [{ type: "text", text: csv }] }, TOOL_CTX)) as {
+      content: Array<{ type: string; text: string }>;
+    };
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(result.content[0]?.text).toMatch(/artifact art_csv/);
+    const sentBody = JSON.parse(mockFetch.mock.calls[0]?.[1]?.body as string) as {
+      data: { mimeType: string; originalName?: string };
+    };
+    expect(sentBody.data.mimeType).toBe("text/csv");
+    // Synthesized filename should pick up the .csv extension.
+    expect(sentBody.data.originalName).toMatch(/\.csv$/);
+  });
+
+  it("lifts a 10 KB TSV blob with text/tab-separated-values mime", async () => {
+    mockArtifactCreate("art_tsv", 10 * 1024, "text/tab-separated-values");
+    const header = "id\tfirst_name\tlast_name\tcity";
+    const row = "1\tAlice\tSmith\tSeattle";
+    const tsv = [header, ...Array(450).fill(row)].join("\n");
+    expect(tsv.length).toBeGreaterThanOrEqual(TEXT_THRESHOLD_CHARS);
+    const result = (await lift({ content: [{ type: "text", text: tsv }] }, TOOL_CTX)) as {
+      content: Array<{ type: string; text: string }>;
+    };
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(result.content[0]?.text).toMatch(/artifact art_tsv/);
+    const sentBody = JSON.parse(mockFetch.mock.calls[0]?.[1]?.body as string) as {
+      data: { mimeType: string; originalName?: string };
+    };
+    expect(sentBody.data.mimeType).toBe("text/tab-separated-values");
+    expect(sentBody.data.originalName).toMatch(/\.tsv$/);
+  });
+
+  it("does NOT mistag arbitrary prose with commas as CSV", async () => {
+    mockArtifactCreate("art_plain", 10 * 1024, "text/plain");
+    // Three-sentence paragraph repeated to threshold. Every sentence
+    // carries multiple commas but the comma counts differ wildly per
+    // line, so the looksLikeDelimited heuristic rejects.
+    const prose = [
+      "Once upon a time, in a kingdom far, far away, there lived a baker.",
+      "She baked, she sang, she danced.",
+      "Every morning, she rose early, prepared dough, and opened her shop.",
+    ].join(" ");
+    const blob = prose.repeat(Math.ceil(TEXT_THRESHOLD_CHARS / prose.length));
+    expect(blob.length).toBeGreaterThanOrEqual(TEXT_THRESHOLD_CHARS);
+    const result = (await lift({ content: [{ type: "text", text: blob }] }, TOOL_CTX)) as {
+      content: Array<{ type: string; text: string }>;
+    };
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const sentBody = JSON.parse(mockFetch.mock.calls[0]?.[1]?.body as string) as {
+      data: { mimeType: string };
+    };
+    expect(sentBody.data.mimeType).toBe("text/plain");
+    expect(result.content[0]?.text).toMatch(/artifact art_plain/);
+  });
+
   it("does NOT lift text below the text threshold", async () => {
     // O1 (review-2): MCP-boundary createScrubber removed; tests use the
     // post-stream lift via the `lift` helper above.
