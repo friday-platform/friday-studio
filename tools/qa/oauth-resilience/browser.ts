@@ -474,9 +474,11 @@ function regexLiteral(pattern: RegExp): string {
 }
 
 /**
- * Wait until a `data-integration-disconnected`-style chip (or any element
- * with `data-testid="integration-chip"`) becomes visible AND its text
- * matches `pattern`. Times out at 15s by default.
+ * Wait until an integration-disconnect chip becomes visible AND its text
+ * matches `pattern`. Matches both the legacy attribute hook
+ * (`data-integration-disconnected`) and the test-id forms — the Phase 3
+ * chip uses `data-testid="integration-chip-${kind}"` (kind-suffixed) so
+ * the selector uses a prefix match. Times out at 15s by default.
  */
 export async function assertChipVisible(
   browser: BrowserController,
@@ -486,7 +488,7 @@ export async function assertChipVisible(
   await browser.waitFor(
     `(() => {
       const re = ${regexLiteral(pattern)};
-      const els = document.querySelectorAll('[data-testid="integration-chip"], [data-integration-disconnected]');
+      const els = document.querySelectorAll('[data-testid^="integration-chip"], [data-integration-disconnected]');
       for (const el of els) {
         if (re.test((el.textContent ?? "").trim())) return true;
       }

@@ -34,6 +34,7 @@ import {
 } from "./run-core.ts";
 // Scenario registration: each file calls `register({...})` at module load.
 // Add new phases by appending another import — order matches Phase number.
+import "./scenarios/p1.ts";
 import "./scenarios/p2.ts";
 
 export type {
