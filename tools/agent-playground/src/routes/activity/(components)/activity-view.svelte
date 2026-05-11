@@ -15,7 +15,6 @@
 <script lang="ts">
   import {
     ElicitationKindSchema,
-    ElicitationSchema,
     ElicitationStatusSchema,
     type Elicitation,
     type ElicitationKind,
@@ -31,6 +30,7 @@
     elicitationQueries,
     mergeElicitationIntoCache,
   } from "$lib/queries/elicitation-queries.ts";
+  import { subscribeToWorkspaceElicitations } from "$lib/shared-worker/client.ts";
   import ElicitationDetail from "./elicitation-detail.svelte";
   import ElicitationRow from "./elicitation-row.svelte";
 
@@ -80,26 +80,20 @@
 
     if (!workspaceId) return;
 
-    const url = new URL("/api/daemon/api/elicitations/stream", globalThis.location.origin);
-    url.searchParams.set("workspaceId", workspaceId);
-
-    const es = new EventSource(url.toString());
-    es.addEventListener("error", () => {
-      // EventSource auto-reconnects; surfacing for devtools when the
-      // daemon's NATS isn't ready (503) or the tab gets a transient drop.
-      console.error("Elicitations SSE feed errored (EventSource will retry)");
-    });
-    es.addEventListener("message", (e) => {
-      let parsed: Elicitation;
+    const controller = new AbortController();
+    void (async () => {
       try {
-        parsed = ElicitationSchema.parse(JSON.parse(e.data));
-      } catch (err) {
-        console.error("Failed to parse elicitation SSE event", err);
-        return;
+        for await (const elicitation of subscribeToWorkspaceElicitations(workspaceId, {
+          signal: controller.signal,
+        })) {
+          mergeElicitationIntoCache(queryClient, elicitation);
+        }
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        console.error("Workspace elicitations stream errored", error);
       }
-      mergeElicitationIntoCache(queryClient, parsed);
-    });
-    return () => es.close();
+    })();
+    return () => controller.abort();
   });
 
   // ---------------------------------------------------------------------------

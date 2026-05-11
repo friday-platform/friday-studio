@@ -6,9 +6,12 @@
   import { createQuery, useQueryClient } from "@tanstack/svelte-query";
   import { page } from "$app/state";
   import { browser } from "$app/environment";
-  import { ElicitationSchema, type Elicitation } from "@atlas/core/elicitations/model";
   import { workspaceQueries } from "$lib/queries";
   import { mergeElicitationIntoCache } from "$lib/queries/elicitation-queries.ts";
+  import {
+    subscribeToSessionEvents,
+    subscribeToWorkspaceElicitations,
+  } from "$lib/shared-worker/client.ts";
   import { DefaultChatTransport } from "ai";
   import ChatInput, { type ImageAttachment } from "./chat-input.svelte";
   import ChatInspector from "./chat-inspector.svelte";
@@ -32,7 +35,6 @@
     type ValidationAttemptDisplay,
   } from "./validation-accumulator.ts";
   import type { SessionStreamEvent } from "@atlas/core/session/session-events";
-  import { sessionEventStream } from "$lib/utils/session-event-stream";
 
   const wsId = $derived(page.params.workspaceId ?? "user");
   const queryClient = useQueryClient();
@@ -160,25 +162,20 @@
   $effect(() => {
     if (!browser || !wsId) return;
 
-    const url = new URL("/api/daemon/api/elicitations/stream", globalThis.location.origin);
-    url.searchParams.set("workspaceId", wsId);
-
-    const es = new EventSource(url.toString());
-    es.addEventListener("message", (e) => {
-      let parsed: Elicitation;
+    const controller = new AbortController();
+    void (async () => {
       try {
-        parsed = ElicitationSchema.parse(JSON.parse(e.data));
-      } catch (err) {
-        console.error("Failed to parse elicitation SSE event", err);
-        return;
+        for await (const elicitation of subscribeToWorkspaceElicitations(wsId, {
+          signal: controller.signal,
+        })) {
+          mergeElicitationIntoCache(queryClient, elicitation);
+        }
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        console.warn("Workspace elicitations stream errored", error);
       }
-      mergeElicitationIntoCache(queryClient, parsed);
-    });
-    es.addEventListener("error", () => {
-      console.warn("Elicitations SSE feed errored (EventSource will retry)");
-    });
-
-    return () => es.close();
+    })();
+    return () => controller.abort();
   });
 
   /**
@@ -597,7 +594,7 @@
 
     (async () => {
       try {
-        for await (const event of sessionEventStream(sid, { signal: controller.signal })) {
+        for await (const event of subscribeToSessionEvents(sid, { signal: controller.signal })) {
           if (controller.signal.aborted) return;
           if ("type" in event && event.type === "step:validation") {
             untrack(() => {

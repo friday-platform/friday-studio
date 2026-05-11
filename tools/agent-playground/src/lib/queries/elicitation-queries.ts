@@ -16,12 +16,7 @@
 // which transitively pulls `@atlas/logger` → `node:path` into client bundles
 // and 500s the playground at `paths.ts`. The model module only depends on zod,
 // so it bundles cleanly for browser code.
-import {
-  ElicitationSchema,
-  ElicitationSummarySchema,
-  type Elicitation,
-  type ElicitationSummary,
-} from "@atlas/core/elicitations/model";
+import { ElicitationSchema, type Elicitation } from "@atlas/core/elicitations/model";
 import {
   createMutation,
   queryOptions,
@@ -33,9 +28,6 @@ import { z } from "zod";
 // ==============================================================================
 // SCHEMAS
 // ==============================================================================
-
-export { ElicitationSummarySchema };
-export type { ElicitationSummary };
 
 const ListResponseSchema = z.object({
   elicitations: z.array(ElicitationSchema),
@@ -177,33 +169,6 @@ export function mergeElicitationIntoCache(queryClient: QueryClient, next: Elicit
   };
   queryClient.setQueryData<Elicitation[]>(elicitationListKey(null), merge);
   queryClient.setQueryData<Elicitation[]>(elicitationListKey(next.workspaceId), merge);
-}
-
-/**
- * Apply a sanitized global SSE event. Since summary events intentionally lack
- * question/options/answers, they only patch fields that are already safe and
- * then invalidate the affected list queries so mounted views refetch full
- * details through the normal authorized list endpoint.
- */
-export function applyElicitationSummaryEvent(
-  queryClient: QueryClient,
-  next: ElicitationSummary,
-): void {
-  const patch = (prev: Elicitation[] | undefined): Elicitation[] | undefined => {
-    if (!prev) return prev;
-    const idx = prev.findIndex((e) => e.id === next.id);
-    if (idx === -1) return prev;
-    const copy = prev.slice();
-    const current = copy[idx];
-    if (!current) return prev;
-    copy[idx] = { ...current, ...next };
-    return copy;
-  };
-
-  queryClient.setQueryData<Elicitation[]>(elicitationListKey(null), patch);
-  queryClient.setQueryData<Elicitation[]>(elicitationListKey(next.workspaceId), patch);
-  void queryClient.invalidateQueries({ queryKey: elicitationListKey(null) });
-  void queryClient.invalidateQueries({ queryKey: elicitationListKey(next.workspaceId) });
 }
 
 function mergeAndInvalidate(queryClient: QueryClient, next: Elicitation): void {

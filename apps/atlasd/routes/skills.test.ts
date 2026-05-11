@@ -4,9 +4,11 @@ import { join } from "node:path";
 import process from "node:process";
 import { startNatsTestServer, type TestNatsServer } from "@atlas/core/test-utils/nats-test-server";
 import { initSkillStorage } from "@atlas/skills";
+import { Hono } from "hono";
 import { connect, type NatsConnection } from "nats";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
+import type { AppVariables } from "../src/factory.ts";
 
 // Set up isolated test environment BEFORE importing routes
 const testDir = join(tmpdir(), `skills-routes-test-${Date.now()}`);
@@ -33,6 +35,25 @@ process.env.FRIDAY_KEY = createTestJwt({
 process.env.USER_IDENTITY_ADAPTER = "local";
 
 const { skillsRoutes } = await import("./skills.ts");
+
+/**
+ * `skillsRoutes` now relies on `c.get("userId")` (set by the session
+ * middleware in production). Wrap it under a minimal test-only
+ * pre-middleware that injects the sentinel "system" id — this mirrors
+ * how the legacy JWT path used to thread the same id via
+ * `extractTempestUserId`'s `user_metadata.tempest_user_id`.
+ *
+ * The auth-stripping tests clear `currentUserId` to simulate the
+ * "no valid session" case the production middleware 401s on.
+ */
+let currentUserId: string | undefined = "system";
+
+const testApp = new Hono<AppVariables>()
+  .use("*", async (c, next) => {
+    if (currentUserId !== undefined) c.set("userId", currentUserId);
+    await next();
+  })
+  .route("/", skillsRoutes);
 
 // Response schemas
 const SkillResponseSchema = z.object({
@@ -106,7 +127,7 @@ describe("Skills API Routes - Global Catalog", () => {
 
   describe("POST /@:namespace/:name (publish)", () => {
     it("publishes a text-only skill via JSON body", async () => {
-      const response = await skillsRoutes.request("/@atlas/code-review", {
+      const response = await testApp.request("/@atlas/code-review", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -124,14 +145,14 @@ describe("Skills API Routes - Global Catalog", () => {
     it("splits embedded frontmatter into the frontmatter column on JSON publish", async () => {
       const fullSkillMd =
         "---\nname: split-me\ndescription: This is a test skill description.\n---\n\n# Split Me\n\nBody content.\n";
-      const publishRes = await skillsRoutes.request("/@atlas/split-me", {
+      const publishRes = await testApp.request("/@atlas/split-me", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ instructions: fullSkillMd }),
       });
       expect(publishRes.status).toBe(201);
 
-      const getRes = await skillsRoutes.request("/@atlas/split-me");
+      const getRes = await testApp.request("/@atlas/split-me");
       expect(getRes.status).toBe(200);
       const body = (await getRes.json()) as {
         skill: { instructions: string; frontmatter: Record<string, unknown>; description: string };
@@ -150,7 +171,7 @@ describe("Skills API Routes - Global Catalog", () => {
       // that direction in so a future merge-order swap shows up as a failure.
       const fullSkillMd =
         "---\nname: merge-conflict\ndescription: embedded\n---\n\n# Merge Conflict\n\nBody.\n";
-      const publishRes = await skillsRoutes.request("/@atlas/merge-conflict", {
+      const publishRes = await testApp.request("/@atlas/merge-conflict", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -160,7 +181,7 @@ describe("Skills API Routes - Global Catalog", () => {
       });
       expect(publishRes.status).toBe(201);
 
-      const getRes = await skillsRoutes.request("/@atlas/merge-conflict");
+      const getRes = await testApp.request("/@atlas/merge-conflict");
       expect(getRes.status).toBe(200);
       const body = (await getRes.json()) as { skill: { frontmatter: Record<string, unknown> } };
       expect(body.skill.frontmatter.description).toBe("explicit");
@@ -171,14 +192,14 @@ describe("Skills API Routes - Global Catalog", () => {
       // `instructions`. The strict parser rejected them, so the body was
       // stored verbatim with the YAML preamble — exactly what this PR fixes.
       const legacySkillMd = "---\nname: legacy-skill\n---\n\n# Legacy Skill\n\nBody content.\n";
-      const publishRes = await skillsRoutes.request("/@atlas/legacy-skill", {
+      const publishRes = await testApp.request("/@atlas/legacy-skill", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ instructions: legacySkillMd }),
       });
       expect(publishRes.status).toBe(201);
 
-      const getRes = await skillsRoutes.request("/@atlas/legacy-skill");
+      const getRes = await testApp.request("/@atlas/legacy-skill");
       expect(getRes.status).toBe(200);
       const body = (await getRes.json()) as {
         skill: { instructions: string; frontmatter: Record<string, unknown> };
@@ -189,7 +210,7 @@ describe("Skills API Routes - Global Catalog", () => {
     });
 
     it("auto-increments version on subsequent publish", async () => {
-      const response = await skillsRoutes.request("/@atlas/code-review", {
+      const response = await testApp.request("/@atlas/code-review", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -205,7 +226,7 @@ describe("Skills API Routes - Global Catalog", () => {
     });
 
     it("allows publish without description", async () => {
-      const response = await skillsRoutes.request("/@atlas/no-desc", {
+      const response = await testApp.request("/@atlas/no-desc", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ instructions: "Do stuff" }),
@@ -215,7 +236,7 @@ describe("Skills API Routes - Global Catalog", () => {
     });
 
     it("rejects publish without instructions", async () => {
-      const response = await skillsRoutes.request("/@atlas/bad-skill", {
+      const response = await testApp.request("/@atlas/bad-skill", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ description: "A skill" }),
@@ -225,7 +246,7 @@ describe("Skills API Routes - Global Catalog", () => {
     });
 
     it("validates namespace format", async () => {
-      const response = await skillsRoutes.request("/@Invalid/skill", {
+      const response = await testApp.request("/@Invalid/skill", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ description: "Test", instructions: "Test" }),
@@ -235,7 +256,7 @@ describe("Skills API Routes - Global Catalog", () => {
     });
 
     it("validates name format", async () => {
-      const response = await skillsRoutes.request("/@atlas/Invalid Name!", {
+      const response = await testApp.request("/@atlas/Invalid Name!", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ description: "Test", instructions: "Test" }),
@@ -251,7 +272,7 @@ describe("Skills API Routes - Global Catalog", () => {
 
   describe("GET /@:namespace/:name (latest)", () => {
     it("returns latest version of a skill", async () => {
-      const response = await skillsRoutes.request("/@atlas/code-review");
+      const response = await testApp.request("/@atlas/code-review");
       expect(response.status).toBe(200);
 
       const body = SkillResponseSchema.parse(await response.json());
@@ -264,14 +285,14 @@ describe("Skills API Routes - Global Catalog", () => {
     });
 
     it("returns 404 for non-existent skill", async () => {
-      const response = await skillsRoutes.request("/@atlas/nonexistent");
+      const response = await testApp.request("/@atlas/nonexistent");
       expect(response.status).toBe(404);
       const body = ErrorSchema.parse(await response.json());
       expect(body.error).toBe("Skill not found");
     });
 
     it("does not include archive blob in JSON response", async () => {
-      const response = await skillsRoutes.request("/@atlas/code-review");
+      const response = await testApp.request("/@atlas/code-review");
       const json = (await response.json()) as { skill: Record<string, unknown> };
       expect(json.skill).not.toHaveProperty("archive");
     });
@@ -283,7 +304,7 @@ describe("Skills API Routes - Global Catalog", () => {
 
   describe("GET /@:namespace/:name/:version", () => {
     it("returns specific version", async () => {
-      const response = await skillsRoutes.request("/@atlas/code-review/1");
+      const response = await testApp.request("/@atlas/code-review/1");
       expect(response.status).toBe(200);
 
       const body = SkillResponseSchema.parse(await response.json());
@@ -291,12 +312,12 @@ describe("Skills API Routes - Global Catalog", () => {
     });
 
     it("returns 404 for non-existent version", async () => {
-      const response = await skillsRoutes.request("/@atlas/code-review/999");
+      const response = await testApp.request("/@atlas/code-review/999");
       expect(response.status).toBe(404);
     });
 
     it("rejects non-integer version", async () => {
-      const response = await skillsRoutes.request("/@atlas/code-review/abc");
+      const response = await testApp.request("/@atlas/code-review/abc");
       expect(response.status).toBe(400);
     });
   });
@@ -307,7 +328,7 @@ describe("Skills API Routes - Global Catalog", () => {
 
   describe("GET / (list)", () => {
     it("lists all skills", async () => {
-      const response = await skillsRoutes.request("/");
+      const response = await testApp.request("/");
       expect(response.status).toBe(200);
 
       const body = SkillsListSchema.parse(await response.json());
@@ -321,13 +342,13 @@ describe("Skills API Routes - Global Catalog", () => {
 
     it("filters by namespace", async () => {
       // Publish in a different namespace first
-      await skillsRoutes.request("/@team/deploy", {
+      await testApp.request("/@team/deploy", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ description: "Deploy skill", instructions: "Deploy things." }),
       });
 
-      const response = await skillsRoutes.request("/?namespace=team");
+      const response = await testApp.request("/?namespace=team");
       expect(response.status).toBe(200);
       const body = SkillsListSchema.parse(await response.json());
 
@@ -336,7 +357,7 @@ describe("Skills API Routes - Global Catalog", () => {
     });
 
     it("filters by query", async () => {
-      const response = await skillsRoutes.request("/?query=deploy");
+      const response = await testApp.request("/?query=deploy");
       expect(response.status).toBe(200);
       const body = SkillsListSchema.parse(await response.json());
 
@@ -351,7 +372,7 @@ describe("Skills API Routes - Global Catalog", () => {
 
   describe("GET /@:namespace/:name/versions", () => {
     it("lists all versions of a skill", async () => {
-      const response = await skillsRoutes.request("/@atlas/code-review/versions");
+      const response = await testApp.request("/@atlas/code-review/versions");
       expect(response.status).toBe(200);
 
       const body = VersionsListSchema.parse(await response.json());
@@ -362,7 +383,7 @@ describe("Skills API Routes - Global Catalog", () => {
     });
 
     it("returns empty list for non-existent skill", async () => {
-      const response = await skillsRoutes.request("/@atlas/nonexistent/versions");
+      const response = await testApp.request("/@atlas/nonexistent/versions");
       expect(response.status).toBe(200);
 
       const body = VersionsListSchema.parse(await response.json());
@@ -377,18 +398,18 @@ describe("Skills API Routes - Global Catalog", () => {
   describe("DELETE /@:namespace/:name/:version", () => {
     it("deletes a specific version", async () => {
       // Publish a throwaway skill
-      await skillsRoutes.request("/@atlas/throwaway", {
+      await testApp.request("/@atlas/throwaway", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ description: "Will be deleted", instructions: "Temporary." }),
       });
 
-      const response = await skillsRoutes.request("/@atlas/throwaway/1", { method: "DELETE" });
+      const response = await testApp.request("/@atlas/throwaway/1", { method: "DELETE" });
       expect(response.status).toBe(200);
       expect(await response.json()).toMatchObject({ success: true });
 
       // Verify it's gone
-      const getResponse = await skillsRoutes.request("/@atlas/throwaway/1");
+      const getResponse = await testApp.request("/@atlas/throwaway/1");
       expect(getResponse.status).toBe(404);
     });
   });
@@ -400,7 +421,7 @@ describe("Skills API Routes - Global Catalog", () => {
 
   describe("GET ...?include=archive", () => {
     it("returns 404 when skill has no archive", async () => {
-      const response = await skillsRoutes.request("/@atlas/code-review?include=archive");
+      const response = await testApp.request("/@atlas/code-review?include=archive");
       expect(response.status).toBe(404);
       const body = (await response.json()) as { error: string };
       expect(body.error).toContain("No archive");
@@ -413,7 +434,7 @@ describe("Skills API Routes - Global Catalog", () => {
 
   describe("GET /:namespace/:name/export", () => {
     it("exports a published skill as a tar.gz containing SKILL.md", async () => {
-      const response = await skillsRoutes.request("/@atlas/code-review/export");
+      const response = await testApp.request("/@atlas/code-review/export");
       expect(response.status).toBe(200);
       expect(response.headers.get("content-type")).toBe("application/gzip");
       const disposition = response.headers.get("content-disposition") ?? "";
@@ -429,7 +450,7 @@ describe("Skills API Routes - Global Catalog", () => {
     });
 
     it("returns 404 for non-existent skill", async () => {
-      const response = await skillsRoutes.request("/@atlas/nonexistent/export");
+      const response = await testApp.request("/@atlas/nonexistent/export");
       expect(response.status).toBe(404);
       const body = ErrorSchema.parse(await response.json());
       expect(body.error).toBe("Skill not found");
@@ -457,17 +478,14 @@ describe("Skills API Routes - Global Catalog", () => {
         new File([new Uint8Array(archiveBytes)], "imported.tar.gz", { type: "application/gzip" }),
       );
 
-      const response = await skillsRoutes.request("/import-archive", {
-        method: "POST",
-        body: formData,
-      });
+      const response = await testApp.request("/import-archive", { method: "POST", body: formData });
       expect(response.status).toBe(201);
       const body = PublishedResponseSchema.parse(await response.json());
       expect(body.published.namespace).toBe("atlas");
       expect(body.published.name).toBe("imported-skill");
 
       // Verify the skill is fetchable + content survived the round trip
-      const getRes = await skillsRoutes.request("/@atlas/imported-skill");
+      const getRes = await testApp.request("/@atlas/imported-skill");
       expect(getRes.status).toBe(200);
       const skill = SkillResponseSchema.parse(await getRes.json());
       expect(skill.skill.description).toBe(frontmatter.description);
@@ -496,10 +514,7 @@ describe("Skills API Routes - Global Catalog", () => {
         new File([new Uint8Array(archiveBytes)], "imported.tar.gz", { type: "application/gzip" }),
       );
 
-      const response = await skillsRoutes.request("/import-archive", {
-        method: "POST",
-        body: formData,
-      });
+      const response = await testApp.request("/import-archive", { method: "POST", body: formData });
       expect(response.status).toBe(400);
       const body = z
         .object({ error: z.string(), needsNamespace: z.literal(true), defaultName: z.string() })
@@ -525,7 +540,7 @@ describe("Skills API Routes - Global Catalog", () => {
         new File([new Uint8Array(archiveBytes)], "imported.tar.gz", { type: "application/gzip" }),
       );
 
-      const response = await skillsRoutes.request("/import-archive?namespace=eric", {
+      const response = await testApp.request("/import-archive?namespace=eric", {
         method: "POST",
         body: formData,
       });
@@ -534,7 +549,7 @@ describe("Skills API Routes - Global Catalog", () => {
       expect(body.published.namespace).toBe("eric");
       expect(body.published.name).toBe("just-a-name");
 
-      const getRes = await skillsRoutes.request("/@eric/just-a-name");
+      const getRes = await testApp.request("/@eric/just-a-name");
       expect(getRes.status).toBe(200);
     });
 
@@ -555,7 +570,7 @@ describe("Skills API Routes - Global Catalog", () => {
         new File([new Uint8Array(archiveBytes)], "imported.tar.gz", { type: "application/gzip" }),
       );
 
-      const response = await skillsRoutes.request(
+      const response = await testApp.request(
         "/import-archive?namespace=different-ns&name=overridden-name",
         { method: "POST", body: formData },
       );
@@ -564,7 +579,7 @@ describe("Skills API Routes - Global Catalog", () => {
       expect(body.published.namespace).toBe("different-ns");
       expect(body.published.name).toBe("overridden-name");
 
-      const getRes = await skillsRoutes.request("/@different-ns/overridden-name");
+      const getRes = await testApp.request("/@different-ns/overridden-name");
       expect(getRes.status).toBe(200);
     });
 
@@ -589,14 +604,14 @@ describe("Skills API Routes - Global Catalog", () => {
         "# Source\n\nUses [foo](references/foo.md) as a reference.",
       );
 
-      const uploadRes = await skillsRoutes.request("/@atlas/roundtrip-src/upload", {
+      const uploadRes = await testApp.request("/@atlas/roundtrip-src/upload", {
         method: "POST",
         body: uploadForm,
       });
       expect(uploadRes.status).toBe(201);
 
       // Export the published skill and re-import it under a different ns/name.
-      const exportRes = await skillsRoutes.request("/@atlas/roundtrip-src/export");
+      const exportRes = await testApp.request("/@atlas/roundtrip-src/export");
       expect(exportRes.status).toBe(200);
       const exportedBytes = new Uint8Array(await exportRes.arrayBuffer());
 
@@ -606,7 +621,7 @@ describe("Skills API Routes - Global Catalog", () => {
         new File([exportedBytes], "exported.tar.gz", { type: "application/gzip" }),
       );
 
-      const importRes = await skillsRoutes.request(
+      const importRes = await testApp.request(
         "/import-archive?namespace=roundtrip-dst&name=roundtrip-dst-name",
         { method: "POST", body: importForm },
       );
@@ -616,7 +631,7 @@ describe("Skills API Routes - Global Catalog", () => {
       expect(imported.published.name).toBe("roundtrip-dst-name");
 
       // The reference file content should survive the export -> import round-trip.
-      const fileRes = await skillsRoutes.request(
+      const fileRes = await testApp.request(
         "/@roundtrip-dst/roundtrip-dst-name/files/references/foo.md",
       );
       expect(fileRes.status).toBe(200);
@@ -641,7 +656,7 @@ describe("Skills API Routes - Global Catalog", () => {
           new File([new Uint8Array(archiveBytes)], "bad.tar.gz", { type: "application/gzip" }),
         );
 
-        const response = await skillsRoutes.request("/import-archive", {
+        const response = await testApp.request("/import-archive", {
           method: "POST",
           body: formData,
         });
@@ -670,10 +685,7 @@ describe("Skills API Routes - Global Catalog", () => {
         new File([new Uint8Array(archiveBytes)], "dead-links.tar.gz", { type: "application/gzip" }),
       );
 
-      const response = await skillsRoutes.request("/import-archive", {
-        method: "POST",
-        body: formData,
-      });
+      const response = await testApp.request("/import-archive", { method: "POST", body: formData });
       expect(response.status).toBe(400);
       const body = z
         .object({ error: z.string(), deadLinks: z.array(z.string()) })
@@ -688,7 +700,7 @@ describe("Skills API Routes - Global Catalog", () => {
 
   describe("POST / (create blank skill)", () => {
     it("creates a blank skill and returns skillId", async () => {
-      const response = await skillsRoutes.request("/", { method: "POST" });
+      const response = await testApp.request("/", { method: "POST" });
       expect(response.status).toBe(201);
 
       const body = z.object({ skillId: z.string() }).parse(await response.json());
@@ -696,16 +708,16 @@ describe("Skills API Routes - Global Catalog", () => {
     });
 
     it("returns 401 without auth", async () => {
-      const savedKey = process.env.FRIDAY_KEY;
-      delete process.env.FRIDAY_KEY;
+      const saved = currentUserId;
+      currentUserId = undefined;
 
       try {
-        const response = await skillsRoutes.request("/", { method: "POST" });
+        const response = await testApp.request("/", { method: "POST" });
         expect(response.status).toBe(401);
         const body = ErrorSchema.parse(await response.json());
         expect(body.error).toBe("Unauthorized");
       } finally {
-        process.env.FRIDAY_KEY = savedKey;
+        currentUserId = saved;
       }
     });
   });
@@ -717,10 +729,10 @@ describe("Skills API Routes - Global Catalog", () => {
   describe("GET /:skillId (get by skillId)", () => {
     it("returns latest version by skillId", async () => {
       // Create a blank skill, then publish to give it a name
-      const createRes = await skillsRoutes.request("/", { method: "POST" });
+      const createRes = await testApp.request("/", { method: "POST" });
       const { skillId } = z.object({ skillId: z.string() }).parse(await createRes.json());
 
-      await skillsRoutes.request("/@friday/by-id-test", {
+      await testApp.request("/@friday/by-id-test", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -731,7 +743,7 @@ describe("Skills API Routes - Global Catalog", () => {
         }),
       });
 
-      const response = await skillsRoutes.request(`/${skillId}`);
+      const response = await testApp.request(`/${skillId}`);
       expect(response.status).toBe(200);
 
       const body = SkillResponseSchema.parse(await response.json());
@@ -744,7 +756,7 @@ describe("Skills API Routes - Global Catalog", () => {
     });
 
     it("returns 404 for non-existent skillId", async () => {
-      const response = await skillsRoutes.request("/01NONEXISTENT0000000000000");
+      const response = await testApp.request("/01NONEXISTENT0000000000000");
       expect(response.status).toBe(404);
       const body = ErrorSchema.parse(await response.json());
       expect(body.error).toBe("Skill not found");
@@ -752,10 +764,10 @@ describe("Skills API Routes - Global Catalog", () => {
 
     it("does not include archive blob", async () => {
       // Use a skill we know exists from earlier tests
-      const createRes = await skillsRoutes.request("/", { method: "POST" });
+      const createRes = await testApp.request("/", { method: "POST" });
       const { skillId } = z.object({ skillId: z.string() }).parse(await createRes.json());
 
-      const response = await skillsRoutes.request(`/${skillId}`);
+      const response = await testApp.request(`/${skillId}`);
       expect(response.status).toBe(200);
       const json = (await response.json()) as { skill: Record<string, unknown> };
       expect(json.skill).not.toHaveProperty("archive");
@@ -769,9 +781,9 @@ describe("Skills API Routes - Global Catalog", () => {
   describe("GET / (list filtering)", () => {
     it("excludes unnamed skills by default", async () => {
       // Create a blank skill (unnamed)
-      await skillsRoutes.request("/", { method: "POST" });
+      await testApp.request("/", { method: "POST" });
 
-      const response = await skillsRoutes.request("/");
+      const response = await testApp.request("/");
       expect(response.status).toBe(200);
       const body = SkillsListSchema.parse(await response.json());
 
@@ -782,7 +794,7 @@ describe("Skills API Routes - Global Catalog", () => {
     });
 
     it("includes unnamed skills when includeAll=true", async () => {
-      const response = await skillsRoutes.request("/?includeAll=true");
+      const response = await testApp.request("/?includeAll=true");
       expect(response.status).toBe(200);
       const body = SkillsListSchema.parse(await response.json());
 
@@ -798,7 +810,7 @@ describe("Skills API Routes - Global Catalog", () => {
 
   describe("publish with skillId linkage", () => {
     it("returns skillId in publish response", async () => {
-      const response = await skillsRoutes.request("/@atlas/code-review", {
+      const response = await testApp.request("/@atlas/code-review", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -814,11 +826,11 @@ describe("Skills API Routes - Global Catalog", () => {
 
     it("links to existing skill when skillId provided", async () => {
       // Create a blank skill
-      const createRes = await skillsRoutes.request("/", { method: "POST" });
+      const createRes = await testApp.request("/", { method: "POST" });
       const { skillId } = z.object({ skillId: z.string() }).parse(await createRes.json());
 
       // Publish with that skillId
-      const pubRes = await skillsRoutes.request("/@friday/linked-skill", {
+      const pubRes = await testApp.request("/@friday/linked-skill", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -834,7 +846,7 @@ describe("Skills API Routes - Global Catalog", () => {
       expect(pubBody.published.skillId).toBe(skillId);
 
       // Verify fetching by skillId returns the published version
-      const getRes = await skillsRoutes.request(`/${skillId}`);
+      const getRes = await testApp.request(`/${skillId}`);
       expect(getRes.status).toBe(200);
       const getBody = SkillResponseSchema.parse(await getRes.json());
       expect(getBody.skill).toMatchObject({
@@ -846,10 +858,10 @@ describe("Skills API Routes - Global Catalog", () => {
 
     it("renames all versions when publishing with skillId and new name", async () => {
       // Create a blank skill (inserts version 1 as draft), then publish with a name
-      const createRes = await skillsRoutes.request("/", { method: "POST" });
+      const createRes = await testApp.request("/", { method: "POST" });
       const { skillId } = z.object({ skillId: z.string() }).parse(await createRes.json());
 
-      await skillsRoutes.request("/@friday/old-name", {
+      await testApp.request("/@friday/old-name", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -860,7 +872,7 @@ describe("Skills API Routes - Global Catalog", () => {
       });
 
       // Publish again with same skillId but different name
-      await skillsRoutes.request("/@friday/new-name", {
+      await testApp.request("/@friday/new-name", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -871,7 +883,7 @@ describe("Skills API Routes - Global Catalog", () => {
       });
 
       // All versions (draft + 2 publishes) should now have the new name
-      const versionsRes = await skillsRoutes.request("/@friday/new-name/versions");
+      const versionsRes = await testApp.request("/@friday/new-name/versions");
       expect(versionsRes.status).toBe(200);
       const versionsBody = z
         .object({ versions: z.array(z.object({ version: z.number() })) })
@@ -879,7 +891,7 @@ describe("Skills API Routes - Global Catalog", () => {
       expect(versionsBody.versions).toHaveLength(3);
 
       // Old name should no longer resolve
-      const oldNameRes = await skillsRoutes.request("/@friday/old-name");
+      const oldNameRes = await testApp.request("/@friday/old-name");
       expect(oldNameRes.status).toBe(404);
     });
   });
@@ -920,7 +932,7 @@ describe("Skills API Routes - Archive Files", () => {
     formData.append("description", "Skill with archive");
     formData.append("instructions", "Test instructions.");
 
-    const response = await skillsRoutes.request(`/@${namespace}/${name}/upload`, {
+    const response = await testApp.request(`/@${namespace}/${name}/upload`, {
       method: "POST",
       body: formData,
     });
@@ -937,7 +949,7 @@ describe("Skills API Routes - Archive Files", () => {
         "data/schema.json": '{"type": "object"}',
       });
 
-      const response = await skillsRoutes.request("/@atlas/with-archive/files");
+      const response = await testApp.request("/@atlas/with-archive/files");
       expect(response.status).toBe(200);
 
       const body = z.object({ files: z.array(z.string()) }).parse(await response.json());
@@ -948,7 +960,7 @@ describe("Skills API Routes - Archive Files", () => {
 
     it("returns empty array for skill without archive", async () => {
       // code-review was published via JSON (no archive)
-      const response = await skillsRoutes.request("/@atlas/code-review/files");
+      const response = await testApp.request("/@atlas/code-review/files");
       expect(response.status).toBe(200);
 
       const body = z.object({ files: z.array(z.string()) }).parse(await response.json());
@@ -956,7 +968,7 @@ describe("Skills API Routes - Archive Files", () => {
     });
 
     it("returns 404 for nonexistent skill", async () => {
-      const response = await skillsRoutes.request("/@atlas/nonexistent-archive/files");
+      const response = await testApp.request("/@atlas/nonexistent-archive/files");
       expect(response.status).toBe(404);
 
       const body = ErrorSchema.parse(await response.json());
@@ -968,7 +980,7 @@ describe("Skills API Routes - Archive Files", () => {
 
   describe("GET /@:namespace/:name/files/* (archive file content)", () => {
     it("returns file content from archive", async () => {
-      const response = await skillsRoutes.request("/@atlas/with-archive/files/references/foo.md");
+      const response = await testApp.request("/@atlas/with-archive/files/references/foo.md");
       expect(response.status).toBe(200);
 
       const body = z.object({ path: z.string(), content: z.string() }).parse(await response.json());
@@ -977,7 +989,7 @@ describe("Skills API Routes - Archive Files", () => {
     });
 
     it("returns 404 for nonexistent file in archive", async () => {
-      const response = await skillsRoutes.request("/@atlas/with-archive/files/nonexistent.md");
+      const response = await testApp.request("/@atlas/with-archive/files/nonexistent.md");
       expect(response.status).toBe(404);
 
       const body = ErrorSchema.parse(await response.json());
@@ -990,13 +1002,13 @@ describe("Skills API Routes - Archive Files", () => {
       // match the /files/* route. Verify with an encoded traversal that
       // bypasses URL normalization but is caught by the handler's guard.
       const req = new Request("http://localhost/@atlas/with-archive/files/..%2Fetc%2Fpasswd");
-      const response = await skillsRoutes.request(req);
+      const response = await testApp.request(req);
       // Either 400 (handler catches ..) or route doesn't match — both prevent traversal
       expect(response.status).not.toBe(200);
     });
 
     it("returns 404 for nonexistent skill", async () => {
-      const response = await skillsRoutes.request("/@atlas/nonexistent-archive/files/any.md");
+      const response = await testApp.request("/@atlas/nonexistent-archive/files/any.md");
       expect(response.status).toBe(404);
 
       const body = ErrorSchema.parse(await response.json());
@@ -1004,7 +1016,7 @@ describe("Skills API Routes - Archive Files", () => {
     });
 
     it("returns 404 when skill has no archive", async () => {
-      const response = await skillsRoutes.request("/@atlas/code-review/files/any.md");
+      const response = await testApp.request("/@atlas/code-review/files/any.md");
       expect(response.status).toBe(404);
 
       const body = ErrorSchema.parse(await response.json());
@@ -1019,11 +1031,11 @@ describe("Skills API Routes - Archive Files", () => {
 
 describe("Skills API Routes - Unauthorized Access", () => {
   it("returns 401 for POST without auth", async () => {
-    const savedKey = process.env.FRIDAY_KEY;
-    delete process.env.FRIDAY_KEY;
+    const saved = currentUserId;
+    currentUserId = undefined;
 
     try {
-      const response = await skillsRoutes.request("/@atlas/test", {
+      const response = await testApp.request("/@atlas/test", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ description: "Test", instructions: "Test" }),
@@ -1033,22 +1045,22 @@ describe("Skills API Routes - Unauthorized Access", () => {
       const body = ErrorSchema.parse(await response.json());
       expect(body.error).toBe("Unauthorized");
     } finally {
-      process.env.FRIDAY_KEY = savedKey;
+      currentUserId = saved;
     }
   });
 
   it("returns 401 for DELETE without auth", async () => {
-    const savedKey = process.env.FRIDAY_KEY;
-    delete process.env.FRIDAY_KEY;
+    const saved = currentUserId;
+    currentUserId = undefined;
 
     try {
-      const response = await skillsRoutes.request("/@atlas/test/1", { method: "DELETE" });
+      const response = await testApp.request("/@atlas/test/1", { method: "DELETE" });
 
       expect(response.status).toBe(401);
       const body = ErrorSchema.parse(await response.json());
       expect(body.error).toBe("Unauthorized");
     } finally {
-      process.env.FRIDAY_KEY = savedKey;
+      currentUserId = saved;
     }
   });
 });

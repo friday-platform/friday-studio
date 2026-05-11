@@ -3,6 +3,11 @@
   import { createQuery, useQueryClient } from "@tanstack/svelte-query";
   import { browser } from "$app/environment";
   import { getDaemonClient } from "$lib/daemon-client";
+  import {
+    ScheduleMissedEventSchema as SharedScheduleSchema,
+    subscribeToScheduleEvents,
+    type ScheduleMissedEvent as SharedScheduleEvent,
+  } from "$lib/shared-worker/client.ts";
   import { z } from "zod";
 
   const client = getDaemonClient();
@@ -41,25 +46,8 @@
   // policy produces a make-up firing. Cross-workspace; per-workspace
   // pages can mount their own filtered view.
   // ---------------------------------------------------------------------------
-  const ScheduleMissedEventSchema = z.object({
-    type: z.literal("schedule.missed"),
-    workspaceId: z.string(),
-    signalId: z.string(),
-    policy: z.enum(["coalesce", "catchup", "manual"]),
-    missedCount: z.number(),
-    firstMissedAt: z.string(),
-    lastMissedAt: z.string(),
-    scheduledAt: z.string(),
-    firedAt: z.string(),
-    schedule: z.string(),
-    timezone: z.string(),
-    status: z.enum(["pending", "fired", "dismissed", "auto"]).optional(),
-    pending: z.boolean().optional(),
-    actionedAt: z.string().optional(),
-    id: z.string().optional(),
-  });
-  const EventsResponseSchema = z.object({ events: z.array(ScheduleMissedEventSchema) });
-  type ScheduleMissedEvent = z.infer<typeof ScheduleMissedEventSchema>;
+  const EventsResponseSchema = z.object({ events: z.array(SharedScheduleSchema) });
+  type ScheduleMissedEvent = SharedScheduleEvent;
 
   const EVENTS_QUERY_KEY = ["workspace-events", "schedule.missed"] as const;
 
@@ -101,41 +89,37 @@
   $effect(() => {
     if (!browser) return;
     if (!eventsQuery.isSuccess) return;
-    const es = new EventSource("/api/daemon/api/events?stream=true");
-    es.addEventListener("error", () => {
-      // EventSource auto-reconnects; surfacing the error so a stale
-      // `/schedules` view is at least visible in devtools when the
-      // daemon's NATS connection is down or the SSE route 503s.
-      console.error("Schedules SSE feed errored (EventSource will retry)");
-    });
-    es.addEventListener("message", (e) => {
-      let parsed: ScheduleMissedEvent;
+    const controller = new AbortController();
+    void (async () => {
       try {
-        parsed = ScheduleMissedEventSchema.parse(JSON.parse(e.data));
-      } catch (err) {
-        console.error("Failed to parse schedule SSE event", err);
-        return;
+        for await (const event of subscribeToScheduleEvents({ signal: controller.signal })) {
+          // The publish path doesn't stamp the KV-derived
+          // `status`/`pending` fields — those only exist after the read
+          // path joins KV. Apply the same defaults the replay path uses
+          // for fresh events: coalesce/catchup auto-fired; manual is
+          // pending until the operator acts (which will trigger an
+          // invalidate → refetch).
+          const enriched: ScheduleMissedEvent = { ...event };
+          if (!enriched.status) {
+            enriched.status = enriched.policy === "manual" ? "pending" : "auto";
+            if (enriched.policy === "manual") enriched.pending = true;
+          }
+          queryClient.setQueryData<{ events: ScheduleMissedEvent[] }>(
+            EVENTS_QUERY_KEY,
+            (prev) => {
+              const existing = prev?.events ?? [];
+              const k = naturalKey(enriched);
+              if (existing.some((ev) => naturalKey(ev) === k)) return prev;
+              return { events: [enriched, ...existing] };
+            },
+          );
+        }
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        console.error("Schedules events stream errored", error);
       }
-      // The publish path doesn't stamp the KV-derived `status`/`pending`
-      // fields — those only exist after the read path joins KV. Apply
-      // the same defaults the replay path uses for fresh events:
-      // coalesce/catchup auto-fired; manual is pending until the
-      // operator acts (which will trigger an invalidate → refetch).
-      if (!parsed.status) {
-        parsed.status = parsed.policy === "manual" ? "pending" : "auto";
-        if (parsed.policy === "manual") parsed.pending = true;
-      }
-      queryClient.setQueryData<{ events: ScheduleMissedEvent[] }>(
-        EVENTS_QUERY_KEY,
-        (prev) => {
-          const existing = prev?.events ?? [];
-          const k = naturalKey(parsed);
-          if (existing.some((ev) => naturalKey(ev) === k)) return prev;
-          return { events: [parsed, ...existing] };
-        },
-      );
-    });
-    return () => es.close();
+    })();
+    return () => controller.abort();
   });
 
   let actingOnGroup = $state<Set<string>>(new Set());
