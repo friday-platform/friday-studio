@@ -40,7 +40,11 @@ const UpdateMeSchema = z.object({
  * cloud and other future deployments tighten this list.
  */
 function requiredOnboardingFields(): string[] {
-  const env = process.env.FRIDAY_ENV ?? "dev";
+  // Fail-closed parity with the session middleware: only an explicit
+  // `FRIDAY_ENV=dev` skips the required-fields gate. Unset reads as
+  // cloud — a forgotten env var shouldn't accidentally let a fresh
+  // user dismiss onboarding without providing their email.
+  const env = process.env.FRIDAY_ENV?.toLowerCase().trim();
   return env === "dev" ? [] : ["email"];
 }
 

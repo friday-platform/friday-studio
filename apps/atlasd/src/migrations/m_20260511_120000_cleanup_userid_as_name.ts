@@ -99,12 +99,14 @@ export const migration: Migration = {
       try {
         await kv.update(key, enc.encode(JSON.stringify(next)), entry.revision);
         reset += 1;
-        logger.info("Reset poisoned identity record", { userId });
+        // userId at debug only — the info summary below counts resets
+        // without leaking identifiers into steady-state logs.
+        logger.debug("Reset poisoned identity record", { userId });
       } catch (err) {
         // CAS conflict means a concurrent write landed between read
         // and update — log and continue; next migration run (or
         // daemon-driven self-correction) will catch it.
-        logger.warn("Failed to reset poisoned identity record", { userId, error: String(err) });
+        logger.warn("Failed to reset poisoned identity record", { error: String(err) });
       }
     }
 

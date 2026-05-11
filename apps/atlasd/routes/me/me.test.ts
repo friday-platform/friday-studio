@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import type { AppVariables } from "../../src/factory.ts";
 
@@ -64,6 +64,15 @@ const fakeUser = {
 beforeEach(() => {
   vi.resetAllMocks();
   currentUserId = "test-user-123";
+  // Default to dev for the bulk of these tests — they exercise the
+  // local-mode onboarding shape (no required fields). Individual tests
+  // re-stub `FRIDAY_ENV` when they need to exercise the fail-closed
+  // cloud-style path.
+  vi.stubEnv("FRIDAY_ENV", "dev");
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
 });
 
 describe("GET /", () => {
@@ -220,7 +229,7 @@ describe("GET /photo", () => {
 });
 
 describe("GET /onboarding", () => {
-  it("returns completed=false with empty requiredFields when the user record is unset (local mode default)", async () => {
+  it("returns completed=false with empty requiredFields under FRIDAY_ENV=dev when the user record is unset", async () => {
     mockUserStorage.getUser.mockResolvedValue({ ok: true, data: null });
 
     const res = await testApp.request("/onboarding");
@@ -235,6 +244,17 @@ describe("GET /onboarding", () => {
     expect(body.completed).toBe(false);
     expect(body.requiredFields).toEqual([]);
     expect(body.missingRequired).toEqual([]);
+  });
+
+  it("requires email when FRIDAY_ENV is unset (fail-closed default)", async () => {
+    vi.stubEnv("FRIDAY_ENV", "");
+    mockUserStorage.getUser.mockResolvedValue({ ok: true, data: null });
+
+    const res = await testApp.request("/onboarding");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { requiredFields: string[]; missingRequired: string[] };
+    expect(body.requiredFields).toEqual(["email"]);
+    expect(body.missingRequired).toEqual(["email"]);
   });
 
   it("returns completed=true when the user record matches the current ONBOARDING_VERSION", async () => {

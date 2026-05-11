@@ -77,6 +77,14 @@ export type InstanceCascadeEvent = z.infer<typeof InstanceCascadeEventSchema>;
 const CascadeReplayResponseSchema = z.object({ events: z.array(InstanceCascadeEventSchema) });
 
 /**
+ * How many recent cascade events the banner replays on mount. Older
+ * transitions silently drop — fine for the banner's "current state"
+ * model since a saturated/drained pair more than this many entries
+ * back has long since been superseded.
+ */
+const CASCADE_REPLAY_LIMIT = 50;
+
+/**
  * Shape published on `events.<ws>.schedule.missed`. Matches the schema
  * the /schedules page parses against the replay endpoint — including
  * the optional KV-joined `status` / `pending` / `actionedAt` fields
@@ -279,7 +287,9 @@ export async function* subscribeToCascadeEvents(
   // restored on mount. The daemon's replay endpoint returns the most
   // recent first; reverse so the consumer sees them in time order.
   try {
-    const res = await fetch("/api/daemon/api/instance/events?type=cascade.&limit=50");
+    const res = await fetch(
+      `/api/daemon/api/instance/events?type=cascade.&limit=${CASCADE_REPLAY_LIMIT}`,
+    );
     if (res.ok) {
       const json: unknown = await res.json();
       const parsed = CascadeReplayResponseSchema.safeParse(json);

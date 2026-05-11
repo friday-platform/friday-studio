@@ -469,6 +469,16 @@ export const handler = async (argv: StartArgs): Promise<void> => {
     const atlasKey = process.env.FRIDAY_KEY;
     const isDev = isDevEnv(process.env.FRIDAY_ENV);
 
+    // The session middleware fail-closes when `FRIDAY_ENV` is unset. The
+    // CLI's local-first UX treats unset as dev (see `isDevEnv` below),
+    // so when we infer dev we mirror that into the env so the daemon —
+    // running either in this same process via `startForeground` or as
+    // an inherited-env child via `startDetached` — sees an explicit
+    // `FRIDAY_ENV=dev` rather than an ambiguous unset.
+    if (isDev && !process.env.FRIDAY_ENV) {
+      process.env.FRIDAY_ENV = "dev";
+    }
+
     if (atlasKey && !isDev) {
       logger.info("Atlas key detected, fetching credentials...");
 

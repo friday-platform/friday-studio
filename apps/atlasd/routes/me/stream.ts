@@ -191,7 +191,7 @@ export const meStreamRoutes = daemonFactory.createApp().get("/stream", async (c)
         })();
       }
     },
-    cancel() {
+    async cancel() {
       // The browser closed the SSE connection; signal will have fired
       // already, but defense-in-depth.
       if (heartbeatTimer !== undefined) {
@@ -205,7 +205,12 @@ export const meStreamRoutes = daemonFactory.createApp().get("/stream", async (c)
           // already gone
         }
       }
-      void stopMembershipWatch();
+      // Await here so the underlying JetStream consumer is fully torn
+      // down before the response promise settles — prevents transient
+      // accumulation on rapid reconnect cycles. The abort-listener
+      // teardown path (above) intentionally remains fire-and-forget
+      // since addEventListener swallows the return value anyway.
+      await stopMembershipWatch();
     },
   });
 

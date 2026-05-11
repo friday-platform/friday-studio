@@ -191,6 +191,14 @@
 
   let containerEl: HTMLDivElement | undefined = $state();
 
+  // Virtualizer tunables. `estimateSize` matches a typical assistant
+  // bubble with one short paragraph — the wrong-by-2x case is bounded
+  // by `overscan` so the user never sees a blank gap. `overscan` is
+  // measured in items above/below the viewport; 5 covers a screen of
+  // fast scrolling without rendering the entire history off-screen.
+  const VIRTUAL_ESTIMATE_SIZE_PX = 200;
+  const VIRTUAL_OVERSCAN_ITEMS = 5;
+
   // Virtualizer for the message list. svelte-virtual v3.x is store-
   // backed (Svelte 4 contract), so consumers read `$virtualizer.*` in
   // template. `count` is set initially to the messages array length
@@ -209,8 +217,8 @@
   const virtualizer = createVirtualizer<HTMLDivElement, HTMLDivElement>({
     count: virtualCount,
     getScrollElement: () => containerEl ?? null,
-    estimateSize: () => 200,
-    overscan: 5,
+    estimateSize: () => VIRTUAL_ESTIMATE_SIZE_PX,
+    overscan: VIRTUAL_OVERSCAN_ITEMS,
   });
 
   // Push count updates to the virtualizer. `untrack` keeps this effect
@@ -223,27 +231,28 @@
       $virtualizer.setOptions({
         count,
         getScrollElement: () => containerEl ?? null,
-        estimateSize: () => 200,
-        overscan: 5,
+        estimateSize: () => VIRTUAL_ESTIMATE_SIZE_PX,
+        overscan: VIRTUAL_OVERSCAN_ITEMS,
       });
     });
   });
 
-  // Auto-scroll to bottom as new messages or tool updates arrive. We watch
-  // both the length of the outer list and the total tool-call count so mid-
-  // stream tool activity (no new messages, just updated tool cards on the
-  // in-flight assistant message) still triggers scroll.
-  const totalToolCallCount = $derived(
-    messages.reduce(
-      (sum, m) =>
-        sum +
-        m.segments.reduce(
-          (s, seg) => s + (seg.type === "tool-burst" ? seg.calls.length : 0),
-          0,
-        ),
-      0,
-    ),
-  );
+  // Auto-scroll-to-bottom trigger. Only the in-flight (last) message
+  // changes during streaming — earlier messages are immutable from the
+  // moment they're appended — so a tail-only count tracks "mid-stream
+  // tool activity" without re-walking every message × every segment on
+  // every reactive tick. Heavy delegation (30+ tool calls per turn,
+  // 50+ messages of history) used to compound this into a hot reduce
+  // that fired the scroll effect on every token.
+  const tailToolCallCount = $derived.by(() => {
+    const last = messages[messages.length - 1];
+    if (!last) return 0;
+    let sum = 0;
+    for (const seg of last.segments) {
+      if (seg.type === "tool-burst") sum += seg.calls.length;
+    }
+    return sum;
+  });
 
   // "Sticky-follow" state: true while the viewport is anchored at/near the
   // bottom, false the moment the user scrolls up to read history. Without
@@ -296,9 +305,9 @@
   }
 
   $effect(() => {
-    // deps: messages.length, totalToolCallCount
+    // deps: messages.length, tailToolCallCount
     const _len = messages.length;
-    const _calls = totalToolCallCount;
+    const _calls = tailToolCallCount;
     // Only scroll if the user is still anchored at the bottom. If they
     // scrolled up to read history, honor that — otherwise we'd hijack
     // their position every token and the chat would be unreadable during
@@ -393,7 +402,22 @@
 
     injectButtons();
 
-    const observer = new MutationObserver(() => injectButtons());
+    // Streaming markdown re-renders `{@html ...}` on every token, which
+    // fires this observer per delta. The naive callback would re-scan
+    // the whole subtree (`querySelectorAll('pre, table')`) for each
+    // mutation record — quadratic on long answers and the actual
+    // main-thread cost behind the heavy-delegation lockup. Coalesce
+    // pending scans to one per animation frame; the result is the same
+    // (every block eventually gets a button) at O(rendered-blocks/frame).
+    let scanScheduled = false;
+    const observer = new MutationObserver(() => {
+      if (scanScheduled) return;
+      scanScheduled = true;
+      requestAnimationFrame(() => {
+        scanScheduled = false;
+        injectButtons();
+      });
+    });
     observer.observe(node, { childList: true, subtree: true });
 
     return {
