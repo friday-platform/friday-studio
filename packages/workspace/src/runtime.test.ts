@@ -5,7 +5,8 @@ import {
   UserConfigurationError,
 } from "@atlas/core";
 import { describe, expect, it } from "vitest";
-import { classifySessionError } from "./runtime.ts";
+import { WORKSPACE_DIRECT_CHAT_SIGNAL_TYPE } from "./constants.ts";
+import { classifySessionError, computeSessionInteractive } from "./runtime.ts";
 
 describe("classifySessionError", () => {
   const wrappedCredentialError = (() => {
@@ -86,5 +87,37 @@ describe("classifySessionError", () => {
     { name: "undefined", error: undefined, expected: "failed" },
   ])("$name → $expected", ({ error, expected }) => {
     expect(classifySessionError(error)).toEqual(expected);
+  });
+});
+
+describe("computeSessionInteractive", () => {
+  it("direct-chat session is interactive regardless of provenance fallback", () => {
+    // Auto-injected chat signal has no entry in workspace.signals, so the
+    // provenance derivation falls back to "external". The signal-type check
+    // must override that — sessions for `chat` are always interactive.
+    expect(
+      computeSessionInteractive({
+        signalType: WORKSPACE_DIRECT_CHAT_SIGNAL_TYPE,
+        signalProvenance: "external",
+      }),
+    ).toBe(true);
+  });
+
+  it("schedule-triggered session is non-interactive (system-config provenance)", () => {
+    expect(
+      computeSessionInteractive({ signalType: "daily-rollup", signalProvenance: "system-config" }),
+    ).toBe(false);
+  });
+
+  it("Slack-triggered session is interactive (user-authored provenance)", () => {
+    expect(
+      computeSessionInteractive({ signalType: "slack-message", signalProvenance: "user-authored" }),
+    ).toBe(true);
+  });
+
+  it("HTTP webhook session is non-interactive (external provenance)", () => {
+    expect(
+      computeSessionInteractive({ signalType: "github-webhook", signalProvenance: "external" }),
+    ).toBe(false);
   });
 });

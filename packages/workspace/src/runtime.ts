@@ -89,6 +89,7 @@ import {
   type GenerateSessionTitleInput,
   generateSessionTitle,
   type PlatformModels,
+  type ProvenanceSource,
   provenanceForSignalProvider,
 } from "@atlas/llm";
 import { logger } from "@atlas/logger";
@@ -207,6 +208,33 @@ function asAbortError(reason: unknown): Error {
   );
   err.name = "AbortError";
   return err;
+}
+
+/**
+ * Decide whether a session is *interactive* — i.e. there is a human attached
+ * to the workspace session who can be prompted to recover from a transient
+ * failure (e.g. complete an OAuth re-auth elicitation). Sessions launched
+ * from `chat` are always interactive; non-chat signals are interactive only
+ * when the provider is a chat communicator that emits user-authored payloads
+ * (Slack, Telegram, Discord, …). Schedule / HTTP / fs-watch sessions are
+ * not interactive — failures must route to the alerting path instead of
+ * blocking on a human response.
+ *
+ * v8 design decision 17 ("Module: workspace runtime classifier"). The
+ * downstream consumer is Phase 3's createMCPTools retry wrapper, which uses
+ * this flag to decide whether to raise an MCP elicitation or surface the
+ * disconnect synchronously.
+ *
+ * @internal Exported for testing
+ */
+export function computeSessionInteractive(args: {
+  signalType: string;
+  signalProvenance: ProvenanceSource;
+}): boolean {
+  return (
+    args.signalType === WORKSPACE_DIRECT_CHAT_SIGNAL_TYPE ||
+    args.signalProvenance === "user-authored"
+  );
 }
 
 /**
@@ -2563,6 +2591,22 @@ export class WorkspaceRuntime {
     const signalConfig = this.config.workspace.signals?.[signal.type];
     const signalProvenance = provenanceForSignalProvider(signalConfig?.provider);
 
+    // Phase 2 (v8 design decision 17): is there a human attached to this
+    // session who can respond to a transient-recovery elicitation? Threaded
+    // through to the agent context here so Phase 3's createMCPTools wrapper
+    // can gate the chat-vs-alert decision when an OAuth refresh fails.
+    const sessionInteractive = computeSessionInteractive({
+      signalType: signal.type,
+      signalProvenance,
+    });
+    logger.debug("Resolved session interactivity", {
+      agentId,
+      signalType: signal.type,
+      signalProvider: signalConfig?.provider,
+      signalProvenance,
+      sessionInteractive,
+    });
+
     const context = await buildAgentPrompt(
       agentId,
       fsmContext,
@@ -2700,6 +2744,7 @@ export class WorkspaceRuntime {
         "atlas.agent.type": agentConfig?.type ?? "sdk",
         "atlas.workspace.id": workspaceId,
         "atlas.session.id": sessionId,
+        "atlas.session.interactive": sessionInteractive,
       },
       async (agentOtelSpan) => {
         // User agents bypass the MCP orchestrator — execute via ProcessAgentExecutor (NATS)
@@ -2719,6 +2764,7 @@ export class WorkspaceRuntime {
                 agentEnv: agentConfig.env,
                 foregroundWorkspaceIds,
                 abortSignal: signal._context?.abortSignal,
+                sessionInteractive,
               })
             : await this.orchestrator.executeAgent(runtimeAgentId, finalPrompt, {
                 sessionId,
@@ -2743,6 +2789,7 @@ export class WorkspaceRuntime {
                 // DELETE /api/sessions/:id actually stops in-flight LLM work
                 // instead of just detaching the client.
                 abortSignal: signal._context?.abortSignal,
+                sessionInteractive,
               });
 
         if (agentOtelSpan) {
@@ -2786,6 +2833,10 @@ export class WorkspaceRuntime {
       agentEnv?: Record<string, string | LinkCredentialRef>;
       foregroundWorkspaceIds?: string[];
       abortSignal?: AbortSignal;
+      // Phase 2 (v8 design decision 17): true when a human is attached to
+      // this session. Phase 3's createMCPTools wrapper reads this off the
+      // execution context to gate chat-vs-alert recovery.
+      sessionInteractive?: boolean;
     },
   ): Promise<AgentResult> {
     // Resolve agent source location from disk

@@ -73,6 +73,15 @@ export interface AgentExecutionContext {
   actionId?: string;
   /** Parent job timeout in milliseconds for blocking HITL expiry. */
   jobTimeoutMs?: number;
+  /**
+   * True when a human is attached to this session and can respond to a
+   * transient-recovery elicitation (direct chat or chat-communicator
+   * signals). Computed by the workspace runtime via
+   * `computeSessionInteractive`. Phase 3's createMCPTools retry wrapper
+   * uses this to decide between raising an MCP elicitation and surfacing
+   * the disconnect synchronously.
+   */
+  sessionInteractive?: boolean;
 }
 
 export interface AgentOrchestratorConfig {
