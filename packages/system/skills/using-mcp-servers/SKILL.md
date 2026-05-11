@@ -25,11 +25,17 @@ enable/disable only controls `workspace.yml` overrides, not chat visibility.
 | Context | Who asks | What changes | Key rule |
 |---------|----------|--------------|----------|
 | Admin | User talking to settings / UI | Catalog or workspace config | `install`/`delete` mutate the catalog; `enable`/`disable` mutate workspace YAML |
-| Chat | Agent during a conversation | Nothing — uses existing servers | `list_capabilities` discovers everything; filter by `kind: "mcp_enabled" \| "mcp_available"` for MCP-only intent. `enable` is irrelevant. |
+| Chat | Agent during a conversation | Nothing — uses existing servers | `list_mcp_servers(scope?)` for the MCP-only inventory; `list_mcp_tools({serverId})` for a server's tool catalog; `describe_mcp_server({id})` for back-references (which agents/jobs use it). `enable` is irrelevant. |
 
 **Critical:** Chat agents do not need `enable_mcp_server` to see or use a
 catalog server. `enable` only adds workspace-level overrides or custom
 servers to `workspace.yml`.
+
+**Discovery tool selection:** prefer the per-domain `list_mcp_servers` for
+"what MCP servers can I use?" — it returns enabled + catalog entries
+without bundled-agent noise. `list_capabilities` is the cross-domain router
+("I don't know whether this is an agent or an MCP server"); reach for it
+only when the question genuinely spans both surfaces.
 
 ## Admin path: choosing the right tool
 
@@ -49,14 +55,16 @@ servers to `workspace.yml`.
 
 ## Chat path: delegation with MCP tools
 
-1. **Discover:** `list_capabilities` — returns a flat list across bundled
-   agents and MCP servers. Filter to `kind: "mcp_enabled" | "mcp_available"`
-   for MCP-only intent. A server is credentialed when `requiresConfig` is
-   empty.
+1. **Discover:** `list_mcp_servers(scope?)` — `scope=workspace` (default)
+   returns enabled + available; `scope=catalog` returns the global catalog
+   only; `scope=all` returns both. Each entry's `requiresConfig` empty
+   means credentialed. For cross-domain "what can I do here?" questions
+   that may resolve to a bundled agent or an MCP server, use
+   `list_capabilities` instead.
 2. **Connect if needed:** If `requiresConfig` is non-empty and `provider` is
    present (on `mcp_available`), call `connect_service(provider)`. The UI will
    fire `data-credential-linked` when the user finishes.
-3. **Auto-continue:** On `data-credential-linked`, re-call `list_capabilities`
+3. **Auto-continue:** On `data-credential-linked`, re-call `list_mcp_servers`
    to confirm `requiresConfig` is empty, then `delegate` with
    `mcpServers: [id]` and the original goal.
 4. **Delegate:** `delegate` validates IDs fail-fast. Unknown or unconfigured
@@ -79,10 +87,8 @@ servers to `workspace.yml`.
 
 ## Quick diagnostic
 
-1. An agent asks for a tool that fails as unknown → do **not** create a tool-access elicitation for the guessed name. Call `list_capabilities`, then `list_mcp_tools({ serverId })` for the chosen server, and use the exact runtime-visible tool name.
-2. User says "I don't see X" → `list_capabilities` (filter by
-   `kind: "mcp_enabled" | "mcp_available"`). If it's there but
-   `requiresConfig` is non-empty → `connect_service`.
+1. An agent asks for a tool that fails as unknown → do **not** create a tool-access elicitation for the guessed name. Call `list_mcp_servers` to see what's wired, then `list_mcp_tools({ serverId })` for the chosen server, and use the exact runtime-visible tool name.
+2. User says "I don't see X" → `list_mcp_servers(scope=all)` to see both enabled and catalog. If it's there but `requiresConfig` is non-empty → `connect_service`.
 3. User says "Add X to workspace" → Check if X is in catalog. If yes, ask:
    chat already sees it — do you mean enable for workspace YAML?
 4. Disable fails → Surface `willUnlinkFrom`, confirm, retry with `force: true`.

@@ -58,7 +58,7 @@ export interface ClassifierResult {
 
 /**
  * Read-only tool allowlist. Tool names in the runtime are typically
- * `<mcp-server-id>/<tool>`; built-ins (e.g. `memory_read`) may appear unprefixed.
+ * `<mcp-server-id>/<tool>`; built-ins (e.g. `list_memory_entries`) may appear unprefixed.
  * Match is performed against both the full name and the suffix after `/`.
  *
  * `run_code` is intentionally NOT in this list — it can mutate state.
@@ -67,10 +67,13 @@ export interface ClassifierResult {
  *
  * Verb-prefix patterns such as `^search_/`, `^get_/`, `^list_/`, and
  * `^view_/` are vendor-agnostic — they match the suffix-after-slash for
- * namespaced tools from MCP servers as well as built-in tools.
+ * namespaced tools from MCP servers as well as built-in tools. The
+ * verb-first rename pass made these patterns sufficient for the
+ * built-in memory + artifact reads (`list_memory_entries`,
+ * `get_artifact`).
  */
 export const READ_ONLY_ALLOWLIST: ReadonlyArray<string | RegExp> = [
-  // verb-based prefixes (vendor-agnostic — covers gmail, github, etc.)
+  // verb-based prefixes (vendor-agnostic — covers gmail, github, built-ins, etc.)
   /^search_/,
   /^get_/,
   /^list_/,
@@ -85,10 +88,8 @@ export const READ_ONLY_ALLOWLIST: ReadonlyArray<string | RegExp> = [
   "web_search",
   "request_tool_access",
   "request_human_input",
-  // memory
-  "memory_read",
-  // artifacts
-  "artifacts_get",
+  // artifacts (verb-first names match the prefixes above; explicit
+  // entries cover the parse / display verbs that don't)
   "parse_artifact",
   "display_artifact",
 ];
@@ -98,7 +99,7 @@ export const READ_ONLY_ALLOWLIST: ReadonlyArray<string | RegExp> = [
  * the suffix after `<mcp-server>/`.
  */
 export const MUTATING_VERB_RE =
-  /^(send_|post_|create_|delete_|modify_|write_|remove_|archive_|unsubscribe_|batch_modify_|fs_write_|memory_save|memory_remove|publish_|deploy_|merge_)/;
+  /^(send_|post_|create_|delete_|modify_|write_|remove_|archive_|unsubscribe_|batch_modify_|fs_write_|save_|publish_|deploy_|merge_)/;
 
 /**
  * Strip the `<mcp-server>/` prefix if present. Built-ins arrive bare.

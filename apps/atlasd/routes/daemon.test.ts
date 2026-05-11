@@ -1,0 +1,123 @@
+import { logger } from "@atlas/logger";
+import { Hono } from "hono";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import type { AppContext, AppVariables } from "../src/factory.ts";
+import { daemonApp } from "./daemon.ts";
+
+type DaemonStub = {
+  shutdown: ReturnType<typeof vi.fn>;
+  currentShutdownPhase: AppContext["daemon"]["currentShutdownPhase"];
+};
+
+function buildApp(daemon: DaemonStub) {
+  const app = new Hono<AppVariables>();
+  app.use("*", async (c, next) => {
+    c.set("app", { daemon } as unknown as AppContext);
+    await next();
+  });
+  app.route("/", daemonApp);
+  return app;
+}
+
+describe("POST /shutdown", () => {
+  let exitMock: ReturnType<typeof vi.fn>;
+  let infoSpy: ReturnType<typeof vi.spyOn>;
+  let errorSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    exitMock = vi.fn();
+    // Spread the real Deno first so node-compat helpers like `Deno.unrefTimer`
+    // (used internally by Timeout.unref → vitest fake timers on Deno 2.7.4)
+    // survive the stub.
+    vi.stubGlobal("Deno", {
+      ...globalThis.Deno,
+      exit: exitMock,
+      env: { get: (key: string) => (key === "ATLAS_SHUTDOWN_WATCHDOG_MS" ? "1500" : undefined) },
+      memoryUsage: () => ({ rss: 0, heapTotal: 0, heapUsed: 0, external: 0 }),
+    });
+    infoSpy = vi.spyOn(logger, "info").mockImplementation(() => {});
+    errorSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    infoSpy.mockRestore();
+    errorSpy.mockRestore();
+  });
+
+  it("responds 200 immediately and then exits 0 on clean shutdown", async () => {
+    // Deferred promise pins the load-bearing contract: exit MUST NOT be called
+    // until shutdown resolves. A regression that moved Deno.exit before the
+    // `await ctx.daemon.shutdown()` would still pass with mockResolvedValue.
+    let resolveShutdown!: () => void;
+    const shutdown = vi.fn(
+      () =>
+        new Promise<void>((r) => {
+          resolveShutdown = r;
+        }),
+    );
+    const app = buildApp({ shutdown, currentShutdownPhase: "idle" });
+
+    const res = await app.request("/shutdown", { method: "POST" });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ message: "Daemon shutdown initiated" });
+
+    expect(shutdown).not.toHaveBeenCalled();
+    expect(exitMock).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(100);
+    expect(shutdown).toHaveBeenCalledOnce();
+    expect(exitMock).not.toHaveBeenCalled();
+
+    resolveShutdown();
+    await vi.runAllTimersAsync();
+
+    expect(exitMock).toHaveBeenCalledWith(0);
+    expect(infoSpy).toHaveBeenCalledWith("Shutdown complete, exiting", { exitCode: 0 });
+    expect(errorSpy).not.toHaveBeenCalledWith("Shutdown watchdog fired", expect.anything());
+  });
+
+  it("fires the watchdog and exits 1 when daemon.shutdown() deadlocks", async () => {
+    const shutdown = vi.fn().mockReturnValue(new Promise<void>(() => {}));
+    const app = buildApp({ shutdown, currentShutdownPhase: "phase-2" });
+
+    const res = await app.request("/shutdown", { method: "POST" });
+    expect(res.status).toBe(200);
+
+    await vi.advanceTimersByTimeAsync(100);
+    expect(shutdown).toHaveBeenCalledOnce();
+    expect(exitMock).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1500);
+
+    expect(errorSpy).toHaveBeenCalledWith(
+      "Shutdown watchdog fired",
+      expect.objectContaining({ phase: "phase-2", memoryUsage: expect.any(Object) }),
+    );
+    expect(exitMock).toHaveBeenCalledWith(1);
+    expect(infoSpy).not.toHaveBeenCalledWith("Shutdown complete, exiting", expect.anything());
+  });
+
+  it("exits 1 with the failure log when daemon.shutdown() rejects", async () => {
+    const err = new Error("nats drain failed");
+    const shutdown = vi.fn().mockRejectedValue(err);
+    const app = buildApp({ shutdown, currentShutdownPhase: "phase-3-nats" });
+
+    const res = await app.request("/shutdown", { method: "POST" });
+    expect(res.status).toBe(200);
+
+    await vi.advanceTimersByTimeAsync(100);
+    await vi.runAllTimersAsync();
+
+    expect(exitMock).toHaveBeenCalledWith(1);
+    expect(errorSpy).toHaveBeenCalledWith(
+      "shutdown failed, exiting with error",
+      expect.objectContaining({ err, exitCode: 1 }),
+    );
+    expect(infoSpy).not.toHaveBeenCalledWith("Shutdown complete, exiting", expect.anything());
+    expect(errorSpy).not.toHaveBeenCalledWith("Shutdown watchdog fired", expect.anything());
+  });
+});

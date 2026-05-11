@@ -2,8 +2,9 @@
  * Workspace operation tools for workspace-chat.
  *
  * - create_workspace: creates an empty workspace from name + optional description
- * - workspace_delete: permanently removes a workspace
- * - remove_item (bound): deletes an agent/signal/job from the current workspace
+ * - delete_workspace: permanently removes a workspace
+ * - delete_agent / delete_signal / delete_job (bound): per-kind delete from
+ *   the current workspace (replaces the older `remove_item({kind, id})`).
  */
 
 import type { AtlasTools } from "@atlas/agent-sdk";
@@ -39,33 +40,23 @@ const WORKSPACE_DELETE_INPUT_SCHEMA = z.object({
     ),
 });
 
-const REMOVE_ITEM_INPUT_SCHEMA = {
-  type: "object" as const,
-  properties: {
-    kind: {
-      type: "string" as const,
-      enum: ["agent", "signal", "job"],
-      description: "Type of entity to remove",
-    },
-    id: { type: "string" as const, description: "Unique identifier of the entity to remove" },
-    workspaceId: {
-      type: "string" as const,
-      description:
-        "Optional. Target a specific workspace instead of the current session workspace.",
-    },
-  },
-  required: ["kind", "id"],
-};
+const DELETE_ITEM_INPUT_SCHEMA = z.object({
+  id: z.string().describe("Identifier of the entity to remove."),
+  workspaceId: z
+    .string()
+    .optional()
+    .describe("Optional. Target a specific workspace instead of the current session workspace."),
+});
 
 export function createWorkspaceOpsTools(logger: Logger): AtlasTools {
   return {
-    workspace_delete: tool({
+    delete_workspace: tool({
       description:
         "Delete a workspace permanently. Calls DELETE /api/workspaces/:id directly — " +
         "do NOT spawn a claude-code sub-agent for this simple API operation.",
       inputSchema: WORKSPACE_DELETE_INPUT_SCHEMA,
       execute: async ({ workspaceId, force }) => {
-        logger.info("workspace_delete tool invoked", { workspaceId, force });
+        logger.info("delete_workspace tool invoked", { workspaceId, force });
 
         const result = await parseResult(
           client.workspace[":workspaceId"].$delete({
@@ -75,11 +66,11 @@ export function createWorkspaceOpsTools(logger: Logger): AtlasTools {
         );
 
         if (!result.ok) {
-          logger.warn("workspace_delete failed", { workspaceId, error: result.error });
+          logger.warn("delete_workspace failed", { workspaceId, error: result.error });
           return { success: false, error: result.error };
         }
 
-        logger.info("workspace_delete succeeded", { workspaceId });
+        logger.info("delete_workspace succeeded", { workspaceId });
         return { success: true, message: result.data.message };
       },
     }),
@@ -123,47 +114,66 @@ export function createWorkspaceOpsTools(logger: Logger): AtlasTools {
   };
 }
 
+async function deleteWorkspaceItem(
+  kind: "agent" | "signal" | "job",
+  id: string,
+  workspaceId: string,
+  logger: Logger,
+): Promise<{ ok: true; livePath?: unknown } | { ok: false; error?: unknown }> {
+  const op = `delete_${kind}`;
+  logger.info(`${op} tool invoked`, { workspaceId, kind, id });
+
+  const res = await client.workspace[":workspaceId"].items[":kind"][":id"].$delete({
+    param: { workspaceId, kind, id },
+  });
+
+  if (!res.ok) {
+    const errorSchema = z.object({ error: z.unknown().optional() });
+    let body: z.infer<typeof errorSchema>;
+    try {
+      body = errorSchema.parse(await res.json());
+    } catch {
+      body = { error: `${op} failed` };
+    }
+    logger.warn(`${op} failed`, { workspaceId, kind, id, error: body.error });
+    return { ok: false, error: body.error ?? `${op} failed` };
+  }
+
+  const data = await res.json();
+  logger.info(`${op} succeeded`, { workspaceId, kind, id });
+  return { ok: true, livePath: data.livePath };
+}
+
 export function createBoundWorkspaceOpsTools(logger: Logger, workspaceId: string): AtlasTools {
   return {
-    remove_item: tool({
+    delete_agent: tool({
       description:
-        "Remove an agent, signal, or job from the current workspace. " +
-        "Calls DELETE /items/:kind/:id on the live config. " +
-        "Refuses the operation if the item is still referenced by other workspace entities. " +
-        "Optional: pass workspaceId to target a different workspace (e.g. after create_workspace).",
-      inputSchema: jsonSchema(REMOVE_ITEM_INPUT_SCHEMA),
-      execute: async ({
-        kind,
-        id,
-        workspaceId: providedId,
-      }: {
-        kind: "agent" | "signal" | "job";
-        id: string;
-        workspaceId?: string;
-      }) => {
-        const targetId = providedId ?? workspaceId;
-        logger.info("remove_item tool invoked", { workspaceId: targetId, kind, id });
-
-        const res = await client.workspace[":workspaceId"].items[":kind"][":id"].$delete({
-          param: { workspaceId: targetId, kind, id },
-        });
-
-        if (!res.ok) {
-          const errorSchema = z.object({ error: z.unknown().optional() });
-          let body: z.infer<typeof errorSchema>;
-          try {
-            body = errorSchema.parse(await res.json());
-          } catch {
-            body = { error: "remove_item failed" };
-          }
-          logger.warn("remove_item failed", { workspaceId: targetId, kind, id, error: body.error });
-          return { ok: false, error: body.error ?? "remove_item failed" };
-        }
-
-        const data = await res.json();
-        logger.info("remove_item succeeded", { workspaceId: targetId, kind, id });
-        return { ok: true, livePath: data.livePath };
-      },
+        "Remove an agent from the current workspace's agents list. Pairs with `upsert_agent` " +
+        "(the create/update verb). Calls DELETE /items/agent/:id on the live config and refuses " +
+        "if the agent is still referenced elsewhere. To remove the agent's installed source from " +
+        "the global registry instead, use `delete_agent_from_registry`. Optional: pass " +
+        "workspaceId to target a different workspace.",
+      inputSchema: DELETE_ITEM_INPUT_SCHEMA,
+      execute: ({ id, workspaceId: providedId }) =>
+        deleteWorkspaceItem("agent", id, providedId ?? workspaceId, logger),
+    }),
+    delete_signal: tool({
+      description:
+        "Remove a signal from the current workspace's signals map. Pairs with `upsert_signal`. " +
+        "Calls DELETE /items/signal/:id on the live config and refuses if the signal is still " +
+        "referenced elsewhere. Optional: pass workspaceId to target a different workspace.",
+      inputSchema: DELETE_ITEM_INPUT_SCHEMA,
+      execute: ({ id, workspaceId: providedId }) =>
+        deleteWorkspaceItem("signal", id, providedId ?? workspaceId, logger),
+    }),
+    delete_job: tool({
+      description:
+        "Remove a job from the current workspace's jobs map. Pairs with `upsert_job`. Calls " +
+        "DELETE /items/job/:id on the live config and refuses if the job is still referenced " +
+        "elsewhere. Optional: pass workspaceId to target a different workspace.",
+      inputSchema: DELETE_ITEM_INPUT_SCHEMA,
+      execute: ({ id, workspaceId: providedId }) =>
+        deleteWorkspaceItem("job", id, providedId ?? workspaceId, logger),
     }),
   };
 }

@@ -130,7 +130,10 @@ async function runAndCapturePrompt(opts: {
   let capturedPrompt = "";
   const provider: LLMProvider = {
     call: (params) => {
-      capturedPrompt = params.prompt;
+      // Capture system + user-message body together so substring asserts
+      // work regardless of whether content lands in the cacheable system
+      // surface or the volatile user preface.
+      capturedPrompt = `${params.system ?? ""}\n\n${params.prompt ?? ""}`;
       return Promise.resolve(
         envelope(params.prompt, params.agentId, { complete: !!opts.outputType }),
       );

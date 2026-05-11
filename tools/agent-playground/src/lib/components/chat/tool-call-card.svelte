@@ -5,6 +5,7 @@
   import ConnectCommunicator from "./connect-communicator.svelte";
   import ConnectService from "./connect-service.svelte";
   import DelegateToolCard from "./delegate-tool-card.svelte";
+  import { getExportContext } from "./export-context";
   import HumanInputToolCard from "./human-input-tool-card.svelte";
   import { jsonHighlighter } from "./json-highlighter";
   import { extractLiftedArtifactIds } from "./lifted-markers";
@@ -52,7 +53,7 @@
         return { icon: Icons.RectangleStack, label: "Delegating", color: "var(--color-accent)", category: "agent" };
       case "load_skill":
         return { icon: Icons.Bolt, label: "Loading skill", color: "var(--yellow-primary)", category: "memory" };
-      case "memory_save":
+      case "save_memory_entry":
         return { icon: Icons.Bookmark, label: "Saving memory", color: "var(--color-accent)", category: "memory" };
       case "connect_service":
         return { icon: Icons.Link, label: "Connecting", color: "var(--text-faded)", category: "connect" };
@@ -60,9 +61,9 @@
         return { icon: Icons.Link, label: "Connecting", color: "var(--text-faded)", category: "connect" };
       case "display_artifact":
         return { icon: Icons.DocumentText, label: "Displaying", color: "var(--color-accent)", category: "file" };
-      case "artifacts_get":
+      case "get_artifact":
         return { icon: Icons.DocumentText, label: "Reading artifact", color: "var(--color-accent)", category: "file" };
-      case "artifacts_create":
+      case "create_artifact":
         return { icon: Icons.DocumentArrowUp, label: "Saving artifact", color: "var(--color-accent)", category: "file" };
       case "parse_artifact":
         return { icon: Icons.DocumentText, label: "Parsing", color: "var(--color-accent)", category: "file" };
@@ -176,6 +177,13 @@
 
   /* ─── Copy to clipboard ──────────────────────────────────────────── */
 
+  /**
+   * Suppresses the clipboard buttons (which depend on JS) when the card
+   * is rendered inside an export. The data still renders; only the copy
+   * affordance is hidden.
+   */
+  const isExport = getExportContext() !== undefined;
+
   function copyToClipboard(value: unknown, btn: HTMLButtonElement) {
     let text: string;
     if (typeof value === "string") {
@@ -272,16 +280,20 @@
 </script>
 
 {#snippet jsonCopyBlock(label: string, data: unknown)}
-  <div class="json-copy-wrapper">
-    <button
-      class="json-copy-btn"
-      aria-label={`Copy ${label}`}
-      onclick={(e: MouseEvent) => copyToClipboard(data, e.currentTarget as HTMLButtonElement)}
-    >
-      Copy
-    </button>
-    <pre>{@html formatRawOutput(data)}</pre>
-  </div>
+  {#if isExport}
+    <pre class="json-render">{@html formatRawOutput(data)}</pre>
+  {:else}
+    <div class="json-copy-wrapper">
+      <button
+        class="json-copy-btn"
+        aria-label={`Copy ${label}`}
+        onclick={(e: MouseEvent) => copyToClipboard(data, e.currentTarget as HTMLButtonElement)}
+      >
+        Copy
+      </button>
+      <pre class="json-render">{@html formatRawOutput(data)}</pre>
+    </div>
+  {/if}
 {/snippet}
 
 {#snippet outputDrawer(c: ToolCallDisplay)}
@@ -318,16 +330,20 @@
             <span class="chevron-icon"><IconSmall.ChevronRight /></span>
             error
           </summary>
-          <div class="json-copy-wrapper">
-            <button
-              class="json-copy-btn"
-              aria-label="Copy error"
-              onclick={(e: MouseEvent) => copyToClipboard(c.errorText, e.currentTarget as HTMLButtonElement)}
-            >
-              Copy
-            </button>
-            <pre class="error-text">{c.errorText}</pre>
-          </div>
+          {#if isExport}
+            <pre class="json-render error-text">{c.errorText}</pre>
+          {:else}
+            <div class="json-copy-wrapper">
+              <button
+                class="json-copy-btn"
+                aria-label="Copy error"
+                onclick={(e: MouseEvent) => copyToClipboard(c.errorText, e.currentTarget as HTMLButtonElement)}
+              >
+                Copy
+              </button>
+              <pre class="json-render error-text">{c.errorText}</pre>
+            </div>
+          {/if}
         </details>
       {/if}
     </div>
@@ -617,7 +633,7 @@
     position: relative;
   }
 
-  .json-copy-wrapper pre {
+  .json-render {
     background-color: var(--surface-bright);
     border-radius: var(--radius-1);
     font-family: var(--font-family-mono, ui-monospace, monospace);
@@ -630,7 +646,7 @@
     word-break: break-word;
   }
 
-  .json-copy-wrapper pre.error-text {
+  .json-render.error-text {
     color: var(--red-primary);
   }
 

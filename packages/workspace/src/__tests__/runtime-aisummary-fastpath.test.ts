@@ -164,7 +164,7 @@ describe("deriveKeyDetailsFromOutputDoc", () => {
   it("surfaces array counts so supervisors can answer 'how many?' (I3)", () => {
     // Mirrors pt1 §8.C: the chat_*** triage report had `actions` and
     // `flagged` arrays; supervisor asked "did anything urgent come in?"
-    // Counts in keyDetails answer that without `artifacts_get`.
+    // Counts in keyDetails answer that without `get_artifact`.
     const out = deriveKeyDetailsFromOutputDoc({
       data: {
         actions: ["a", "b", "c", "d", "e", "f", "g", "h"],

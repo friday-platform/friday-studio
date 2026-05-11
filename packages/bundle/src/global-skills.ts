@@ -500,28 +500,15 @@ async function importV2Rows(
         }
       }
       if (!inherited) {
-        // Distinguish the failure modes the loop can hit: prior versions in
-        // the bundle cache (in-memory hits), prior versions present at the
-        // target (presence-skip path that may or may not have archive bytes),
-        // and prior versions absent entirely. The throw above at :492-494
-        // covers `get` errors with operands; this one mirrors that style for
-        // the unresolvable case so an engineer doing forensic recovery can
-        // tell "bundle is internally inconsistent" from "target row exists
-        // but carries no archive bytes" at a glance.
-        const cacheKeys: number[] = [];
+        const cacheVersions: number[] = [];
         const cacheMap = archivesBySkill.get(row.skillId);
         if (cacheMap) {
-          for (const v of cacheMap.keys()) if (v < row.version) cacheKeys.push(v);
+          for (const v of cacheMap.keys()) if (v < row.version) cacheVersions.push(v);
         }
-        cacheKeys.sort((a, b) => a - b);
-        const targetKeys: number[] = [];
-        for (const v of presentVersions) if (v < row.version) targetKeys.push(v);
-        targetKeys.sort((a, b) => a - b);
+        const targetVersions: number[] = [];
+        for (const v of presentVersions) if (v < row.version) targetVersions.push(v);
         throw new Error(
-          `importGlobalSkills: inherited archive for skill ${row.skillId} version ${row.version} ` +
-            `could not be resolved — walked versions [1..${row.version - 1}], ` +
-            `bundle cache had [${cacheKeys.join(",")}], ` +
-            `target had [${targetKeys.join(",")}] (none carried archive bytes)`,
+          buildUnresolvedInheritedMessage(row.skillId, row.version, cacheVersions, targetVersions),
         );
       }
       archiveBytes = inherited;
@@ -560,6 +547,34 @@ async function importV2Rows(
   }
 
   return { kind: "imported", skillsPublished, skillsSkipped };
+}
+
+/**
+ * Build a diagnostic message for the unresolvable-`inherited` case. Hoisted
+ * out of `importV2Rows` because inlining the array spreads / sorts inside
+ * the discriminated-union loop body tripped TS2589 (excessively deep
+ * instantiation) under certain dep-graph configurations.
+ *
+ * The neighbor throw at the `get` failure path already carries operands;
+ * this mirrors that style so the unresolvable case surfaces which versions
+ * were walked, which had presence at the target, and which were in the
+ * bundle cache — enough to distinguish "bundle is internally inconsistent"
+ * from "target row exists but carries no archive bytes" at a glance.
+ */
+function buildUnresolvedInheritedMessage(
+  skillId: string,
+  version: number,
+  cacheVersions: number[],
+  targetVersions: number[],
+): string {
+  const cacheSorted = [...cacheVersions].sort((a, b) => a - b);
+  const targetSorted = [...targetVersions].sort((a, b) => a - b);
+  return (
+    `importGlobalSkills: inherited archive for skill ${skillId} version ${version} ` +
+    `could not be resolved — walked versions [1..${version - 1}], ` +
+    `bundle cache had [${cacheSorted.join(",")}], ` +
+    `target had [${targetSorted.join(",")}] (none carried archive bytes)`
+  );
 }
 
 /**

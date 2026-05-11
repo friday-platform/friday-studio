@@ -34,7 +34,10 @@ const launcherBundleID = "ai.hellofriday.studio"
 // launcher-release coordinated bump: we test this launcher's daemon
 // against the SDK version named here. PyPI:
 // https://pypi.org/project/friday-agent-sdk/
-const bundledAgentSDKVersion = "0.1.7"
+//
+// To bump: see UPDATING-AGENT-SDK.md at the repo root (three pin sites
+// must agree; CI enforces via scripts/check-sdk-pin-sync.ts).
+const bundledAgentSDKVersion = "0.1.8"
 
 func friendlyHome() string {
 	if v := os.Getenv("FRIDAY_LAUNCHER_HOME"); v != "" {

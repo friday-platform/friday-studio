@@ -38,11 +38,11 @@ Do not treat this skill as a replacement for those. This skill gives the repair 
 
 Start from evidence, not guesses.
 
-1. **Find the failing session or trigger.** Use daemon/session tools when available. If the user gives a URL, identify workspace id, chat id/session id, job name, and failing action.
-2. **Read the workspace config.** Locate signals, agents, jobs, permissions, validation settings, and MCP servers.
+1. **Find the failing session or trigger.** Call `list_sessions` / `describe_session(id)` from chat, or `deno task atlas session list/get` from a terminal. If the user gives a URL, identify workspace id, chat id/session id, job name, and failing action.
+2. **Read the workspace config.** Call `describe_workspace(id)` for the full record, then drill in with `list_agents` / `list_jobs` / `list_signals` / `list_memory_stores` / `list_communicators` / `describe_draft` as needed.
 3. **Identify the action type.** `type: llm`, `type: agent` wrapping `type: llm`, `type: agent` wrapping `type: user`, and `type: agent` wrapping `type: atlas` have different contracts.
-4. **Inspect the actual tool catalog.** Do not infer tool names from prose or old generated code. Use the platform discovery/listing path from `using-mcp-servers` / `workspace-api`.
-5. **Inspect persisted output.** If a downstream action received empty/stub data, find the upstream `outputTo` writer and verify whether it called the required output tool.
+4. **Inspect the actual tool catalog.** Do not infer tool names from prose or old generated code. Call `list_mcp_servers(scope=workspace)` for what's wired, `list_mcp_tools({serverId})` to see a server's tool names + input schemas, `describe_mcp_server({id})` for back-references (which agents/jobs use it), and `list_bundled_agents` / `describe_bundled_agent({id})` for atlas-agent invocation contracts.
+5. **Inspect persisted output.** If a downstream action received empty/stub data, find the upstream `outputTo` writer and verify whether it called the required output tool. Use `list_artifacts` / `get_artifact(id)` to inspect what was actually written.
 
 ## Current contracts to repair toward
 
@@ -154,6 +154,50 @@ Minimum gates for a production repair:
 - HITL paths are tested for at least the expected terminal status (`answered`, `declined`, or `expired`).
 
 When external auth is unhealthy, use deterministic fake/no-auth tooling to prove the contract shape, then separately report the credential issue.
+
+## Tool renames — workspaces with hard-coded old names
+
+The platform's tool surface was renamed for verb-first consistency in
+2026-05. The rename hit every caller — chat agents, FSM `type: llm`
+actions, and Python `type: user` agents calling `ctx.tools.call(...)`.
+There are no aliases; old names return "unknown tool" at runtime.
+
+| Old name | New name | Where it appears |
+|---|---|---|
+| `workspace_delete` | `delete_workspace` | `ctx.tools.call(...)` in Python agents, `permissions.tools.allow` lists, FSM `tools:` whitelists |
+| `remove_item({kind, id})` | `delete_agent({id})` / `delete_signal({id})` / `delete_job({id})` | chat tool only; the union form is gone — per-kind matches `upsert_<kind>` |
+| `memory_save` | `save_memory_entry` | every caller (chat, FSM, `ctx.tools.call`) |
+| `memory_read` | `list_memory_entries` | every caller. New shape adds `query` / `since` / `until` / `metadata` filters and pagination; `since` and `limit` keep their meaning, the rest are additive. The legacy `ReadResponse` envelope is gone — direct `{items, has_more, next_cursor?}` shape. |
+| `memory_remove` | `delete_memory_entry` | every caller |
+| `artifacts_get` | `get_artifact` | every caller |
+| `artifacts_create` | `create_artifact` | every caller |
+| `get_mcp_dependencies` | `describe_mcp_server({id})` (with `scope=workspace`, default) | chat tool only; output now includes `agentIds` / `jobIds` plus the wired config |
+
+Repair pattern:
+
+1. Grep the workspace dir + any installed Python agents under
+   `~/.friday/agents/<id>@<version>/` for the old name(s):
+
+   ```sh
+   grep -RIn 'memory_read\|memory_save\|memory_remove\|workspace_delete\|remove_item\|artifacts_get\|artifacts_create\|get_mcp_dependencies' .
+   ```
+
+2. For each hit, replace with the new name using the table above. The
+   per-kind `delete_agent` / `delete_signal` / `delete_job` rename
+   from `remove_item` requires reading the call site to pick the
+   right kind. Most replacements are bare grep-and-replace; the
+   `memory_read` → `list_memory_entries` rename also drops the
+   `ReadResponse` envelope, so callers that read `result.items`
+   continue to work and callers that read `result.provenance` need
+   to drop that field reference.
+
+3. Re-register the agent (`register_agent({entrypoint})`) so the
+   updated source overwrites the install dir, then re-validate the
+   workspace and re-run the failing job/signal.
+
+If a Python agent fails with `ToolCallError("unknown tool: memory_save")`
+post-upgrade, that's the rename surfacing; apply step 2 to the agent's
+source and re-register.
 
 ## Gotchas
 

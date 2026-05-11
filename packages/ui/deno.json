@@ -3,6 +3,7 @@
   "version": "0.0.1",
   "exports": {
     ".": "./src/lib/index.ts",
+    "./markdown": "./src/lib/markdown/markdown.ts",
     "./tokens.css": "./src/lib/tokens.css",
     "./eslint": "./eslint.config.base.js",
     "./prettier": "./prettier.config.js"

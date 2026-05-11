@@ -9,6 +9,7 @@ import {
 } from "@atlas/agent-sdk/vercel-helpers";
 import type { LLMAgentConfig } from "@atlas/config";
 import {
+  getCachingRequestOpts,
   getDefaultProviderOpts,
   registry,
   temporalGroundingMessage,
@@ -63,7 +64,10 @@ export function convertLLMToAgent(
     outputSchema: LLMOutputSchema,
     expertise: { examples: [] },
     useWorkspaceSkills: true,
-    handler: async (prompt, { tools, stream, abortSignal, config: ctxConfig, outputSchema }) => {
+    handler: async (
+      prompt,
+      { tools, session, stream, abortSignal, config: ctxConfig, outputSchema },
+    ) => {
       try {
         // Use agent's system prompt directly - no attribution protocol injection
         let systemPrompt = config.config.prompt || "";
@@ -189,6 +193,13 @@ export function convertLLMToAgent(
             : stepCountIs(config.config.max_steps || 10),
           abortSignal,
           experimental_repairToolCall: repairToolCall,
+          // Default request-level caching (OpenAI promptCacheKey).
+          // Compose with workspaceId so an agent named e.g. "summarizer"
+          // in different workspaces gets distinct cache routes — agentId
+          // is workspace-scoped and would otherwise collide. The
+          // workspace.yml `provider_options` spread below can override
+          // by supplying its own `providerOptions` field.
+          providerOptions: getCachingRequestOpts({ cacheKey: `${session.workspaceId}:${agentId}` }),
           ...(config.config.provider_options || {}),
         });
 

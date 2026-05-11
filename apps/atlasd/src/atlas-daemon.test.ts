@@ -7,6 +7,13 @@
 import process from "node:process";
 import type { WorkspaceRuntime } from "@atlas/workspace";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("@atlas/core/users/storage", () => ({
+  UserStorage: { getCachedLocalUserId: () => "test-local-user" },
+  initUserStorage: () => undefined,
+  ensureUsersKVBucket: () => Promise.resolve(undefined),
+}));
+
 import { AtlasDaemon } from "./atlas-daemon.ts";
 import { DiscordGatewayService } from "./discord-gateway-service.ts";
 

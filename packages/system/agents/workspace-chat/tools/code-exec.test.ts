@@ -134,6 +134,24 @@ describe("run_code — PTY wrap for interactive-auth commands", () => {
     }
   });
 
+  it("aborts the in-flight subprocess when the parent signal fires", async () => {
+    const controller = new AbortController();
+    const tools = createRunCodeTool("test-session-abort", logger, controller.signal);
+    const run = getExecute(tools.run_code);
+
+    setTimeout(() => controller.abort(), 50);
+    const started = Date.now();
+    const result = await run({ language: "bash", source: "sleep 5; echo done" });
+    const elapsed = Date.now() - started;
+
+    // Bound sits below the 5s sleep but leaves headroom for slow CI.
+    expect(elapsed).toBeLessThan(4500);
+    if (!hasKey(result, "error")) {
+      throw new Error(`expected error shape, got ${JSON.stringify(result)}`);
+    }
+    expect(String(result.error)).toContain("aborted");
+  });
+
   it("preserves stderr on nonzero exit (regression — was lost via the 'code is number' condition)", async () => {
     const tools = createRunCodeTool("test-session-preserve", logger);
     const run = getExecute(tools.run_code);

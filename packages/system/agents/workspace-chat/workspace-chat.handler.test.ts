@@ -35,7 +35,6 @@ const mockGetDefaultProviderOpts = vi.hoisted(() => vi.fn());
 const mockValidateAtlasUIMessages = vi.hoisted(() => vi.fn());
 const mockPipeUIMessageStream = vi.hoisted(() => vi.fn());
 const mockFetchLinkSummary = vi.hoisted(() => vi.fn());
-const mockFormatIntegrationsSection = vi.hoisted(() => vi.fn());
 const mockFetchUserIdentitySection = vi.hoisted(() => vi.fn());
 const mockCreateConnectServiceTool = vi.hoisted(() => vi.fn());
 const mockCreateJobTools = vi.hoisted(() => vi.fn());
@@ -135,10 +134,7 @@ vi.mock("@atlas/skills", () => ({
   resolveVisibleSkills: mockResolveVisibleSkills,
 }));
 
-vi.mock("../link-context.ts", () => ({
-  fetchLinkSummary: mockFetchLinkSummary,
-  formatIntegrationsSection: mockFormatIntegrationsSection,
-}));
+vi.mock("../link-context.ts", () => ({ fetchLinkSummary: mockFetchLinkSummary }));
 
 vi.mock("../user-identity.ts", () => ({ fetchUserIdentitySection: mockFetchUserIdentitySection }));
 
@@ -164,7 +160,7 @@ vi.mock("./tools/list-capabilities.ts", () => ({
 
 vi.mock("./tools/artifact-tools.ts", () => ({
   artifactTools: {},
-  createArtifactsCreateTool: vi.fn(() => ({})),
+  createCreateArtifactTool: vi.fn(() => ({})),
 }));
 
 vi.mock("./prompt.txt", () => ({ default: "SYSTEM_PROMPT_PLACEHOLDER" }));
@@ -282,7 +278,6 @@ function setupDefaultMocks(existingMessages: AtlasUIMessage[] = []): void {
 
   // Link / identity
   mockFetchLinkSummary.mockResolvedValue(null);
-  mockFormatIntegrationsSection.mockReturnValue("<integrations/>");
   mockFetchUserIdentitySection.mockResolvedValue(undefined);
 
   // Tools
@@ -305,7 +300,11 @@ function setupDefaultMocks(existingMessages: AtlasUIMessage[] = []): void {
   // convertToModelMessages: pass through
   mockConvertToModelMessages.mockImplementation((msgs: unknown) => msgs);
 
-  // streamText: returns an object with toUIMessageStream
+  // streamText: returns an object with toUIMessageStream + finishReason.
+  // The real workspace-chat now opens an `enterUsageScope` and awaits
+  // `result.finishReason` to keep that scope alive until the underlying
+  // stream settles — the mock must therefore expose `finishReason` as a
+  // resolved promise so the await actually resolves under test.
   mockStreamText.mockImplementation((opts: { onFinish?: (arg: { text: string }) => void }) => {
     opts.onFinish?.({ text: "Hello from LLM" });
     return {
@@ -316,6 +315,7 @@ function setupDefaultMocks(existingMessages: AtlasUIMessage[] = []): void {
           },
         }),
       ),
+      finishReason: Promise.resolve("stop"),
     };
   });
 
@@ -378,7 +378,6 @@ describe("workspace-chat handler", () => {
     mockValidateAtlasUIMessages.mockReset();
     mockPipeUIMessageStream.mockReset();
     mockFetchLinkSummary.mockReset();
-    mockFormatIntegrationsSection.mockReset();
     mockFetchUserIdentitySection.mockReset();
     mockCreateConnectServiceTool.mockReset();
     mockCreateJobTools.mockReset();
@@ -555,14 +554,17 @@ describe("workspace-chat handler", () => {
     expect(mockSetSystemPromptContext).toHaveBeenCalledOnce();
   });
 
-  it("does NOT capture system prompt context when messages.length > 1", async () => {
+  it("captures system prompt context on every turn, not just the first", async () => {
     setupDefaultMocks([makeMessage("user", "Hello"), makeMessage("assistant", "Hi")]);
 
     const handler = getHandler();
     const ctx = makeContext();
     await handler("", ctx);
 
-    expect(mockSetSystemPromptContext).not.toHaveBeenCalled();
+    // Phase 0: setter is no longer first-turn-only — the snapshot is
+    // written on every turn so the persisted context reflects what the
+    // model actually saw on the latest turn.
+    expect(mockSetSystemPromptContext).toHaveBeenCalledOnce();
   });
 
   // -----------------------------------------------------------------------
@@ -652,6 +654,46 @@ describe("workspace-chat handler", () => {
     );
   });
 
+  it("Block 4 preface is sent to the model but not persisted", async () => {
+    // The synthetic user-message preface (memory + temporal facts) is
+    // injected into the LLM call but must not leak into ChatStorage —
+    // it would accumulate across turns and corrupt the conversation.
+    const userMessage = makeMessage("user", "Hello");
+    setupDefaultMocks([userMessage]);
+
+    let streamTextMessages: unknown[] | undefined;
+    mockStreamText.mockImplementation((opts) => {
+      streamTextMessages = opts.messages as unknown[];
+      opts.onFinish?.({ text: "Hi" });
+      return {
+        toUIMessageStream: vi.fn().mockReturnValue(
+          new ReadableStream({
+            start(controller) {
+              controller.close();
+            },
+          }),
+        ),
+        finishReason: Promise.resolve("stop"),
+      };
+    });
+
+    const handler = getHandler();
+    const ctx = makeContext();
+    await handler("", ctx);
+
+    // The model saw a message with the temporal-facts preface tag.
+    expect(streamTextMessages).toBeDefined();
+    const serializedModelMessages = JSON.stringify(streamTextMessages);
+    expect(serializedModelMessages).toContain("<retrieved_content");
+
+    // But the persisted assistant message must NOT carry preface bytes.
+    expect(mockAppendMessage).toHaveBeenCalledOnce();
+    const persistedMessage = mockAppendMessage.mock.calls[0]?.[1] as AtlasUIMessage;
+    expect(persistedMessage.role).toBe("assistant");
+    const persistedSerialized = JSON.stringify(persistedMessage);
+    expect(persistedSerialized).not.toContain("<retrieved_content");
+  });
+
   // -----------------------------------------------------------------------
   // Seamless auto-continue after connect_service
   // -----------------------------------------------------------------------
@@ -717,6 +759,7 @@ describe("workspace-chat handler", () => {
             },
           }),
         ),
+        finishReason: Promise.resolve("stop"),
       };
     });
 
@@ -1014,6 +1057,7 @@ describe("workspace-chat handler", () => {
               },
             }),
           ),
+          finishReason: Promise.resolve("stop"),
         };
       },
     );

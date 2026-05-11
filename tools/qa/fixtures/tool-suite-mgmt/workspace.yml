@@ -1,0 +1,52 @@
+version: "1.0"
+
+workspace:
+  name: "Tool Suite Management"
+  description: "Fixture for tool-suite-management eval scenarios — exercises chat retrieval tools (skills, integrations, agents, sessions, memory entries, foreground)."
+
+permissions:
+  dangerouslySkipAllowlist: false
+
+memory:
+  own:
+    - name: notes
+      type: long_term
+
+agents:
+  triage-writer:
+    type: llm
+    description: "LLM-backed triage agent for inventory list/describe coverage."
+    config:
+      provider: anthropic
+      model: claude-sonnet-4-6
+      temperature: 0
+      max_steps: 4
+      prompt: |
+        You are a deterministic triage writer. Return the requested output.
+
+signals:
+  inventory-event:
+    provider: http
+    description: "No-op signal so the workspace has a signal entry for inventory tests."
+    config:
+      path: "/inventory-event"
+    schema:
+      type: object
+      properties: {}
+      required: []
+
+jobs:
+  inventory-noop:
+    description: "No-op job so the workspace has a job entry for inventory tests."
+    triggers:
+      - signal: inventory-event
+    config:
+      timeout: "1m"
+      max_steps: 1
+    validation:
+      default: "skip"
+    fsm:
+      initial: done
+      states:
+        done:
+          type: final

@@ -81,8 +81,16 @@ registerAgentRoute.post("/register", async (c) => {
 
   const nc = c.get("app").daemon.getNatsConnection();
 
-  // Subscribe BEFORE spawning to avoid race (agent may publish and exit fast)
+  // Subscribe BEFORE spawning to avoid race (agent may publish and exit fast).
+  // The flush() is load-bearing: without it, the SUB protocol message can sit
+  // in the client buffer while a warm-cached uv spawn (~50–100ms) lets the
+  // child connect, publish validate, drain, and exit before the broker
+  // registers our subscription. The metadata message is then lost; this
+  // route times out at VALIDATE_TIMEOUT_MS with no useful diagnostic.
+  // Mirrors the readiness flush the SDK side does post-subscribe in
+  // friday_agent_sdk/_bridge.py.
   const sub = nc.subscribe(`agents.validate.${registerId}`, { max: 1 });
+  await nc.flush();
 
   const [cmd, args] = buildAgentSpawnArgs(entrypointPath);
   const proc = spawn(cmd, args, {

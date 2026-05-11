@@ -36,7 +36,11 @@ import { SessionActionTypeSchema } from "./session-events.ts";
 export interface AgentResultData {
   toolCalls: ToolCallSummary[];
   reasoning?: string;
-  output: unknown;
+  // Optional: success-path actions populate the structured complete-tool
+  // args (or LLM text fallback). Failure-path early-captures (action threw
+  // mid-execution before producing a contracted output) carry toolCalls
+  // without an output.
+  output?: unknown;
   artifactRefs?: unknown[];
   /** Optional LLM token usage. Set by LLM action paths; agent actions leave it absent. */
   usage?: StepUsage;

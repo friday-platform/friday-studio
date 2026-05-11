@@ -137,8 +137,15 @@ export interface RunCodeError {
  * Build the `run_code` tool. Each tool instance is scoped to a single chat
  * session via its `sessionId` — scripts can read files they wrote earlier
  * in the same session, but never from other sessions.
+ *
+ * `parentSignal` is wired to Node exec's `signal` option so a parent abort
+ * SIGKILLs the child subprocess.
  */
-export function createRunCodeTool(sessionId: string, logger: Logger): AtlasTools {
+export function createRunCodeTool(
+  sessionId: string,
+  logger: Logger,
+  parentSignal?: AbortSignal,
+): AtlasTools {
   return {
     run_code: tool({
       description:
@@ -190,6 +197,7 @@ export function createRunCodeTool(sessionId: string, logger: Logger): AtlasTools
             PYTHONUNBUFFERED: "1",
           },
           killSignal: "SIGKILL",
+          signal: parentSignal,
         };
 
         const started = Date.now();
@@ -213,6 +221,21 @@ export function createRunCodeTool(sessionId: string, logger: Logger): AtlasTools
           );
         } catch (err) {
           const duration = Date.now() - started;
+          // Node exec signals abort as either `name: "AbortError"` or
+          // `code: "ABORT_ERR"` depending on version — check both.
+          if (
+            typeof err === "object" &&
+            err !== null &&
+            (("name" in err && err.name === "AbortError") ||
+              ("code" in err && err.code === "ABORT_ERR"))
+          ) {
+            logger.info("run_code aborted by parent signal", {
+              sessionId,
+              language: lang,
+              duration,
+            });
+            return { error: "run_code aborted by chat turn cancellation" };
+          }
           // exec() throws on non-zero exit OR on exec-layer errors (timeout,
           // maxBuffer, ENOENT). Both kinds of error object carry
           // `stdout`/`stderr` when they exist, and we want to surface them

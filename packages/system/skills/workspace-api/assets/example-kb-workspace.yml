@@ -2,7 +2,7 @@
 #
 # Every workspace already has a `notes` narrative memory corpus that the chat
 # runtime auto-injects into the agent's system prompt on every turn and that
-# the platform exposes via `memory_save`, `memory_read`, and `memory_remove`. Use those.
+# the platform exposes via `save_memory_entry`, `list_memory_entries`, and `delete_memory_entry`. Use those.
 #
 # Do NOT reach for user-authored SQLite for plain "save a note / recall by
 # question" use cases. SQLite adds an MCP dependency (`uvx mcp-server-sqlite`),
@@ -12,7 +12,7 @@
 # (structured logs, tables with joins, etc.).
 #
 # No agents block needed — workspace-chat handles KB interactions automatically
-# using memory_save / memory_read via the `notes` corpus below.
+# using save_memory_entry / list_memory_entries via the `notes` corpus below.
 # Before submitting: rename `workspace.name`; everything else is safe to ship as-is.
 
 version: "1.0"

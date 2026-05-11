@@ -3,6 +3,7 @@
   import { QueryClient, QueryClientProvider } from "@tanstack/svelte-query";
   import { onMount } from "svelte";
   import { browser } from "$app/environment";
+  import { page } from "$app/state";
   import "@atlas/ui/tokens.css";
   import "@atlas/ui/colors.css";
   import "../app.css";
@@ -16,6 +17,18 @@
   import { loadUpdateStatus } from "$lib/update-status.svelte";
 
   const { children } = $props();
+
+  // Routes that opt out of the playground app shell (sidebar, palette, etc.)
+  // and render their children directly. Two consumers today:
+  //   - `/export/preview` — packaged into standalone HTML, no live UI.
+  //   - `/artifacts/[id]` and subpaths — dedicated artifact viewers
+  //     opened in a new tab. The dispatcher + per-renderer subpaths
+  //     (`./table` today, `./raw` / `./diff` etc. later) all opt out
+  //     of the workspace chrome so the artifact gets the full viewport.
+  const isChromeless = $derived(
+    page.route.id?.endsWith("/export/preview") === true ||
+      page.route.id?.startsWith("/artifacts/") === true,
+  );
 
   if (browser) {
     void loadUpdateStatus();
@@ -66,30 +79,45 @@
 
 <svelte:head>
   <title>Friday Studio</title>
-  <link rel="icon" href={favicon} sizes="32x32" />
+  {#if !isChromeless}
+    <!--
+      The chromeless export-preview omits the favicon link entirely; the
+      export orchestrator post-processes the rendered HTML and injects a
+      data: URL favicon directly into <head>. A relative `favicon.png`
+      sibling-file approach worked, but Chrome treats every file:// URL
+      as a unique security origin, so loading the icon from the page
+      logs a cross-origin warning to the console. Inlining as a data:
+      URL keeps the icon and removes the warning.
+    -->
+    <link rel="icon" href={favicon} sizes="32x32" />
+  {/if}
 </svelte:head>
 
-<QueryClientProvider client={queryClient}>
-  <div class="app-root">
-    <UpdateBanner />
-    <CascadeStatusBanner />
-    <ElicitationGlobalStream {queryClient} />
-    <div class="app-shell">
-      <Sidebar />
-      <main>
-        <div class="app-content">
-          {@render children?.()}
-        </div>
-      </main>
+{#if isChromeless}
+  {@render children?.()}
+{:else}
+  <QueryClientProvider client={queryClient}>
+    <div class="app-root">
+      <UpdateBanner />
+      <CascadeStatusBanner />
+      <ElicitationGlobalStream {queryClient} />
+      <div class="app-shell">
+        <Sidebar />
+        <main>
+          <div class="app-content">
+            {@render children?.()}
+          </div>
+        </main>
+      </div>
+
+      {#if paletteOpen}
+        <CommandPalette initialMode={paletteMode} onclose={() => (paletteOpen = false)} />
+      {/if}
     </div>
-  </div>
+  </QueryClientProvider>
 
-  {#if paletteOpen}
-    <CommandPalette initialMode={paletteMode} onclose={() => (paletteOpen = false)} />
-  {/if}
-</QueryClientProvider>
-
-<NotificationPortal />
+  <NotificationPortal />
+{/if}
 
 <style>
   .app-root {

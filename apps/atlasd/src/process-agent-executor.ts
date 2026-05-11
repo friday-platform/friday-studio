@@ -17,6 +17,7 @@
 import { spawn } from "node:child_process";
 import process from "node:process";
 import type { AgentExecutionSuccess, AgentResult, AtlasUIMessageChunk } from "@atlas/agent-sdk";
+import { getActiveUsageCounter } from "@atlas/llm";
 import { logger as rootLogger } from "@atlas/logger";
 import type { CodeAgentExecutorOptions } from "@atlas/workspace/agent-executor-utils";
 import { serializeAgentContext } from "@atlas/workspace/agent-executor-utils";
@@ -56,6 +57,12 @@ export class ProcessAgentExecutor {
       agentLlmConfig: options.agentLlmConfig,
       logger: options.logger,
       abortSignal: options.abortSignal,
+      // Forward the calling scope's usage counter so the daemon's LLM
+      // capability handler can bump the same object across the NATS hop.
+      // ALS lookup happens here (in the workspace-chat tool-execute async
+      // chain), then the reference rides the CapabilityContext until
+      // unregister().
+      usageCounter: getActiveUsageCounter(),
     });
 
     // 2. Subscribe to stream events from the agent on the private subprocess→host

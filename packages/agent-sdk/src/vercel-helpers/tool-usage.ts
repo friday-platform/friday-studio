@@ -57,7 +57,7 @@ export function extractArtifactRefsFromToolResults(
   const refs: ArtifactRef[] = [];
 
   for (const result of toolResults) {
-    if (result.toolName === "artifacts_create") {
+    if (result.toolName === "create_artifact") {
       // Skip error results
       if (result.output.isError) {
         logger?.debug("skipping error tool result", { toolResult: result });

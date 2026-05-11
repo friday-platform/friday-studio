@@ -5,7 +5,14 @@ import type {
   LanguageModelV3StreamPart,
 } from "@ai-sdk/provider";
 import { describe, expect, it } from "vitest";
-import { enterTraceScope, type TraceEntry, traceModel } from "../tracing.ts";
+import {
+  enterTraceScope,
+  enterUsageScope,
+  getActiveUsageCounter,
+  type TraceEntry,
+  traceModel,
+  type UsageCounter,
+} from "../tracing.ts";
 
 const MINIMAL_OPTS: Pick<LanguageModelV3CallOptions, "prompt"> = {
   prompt: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
@@ -430,6 +437,238 @@ describe("tracing", () => {
         role: "user",
         content: [{ type: "text", text: "inner" }],
       });
+    });
+  });
+
+  describe("enterUsageScope", () => {
+    const freshCounter = (): UsageCounter => ({
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+    });
+
+    /** Model that emits cache token fields and supports a synthetic doGenerate error. */
+    function createUsageMockModel(opts?: {
+      inputTotal?: number;
+      outputTotal?: number;
+      cacheRead?: number;
+      cacheWrite?: number;
+      doGenerateError?: Error;
+      doStreamError?: Error;
+    }): LanguageModelV3 {
+      const inputTotal = opts?.inputTotal ?? 100;
+      const outputTotal = opts?.outputTotal ?? 50;
+      const cacheRead = opts?.cacheRead ?? 0;
+      const cacheWrite = opts?.cacheWrite ?? 0;
+      return {
+        specificationVersion: "v3",
+        provider: "test-provider",
+        modelId: "test-provider:test-model",
+        supportedUrls: {},
+        // deno-lint-ignore require-await
+        doGenerate: async () => {
+          if (opts?.doGenerateError) throw opts.doGenerateError;
+          return {
+            content: [{ type: "text", text: "ok" }] as LanguageModelV3Content[],
+            finishReason: { unified: "stop" as const, raw: undefined },
+            usage: {
+              inputTokens: { total: inputTotal, noCache: undefined, cacheRead, cacheWrite },
+              outputTokens: { total: outputTotal, text: undefined, reasoning: undefined },
+            },
+            warnings: [],
+          };
+        },
+        // deno-lint-ignore require-await
+        doStream: async () => {
+          if (opts?.doStreamError) throw opts.doStreamError;
+          return {
+            stream: new ReadableStream<LanguageModelV3StreamPart>({
+              start(controller) {
+                controller.enqueue({ type: "stream-start", warnings: [] });
+                controller.enqueue({
+                  type: "finish",
+                  usage: {
+                    inputTokens: { total: inputTotal, noCache: undefined, cacheRead, cacheWrite },
+                    outputTokens: { total: outputTotal, text: undefined, reasoning: undefined },
+                  },
+                  finishReason: { unified: "stop" as const, raw: undefined },
+                });
+                controller.close();
+              },
+            }),
+          };
+        },
+      };
+    }
+
+    it("getActiveUsageCounter returns the counter inside scope and undefined outside", async () => {
+      const counter = freshCounter();
+      expect(getActiveUsageCounter()).toBeUndefined();
+      await enterUsageScope(counter, () => {
+        expect(getActiveUsageCounter()).toBe(counter);
+        return Promise.resolve();
+      });
+      expect(getActiveUsageCounter()).toBeUndefined();
+    });
+
+    it("wrapGenerate mutates the counter for in-scope calls", async () => {
+      const counter = freshCounter();
+      const model = traceModel(createUsageMockModel({ inputTotal: 120, outputTotal: 70 }));
+
+      await enterUsageScope(counter, async () => {
+        await model.doGenerate(MINIMAL_OPTS);
+      });
+
+      expect(counter).toEqual({
+        inputTokens: 120,
+        outputTokens: 70,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+      });
+    });
+
+    it("wrapStream mutates the counter on the finish chunk", async () => {
+      const counter = freshCounter();
+      const model = traceModel(createUsageMockModel({ inputTotal: 80, outputTotal: 40 }));
+
+      await enterUsageScope(counter, async () => {
+        const { stream } = await model.doStream(MINIMAL_OPTS);
+        await drainStream(stream);
+      });
+
+      expect(counter).toEqual({
+        inputTokens: 80,
+        outputTokens: 40,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+      });
+    });
+
+    it("cache token fields under inputTokens flow into cacheReadTokens/cacheWriteTokens", async () => {
+      const counter = freshCounter();
+      const model = traceModel(
+        createUsageMockModel({
+          inputTotal: 1000,
+          outputTotal: 50,
+          cacheRead: 600,
+          cacheWrite: 200,
+        }),
+      );
+
+      await enterUsageScope(counter, async () => {
+        await model.doGenerate(MINIMAL_OPTS);
+        const { stream } = await model.doStream(MINIMAL_OPTS);
+        await drainStream(stream);
+      });
+
+      // Two calls × 1000 input each, 50 output each, 600 cacheRead, 200 cacheWrite
+      expect(counter).toEqual({
+        inputTokens: 2000,
+        outputTokens: 100,
+        cacheReadTokens: 1200,
+        cacheWriteTokens: 400,
+      });
+    });
+
+    it("nested calls all credit to the same counter", async () => {
+      const counter = freshCounter();
+      const model = traceModel(createUsageMockModel({ inputTotal: 10, outputTotal: 5 }));
+
+      await enterUsageScope(counter, async () => {
+        await model.doGenerate(MINIMAL_OPTS);
+        // Simulate a tool-execute fan-out: nested awaits inside the same scope
+        await Promise.all([
+          model.doGenerate(MINIMAL_OPTS),
+          model.doGenerate(MINIMAL_OPTS),
+          (async () => {
+            const { stream } = await model.doStream(MINIMAL_OPTS);
+            await drainStream(stream);
+          })(),
+        ]);
+      });
+
+      expect(counter.inputTokens).toBe(40);
+      expect(counter.outputTokens).toBe(20);
+    });
+
+    it("captures the counter reference at scope entry — drained outside scope still credits", async () => {
+      // The wrapStream middleware reads `usageStorage.getStore()` at scope
+      // entry (when doStream is called) and closes over it. When the
+      // consumer drains the stream later — possibly in a different async
+      // context — the captured closure must keep mutating the original
+      // counter, not look up ALS at finish-chunk time.
+      const counter = freshCounter();
+      const model = traceModel(createUsageMockModel({ inputTotal: 80, outputTotal: 40 }));
+
+      let stream: ReadableStream<LanguageModelV3StreamPart> | undefined;
+      await enterUsageScope(counter, async () => {
+        const result = await model.doStream(MINIMAL_OPTS);
+        stream = result.stream;
+      });
+
+      // We're now outside the scope.
+      expect(getActiveUsageCounter()).toBeUndefined();
+      expect(counter.inputTokens).toBe(0); // finish chunk not yet processed
+
+      if (!stream) throw new Error("stream not captured");
+      await drainStream(stream);
+
+      // The finish chunk fired outside the ALS scope — but the closure
+      // reference is intact, so the counter is still mutated.
+      expect(counter.inputTokens).toBe(80);
+      expect(counter.outputTokens).toBe(40);
+    });
+
+    it("calls outside any scope do not throw or accumulate", async () => {
+      const model = traceModel(createUsageMockModel());
+      await expect(model.doGenerate(MINIMAL_OPTS)).resolves.toBeDefined();
+      const { stream } = await model.doStream(MINIMAL_OPTS);
+      await expect(drainStream(stream)).resolves.toBeUndefined();
+    });
+
+    it("errored doGenerate does not mutate the counter", async () => {
+      const counter = freshCounter();
+      const model = traceModel(createUsageMockModel({ doGenerateError: new Error("boom") }));
+
+      await enterUsageScope(counter, async () => {
+        await expect(model.doGenerate(MINIMAL_OPTS)).rejects.toThrow("boom");
+      });
+
+      expect(counter).toEqual({
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+      });
+    });
+
+    it("errored doStream (rejects before stream) does not mutate the counter", async () => {
+      const counter = freshCounter();
+      const model = traceModel(createUsageMockModel({ doStreamError: new Error("boom") }));
+
+      await enterUsageScope(counter, async () => {
+        await expect(model.doStream(MINIMAL_OPTS)).rejects.toThrow("boom");
+      });
+
+      expect(counter.inputTokens).toBe(0);
+    });
+
+    it("nested enterUsageScope shadows the outer counter (inner calls credit inner only)", async () => {
+      const outer = freshCounter();
+      const inner = freshCounter();
+      const model = traceModel(createUsageMockModel({ inputTotal: 10, outputTotal: 5 }));
+
+      await enterUsageScope(outer, async () => {
+        await model.doGenerate(MINIMAL_OPTS);
+        await enterUsageScope(inner, async () => {
+          await model.doGenerate(MINIMAL_OPTS);
+        });
+        await model.doGenerate(MINIMAL_OPTS);
+      });
+
+      expect(outer.inputTokens).toBe(20);
+      expect(inner.inputTokens).toBe(10);
     });
   });
 });

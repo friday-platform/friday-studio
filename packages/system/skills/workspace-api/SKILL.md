@@ -19,13 +19,13 @@ Create and manage Friday workspaces. This skill is where LLM judgment lives: whe
 | `llm` | Default for open-ended work — classifying, summarizing, scoring, choosing among options. Use when in doubt. | `type: llm, config: { prompt, tools }` |
 | `user` | ONLY when each call's decision is mechanical (regex, schema, fixed routing). If the agent body would call `ctx.llm.generate` to decide anything, this is wrong — use `llm`. User agents must use host capabilities (`ctx.tools`, `ctx.http`, `ctx.llm`) rather than direct local MCP/API calls. | `type: user, agent: "csv-parser"` |
 
-**Decision rule.** Call `list_capabilities` first. If a bundled agent's `constraints` cover the user's intent end-to-end, pick `atlas`. Otherwise default to `llm` with the right MCP tools wired. Reach for `user` only when you can name the deterministic decision the agent body makes — never as a fallback. If the user names a type explicitly (`use an llm agent`), respect it.
+**Decision rule.** Inspect what's available with the per-domain tools: `list_bundled_agents` for atlas-agent candidates (then `describe_bundled_agent({id})` to read `constraints`); `list_mcp_servers(scope=workspace)` for currently-wired MCP servers, or `scope=catalog` to see what could be enabled. Reach for `list_capabilities` only when the question genuinely spans both surfaces ("what could I use here?"). If a bundled agent's `constraints` cover the user's intent end-to-end, pick `atlas`. Otherwise default to `llm` with the right MCP tools wired. Reach for `user` only when you can name the deterministic decision the agent body makes — never as a fallback. If the user names a type explicitly (`use an llm agent`), respect it.
 
 **Bundled vs MCP-as-tool.** Bundled when the work is open-ended within a domain (you want a sub-agent that reasons). MCP server when the work is deterministic / single-call (you want a tool). A `web` bundled agent that browses, scrapes, and summarises beats `playwright-mcp` wired into a `type: llm` agent every time the work is open-ended; a single `slack_post_message` call is cleanest as an MCP tool.
 
 **7-step recipe.**
-1. `list_capabilities` once at session start to see bundled agents + enabled MCP servers + catalog.
-2. Wire capabilities by `kind`: `bundled` → straight into `upsert_agent`; `mcp_enabled` → already wired; `mcp_available` → `enable_mcp_server` first.
+1. Inventory: `list_bundled_agents` for atlas options, `list_mcp_servers(scope=all)` for wired + catalog MCP, `list_skills` for skills already attached to the workspace. Use `list_capabilities` only for the cross-domain "what can I do here?" rung when you don't yet know which surface you need.
+2. Wire by surface: bundled → straight into `upsert_agent` with `type: atlas`; MCP enabled → already wired; MCP available in catalog → `enable_mcp_server` first.
 3. For each provider needing credentials: `connect_service`.
 4. Decide direct vs draft: single atomic change → direct; multi-entity build → draft.
 5. If draft: `begin_draft` (pass `workspaceId` if targeting a newly created workspace). Then `upsert_agent` → `upsert_job` → `upsert_signal` in dependency order (agents before jobs, jobs before signals). **All draft/upsert tools accept an optional `workspaceId` parameter.** Use it after `create_workspace` so operations land on the new workspace, not the current session workspace.
@@ -37,8 +37,8 @@ Create and manage Friday workspaces. This skill is where LLM judgment lives: whe
 - Draft: upserts stage to `workspace.yml.draft`, permissive per-entity validation, cross-entity checks at `validate_workspace` + `publish_draft`. Best for new workspaces or pipelines.
 
 **Tool selection.**
-- Discovery: `list_capabilities` (bundled agents + MCP servers, single call).
-- Workspace building: `create_workspace`, `begin_draft`, `upsert_agent`, `upsert_signal`, `upsert_job`, `upsert_memory_own`, `upsert_memory_mount`, `remove_item`, `validate_workspace`, `publish_draft`, `discard_draft`.
+- Discovery: `list_bundled_agents` / `describe_bundled_agent` for atlas-agent inspection; `list_mcp_servers` / `describe_mcp_server` for MCP servers; `list_skills` / `describe_skill` for skills; `list_capabilities` only as a cross-domain router.
+- Workspace building: `create_workspace`, `begin_draft`, `upsert_agent`, `upsert_signal`, `upsert_job`, `upsert_memory_own`, `upsert_memory_mount`, `delete_agent` / `delete_signal` / `delete_job`, `validate_workspace`, `publish_draft`, `discard_draft`.
 - Skill management (persistent assignment, not ephemeral load): `assign_workspace_skill` attaches a global-catalog skill to a workspace so every agent and job sees it in `<available_skills>`. `unassign_workspace_skill` removes it. For one-time use in the current chat only, use `load_skill` instead.
 - Daemon CRUD (list, get, delete): `run_code` bash + curl to the daemon HTTP API.
 - MCP install/enable/credentials: `using-mcp-servers` skill.
@@ -47,7 +47,7 @@ Create and manage Friday workspaces. This skill is where LLM judgment lives: whe
 **Key one-liners.**
 - Jobs must use `fsm:`, not `execution:` — the runtime silently skips jobs without `fsm:`.
 - `write_file` writes to scratch only; use `run_code` with an absolute path to edit `workspace.yml`.
-- Tool names in `agents.*.config.tools` resolve against `tools.mcp.servers.*` for workspace-scoped MCP servers. Atlas-platform built-ins (memory, artifacts, fs, `request_tool_access`, `request_human_input`) auto-inject everywhere and use bare names (`memory_save`, `fs_glob`, `request_human_input`); no `serverId/` prefix.
+- Tool names in `agents.*.config.tools` resolve against `tools.mcp.servers.*` for workspace-scoped MCP servers. Atlas-platform built-ins (memory, artifacts, fs, `request_tool_access`, `request_human_input`) auto-inject everywhere and use bare names (`save_memory_entry`, `fs_glob`, `request_human_input`); no `serverId/` prefix.
 - Jobs that return data need `outputTo`; LLM-backed `outputTo` actions must finish with the injected `complete` tool (`outputType` schema args, or `{ response }` for untyped output).
 
 ---
@@ -59,7 +59,7 @@ Friday workspaces have a fixed call chain:
 ```
 user message → workspace-chat (platform meta-agent)
                       │
-                      ├─ calls memory_save / memory_read (built-in)
+                      ├─ calls save_memory_entry / list_memory_entries (built-in)
                       │
                       └─ calls <job-name> tool → fires signal → FSM runs
                                                      │
@@ -70,7 +70,7 @@ user message → workspace-chat (platform meta-agent)
 **Chat interacts with your workspace through jobs. Nothing else.** Agents and MCP servers are internals of the jobs that wrap them. This is the single most important mental model to get right:
 
 - **An agent declared without a job that invokes it is unreachable.** Chat cannot call agents directly, only jobs. A lone `agents.kb-agent` with MCP tools attached will sit idle. The validator catches this as `orphan_agent`.
-- **Memory is accessed by agents, not signals or jobs directly.** Agents see narrative memory auto-injected into their prompts. Agents call `memory_save`, `memory_read`, `memory_remove` explicitly for older entries or specific filters.
+- **Memory is accessed by agents, not signals or jobs directly.** Agents see narrative memory auto-injected into their prompts. Agents call `save_memory_entry`, `list_memory_entries`, `delete_memory_entry` explicitly for older entries or specific filters.
 - **Tools belong to agents** (via the agent's `tools:` array), and the tools have to be enabled at workspace scope (in `tools.mcp.servers`) for the agent to use them.
 
 **What this means for authoring:** work backward from the trigger. What signal fires this? What job does that signal start? What agents does that job invoke? What tools do those agents need? Declare agents first, then jobs that reference them, then signals that trigger those jobs.
@@ -112,7 +112,7 @@ If an enabled server requires credentials (GitHub token, API key, OAuth), call `
 **Direct mode** — use when the change is a single atomic operation:
 - Add one signal to an existing workspace.
 - Update one agent's prompt or model.
-- Remove one entity with `remove_item`.
+- Remove one entity with `delete_agent` / `delete_signal` / `delete_job` (per-kind).
 
 **Draft mode** — use when the change is a multi-entity coherent build:
 - Creating a new workspace from scratch.
@@ -374,7 +374,7 @@ The cheat-sheet table covers the decision rule. These are worked examples for ea
     - **`delegation: { max_depth, max_steps_per_call, max_output_tokens, max_input_tokens, max_wall_time_ms, max_cost_usd }`** — bounds for the `delegate` tool when an agent uses it. Workspace-level + per-job override (`jobs.<name>.delegation`) — per-field merge, job wins. Default `max_depth: 1`.
     - **`validation: { default, skill }`** — default LLM-output validation strategy applied to `type: llm` / `type: agent` actions that don't set `validate:` themselves. See the dedicated `validation:` section below for the full precedence chain (action > job > workspace > `"auto"`).
     - **`memory.own[].ttl: <duration>`** — explicit TTL on a memory store. Without it, `type: short_term` (notes) defaults to ephemeral session-bound and `type: long_term` (memory) to durable.
-    - **`artifacts: { default_grace: <duration> }`** — workspace-level grace window after job completion before ephemeral artifacts are swept (default `24h`). Per-job override: `jobs.<name>.artifacts: { default_grace, ephemeral }`. Promotion-by-reference (a `memory_save` text containing the artifact id, a `display_artifact` call, or `aiSummary.keyDetails[].url`) keeps an artifact alive past the grace window with no author opt-in.
+    - **`artifacts: { default_grace: <duration> }`** — workspace-level grace window after job completion before ephemeral artifacts are swept (default `24h`). Per-job override: `jobs.<name>.artifacts: { default_grace, ephemeral }`. Promotion-by-reference (a `save_memory_entry` text containing the artifact id, a `display_artifact` call, or `aiSummary.keyDetails[].url`) keeps an artifact alive past the grace window with no author opt-in.
     - **`jobs.<name>.elicitations: { timeout: <duration> }`** — per-job elicitation timeout, independent of `config.timeout`. Useful for long batch jobs whose individual prompts shouldn't sit unanswered.
 
     Worked example showing every option in one workspace.yml. Comments
@@ -410,7 +410,7 @@ The cheat-sheet table covers the decision rule. These are worked examples for ea
     artifacts:
       # Workspace-level grace window after job completion before ephemeral
       # artifacts are swept. Default '24h'. Promotion-by-reference
-      # (memory_save text containing the id, display_artifact, or
+      # (save_memory_entry text containing the id, display_artifact, or
       # aiSummary.keyDetails[].url) keeps an artifact past the window.
       default_grace: 24h
 

@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+
+description: Friday tool-suite management daemon evals (chat-driven retrieval-tool coverage)
+
+prompts:
+  - "{{scenarioId}}"
+
+providers:
+  - id: file://tool-suite-management-provider.cjs
+    label: friday-tool-suite-management-daemon
+
+defaultTest:
+  assert:
+    - type: is-json
+    - type: javascript
+      value: |
+        const result = JSON.parse(output);
+        if (result.pass !== true) {
+          throw new Error(`${result.id} failed: ${(result.notes || []).join('; ')}`);
+        }
+        return true;
+
+tests: file://tool-suite-management-tests.yaml

@@ -2,12 +2,21 @@
   import { browser } from "$app/environment";
   import { stripMimeParams } from "@atlas/core/artifacts/file-upload";
   import { z } from "zod";
+  import { getExportContext } from "./export-context.ts";
+  import { parseTabular, TABULAR_MIMES, type TableModel } from "./table-parsers.ts";
+  import TableView from "./table-view.svelte";
 
   interface Props {
     artifactId: string;
   }
 
   const { artifactId }: Props = $props();
+
+  // Pulled at script init per Svelte's getContext rule. When defined, the
+  // card renders synchronously from prefetched data and the fetch +
+  // ResizeObserver effects are skipped — the live UI path is only taken
+  // when this is undefined.
+  const exportCtx = getExportContext();
 
   const ArtifactResponseSchema = z.object({
     artifact: z.object({
@@ -24,21 +33,40 @@
     contents: z.string().optional(),
   });
 
-  let resolvedTitle = $state("Artifact");
-  let resolvedSummary = $state<string | undefined>(undefined);
-  let mimeType = $state<string | undefined>(undefined);
+  // Initial state branches on `exportCtx`. With context, every field is
+  // populated synchronously from the prefetch map and `loading` is false
+  // out of the gate so the card never paints a spinner. The trust
+  // contract from `export-context.ts` says: if a referenced artifactId is
+  // missing from the map, surface a clear error rather than spin.
+  // `artifactId` doesn't change after mount (the parent re-keys to switch
+  // artifacts), so capturing its initial value here is intentional.
+  // svelte-ignore state_referenced_locally
+  const prefetched = exportCtx?.artifacts.get(artifactId);
+  const exportMissing = exportCtx !== undefined && prefetched === undefined;
+
+  let resolvedTitle = $state(prefetched?.title || "Artifact");
+  let resolvedSummary = $state<string | undefined>(prefetched?.summary);
+  let mimeType = $state<string | undefined>(prefetched?.mimeType);
   let contents = $state<string | undefined>(undefined);
-  let originalName = $state<string | undefined>(undefined);
-  let sizeBytes = $state<number | undefined>(undefined);
-  let loading = $state(true);
-  let fetchError = $state<string | null>(null);
+  let originalName = $state<string | undefined>(prefetched?.originalName);
+  let sizeBytes = $state<number | undefined>(prefetched?.size);
+  let loading = $state(exportCtx === undefined);
+  // svelte-ignore state_referenced_locally
+  let fetchError = $state<string | null>(
+    exportMissing ? `Artifact ${artifactId} missing from export context` : null,
+  );
 
   // Iframe scale — computed from container width vs assumed content width.
+  // In export mode the ResizeObserver path is skipped and we render at 1:1
+  // so iframes fill their container without runtime measurement.
   const IFRAME_CONTENT_WIDTH = 1200;
-  let iframeScale = $state(0.5);
+  let iframeScale = $state(exportCtx === undefined ? 0.5 : 1);
   let scalerEl = $state<HTMLDivElement | undefined>(undefined);
 
   $effect(() => {
+    // Skip in export mode — no JS runtime in the static HTML, and we
+    // already locked iframeScale to 1 so the iframe renders 1:1.
+    if (exportCtx !== undefined) return;
     if (!scalerEl) return;
     const observer = new ResizeObserver(([entry]) => {
       const w = entry.contentRect.width;
@@ -49,6 +77,10 @@
   });
 
   $effect(() => {
+    // In export mode, the prefetch map already populated state — no fetch
+    // is fired (and the daemon API isn't reachable from the static HTML
+    // anyway).
+    if (exportCtx !== undefined) return;
     if (!browser || !artifactId) return;
 
     let cancelled = false;
@@ -93,10 +125,15 @@
     };
   });
 
-  // Bytes come straight from the daemon's /:id/content endpoint, which
-  // streams the Object Store blob inline (image) or as attachment.
+  // Live UI hits the daemon's /:id/content endpoint; export mode rewrites
+  // the URL to a relative `assets/artifacts/<id>/<file>` path inside the
+  // zip via the context-supplied resolver.
   const serveUrl = $derived(
-    artifactId ? `/api/daemon/api/artifacts/${encodeURIComponent(artifactId)}/content` : null,
+    artifactId
+      ? exportCtx !== undefined
+        ? exportCtx.resolveUrl(artifactId)
+        : `/api/daemon/api/artifacts/${encodeURIComponent(artifactId)}/content`
+      : null,
   );
 
   // Storage adapters can round-trip text mimes with a charset parameter
@@ -152,6 +189,84 @@
 
   const sizeLabel = $derived(sizeBytes !== undefined ? formatBytes(sizeBytes) : undefined);
 
+  // -- Tabular preview -----------------------------------------------
+  // When an artifact's mime is one the dedicated table view can parse
+  // (csv/tsv/json/html/markdown), render the first N rows inline as a
+  // real table, and route the existing Open button to the table view
+  // instead of a raw-content tab. Falls back to the generic preview/
+  // download tile when the bytes don't actually parse as tabular.
+
+  // `TABULAR_MIMES` is imported from `table-parsers.ts` — both the
+  // route dispatcher and this card classify against the same set so a
+  // tabular artifact gets the table preview here AND a /table route
+  // redirect from the dispatcher.
+  const PREVIEW_ROW_LIMIT = 8;
+
+  const isTabularMime = $derived(baseMime ? TABULAR_MIMES.has(baseMime) : false);
+
+  // Tabular artifacts open in the dedicated full-screen table viewer
+  // at `/artifacts/<id>/table` — the explicit "render as table" path
+  // (the bare `/artifacts/<id>` dispatcher would redirect there
+  // anyway for tabular mimes, but linking directly skips the
+  // round-trip). Workspace-agnostic; export mode skips this — the
+  // static HTML has no router.
+  const tableRouteUrl = $derived(
+    isTabularMime && exportCtx === undefined
+      ? `/artifacts/${encodeURIComponent(artifactId)}/table`
+      : undefined,
+  );
+
+  // Fetch raw text for tabular artifacts when the metadata endpoint
+  // didn't return `contents` inline. The /content endpoint is content-
+  // addressed + cacheable so re-fetching is cheap; we only do it when
+  // the mime says "tabular" and we don't already have the text.
+  let tabularText = $state<string | undefined>(undefined);
+  $effect(() => {
+    if (exportCtx !== undefined) return;
+    if (!browser) return;
+    if (!isTabularMime) {
+      tabularText = undefined;
+      return;
+    }
+    if (contents) {
+      tabularText = contents;
+      return;
+    }
+    let cancelled = false;
+    void fetch(`/api/daemon/api/artifacts/${encodeURIComponent(artifactId)}/content`).then(
+      async (res) => {
+        if (cancelled || !res.ok) return;
+        const text = await res.text();
+        if (!cancelled) tabularText = text;
+      },
+      () => {
+        // Silent — preview falls back to download tile when text never
+        // arrives. Network errors aren't worth a card-level error
+        // banner for what is itself a fallback affordance.
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  });
+
+  const tableModel = $derived<TableModel | null>(
+    isTabularMime && tabularText && baseMime ? parseTabular(baseMime, tabularText) : null,
+  );
+
+  const tablePreview = $derived<TableModel | null>(
+    tableModel
+      ? {
+          columns: tableModel.columns,
+          rows: tableModel.rows.slice(0, PREVIEW_ROW_LIMIT),
+        }
+      : null,
+  );
+
+  const tableHiddenRows = $derived(
+    tableModel ? Math.max(0, tableModel.rows.length - PREVIEW_ROW_LIMIT) : 0,
+  );
+
   function previewContents(raw: string | undefined, mt: string | undefined): string {
     if (!raw) return "";
     const text =
@@ -197,9 +312,31 @@
         <a class="download-btn" href={serveUrl} download title="Download">
           Download
         </a>
-        <a class="open-btn" href={serveUrl} target="_blank" rel="noopener noreferrer" title="Open in new tab">
-          Open
-        </a>
+        {#if tableRouteUrl}
+          <!-- Tabular artifacts open in the dedicated full-screen
+               table view (sticky header, copy / download CSV / MD
+               buttons) in a new tab. The view runs without app
+               chrome — see `isChromeless` in the root layout. -->
+          <a
+            class="open-btn"
+            href={tableRouteUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Open table in new tab"
+          >
+            Open
+          </a>
+        {:else}
+          <a
+            class="open-btn"
+            href={serveUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Open in new tab"
+          >
+            Open
+          </a>
+        {/if}
       </div>
     {/if}
   </div>
@@ -247,6 +384,28 @@
       class="artifact-pdf"
       loading="lazy"
     ></iframe>
+  {:else if tablePreview}
+    <!-- First N rows rendered with the same shared TableView the
+         dedicated route uses. Cap the height so the preview stays
+         in chat-bubble scale; users wanting the full grid click
+         Open in the header above. -->
+    <div class="artifact-table-preview">
+      <TableView
+        columns={tablePreview.columns}
+        rows={tablePreview.rows}
+        maxBlockSize="240px"
+      />
+      {#if tableHiddenRows > 0}
+        <div class="artifact-table-footer">
+          + {tableHiddenRows} more row{tableHiddenRows === 1 ? "" : "s"} —
+          {#if tableRouteUrl}
+            <a href={tableRouteUrl}>open the full table</a>
+          {:else}
+            open the full table
+          {/if}
+        </div>
+      {/if}
+    </div>
   {:else if contents && isTextPreviewable(baseMime)}
     <pre class="artifact-preview">{previewContents(contents, baseMime)}</pre>
   {/if}
@@ -456,6 +615,25 @@
     padding: var(--size-2);
     white-space: pre-wrap;
     word-break: break-word;
+  }
+
+  .artifact-table-preview {
+    border: 1px solid var(--color-border-1);
+    border-radius: var(--radius-1);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .artifact-table-footer {
+    background: var(--surface-bright, var(--surface));
+    border-block-start: 1px solid var(--color-border-1);
+    color: var(--text-faded);
+    font-size: var(--font-size-1);
+    padding: var(--size-1) var(--size-2);
+  }
+  .artifact-table-footer a {
+    color: var(--color-primary);
+    text-decoration: underline;
   }
 
   .artifact-error {

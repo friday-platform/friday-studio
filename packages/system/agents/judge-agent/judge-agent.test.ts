@@ -7,7 +7,7 @@
  *    the judge's `ctx.config.budget` causes the delegate's input-token
  *    watchdog to fire and the agent surfaces the structured failure to
  *    its caller.
- * 2. `artifacts_get` (and any other tool the runner injects via
+ * 2. `get_artifact` (and any other tool the runner injects via
  *    `ctx.tools`) is forwarded into the child's tool catalog so the
  *    judge can selectively pull lifted bytes.
  * 3. The structured-output contract is preserved — the child emits the
@@ -235,20 +235,20 @@ describe("judgeAgent — delegate-routed (K2)", () => {
   });
 
   describe("tool catalog forwarding", () => {
-    it("includes artifacts_get from ctx.tools in the child's tool catalog", async () => {
+    it("includes get_artifact from ctx.tools in the child's tool catalog", async () => {
       const captured: CapturedStreamTextArgs = { args: undefined };
       setupMockStreamText(captured, { finalText: JSON.stringify({ verdict: "pass" }) });
 
       await judgeAgent.execute(
         sampleInput,
-        buildContext({ tools: { artifacts_get: dummyArtifactsGet } }),
+        buildContext({ tools: { get_artifact: dummyArtifactsGet } }),
       );
 
       const childTools = captured.args?.tools as Record<string, unknown> | undefined;
       expect(childTools).toBeDefined();
-      // The delegate adds `finish` synthetically; `artifacts_get` arrives
+      // The delegate adds `finish` synthetically; `get_artifact` arrives
       // via ctx.tools forwarded by the judge agent.
-      expect("artifacts_get" in (childTools ?? {})).toBe(true);
+      expect("get_artifact" in (childTools ?? {})).toBe(true);
       expect("finish" in (childTools ?? {})).toBe(true);
     });
 
@@ -263,7 +263,7 @@ describe("judgeAgent — delegate-routed (K2)", () => {
       });
       await judgeAgent.execute(
         sampleInput,
-        buildContext({ tools: { artifacts_get: dummyArtifactsGet, delegate: dummyDelegate } }),
+        buildContext({ tools: { get_artifact: dummyArtifactsGet, delegate: dummyDelegate } }),
       );
 
       const childTools = captured.args?.tools as Record<string, unknown> | undefined;
@@ -271,7 +271,7 @@ describe("judgeAgent — delegate-routed (K2)", () => {
       // child cannot re-delegate; the parent's delegate tool is stripped
       // before the child sees it.
       expect("delegate" in (childTools ?? {})).toBe(false);
-      expect("artifacts_get" in (childTools ?? {})).toBe(true);
+      expect("get_artifact" in (childTools ?? {})).toBe(true);
     });
   });
 

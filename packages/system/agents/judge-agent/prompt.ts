@@ -20,7 +20,7 @@ You will receive a JSON handoff with:
 - \`actionOutput\` — the agent's draft output.
 - \`toolCalls\` — a manifest of tool calls. Each entry has \`toolName\`, \`args\`, and either:
   - \`resultInline\` — small payloads inlined directly, or
-  - \`resultArtifactId\` + \`resultSummary\` — the result was lifted to an artifact (binary, large blob). Call \`artifacts_get\` or \`parse_artifact\` ONLY when you need to verify a specific claim against the lifted content.
+  - \`resultArtifactId\` + \`resultSummary\` — the result was lifted to an artifact (binary, large blob). Call \`get_artifact\` or \`parse_artifact\` ONLY when you need to verify a specific claim against the lifted content.
 
 ## OUT OF SCOPE — DO NOT ATTEMPT THESE CHECKS
 

@@ -16,6 +16,7 @@ import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
 import {
   AckPolicy,
+  type ConsumerMessages,
   DeliverPolicy,
   type JsMsg,
   type NatsConnection,
@@ -242,6 +243,12 @@ export interface SignalConsumerOptions {
 export class SignalConsumer {
   private running = false;
   private loop: Promise<void> | null = null;
+  /**
+   * `consumer.fetch({ expires })` blocks the full expires window even after
+   * `running = false` — closing the iterator is the only way to break out
+   * promptly.
+   */
+  private currentBatch: ConsumerMessages | null = null;
   private readonly name: string;
   private readonly expiresMs: number;
   private readonly batchSize: number;
@@ -286,8 +293,23 @@ export class SignalConsumer {
     this.loop = this.runLoop();
   }
 
-  async stop(): Promise<void> {
+  /**
+   * Best-effort fast stop: closes any in-flight fetch iterator so the
+   * for-await breaks immediately. `signal`, if supplied, closes the
+   * iterator on abort as well.
+   *
+   * Between-batches race: `currentBatch` is null between iterations, so a
+   * `stop()` arriving while `consumer.fetch()` is mid-flight is a no-op
+   * and the pending fetch resolves naturally up to `expiresMs`. The firm
+   * shutdown bound is `nc.close()` in `NatsManager.stop()` — this method
+   * is an optimization, not a guarantee.
+   */
+  async stop(signal?: AbortSignal): Promise<void> {
     this.running = false;
+    void this.currentBatch?.close();
+    if (signal && !signal.aborted) {
+      signal.addEventListener("abort", () => void this.currentBatch?.close(), { once: true });
+    }
     if (this.loop) {
       try {
         await this.loop;
@@ -325,10 +347,12 @@ export class SignalConsumer {
         await new Promise((r) => setTimeout(r, 1000));
         continue;
       }
+      this.currentBatch = batch;
 
       for await (const msg of batch) {
         await this.handleMessage(msg);
       }
+      this.currentBatch = null;
     }
   }
 

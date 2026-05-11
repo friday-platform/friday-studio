@@ -22,10 +22,16 @@ function injectConfig(html: string): string {
 	return root.toString();
 }
 
-export const handle: Handle = ({ event, resolve }) =>
-	resolve(event, {
+export const handle: Handle = ({ event, resolve }) => {
+	// The export-preview route is fetched by the export orchestrator and
+	// packaged verbatim into a downloadable zip. Injecting the playground's
+	// dev daemon URL there would leak it into every shared export — and the
+	// HTML has nothing client-side that would consume it anyway.
+	const isExportPreview = event.url.pathname.endsWith("/export/preview");
+	return resolve(event, {
 		transformPageChunk: ({ html, done }) => {
-			if (!shouldInject || !done) return html;
+			if (!shouldInject || !done || isExportPreview) return html;
 			return injectConfig(html);
 		},
 	});
+};

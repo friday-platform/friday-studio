@@ -3,7 +3,6 @@ import type { ValidatedJSONSchema } from "@atlas/schemas/json-schema";
 import { z } from "zod";
 import { bbAgent } from "./bb/agent.ts";
 import { claudeCodeAgent } from "./claude-code/agent.ts";
-import { csvFilterSamplerAgent } from "./csv/filter.ts";
 import { fathomGetTranscriptAgent } from "./fathom-ai/get-transcript.ts";
 import { ghAgent } from "./gh/agent.ts";
 import { hubspotAgent } from "./hubspot/index.ts";
@@ -28,14 +27,13 @@ export const bundledAgents: AtlasAgent[] = [
   ghAgent,
   bbAgent,
   jiraAgent,
-  csvFilterSamplerAgent,
   hubspotAgent,
   imageGenerationAgent,
   knowledgeHybridAgent,
 ];
 
 /** Agents hidden from discovery surfaces (list_capabilities, system prompts). */
-const HIDDEN_FROM_DISCOVERY = new Set(["csv-filter-sampler", "fathom-get-transcript"]);
+const HIDDEN_FROM_DISCOVERY = new Set(["fathom-get-transcript"]);
 
 /** Subset of bundled agents advertised in discovery surfaces. */
 export const discoverableBundledAgents = bundledAgents.filter(

@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { deleteAgentRoute } from "./delete.ts";
 import { getAgentExpertise } from "./expertise.ts";
 import { getAgent } from "./get.ts";
 import { listAgents } from "./list.ts";
@@ -14,3 +15,4 @@ agents.route("/", getAgent);
 agents.route("/", getAgentExpertise);
 agents.route("/", getAgentPreflight);
 agents.route("/", runAgentRoute);
+agents.route("/", deleteAgentRoute);

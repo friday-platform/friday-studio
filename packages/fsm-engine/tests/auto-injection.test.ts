@@ -3,14 +3,14 @@
  * auto-prepend recent memory blocks to the action prompt.
  *
  * The chat path has long composed memory blocks (`<memory workspace="..." />`)
- * into its system prompt and exposed memory_save / memory_read / artifacts_*
+ * into its system prompt and exposed save_memory_entry / list_memory_entries / artifacts_*
  * tools regardless of any per-call tool list. FSM-side LLM actions did not —
- * an action whose `tools:` array omitted `memory_save` couldn't save memory,
+ * an action whose `tools:` array omitted `save_memory_entry` couldn't save memory,
  * even though the workspace had a memory store declared. This test asserts
  * the parity wiring:
  *
  *   1. With NO `tools:` declared on the action, the platform-tool surface
- *      (memory_save, memory_read, artifacts_create, etc.) still reaches the
+ *      (save_memory_entry, list_memory_entries, create_artifact, etc.) still reaches the
  *      LLM call. Equivalently: `createMCPTools` is invoked with at least
  *      atlas-platform configured, and those tools end up in the `tools` map
  *      handed to `llmProvider.call`.
@@ -74,12 +74,12 @@ function jsonResponse(body: unknown, status = 200): Response {
 // path forwards platform tools returned by createMCPTools to the LLM
 // and that atlas-platform is in the connected configs. It does NOT
 // verify that the *real* atlas-platform MCP server actually exposes a
-// tool named `memory_save` — that's an integration concern covered by
+// tool named `save_memory_entry` — that's an integration concern covered by
 // the eval suite. If platform's tool naming changes (e.g. `mem_save`),
 // production breaks but these tests still pass because they stub
 // createMCPTools.
 describe("FSM LLM action — forwards configured platform tools to LLM (Phase 5)", () => {
-  it("exposes memory_save without action.tools declaring it, and prepends <memory> blocks to the prompt", async () => {
+  it("exposes save_memory_entry without action.tools declaring it, and prepends <memory> blocks to the prompt", async () => {
     // Daemon HTTP mock: list one narrative store with one entry.
     mockFetch.mockImplementation((input) => {
       const url = String(input);
@@ -122,8 +122,8 @@ describe("FSM LLM action — forwards configured platform tools to LLM (Phase 5)
     };
 
     mockCreateMCPTools.mockResolvedValue({
-      tools: { memory_save: memorySaveTool },
-      toolsByServer: { "atlas-platform": ["memory_save"] },
+      tools: { save_memory_entry: memorySaveTool },
+      toolsByServer: { "atlas-platform": ["save_memory_entry"] },
       dispose: () => Promise.resolve(),
       disconnectedIntegrations: [],
     });
@@ -132,10 +132,13 @@ describe("FSM LLM action — forwards configured platform tools to LLM (Phase 5)
     let observedToolNames: string[] | undefined;
     const mockLLMProvider: LLMProvider = {
       call: async (params) => {
-        observedPrompt = params.prompt;
+        // Capture system + user-message body together so substring asserts
+        // work regardless of whether content lands in the cacheable system
+        // surface or the volatile user preface.
+        observedPrompt = `${params.system ?? ""}\n\n${params.prompt ?? ""}`;
         observedToolNames = Object.keys(params.tools as Record<string, Tool>);
 
-        const tool = (params.tools as Record<string, Tool>)["memory_save"];
+        const tool = (params.tools as Record<string, Tool>)["save_memory_entry"];
         if (tool?.execute) {
           await tool.execute(
             { workspaceId: "ignored-by-wrapper", memoryName: "decisions", text: "new decision" },
@@ -158,7 +161,7 @@ describe("FSM LLM action — forwards configured platform tools to LLM (Phase 5)
     };
 
     // FSM definition: an LLM action with NO `tools:` declared. Auto-injection
-    // is what makes memory_save reachable.
+    // is what makes save_memory_entry reachable.
     const fsm: FSMDefinition = {
       id: "auto-injection-test",
       initial: "pending",
@@ -199,8 +202,8 @@ describe("FSM LLM action — forwards configured platform tools to LLM (Phase 5)
     expect(configs).toBeDefined();
     expect(configs!["atlas-platform"]).toBeDefined();
 
-    // 2) memory_save reached the LLM tools map without being declared.
-    expect(observedToolNames).toContain("memory_save");
+    // 2) save_memory_entry reached the LLM tools map without being declared.
+    expect(observedToolNames).toContain("save_memory_entry");
     expect(observedToolNames).toContain("failStep");
 
     // 3) Memory blocks were prepended to the prompt.

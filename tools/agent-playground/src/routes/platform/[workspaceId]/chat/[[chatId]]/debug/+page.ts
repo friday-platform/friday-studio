@@ -2,13 +2,21 @@ import { error } from "@sveltejs/kit";
 import type { PageLoad } from "./$types";
 
 type ChatBody = {
-  chat: { id: string; workspaceId: string; title?: string; createdAt: string; updatedAt: string };
+  chat: {
+    id: string;
+    workspaceId: string;
+    title?: string;
+    createdAt: string;
+    updatedAt: string;
+    systemPromptContext?: { timestamp: string; systemMessages: string[] } | null;
+  };
   messages: Array<{
     id: string;
     role: "user" | "assistant" | "system";
     metadata?: Record<string, unknown>;
     parts: Array<Record<string, unknown>>;
   }>;
+  systemPromptContext?: { timestamp: string; systemMessages: string[] } | null;
 };
 
 type ChatDebugBody = {
@@ -107,6 +115,12 @@ export const load: PageLoad = async ({ params, fetch }) => {
   );
   const sessions = Object.fromEntries(sessionEntries);
 
+  // The systemPromptContext lives on the chat record (top-level for newer
+  // shapes; nested under `chat` for older ones). Surface either spelling
+  // so the /debug view renders the captured cache blocks regardless.
+  const systemPromptContext =
+    chatBody?.systemPromptContext ?? chatBody?.chat?.systemPromptContext ?? null;
+
   return {
     chatId,
     workspaceId,
@@ -114,6 +128,7 @@ export const load: PageLoad = async ({ params, fetch }) => {
     messages,
     sessions,
     nats,
+    systemPromptContext,
     fetchError,
   };
 };
