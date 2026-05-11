@@ -7,6 +7,7 @@
  * @module oauth/delegated
  */
 
+import { logger } from "@atlas/logger";
 import { z } from "zod";
 import type { OAuthConfig } from "../providers/types.ts";
 
@@ -115,6 +116,195 @@ const DelegatedRefreshResponseSchema = z.object({
   token_type: z.string().optional(),
 });
 
+const DelegatedRefreshErrorBodySchema = z.object({
+  error: z.string(),
+  error_subtype: z.string().optional(),
+  error_description: z.string().optional(),
+});
+
+/**
+ * Why transient: caller should retry / wait, not prompt re-auth.
+ * - `network`:      fetch threw (DNS, ECONNREFUSED, ECONNRESET, TLS, abort that wasn't our timeout)
+ * - `timeout`:      our 15s AbortSignal.timeout fired
+ * - `http_5xx`:     upstream said it's broken
+ * - `http_429`:     upstream said slow down
+ * - `platform_bug`: 4xx with non-`invalid_grant` error code, malformed body, or plain-text 4xx —
+ *                   refresh_token might still be valid, but the endpoint is misbehaving
+ */
+export type TransientReason = "network" | "timeout" | "http_5xx" | "http_429" | "platform_bug";
+
+/**
+ * Outcome of a refresh attempt against the delegated endpoint.
+ *
+ * Only `kind: "token_dead"` means the refresh_token is provably revoked
+ * (RFC 6749 § 5.2 `invalid_grant`). Callers should branch exhaustively on
+ * `kind` rather than reading HTTP responses directly.
+ */
+export type RefreshOutcome =
+  | { kind: "success"; tokens: DelegatedTokens }
+  | { kind: "token_dead"; subtype?: string }
+  | { kind: "transient"; reason: TransientReason; detail: string };
+
+const REFRESH_FETCH_TIMEOUT_MS = 15_000;
+const REFRESH_RETRY_DELAY_MS = 500;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function classifyRefreshAttempt(
+  config: Extract<OAuthConfig, { mode: "delegated" }>,
+  refreshToken: string,
+): Promise<RefreshOutcome> {
+  let response: Response;
+  try {
+    response = await fetch(config.delegatedRefreshUri, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+      signal: AbortSignal.timeout(REFRESH_FETCH_TIMEOUT_MS),
+    });
+  } catch (err) {
+    const name = err instanceof Error ? err.name : "";
+    const detail = err instanceof Error ? err.message : String(err);
+    if (name === "AbortError" || name === "TimeoutError") {
+      return { kind: "transient", reason: "timeout", detail };
+    }
+    return { kind: "transient", reason: "network", detail };
+  }
+
+  if (response.ok) {
+    const rawBody = await response.text();
+    let json: unknown;
+    try {
+      json = JSON.parse(rawBody);
+    } catch {
+      logger.error("oauth_refresh_platform_bug", {
+        reason: "non_json_success_body",
+        status: response.status,
+        body: rawBody.slice(0, 500),
+      });
+      return {
+        kind: "transient",
+        reason: "platform_bug",
+        detail: `2xx with non-JSON body: ${rawBody.slice(0, 200)}`,
+      };
+    }
+    const parsed = DelegatedRefreshResponseSchema.safeParse(json);
+    if (!parsed.success) {
+      logger.error("oauth_refresh_platform_bug", {
+        reason: "malformed_success_body",
+        status: response.status,
+        zodError: parsed.error.message,
+      });
+      return {
+        kind: "transient",
+        reason: "platform_bug",
+        detail: `2xx with malformed body: ${parsed.error.message}`,
+      };
+    }
+    return {
+      kind: "success",
+      tokens: {
+        access_token: parsed.data.access_token,
+        refresh_token: refreshToken, // preserved — upstream never rotates
+        expires_at: Math.floor(parsed.data.expiry_date / 1000),
+        scope: parsed.data.scope,
+        token_type: parsed.data.token_type ?? "Bearer",
+      },
+    };
+  }
+
+  if (response.status === 429) {
+    const body = await response.text().catch(() => "");
+    return {
+      kind: "transient",
+      reason: "http_429",
+      detail: `HTTP 429 ${response.statusText} ${body.slice(0, 200)}`,
+    };
+  }
+
+  if (response.status >= 500) {
+    const body = await response.text().catch(() => "");
+    return {
+      kind: "transient",
+      reason: "http_5xx",
+      detail: `HTTP ${response.status} ${response.statusText} ${body.slice(0, 200)}`,
+    };
+  }
+
+  // 4xx (non-429): need to parse body to distinguish invalid_grant vs platform_bug.
+  const rawBody = await response.text().catch(() => "");
+  let json: unknown;
+  try {
+    json = JSON.parse(rawBody);
+  } catch {
+    logger.error("oauth_refresh_platform_bug", {
+      reason: "non_json_4xx_body",
+      status: response.status,
+      body: rawBody.slice(0, 500),
+    });
+    return {
+      kind: "transient",
+      reason: "platform_bug",
+      detail: `HTTP ${response.status} with non-JSON body: ${rawBody.slice(0, 200)}`,
+    };
+  }
+
+  const parsedError = DelegatedRefreshErrorBodySchema.safeParse(json);
+  if (!parsedError.success) {
+    logger.error("oauth_refresh_platform_bug", {
+      reason: "4xx_missing_error_field",
+      status: response.status,
+      body: rawBody.slice(0, 500),
+    });
+    return {
+      kind: "transient",
+      reason: "platform_bug",
+      detail: `HTTP ${response.status} with JSON body missing 'error' field: ${rawBody.slice(0, 200)}`,
+    };
+  }
+
+  if (parsedError.data.error === "invalid_grant") {
+    return { kind: "token_dead", subtype: parsedError.data.error_subtype };
+  }
+
+  logger.error("oauth_refresh_platform_bug", {
+    reason: "4xx_non_invalid_grant",
+    status: response.status,
+    errorCode: parsedError.data.error,
+    errorDescription: parsedError.data.error_description,
+  });
+  return {
+    kind: "transient",
+    reason: "platform_bug",
+    detail: `HTTP ${response.status} error=${parsedError.data.error}`,
+  };
+}
+
+/**
+ * Refresh an access token via the delegated endpoint, returning a typed
+ * outcome rather than throwing.
+ *
+ * One retry policy: on a `transient` first attempt, sleeps
+ * `REFRESH_RETRY_DELAY_MS` and retries ONCE. The second attempt's outcome
+ * is final regardless of kind. `success` and `token_dead` never retry —
+ * `success` is done, `token_dead` is a permanent state.
+ *
+ * Trust contract: only `kind === "token_dead"` means the refresh_token is
+ * provably revoked. Everything else is either usable (`success`) or a
+ * non-actionable platform/transport failure (`transient`).
+ */
+export async function refreshDelegatedTokenClassified(
+  config: Extract<OAuthConfig, { mode: "delegated" }>,
+  refreshToken: string,
+): Promise<RefreshOutcome> {
+  const first = await classifyRefreshAttempt(config, refreshToken);
+  if (first.kind !== "transient") return first;
+  await sleep(REFRESH_RETRY_DELAY_MS);
+  return await classifyRefreshAttempt(config, refreshToken);
+}
+
 /**
  * Refresh an access token via the delegated refresh endpoint.
  *
@@ -122,33 +312,26 @@ const DelegatedRefreshResponseSchema = z.object({
  * access token. Note: the refresh response does NOT include a fresh
  * `refresh_token` — Google never returns one on refresh, so the caller
  * must preserve the original.
+ *
+ * Throws on `token_dead` and on `transient` after the one-retry policy.
+ * Callers wanting to distinguish those cases should use
+ * `refreshDelegatedTokenClassified` directly.
  */
 export async function refreshDelegatedToken(
   config: Extract<OAuthConfig, { mode: "delegated" }>,
   refreshToken: string,
 ): Promise<DelegatedTokens> {
-  const response = await fetch(config.delegatedRefreshUri, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ refresh_token: refreshToken }),
-  });
-
-  if (!response.ok) {
-    const body = await response.text().catch(() => "");
-    throw new Error(`Delegated refresh failed: ${response.status} ${response.statusText} ${body}`);
+  const outcome = await refreshDelegatedTokenClassified(config, refreshToken);
+  switch (outcome.kind) {
+    case "success":
+      return outcome.tokens;
+    case "token_dead":
+      throw new Error(
+        `Delegated refresh failed: token_dead${outcome.subtype ? ` (subtype=${outcome.subtype})` : ""}`,
+      );
+    case "transient":
+      throw new Error(
+        `Delegated refresh failed: transient reason=${outcome.reason} detail=${outcome.detail}`,
+      );
   }
-
-  const body = await response.json();
-  const parsed = DelegatedRefreshResponseSchema.safeParse(body);
-  if (!parsed.success) {
-    throw new Error(`Delegated refresh returned malformed response: ${parsed.error.message}`);
-  }
-
-  return {
-    access_token: parsed.data.access_token,
-    refresh_token: refreshToken, // preserved — upstream never rotates
-    expires_at: Math.floor(parsed.data.expiry_date / 1000),
-    scope: parsed.data.scope,
-    token_type: parsed.data.token_type ?? "Bearer",
-  };
 }
