@@ -2,7 +2,13 @@ import { randomUUID } from "node:crypto";
 import process from "node:process";
 import { createAgent, err, ok } from "@atlas/agent-sdk";
 import { streamTextWithEvents } from "@atlas/agent-sdk/vercel-helpers";
-import { registry, temporalGroundingMessage, traceModel } from "@atlas/llm";
+import {
+  getCachingRequestOpts,
+  getDefaultProviderOpts,
+  registry,
+  temporalGroundingMessage,
+  traceModel,
+} from "@atlas/llm";
 import { stringifyError } from "@atlas/utils";
 import { stepCountIs } from "ai";
 import { z } from "zod";
@@ -80,8 +86,13 @@ export const webAgent = createAgent<string, WebAgentResult>({
       const result = await streamTextWithEvents({
         params: {
           model: traceModel(registry.languageModel("anthropic:claude-sonnet-4-6")),
+          allowSystemInMessages: true,
           messages: [
-            { role: "system", content: getWebAgentPrompt({ hasSearch: hasSearchKey }) },
+            {
+              role: "system",
+              content: getWebAgentPrompt({ hasSearch: hasSearchKey }),
+              providerOptions: getDefaultProviderOpts("anthropic"),
+            },
             temporalGroundingMessage(),
             { role: "user", content: prompt },
           ],
@@ -89,7 +100,10 @@ export const webAgent = createAgent<string, WebAgentResult>({
           stopWhen: stepCountIs(300),
           maxRetries: 3,
           abortSignal,
-          providerOptions: { anthropic: { thinking: { type: "enabled", budgetTokens: 4000 } } },
+          providerOptions: {
+            anthropic: { thinking: { type: "enabled", budgetTokens: 4000 } },
+            ...getCachingRequestOpts({ cacheKey: "web" }),
+          },
         },
         stream,
       });

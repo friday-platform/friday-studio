@@ -59,16 +59,27 @@ export {
 } from "./src/session-title.ts";
 export { smallLLM } from "./src/small.ts";
 export { createStubPlatformModels } from "./src/test-utils.ts";
-export { enterTraceScope, type TraceEntry, traceModel } from "./src/tracing.ts";
+export {
+  enterTraceScope,
+  enterUsageScope,
+  getActiveUsageCounter,
+  type TraceEntry,
+  traceModel,
+  type UsageCounter,
+} from "./src/tracing.ts";
 export { validateProvider } from "./src/util.ts";
 
 /**
- * Retrieves our default set of provider-specific metadata to apply
- * to generate/stream LLM calls.
- * @see https://ai-sdk.dev/docs/foundations/prompts#provider-options
+ * Per-message provider options for caching. Attach to the system message
+ * (or any content block) you want to act as the cache breakpoint.
+ *
+ * Anthropic: 1h ephemeral cache_control on the attached content block —
+ *   matches every block from the start of the prompt up to and including
+ *   the marked block, so place it on the static prefix (system prompt).
+ *   OpenAI ignores per-message providerOptions for caching.
  *
  * @param provider inference provider
- * @param overrides call-site specific options
+ * @param overrides call-site specific options merged on top of the defaults
  */
 export function getDefaultProviderOpts(
   provider: ValidProvider,
@@ -85,4 +96,21 @@ export function getDefaultProviderOpts(
     return defaults;
   }
   return deepMerge(defaults, overrides);
+}
+
+/**
+ * Top-level (request-scope) provider options for caching. Merge into the
+ * `providerOptions` field of generateText / streamText / generateObject.
+ *
+ * OpenAI: prompt_cache_key routing hint. OpenAI caches prefixes ≥1024
+ *   tokens automatically; the key improves cache-routing reliability so
+ *   requests from the same logical call site land on the same warm
+ *   cache. Use a stable per-call-site string (e.g. `"agent-summary"`,
+ *   `"slack-plan"`) — colliding keys across unrelated call sites
+ *   degrade routing.
+ * Anthropic: no top-level caching knob — cache_control sits per-message
+ *   (see `getDefaultProviderOpts`).
+ */
+export function getCachingRequestOpts(opts: { cacheKey: string }): SharedV2ProviderOptions {
+  return { openai: { promptCacheKey: opts.cacheKey } };
 }
