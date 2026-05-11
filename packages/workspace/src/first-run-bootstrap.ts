@@ -13,7 +13,10 @@ const templateYaml = readFileSync(
   "utf-8",
 );
 
-export async function ensureDefaultUserWorkspace(manager: WorkspaceManager): Promise<void> {
+export async function ensureDefaultUserWorkspace(
+  manager: WorkspaceManager,
+  ownerUserId?: string,
+): Promise<void> {
   // The `user` workspace is the stable personal scope every authenticated chat
   // routes into. It must exist in every installation, not just fresh ones —
   // the previous first-run guard (`nonSystem.length > 0`) bailed out whenever
@@ -27,7 +30,11 @@ export async function ensureDefaultUserWorkspace(manager: WorkspaceManager): Pro
   await mkdir(dir, { recursive: true });
   writeFileSync(join(dir, "workspace.yml"), templateYaml, "utf-8");
 
-  await manager.registerWorkspace(dir, { id: USER_WORKSPACE_ID, canonical: "personal" });
+  await manager.registerWorkspace(dir, {
+    id: USER_WORKSPACE_ID,
+    canonical: "personal",
+    ...(ownerUserId ? { createdBy: ownerUserId } : {}),
+  });
 
   logger.info("Default user workspace created", { id: USER_WORKSPACE_ID });
 }

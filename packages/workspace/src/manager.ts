@@ -25,6 +25,15 @@ import { WorkspaceConfigWatcher } from "./watchers/index.ts";
 /** Called when a runtime needs to be destroyed (config changed, workspace deleted) */
 export type RuntimeInvalidateCallback = (workspaceId: string) => Promise<void>;
 
+/**
+ * Hook for stamping a workspace membership row when a workspace is
+ * registered. Injected by the daemon at startup — the manager itself
+ * stays storage-agnostic (no `@atlas/core` import).
+ */
+export interface MembershipWriter {
+  stampOwner(input: { wsId: string; ownerUserId: string }): Promise<void>;
+}
+
 /** @internal Exported for testing. */
 export function validateMCPEnvironmentForWorkspace(
   config: MergedConfig,
@@ -109,6 +118,7 @@ export class WorkspaceManager {
   private memoryAdapter?: MemoryAdapter & {
     ensureRoot(workspaceId: string, name: string): Promise<void>;
   };
+  private membershipWriter?: MembershipWriter;
 
   /**
    * Cache of parsed workspace configs keyed by workspaceId. Each entry pins
@@ -153,6 +163,16 @@ export class WorkspaceManager {
   }
 
   /**
+   * Inject the hook used to stamp the owner membership row on workspace
+   * registration. The daemon wires this against `WorkspaceMemberStorage`
+   * after KV bootstrap; tests can leave it unset (registration becomes
+   * a no-op for the membership bucket).
+   */
+  setMembershipWriter(writer: MembershipWriter): void {
+    this.membershipWriter = writer;
+  }
+
+  /**
    * Initialize registry and observers.
    *
    * - Registers system workspaces (idempotent)
@@ -160,7 +180,10 @@ export class WorkspaceManager {
    * - Registers existing user workspaces with signal registrars
    * - Starts config file watching for user workspaces
    */
-  async initialize(signalRegistrars: WorkspaceSignalRegistrar[]): Promise<void> {
+  async initialize(
+    signalRegistrars: WorkspaceSignalRegistrar[],
+    opts?: { defaultOwnerId?: string },
+  ): Promise<void> {
     await this.registry.initialize();
 
     this.signalRegistrars = signalRegistrars;
@@ -201,7 +224,7 @@ export class WorkspaceManager {
 
     if (!this.isTestMode()) {
       try {
-        await ensureDefaultUserWorkspace(this);
+        await ensureDefaultUserWorkspace(this, opts?.defaultOwnerId);
       } catch (error) {
         logger.error("Failed to bootstrap default user workspace", { error });
       }
@@ -306,6 +329,22 @@ export class WorkspaceManager {
 
     await this.registry.registerWorkspace(entry);
     logger.info(`Workspace registered: ${entry.name}`, { id: entry.id });
+
+    if (options?.createdBy && this.membershipWriter) {
+      try {
+        await this.membershipWriter.stampOwner({ wsId: entry.id, ownerUserId: options.createdBy });
+      } catch (error) {
+        // Soft-fail: the registry row is durable, and the membership
+        // migration's idempotent re-check will recover this on next boot
+        // by stamping an owner from `metadata.createdBy`. Don't roll the
+        // registration back — that's worse than a missing membership row.
+        logger.warn("Failed to stamp workspace owner membership", {
+          workspaceId: entry.id,
+          createdBy: options.createdBy,
+          error,
+        });
+      }
+    }
 
     const ownEntries = config.workspace.memory?.own ?? [];
     if (ownEntries.length > 0 && this.memoryAdapter) {

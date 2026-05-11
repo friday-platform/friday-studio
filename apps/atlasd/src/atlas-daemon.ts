@@ -21,6 +21,11 @@ import { bootstrapElicitationsStream, initElicitationStorage } from "@atlas/core
 import { initMCPRegistryAdapter } from "@atlas/core/mcp-registry/storage";
 import { ensureSessionsKVBucket, initSessionStorage } from "@atlas/core/sessions/storage";
 import { ensureUsersKVBucket, initUserStorage, UserStorage } from "@atlas/core/users/storage";
+import {
+  ensureWorkspaceMembersKVBucket,
+  initWorkspaceMemberStorage,
+  WorkspaceMemberStorage,
+} from "@atlas/core/workspace-members/storage";
 import { CronManager } from "@atlas/cron";
 import { initDocumentStore } from "@atlas/document-store";
 import { createPlatformModels, type PlatformModels, prewarmCatalog } from "@atlas/llm";
@@ -513,6 +518,15 @@ export class AtlasDaemon {
     initSessionStorage(nc);
     await ensureSessionsKVBucket(nc);
 
+    // Workspace memberships: per-user-per-workspace role rows. The
+    // firehose handshake and HTTP authz middleware both read from
+    // this bucket; migration below backfills owner rows for existing
+    // workspaces, steady-state writes happen in WorkspaceManager via
+    // the injected MembershipWriter (wired below, after the manager
+    // is constructed).
+    initWorkspaceMemberStorage(nc);
+    await ensureWorkspaceMembersKVBucket(nc);
+
     // Wire MCP registry to JetStream KV. Routes / discovery code call
     // the zero-arg `getMCPRegistryAdapter()` and get back the JS-KV-backed
     // adapter. Migration entry below republishes any legacy
@@ -592,6 +606,21 @@ export class AtlasDaemon {
 
     // Wire up runtime invalidation callback so file watcher changes clear both maps
     this.workspaceManager.setRuntimeInvalidateCallback(this.destroyWorkspaceRuntime.bind(this));
+
+    // Stamp an `owner` membership row on every workspace registration.
+    // The manager doesn't import @atlas/core directly — the writer is
+    // injected here so the storage facade stays the daemon's concern.
+    this.workspaceManager.setMembershipWriter({
+      async stampOwner({ wsId, ownerUserId }) {
+        const result = await WorkspaceMemberStorage.putIfAbsent({
+          userId: ownerUserId,
+          wsId,
+          role: "owner",
+          addedAt: new Date().toISOString(),
+        });
+        if (!result.ok) throw new Error(result.error);
+      },
+    });
 
     // Initialize CronManager with JetStream-KV-backed storage. Cron
     // only uses get/set/delete/list — JS KV's per-key model fits
@@ -713,8 +742,12 @@ export class AtlasDaemon {
 
     const signalRegistrars: WorkspaceSignalRegistrar[] = [fsRegistrar, cronRegistrar];
 
-    // Initialize WorkspaceManager with registrars and watcher (manager owns lifecycle)
-    await this.workspaceManager.initialize(signalRegistrars);
+    // Initialize WorkspaceManager with registrars and watcher (manager owns lifecycle).
+    // `defaultOwnerId` is threaded through to ensureDefaultUserWorkspace so the
+    // user-workspace gets stamped with an owner membership row on first run.
+    await this.workspaceManager.initialize(signalRegistrars, {
+      defaultOwnerId: UserStorage.getCachedLocalUserId(),
+    });
 
     // SignalConsumer — thin forwarder. Pulls from SIGNALS, parses the
     // envelope, publishes onto CASCADES, acks. No FSM execution here;

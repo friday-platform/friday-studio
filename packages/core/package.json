@@ -23,6 +23,8 @@
     "./chat/export/render": "./src/chat/export/render.ts",
     "./users/storage": "./src/users/storage.ts",
     "./sessions/storage": "./src/sessions/storage.ts",
+    "./workspace-members": "./src/workspace-members/mod.ts",
+    "./workspace-members/storage": "./src/workspace-members/storage.ts",
     "./session/session-events": "./src/session/session-events.ts",
     "./session/session-reducer": "./src/session/session-reducer.ts",
     "./mcp-registry/discovery": "./src/mcp-registry/discovery.ts",
