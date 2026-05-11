@@ -174,7 +174,7 @@ export const WorkspaceConfigSchema = z.strictObject({
    * `default_grace` is the time window after job completion before
    * ephemeral artifacts are swept. Default `24h`. Per-job override at
    * `jobs.<name>.artifacts.default_grace`. Promotion-by-reference signals
-   * (memory_save text contains the artifact id; display_artifact called;
+   * (save_memory_entry text contains the artifact id; display_artifact called;
    * aiSummary.keyDetails URL references it) keep an artifact alive past
    * the grace window without an author opt-in.
    */

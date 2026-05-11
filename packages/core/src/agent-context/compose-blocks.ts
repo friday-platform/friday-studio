@@ -15,6 +15,7 @@ import { stringifyError } from "@atlas/utils";
 import { z } from "zod";
 import type { ArtifactSummary } from "../artifacts/model.ts";
 import { ArtifactStorage } from "../artifacts/storage.ts";
+import { composePreface } from "./compose-preface.ts";
 
 const MemoryListSchema = z.array(
   z.object({ workspaceId: z.string(), name: z.string(), kind: z.string() }),
@@ -233,7 +234,7 @@ export async function composeArtifactBlocks(
     // bytes. The artifact id is in `provenance` so the model can call
     // `parse_artifact` for the full content if it needs more.
     const body = a.summary.trim();
-    return `<retrieved_content provenance="${provenance}" origin="${origin}" fetched_at="${fetchedAt}">\n${body}\n</retrieved_content>`;
+    return composePreface([{ source: provenance, origin, body, fetched_at: fetchedAt }]);
   });
 }
 

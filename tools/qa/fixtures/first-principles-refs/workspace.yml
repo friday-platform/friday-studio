@@ -621,7 +621,7 @@ jobs:
               validate: skip
               prompt: |
                 Read the EmailBatch document from the visible action input and
-                available documents. Do not call artifacts_get,
+                available documents. Do not call get_artifact,
                 display_artifact, parse_artifact, delegate, or any job tool.
 
                 The previous document may be represented as compact
@@ -763,7 +763,7 @@ jobs:
               validate: skip
               tools:
                 - batch_modify_message_labels
-                - memory_save
+                - save_memory_entry
               prompt: |
                 Simulate the user entering review choices "1a 2a 3a 4k"
                 for the fake inbox:
@@ -774,7 +774,7 @@ jobs:
                 ["fake-001", "fake-002", "fake-003"], addLabels
                 ["archived"], and removeLabels ["inbox", "unread"].
 
-                Then call memory_save exactly once with memoryName
+                Then call save_memory_entry exactly once with memoryName
                 "preferences" and this exact text:
                 "FIRST_PRINCIPLES_REVIEW_CHOICE learned: archive synthetic digest messages; keep action-required alerts for review"
 

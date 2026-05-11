@@ -84,11 +84,28 @@ export interface ChatMessage {
     provider?: string;
     modelId?: string;
     sessionId?: string;
-    /** ISO timestamp emitted on stream start. Preferred for display. */
+    /**
+     * Per-turn token + cache usage. Populated by workspace-chat from
+     * `streamText.totalUsage` so the inline usage badge can render
+     * without re-fetching session events. Cache fields are absent when
+     * the provider didn't surface them (e.g. some non-Anthropic
+     * non-OpenAI providers).
+     */
+    usage?: {
+      inputTokens?: number;
+      outputTokens?: number;
+      cacheReadTokens?: number;
+      cacheWriteTokens?: number;
+    };
+    /** ISO timestamp when the model began emitting output for this
+     *  turn. Pairs with `endTimestamp` to compute turn duration.
+     *  Preferred for display when present. */
     startTimestamp?: string;
-    /** ISO timestamp from any single-shot message that doesn't span a stream. */
+    /** ISO timestamp from any single-shot message that doesn't span a
+     *  stream (used by the chat export route when no stream-start was
+     *  recorded). */
     timestamp?: string;
-    /** ISO timestamp emitted when the stream finished. */
+    /** ISO timestamp when the model's terminal finish event landed. */
     endTimestamp?: string;
   };
 }

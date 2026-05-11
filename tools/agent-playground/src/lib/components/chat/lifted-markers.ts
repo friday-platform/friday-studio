@@ -29,14 +29,27 @@ export interface LiftedArtifactRef {
  * id referenced by a lifted-marker. Walks strings, arrays, and plain objects.
  * Order matches a depth-first, in-order traversal of the source value so the
  * UI can render previews in the same order they appear in the result.
+ *
+ * Duplicates are dropped (first-occurrence wins). The same artifact id often
+ * shows up in more than one field of a single tool result — e.g. once in the
+ * top-level summary string and again under `aiSummary.keyDetails[].url` —
+ * and downstream callers render one card per artifact, so emitting the same
+ * id twice both wastes a card and breaks the keyed `{#each}` in
+ * `tool-call-card.svelte` (`each_key_duplicate`).
  */
 export function extractLiftedArtifactIds(value: unknown): LiftedArtifactRef[] {
+  const seen = new Set<string>();
   const refs: LiftedArtifactRef[] = [];
-  walk(value, refs, 0);
+  walk(value, refs, seen, 0);
   return refs;
 }
 
-function walk(value: unknown, refs: LiftedArtifactRef[], depth: number): void {
+function walk(
+  value: unknown,
+  refs: LiftedArtifactRef[],
+  seen: Set<string>,
+  depth: number,
+): void {
   // Cap recursion to match the scrubber's MAX_DEPTH; tool results are
   // shallow JSON in practice, this is a defensive stop for cyclic shapes.
   if (depth > 16) return;
@@ -46,15 +59,18 @@ function walk(value: unknown, refs: LiftedArtifactRef[], depth: number): void {
     let m: RegExpExecArray | null;
     while ((m = MARKER_RE.exec(value)) !== null) {
       const artifactId = m[1];
-      if (artifactId) refs.push({ artifactId });
+      if (artifactId && !seen.has(artifactId)) {
+        seen.add(artifactId);
+        refs.push({ artifactId });
+      }
     }
     return;
   }
   if (Array.isArray(value)) {
-    for (const v of value) walk(v, refs, depth + 1);
+    for (const v of value) walk(v, refs, seen, depth + 1);
     return;
   }
   if (value !== null && typeof value === "object") {
-    for (const v of Object.values(value)) walk(v, refs, depth + 1);
+    for (const v of Object.values(value)) walk(v, refs, seen, depth + 1);
   }
 }

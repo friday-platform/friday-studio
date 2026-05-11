@@ -95,6 +95,8 @@ this for you.
 
 ### 4. Watch a running session's agent activity + read the outcome
 
+**From chat:** prefer `list_sessions(scope?)` + `describe_session(id)` — same data, no curl required. Use the CLI/HTTP recipes below from terminals or shell scripts.
+
 ```bash
 deno task atlas session list --json           # find the session
 deno task atlas session get <session-id> --json  # full SessionView
@@ -176,7 +178,7 @@ one your chat is running in). Do not `DELETE` + `POST /create`.
 | Edit an agent's prompt / model / tools | `upsert_agent({id, config: <full agent config>})` |
 | Add or replace a signal | `upsert_signal({id, config})` |
 | Patch a signal's schedule / timezone | `upsert_signal({id, config: <full signal config with edit>})` |
-| Delete a signal | `remove_item({kind: "signal", id})` |
+| Delete an agent / signal / job | `delete_agent({id})` / `delete_signal({id})` / `delete_job({id})` |
 | Add or replace a job | `upsert_job({id, config})` |
 | Multi-entity edits | `begin_draft` → upserts → `validate_workspace` → `publish_draft` |
 | Workspace metadata (name, color) | `PATCH /api/workspaces/:id/metadata` (still safe — does not touch runtime) |

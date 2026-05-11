@@ -17,15 +17,15 @@ export { PLATFORM_TOOL_NAMES };
  */
 export const SCOPE_INJECTED_PLATFORM_TOOLS = new Set([
   "webfetch",
-  "artifacts_create",
-  "artifacts_get",
+  "create_artifact",
+  "get_artifact",
   "artifacts_update",
   "state_append",
   "state_filter",
   "state_lookup",
-  "memory_save",
-  "memory_read",
-  "memory_remove",
+  "save_memory_entry",
+  "list_memory_entries",
+  "delete_memory_entry",
   // fs_write_file uses workspaceId to resolve relative paths against the
   // workspace working directory (`<friday-home>/workspaces/<workspaceId>/`)
   // instead of the daemon's launch directory.
@@ -146,7 +146,7 @@ export function wrapPlatformToolsWithScope(
  * Platform tools that workspace LLM agents and `type: user` SDK agents are
  * allowed to use. Subset of PLATFORM_TOOL_NAMES — tools NOT in this set are
  * blocked. External MCP server tools always pass through regardless of this
- * list. Workspace-management tools (workspace_delete, session_describe, etc.)
+ * list. Workspace-management tools (delete_workspace, session_describe, etc.)
  * are intentionally excluded so a workspace agent can't escape its own scope.
  */
 export const LLM_AGENT_ALLOWED_PLATFORM_TOOLS = new Set([
@@ -157,8 +157,8 @@ export const LLM_AGENT_ALLOWED_PLATFORM_TOOLS = new Set([
   "fs_read_file",
   "fs_write_file",
   // Artifacts
-  "artifacts_create",
-  "artifacts_get",
+  "create_artifact",
+  "get_artifact",
   "artifacts_update",
   "artifacts_get_by_chat",
   "artifacts_delete",
@@ -167,9 +167,9 @@ export const LLM_AGENT_ALLOWED_PLATFORM_TOOLS = new Set([
   "csv",
   "webfetch",
   // Memory — adapter-agnostic
-  "memory_save",
-  "memory_read",
-  "memory_remove",
+  "save_memory_entry",
+  "list_memory_entries",
+  "delete_memory_entry",
   // State — workspace-scoped ephemeral storage (same security profile as memory)
   "state_append",
   "state_filter",

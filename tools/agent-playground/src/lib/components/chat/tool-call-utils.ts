@@ -63,7 +63,7 @@ export function argPreview(toolName: string, input: unknown): string {
   if (toolName === "load_skill" && typeof obj.name === "string") {
     return obj.name;
   }
-  if (toolName === "memory_save" && typeof obj.text === "string") {
+  if (toolName === "save_memory_entry" && typeof obj.text === "string") {
     return obj.text.length > 60 ? `${obj.text.slice(0, 60)}…` : obj.text;
   }
   if (toolName === "display_artifact") {

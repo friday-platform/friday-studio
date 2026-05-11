@@ -13,6 +13,7 @@
   import ChatInput, { type ImageAttachment } from "./chat-input.svelte";
   import ChatInspector from "./chat-inspector.svelte";
   import ChatMessageList from "./chat-message-list.svelte";
+  import ChatSessionUsage from "./chat-session-usage.svelte";
   import { createCursorTrackingFetch } from "./cursor-tracking-fetch.ts";
   import { nextQueueStep } from "./chat-queue.ts";
   import { nextResumeBudgetStep } from "./resume-budget.ts";
@@ -846,6 +847,72 @@
     return [...textParts, ...credentialParts].join(" ");
   }
 
+  /**
+   * Pull per-turn token + cache usage off a UI message. Reads
+   * `metadata.usage` first (the persisted shape, set by the chat
+   * handler just before append) and falls back to a `data-usage`
+   * part on the message (the live-stream shape, emitted from
+   * `streamText.onFinish` so the UsageBadge can render the in-flight
+   * turn before the first page refresh).
+   *
+   * Returns `undefined` when neither source is present — legacy chat
+   * messages, or turns that haven't reported usage yet.
+   */
+  function extractTurnUsage(
+    msg: AtlasUIMessage,
+    metadataRecord: Record<string, unknown>,
+  ):
+    | {
+        inputTokens?: number;
+        outputTokens?: number;
+        cacheReadTokens?: number;
+        cacheWriteTokens?: number;
+      }
+    | undefined {
+    function pickNumber(source: unknown, key: string): number | undefined {
+      if (typeof source !== "object" || source === null) return undefined;
+      const v = (source as Record<string, unknown>)[key];
+      return typeof v === "number" ? v : undefined;
+    }
+
+    function shape(source: unknown):
+      | {
+          inputTokens?: number;
+          outputTokens?: number;
+          cacheReadTokens?: number;
+          cacheWriteTokens?: number;
+        }
+      | undefined {
+      if (typeof source !== "object" || source === null) return undefined;
+      return {
+        inputTokens: pickNumber(source, "inputTokens"),
+        outputTokens: pickNumber(source, "outputTokens"),
+        cacheReadTokens: pickNumber(source, "cacheReadTokens"),
+        cacheWriteTokens: pickNumber(source, "cacheWriteTokens"),
+      };
+    }
+
+    const fromMetadata = shape(metadataRecord.usage);
+    if (fromMetadata) return fromMetadata;
+
+    if (Array.isArray(msg.parts)) {
+      // Walk in reverse so the latest data-usage part wins on the
+      // (rare) case the stream emits more than one.
+      for (let i = msg.parts.length - 1; i >= 0; i--) {
+        const part = msg.parts[i];
+        if (typeof part !== "object" || part === null || !("type" in part)) continue;
+        const p = part as { type: unknown; data?: unknown };
+        if (p.type === "data-usage") {
+          const fromPart = shape(p.data);
+          if (fromPart) return fromPart;
+        }
+      }
+    }
+
+    return undefined;
+  }
+
+
   // Stable per-message first-seen fallback for messages whose metadata
   // carries no timestamp (legacy user messages written before we started
   // stamping, with no following assistant turn to borrow from). A plain
@@ -952,6 +1019,19 @@
           startTimestamp: typeof m.startTimestamp === "string" ? m.startTimestamp : undefined,
           timestamp: typeof m.timestamp === "string" ? m.timestamp : undefined,
           endTimestamp: typeof m.endTimestamp === "string" ? m.endTimestamp : undefined,
+          // Token + cache usage. Two sources, in priority order:
+          //
+          //   1. The persisted `metadata.usage` field (set by the chat
+          //      handler just before append). Available on reload and
+          //      after the turn has fully settled.
+          //   2. A `data-usage` part emitted from streamText.onFinish.
+          //      Streamed during the live turn so the UsageBadge can
+          //      render before the first reload.
+          //
+          // The data-part path lets the UI update without waiting for
+          // the SDK to re-fetch chat history; both paths produce the
+          // same shape, so the UsageBadge consumes either uniformly.
+          usage: extractTurnUsage(msg, m),
         },
       };
     });
@@ -1088,7 +1168,8 @@
   /**
    * Called when the user successfully connects a credential via an inline
    * connect_service card. Sends a lightweight user message so the agent
-   * retries on its next turn with the updated <integrations> state.
+   * retries on its next turn — the agent re-fetches credential status via
+   * `list_integrations` / `describe_integration` on demand.
    */
   function handleCredentialConnected(provider: string): void {
     if (!chat) return;
@@ -1118,11 +1199,14 @@
   const WORKSPACE_INVALIDATING_TOOLS = new Set([
     "create_workspace",
     "workspace_create",
+    "delete_workspace",
     "publish_draft",
     "upsert_agent",
     "upsert_signal",
     "upsert_job",
-    "remove_item",
+    "delete_agent",
+    "delete_signal",
+    "delete_job",
     "begin_draft",
     "discard_draft",
     "enable_mcp_server",
@@ -1195,7 +1279,14 @@
 
   {#if chat && chat.messages.length > 0}
     <header class="chat-header">
-      <span class="header-spacer"></span>
+      <!-- Session stats sit at the leading edge of the header; the
+           Export button auto-pushes to the trailing edge via its own
+           `margin-inline-start: auto`. When the chat has no recorded
+           usage yet (legacy chats from before the metric existed),
+           `ChatSessionUsage` renders nothing and the button sits alone
+           against the leading edge — wrapping in `header-spacer` would
+           waste a flex item for the same effect. -->
+      <ChatSessionUsage messages={displayedMessages} />
       <button
         class="new-chat-button"
         onclick={handleExportChat}
@@ -1215,6 +1306,8 @@
         onCredentialConnected={handleCredentialConnected}
         {thinking}
         {validationAttemptsBySession}
+        workspaceId={wsId}
+        {chatId}
       />
 
       {#if wasInterrupted}
@@ -1330,10 +1423,6 @@
     padding: var(--size-2) var(--size-4);
   }
 
-  .header-spacer {
-    flex: 1;
-  }
-
   .new-chat-button {
     background: none;
     border: 1px solid var(--color-border-1);
@@ -1341,6 +1430,10 @@
     color: inherit;
     cursor: pointer;
     font-size: var(--font-size-2);
+    /* Pushes to the trailing edge regardless of how wide the leading-
+       edge ChatSessionUsage row is (or whether it rendered at all,
+       for legacy chats with no recorded usage). */
+    margin-inline-start: auto;
     padding: var(--size-1) var(--size-3);
   }
 

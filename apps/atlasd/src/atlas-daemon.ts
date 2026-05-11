@@ -19,6 +19,7 @@ import { initArtifactStorage } from "@atlas/core/artifacts/server";
 import { ensureChatsKVBucket, initChatStorage } from "@atlas/core/chat/storage";
 import { bootstrapElicitationsStream, initElicitationStorage } from "@atlas/core/elicitations";
 import { initMCPRegistryAdapter } from "@atlas/core/mcp-registry/storage";
+import { ensureUsersKVBucket, initUserStorage, UserStorage } from "@atlas/core/users/storage";
 import { CronManager } from "@atlas/cron";
 import { initDocumentStore } from "@atlas/document-store";
 import { createPlatformModels, type PlatformModels, prewarmCatalog } from "@atlas/llm";
@@ -82,6 +83,7 @@ import { createPlatformSignalRoutes } from "../routes/signals/platform.ts";
 import { skillsRoutes } from "../routes/skills.ts";
 import { userRoutes } from "../routes/user/index.ts";
 import { eventsRoutes, workspaceEventsRoutes } from "../routes/workspace-events.ts";
+import workspaceCacheSaltRoutes from "../routes/workspaces/cache-salt.ts";
 import workspaceChatRoutes from "../routes/workspaces/chat.ts";
 import workspaceChatDebugRoutes from "../routes/workspaces/chat-debug.ts";
 import { configRoutes as workspaceConfigRoutes } from "../routes/workspaces/config.ts";
@@ -489,6 +491,18 @@ export class AtlasDaemon {
       duplicateWindowNs: jsCfg.stream.duplicateWindowNs.value,
     });
     await ensureChatsKVBucket(nc);
+
+    // Wire user-identity storage and warm the local-user-id cache so
+    // synchronous request handlers can read it via getCachedLocalUserId().
+    initUserStorage(nc);
+    await ensureUsersKVBucket(nc);
+    {
+      const localUser = await UserStorage.resolveLocalUserId();
+      if (!localUser.ok) {
+        throw new Error(`Failed to resolve local user id: ${localUser.error}`);
+      }
+      logger.info("Resolved local user id", { userId: localUser.data });
+    }
 
     // Wire MCP registry to JetStream KV. Routes / discovery code call
     // the zero-arg `getMCPRegistryAdapter()` and get back the JS-KV-backed
@@ -1331,6 +1345,7 @@ export class AtlasDaemon {
     this.app.route("/api/workspaces/:workspaceId/config", workspaceConfigRoutes);
     this.app.route("/api/workspaces/:workspaceId/chat", workspaceChatRoutes);
     this.app.route("/api/workspaces/:workspaceId/chat", workspaceChatDebugRoutes);
+    this.app.route("/api/workspaces/:workspaceId", workspaceCacheSaltRoutes);
     this.app.route("/api/workspaces/:workspaceId/integrations", integrationRoutes);
     this.app.route("/api/workspaces/:workspaceId/mcp", mcpRoutes);
     this.app.route("/api/workspaces", workspaceEventsRoutes);
@@ -2050,7 +2065,7 @@ export class AtlasDaemon {
     }
 
     const workspace = await manager.find({ id: workspaceId });
-    const userId = workspace?.metadata?.createdBy ?? "default-user";
+    const userId = workspace?.metadata?.createdBy ?? UserStorage.getCachedLocalUserId();
 
     let credentials: PlatformCredentials[] | undefined;
     try {
@@ -2667,7 +2682,7 @@ export class AtlasDaemon {
         }
         if (!discordConfig) continue;
 
-        const userId = workspace.metadata?.createdBy ?? "default-user";
+        const userId = workspace.metadata?.createdBy ?? UserStorage.getCachedLocalUserId();
         const creds = await resolveDiscordCredentials(workspace.id, userId, discordConfig);
         if (!creds || creds.credentials.kind !== "discord") continue;
         const { botToken, publicKey, applicationId } = creds.credentials;

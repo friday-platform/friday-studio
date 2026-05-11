@@ -1,0 +1,23 @@
+- description: text/csv artifact creates with right mime and round-trips bytes verbatim
+  vars:
+    scenarioId: csv-artifact-roundtrip
+
+- description: text/tab-separated-values artifact creates + round-trips with tab separators preserved
+  vars:
+    scenarioId: tsv-artifact-roundtrip
+
+- description: application/json array-of-objects artifact round-trips with row data intact
+  vars:
+    scenarioId: json-array-roundtrip
+
+- description: text/html artifact containing a <table> round-trips with cell markup preserved
+  vars:
+    scenarioId: html-table-roundtrip
+
+- description: text/markdown artifact with a table block round-trips with pipe rows preserved
+  vars:
+    scenarioId: markdown-table-roundtrip
+
+- description: text/plain prose with embedded commas stays text/plain (no silent re-sniff by storage)
+  vars:
+    scenarioId: prose-not-mistagged

@@ -103,7 +103,7 @@ Example:
 name: creating-workspaces
 description: Scaffolds new Friday workspaces. Use when the user asks to create a workspace, add a new workflow, or convert a recurring task into automation.
 allowed-tools:
-  - artifacts_create
+  - create_artifact
   - artifacts_update
   - webfetch
 context: workspace-authoring

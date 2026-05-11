@@ -9,7 +9,7 @@ import { resolveStore } from "./resolve.ts";
 /** Register MCP tool for saving an entry to a workspace memory store. */
 export function registerMemorySaveTool(server: McpServer, ctx: ToolContext): void {
   server.registerTool(
-    "memory_save",
+    "save_memory_entry",
     {
       description:
         "Save an entry to a named memory store in a workspace. " +
@@ -37,7 +37,7 @@ export function registerMemorySaveTool(server: McpServer, ctx: ToolContext): voi
       createdAt,
       metadata,
     }): Promise<CallToolResult> => {
-      ctx.logger.info("MCP memory_save called", { workspaceId, memoryName });
+      ctx.logger.info("MCP save_memory_entry called", { workspaceId, memoryName });
 
       const resolved = await resolveStore({
         daemonUrl: ctx.daemonUrl,
@@ -62,7 +62,7 @@ export function registerMemorySaveTool(server: McpServer, ctx: ToolContext): voi
         });
         if (!res.ok) {
           const body = await res.text();
-          ctx.logger.error("memory_save HTTP failed", {
+          ctx.logger.error("save_memory_entry HTTP failed", {
             workspaceId,
             memoryName,
             status: res.status,
@@ -77,7 +77,7 @@ export function registerMemorySaveTool(server: McpServer, ctx: ToolContext): voi
           memoryName: effectiveMemoryName,
         });
       } catch (err) {
-        ctx.logger.error("memory_save fetch error", { workspaceId, memoryName, error: err });
+        ctx.logger.error("save_memory_entry fetch error", { workspaceId, memoryName, error: err });
         return createErrorResponse("memory save failed: network error", stringifyError(err));
       }
     },

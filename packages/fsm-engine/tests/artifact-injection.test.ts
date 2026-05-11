@@ -120,7 +120,10 @@ describe("FSM LLM action — Phase 9 retrieval-gated artifact injection", () => 
     let observedPrompt: string | undefined;
     const mockLLMProvider: LLMProvider = {
       call: (params) => {
-        observedPrompt = params.prompt;
+        // Capture system + user-message body together so substring asserts
+        // work regardless of whether content lands in the cacheable system
+        // surface or the volatile user preface.
+        observedPrompt = `${params.system ?? ""}\n\n${params.prompt ?? ""}`;
         const envelope: AgentResult<string, FSMLLMOutput> = {
           agentId: params.agentId,
           timestamp: new Date().toISOString(),

@@ -2,8 +2,8 @@
  * Artifact tools for the workspace-chat agent.
  *
  * Provides `display_artifact` (re-exported from conversation tools),
- * `artifacts_get` (direct tool mirroring the MCP registration), and
- * `artifacts_create` (register a scratch-dir file as a displayable artifact).
+ * `get_artifact` (direct tool mirroring the MCP registration), and
+ * `create_artifact` (register a scratch-dir file as a displayable artifact).
  *
  * Exported as a pre-typed `AtlasTools` object to avoid TS2589 deep type
  * instantiation when spread into `streamText`'s tools parameter.
@@ -26,7 +26,7 @@ const logger = createLogger({ name: "workspace-chat-artifacts" });
 
 /**
  * Direct tool for retrieving an artifact by ID.
- * Mirrors the MCP `artifacts_get` tool (packages/mcp-server/src/tools/artifacts/get.ts)
+ * Mirrors the MCP `get_artifact` tool (packages/mcp-server/src/tools/artifacts/get.ts)
  * so workspace-chat can use it without platform tool passthrough.
  *
  * For text-like artifacts (json/yaml/text/*) the response includes the
@@ -37,7 +37,7 @@ const logger = createLogger({ name: "workspace-chat-artifacts" });
  * decoded-as-UTF-8 bytes through the LLM, which is both expensive and
  * useless (the model can't reason about random bytes).
  */
-const artifactsGet = tool({
+const getArtifactTool = tool({
   description:
     "Get artifact by ID. For binary artifacts (PDF/image/etc.), use the returned `hint` to choose the right follow-up tool; the response will not include raw bytes.",
   inputSchema: z.object({
@@ -50,7 +50,7 @@ const artifactsGet = tool({
       .describe("Revision number (defaults to latest)"),
   }),
   execute: async ({ artifactId, revision }) => {
-    logger.info("artifacts_get called", { artifactId, revision });
+    logger.info("get_artifact called", { artifactId, revision });
 
     const response = await parseResult(
       client.artifactsStorage[":id"].$get({
@@ -99,16 +99,16 @@ const parseArtifact = tool({
 /** Artifact tools typed as AtlasTools to prevent TS2589 in streamText generics. */
 export const artifactTools: AtlasTools = {
   display_artifact: displayArtifact,
-  artifacts_get: artifactsGet,
+  get_artifact: getArtifactTool,
   parse_artifact: parseArtifact,
 };
 
 /**
- * Build the `artifacts_create` tool scoped to the current session.
+ * Build the `create_artifact` tool scoped to the current session.
  * Takes a scratch-relative path, registers it as a file artifact, and
  * returns the artifact ID so the caller can immediately `display_artifact`.
  */
-export function createArtifactsCreateTool({
+export function createCreateArtifactTool({
   sessionId,
   workspaceId,
   streamId,
@@ -118,7 +118,7 @@ export function createArtifactsCreateTool({
   streamId: string | undefined;
 }): AtlasTools {
   return {
-    artifacts_create: tool({
+    create_artifact: tool({
       description:
         "Register a file written to the scratch directory as a displayable artifact. Call this after write_file or run_code has produced a file you want to show the user, then immediately call display_artifact with the returned artifactId.",
       inputSchema: z.object({
@@ -160,7 +160,7 @@ export function createArtifactsCreateTool({
           ...(inferredMime && isTextMimeType(inferredMime) ? { mimeType: inferredMime } : {}),
         };
 
-        logger.info("artifacts_create called", { sessionId, path, workspaceId });
+        logger.info("create_artifact called", { sessionId, path, workspaceId });
 
         const response = await parseResult(
           client.artifactsStorage.index.$post({

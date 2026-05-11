@@ -10,16 +10,7 @@ description: >
   authored or modified, or when upsert_agent was just called with
   type:user. Do NOT load to decide whether to author a user agent —
   that decision belongs in the workspace-chat agent_types rules.
-vendored-from: friday-platform/agent-sdk@b71664e11d4794edc035791fde133eb02dfe1ac3
-vendored-path: packages/python/skills/writing-friday-python-agents/
-vendored-version: 0.1.7
 ---
-
-<!--
-  This skill is vendored from the friday-agent-sdk repo. Edits should land
-  upstream first; scripts/sync-sdk-skill.ts re-vendors for the pinned
-  FRIDAY_AGENT_SDK_VERSION (see tools/friday-launcher/paths.go).
--->
 
 # Writing Friday Python Agents
 
@@ -169,23 +160,23 @@ same tool call until the user answers/declines/expires, then resumes the agent
 with the answer. Use this for interactive review workflows; do not implement a
 local polling loop or direct `/api/elicitations` HTTP calls.
 
-### Memory — `memory_save` / `memory_read` (platform tools)
+### Memory — `save_memory_entry` / `list_memory_entries` (platform tools)
 
 The host injects platform memory tools into every agent's tool surface
 automatically — no MCP declaration needed. Most-used:
 
 ```python
 # Append a single fact. The store handles persistence + ordering.
-ctx.tools.call("memory_save", {
+ctx.tools.call("save_memory_entry", {
     "memoryName": "preferences",
     "text": "Always archive newsletters from substack.com",
 })
 
 # Read recent entries. (The 20 most recent narrative entries are
 # auto-injected into the LLM-side system prompt every turn — Python
-# agents don't see those, so call memory_read explicitly when you need
+# agents don't see those, so call list_memory_entries explicitly when you need
 # durable state across runs.)
-result = ctx.tools.call("memory_read", {
+result = ctx.tools.call("list_memory_entries", {
     "memoryName": "preferences",
     "limit": 50,
 })
@@ -196,14 +187,14 @@ result = ctx.tools.call("memory_read", {
 ```python
 # ✅ Correct — one fact per call. Concurrent writers compose cleanly.
 for fact in new_preferences:
-    ctx.tools.call("memory_save", {"memoryName": "preferences", "text": fact})
+    ctx.tools.call("save_memory_entry", {"memoryName": "preferences", "text": fact})
 
 # ❌ Wrong — read-concat-write. Concurrent writers clobber each other,
 #    fights the platform's append/dedup logic, and the next run starts
 #    from a stale snapshot.
-existing = ctx.tools.call("memory_read", {"memoryName": "preferences"})
+existing = ctx.tools.call("list_memory_entries", {"memoryName": "preferences"})
 combined = existing["text"] + "\n" + "\n".join(new_preferences)
-ctx.tools.call("memory_save", {"memoryName": "preferences", "text": combined})
+ctx.tools.call("save_memory_entry", {"memoryName": "preferences", "text": combined})
 ```
 
 **Footgun: `ToolCallError` on validation failure.** `ctx.tools.call`
@@ -216,9 +207,9 @@ the error through `err()` or let it propagate.
 from friday_agent_sdk import ToolCallError
 
 try:
-    ctx.tools.call("memory_save", {"memoryName": "preferences", "text": fact})
+    ctx.tools.call("save_memory_entry", {"memoryName": "preferences", "text": fact})
 except ToolCallError as e:
-    return err(f"memory_save failed: {e}")
+    return err(f"save_memory_entry failed: {e}")
 ```
 
 **Stores must use the `narrative` strategy.** Friday's runtime today
@@ -257,7 +248,7 @@ Useful methods:
 - `ctx.input.get("doc-id")` — compact input payload for an `inputFrom` document.
 - `ctx.input.require("doc-id")` — same, but raises if missing.
 - `ctx.input.artifact_refs("doc-id")` — artifact refs attached to the input.
-- `ctx.input.artifact_json("doc-id")` — fetches via `artifacts_get` and parses JSON contents.
+- `ctx.input.artifact_json("doc-id")` — fetches via `get_artifact` and parses JSON contents.
 
 `prompt` still exists for natural-language task instructions and backwards
 compatibility, but `parse_input(prompt)` is not the right abstraction for

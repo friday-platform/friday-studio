@@ -188,6 +188,18 @@ export const AtlasDataEventSchemas = {
       }),
     ),
   }),
+  // Per-turn token + cache usage emitted from streamText.onFinish so the
+  // chat UI can render the usage badge live, without waiting for a page
+  // reload to read the persisted assistant-message metadata. The chunk
+  // is purely informational; the source of truth for the persisted
+  // turn lives on the assistant message's `metadata.usage` field, which
+  // the chat handler stamps just before append.
+  usage: z.object({
+    inputTokens: z.number().optional(),
+    outputTokens: z.number().optional(),
+    cacheReadTokens: z.number().optional(),
+    cacheWriteTokens: z.number().optional(),
+  }),
 };
 
 // ── Standalone event schemas with type discriminant (leapfrog #3) ───────────
@@ -267,6 +279,7 @@ export type AtlasDataEvents = {
   "skill-write": z.infer<(typeof AtlasDataEventSchemas)["skill-write"]>;
   "skill-rollback": z.infer<(typeof AtlasDataEventSchemas)["skill-rollback"]>;
   "skill-lint-warning": z.infer<(typeof AtlasDataEventSchemas)["skill-lint-warning"]>;
+  usage: z.infer<(typeof AtlasDataEventSchemas)["usage"]>;
 };
 
 /**
@@ -325,6 +338,31 @@ export async function validateAtlasUIMessages(messages: unknown[]): Promise<Atla
   });
 }
 
+/**
+ * Per-turn token + cache usage attached to assistant messages.
+ *
+ * `inputTokens` and `outputTokens` are the totals normalized by the
+ * Vercel AI SDK across all steps in a multi-tool-call turn. Cache fields
+ * surface the prompt-cache contribution from `inputTokenDetails`:
+ *
+ *   - `cacheReadTokens` is the count of input tokens served from a
+ *     cached prefix (charged at the discounted read rate).
+ *   - `cacheWriteTokens` is the count of input tokens written to the
+ *     cache (charged at the write rate; only the first request that
+ *     populates a given prefix pays this).
+ *
+ * Anthropic and OpenAI both populate cacheReadTokens; Anthropic also
+ * populates cacheWriteTokens. UI consumers INFER per-block cache_control
+ * attribution from cumulative counts and known block sizes — providers
+ * report a single read total, not per-breakpoint matches.
+ */
+const MessageUsageSchema = z.object({
+  inputTokens: z.number().optional(),
+  outputTokens: z.number().optional(),
+  cacheReadTokens: z.number().optional(),
+  cacheWriteTokens: z.number().optional(),
+});
+
 export const MessageMetadataSchema = z.object({
   agentId: z.string().optional(),
   // FSM job name that produced the message. Powers the Context tab's
@@ -341,6 +379,14 @@ export const MessageMetadataSchema = z.object({
   // them, otherwise providers may reject the payload.
   provider: z.string().optional(),
   modelId: z.string().optional(),
+  /**
+   * Token + cache usage for this assistant turn. Populated from the AI
+   * SDK's `result.totalUsage` (covers all streamText steps, not just
+   * the last). Cache fields are zero or absent when the provider didn't
+   * populate them. Used by chat-UI badges + the global usage page to
+   * surface per-turn and aggregate cost.
+   */
+  usage: MessageUsageSchema.optional(),
 });
 
 export type MessageMetadata = z.infer<typeof MessageMetadataSchema>;

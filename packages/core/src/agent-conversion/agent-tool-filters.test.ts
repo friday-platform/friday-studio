@@ -31,7 +31,7 @@ describe("filterWorkspaceAgentTools", () => {
   it("blocks platform management tools", () => {
     const tools = makeTools([
       "workspace_list",
-      "workspace_delete",
+      "delete_workspace",
       "session_describe",
       "workspace_agents_list",
       "system_version",
@@ -42,7 +42,7 @@ describe("filterWorkspaceAgentTools", () => {
     const result = filterWorkspaceAgentTools(tools, stubLogger);
 
     expect(result).not.toHaveProperty("workspace_list");
-    expect(result).not.toHaveProperty("workspace_delete");
+    expect(result).not.toHaveProperty("delete_workspace");
     expect(result).not.toHaveProperty("session_describe");
     expect(result).not.toHaveProperty("workspace_agents_list");
     expect(result).not.toHaveProperty("system_version");
@@ -55,7 +55,7 @@ describe("filterWorkspaceAgentTools", () => {
       "bash",
       "csv",
       "webfetch",
-      "artifacts_create",
+      "create_artifact",
       "convert_task_to_workspace",
       "workspace_signal_trigger",
       "request_human_input",
@@ -107,7 +107,7 @@ describe("allowlist/wrap-list invariant", () => {
   // wrap-list as the filter — silently strips fs_*, bash, csv from one or
   // more execution paths. Past regression: fsm-engine.ts aliased
   // PLATFORM_TOOL_ALLOWLIST = SCOPE_INJECTED_PLATFORM_TOOLS, breaking the
-  // canonical write-file-then-artifacts_create pattern in FSM LLM actions.
+  // canonical write-file-then-create_artifact pattern in FSM LLM actions.
   it("SCOPE_INJECTED is a strict subset of LLM_AGENT_ALLOWED", () => {
     for (const tool of SCOPE_INJECTED_PLATFORM_TOOLS) {
       expect(LLM_AGENT_ALLOWED_PLATFORM_TOOLS.has(tool)).toBe(true);
@@ -130,8 +130,8 @@ describe("allowlist/wrap-list invariant", () => {
   it("SCOPE_INJECTED holds tools that need workspace-id injection (incl. fs_write_file post-N5)", () => {
     // These tools are scope-bound to a workspace at the runtime layer; the
     // LLM never passes workspaceId.
-    expect(SCOPE_INJECTED_PLATFORM_TOOLS.has("memory_save")).toBe(true);
-    expect(SCOPE_INJECTED_PLATFORM_TOOLS.has("artifacts_create")).toBe(true);
+    expect(SCOPE_INJECTED_PLATFORM_TOOLS.has("save_memory_entry")).toBe(true);
+    expect(SCOPE_INJECTED_PLATFORM_TOOLS.has("create_artifact")).toBe(true);
     expect(SCOPE_INJECTED_PLATFORM_TOOLS.has("state_append")).toBe(true);
     expect(SCOPE_INJECTED_PLATFORM_TOOLS.has("webfetch")).toBe(true);
     // N5 (melodic-strolling-seal-pt3): fs_write_file now scope-bound so
@@ -160,10 +160,12 @@ describe("wrapPlatformToolsWithScope", () => {
 
   it("injects workspaceId on allowlisted platform tools", async () => {
     const capture: { args?: unknown } = {};
-    const tools: AtlasTools = { memory_save: makeExecutableTool("memory_save", capture) };
+    const tools: AtlasTools = {
+      save_memory_entry: makeExecutableTool("save_memory_entry", capture),
+    };
 
     const wrapped = wrapPlatformToolsWithScope(tools, { workspaceId: "young_kale" });
-    await wrapped.memory_save?.execute?.(
+    await wrapped.save_memory_entry?.execute?.(
       { memoryName: "notes", text: "hi" },
       { toolCallId: "t1", messages: [] },
     );
@@ -194,10 +196,12 @@ describe("wrapPlatformToolsWithScope", () => {
 
   it("overrides caller-supplied workspaceId (defense in depth)", async () => {
     const capture: { args?: unknown } = {};
-    const tools: AtlasTools = { memory_read: makeExecutableTool("memory_read", capture) };
+    const tools: AtlasTools = {
+      list_memory_entries: makeExecutableTool("list_memory_entries", capture),
+    };
 
     const wrapped = wrapPlatformToolsWithScope(tools, { workspaceId: "real_ws" });
-    await wrapped.memory_read?.execute?.(
+    await wrapped.list_memory_entries?.execute?.(
       { memoryName: "notes", workspaceId: "spoofed_ws" },
       { toolCallId: "t1", messages: [] },
     );
@@ -234,10 +238,10 @@ describe("wrapPlatformToolsWithScope", () => {
   });
 
   it("SCOPE_INJECTED_PLATFORM_TOOLS contains memory + artifacts + state + webfetch", () => {
-    expect(SCOPE_INJECTED_PLATFORM_TOOLS.has("memory_save")).toBe(true);
-    expect(SCOPE_INJECTED_PLATFORM_TOOLS.has("memory_read")).toBe(true);
-    expect(SCOPE_INJECTED_PLATFORM_TOOLS.has("memory_remove")).toBe(true);
-    expect(SCOPE_INJECTED_PLATFORM_TOOLS.has("artifacts_create")).toBe(true);
+    expect(SCOPE_INJECTED_PLATFORM_TOOLS.has("save_memory_entry")).toBe(true);
+    expect(SCOPE_INJECTED_PLATFORM_TOOLS.has("list_memory_entries")).toBe(true);
+    expect(SCOPE_INJECTED_PLATFORM_TOOLS.has("delete_memory_entry")).toBe(true);
+    expect(SCOPE_INJECTED_PLATFORM_TOOLS.has("create_artifact")).toBe(true);
     expect(SCOPE_INJECTED_PLATFORM_TOOLS.has("state_append")).toBe(true);
     expect(SCOPE_INJECTED_PLATFORM_TOOLS.has("webfetch")).toBe(true);
     // HITL tools read sessionId/actionId from the wrapper so Activity can
@@ -303,9 +307,11 @@ describe("wrapPlatformToolsWithScope", () => {
 
   it("omits sessionId/actionId/permissions fields when scope doesn't supply them", async () => {
     const capture: { args?: unknown } = {};
-    const tools: AtlasTools = { memory_save: makeExecutableTool("memory_save", capture) };
+    const tools: AtlasTools = {
+      save_memory_entry: makeExecutableTool("save_memory_entry", capture),
+    };
     const wrapped = wrapPlatformToolsWithScope(tools, { workspaceId: "ws_1" });
-    await wrapped.memory_save?.execute?.(
+    await wrapped.save_memory_entry?.execute?.(
       { memoryName: "notes", text: "hi" },
       { toolCallId: "t1", messages: [] },
     );

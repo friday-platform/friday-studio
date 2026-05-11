@@ -172,16 +172,16 @@ describe("isReadOnly — allowlist coverage", () => {
     ["web_search", true],
     ["request_tool_access", true],
     ["request_human_input", true],
-    ["memory_read", true],
-    ["artifacts/artifacts_get", true],
-    ["artifacts_get", true],
+    ["list_memory_entries", true],
+    ["artifacts/get_artifact", true],
+    ["get_artifact", true],
     ["parse_artifact", true],
     ["display_artifact", true],
     // Negative cases
     ["run_code", false],
     ["google-gmail/send_gmail_message", false],
     ["fs/fs_write_file", false],
-    ["memory_save", false],
+    ["save_memory_entry", false],
   ])("isReadOnly(%s) === %s", (name, expected) => {
     expect(isReadOnly(name)).toBe(expected);
   });
@@ -197,8 +197,8 @@ describe("MUTATING_VERB_RE — verb regex spot checks", () => {
     ["send_email", true],
     ["create_issue", true],
     ["create_", true],
-    ["memory_save", true],
-    ["memory_remove", true],
+    ["save_memory_entry", true],
+    ["delete_memory_entry", true],
     ["fs_write_file", true],
     ["batch_modify_gmail_message_labels", true],
     ["delete_message", true],
@@ -213,7 +213,7 @@ describe("MUTATING_VERB_RE — verb regex spot checks", () => {
     ["search_messages", false],
     ["view_file", false],
     ["fs_read_file", false],
-    ["memory_read", false],
+    ["list_memory_entries", false],
   ])("MUTATING_VERB_RE.test(%s) === %s", (name, expected) => {
     expect(MUTATING_VERB_RE.test(name)).toBe(expected);
   });

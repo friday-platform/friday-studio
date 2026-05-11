@@ -47,6 +47,33 @@ describe("extractLiftedArtifactIds", () => {
     ]);
   });
 
+  it("deduplicates the same artifact id across fields (first occurrence wins)", () => {
+    // Regression: tool results commonly mention the same artifact id in
+    // more than one field — once in the top-level summary, again in
+    // an `aiSummary.keyDetails[].url`, sometimes again in a nested
+    // content blob. The UI keys `{#each liftedArtifacts as ref
+    // (ref.artifactId)}` so a duplicate id crashes the render with
+    // `each_key_duplicate`. Order preserves first-occurrence so the
+    // visible artifact card still lines up with where the user expects.
+    const out = {
+      summary: `result lifted: ${marker("art_dup")}`,
+      aiSummary: {
+        keyDetails: [{ url: marker("art_dup", "application/pdf", "x", "y", 50) }],
+      },
+      details: marker("art_other"),
+      footer: marker("art_dup"),
+    };
+    expect(extractLiftedArtifactIds(out)).toEqual([
+      { artifactId: "art_dup" },
+      { artifactId: "art_other" },
+    ]);
+  });
+
+  it("deduplicates the same artifact id when it appears twice in one string", () => {
+    const out = `${marker("art_x")} mentioned again: ${marker("art_x")}`;
+    expect(extractLiftedArtifactIds(out)).toEqual([{ artifactId: "art_x" }]);
+  });
+
   it("ignores malformed marker shapes", () => {
     // No closing bracket — regex requires `]`.
     expect(extractLiftedArtifactIds("[attachment lifted to artifact bad ")).toEqual([]);
@@ -54,14 +81,20 @@ describe("extractLiftedArtifactIds", () => {
     expect(extractLiftedArtifactIds("[file lifted to artifact bad]")).toEqual([]);
   });
 
-  it("does not infinitely recurse on deeply nested objects", () => {
-    // 20 levels deep — beyond the depth cap of 16; the tail marker is dropped
-    // but the function still returns rather than blowing the stack.
+  it("respects the depth cap and drops markers below it", () => {
+    // 20 levels of wrap — beyond the depth cap of 16. The string
+    // (and its marker) sits at depth 20, so the walker bails before
+    // ever reaching it and the returned list is empty.
     let v: unknown = marker("art_deep");
     for (let i = 0; i < 20; i++) v = { wrap: v };
-    // Either an empty list (cap hit before string) or a single id — both are
-    // acceptable; the assertion is that the call returns synchronously.
-    const refs = extractLiftedArtifactIds(v);
-    expect(Array.isArray(refs)).toBe(true);
+    expect(extractLiftedArtifactIds(v)).toEqual([]);
+  });
+
+  it("extracts markers exactly at the depth cap", () => {
+    // 16 wraps puts the string at depth 16. The cap is inclusive
+    // (depth > 16 returns), so the marker should still be picked up.
+    let v: unknown = marker("art_at_cap");
+    for (let i = 0; i < 16; i++) v = { wrap: v };
+    expect(extractLiftedArtifactIds(v)).toEqual([{ artifactId: "art_at_cap" }]);
   });
 });

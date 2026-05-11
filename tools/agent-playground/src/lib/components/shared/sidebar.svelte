@@ -61,6 +61,7 @@
     { label: "Schedules", href: "/schedules", icon: IconLarge.Target },
     { label: "MCP Catalog", href: "/mcp", icon: IconLarge.Wrench },
     { label: "Skills", href: "/skills", icon: IconLarge.Compass },
+    { label: "Usage", href: "/usage", icon: IconLarge.Target },
     // { label: "Discover Spaces", href: "/discover", icon: IconLarge.OpenSquare },
     { label: "Settings", href: "/settings", icon: IconLarge.Gear },
   ];

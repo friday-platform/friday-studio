@@ -94,7 +94,7 @@ describe("ChatStorage (JetStream-backed)", () => {
     expect(globalRes.ok && globalRes.data).toBeNull();
   });
 
-  it("setSystemPromptContext is idempotent", async () => {
+  it("setSystemPromptContext overwrites on each call (latest wins)", async () => {
     const chatId = crypto.randomUUID();
     await createTestChat(chatId);
 
@@ -103,7 +103,7 @@ describe("ChatStorage (JetStream-backed)", () => {
 
     const get = await ChatStorage.getChat(chatId);
     if (get.ok && get.data) {
-      expect(get.data.systemPromptContext?.systemMessages).toEqual(["a", "b"]);
+      expect(get.data.systemPromptContext?.systemMessages).toEqual(["c"]);
     } else {
       throw new Error("expected chat");
     }

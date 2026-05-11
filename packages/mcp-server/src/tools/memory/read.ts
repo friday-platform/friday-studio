@@ -9,7 +9,7 @@ import { resolveStore } from "./resolve.ts";
 /** Register MCP tool for reading entries from a workspace memory store. */
 export function registerMemoryReadTool(server: McpServer, ctx: ToolContext): void {
   server.registerTool(
-    "memory_read",
+    "list_memory_entries",
     {
       description:
         "Read entries from a named memory store in a workspace, newest-first by default. " +
@@ -26,7 +26,7 @@ export function registerMemoryReadTool(server: McpServer, ctx: ToolContext): voi
       },
     },
     async ({ workspaceId, memoryName, since, limit }): Promise<CallToolResult> => {
-      ctx.logger.info("MCP memory_read called", { workspaceId, memoryName, since, limit });
+      ctx.logger.info("MCP list_memory_entries called", { workspaceId, memoryName, since, limit });
 
       const resolved = await resolveStore({
         daemonUrl: ctx.daemonUrl,
@@ -60,7 +60,11 @@ export function registerMemoryReadTool(server: McpServer, ctx: ToolContext): voi
           memoryName: effectiveMemoryName,
         });
       } catch (err) {
-        ctx.logger.error("memory_read fetch error", { workspaceId, memoryName, error: err });
+        ctx.logger.error("list_memory_entries fetch error", {
+          workspaceId,
+          memoryName,
+          error: err,
+        });
         return createErrorResponse("memory read failed: network error", stringifyError(err));
       }
     },

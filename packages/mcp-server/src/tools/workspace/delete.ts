@@ -11,7 +11,7 @@ import { createErrorResponse, createSuccessResponse } from "../utils.ts";
 
 export function registerWorkspaceDeleteTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
-    "workspace_delete",
+    "delete_workspace",
     {
       description:
         "Remove a workspace and its associated resources permanently. This action destroys the workspace environment, its configuration, and all associated data. Use with caution as this operation cannot be undone.",
@@ -28,7 +28,7 @@ export function registerWorkspaceDeleteTool(server: McpServer, ctx: ToolContext)
       },
     },
     async ({ workspaceId, force }) => {
-      ctx.logger.info("MCP workspace_delete called", { workspaceId, force });
+      ctx.logger.info("MCP delete_workspace called", { workspaceId, force });
 
       const result = await parseResult(
         client.workspace[":workspaceId"].$delete({

@@ -34,6 +34,11 @@ export {
   type PlatformModelsInput,
   type PlatformRole,
 } from "./src/platform-models.ts";
+export {
+  type CostBreakdown,
+  type TokenUsage,
+  tokensToCost,
+} from "./src/pricing.ts";
 export { pruneMessages } from "./src/prune-messages.ts";
 export { registry } from "./src/registry.ts";
 export {
@@ -43,6 +48,11 @@ export {
   type RegistryModelId,
   type RegistryProvider,
 } from "./src/registry-id.ts";
+export {
+  type ProvenanceSource,
+  provenanceForSignalProvider,
+  wrapRetrieved,
+} from "./src/retrieved-content.ts";
 export {
   type GenerateSessionTitleInput,
   generateSessionTitle,

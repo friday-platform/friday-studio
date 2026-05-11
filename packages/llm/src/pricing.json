@@ -1,0 +1,72 @@
+{
+  "_metadata": {
+    "snapshot_date": "2026-05-09",
+    "source": "https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json",
+    "note": "Hand-curated subset of LiteLLM's pricing JSON, scoped to the models the registry actively uses. Replace with the full upstream JSON when refresh is needed; the shape (per-model input/output/cache cost) matches LiteLLM so the upstream file drops in. All costs are USD per token.",
+    "fields": {
+      "input_cost_per_token": "Charged for fresh input tokens (no cache).",
+      "output_cost_per_token": "Charged for output tokens.",
+      "cache_creation_input_token_cost": "Charged once per cache write. Anthropic 5m default (1.25× base) — for 1h TTL multiply by 1.6 (~2× base).",
+      "cache_read_input_token_cost": "Charged for input tokens served from cache. Anthropic ~0.1× base; OpenAI ~0.5× base."
+    }
+  },
+  "claude-sonnet-4-6": {
+    "litellm_provider": "anthropic",
+    "input_cost_per_token": 0.000003,
+    "output_cost_per_token": 0.000015,
+    "cache_creation_input_token_cost": 0.00000375,
+    "cache_read_input_token_cost": 0.0000003
+  },
+  "claude-sonnet-4-7": {
+    "litellm_provider": "anthropic",
+    "input_cost_per_token": 0.000003,
+    "output_cost_per_token": 0.000015,
+    "cache_creation_input_token_cost": 0.00000375,
+    "cache_read_input_token_cost": 0.0000003
+  },
+  "claude-opus-4-5": {
+    "litellm_provider": "anthropic",
+    "input_cost_per_token": 0.000015,
+    "output_cost_per_token": 0.000075,
+    "cache_creation_input_token_cost": 0.00001875,
+    "cache_read_input_token_cost": 0.0000015
+  },
+  "claude-opus-4-7": {
+    "litellm_provider": "anthropic",
+    "input_cost_per_token": 0.000015,
+    "output_cost_per_token": 0.000075,
+    "cache_creation_input_token_cost": 0.00001875,
+    "cache_read_input_token_cost": 0.0000015
+  },
+  "claude-haiku-4-5": {
+    "litellm_provider": "anthropic",
+    "input_cost_per_token": 0.000001,
+    "output_cost_per_token": 0.000005,
+    "cache_creation_input_token_cost": 0.00000125,
+    "cache_read_input_token_cost": 0.0000001
+  },
+  "gpt-5": {
+    "litellm_provider": "openai",
+    "input_cost_per_token": 0.00000125,
+    "output_cost_per_token": 0.00001,
+    "cache_read_input_token_cost": 0.000000625
+  },
+  "gpt-5-mini": {
+    "litellm_provider": "openai",
+    "input_cost_per_token": 0.0000003,
+    "output_cost_per_token": 0.0000024,
+    "cache_read_input_token_cost": 0.00000015
+  },
+  "gpt-4o": {
+    "litellm_provider": "openai",
+    "input_cost_per_token": 0.0000025,
+    "output_cost_per_token": 0.00001,
+    "cache_read_input_token_cost": 0.00000125
+  },
+  "gpt-4o-mini": {
+    "litellm_provider": "openai",
+    "input_cost_per_token": 0.00000015,
+    "output_cost_per_token": 0.0000006,
+    "cache_read_input_token_cost": 0.000000075
+  }
+}

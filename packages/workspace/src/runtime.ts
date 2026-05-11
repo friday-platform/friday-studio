@@ -89,6 +89,7 @@ import {
   type GenerateSessionTitleInput,
   generateSessionTitle,
   type PlatformModels,
+  provenanceForSignalProvider,
 } from "@atlas/llm";
 import { logger } from "@atlas/logger";
 import { createMCPTools } from "@atlas/mcp";
@@ -755,7 +756,7 @@ export function findTerminalAction(definition: FSMDefinition): LLMAction | Agent
  *     strings also populate the `url` field.
  *   - Arrays surface as a count entry (`"N items"`) — I3: lets the
  *     supervisor answer "how many?" from `keyDetails` without
- *     `artifacts_get`. Empty arrays included (`"0 items"`) so consumers
+ *     `get_artifact`. Empty arrays included (`"0 items"`) so consumers
  *     can distinguish "no urgent" from "field missing".
  *   - Nested objects are skipped (too noisy for an at-a-glance summary).
  *
@@ -1012,9 +1013,9 @@ export async function persistFsmSessionArtifacts(args: {
  * artifact sweeper (`apps/atlasd/src/sweepers/artifacts-sweeper.ts`)
  * walks `expiresAt`-past-now ephemeral artifacts on a timer and either
  * deletes them or promotes them to durable based on inbound reference
- * signals (memory_save text, aiSummary URL). The grace window between
+ * signals (save_memory_entry text, aiSummary URL). The grace window between
  * `completedAt` and `expiresAt` is what gives those signals time to
- * land — the chat path's `memory_save` callbacks fire after
+ * land — the chat path's `save_memory_entry` callbacks fire after
  * session-complete in some shapes.
  *
  * Memory entries keep the synchronous-forget behavior: notes are
@@ -2551,6 +2552,16 @@ export class WorkspaceRuntime {
     const agentConfig = this.config.workspace.agents?.[agentId];
     const agentCustomConfig = extractAgentConfig(agentConfig);
 
+    // Resolve signal provenance from the workspace's signal config so
+    // signal payloads are tagged at the right trust tier (HTTP webhook
+    // bodies are caller-controlled → "external"; chat communicator
+    // payloads are user-typed → "user-authored"; cron triggers are
+    // internal → "system-config"). The model's
+    // `<retrieved_content_hygiene>` rule (in workspace-chat prompt.txt)
+    // uses this to refuse instruction-execution from data tags.
+    const signalConfig = this.config.workspace.signals?.[signal.type];
+    const signalProvenance = provenanceForSignalProvider(signalConfig?.provider);
+
     const context = await buildAgentPrompt(
       agentId,
       fsmContext,
@@ -2558,6 +2569,7 @@ export class WorkspaceRuntime {
       signal._context?.abortSignal,
       this.workspace.id,
       ArtifactStorage,
+      { signalProvenance },
     );
 
     const prompt = composeAgentPrompt(action, agentConfig, fsmContext.input, context);
@@ -2710,6 +2722,7 @@ export class WorkspaceRuntime {
             : await this.orchestrator.executeAgent(runtimeAgentId, finalPrompt, {
                 sessionId,
                 workspaceId,
+                userId: typeof signal.data?.userId === "string" ? signal.data.userId : undefined,
                 streamId,
                 datetime,
                 memoryContextKey: mountNames.length > 0 ? ctxKey : undefined,
@@ -2929,7 +2942,7 @@ export class WorkspaceRuntime {
     // Filter platform tools to LLM_AGENT_ALLOWED — same surface workspace LLM
     // agents see (memory, artifacts, state, fs, csv, bash, webfetch,
     // workspace_signal_trigger, convert_task_to_workspace). Workspace-management
-    // tools (workspace_delete, session_describe, etc.) stay blocked.
+    // tools (delete_workspace, session_describe, etc.) stay blocked.
     // External MCP server tools pass through unfiltered.
     const filteredTools: typeof rawMcpTools = {};
     for (const [name, tool] of Object.entries(rawMcpTools)) {
