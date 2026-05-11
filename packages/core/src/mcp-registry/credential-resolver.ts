@@ -182,6 +182,10 @@ async function fetchDefaultCredential(provider: string, logger: Logger): Promise
     throw new LinkCredentialExpiredError(credential.id, "refresh_failed");
   }
 
+  if (status === "refresh_unavailable") {
+    throw new LinkCredentialUnavailableError({ credentialId: credential.id });
+  }
+
   return credential;
 }
 
@@ -221,6 +225,10 @@ export async function fetchLinkCredential(
 
   if (status === "refresh_failed") {
     throw new LinkCredentialExpiredError(credentialId, "refresh_failed");
+  }
+
+  if (status === "refresh_unavailable") {
+    throw new LinkCredentialUnavailableError({ credentialId });
   }
 
   return credential;

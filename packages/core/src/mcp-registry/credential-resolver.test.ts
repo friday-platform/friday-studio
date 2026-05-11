@@ -61,12 +61,15 @@ type MockFullCredential = {
   secret: Record<string, unknown>;
 };
 
+type MockStatus = "ready" | "expired_no_refresh" | "refresh_failed" | "refresh_unavailable";
+
 /** Default credential lookup by provider (keyed by provider name) */
-type MockDefaultCredentialEntry = {
-  credential: MockFullCredential;
-  status?: "ready" | "expired_no_refresh" | "refresh_failed";
-};
+type MockDefaultCredentialEntry = { credential: MockFullCredential; status?: MockStatus };
 type MockDefaultCredentials = Record<string, MockFullCredential | MockDefaultCredentialEntry>;
+
+/** Per-id credential lookup that can carry a non-"ready" status. */
+type MockFullCredentialEntry = { credential: MockFullCredential; status?: MockStatus };
+type MockFullCredentials = Record<string, MockFullCredential | MockFullCredentialEntry>;
 
 /**
  * Create mock fetch that handles summary, credential-by-id, and default credential endpoints.
@@ -75,7 +78,7 @@ type MockDefaultCredentials = Record<string, MockFullCredential | MockDefaultCre
 function mockLinkFetch(
   provider: string,
   summaryCredentials: MockCredential[],
-  fullCredentials: Record<string, MockFullCredential>,
+  fullCredentials: MockFullCredentials,
   defaultCredentials?: MockDefaultCredentials,
 ): typeof fetch {
   const summaryUrl = `${LINK_BASE_URL}/v1/summary?provider=${provider}`;
@@ -124,9 +127,9 @@ function mockLinkFetch(
     // Handle internal credential-by-id endpoint
     if (requestUrl.startsWith(internalUrlPrefix)) {
       const credId = requestUrl.slice(internalUrlPrefix.length);
-      const credential = fullCredentials[credId];
+      const entry = fullCredentials[credId];
 
-      if (!credential) {
+      if (!entry) {
         return Promise.resolve(
           new Response(JSON.stringify({ error: "Not found" }), {
             status: 404,
@@ -135,8 +138,11 @@ function mockLinkFetch(
         );
       }
 
+      const credential = "credential" in entry ? entry.credential : entry;
+      const status = "credential" in entry ? (entry.status ?? "ready") : "ready";
+
       return Promise.resolve(
-        new Response(JSON.stringify({ credential, status: "valid" }), {
+        new Response(JSON.stringify({ credential, status }), {
           status: 200,
           headers: { "Content-Type": "application/json" },
         }),
@@ -362,6 +368,58 @@ describe("resolveEnvValues with provider-only ref", () => {
     const error = await resolveEnvValues(env, logger).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(LinkCredentialExpiredError);
     expect((error as LinkCredentialExpiredError).credentialId).toEqual("cred_refresh_fail");
+  });
+
+  it("throws LinkCredentialUnavailableError when default credential is refresh_unavailable", async () => {
+    globalThis.fetch = mockLinkFetch(
+      "google-calendar",
+      [],
+      {},
+      {
+        "google-calendar": {
+          credential: {
+            id: "cred_transient",
+            provider: "google-calendar",
+            type: "oauth",
+            secret: { access_token: "still-valid-token" },
+          },
+          status: "refresh_unavailable",
+        },
+      },
+    );
+
+    const env = {
+      GOOGLE_CALENDAR_TOKEN: {
+        from: "link" as const,
+        provider: "google-calendar",
+        key: "access_token",
+      },
+    };
+
+    const error = await resolveEnvValues(env, logger).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(LinkCredentialUnavailableError);
+    expect((error as LinkCredentialUnavailableError).credentialId).toEqual("cred_transient");
+  });
+
+  it("throws LinkCredentialUnavailableError when explicit id credential is refresh_unavailable", async () => {
+    const credId = "cred_id_transient";
+    globalThis.fetch = mockLinkFetch("any-provider", [], {
+      [credId]: {
+        credential: {
+          id: credId,
+          provider: "google-drive",
+          type: "oauth",
+          secret: { access_token: "still-valid-token" },
+        },
+        status: "refresh_unavailable",
+      },
+    });
+
+    const env = { DRIVE_TOKEN: { from: "link" as const, id: credId, key: "access_token" } };
+
+    const error = await resolveEnvValues(env, logger).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(LinkCredentialUnavailableError);
+    expect((error as LinkCredentialUnavailableError).credentialId).toEqual(credId);
   });
 
   it("throws when default credential is missing requested secret key", async () => {
