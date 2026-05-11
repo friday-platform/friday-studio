@@ -37,6 +37,7 @@ import {
 import "./scenarios/p1.ts";
 import "./scenarios/p2.ts";
 import "./scenarios/p3-core.ts";
+import "./scenarios/p3-edge.ts";
 
 export type {
   Scenario,
