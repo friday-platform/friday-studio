@@ -10,6 +10,7 @@ import { z } from "zod";
 import { AppInstallError } from "../app-install/errors.ts";
 import { factory } from "../factory.ts";
 import * as oauth from "../oauth/client.ts";
+import { refreshDelegatedTokenClassified } from "../oauth/delegated.ts";
 import { discoverAuthorizationServer } from "../oauth/discovery.ts";
 import type { OAuthService } from "../oauth/service.ts";
 import { buildStaticAuthServer, getStaticClientAuth } from "../oauth/static.ts";
@@ -358,9 +359,13 @@ export function createCredentialsRoutes(storage: StorageAdapter, _oauthService: 
 /** Response shape for internal credential endpoints */
 type CredentialResponse = {
   credential: Credential;
-  status: "ready" | "refreshed" | "expired_no_refresh" | "refresh_failed";
+  status: "ready" | "refreshed" | "expired_no_refresh" | "refresh_failed" | "refresh_unavailable";
   error?: string;
 };
+
+/** Stale-token threshold: if access_token has < this many seconds left and
+ * refresh failed transiently, callers can't safely use it. v8 decision 7. */
+const STALE_TOKEN_THRESHOLD_SECONDS = 60;
 
 /** Resolve a credential with proactive OAuth token refresh. */
 async function resolveCredentialWithRefresh(
@@ -430,6 +435,65 @@ async function resolveCredentialWithRefresh(
         credential,
         status: "refresh_failed",
         error: "Credential does not match OAuth schema",
+      };
+    }
+
+    // Delegated mode: use the classifier so we can distinguish a provably
+    // revoked refresh_token (token_dead → refresh_failed) from a transient
+    // upstream issue (transient → refresh_unavailable / silent fallback).
+    if (
+      provider?.type === "oauth" &&
+      provider.oauthConfig.mode === "delegated" &&
+      oauthCredResult.data.secret.refresh_token
+    ) {
+      const outcome = await refreshDelegatedTokenClassified(
+        provider.oauthConfig,
+        oauthCredResult.data.secret.refresh_token,
+      );
+
+      if (outcome.kind === "success") {
+        const updatedSecret = {
+          ...oauthCredResult.data.secret,
+          access_token: outcome.tokens.access_token,
+          refresh_token: outcome.tokens.refresh_token,
+          token_type: outcome.tokens.token_type,
+          expires_at: outcome.tokens.expires_at,
+          granted_scopes: outcome.tokens.scope
+            ? outcome.tokens.scope.split(" ")
+            : oauthCredResult.data.secret.granted_scopes,
+        };
+        const credentialInput: CredentialInput = {
+          type: credential.type,
+          provider: credential.provider,
+          userIdentifier: credential.userIdentifier,
+          label: credential.label,
+          secret: updatedSecret,
+        };
+        const metadata = await storage.update(credential.id, credentialInput, userId);
+        return {
+          credential: { ...credential, secret: updatedSecret, metadata },
+          status: "refreshed",
+        };
+      }
+
+      if (outcome.kind === "token_dead") {
+        return { credential, status: "refresh_failed" };
+      }
+
+      const remainingSeconds = expiresAt ? expiresAt - now : 0;
+      if (remainingSeconds >= STALE_TOKEN_THRESHOLD_SECONDS) {
+        logger.info("oauth_refresh.silent_fallback", {
+          credentialId: credential.id,
+          provider: credential.provider,
+          remainingSeconds,
+          reason: outcome.reason,
+        });
+        return { credential, status: "ready" };
+      }
+      return {
+        credential,
+        status: "refresh_unavailable",
+        error: `transient refresh failure (${outcome.reason}): ${outcome.detail}`,
       };
     }
 
