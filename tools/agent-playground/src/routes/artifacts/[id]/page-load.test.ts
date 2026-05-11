@@ -11,7 +11,7 @@ import { load } from "./+page.ts";
 
 type FetchImpl = (url: string | URL) => Promise<Response>;
 
-function mockMetaFetch(mimeType: string | undefined): FetchImpl {
+function mockMetaFetch(mimeType: string | undefined, contents?: string): FetchImpl {
   return vi.fn(async (url) => {
     const u = typeof url === "string" ? url : url.toString();
     if (!u.includes("/artifacts/")) throw new Error(`unhandled: ${u}`);
@@ -24,6 +24,7 @@ function mockMetaFetch(mimeType: string | undefined): FetchImpl {
           title: "t",
           data: mimeType ? { mimeType, originalName: "t" } : { originalName: "t" },
         },
+        ...(contents !== undefined ? { contents } : {}),
       }),
     } as unknown as Response;
   }) as FetchImpl;
@@ -45,10 +46,25 @@ async function captureRedirect(artifactId: string, fetch: FetchImpl): Promise<Re
 }
 
 describe("/artifacts/[id] dispatcher", () => {
-  it("redirects text/markdown to the /markdown viewer", async () => {
-    const err = await captureRedirect("art_md", mockMetaFetch("text/markdown"));
+  it("redirects text/markdown with prose to the /markdown viewer", async () => {
+    const md = "# Title\n\nSome real prose here describing things.\n\n| a | b |\n| --- | --- |\n| 1 | 2 |";
+    const err = await captureRedirect("art_md", mockMetaFetch("text/markdown", md));
     expect(err.status).toBe(307);
     expect(err.location).toBe("/artifacts/art_md/markdown");
+  });
+
+  it("redirects text/markdown that is just a heading + table to the /table viewer", async () => {
+    const md = "# Comparison\n\n| GoT | LotR |\n| --- | --- |\n| Jon | Aragorn |";
+    const err = await captureRedirect("art_md_table", mockMetaFetch("text/markdown", md));
+    expect(err.status).toBe(307);
+    expect(err.location).toBe("/artifacts/art_md_table/table");
+  });
+
+  it("redirects text/markdown without contents (legacy/unfetched) to /markdown by default", async () => {
+    // No contents = isPureMarkdownTable returns false (no segments) = /markdown
+    const err = await captureRedirect("art_md_no_contents", mockMetaFetch("text/markdown"));
+    expect(err.status).toBe(307);
+    expect(err.location).toBe("/artifacts/art_md_no_contents/markdown");
   });
 
   it("redirects text/csv to the /table viewer", async () => {
@@ -72,7 +88,7 @@ describe("/artifacts/[id] dispatcher", () => {
   it("strips charset params before deciding the route", async () => {
     const err = await captureRedirect(
       "art_md_charset",
-      mockMetaFetch("text/markdown; charset=utf-8"),
+      mockMetaFetch("text/markdown; charset=utf-8", "# heading\n\nReal prose."),
     );
     expect(err.status).toBe(307);
     expect(err.location).toBe("/artifacts/art_md_charset/markdown");

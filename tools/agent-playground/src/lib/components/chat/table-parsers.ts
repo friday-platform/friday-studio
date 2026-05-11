@@ -359,6 +359,33 @@ export function splitMarkdownByTables(md: string): MarkdownSegment[] {
   return segments;
 }
 
+/**
+ * Disambiguates "markdown that's basically a table" from "markdown that
+ * happens to contain a table." True when the document has exactly one
+ * GFM table and the only non-table content is headings (no paragraphs,
+ * no lists, no quotes). Used by the artifact-route dispatcher to send
+ * table-shaped markdown to the dedicated /table viewer instead of the
+ * /markdown prose renderer.
+ *
+ * Returns true for "# Title\n\n| a | b |\n| - | - |\n| 1 | 2 |".
+ * Returns false for a whitepaper that contains a table among prose,
+ * two tables, or a table with a paragraph caption ("This table shows...").
+ */
+export function isPureMarkdownTable(md: string): boolean {
+  const segments = splitMarkdownByTables(md);
+  const tables = segments.filter((s) => s.kind === "table");
+  if (tables.length !== 1) return false;
+  for (const seg of segments) {
+    if (seg.kind !== "prose") continue;
+    const meaningful = seg.markdown
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0 && !l.startsWith("#"));
+    if (meaningful.length > 0) return false;
+  }
+  return true;
+}
+
 function isPipeLine(line: string): boolean {
   const t = line.trim();
   return t.startsWith("|") && t.endsWith("|") && t.length >= 3;

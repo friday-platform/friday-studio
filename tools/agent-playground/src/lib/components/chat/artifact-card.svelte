@@ -216,14 +216,16 @@
       : undefined,
   );
 
-  // text/markdown gets the same direct-link treatment as tabular mimes —
-  // the dispatcher redirects there too, but linking from the Open button
-  // skips the round-trip. Without this, Open falls through to `serveUrl`
-  // (the raw /content endpoint) which the daemon serves with attachment
-  // disposition — i.e. a download, not a viewer.
-  const markdownRouteUrl = $derived(
+  // text/markdown routes through the bare `/artifacts/<id>` dispatcher
+  // (one redirect hop) so the same disambiguation lives in one place:
+  // table-shaped markdown (heading + one table) lands on /table, prose
+  // lands on /markdown. Linking direct to /markdown would bypass that
+  // and ship every md to the prose viewer — wrong for table-only
+  // artifacts. Without this branch, Open would fall through to
+  // `serveUrl` (the raw /content endpoint, served as a download).
+  const markdownDispatchUrl = $derived(
     baseMime === "text/markdown" && exportCtx === undefined
-      ? `/artifacts/${encodeURIComponent(artifactId)}/markdown`
+      ? `/artifacts/${encodeURIComponent(artifactId)}`
       : undefined,
   );
 
@@ -337,13 +339,13 @@
           >
             Open
           </a>
-        {:else if markdownRouteUrl}
-          <!-- Markdown artifacts open in the dedicated /markdown
-               viewer (prose render + inline TableView for embedded
-               GFM tables) in a new tab. -->
+        {:else if markdownDispatchUrl}
+          <!-- Markdown artifacts go through the bare /artifacts/<id>
+               dispatcher so the table-vs-prose disambiguation
+               (isPureMarkdownTable) lives in one place. -->
           <a
             class="open-btn"
-            href={markdownRouteUrl}
+            href={markdownDispatchUrl}
             target="_blank"
             rel="noopener noreferrer"
             title="Open markdown in new tab"

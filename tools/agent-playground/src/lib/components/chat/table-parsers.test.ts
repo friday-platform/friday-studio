@@ -3,6 +3,7 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  isPureMarkdownTable,
   parseDelimited,
   parseHTML,
   parseJSON,
@@ -334,6 +335,81 @@ describe("splitMarkdownByTables", () => {
     const md = ["| only |", "| --- |", "| value |"].join("\n");
     const segs = splitMarkdownByTables(md);
     expect(segs.every((s) => s.kind === "prose")).toBe(true);
+  });
+});
+
+describe("isPureMarkdownTable", () => {
+  it("true when the document is just a table", () => {
+    const md = ["| a | b |", "| --- | --- |", "| 1 | 2 |"].join("\n");
+    expect(isPureMarkdownTable(md)).toBe(true);
+  });
+
+  it("true when the only prose is headings around the table", () => {
+    const md = [
+      "# Character Comparison",
+      "",
+      "| GoT | LotR |",
+      "| --- | --- |",
+      "| Jon | Aragorn |",
+      "| Tyrion | Bilbo |",
+    ].join("\n");
+    expect(isPureMarkdownTable(md)).toBe(true);
+  });
+
+  it("true with multiple heading levels and the table at the end", () => {
+    const md = [
+      "# Title",
+      "",
+      "## Subtitle",
+      "",
+      "| a | b |",
+      "| --- | --- |",
+      "| 1 | 2 |",
+    ].join("\n");
+    expect(isPureMarkdownTable(md)).toBe(true);
+  });
+
+  it("false when there is a paragraph anywhere", () => {
+    const md = [
+      "# Title",
+      "",
+      "This table compares two things.",
+      "",
+      "| a | b |",
+      "| --- | --- |",
+      "| 1 | 2 |",
+    ].join("\n");
+    expect(isPureMarkdownTable(md)).toBe(false);
+  });
+
+  it("false when there are two tables", () => {
+    const md = [
+      "| a | b |",
+      "| --- | --- |",
+      "| 1 | 2 |",
+      "",
+      "| x | y |",
+      "| --- | --- |",
+      "| 9 | 8 |",
+    ].join("\n");
+    expect(isPureMarkdownTable(md)).toBe(false);
+  });
+
+  it("false when there is no table at all", () => {
+    expect(isPureMarkdownTable("# Just a heading\n\nAnd some prose.")).toBe(false);
+  });
+
+  it("false when there is a list around the table (lists aren't headings)", () => {
+    const md = [
+      "# Title",
+      "",
+      "- item one",
+      "",
+      "| a | b |",
+      "| --- | --- |",
+      "| 1 | 2 |",
+    ].join("\n");
+    expect(isPureMarkdownTable(md)).toBe(false);
   });
 });
 

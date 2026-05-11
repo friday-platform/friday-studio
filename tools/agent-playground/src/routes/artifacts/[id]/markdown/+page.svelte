@@ -208,8 +208,12 @@
     overflow: auto;
   }
   .md-article {
+    /* Hug MarkdownRendered's own 80ch prose cap so margin-auto actually
+       centers the visible text, not just the wider article container.
+       Tables inside articles use their own overflow:auto for horizontal
+       scroll, so a narrow article doesn't crowd them. */
     margin: 0 auto;
-    max-inline-size: 72rem;
+    max-inline-size: calc(80ch + 2 * var(--size-5));
     padding-block: var(--size-6);
     padding-inline: var(--size-5);
   }
