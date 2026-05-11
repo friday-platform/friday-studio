@@ -123,6 +123,7 @@ import {
 import type { CodeAgentExecutorOptions } from "./agent-executor-utils.ts";
 import { createBashTool } from "./bash-tool.ts";
 import type { MemoryMount } from "./config-schema.ts";
+import { WORKSPACE_DIRECT_CHAT_SIGNAL_TYPE } from "./constants.ts";
 import { compileExecutionToFsm, ExecutionCompileError } from "./execution-to-fsm.ts";
 import { assertGlobalWriteAllowed, isGlobalWriteAttempt } from "./global-scope-guard.ts";
 import { MountSourceNotFoundError } from "./mount-errors.ts";
@@ -1329,11 +1330,11 @@ export class WorkspaceRuntime {
 
     const configJobs = this.config.workspace.jobs || {};
 
-    // Reserved signal name validation — "chat" is system-owned
+    // Reserved signal name validation — the direct-chat signal is system-owned
     const configSignals = this.config.workspace.signals || {};
-    if (configSignals.chat) {
+    if (configSignals[WORKSPACE_DIRECT_CHAT_SIGNAL_TYPE]) {
       throw new Error(
-        `Workspace "${this.workspace.id}" defines a "chat" signal, but "chat" is reserved for workspace direct chat. Rename your signal.`,
+        `Workspace "${this.workspace.id}" defines a "${WORKSPACE_DIRECT_CHAT_SIGNAL_TYPE}" signal, but "${WORKSPACE_DIRECT_CHAT_SIGNAL_TYPE}" is reserved for workspace direct chat. Rename your signal.`,
       );
     }
 
@@ -1347,7 +1348,7 @@ export class WorkspaceRuntime {
         id: `${this.workspace.id}-chat`,
         initial: "idle",
         states: {
-          idle: { on: { chat: { target: "processing" } } },
+          idle: { on: { [WORKSPACE_DIRECT_CHAT_SIGNAL_TYPE]: { target: "processing" } } },
           processing: {
             entry: [
               { type: "agent", agentId: "workspace-chat", outputTo: "chat-result" },
@@ -1361,7 +1362,7 @@ export class WorkspaceRuntime {
       this.jobs.set("handle-chat", {
         name: "handle-chat",
         fsmPath: "",
-        signals: ["chat"],
+        signals: [WORKSPACE_DIRECT_CHAT_SIGNAL_TYPE],
         fsmDefinition: chatFSM,
         description: "Direct chat with workspace",
       });
