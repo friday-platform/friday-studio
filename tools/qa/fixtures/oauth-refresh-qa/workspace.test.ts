@@ -35,4 +35,13 @@ describe("oauth-refresh-qa fixture", () => {
     expect(cfg.jobs?.["calendar-cron-check"]).toBeDefined();
     expect(cfg.jobs?.["gmail-webhook-check"]).toBeDefined();
   });
+
+  it("overrides handle-chat with a sub-minute timeout for P3-17", () => {
+    if (!result.success) throw new Error("parse failed (see prior test)");
+    const cfg = result.data;
+    const chatJob = cfg.jobs?.["handle-chat"];
+    expect(chatJob).toBeDefined();
+    expect(chatJob?.triggers?.[0]?.signal).toBe("chat");
+    expect(chatJob?.config?.timeout).toBe("60s");
+  });
 });

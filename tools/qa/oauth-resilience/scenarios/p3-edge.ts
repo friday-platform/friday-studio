@@ -441,17 +441,12 @@ register({
   id: "P3-17",
   description: "Indefinite Retry loop bounded by jobTimeoutMs — sessionAbortSignal terminates wait",
   run: async (ctx) => {
-    // The end-to-end live observable is "session CANCELLED after jobTimeoutMs
-    // elapses while the user keeps clicking Retry". That requires:
-    //   (a) a chat job with a sub-minute jobTimeoutMs in the fixture, and
-    //   (b) automated repeated Retry clicks against successive elicitations.
-    // The current QA fixture's chat agent uses default timeouts (no
-    // overridable jobTimeoutMs for direct chat); reproducing this end-to-end
-    // means either patching the fixture or simulating via signal trigger.
-    //
-    // The Vitest case below proves the wrapper's abort path — the same
-    // primitive `sessionAbortSignal` that the runtime feeds the wrapper from
-    // `jobTimeoutMs`. The browser drive is a follow-up.
+    // Unit pre-checks seal the wrapper's abort primitive: `sessionAbortSignal`
+    // rejects the wait synchronously (pre-aborted) or mid-poll. The runtime
+    // wires this signal from the chat job's `jobTimeoutMs` — so when the
+    // chat job's 60s timeout elapses while we keep clicking Retry on
+    // successive transient elicitations, the wait rejects with AbortError and
+    // the session row lands as `cancelled`.
     await assertUnitPasses(
       "P3-17",
       "packages/mcp/src/create-mcp-tools-with-retry.test.ts",
@@ -463,11 +458,111 @@ register({
       "rejects immediately when sessionAbortSignal is pre-aborted",
     );
 
-    // Best-effort live probe: confirm the daemon is running so this scenario
-    // doesn't silently no-op when the live stack is offline.
     await liveEnvProbe(ctx);
+    await ensureWorkspaceRegistered(ctx.daemon.baseUrl);
+
+    // Snapshot existing sessions for this workspace so we can distinguish the
+    // session this scenario creates from any prior runs sharing the daemon.
+    const sessionsBefore = await listWorkspaceSessions(ctx.daemon.baseUrl, WORKSPACE_ID);
+    const sessionIdsBefore = new Set(sessionsBefore.map((s) => s.sessionId));
+
+    // Force every refresh to bucket transient + tamper the credential so the
+    // very first chat tool call needs a refresh.
+    await tamperCredential(
+      "google-calendar",
+      { expires_at: Math.floor(Date.now() / 1000) - 60 },
+      { linkBaseUrl: linkBaseUrlFromDaemon(ctx) },
+    );
+    await mockControl(ctx.mock, { mode: "http_500_text", resetCounts: true });
+
+    await navigateToChat(ctx.browser, WORKSPACE_ID);
+    await sendMessage(ctx.browser, "what's on my calendar?");
+
+    // Loop: click Retry each time a chip surfaces. The chat job's 60s
+    // jobTimeoutMs caps the whole run — sessionAbortSignal fires at the
+    // boundary and the wrapper's wait rejects. Generous deadline (90s) to
+    // absorb startup latency before the first chip + the 500ms inter-retry
+    // wait inside the classifier.
+    const driveDeadline = Date.now() + 90_000;
+    let retryClicks = 0;
+    while (Date.now() < driveDeadline) {
+      const chipPresent = await ctx.browser.evaluate<boolean>(
+        `Boolean(document.querySelector('[data-testid="auth-refresh-inline-card"]'))`,
+      );
+      if (chipPresent) {
+        await ctx.browser
+          .evaluate<void>(`
+            (() => {
+              const btn = document.querySelector('[data-testid="elicitation-auth-refresh-retry"]');
+              if (btn) btn.click();
+            })();
+          `)
+          .catch(() => {});
+        retryClicks += 1;
+      }
+      // Check whether the session has reached its terminal state. The chat
+      // job's `cancelled` outcome ends the loop early; if the daemon decides
+      // FAILED before we'd expect (e.g. credential reclassified), surface
+      // that distinctly.
+      const sessions = await listWorkspaceSessions(ctx.daemon.baseUrl, WORKSPACE_ID).catch(
+        () => [],
+      );
+      const fresh = sessions.find((s) => !sessionIdsBefore.has(s.sessionId));
+      if (fresh && fresh.status === "cancelled") {
+        if (retryClicks < 1) {
+          throw new Error(
+            "[ui] P3-17: session reached cancelled without a single chip click — abort path is firing on something other than the indefinite-retry loop.",
+          );
+        }
+        return;
+      }
+      if (fresh && (fresh.status === "failed" || fresh.status === "completed")) {
+        throw new Error(
+          `[ui] P3-17: expected session to end CANCELLED but got "${fresh.status}" after ${retryClicks} Retry clicks. The chat job's jobTimeoutMs should drive the wrapper's sessionAbortSignal, not a terminal failure inside the agent.`,
+        );
+      }
+      await new Promise<void>((r) => setTimeout(r, 750));
+    }
+
+    throw new Error(
+      `[ui] P3-17: session did not transition to cancelled within 90s (clicked Retry ${retryClicks} times). Check that the QA workspace fixture's handle-chat job carries config.timeout = "60s" and that the runtime is wiring jobTimeoutMs into the wrapper's interactiveCtx.`,
+    );
   },
 });
+
+interface SessionRow {
+  sessionId: string;
+  status: string;
+  workspaceId?: string;
+}
+
+async function listWorkspaceSessions(
+  daemonBaseUrl: string,
+  workspaceId: string,
+): Promise<SessionRow[]> {
+  const url = new URL(`${daemonBaseUrl}/api/sessions`);
+  url.searchParams.set("workspaceId", workspaceId);
+  const res = await fetch(url.toString());
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`[ui] GET /api/sessions?workspaceId=${workspaceId}: ${res.status} ${text}`);
+  }
+  const body = await res.json();
+  const sessions = isPlainRecord(body) && Array.isArray(body.sessions) ? body.sessions : [];
+  const out: SessionRow[] = [];
+  for (const raw of sessions) {
+    if (!isPlainRecord(raw)) continue;
+    const sessionId = raw.sessionId;
+    const status = raw.status;
+    if (typeof sessionId !== "string" || typeof status !== "string") continue;
+    out.push({
+      sessionId,
+      status,
+      ...(typeof raw.workspaceId === "string" ? { workspaceId: raw.workspaceId } : {}),
+    });
+  }
+  return out;
+}
 
 // ──────────────────────────────────────────────────────────────────────────
 // P3-18 — Second message in same chat session re-attempts refresh

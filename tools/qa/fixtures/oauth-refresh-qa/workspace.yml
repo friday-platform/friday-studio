@@ -60,6 +60,37 @@ signals:
       path: /oauth-refresh-qa/webhook
 
 jobs:
+  # Overrides the runtime's auto-injected `handle-chat` job so we can attach a
+  # sub-minute jobTimeoutMs for P3-17's "indefinite Retry loop bounded by
+  # jobTimeoutMs" scenario. The FSM mirrors the runtime auto-injection
+  # (`packages/workspace/src/runtime.ts` ~L1378) exactly — same `chat` signal,
+  # same `workspace-chat` agent, same emit/transition pair — so direct chat
+  # behaves identically aside from the wall-clock bound. The 60s value lines
+  # up with qa.md's P3-17 setup (`jobTimeoutMs: 60_000`) while still giving
+  # P3-14 (15s × 2 hang retries → chip at ~30s) ~30s of post-chip room.
+  handle-chat:
+    description: "Direct chat job with a 60s timeout (P3-17 abort drive). Otherwise identical to the runtime's auto-injected handle-chat."
+    triggers:
+      - signal: chat
+    config:
+      timeout: "60s"
+    fsm:
+      id: oauth-refresh-qa-chat
+      initial: idle
+      states:
+        idle:
+          on:
+            chat: { target: processing }
+        processing:
+          entry:
+            - type: agent
+              agentId: workspace-chat
+              outputTo: chat-result
+            - type: emit
+              event: chat_complete
+          on:
+            chat_complete: { target: idle }
+
   calendar-cron-check:
     description: "Cron-triggered job: read calendars via google-calendar and print the result. Exercises the non-interactive (sessionInteractive=false) refresh path."
     triggers:
