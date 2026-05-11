@@ -56,6 +56,18 @@ export async function getCurrentUserId(): Promise<string | undefined> {
   return result.ok ? (result.data?.id ?? undefined) : undefined;
 }
 
+/**
+ * Clear the cached userId so the next `getCurrentUserId()` reads fresh
+ * from FRIDAY_KEY. Daemon startup calls this after rewriting the
+ * local-mode JWT to embed the canonical UserStorage nanoid — without
+ * an invalidation, the cache could capture the pre-rewrite placeholder
+ * (`local-user`) for the rest of the daemon's lifetime.
+ */
+export function invalidateUserIdCache(): void {
+  userIdResolved = false;
+  cachedUserId = null;
+}
+
 function extractFromJwt(atlasKey: string | undefined): Result<UserIdentity | null, string> {
   if (!atlasKey) return success(null);
 

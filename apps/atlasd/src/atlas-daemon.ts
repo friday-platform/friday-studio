@@ -1,3 +1,4 @@
+import { Buffer } from "node:buffer";
 import { stat } from "node:fs/promises";
 import { join } from "node:path";
 import process, { env } from "node:process";
@@ -69,6 +70,7 @@ import { instanceEventsRoutes } from "../routes/instance-events.ts";
 import { jobsRoutes } from "../routes/jobs.ts";
 import { linkRoutes } from "../routes/link.ts";
 import { mcpRegistryRouter } from "../routes/mcp-registry.ts";
+import { invalidateUserIdCache } from "../routes/me/adapter.ts";
 import { meRoutes } from "../routes/me/index.ts";
 import { memoryNarrativeRoutes } from "../routes/memory/index.ts";
 import reportRoutes from "../routes/report.ts";
@@ -502,6 +504,30 @@ export class AtlasDaemon {
         throw new Error(`Failed to resolve local user id: ${localUser.error}`);
       }
       logger.info("Resolved local user id", { userId: localUser.data });
+
+      // In local mode the CLI seeds a placeholder FRIDAY_KEY whose `sub`
+      // and `user_metadata.tempest_user_id` are the literal "local-user".
+      // The canonical user id is the nanoid UserStorage just resolved —
+      // /api/me reads identity by decoding this JWT, so swap the
+      // placeholder for one stamped with the canonical id. Without this
+      // step, `workspace.metadata.createdBy` (written via /api/me) and
+      // `UserStorage.getCachedLocalUserId()` (used by chat / stream-
+      // authz) disagree, and "my workspaces" lookups fail silently.
+      // The CLI's signature is the literal "local" — never verified,
+      // only decoded — so rebuilding it in-process is safe.
+      if (process.env.FRIDAY_LOCAL_ONLY === "true") {
+        const header = { alg: "HS256", typ: "JWT" };
+        const payload = {
+          iss: "friday-platform",
+          email: "platform-local@hellofriday.ai",
+          sub: localUser.data,
+          user_metadata: { tempest_user_id: localUser.data },
+        };
+        const b64url = (obj: object): string =>
+          Buffer.from(JSON.stringify(obj)).toString("base64url");
+        process.env.FRIDAY_KEY = `${b64url(header)}.${b64url(payload)}.local`;
+        invalidateUserIdCache();
+      }
     }
 
     // Wire MCP registry to JetStream KV. Routes / discovery code call
