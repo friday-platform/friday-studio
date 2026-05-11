@@ -59,6 +59,10 @@ func buildTransport(caCertPath string) (http.RoundTripper, error) {
 	if caCertPath == "" {
 		return http.DefaultTransport, nil
 	}
+	// #nosec G304 -- caCertPath comes from FRIDAY_TLS_CA, set by
+	// scripts/setup-tls.sh under the user's own FRIDAY_HOME. The
+	// operator chooses what CA to trust; reading an arbitrary path is
+	// the intended affordance, not a vulnerability.
 	pem, err := os.ReadFile(caCertPath)
 	if err != nil {
 		return nil, fmt.Errorf("read FRIDAY_TLS_CA %q: %w", caCertPath, err)
