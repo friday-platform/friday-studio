@@ -19,9 +19,11 @@
  * `(skillId, version)` pairs already present in JetStream, so a
  * re-run after a partial failure is a no-op (no duplicate rows, no
  * duplicate-rejection errors). Drafts (rows with `name IS NULL`)
- * still flow through `adapter.create()` since `replayVersion` is
- * for restoring published-version history, not draft shells. The
- * legacy `skills.db` file is left in place for rollback.
+ * are skipped entirely: `adapter.create()` mints fresh `skillId` /
+ * `ulid` / `id`, so the legacy SQLite `id` can't be preserved, and
+ * drafts are invisible in every UI list (`list()` filters
+ * `name === null`). The legacy `skills.db` file is left in place
+ * for rollback.
  *
  * No-op if `~/.atlas/skills.db` doesn't exist.
  */
@@ -105,17 +107,11 @@ export const migration: Migration = {
 
       for (const row of rows) {
         if (!row.name) {
-          // Draft row — replay via create() then leave at version 1.
-          // Most drafts get superseded by a later publish, but copy the
-          // shell so getById() still resolves. `replayVersion` is for
-          // published-version history; drafts have no history to replay.
-          const result = await adapter.create(row.namespace, row.created_by);
-          if (!result.ok) {
-            logger.warn("Failed to migrate skill draft", { id: row.id, error: result.error });
-            failed++;
-            continue;
-          }
-          migrated++;
+          // Drafts can't round-trip: `create()` mints a fresh skillId/ulid/id,
+          // so the legacy SQLite `id` becomes unreachable from any pre-migration
+          // reference. They're also invisible in every UI list (`list()` filters
+          // `name === null`). Skip rather than create unreachable shells.
+          skipped++;
           continue;
         }
 

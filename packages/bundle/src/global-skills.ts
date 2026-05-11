@@ -500,9 +500,28 @@ async function importV2Rows(
         }
       }
       if (!inherited) {
+        // Distinguish the failure modes the loop can hit: prior versions in
+        // the bundle cache (in-memory hits), prior versions present at the
+        // target (presence-skip path that may or may not have archive bytes),
+        // and prior versions absent entirely. The throw above at :492-494
+        // covers `get` errors with operands; this one mirrors that style for
+        // the unresolvable case so an engineer doing forensic recovery can
+        // tell "bundle is internally inconsistent" from "target row exists
+        // but carries no archive bytes" at a glance.
+        const cacheKeys: number[] = [];
+        const cacheMap = archivesBySkill.get(row.skillId);
+        if (cacheMap) {
+          for (const v of cacheMap.keys()) if (v < row.version) cacheKeys.push(v);
+        }
+        cacheKeys.sort((a, b) => a - b);
+        const targetKeys: number[] = [];
+        for (const v of presentVersions) if (v < row.version) targetKeys.push(v);
+        targetKeys.sort((a, b) => a - b);
         throw new Error(
           `importGlobalSkills: inherited archive for skill ${row.skillId} version ${row.version} ` +
-            `could not be resolved from this bundle or the target`,
+            `could not be resolved — walked versions [1..${row.version - 1}], ` +
+            `bundle cache had [${cacheKeys.join(",")}], ` +
+            `target had [${targetKeys.join(",")}] (none carried archive bytes)`,
         );
       }
       archiveBytes = inherited;

@@ -312,7 +312,7 @@ describe("m_20260503_110100_skills_to_jetstream", () => {
     expect(sysSkill.data).toBeNull();
   });
 
-  it("drafts (name=null) flow through create() rather than replayVersion", async () => {
+  it("drafts (name=null) are skipped, not migrated", async () => {
     const home = await freshHome();
     writeSkillsDb(home, [
       {
@@ -329,14 +329,13 @@ describe("m_20260503_110100_skills_to_jetstream", () => {
     const facade = createJetStreamFacade(nc);
     await migration.run({ nc, js: facade, logger: noopLogger });
 
-    // Drafts get a fresh skillId from create() — original draft id is not
-    // preserved (replayVersion is for published-version history). Verify a
-    // single draft landed in the namespace under list(includeAll=true).
+    // Drafts can't round-trip: `create()` would mint a fresh skillId/ulid/id,
+    // making the legacy SQLite `id` unreachable. The migration skips them
+    // rather than create unreachable shells. No draft should land in JetStream.
     const adapter = new JetStreamSkillAdapter(nc);
     const all = await adapter.list("user", undefined, true);
     expect.assert(all.ok === true);
-    const drafts = all.data.filter((s) => s.name === null);
-    expect(drafts).toHaveLength(1);
+    expect(all.data).toHaveLength(0);
   });
 
   it("is a no-op when skills.db does not exist", async () => {
