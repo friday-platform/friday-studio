@@ -7,27 +7,24 @@ import type { PageLoad } from "./$types";
  * to the renderer best suited to it:
  *
  *   text/csv, text/tab-separated-values, application/json,
- *   text/html, text/markdown          → `./table` (full-screen
+ *   text/html                         → `./table` (full-screen
  *                                       sticky-header view with
  *                                       Copy / Download CSV / Download
  *                                       MD action bar)
+ *
+ *   text/markdown                     → `./markdown` (prose renderer
+ *                                       that surfaces embedded GFM
+ *                                       tables inline via TableView +
+ *                                       the same action chrome)
  *
  *   anything else                     → render a file-info card with
  *                                       a download link inline on
  *                                       this same page
  *
- * Subpath renderers (`./table`, future `./raw`, `./diff/[rev]`) are
- * the explicit-override URLs. This bare path is the "open the
- * artifact" URL — what tool-call cards and the inline-table Actions
- * menu link to.
- *
- * Markdown disambiguation: a markdown artifact may or may not be
- * mostly-a-table. For now we always route markdown to the table view
- * — the most common producer is the chat snapshot helper which
- * emits markdown that is ONLY a table. When this changes (future
- * markdown artifacts with rich prose around a table) the dispatcher
- * can sniff content to decide between the markdown preview and the
- * table extraction view.
+ * Subpath renderers (`./table`, `./markdown`, future `./raw`,
+ * `./diff/[rev]`) are the explicit-override URLs. This bare path is
+ * the "open the artifact" URL — what tool-call cards and the inline-
+ * table Actions menu link to.
  */
 export const load: PageLoad = async ({ params, fetch }) => {
   const { id: artifactId } = params;
@@ -54,6 +51,9 @@ export const load: PageLoad = async ({ params, fetch }) => {
     throw error(500, "Artifact response missing metadata");
   }
   const baseMime = (artifact.data?.mimeType ?? "application/octet-stream").split(";")[0]?.trim().toLowerCase() ?? "";
+  if (baseMime === "text/markdown") {
+    throw redirect(307, `/artifacts/${encodeURIComponent(artifactId)}/markdown`);
+  }
   if (TABULAR_MIMES.has(baseMime)) {
     // Forward to the explicit table renderer — keeps the table-
     // specific chrome (Copy / Download CSV / Download MD) accessible

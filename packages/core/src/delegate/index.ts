@@ -31,6 +31,11 @@ import { z } from "zod";
 import { discoverMCPServers, type LinkSummary } from "../mcp-registry/discovery.ts";
 import { FINISH_TOOL_NAME, type FinishInput, finishTool, parseFinishInput } from "./finish-tool.ts";
 import { createDelegateProxyWriter } from "./proxy-writer.ts";
+import {
+  formatDelegateSkillsBlock,
+  resolveDelegateSkills,
+  type SkillArchiveCache,
+} from "./skills-resolver.ts";
 
 const DELEGATE_TOOL_NAME = "delegate";
 /**
@@ -42,6 +47,18 @@ export const DEFAULT_MAX_STEPS_PER_CALL = 40;
 export const DEFAULT_MAX_OUTPUT_TOKENS = 20000;
 export const DEFAULT_MAX_DEPTH = 1;
 
+const DelegateSkillRequestSchema = z.strictObject({
+  name: z
+    .string()
+    .describe("Skill ref in @namespace/skill-name form — must be one of your visible skills."),
+  refs: z
+    .array(z.string())
+    .optional()
+    .describe(
+      "Specific reference file paths inside the skill archive (e.g. references/phrases.md). When omitted, the full SKILL.md body is injected.",
+    ),
+});
+
 const DelegateInputSchema = z.strictObject({
   goal: z.string().describe("What the sub-agent should accomplish."),
   handoff: z.string().describe("Distilled context the sub-agent needs to do the work."),
@@ -49,6 +66,12 @@ const DelegateInputSchema = z.strictObject({
     .array(z.string())
     .optional()
     .describe("List of MCP server IDs to make available to the sub-agent."),
+  skills: z
+    .array(DelegateSkillRequestSchema)
+    .optional()
+    .describe(
+      "Skills to inject into the sub-agent's system prompt. Must be drawn from your own visible skills; out-of-scope refs are dropped. Pass `refs` to surgically include only specific reference files rather than the entire skill body.",
+    ),
 });
 
 interface DatetimeContext {
@@ -106,6 +129,13 @@ export interface DelegateDeps {
    * depth = max_depth - 1).
    */
   depth?: number;
+  /**
+   * Optional per-session skill-archive cache. When omitted,
+   * `createDelegateTool` instantiates a fresh one. Forwarded into the
+   * nested delegate at depth + 1 so re-delegated children share the
+   * parent's already-extracted tarballs.
+   */
+  archiveCache?: SkillArchiveCache;
 }
 
 export type DelegateToolsUsedEntry = { name: string; outcome: "success" | "error" };
@@ -156,11 +186,21 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
   const maxInputTokens = budget?.max_input_tokens ?? Number.POSITIVE_INFINITY;
   const maxWallTimeMs = budget?.max_wall_time_ms ?? Number.POSITIVE_INFINITY;
 
+  // Per-tool-instance archive cache. Lifetime matches the parent agent's
+  // session: a chat that delegates 6× with the same skill ref pays the
+  // tarball-extraction cost once. Re-delegated children (depth > 0) share
+  // the same cache via `{ ...deps }` propagation below.
+  const archiveCache: SkillArchiveCache =
+    deps.archiveCache ?? new Map<string, Promise<Record<string, string>>>();
+
   return tool({
     description:
-      "Spawn a sub-agent that runs in-process and inherits all of your tools (except delegate itself). Use for arbitrary multi-step work that doesn't map to a more specific tool. Provide a clear goal and a distilled handoff summary — the sub-agent does NOT see your conversation history.",
+      "Spawn a sub-agent that runs in-process and inherits all of your tools (except delegate itself). Use for arbitrary multi-step work that doesn't map to a more specific tool. Provide a clear goal and a distilled handoff summary — the sub-agent does NOT see your conversation history. Pass `skills: [{name, refs?}]` to thread skills from your visible set into the sub-agent's system prompt; use `refs` to scope to specific reference files within a skill instead of injecting the whole body.",
     inputSchema: DelegateInputSchema,
-    execute: async ({ goal, handoff, mcpServers }, { toolCallId }): Promise<DelegateResult> => {
+    execute: async (
+      { goal, handoff, mcpServers, skills },
+      { toolCallId },
+    ): Promise<DelegateResult> => {
       // Depth budget. Fail before spawning the child when the
       // parent's depth is already at the cap. The fsm-engine wiring also
       // strips `delegate` from the child's tool set at this depth, so this
@@ -227,7 +267,15 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
         const inheritedForChild: AtlasTools = childCanDelegate
           ? {
               ...withoutDelegate,
-              [DELEGATE_TOOL_NAME]: createDelegateTool({ ...deps, depth: depth + 1 }, toolSetThunk),
+              // Forward `archiveCache` explicitly: `deps.archiveCache` is
+              // undefined on the first call (the local `archiveCache`
+              // closure-variable is the freshly-instantiated Map), so a
+              // bare `{...deps}` would give the grandchild its own empty
+              // cache and defeat the per-session sharing.
+              [DELEGATE_TOOL_NAME]: createDelegateTool(
+                { ...deps, depth: depth + 1, archiveCache },
+                toolSetThunk,
+              ),
             }
           : withoutDelegate;
 
@@ -330,14 +378,31 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
           Object.assign(childTools, mcpTools);
         }
 
+        // Resolve any skills the parent threaded through. Authority is the
+        // parent's visible-skill set — anything outside is dropped and
+        // logged, so a hallucinated name cannot escalate the child's reach.
+        // An empty / missing `skills` arg returns [] and contributes no
+        // text to the prompt.
+        const resolvedSkills = skills
+          ? await resolveDelegateSkills(skills, {
+              workspaceId: session.workspaceId,
+              logger,
+              archiveCache,
+            })
+          : [];
+        const skillsBlock = formatDelegateSkillsBlock(resolvedSkills);
+
         const datetimeMessage = buildTemporalFacts(session.datetime);
         const childSystemPrompt = [
+          skillsBlock,
           `Goal: ${goal}`,
           `Handoff: ${handoff}`,
           datetimeMessage,
           `You are a terse back-end agent. Your output is consumed by another AI agent, not a human user. Do not narrate your actions, do not produce conversational filler, and do not emit markdown tables, section headers, or other human-facing formatting. Make tool calls directly without describing what you are doing. Gather the required facts with the fewest tool calls possible, then call the \`finish\` tool immediately with a concise, factual answer.`,
           `When you have produced a final answer (or determined the task is impossible), call the \`finish\` tool with { ok: true, answer } or { ok: false, reason }. Do not return free-form text after calling \`finish\`.`,
-        ].join("\n\n");
+        ]
+          .filter((s) => s.length > 0)
+          .join("\n\n");
 
         const conversationalModel = platformModels.get("conversational");
 

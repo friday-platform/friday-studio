@@ -21,6 +21,7 @@ const mockStreamText = vi.hoisted(() => vi.fn());
 const mockStepCountIs = vi.hoisted(() => vi.fn((n: number) => ({ __stepCountIs: n })));
 const mockDiscoverMCPServers = vi.hoisted(() => vi.fn());
 const mockCreateMCPTools = vi.hoisted(() => vi.fn());
+const mockResolveDelegateSkills = vi.hoisted(() => vi.fn());
 
 vi.mock("ai", async () => {
   const actual = await vi.importActual<typeof import("ai")>("ai");
@@ -32,6 +33,16 @@ vi.mock("ai", async () => {
 vi.mock("../mcp-registry/discovery.ts", () => ({ discoverMCPServers: mockDiscoverMCPServers }));
 
 vi.mock("@atlas/mcp", () => ({ createMCPTools: mockCreateMCPTools }));
+
+// Skills resolver is its own module with full coverage in
+// `skills-resolver.test.ts`; here we stub it so this file does not need to
+// wire SkillStorage mocks. The integration test below asserts that whatever
+// the resolver returns lands in the child's system prompt.
+vi.mock("./skills-resolver.ts", async () => {
+  const actual =
+    await vi.importActual<typeof import("./skills-resolver.ts")>("./skills-resolver.ts");
+  return { ...actual, resolveDelegateSkills: mockResolveDelegateSkills };
+});
 
 import { createDelegateTool, type DelegateResult } from "./index.ts";
 
@@ -199,7 +210,12 @@ function makeDelegate(
 async function runDelegate(
   delegateTool: ReturnType<typeof createDelegateTool>,
   toolCallId = "del-call-1",
-  overrides?: Partial<{ goal: string; handoff: string; mcpServers: string[] }>,
+  overrides?: Partial<{
+    goal: string;
+    handoff: string;
+    mcpServers: string[];
+    skills: Array<{ name: string; refs?: string[] }>;
+  }>,
 ): Promise<DelegateResult> {
   // The AI SDK's tool() wraps execute; invoke directly via the typed handle.
   const execute = delegateTool.execute;
@@ -223,6 +239,7 @@ describe("createDelegateTool", () => {
     mockStepCountIs.mockClear();
     mockDiscoverMCPServers.mockReset();
     mockCreateMCPTools.mockReset();
+    mockResolveDelegateSkills.mockReset().mockResolvedValue([]);
   });
 
   it("happy path — finish ok=true drives answer, envelopes carry namespaced toolCallIds", async () => {
@@ -288,6 +305,49 @@ describe("createDelegateTool", () => {
     // chunks are dropped.
     expect(envelopedToolCallIds).toContain("child-1");
     expect(envelopedToolCallIds.every((id) => id !== "finish-id")).toBe(true);
+  });
+
+  it("threads parent-resolved skills into the child's system prompt", async () => {
+    mockResolveDelegateSkills.mockResolvedValue([
+      { name: "@friday/stop-slop", description: "No em dashes", body: "rule: no em dashes" },
+    ]);
+
+    const captured: CapturedStreamTextArgs = { args: undefined };
+    setupMockStreamText(captured, {
+      steps: [{ finish: { ok: true, answer: "done" } }],
+      finalText: "ignored",
+    });
+
+    const { delegateTool } = makeDelegate();
+    await runDelegate(delegateTool, "del-skills-1", { skills: [{ name: "@friday/stop-slop" }] });
+
+    expect(mockResolveDelegateSkills).toHaveBeenCalledWith(
+      [{ name: "@friday/stop-slop" }],
+      expect.objectContaining({ workspaceId: "w1" }),
+    );
+    expect(captured.args).toBeDefined();
+    const system = (captured.args as { system?: string }).system ?? "";
+    expect(system).toContain("<skills>");
+    expect(system).toContain('<skill name="@friday/stop-slop">');
+    expect(system).toContain("rule: no em dashes");
+    // Resolver output goes before goal/handoff so the child reads constraints first.
+    expect(system.indexOf("<skills>")).toBeLessThan(system.indexOf("Goal:"));
+  });
+
+  it("omits the skills block entirely when no skills are passed", async () => {
+    const captured: CapturedStreamTextArgs = { args: undefined };
+    setupMockStreamText(captured, {
+      steps: [{ finish: { ok: true, answer: "done" } }],
+      finalText: "ignored",
+    });
+
+    const { delegateTool } = makeDelegate();
+    await runDelegate(delegateTool, "del-no-skills");
+
+    expect(mockResolveDelegateSkills).not.toHaveBeenCalled();
+    const system = (captured.args as { system?: string }).system ?? "";
+    expect(system).not.toContain("<skills>");
+    expect(system).toContain("Goal:");
   });
 
   it("falls back to final streamed text when child does not call finish", async () => {
