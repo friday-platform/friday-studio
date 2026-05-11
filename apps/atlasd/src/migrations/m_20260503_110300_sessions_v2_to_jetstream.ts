@@ -32,6 +32,17 @@ const SUBJECT_PREFIX = "sessions";
 const METADATA_BUCKET = "SESSION_METADATA";
 const INFLIGHT_BUCKET = "SESSION_INFLIGHT";
 const NINETY_DAYS_NS = 90 * 24 * 60 * 60 * 1_000_000_000;
+// Must match `DEFAULT_DUPLICATE_WINDOW_NS` in
+// `packages/core/src/session/jetstream-session-history-adapter.ts`. The
+// `Nats-Msg-Id = migrate-v2:<sid>:<idx>` republish-dedup design below
+// relies on the broker remembering the message id across migration
+// retries; the broker's default of 2 minutes is far too short for a
+// crash-resume that lands more than 2 minutes after the original run
+// (and shorter than the rerun-after-restart window we actually want to
+// cover). Born-with-24h here; the runtime adapter reconciles to the
+// same value via streams.update when an existing stream has a narrower
+// window.
+const DUPLICATE_WINDOW_NS = 24 * 60 * 60 * 1_000_000_000;
 const SAFE_TOKEN_RE = /[^A-Za-z0-9_-]/g;
 
 function sanitize(s: string): string {
@@ -64,6 +75,12 @@ export const migration: Migration = {
 
     // Provision the stream + KV buckets up-front so the per-session loop
     // can stream-publish without per-message creates.
+    // Info-then-update-or-add: mirrors the runtime adapter pattern so
+    // an existing stream's wider duplicate window is preserved and a
+    // newly-created one is born with the same 24h window the runtime
+    // expects. Without this, a fresh-install first-run births the
+    // stream with NATS's 2-minute default, breaking the `Nats-Msg-Id`
+    // dedup contract this migration's republish loop depends on.
     const jsm = await nc.jetstreamManager();
     try {
       await jsm.streams.info(STREAM_NAME);
@@ -74,6 +91,7 @@ export const migration: Migration = {
         retention: RetentionPolicy.Limits,
         storage: StorageType.File,
         max_age: NINETY_DAYS_NS,
+        duplicate_window: DUPLICATE_WINDOW_NS,
       });
     }
     const metadataKV = await createJetStreamKVStorage(nc, { bucket: METADATA_BUCKET, history: 1 });
