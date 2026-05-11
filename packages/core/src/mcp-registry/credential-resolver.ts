@@ -73,6 +73,50 @@ export class LinkCredentialExpiredError extends Error {
   }
 }
 
+/** Entry describing one credential that is temporarily unavailable (e.g. mid-refresh). */
+export type LinkCredentialUnavailableEntry = {
+  credentialId: string;
+  serverName?: string;
+  provider?: string;
+};
+
+/**
+ * Error thrown when one or more credentials are temporarily unavailable —
+ * typically because a refresh is in progress and the caller should wait /
+ * retry rather than treat the credential as unusable.
+ */
+export class LinkCredentialUnavailableError extends Error {
+  readonly entries: LinkCredentialUnavailableEntry[];
+  readonly credentialId: string;
+  readonly serverName?: string;
+
+  constructor(
+    input: { entries: LinkCredentialUnavailableEntry[] } | LinkCredentialUnavailableEntry,
+  ) {
+    const entries = "entries" in input ? input.entries : [input];
+    if (entries.length === 0) {
+      throw new Error("LinkCredentialUnavailableError requires at least one entry");
+    }
+
+    const named = entries.map((e) => (e.serverName ? `'${e.serverName}'` : "an integration"));
+    const integrations =
+      named.length === 1
+        ? named[0]
+        : `${named.slice(0, -1).join(", ")} and ${named[named.length - 1]}`;
+    super(
+      `The credential for ${integrations} is temporarily unavailable. Please try again in a moment.`,
+    );
+    this.name = "LinkCredentialUnavailableError";
+    this.entries = entries;
+    const first = entries[0];
+    if (!first) {
+      throw new Error("LinkCredentialUnavailableError requires at least one entry");
+    }
+    this.credentialId = first.credentialId;
+    this.serverName = first.serverName;
+  }
+}
+
 /** Build auth headers for Link API calls. Returns empty object in dev mode. */
 function getLinkAuthHeaders(): Record<string, string> {
   if (process.env.LINK_DEV_MODE === "true") return {};
