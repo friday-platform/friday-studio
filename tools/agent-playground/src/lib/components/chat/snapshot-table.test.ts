@@ -140,7 +140,7 @@ describe("snapshotTableToArtifact", () => {
         } as Response;
       }
       const body = (init?.body ? JSON.parse(init.body as string) : {}) as PostBody;
-      createdTitle = body.title;
+      createdTitle = body.title ?? "";
       return {
         ok: true,
         status: 201,
@@ -165,7 +165,7 @@ describe("snapshotTableToArtifact", () => {
         return { ok: false, status: 404, json: () => Promise.resolve({}) } as Response;
       }
       const body = (init?.body ? JSON.parse(init.body as string) : {}) as PostBody;
-      createdTitle = body.title;
+      createdTitle = body.title ?? "";
       return {
         ok: true,
         status: 201,
@@ -185,7 +185,7 @@ describe("snapshotTableToArtifact", () => {
     let createdTitle = "";
     globalThis.fetch = vi.fn(async (_url, init) => {
       const body = (init?.body ? JSON.parse(init.body as string) : {}) as PostBody;
-      createdTitle = body.title;
+      createdTitle = body.title ?? "";
       return {
         ok: true,
         status: 201,
@@ -206,7 +206,7 @@ describe("snapshotTableToArtifact", () => {
         throw new Error("chat-title fetch should not run when title override is set");
       }
       const body = (init?.body ? JSON.parse(init.body as string) : {}) as PostBody;
-      createdTitle = body.title;
+      createdTitle = body.title ?? "";
       return {
         ok: true,
         status: 201,
@@ -230,7 +230,7 @@ describe("snapshotTableToArtifact", () => {
         return { ok: false, status: 404, json: () => Promise.resolve({}) } as Response;
       }
       const body = (init?.body ? JSON.parse(init.body as string) : {}) as PostBody;
-      createdSummary = body.summary;
+      createdSummary = body.summary ?? "";
       return {
         ok: true,
         status: 201,
@@ -286,7 +286,7 @@ describe("snapshotTableToArtifact", () => {
         } as Response;
       }
       const body = (init?.body ? JSON.parse(init.body as string) : {}) as PostBody;
-      createdName = body.data.originalName;
+      createdName = body.data?.originalName ?? "";
       return {
         ok: true,
         status: 201,
@@ -307,7 +307,7 @@ describe("snapshotTableToArtifact", () => {
     let createdName = "";
     globalThis.fetch = vi.fn(async (_url, init) => {
       const body = (init?.body ? JSON.parse(init.body as string) : {}) as PostBody;
-      createdName = body.data.originalName;
+      createdName = body.data?.originalName ?? "";
       return {
         ok: true,
         status: 201,
