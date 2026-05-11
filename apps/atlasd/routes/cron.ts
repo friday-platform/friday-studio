@@ -7,17 +7,25 @@
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { daemonFactory } from "../src/factory.ts";
+import { getAccessibleWorkspaceIds, requireWorkspaceAdmin } from "../src/workspace-authz.ts";
 
 const ParamSchema = z.object({ workspaceId: z.string(), signalId: z.string() });
 
 export const cronRoutes = daemonFactory
   .createApp()
   .get("/timers", async (c) => {
+    const userId = c.get("userId");
+    if (!userId) return c.json({ error: "Unauthorized" }, 401);
+
     const ctx = c.get("app");
     const cronManager = ctx.daemon.getCronManager();
     if (!cronManager) return c.json({ error: "Cron manager not ready" }, 503);
 
-    const timers = cronManager.listTimers();
+    // Filter timers to workspaces the caller is a member of. Single
+    // membership lookup, then a Set.has check per timer.
+    const accessible = await getAccessibleWorkspaceIds(userId);
+
+    const timers = cronManager.listTimers().filter((t) => accessible.has(t.workspaceId));
 
     // Enrich with workspace display names
     const workspaces = await ctx.getWorkspaceManager().list();
@@ -38,6 +46,7 @@ export const cronRoutes = daemonFactory
   })
   .post("/timers/:workspaceId/:signalId/pause", zValidator("param", ParamSchema), async (c) => {
     const { workspaceId, signalId } = c.req.valid("param");
+    await requireWorkspaceAdmin(c, workspaceId);
     const ctx = c.get("app");
     const cronManager = ctx.daemon.getCronManager();
     if (!cronManager) return c.json({ error: "Cron manager not ready" }, 503);
@@ -49,6 +58,7 @@ export const cronRoutes = daemonFactory
   })
   .post("/timers/:workspaceId/:signalId/resume", zValidator("param", ParamSchema), async (c) => {
     const { workspaceId, signalId } = c.req.valid("param");
+    await requireWorkspaceAdmin(c, workspaceId);
     const ctx = c.get("app");
     const cronManager = ctx.daemon.getCronManager();
     if (!cronManager) return c.json({ error: "Cron manager not ready" }, 503);

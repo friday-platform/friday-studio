@@ -14,6 +14,7 @@
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { daemonFactory } from "../src/factory.ts";
+import { requireWorkspaceMember } from "../src/workspace-authz.ts";
 import {
   listAllWorkspaceEvents,
   listWorkspaceEvents,
@@ -64,6 +65,7 @@ export const workspaceEventsRoutes = daemonFactory
     zValidator("query", QuerySchema),
     async (c) => {
       const { workspaceId } = c.req.valid("param");
+      await requireWorkspaceMember(c, workspaceId);
       const { limit } = c.req.valid("query");
       const ctx = c.get("app");
       const nc = ctx.daemon.getNatsConnection();
@@ -105,6 +107,7 @@ export const eventsRoutes = daemonFactory
    */
   .post("/fire", zValidator("json", ManualActionBodySchema), async (c) => {
     const { workspaceId, signalId, scheduledAt } = c.req.valid("json");
+    await requireWorkspaceMember(c, workspaceId);
     const ctx = c.get("app");
     const nc = ctx.daemon.getNatsConnection();
     if (!nc) return c.json({ error: "NATS connection not ready" }, 503);
@@ -136,6 +139,7 @@ export const eventsRoutes = daemonFactory
    */
   .post("/dismiss", zValidator("json", ManualActionBodySchema), async (c) => {
     const { workspaceId, signalId, scheduledAt } = c.req.valid("json");
+    await requireWorkspaceMember(c, workspaceId);
     const ctx = c.get("app");
     const nc = ctx.daemon.getNatsConnection();
     if (!nc) return c.json({ error: "NATS connection not ready" }, 503);
@@ -153,6 +157,7 @@ export const eventsRoutes = daemonFactory
    */
   .post("/group", zValidator("json", GroupActionBodySchema), async (c) => {
     const { workspaceId, signalId, action } = c.req.valid("json");
+    await requireWorkspaceMember(c, workspaceId);
     const ctx = c.get("app");
     const nc = ctx.daemon.getNatsConnection();
     if (!nc) return c.json({ error: "NATS connection not ready" }, 503);

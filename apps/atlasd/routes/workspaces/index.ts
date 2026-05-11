@@ -63,6 +63,7 @@ import {
   wireCommunicator,
 } from "../../src/services/communicator-wiring.ts";
 import { awaitSignalCompletion, publishSignalCancellation } from "../../src/signal-stream.ts";
+import { requireWorkspaceAdmin, requireWorkspaceMember } from "../../src/workspace-authz.ts";
 import {
   buildWorkspaceBundleBytes,
   isOnDiskWorkspace,
@@ -929,6 +930,7 @@ const workspacesRoutes = daemonFactory
   // Get workspace details
   .get("/:workspaceId", async (c) => {
     const workspaceId = c.req.param("workspaceId");
+    await requireWorkspaceMember(c, workspaceId);
     try {
       const ctx = c.get("app");
       const manager = ctx.getWorkspaceManager();
@@ -961,6 +963,7 @@ const workspacesRoutes = daemonFactory
   // Export workspace configuration as YAML
   .get("/:workspaceId/export", async (c) => {
     const workspaceId = c.req.param("workspaceId");
+    await requireWorkspaceMember(c, workspaceId);
     const exportLogger = createLogger({ component: "workspace-export" });
     try {
       const ctx = c.get("app");
@@ -1049,6 +1052,7 @@ const workspacesRoutes = daemonFactory
   // Export workspace as a zip bundle (POC — definition-mode only for now)
   .get("/:workspaceId/bundle", async (c) => {
     const workspaceId = c.req.param("workspaceId");
+    await requireWorkspaceMember(c, workspaceId);
     const modeParam = c.req.query("mode");
     const mode: "definition" | "migration" = modeParam === "migration" ? "migration" : "definition";
     const bundleLogger = createLogger({ component: "workspace-bundle-export" });
@@ -1149,6 +1153,7 @@ const workspacesRoutes = daemonFactory
   // Get workspace configuration
   .get("/:workspaceId/config", async (c) => {
     const workspaceId = c.req.param("workspaceId");
+    await requireWorkspaceMember(c, workspaceId);
     try {
       const ctx = c.get("app");
       const manager = ctx.getWorkspaceManager();
@@ -1179,6 +1184,7 @@ const workspacesRoutes = daemonFactory
   // without forcing the user to recreate them.
   .post("/:workspaceId/lint", async (c) => {
     const workspaceId = c.req.param("workspaceId");
+    await requireWorkspaceMember(c, workspaceId);
     try {
       const ctx = c.get("app");
       const manager = ctx.getWorkspaceManager();
@@ -1204,6 +1210,7 @@ const workspacesRoutes = daemonFactory
     async (c) => {
       try {
         const { workspaceId } = c.req.valid("param");
+        await requireWorkspaceAdmin(c, workspaceId);
         const { config, backup, force } = c.req.valid("json");
 
         const ctx = c.get("app");
@@ -1335,6 +1342,7 @@ const workspacesRoutes = daemonFactory
     zValidator("json", z.object({ persistent: z.boolean() })),
     async (c) => {
       const { workspaceId } = c.req.valid("param");
+      await requireWorkspaceAdmin(c, workspaceId);
       const { persistent } = c.req.valid("json");
       const ctx = c.get("app");
       try {
@@ -1368,6 +1376,7 @@ const workspacesRoutes = daemonFactory
     ),
     async (c) => {
       const { workspaceId } = c.req.valid("param");
+      await requireWorkspaceAdmin(c, workspaceId);
       const { name, ...metadataUpdates } = c.req.valid("json");
       const ctx = c.get("app");
 
@@ -1401,6 +1410,7 @@ const workspacesRoutes = daemonFactory
     zValidator("param", z.object({ workspaceId: z.string() })),
     async (c) => {
       const { workspaceId } = c.req.valid("param");
+      await requireWorkspaceAdmin(c, workspaceId);
       const ctx = c.get("app");
 
       try {
@@ -1458,6 +1468,7 @@ const workspacesRoutes = daemonFactory
     ),
     async (c) => {
       const { workspaceId } = c.req.valid("param");
+      await requireWorkspaceAdmin(c, workspaceId);
       const { kind, credential_id } = c.req.valid("json");
       const ctx = c.get("app");
 
@@ -1523,6 +1534,7 @@ const workspacesRoutes = daemonFactory
     zValidator("json", z.object({ kind: CommunicatorKindSchema })),
     async (c) => {
       const { workspaceId } = c.req.valid("param");
+      await requireWorkspaceAdmin(c, workspaceId);
       const { kind } = c.req.valid("json");
       const ctx = c.get("app");
 
@@ -1592,6 +1604,7 @@ const workspacesRoutes = daemonFactory
       return c.json({ error: paramResult.error.message }, 400);
     }
     const { workspaceId, signalId } = paramResult.data;
+    await requireWorkspaceMember(c, workspaceId);
 
     let rawBody: unknown;
     try {
@@ -1947,6 +1960,7 @@ const workspacesRoutes = daemonFactory
     zValidator("json", signalBodySchema),
     async (c) => {
       const { workspaceId, signalId } = c.req.valid("param");
+      await requireWorkspaceMember(c, workspaceId);
       const {
         payload,
         streamId,
@@ -2173,6 +2187,7 @@ const workspacesRoutes = daemonFactory
   // List jobs in a workspace
   .get("/:workspaceId/jobs", async (c) => {
     const workspaceId = c.req.param("workspaceId");
+    await requireWorkspaceMember(c, workspaceId);
     const ctx = c.get("app");
 
     const manager = ctx.getWorkspaceManager();
@@ -2195,6 +2210,7 @@ const workspacesRoutes = daemonFactory
   // Get workspace sessions
   .get("/:workspaceId/sessions", async (c) => {
     const workspaceId = c.req.param("workspaceId");
+    await requireWorkspaceMember(c, workspaceId);
     const ctx = c.get("app");
 
     try {
@@ -2219,6 +2235,7 @@ const workspacesRoutes = daemonFactory
   // List signals in a workspace
   .get("/:workspaceId/signals", async (c) => {
     const workspaceId = c.req.param("workspaceId");
+    await requireWorkspaceMember(c, workspaceId);
     const ctx = c.get("app");
 
     try {
@@ -2261,6 +2278,7 @@ const workspacesRoutes = daemonFactory
   // Describe specific agent in a workspace
   .get("/:workspaceId/agents/:agentId", async (c) => {
     const workspaceId = c.req.param("workspaceId");
+    await requireWorkspaceMember(c, workspaceId);
     const agentId = c.req.param("agentId");
     const ctx = c.get("app");
 
@@ -2283,6 +2301,7 @@ const workspacesRoutes = daemonFactory
   // List agents in a workspace
   .get("/:workspaceId/agents", async (c) => {
     const workspaceId = c.req.param("workspaceId");
+    await requireWorkspaceMember(c, workspaceId);
     const ctx = c.get("app");
 
     try {
@@ -2308,6 +2327,7 @@ const workspacesRoutes = daemonFactory
     zValidator("query", z.object({ force: z.literal("true").optional() }).optional()),
     async (c) => {
       const { workspaceId } = c.req.valid("param");
+      await requireWorkspaceAdmin(c, workspaceId);
       const ctx = c.get("app");
 
       const force = c.req.valid("query")?.force === "true";
@@ -2386,6 +2406,7 @@ const workspacesRoutes = daemonFactory
     zValidator("param", z.object({ workspaceId: z.string().min(1) })),
     async (c) => {
       const { workspaceId } = c.req.valid("param");
+      await requireWorkspaceMember(c, workspaceId);
       const skills = await resolveVisibleSkills(workspaceId, SkillStorage);
       return c.json({ skills });
     },
@@ -2405,6 +2426,7 @@ const workspacesRoutes = daemonFactory
     zValidator("param", z.object({ workspaceId: z.string().min(1) })),
     async (c) => {
       const { workspaceId } = c.req.valid("param");
+      await requireWorkspaceMember(c, workspaceId);
       const listResult = await SkillStorage.list(undefined, undefined, true);
       if (!listResult.ok) return c.json({ error: listResult.error }, 500);
       const allSkills = listResult.data;
@@ -2445,6 +2467,7 @@ const workspacesRoutes = daemonFactory
     zValidator("param", z.object({ workspaceId: z.string().min(1), jobName: z.string().min(1) })),
     async (c) => {
       const { workspaceId, jobName } = c.req.valid("param");
+      await requireWorkspaceMember(c, workspaceId);
 
       const [catalogResult, inheritedSkills, jobAssignedResult] = await Promise.all([
         SkillStorage.list(undefined, undefined, true),
@@ -2487,6 +2510,7 @@ const workspacesRoutes = daemonFactory
     zValidator("param", z.object({ workspaceId: z.string().min(1) })),
     async (c) => {
       const { workspaceId } = c.req.valid("param");
+      await requireWorkspaceMember(c, workspaceId);
       const ctx = c.get("app");
       const manager = ctx.getWorkspaceManager();
       const workspace =
@@ -2515,6 +2539,7 @@ const workspacesRoutes = daemonFactory
     zValidator("param", z.object({ workspaceId: z.string().min(1) })),
     async (c) => {
       const { workspaceId } = c.req.valid("param");
+      await requireWorkspaceAdmin(c, workspaceId);
       const ctx = c.get("app");
       try {
         const manager = ctx.getWorkspaceManager();
@@ -2537,6 +2562,7 @@ const workspacesRoutes = daemonFactory
     zValidator("param", z.object({ workspaceId: z.string().min(1) })),
     async (c) => {
       const { workspaceId } = c.req.valid("param");
+      await requireWorkspaceMember(c, workspaceId);
       const ctx = c.get("app");
       try {
         const manager = ctx.getWorkspaceManager();
@@ -2559,6 +2585,7 @@ const workspacesRoutes = daemonFactory
     zValidator("param", z.object({ workspaceId: z.string().min(1) })),
     async (c) => {
       const { workspaceId } = c.req.valid("param");
+      await requireWorkspaceAdmin(c, workspaceId);
       const ctx = c.get("app");
       try {
         const manager = ctx.getWorkspaceManager();
@@ -2590,6 +2617,7 @@ const workspacesRoutes = daemonFactory
     zValidator("param", z.object({ workspaceId: z.string().min(1) })),
     async (c) => {
       const { workspaceId } = c.req.valid("param");
+      await requireWorkspaceAdmin(c, workspaceId);
       const ctx = c.get("app");
       try {
         const manager = ctx.getWorkspaceManager();
@@ -2625,6 +2653,7 @@ const workspacesRoutes = daemonFactory
     ),
     async (c) => {
       const { workspaceId, kind } = c.req.valid("param");
+      await requireWorkspaceAdmin(c, workspaceId);
       const { id, config } = c.req.valid("json");
       const ctx = c.get("app");
       try {
@@ -2670,6 +2699,7 @@ const workspacesRoutes = daemonFactory
     ),
     async (c) => {
       const { workspaceId, kind, id } = c.req.valid("param");
+      await requireWorkspaceAdmin(c, workspaceId);
       const ctx = c.get("app");
       try {
         const manager = ctx.getWorkspaceManager();
@@ -2711,6 +2741,7 @@ const workspacesRoutes = daemonFactory
     ),
     async (c) => {
       const { workspaceId, kind } = c.req.valid("param");
+      await requireWorkspaceAdmin(c, workspaceId);
       const { id, config } = c.req.valid("json");
       const ctx = c.get("app");
       try {
@@ -2755,6 +2786,7 @@ const workspacesRoutes = daemonFactory
     ),
     async (c) => {
       const { workspaceId, kind, id } = c.req.valid("param");
+      await requireWorkspaceAdmin(c, workspaceId);
       const ctx = c.get("app");
       try {
         const manager = ctx.getWorkspaceManager();
@@ -2790,6 +2822,7 @@ const workspacesRoutes = daemonFactory
     zValidator("param", z.object({ workspaceId: z.string().min(1) })),
     async (c) => {
       const { workspaceId } = c.req.valid("param");
+      await requireWorkspaceMember(c, workspaceId);
       const ctx = c.get("app");
       try {
         const manager = ctx.getWorkspaceManager();
@@ -2818,6 +2851,7 @@ const workspacesRoutes = daemonFactory
     zValidator("param", z.object({ workspaceId: z.string().min(1) })),
     async (c) => {
       const { workspaceId } = c.req.valid("param");
+      await requireWorkspaceAdmin(c, workspaceId);
       const ctx = c.get("app");
       try {
         const manager = ctx.getWorkspaceManager();
