@@ -70,6 +70,12 @@
   const declineMutation = useDeclineElicitation();
 
   const inFlight = $derived(answerMutation.isPending || declineMutation.isPending);
+  const isAuthRefresh = $derived(elicitation.kind === "auth-refresh");
+
+  function answerAuthRefresh(value: "retry" | "cancel") {
+    if (isReadOnly || inFlight) return;
+    answerMutation.mutate({ id: elicitation.id, value });
+  }
 
   const hasOptions = $derived((elicitation.options?.length ?? 0) > 0);
   const groupedOptionPrompt = $derived(
@@ -179,7 +185,34 @@
     <section class="block">
       <h3>Respond</h3>
 
-      {#if groupedOptionPrompt}
+      {#if isAuthRefresh}
+        <!-- auth-refresh: transient credential-refresh prompt. Two
+             explicit action buttons go straight through to the
+             /answer endpoint with the elicitation's option values
+             (`retry` or `cancel`) so the operator can resolve the
+             pause without picking a radio + clicking Answer. -->
+        <div class="actions">
+          <Button
+            onclick={() => answerAuthRefresh("retry")}
+            disabled={inFlight}
+            data-testid="elicitation-auth-refresh-retry"
+          >
+            {answerMutation.isPending ? "Answering…" : "Retry"}
+          </Button>
+          <Button
+            variant="destructive"
+            onclick={() => answerAuthRefresh("cancel")}
+            disabled={inFlight}
+            data-testid="elicitation-auth-refresh-cancel"
+          >
+            {answerMutation.isPending ? "Answering…" : "Cancel"}
+          </Button>
+        </div>
+
+        {#if answerMutation.isError}
+          <p class="error">Answer failed: {answerMutation.error?.message ?? "unknown"}</p>
+        {/if}
+      {:else if groupedOptionPrompt}
         <div class="nested-choice-list" aria-label="Choose an action for each item">
           {#each groupedOptionPrompt.items as item (item.index)}
             <section class="nested-choice-item">
@@ -304,30 +337,32 @@
         </label>
       {/if}
 
-      <label class="field">
-        <span class="field-label">Note (optional)</span>
-        <textarea
-          bind:value={note}
-          disabled={inFlight}
-          rows="2"
-          placeholder="Context for the audit log"
-        ></textarea>
-      </label>
+      {#if !isAuthRefresh}
+        <label class="field">
+          <span class="field-label">Note (optional)</span>
+          <textarea
+            bind:value={note}
+            disabled={inFlight}
+            rows="2"
+            placeholder="Context for the audit log"
+          ></textarea>
+        </label>
 
-      <div class="actions">
-        <Button onclick={onAnswer} disabled={!canAnswer}>
-          {answerMutation.isPending ? "Answering…" : "Answer"}
-        </Button>
-        <Button variant="destructive" onclick={onDecline} disabled={inFlight}>
-          {declineMutation.isPending ? "Declining…" : "Decline"}
-        </Button>
-      </div>
+        <div class="actions">
+          <Button onclick={onAnswer} disabled={!canAnswer}>
+            {answerMutation.isPending ? "Answering…" : "Answer"}
+          </Button>
+          <Button variant="destructive" onclick={onDecline} disabled={inFlight}>
+            {declineMutation.isPending ? "Declining…" : "Decline"}
+          </Button>
+        </div>
 
-      {#if answerMutation.isError}
-        <p class="error">Answer failed: {answerMutation.error?.message ?? "unknown"}</p>
-      {/if}
-      {#if declineMutation.isError}
-        <p class="error">Decline failed: {declineMutation.error?.message ?? "unknown"}</p>
+        {#if answerMutation.isError}
+          <p class="error">Answer failed: {answerMutation.error?.message ?? "unknown"}</p>
+        {/if}
+        {#if declineMutation.isError}
+          <p class="error">Decline failed: {declineMutation.error?.message ?? "unknown"}</p>
+        {/if}
       {/if}
     </section>
   {:else}

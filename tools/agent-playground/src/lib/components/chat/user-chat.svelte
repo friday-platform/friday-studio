@@ -13,6 +13,7 @@
     subscribeToWorkspaceElicitations,
   } from "$lib/shared-worker/client.ts";
   import { DefaultChatTransport } from "ai";
+  import AuthRefreshInlineCard from "./auth-refresh-inline-card.svelte";
   import ChatInput, { type ImageAttachment } from "./chat-input.svelte";
   import ChatInspector from "./chat-inspector.svelte";
   import ChatMessageList from "./chat-message-list.svelte";
@@ -1385,6 +1386,8 @@
           {error}
         </div>
       {/if}
+
+      <AuthRefreshInlineCard workspaceId={wsId} />
 
       <div class="chat-input-area">
         {#if queuedMessages.length > 0}
