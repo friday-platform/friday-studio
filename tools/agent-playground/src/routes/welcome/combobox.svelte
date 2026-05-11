@@ -28,10 +28,14 @@
 
   let { value = $bindable(""), options, placeholder = "", disabled = false }: Props = $props();
 
+  // Generic is `string` (the value type), not the option object:
+  // melt's `selected` store holds `ListboxOption<T> = {value: T, label?: string}`,
+  // so threading `ComboboxOption` would make `.value` an object instead
+  // of the string we actually want to round-trip through `bind:value`.
   const {
     elements: { menu, input, option },
     states: { open, inputValue, selected, touchedInput, highlighted },
-  } = createCombobox<ComboboxOption>({
+  } = createCombobox<string>({
     forceVisible: true,
     onSelectedChange: ({ next }) => {
       if (next) value = next.value;
@@ -44,7 +48,7 @@
   $effect(() => {
     const match = options.find((o) => o.value === value);
     if (match && $selected?.value !== match.value) {
-      selected.set(match);
+      selected.set({ value: match.value, label: match.label });
       inputValue.set(match.label);
     } else if (!match && value && $inputValue !== value) {
       inputValue.set(value);
@@ -109,7 +113,7 @@
     <ul use:melt={$menu} class="menu">
       {#each filtered as opt, i (opt.value)}
         <li
-          use:melt={$option({ value: opt, label: opt.label })}
+          use:melt={$option({ value: opt.value, label: opt.label })}
           class="option"
           class:highlighted={$highlighted?.value === opt.value}
         >
