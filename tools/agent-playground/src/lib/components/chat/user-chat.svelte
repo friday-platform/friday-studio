@@ -18,7 +18,6 @@
   import ChatMessageList from "./chat-message-list.svelte";
   import ChatSessionUsage from "./chat-session-usage.svelte";
   import { createCursorTrackingFetch } from "./cursor-tracking-fetch.ts";
-  import { createWorkerFetch } from "./worker-chat-transport.ts";
   import { nextQueueStep } from "./chat-queue.ts";
   import { nextResumeBudgetStep } from "./resume-budget.ts";
   import { nextSpeechChunk } from "./chat-tts.ts";
@@ -140,10 +139,6 @@
     unrecoverableStream = false;
   }
 
-  // SSE socket lives in the SharedWorker; the cursor tracker wraps a
-  // worker-routed fetch on main so resume cursors stay correct.
-  // `createWorkerFetch` returns native `fetch` when SharedWorker is
-  // unavailable (SSR, tests) so no caller branching is needed.
   const trackingFetch = createCursorTrackingFetch({
     getCursor: () => lastSeenEventId,
     setCursor: (value) => {
@@ -156,7 +151,6 @@
     onUnrecoverable: () => {
       unrecoverableStream = true;
     },
-    fetchImpl: createWorkerFetch(),
   });
 
   /**

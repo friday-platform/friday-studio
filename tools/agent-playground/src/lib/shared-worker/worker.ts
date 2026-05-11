@@ -126,103 +126,14 @@ function handleUnsubscribe(msg: Extract<ClientMessage, { type: "unsubscribe" }>)
   maybeCloseUpstream();
 }
 
-/**
- * Active per-turn chat fetches. Keyed by turnId so a stop-button abort
- * from the page can find the right `AbortController`. Streams write
- * chunks back to the originating `port` until the body completes or
- * the page sends `chat-turn-abort`.
- */
-const chatTurns = new Map<string, { controller: AbortController; port: MessagePort }>();
-
-async function handleChatTurnOpen(
-  port: MessagePort,
-  msg: Extract<ClientMessage, { type: "chat-turn-open" }>,
-): Promise<void> {
-  const { turnId, init } = msg;
-  const controller = new AbortController();
-  chatTurns.set(turnId, { controller, port });
-
-  try {
-    const response = await fetch(init.url, {
-      method: init.method,
-      headers: init.headers,
-      body: init.body,
-      credentials: init.credentials,
-      signal: controller.signal,
-    });
-
-    const responseHeaders: Record<string, string> = {};
-    response.headers.forEach((value, key) => {
-      responseHeaders[key] = value;
-    });
-    port.postMessage({
-      type: "chat-turn-response",
-      turnId,
-      status: response.status,
-      statusText: response.statusText,
-      headers: responseHeaders,
-    } satisfies WorkerMessage);
-
-    if (response.body) {
-      const reader = response.body.getReader();
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        // Transfer the underlying buffer — zero-copy across the
-        // worker→page boundary. The SDK's SSE parser on main reads
-        // these chunks as bytes.
-        const slice = value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength);
-        port.postMessage(
-          {
-            type: "chat-turn-chunk",
-            turnId,
-            chunk: slice,
-          } satisfies WorkerMessage,
-          [slice],
-        );
-      }
-    }
-    port.postMessage({ type: "chat-turn-end", turnId } satisfies WorkerMessage);
-  } catch (error) {
-    // AbortError from `controller.abort()` is the page-driven cancel
-    // path — surface it as an error so the transport's AbortSignal
-    // contract is honored end-to-end.
-    const message =
-      error instanceof Error ? error.message : typeof error === "string" ? error : "fetch failed";
-    port.postMessage({
-      type: "chat-turn-error",
-      turnId,
-      error: message,
-    } satisfies WorkerMessage);
-  } finally {
-    chatTurns.delete(turnId);
-  }
-}
-
-function handleChatTurnAbort(msg: Extract<ClientMessage, { type: "chat-turn-abort" }>): void {
-  const entry = chatTurns.get(msg.turnId);
-  if (entry) entry.controller.abort();
-}
-
 function handleMessage(port: MessagePort, msg: ClientMessage): void {
   if (msg.type === "subscribe") handleSubscribe(port, msg);
   else if (msg.type === "unsubscribe") handleUnsubscribe(msg);
-  else if (msg.type === "chat-turn-open") void handleChatTurnOpen(port, msg);
-  else if (msg.type === "chat-turn-abort") handleChatTurnAbort(msg);
 }
 
 function dropPort(port: MessagePort): void {
   for (const [id, entry] of subscriptions) {
     if (entry.port === port) subscriptions.delete(id);
-  }
-  // Tab gone → cancel any in-flight chat turns that were writing to it.
-  // Otherwise the fetch keeps streaming bytes into a closed port until
-  // the daemon finishes the turn.
-  for (const [id, entry] of chatTurns) {
-    if (entry.port === port) {
-      entry.controller.abort();
-      chatTurns.delete(id);
-    }
   }
   maybeCloseUpstream();
 }
