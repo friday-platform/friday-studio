@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+
+description: Friday table-outcomes daemon evals — artifact-roundtrip coverage for every mime the /artifacts/[id]/table route claims to render
+
+prompts:
+  - "{{scenarioId}}"
+
+providers:
+  - id: file://table-outcomes-provider.cjs
+    label: friday-table-outcomes-daemon
+
+defaultTest:
+  assert:
+    - type: is-json
+    - type: javascript
+      value: |
+        const result = JSON.parse(output);
+        if (result.pass !== true) {
+          throw new Error(`${result.id} failed: ${(result.notes || []).join('; ')}`);
+        }
+        return true;
+
+tests: file://table-outcomes-tests.yaml
