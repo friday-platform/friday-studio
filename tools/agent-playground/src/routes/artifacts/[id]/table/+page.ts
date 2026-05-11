@@ -21,9 +21,9 @@ import type { PageLoad } from "./$types";
  * link to download the original.
  */
 export const load: PageLoad = async ({ params, fetch }) => {
-  const { artifactId } = params;
+  const { id: artifactId } = params;
   if (!artifactId) {
-    throw error(400, "Missing artifactId");
+    throw error(400, "Missing artifact id");
   }
 
   // Single round-trip: artifact metadata endpoint returns the file's

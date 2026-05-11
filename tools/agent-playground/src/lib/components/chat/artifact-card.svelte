@@ -3,7 +3,7 @@
   import { stripMimeParams } from "@atlas/core/artifacts/file-upload";
   import { z } from "zod";
   import { getExportContext } from "./export-context.ts";
-  import { parseTabular, type TableModel } from "./table-parsers.ts";
+  import { parseTabular, TABULAR_MIMES, type TableModel } from "./table-parsers.ts";
   import TableView from "./table-view.svelte";
 
   interface Props {
@@ -196,29 +196,23 @@
   // instead of a raw-content tab. Falls back to the generic preview/
   // download tile when the bytes don't actually parse as tabular.
 
-  const TABULAR_MIMES = new Set([
-    "text/csv",
-    "text/tab-separated-values",
-    "text/tsv",
-    "application/json",
-    "text/json",
-    "text/html",
-    "application/xhtml+xml",
-    "text/markdown",
-    "text/x-markdown",
-  ]);
+  // `TABULAR_MIMES` is imported from `table-parsers.ts` — both the
+  // route dispatcher and this card classify against the same set so a
+  // tabular artifact gets the table preview here AND a /table route
+  // redirect from the dispatcher.
   const PREVIEW_ROW_LIMIT = 8;
 
   const isTabularMime = $derived(baseMime ? TABULAR_MIMES.has(baseMime) : false);
 
-  // Tabular artifacts open in the dedicated full-screen table viewer.
-  // The route is workspace-agnostic (the /content endpoint is global
-  // and the view doesn't need workspace chrome) so no prop drilling,
-  // no Svelte-context plumbing. Export mode skips this — the static
-  // HTML has no router.
+  // Tabular artifacts open in the dedicated full-screen table viewer
+  // at `/artifacts/<id>/table` — the explicit "render as table" path
+  // (the bare `/artifacts/<id>` dispatcher would redirect there
+  // anyway for tabular mimes, but linking directly skips the
+  // round-trip). Workspace-agnostic; export mode skips this — the
+  // static HTML has no router.
   const tableRouteUrl = $derived(
     isTabularMime && exportCtx === undefined
-      ? `/table/${encodeURIComponent(artifactId)}`
+      ? `/artifacts/${encodeURIComponent(artifactId)}/table`
       : undefined,
   );
 

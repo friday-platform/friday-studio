@@ -12,6 +12,7 @@
   import { formatMessageTimestamp } from "@atlas/core/chat/export/render";
   import { tableToMarkdown } from "./table-to-markdown";
   import { tableToCSV } from "./table-to-csv";
+  import { tableToSafeHTML } from "./table-to-html";
   import { snapshotTableToArtifact } from "./snapshot-table";
 
   // Per-message timestamp formatters. Default is HH:MM:SS in the user's
@@ -135,9 +136,9 @@
      * Workspace + chat ids for the inline-table Actions menu's "Open in
      * dedicated view" path. The handler auto-snapshots the rendered
      * <table> to a markdown artifact tagged with these ids, then
-     * navigates to `/platform/<workspaceId>/table/<artifactId>`. Both
-     * are optional — when missing the menu omits the Open option but
-     * Copy / Download CSV / Download MD still work without round-tripping.
+     * opens `/artifacts/<id>/table` in a new tab. Both are optional —
+     * when missing the menu omits the Open option but Copy / Download
+     * CSV / Download MD still work without round-tripping.
      */
     workspaceId?: string;
     chatId?: string;
@@ -315,6 +316,13 @@
     return {
       destroy() {
         observer.disconnect();
+        // Tear down any Actions menu that was open when the list
+        // unmounts (navigate to another chat, close the inspector,
+        // HMR refresh). Without this, the document-level pointerdown
+        // and keydown listeners that `openMenu` attached stay alive
+        // pointing at GC-collectible nodes — small leak per open menu
+        // and a confusing dev-tools state after a few HMR cycles.
+        currentOpenClose?.();
       },
     };
   }
@@ -349,12 +357,14 @@
    * Actions dropdown for `<table>` blocks. Four items:
    *
    *   Copy                  — multi-format clipboard write (markdown
-   *                           text/plain + original outerHTML text/html)
+   *                           text/plain + sanitized text/html — see
+   *                           table-to-html.ts for why we don't
+   *                           round-trip outerHTML)
    *                           so Sheets/Excel pasting works alongside
    *                           code-editor / Slack / GitHub paste.
    *   Open in dedicated view — auto-snapshots the table to a markdown
-   *                            artifact, then navigates to
-   *                            /platform/<wsId>/table/<artifactId>.
+   *                            artifact, then opens
+   *                            /artifacts/<id>/table in a new tab.
    *                            Hidden when workspaceId is unknown
    *                            (component used outside a workspace
    *                            context, e.g. ephemeral preview).
@@ -412,7 +422,12 @@
 
     addItem("Copy", () => {
       const md = tableToMarkdown(table);
-      const html = table.outerHTML;
+      // Rebuild HTML from a sanitizing serializer rather than
+      // round-tripping `table.outerHTML` — agent-rendered chat tables
+      // can carry attributes / nested formatting we don't want
+      // landing in someone's downstream rich-text paste. See
+      // `table-to-html.ts` for the threat model.
+      const html = tableToSafeHTML(table);
       const writeMulti =
         typeof ClipboardItem !== "undefined" && navigator.clipboard.write
           ? navigator.clipboard.write([
@@ -440,8 +455,14 @@
           (artifactId) => {
             // New tab + no app chrome — the destination is its own
             // standalone surface. See `isChromeless` in the root
-            // layout for the chrome opt-out.
-            window.open(`/table/${encodeURIComponent(artifactId)}`, "_blank", "noopener");
+            // layout for the chrome opt-out. Linking directly to
+            // the explicit table renderer skips the dispatcher
+            // redirect.
+            window.open(
+              `/artifacts/${encodeURIComponent(artifactId)}/table`,
+              "_blank",
+              "noopener",
+            );
           },
           (err) => {
             console.error("Failed to snapshot table:", err);

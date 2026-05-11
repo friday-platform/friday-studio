@@ -27,6 +27,7 @@
     type TableModel,
   } from "$lib/components/chat/table-parsers.ts";
   import { tableToCSV } from "$lib/components/chat/table-to-csv.ts";
+  import { tableToSafeHTML } from "$lib/components/chat/table-to-html.ts";
   import { tableToMarkdown } from "$lib/components/chat/table-to-markdown.ts";
   import TableView from "$lib/components/chat/table-view.svelte";
 
@@ -94,7 +95,13 @@
     if (!model) return;
     const table = buildDetachedTable(model);
     const md = tableToMarkdown(table);
-    const html = table.outerHTML;
+    // The detached <table> we just built has only `textContent` in
+    // each cell (no rich HTML) so outerHTML would be safe here today.
+    // Route through the sanitizing serializer anyway so a future
+    // refactor of `buildDetachedTable` that adds links / images /
+    // inline formatting can't slip an XSS shape into someone's
+    // rich-text paste. See `table-to-html.ts` for the threat model.
+    const html = tableToSafeHTML(table);
     const writeMulti =
       typeof ClipboardItem !== "undefined" && navigator.clipboard.write
         ? navigator.clipboard.write([
