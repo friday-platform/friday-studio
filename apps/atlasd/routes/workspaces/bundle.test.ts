@@ -257,6 +257,36 @@ describe("workspace bundle endpoints (end-to-end)", () => {
     expect(lockfile).toContain("agents/spritesheet-normalizer");
   });
 
+  test("GET /:id/bundle fails when a referenced user agent isn't installed", async () => {
+    // Nothing seeded under <homeDir>/agents/ — referenced user agent is
+    // unresolvable, export should fail loudly instead of producing a
+    // half-empty bundle.
+    const { app } = createApp({
+      workspaceDir,
+      homeDir,
+      workspaceConfig: {
+        atlas: null,
+        workspace: {
+          version: "1.0",
+          workspace: { name: "demo-space" },
+          agents: {
+            ghost: {
+              type: "user",
+              agent: "ghost",
+              description: "agent that does not exist on disk",
+            },
+          },
+        },
+      },
+    });
+
+    const response = await app.request("/ws-demo/bundle");
+    expect(response.status).toBe(500);
+    const body = (await response.json()) as { error: string };
+    expect(body.error).toMatch(/user agent.*could not be resolved/i);
+    expect(body.error).toContain("ghost");
+  });
+
   test("POST /import-bundle rejects a tampered bundle", async () => {
     const { app: exportApp } = createApp({ workspaceDir, homeDir });
     const exportResponse = await exportApp.request("/ws-demo/bundle");

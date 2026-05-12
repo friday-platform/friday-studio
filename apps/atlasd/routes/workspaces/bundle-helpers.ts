@@ -119,8 +119,8 @@ export async function buildWorkspaceBundleBytes(
  * installed source dir under `<userAgentsDir>/<id>@<version>/` so it can be
  * embedded in the bundle. Skipped when the workspace already ships a
  * same-named agent under `<workspacePath>/agents/<id>/` (workspace-local
- * wins). Unresolvable refs log a warning and are left out — the bundle
- * still exports, but is not portable for that agent.
+ * wins). Throws if any referenced user agent can't be resolved — silently
+ * partial bundles fail much later on the import side, so surface it here.
  */
 async function resolveExternalUserAgents(opts: {
   config: WorkspaceConfig;
@@ -139,6 +139,7 @@ async function resolveExternalUserAgents(opts: {
 
   const adapter = new UserAdapter(opts.userAgentsDir);
   const resolved: { name: string; sourceDir: string }[] = [];
+  const missing: string[] = [];
   for (const id of userAgentIds) {
     try {
       await stat(join(opts.workspacePath, "agents", id));
@@ -149,12 +150,14 @@ async function resolveExternalUserAgents(opts: {
     try {
       const source = await adapter.loadAgent(id);
       resolved.push({ name: id, sourceDir: source.metadata.sourceLocation });
-    } catch (error) {
-      opts.logger.warn(
-        "User agent referenced by workspace.yml could not be resolved; bundle will not include it",
-        { agentId: id, userAgentsDir: opts.userAgentsDir, error },
-      );
+    } catch {
+      missing.push(id);
     }
+  }
+  if (missing.length > 0) {
+    throw new Error(
+      `Workspace references user agent(s) that could not be resolved under ${opts.userAgentsDir}: ${missing.join(", ")}`,
+    );
   }
   return resolved;
 }
