@@ -484,11 +484,11 @@ describe("hasUnusableCredentialCause", () => {
     { name: "LinkCredentialNotFoundError", error: new LinkCredentialNotFoundError("cred_1") },
     {
       name: "LinkCredentialExpiredError (expired_no_refresh)",
-      error: new LinkCredentialExpiredError("cred_2", "expired_no_refresh"),
+      error: new LinkCredentialExpiredError("cred_2", "expired_no_refresh", "expired, no refresh"),
     },
     {
       name: "LinkCredentialExpiredError (refresh_failed)",
-      error: new LinkCredentialExpiredError("cred_3", "refresh_failed"),
+      error: new LinkCredentialExpiredError("cred_3", "refresh_failed", "refresh failed"),
     },
     { name: "NoDefaultCredentialError", error: new NoDefaultCredentialError("slack") },
   ])("returns true for direct $name", ({ error }) => {
@@ -519,6 +519,7 @@ describe("hasUnusableCredentialCause", () => {
     const error = new LinkCredentialUnavailableError({
       credentialId: "cred_pending",
       serverName: "google-calendar",
+      linkError: "transient refresh failure (network)",
     });
     expect(hasUnusableCredentialCause(error)).toBe(false);
   });

@@ -161,8 +161,12 @@ describe("createMCPTools", () => {
 
   it("skips server with LinkCredentialExpiredError and classifies refresh kind", async () => {
     mockResolveEnvValues
-      .mockRejectedValueOnce(new LinkCredentialExpiredError("cred_456", "refresh_failed"))
-      .mockRejectedValueOnce(new LinkCredentialExpiredError("cred_789", "expired_no_refresh"));
+      .mockRejectedValueOnce(
+        new LinkCredentialExpiredError("cred_456", "refresh_failed", "refresh failed"),
+      )
+      .mockRejectedValueOnce(
+        new LinkCredentialExpiredError("cred_789", "expired_no_refresh", "expired, no refresh"),
+      );
 
     const configs: Record<string, MCPServerConfig> = {
       "refresh-failed": {
@@ -188,6 +192,7 @@ describe("createMCPTools", () => {
         credentialId: "cred_transient",
         serverName: "needs-cred",
         provider: "google-gmail",
+        linkError: "transient refresh failure (network)",
       }),
     );
 
@@ -214,6 +219,7 @@ describe("createMCPTools", () => {
         new LinkCredentialUnavailableError({
           credentialId: "cred_transient",
           serverName: "transient-server",
+          linkError: "transient refresh failure (network)",
         }),
       )
       .mockResolvedValueOnce({});
