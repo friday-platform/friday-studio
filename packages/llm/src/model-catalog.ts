@@ -383,6 +383,14 @@ async function fetchCatalog(): Promise<Catalog> {
 
 let cache: Catalog | null = null;
 let inflight: Promise<Catalog> | null = null;
+/**
+ * Bumped by {@link invalidateCatalog}. A fetch captures the current value
+ * before awaiting and only commits its result to `cache` if the counter
+ * is still equal — otherwise an env-changing invalidation happened mid-
+ * flight and the fetch's view of `process.env` (e.g. `GROQ_API_KEY`) is
+ * stale.
+ */
+let generation = 0;
 
 /**
  * Returns the cached catalog, or fetches fresh when the cache is missing
@@ -392,9 +400,10 @@ let inflight: Promise<Catalog> | null = null;
 export function getCatalog(): Promise<Catalog> {
   if (cache && Date.now() - cache.fetchedAt < CACHE_TTL_MS) return Promise.resolve(cache);
   if (inflight) return inflight;
+  const myGen = generation;
   inflight = fetchCatalog()
     .then((fresh) => {
-      cache = fresh;
+      if (myGen === generation) cache = fresh;
       return fresh;
     })
     .finally(() => {
@@ -424,4 +433,5 @@ export async function prewarmCatalog(): Promise<void> {
 export function invalidateCatalog(): void {
   cache = null;
   inflight = null;
+  generation++;
 }
