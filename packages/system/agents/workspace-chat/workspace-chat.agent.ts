@@ -499,7 +499,10 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
   expertise: { examples: [] },
   useWorkspaceSkills: true,
 
-  handler: async (_, { session, logger, stream, abortSignal, platformModels }) => {
+  handler: async (
+    _,
+    { session, logger, stream, abortSignal, platformModels, disconnectedIntegrations },
+  ) => {
     if (!session.streamId) {
       throw new Error("Stream ID is required");
     }
@@ -691,6 +694,21 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
       execute: async ({ writer }) => {
         if (!session.streamId) {
           throw new Error("Stream ID is required");
+        }
+
+        // Persist disconnect notices as a `data-integration-disconnected`
+        // part on the assistant message. The FSM also emits this via
+        // `stream.emit` for the live UI, but that path is MCP-notification-only
+        // and the chip vanishes on reload. Writing here routes through the
+        // AI SDK writer → onFinish → ChatStorage.appendMessage, so the chip
+        // survives. The chat UI dedups by (serverId, kind), so the double
+        // emit (FSM + writer) collapses to one chip in either render path.
+        if (disconnectedIntegrations && disconnectedIntegrations.length > 0) {
+          writer.write({
+            id: crypto.randomUUID(),
+            type: "data-integration-disconnected",
+            data: { integrations: disconnectedIntegrations },
+          });
         }
 
         // Parallel fetch of startup context
