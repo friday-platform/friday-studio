@@ -34,7 +34,7 @@ export function registerSignalTriggerTool(server: McpServer, ctx: ToolContext) {
         _sessionContext: z.record(z.string(), z.unknown()).optional(),
       },
     },
-    async ({ workspaceId, signalId, payload: rawPayload, _sessionContext }) => {
+    async ({ workspaceId, signalId, payload: rawPayload, _sessionContext }, extra) => {
       // Extract datetime and streamId from session context
       const datetime = _sessionContext?.datetime;
       const streamId =
@@ -129,11 +129,22 @@ export function registerSignalTriggerTool(server: McpServer, ctx: ToolContext) {
         // Merge datetime into payload for timezone-aware FSM agents
         const enrichedPayload = datetime ? { ...payload, datetime } : payload || {};
 
+        // Forward the per-request abort signal so an external MCP client's
+        // `notifications/cancelled` for this tool call propagates into the
+        // downstream daemon route — the daemon's `onClientAbort` listener
+        // then publishes `signals.cancel.<correlationId>` for the spawned
+        // session. Validation `$get` above is left unsignaled: it's a
+        // synchronous-ish read, dropping it on cancel would silently fall
+        // through to the warn-log branch and trigger the signal without
+        // payload validation.
         const result = await parseResult(
-          client.workspace[":workspaceId"].signals[":signalId"].$post({
-            param: { workspaceId, signalId },
-            json: { payload: enrichedPayload },
-          }),
+          client.workspace[":workspaceId"].signals[":signalId"].$post(
+            {
+              param: { workspaceId, signalId },
+              json: { payload: enrichedPayload },
+            },
+            { init: { signal: extra.signal } },
+          ),
         );
 
         if (!result.ok) {
