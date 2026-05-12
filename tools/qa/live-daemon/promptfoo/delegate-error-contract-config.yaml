@@ -2,8 +2,14 @@
 
 description: Friday delegate sub-agent scope discipline + MCP error contract evals
 
+# Render the actual system prompt under test in the promptfoo view's
+# "Prompt" column. Each test sets `vars.systemPrompt` to a file:// ref
+# of the matching prompt file under `prompts/` — promptfoo loads the
+# file content and interpolates it into the prompt template below.
+# The `scenarioId` var is still threaded so the provider knows which
+# scenario's result to surface.
 prompts:
-  - "{{scenarioId}}"
+  - "{{systemPrompt}}\n\n[scenario: {{scenarioId}}]"
 
 providers:
   - id: file://delegate-error-contract-provider.cjs
