@@ -54,7 +54,7 @@ export class LinkCredentialNotFoundError extends Error {
 /** Error thrown when multiple credentials exist for a provider but none is marked as default */
 export class NoDefaultCredentialError extends Error {
   constructor(public readonly provider: string) {
-    super(`No default credential set for ${provider}. Go to Settings > Connections to pick one.`);
+    super(`No default credential set for ${provider}. Call connect_service to connect one.`);
     this.name = "NoDefaultCredentialError";
   }
 }
