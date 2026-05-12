@@ -122,6 +122,47 @@ describe("createFetchTool", () => {
     expect(options.signal).toBeInstanceOf(AbortSignal);
   });
 
+  // Without composition, an aborted chat turn couldn't stop a long-running
+  // fetch — the tool would wait for the 30s timeout regardless. Aborting
+  // the parent signal must propagate into the underlying fetch promptly.
+  test("aborts the fetch when the parent opts.abortSignal fires", async () => {
+    const parent = new AbortController();
+    let observedSignal: AbortSignal | undefined;
+    fetchSpy.mockImplementationOnce((_input: RequestInfo | URL, init?: RequestInit) => {
+      observedSignal = init?.signal ?? undefined;
+      return new Promise<Response>((_, reject) => {
+        observedSignal?.addEventListener(
+          "abort",
+          () => reject(observedSignal?.reason ?? new Error("aborted")),
+          { once: true },
+        );
+      });
+    });
+
+    const execute = (
+      fetchTool as unknown as {
+        execute: (
+          input: { url: string; format: string },
+          opts: { abortSignal?: AbortSignal },
+        ) => Promise<string>;
+      }
+    ).execute;
+
+    const resultPromise = execute(
+      { url: "https://example.com", format: "markdown" },
+      { abortSignal: parent.signal },
+    );
+
+    const start = Date.now();
+    parent.abort();
+    const result = await resultPromise;
+    const elapsed = Date.now() - start;
+
+    expect(elapsed).toBeLessThan(500);
+    expect(observedSignal?.aborted).toBe(true);
+    expect(result).toContain("Fetch failed");
+  });
+
   test("converts HTML to markdown even for text format when content-type is html", async () => {
     // When format is "text" but the response is HTML, extract text
     const html = "<h1>Title</h1><p>Paragraph text</p>";
