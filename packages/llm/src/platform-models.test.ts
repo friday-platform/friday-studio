@@ -184,4 +184,15 @@ describe("createPlatformModels — lazy resolution", () => {
     delete process.env.GROQ_API_KEY;
     expect(pm.get("labels").modelId).toBe("claude-haiku-4-5");
   });
+
+  it("picks up credentials added to process.env after construction", () => {
+    stubEnv({ ANTHROPIC_API_KEY: "sk-ant-test" });
+    const pm = createPlatformModels({
+      models: { labels: ["groq:llama-3.3-70b", "anthropic:claude-haiku-4-5"] },
+    });
+    expect(pm.get("labels").modelId).toBe("claude-haiku-4-5");
+
+    process.env.GROQ_API_KEY = "gsk_test";
+    expect(pm.get("labels").modelId).toBe("llama-3.3-70b");
+  });
 });
