@@ -959,6 +959,11 @@ describe("POST /workspaces/:workspaceId/signals/:signalId — client-abort cance
     await reqPromise;
   });
 
+  // The SSE branch has two cancel paths in production: the `onClientAbort`
+  // listener (exercised here) and the `ReadableStream.cancel()` callback
+  // (not exercised — Hono's `app.request()` doesn't drive the response
+  // stream's cancel callback, and in real production an HTTP-level client
+  // abort fires `onClientAbort` first, so `cancel()` is defense-in-depth).
   test("SSE variant: aborting before data-session-start publishes a cancel frame", async () => {
     const { app } = createAbortTestApp();
     const framePromise = awaitFirstCancelFrame(2000);
@@ -973,6 +978,8 @@ describe("POST /workspaces/:workspaceId/signals/:signalId — client-abort cance
       }),
     ).catch(() => undefined);
 
+    // Same 50ms invariant as the JSON test: yield long enough for the route
+    // to attach its abort listener before the abort fires.
     await new Promise((r) => setTimeout(r, 50));
     ac.abort();
 
