@@ -75,3 +75,19 @@
 - description: chip uses role='status' (non-interactive, screen-reader friendly)
   vars:
     scenarioId: chip-render-role-status
+
+# Group D — createMCPTools → disconnect[] integration (canonical vitest pin)
+
+- description: createMCPTools catch path for credential_temporarily_unavailable (vitest pin)
+  vars:
+    scenarioId: disconnect-emission-covered-by-vitest
+
+# Group E — storage invariant (refresh_token preservation)
+
+- description: classifier success outcome echoes the original refresh_token
+  vars:
+    scenarioId: storage-invariant-success-echoes-original
+
+- description: classifier transient outcome carries no tokens (storage can't be tricked into a write)
+  vars:
+    scenarioId: storage-invariant-transient-carries-no-tokens

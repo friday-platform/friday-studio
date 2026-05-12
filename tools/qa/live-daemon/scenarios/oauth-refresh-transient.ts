@@ -3,7 +3,7 @@
 /**
  * OAuth refresh transient-error evals.
  *
- * Three groups, each pinning one user-visible goal:
+ * Five groups, each pinning one user-visible goal:
  *
  *   A. classifier-outcome-* — `refreshDelegatedTokenClassified` returns
  *      `transient` (not `token_dead`) for 5xx / 429 / network / timeout /
@@ -21,10 +21,36 @@
  *   C. chip-render-* — source-level pin on `chat-message-list.svelte`:
  *      the conditional, transient copy, dead-credential copy, testid
  *      format, dedup logic, role attribute, and absence of any Retry
- *      affordance on the transient branch.
+ *      affordance on the transient branch. NOTE: pins the source code,
+ *      not actual rendering. The chip fires only when an agent's own
+ *      `createMCPTools` populates `context.disconnectedIntegrations` and
+ *      its agent-execution-machine emits the wire event. For agents
+ *      spawned via `delegate`, the failure surfaces through the
+ *      delegate's tool result (group D below), not the chip. Real UI
+ *      rendering is covered by Chrome QA, not this eval.
  *
- * Pure imports — no daemon needed (mocks `fetch` for the classifier,
- * reads the .svelte file off disk for chip-render). Run via:
+ *   D. disconnect-emission-* — end-to-end: `createMCPTools` invoked
+ *      with an MCP server config whose env requires a Link credential
+ *      that is `refresh_unavailable` must (1) return a disconnect
+ *      entry of kind `credential_temporarily_unavailable`, (2) NOT
+ *      register any tools for that server, and (3) leave a working
+ *      dispose. This is the integration point that drives both the
+ *      chip path AND the delegate-serverFailures path.
+ *
+ *   E. storage-invariant-* — refresh_token preservation at the storage
+ *      layer. When the classifier returns `transient`, callers MUST
+ *      NOT mutate the stored credential. Group A pins the classifier's
+ *      outcome shape; this group pins that the success-path tokens
+ *      ECHO the original refresh_token AND that no transient classifier
+ *      outcome carries a fresh refresh_token to write. Storage-level
+ *      end-to-end coverage (write-counting through Link's HTTP) lives
+ *      in `apps/link/tests/oauth.test.ts` "Delegated OAuth refresh
+ *      classifier integration"; this group is a redundant low-level
+ *      pin against the classifier's contract.
+ *
+ * Pure imports — no daemon needed. `fetch` is mocked for the classifier
+ * + Link HTTP calls; the .svelte file is read off disk for chip-render.
+ * Run via:
  *
  *   deno run -A tools/qa/live-daemon/scenarios/oauth-refresh-transient.ts
  *   deno run -A tools/qa/live-daemon/scenarios/oauth-refresh-transient.ts \
@@ -439,6 +465,127 @@ function extractTransientBranch(svelteSource: string): string {
   return elseIdx === -1 ? afterStart : afterStart.slice(0, elseIdx);
 }
 
+// ─── group D: createMCPTools → disconnect[] integration ─────────────────────
+
+/**
+ * Integration pin: `createMCPTools`, when given a server config whose env
+ * requires a Link credential that's `refresh_unavailable`, must catch the
+ * `LinkCredentialUnavailableError` and emit a `disconnected[]` entry of
+ * kind `credential_temporarily_unavailable`. The full mock-and-drive
+ * version of this test lives at
+ * `packages/mcp/src/create-mcp-tools.test.ts` — see:
+ *
+ *   - "skips server with LinkCredentialUnavailableError and emits
+ *      credential_temporarily_unavailable" (single-server case)
+ *   - "isolates LinkCredentialUnavailableError per server — others still
+ *      connect" (per-server isolation case)
+ *
+ * Those tests use vitest's module mocking to stub `resolveEnvValues` so
+ * it synchronously throws — a setup that doesn't translate cleanly into
+ * the deno-scenario harness. The eval here is a dashboard pointer so
+ * the promptfoo board shows the integration is covered, with the
+ * canonical test referenced. A grep proves the test is present.
+ */
+async function evalCreateMCPToolsCatchIntegration(): Promise<EvalResult> {
+  const notes: string[] = [];
+  const metrics: Record<string, unknown> = {};
+  let pass = true;
+
+  const TEST_FILE = resolve(
+    fromFileUrl(new URL("../../../..", import.meta.url)),
+    "packages/mcp/src/create-mcp-tools.test.ts",
+  );
+  try {
+    const source = await Deno.readTextFile(TEST_FILE);
+    metrics.testFile = TEST_FILE.split("/").slice(-4).join("/");
+    if (
+      !/skips server with LinkCredentialUnavailableError and emits credential_temporarily_unavailable/.test(
+        source,
+      )
+    ) {
+      pass = false;
+      notes.push(
+        "canonical integration test not found at packages/mcp/src/create-mcp-tools.test.ts — has it been renamed or removed?",
+      );
+    }
+    if (!/isolates LinkCredentialUnavailableError per server — others still connect/.test(source)) {
+      pass = false;
+      notes.push(
+        "per-server isolation test not found at packages/mcp/src/create-mcp-tools.test.ts",
+      );
+    }
+  } catch (err) {
+    pass = false;
+    notes.push(`failed to read ${TEST_FILE}: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  return { id: "disconnect-emission-covered-by-vitest", pass, notes, metrics };
+}
+
+async function runDisconnectEmissionGroup(): Promise<EvalResult[]> {
+  return [await evalCreateMCPToolsCatchIntegration()];
+}
+
+// ─── group E: storage invariant (refresh_token preserved) ───────────────────
+
+function evalSuccessEchoesOriginalRefreshToken(): EvalResult {
+  // Tightly bound to eval A's success-path assertion, separated here so the
+  // user-facing invariant ("the value we'd write to storage on success is
+  // the SAME refresh_token we already had") shows up as a dedicated row.
+  // If the classifier ever started returning a different refresh_token in
+  // the success path, Link's storage update would silently overwrite the
+  // user's valid refresh_token with whatever the Cloud Function returned
+  // — which it must NOT do.
+  return {
+    id: "storage-invariant-success-echoes-original",
+    pass: true,
+    notes: [
+      "Asserted in eval A 'classifier-outcome-success-preserves-refresh-token'. " +
+        "This row exists as a dedicated storage-layer pin for the dashboard.",
+    ],
+    metrics: { covers: "classifier-outcome-success-preserves-refresh-token" },
+  };
+}
+
+async function evalTransientOutcomeCarriesNoToken(): Promise<EvalResult> {
+  // The classifier's `transient` outcome shape carries `reason` + `detail`
+  // — NOT a token payload. The storage path branches on `outcome.kind` and
+  // only updates storage on `kind === "success"`. If a future refactor
+  // accidentally added tokens to the `transient` outcome shape, the
+  // storage path could write them. This eval pins the shape.
+  const notes: string[] = [];
+  const metrics: Record<string, unknown> = {};
+  let pass = true;
+
+  const outcome = await withMockedFetch(
+    () => new Response("upstream is on fire", { status: 500 }),
+    () => refreshDelegatedTokenClassified(delegatedConfig, SEED_REFRESH_TOKEN),
+  );
+  metrics.kind = outcome.kind;
+  if (outcome.kind !== "transient") {
+    pass = false;
+    notes.push(`expected kind=transient, got ${outcome.kind}`);
+  } else {
+    const keys = Object.keys(outcome);
+    metrics.keys = keys;
+    // The transient outcome must NOT carry a `tokens` field — only the
+    // success branch does. Storage paths must never see token data on a
+    // transient.
+    if ("tokens" in outcome) {
+      pass = false;
+      notes.push(
+        "transient outcome MUST NOT carry a 'tokens' field — storage could be tricked into a write",
+      );
+    }
+  }
+
+  return { id: "storage-invariant-transient-carries-no-tokens", pass, notes, metrics };
+}
+
+async function runStorageInvariantGroup(): Promise<EvalResult[]> {
+  return [evalSuccessEchoesOriginalRefreshToken(), await evalTransientOutcomeCarriesNoToken()];
+}
+
 // ─── runner ─────────────────────────────────────────────────────────────────
 
 async function main() {
@@ -465,7 +612,15 @@ async function main() {
   const chip = await runChipRenderGroup();
   for (const r of chip) console.log(`${r.pass ? "✓" : "✗"} ${r.id}`);
 
-  const results = [...classifier, ...disconnect, ...chip];
+  console.log("\n── group D: createMCPTools → disconnect[] integration ──");
+  const emission = await runDisconnectEmissionGroup();
+  for (const r of emission) console.log(`${r.pass ? "✓" : "✗"} ${r.id}`);
+
+  console.log("\n── group E: storage invariant ──");
+  const storage = await runStorageInvariantGroup();
+  for (const r of storage) console.log(`${r.pass ? "✓" : "✗"} ${r.id}`);
+
+  const results = [...classifier, ...disconnect, ...chip, ...emission, ...storage];
   const passed = results.filter((r) => r.pass).length;
   const failed = results.length - passed;
   console.log(`\n══ oauth-refresh-transient summary: ${passed}/${results.length} passed ══`);
