@@ -216,6 +216,19 @@
       : undefined,
   );
 
+  // text/markdown routes through the bare `/artifacts/<id>` dispatcher
+  // (one redirect hop) so the same disambiguation lives in one place:
+  // table-shaped markdown (heading + one table) lands on /table, prose
+  // lands on /markdown. Linking direct to /markdown would bypass that
+  // and ship every md to the prose viewer — wrong for table-only
+  // artifacts. Without this branch, Open would fall through to
+  // `serveUrl` (the raw /content endpoint, served as a download).
+  const markdownDispatchUrl = $derived(
+    baseMime === "text/markdown" && exportCtx === undefined
+      ? `/artifacts/${encodeURIComponent(artifactId)}`
+      : undefined,
+  );
+
   // Fetch raw text for tabular artifacts when the metadata endpoint
   // didn't return `contents` inline. The /content endpoint is content-
   // addressed + cacheable so re-fetching is cheap; we only do it when
@@ -323,6 +336,19 @@
             target="_blank"
             rel="noopener noreferrer"
             title="Open table in new tab"
+          >
+            Open
+          </a>
+        {:else if markdownDispatchUrl}
+          <!-- Markdown artifacts go through the bare /artifacts/<id>
+               dispatcher so the table-vs-prose disambiguation
+               (isPureMarkdownTable) lives in one place. -->
+          <a
+            class="open-btn"
+            href={markdownDispatchUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Open markdown in new tab"
           >
             Open
           </a>

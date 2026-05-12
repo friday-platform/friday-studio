@@ -24,13 +24,19 @@ export interface TableModel {
  * the list. Add a new branch to `parseTabular` AND this set in lock-
  * step; a mime in the set with no `parseTabular` case is a runtime
  * promise we can't keep.
+ *
+ * `text/markdown` is intentionally absent: markdown artifacts route to
+ * the dedicated `/markdown` viewer, which renders the document as prose
+ * and surfaces any embedded tables inline via TableView + the action
+ * bar. `parseMarkdown` (below) is still kept and used by the inline
+ * snapshot path that produces a single-table TableModel from a
+ * pipe-only markdown blob.
  */
 export const TABULAR_MIMES: ReadonlySet<string> = new Set([
   "text/csv",
   "text/tab-separated-values",
   "application/json",
   "text/html",
-  "text/markdown",
 ]);
 
 /**
@@ -285,6 +291,99 @@ function projectDOMTable(table: Element): TableModel {
     columns: header,
     rows: rows.filter((_, idx) => idx !== headerIdx),
   };
+}
+
+/**
+ * Discriminated segment used by the markdown viewer: a markdown document
+ * is rendered as an alternating sequence of `prose` and `table` segments.
+ * Prose chunks are handed to `markdownToHTMLSafe`; table chunks render
+ * via `TableView` so the same chrome that powers `/artifacts/.../table`
+ * applies to tables embedded inside a whitepaper.
+ */
+export type MarkdownSegment =
+  | { kind: "prose"; markdown: string }
+  | { kind: "table"; model: TableModel };
+
+/**
+ * Walk `md` line-by-line, slicing out every pipe-table block (detected by
+ * the same heuristic `parseMarkdown` uses — header line followed by a
+ * `| --- | --- |` separator) and returning the alternating sequence of
+ * prose and table segments. Empty leading/trailing prose chunks are
+ * elided.
+ */
+export function splitMarkdownByTables(md: string): MarkdownSegment[] {
+  const lines = md.split("\n");
+  const segments: MarkdownSegment[] = [];
+  let prose: string[] = [];
+
+  const flushProse = () => {
+    if (prose.length === 0) return;
+    const text = prose.join("\n");
+    // Skip if it's only whitespace — keeps the rendered output tight
+    // when a table sits between two blank lines.
+    if (text.trim().length > 0) {
+      segments.push({ kind: "prose", markdown: text });
+    }
+    prose = [];
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const headerLine = lines[i] ?? "";
+    const sepLine = lines[i + 1] ?? "";
+    if (i + 1 < lines.length && isPipeLine(headerLine) && isSeparatorLine(sepLine)) {
+      // Found a table starting at `i`. Collect body until non-pipe / EOF.
+      flushProse();
+      const header = splitPipeRow(headerLine);
+      const rows: string[][] = [];
+      let j = i + 2;
+      while (j < lines.length && isPipeLine(lines[j] ?? "")) {
+        rows.push(splitPipeRow(lines[j] ?? ""));
+        j++;
+      }
+      if (header.length >= 2) {
+        segments.push({ kind: "table", model: { columns: header, rows } });
+      } else {
+        // Header too narrow to be a real table — fall through, keep
+        // the original lines as prose. Treat both `headerLine` and the
+        // collected rows as raw text.
+        prose.push(headerLine, sepLine);
+        for (let k = i + 2; k < j; k++) prose.push(lines[k] ?? "");
+      }
+      i = j - 1;
+      continue;
+    }
+    prose.push(headerLine);
+  }
+
+  flushProse();
+  return segments;
+}
+
+/**
+ * Disambiguates "markdown that's basically a table" from "markdown that
+ * happens to contain a table." True when the document has exactly one
+ * GFM table and the only non-table content is headings (no paragraphs,
+ * no lists, no quotes). Used by the artifact-route dispatcher to send
+ * table-shaped markdown to the dedicated /table viewer instead of the
+ * /markdown prose renderer.
+ *
+ * Returns true for "# Title\n\n| a | b |\n| - | - |\n| 1 | 2 |".
+ * Returns false for a whitepaper that contains a table among prose,
+ * two tables, or a table with a paragraph caption ("This table shows...").
+ */
+export function isPureMarkdownTable(md: string): boolean {
+  const segments = splitMarkdownByTables(md);
+  const tables = segments.filter((s) => s.kind === "table");
+  if (tables.length !== 1) return false;
+  for (const seg of segments) {
+    if (seg.kind !== "prose") continue;
+    const meaningful = seg.markdown
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0 && !l.startsWith("#"));
+    if (meaningful.length > 0) return false;
+  }
+  return true;
 }
 
 function isPipeLine(line: string): boolean {

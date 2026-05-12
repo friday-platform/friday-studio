@@ -1,0 +1,15 @@
+- description: B (system-reminder) produces zero em-dashes on turn 1
+  vars:
+    scenarioId: load-skill-injection-B-turn1-no-em-dashes
+
+- description: B (system-reminder) produces zero em-dashes on turn 3 (persistence — no forgetting)
+  vars:
+    scenarioId: load-skill-injection-B-turn3-no-em-dashes
+
+- description: B never regresses past A (em-dash count ≤ A on every turn)
+  vars:
+    scenarioId: load-skill-injection-B-no-worse-than-A
+
+- description: A baseline (always passes — notes record current tool-result-only em-dash counts for visibility)
+  vars:
+    scenarioId: load-skill-injection-A-baseline

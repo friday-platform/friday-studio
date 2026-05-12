@@ -3,11 +3,14 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  isPureMarkdownTable,
   parseDelimited,
   parseHTML,
   parseJSON,
   parseMarkdown,
   parseTabular,
+  splitMarkdownByTables,
+  TABULAR_MIMES,
 } from "./table-parsers.ts";
 
 describe("parseDelimited (CSV/TSV)", () => {
@@ -230,6 +233,183 @@ describe("parseMarkdown", () => {
       "| this | shouldn't | become | rows |",
     ].join("\n");
     expect(parseMarkdown(md)?.rows).toEqual([["1", "2"]]);
+  });
+});
+
+describe("TABULAR_MIMES", () => {
+  it("contains the four delimiter / structured formats", () => {
+    expect(TABULAR_MIMES.has("text/csv")).toBe(true);
+    expect(TABULAR_MIMES.has("text/tab-separated-values")).toBe(true);
+    expect(TABULAR_MIMES.has("application/json")).toBe(true);
+    expect(TABULAR_MIMES.has("text/html")).toBe(true);
+  });
+
+  it("excludes text/markdown — markdown routes to the dedicated /markdown viewer", () => {
+    expect(TABULAR_MIMES.has("text/markdown")).toBe(false);
+  });
+});
+
+describe("splitMarkdownByTables", () => {
+  it("returns a single prose segment when no tables are present", () => {
+    const segs = splitMarkdownByTables("# Whitepaper\n\nJust prose here.");
+    expect(segs).toHaveLength(1);
+    expect(segs[0]).toEqual({
+      kind: "prose",
+      markdown: "# Whitepaper\n\nJust prose here.",
+    });
+  });
+
+  it("splits a document with one embedded table into [prose, table, prose]", () => {
+    const md = [
+      "# Report",
+      "",
+      "Intro paragraph.",
+      "",
+      "| a | b |",
+      "| --- | --- |",
+      "| 1 | 2 |",
+      "| 3 | 4 |",
+      "",
+      "Closing thoughts.",
+    ].join("\n");
+    const segs = splitMarkdownByTables(md);
+    expect(segs).toHaveLength(3);
+    expect(segs[0]?.kind).toBe("prose");
+    expect(segs[1]).toEqual({
+      kind: "table",
+      model: {
+        columns: ["a", "b"],
+        rows: [
+          ["1", "2"],
+          ["3", "4"],
+        ],
+      },
+    });
+    expect(segs[2]).toEqual({ kind: "prose", markdown: "\nClosing thoughts." });
+  });
+
+  it("captures multiple tables in document order", () => {
+    const md = [
+      "Before.",
+      "",
+      "| a | b |",
+      "| --- | --- |",
+      "| 1 | 2 |",
+      "",
+      "Middle.",
+      "",
+      "| x | y |",
+      "| --- | --- |",
+      "| 9 | 8 |",
+      "",
+      "After.",
+    ].join("\n");
+    const segs = splitMarkdownByTables(md);
+    const tables = segs.filter((s) => s.kind === "table");
+    expect(tables).toHaveLength(2);
+    expect(tables[0]?.kind === "table" && tables[0].model.columns).toEqual(["a", "b"]);
+    expect(tables[1]?.kind === "table" && tables[1].model.columns).toEqual(["x", "y"]);
+  });
+
+  it("does not emit empty prose segments around back-to-back tables", () => {
+    const md = [
+      "| a | b |",
+      "| --- | --- |",
+      "| 1 | 2 |",
+      "| x | y |",
+      "| --- | --- |",
+      "| 9 | 8 |",
+    ].join("\n");
+    // Two tables in a row collapse into the second's continuation rows under
+    // the lenient parser — that's a separate corner. Here we just assert that
+    // the result doesn't include any whitespace-only prose entries.
+    const segs = splitMarkdownByTables(md);
+    for (const s of segs) {
+      if (s.kind === "prose") {
+        expect(s.markdown.trim().length).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it("returns a single prose segment when the only 'table' has a single column header", () => {
+    const md = ["| only |", "| --- |", "| value |"].join("\n");
+    const segs = splitMarkdownByTables(md);
+    expect(segs.every((s) => s.kind === "prose")).toBe(true);
+  });
+});
+
+describe("isPureMarkdownTable", () => {
+  it("true when the document is just a table", () => {
+    const md = ["| a | b |", "| --- | --- |", "| 1 | 2 |"].join("\n");
+    expect(isPureMarkdownTable(md)).toBe(true);
+  });
+
+  it("true when the only prose is headings around the table", () => {
+    const md = [
+      "# Character Comparison",
+      "",
+      "| GoT | LotR |",
+      "| --- | --- |",
+      "| Jon | Aragorn |",
+      "| Tyrion | Bilbo |",
+    ].join("\n");
+    expect(isPureMarkdownTable(md)).toBe(true);
+  });
+
+  it("true with multiple heading levels and the table at the end", () => {
+    const md = [
+      "# Title",
+      "",
+      "## Subtitle",
+      "",
+      "| a | b |",
+      "| --- | --- |",
+      "| 1 | 2 |",
+    ].join("\n");
+    expect(isPureMarkdownTable(md)).toBe(true);
+  });
+
+  it("false when there is a paragraph anywhere", () => {
+    const md = [
+      "# Title",
+      "",
+      "This table compares two things.",
+      "",
+      "| a | b |",
+      "| --- | --- |",
+      "| 1 | 2 |",
+    ].join("\n");
+    expect(isPureMarkdownTable(md)).toBe(false);
+  });
+
+  it("false when there are two tables", () => {
+    const md = [
+      "| a | b |",
+      "| --- | --- |",
+      "| 1 | 2 |",
+      "",
+      "| x | y |",
+      "| --- | --- |",
+      "| 9 | 8 |",
+    ].join("\n");
+    expect(isPureMarkdownTable(md)).toBe(false);
+  });
+
+  it("false when there is no table at all", () => {
+    expect(isPureMarkdownTable("# Just a heading\n\nAnd some prose.")).toBe(false);
+  });
+
+  it("false when there is a list around the table (lists aren't headings)", () => {
+    const md = [
+      "# Title",
+      "",
+      "- item one",
+      "",
+      "| a | b |",
+      "| --- | --- |",
+      "| 1 | 2 |",
+    ].join("\n");
+    expect(isPureMarkdownTable(md)).toBe(false);
   });
 });
 
