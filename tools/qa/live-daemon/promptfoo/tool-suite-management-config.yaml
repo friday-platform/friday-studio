@@ -3,7 +3,7 @@
 description: Friday tool-suite management daemon evals (chat-driven retrieval-tool coverage)
 
 prompts:
-  - "{{scenarioId}}"
+  - file://scenario-prompt.txt
 
 providers:
   - id: file://tool-suite-management-provider.cjs

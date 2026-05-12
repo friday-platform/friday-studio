@@ -3,7 +3,7 @@
 description: Friday retrieval-gated injection + user identity daemon evals
 
 prompts:
-  - "{{scenarioId}}"
+  - file://scenario-prompt.txt
 
 providers:
   - id: file://retrieval-gated-provider.cjs

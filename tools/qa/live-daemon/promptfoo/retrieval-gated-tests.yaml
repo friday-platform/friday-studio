@@ -1,11 +1,14 @@
 - description: user identity bootstrap (USERS bucket has _local pointer + nanoid User record)
   vars:
     scenarioId: user-identity-bootstrap
+    description: "user identity bootstrap (USERS bucket has _local pointer + nanoid User record)"
 
 - description: user identity stable across daemon restart (idempotent provisioning)
   vars:
     scenarioId: user-identity-stable-across-restart
+    description: "user identity stable across daemon restart (idempotent provisioning)"
 
 - description: wrapRetrieved defangs literal </retrieved_content> in body (close-tag escape)
   vars:
     scenarioId: retrieved-content-defang
+    description: "wrapRetrieved defangs literal </retrieved_content> in body (close-tag escape)"
