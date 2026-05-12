@@ -3,12 +3,7 @@ import type { Tracer } from "@opentelemetry/api";
 import type { Tool, TypedToolCall, TypedToolResult } from "ai";
 import { z } from "zod";
 import type { MemoryAdapter, NarrativeEntry } from "./memory-adapter.ts";
-import type {
-  AtlasDataEvents,
-  AtlasUIMessage,
-  AtlasUIMessageChunk,
-  AtlasUIMessagePart,
-} from "./messages.ts";
+import type { AtlasUIMessage, AtlasUIMessageChunk, AtlasUIMessagePart } from "./messages.ts";
 import type { AgentPayload } from "./result.ts";
 
 export type { AtlasUIMessage, AtlasUIMessageChunk, AtlasUIMessagePart };
@@ -363,18 +358,6 @@ export interface AgentContext {
   /** Workspace skills resolved for the agent (when useWorkspaceSkills is true) */
   skills?: AgentSkill[];
   stream: StreamEmitter | undefined;
-  /**
-   * MCP integrations that were unusable at session boot (dead credential,
-   * mid-refresh, etc.). Populated by `buildAgentContext` from the same
-   * `createMCPTools` pass that produced `tools`. Chat agents persist these
-   * to the assistant message as `data-integration-disconnected` parts so
-   * the chip survives a page reload — `stream.emit` alone is transient.
-   *
-   * Shape matches the `integration-disconnected` data-event payload (see
-   * {@link AtlasDataEventSchemas}); the canonical class lives in
-   * `@atlas/mcp` but agent-sdk can't depend on it without a cycle.
-   */
-  disconnectedIntegrations?: AtlasDataEvents["integration-disconnected"]["integrations"];
   logger: Logger;
   abortSignal?: AbortSignal;
   telemetry?: AgentTelemetryConfig;

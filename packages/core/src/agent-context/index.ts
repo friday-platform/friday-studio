@@ -221,11 +221,6 @@ export function createAgentContextBuilder(deps: AgentContextBuilderDeps) {
           streamId: sessionData.streamId,
         }),
         platformModels: deps.platformModels,
-        // Chat agents read this and write a `data-integration-disconnected`
-        // part via the persisting writer so the chip survives reload —
-        // the FSM-level `stream.emit` is transient (MCP notification only).
-        disconnectedIntegrations:
-          disconnectedIntegrations.length > 0 ? disconnectedIntegrations : undefined,
         // Spread overrides to include abortSignal and other overrides
         ...overrides,
         ...(memory ? { memory } : {}),

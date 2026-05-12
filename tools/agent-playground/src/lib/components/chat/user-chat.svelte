@@ -22,12 +22,7 @@
   import { nextResumeBudgetStep } from "./resume-budget.ts";
   import { nextSpeechChunk } from "./chat-tts.ts";
   import { buildSegments, extractImages } from "@atlas/core/chat/export/render";
-  import {
-    extractDisconnectedIntegrations,
-    extractErrorText,
-    hasErrorPart,
-    hasRenderableContent,
-  } from "./message-error.ts";
+  import { extractErrorText, hasErrorPart, hasRenderableContent } from "./message-error.ts";
   import type { ChatMessage, ToolCallDisplay } from "./types";
   import { GetChatResponseSchema } from "./types";
   import {
@@ -1057,7 +1052,6 @@
         timestamp: ts,
         images: extractImages(msg),
         errorText: extractErrorText(msg),
-        disconnectedIntegrations: extractDisconnectedIntegrations(msg),
         metadata: {
           agentId: typeof m.agentId === "string" ? m.agentId : undefined,
           jobName: typeof m.jobName === "string" ? m.jobName : undefined,

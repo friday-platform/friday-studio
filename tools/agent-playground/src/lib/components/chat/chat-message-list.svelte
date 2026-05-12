@@ -255,30 +255,6 @@
     return sum;
   });
 
-  // Dedupe disconnect chips across messages: once a (serverId, kind) pair
-  // has shown up in an earlier message, the same pair on a later message
-  // does NOT re-render its banner. In practice two agents in one turn
-  // (workspace-chat top-level + a delegated sub-agent) both run
-  // `createMCPTools` against the same dead MCP and each emit a
-  // disconnect entry. Without this dedup the user sees the same chip
-  // twice — confirmed via Chrome QA.
-  const disconnectIntegrationsByMessageId = $derived.by(() => {
-    const map = new Map<string, ChatMessage["disconnectedIntegrations"]>();
-    const seen = new Set<string>();
-    for (const m of messages) {
-      const raw = m.disconnectedIntegrations;
-      if (!raw || raw.length === 0) continue;
-      const kept = raw.filter((i) => {
-        const key = `${i.serverId}::${i.kind}`;
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      });
-      if (kept.length > 0) map.set(m.id, kept);
-    }
-    return map;
-  });
-
   // "Sticky-follow" state: true while the viewport is anchored at/near the
   // bottom, false the moment the user scrolls up to read history. Without
   // this, every streaming token would re-snap the scroll to the bottom and
@@ -726,41 +702,6 @@
           {/if}
         {:else}
           <span class="role-badge">{message.role === "user" ? "You" : "Friday"}</span>
-
-          {@const dedupedDisconnects = disconnectIntegrationsByMessageId.get(message.id)}
-          {#if dedupedDisconnects && dedupedDisconnects.length > 0}
-            <!-- Non-fatal info chip: an MCP integration's credential is dead
-                 (or temporarily unavailable) so its tools were skipped this
-                 session. The session still ran; the user just needs to
-                 reconnect the integration — or, for transient failures,
-                 try again in a moment. Rendered ABOVE segments so the user
-                 sees the "this integration is unavailable" context before
-                 the answer text and tool cards, not as a trailing footer. -->
-            <div
-              class="message-notice"
-              role="status"
-              data-integration-disconnected="true"
-            >
-              <span class="message-notice-icon" aria-hidden="true">⚠</span>
-              <div class="message-notice-body">
-                {#each dedupedDisconnects as integration (integration.serverId)}
-                  <div
-                    class="message-notice-row"
-                    data-testid={`integration-chip-${integration.kind}`}
-                  >
-                    {#if integration.kind === "credential_temporarily_unavailable"}
-                      Friday couldn't reach
-                      <strong>{integration.provider ?? integration.serverId}</strong>
-                      this turn — try again in a moment.
-                    {:else}
-                      <strong>{integration.provider ?? integration.serverId}</strong>
-                      is disconnected — reconnect in Settings → Connections to use those tools.
-                    {/if}
-                  </div>
-                {/each}
-              </div>
-            </div>
-          {/if}
 
           {#each message.segments as segment}
             {#if segment.type === "text" && segment.content.length > 0}
@@ -1229,32 +1170,6 @@
     opacity: 0.85;
     overflow-wrap: anywhere;
     white-space: pre-wrap;
-  }
-
-  .message-notice {
-    align-items: flex-start;
-    background-color: light-dark(#fffbeb, color-mix(in srgb, #d97706, black 70%));
-    border: 1px solid light-dark(#fde68a, color-mix(in srgb, #d97706, black 40%));
-    border-radius: var(--radius-3);
-    color: light-dark(#92400e, #fde68a);
-    display: flex;
-    font-size: var(--font-size-2);
-    gap: var(--size-2);
-    line-height: 1.5;
-    padding: var(--size-2-5) var(--size-3);
-  }
-  .message-notice-icon {
-    flex-shrink: 0;
-    font-size: 1.1em;
-  }
-  .message-notice-body {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    min-inline-size: 0;
-  }
-  .message-notice-row {
-    overflow-wrap: anywhere;
   }
 
   .message-content {
