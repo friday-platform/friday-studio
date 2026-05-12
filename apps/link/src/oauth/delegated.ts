@@ -293,15 +293,31 @@ export interface RefreshClassifyMeta {
  * outcome rather than throwing. Single attempt — no retry.
  *
  * Trust contract: only `kind === "token_dead"` means the refresh_token
- * is provably no longer usable — i.e. the upstream Cloud Function
- * forwarded Google's `400 invalid_grant`, which per RFC 6749 § 5.2
- * covers "invalid, expired, revoked, does not match the original
- * redirect URI, or was issued to another client". Verified against
- * the Cloud Function at
- * https://github.com/gemini-cli-extensions/workspace
- * (`cloud_function/index.js:328-337` forwards Google's status + body;
- * the success response at `:321-326` deliberately omits any
- * `refresh_token` because Google never rotates it on refresh).
+ * is provably no longer usable.
+ *
+ * Verified against Google's documented response shape
+ * (developers.google.com/identity/protocols/oauth2) — when a refresh
+ * fails because the token is revoked / expired / never-issued, Google's
+ * `https://oauth2.googleapis.com/token` returns:
+ *
+ *   HTTP 400 Bad Request
+ *   { "error": "invalid_grant",
+ *     "error_description": "Token has been expired or revoked.",
+ *     "error_subtype": "invalid_rapt"          // optional — present
+ *                                              //  for session-control
+ *                                              //  policy failures }
+ *
+ * Per RFC 6749 § 5.2, `invalid_grant` means the refresh_token is
+ * "invalid, expired, revoked, does not match the redirect URI, or was
+ * issued to another client".
+ *
+ * The upstream Cloud Function
+ * (github.com/gemini-cli-extensions/workspace/cloud_function/index.js)
+ * forwards Google's status + body verbatim at line 328-337; its success
+ * response at line 321-326 deliberately omits `refresh_token` because
+ * Google never rotates it on refresh. So the bytes we see here are
+ * Google's bytes.
+ *
  * Everything else is either usable (`success`) or a non-actionable
  * platform/transport failure (`transient`).
  */
