@@ -207,26 +207,39 @@ function workspaceHasBroadcastDestination(workspace: {
 }
 
 /**
- * Race a shutdown step against a per-step deadline. A slow step (NATS drain,
- * MCP subprocess refusing SIGTERM, runtime hang) gets force-skipped on its
- * own ceiling instead of eating the global shutdown budget. Errors and
- * timeouts are logged and swallowed — the rest of shutdown continues.
+ * Race a shutdown step against a per-step deadline. A slow step gets
+ * force-skipped on its own ceiling instead of eating the global shutdown
+ * budget. Errors and timeouts are logged and swallowed — the rest of
+ * shutdown continues.
+ *
+ * Pass a thunk (not a bare promise) when the work owns event-loop handles:
+ * the step-local signal aborts on timeout so the underlying work can
+ * actually cancel, instead of leaking handles and blocking process exit.
  */
-async function withShutdownTimeout<T>(
+export async function withShutdownTimeout<T>(
   label: string,
-  task: Promise<T> | undefined | null,
+  task: Promise<T> | undefined | null | ((signal: AbortSignal) => Promise<T>),
   ms: number,
 ): Promise<void> {
   if (!task) return;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let controller: AbortController | undefined;
   try {
+    let work: Promise<T>;
+    if (typeof task === "function") {
+      controller = new AbortController();
+      work = task(controller.signal);
+    } else {
+      work = task;
+    }
     await Promise.race([
-      task,
+      work,
       new Promise<never>((_, reject) => {
-        timer = setTimeout(
-          () => reject(new Error(`shutdown step "${label}" exceeded ${ms}ms`)),
-          ms,
-        );
+        timer = setTimeout(() => {
+          const error = new Error(`shutdown step "${label}" exceeded ${ms}ms`);
+          controller?.abort(error);
+          reject(error);
+        }, ms);
       }),
     ]);
   } catch (error) {
@@ -235,6 +248,9 @@ async function withShutdownTimeout<T>(
     if (timer) clearTimeout(timer);
   }
 }
+
+/** Surfaced to the watchdog log so a postmortem shows which phase wedged. */
+export type ShutdownPhase = "idle" | "phase-1-drain" | "phase-2" | "phase-3-nats" | "complete";
 
 /**
  * AtlasDaemon - Single daemon managing multiple workspaces with on-demand runtime creation
@@ -261,7 +277,12 @@ export class AtlasDaemon {
   // Private properties
   private idleTimeouts: Map<string, ReturnType<typeof setTimeout>> = new Map();
   private shutdownPromise: Promise<void> | null = null;
+  public currentShutdownPhase: ShutdownPhase = "idle";
   private server: Deno.HttpServer | null = null;
+  // Force-closes the Deno.serve listener when server.shutdown() exceeds its
+  // step ceiling. Wired into both Deno.serve sites; aborted from the http
+  // drain step below.
+  private serverAbortController = new AbortController();
   private signalHandlers: Array<{ signal: Deno.Signal; handler: () => void }> = [];
   private isInitialized = false;
   private platformModels: PlatformModels | null = null;
@@ -2603,6 +2624,7 @@ export class AtlasDaemon {
       {
         port,
         hostname,
+        signal: this.serverAbortController.signal,
         onListen: ({ hostname, port }) => {
           this.#port = port;
           logger.info("👹 Atlas daemon running", { hostname, port });
@@ -2643,6 +2665,7 @@ export class AtlasDaemon {
       {
         port,
         hostname,
+        signal: this.serverAbortController.signal,
         onListen: ({ hostname, port }) => {
           this.#port = port; // Store the actual port
           logger.info("Atlas daemon running", { hostname, port });
@@ -2789,6 +2812,7 @@ export class AtlasDaemon {
 
   private async _doShutdown(): Promise<void> {
     logger.info("Shutting down Atlas daemon...");
+    this.currentShutdownPhase = "phase-1-drain";
 
     // Drop our signal handlers up front — a second SIGINT/SIGTERM now hits
     // the OS default and force-exits, which is the desired escape hatch.
@@ -2802,12 +2826,33 @@ export class AtlasDaemon {
     // need them); the rest just stop accepting new work. Each step has its
     // own ceiling so a hung component can't block the others.
     await Promise.allSettled([
-      withShutdownTimeout("http server drain", this.server?.shutdown(), 3000),
+      withShutdownTimeout(
+        "http server drain",
+        (signal) => {
+          signal.addEventListener(
+            "abort",
+            () => {
+              this.serverAbortController.abort(signal.reason);
+            },
+            { once: true },
+          );
+          return this.server?.shutdown() ?? Promise.resolve();
+        },
+        3000,
+      ),
       withShutdownTimeout("discord gateway", this.discordGatewayService?.stop(), 1500),
       // Stop the SIGNALS forwarder first so no new envelopes land on
       // CASCADES while the cascade consumer is draining.
-      withShutdownTimeout("signals consumer", this.signalConsumer?.stop(), 1500),
-      withShutdownTimeout("cascades consumer", this.cascadeConsumer?.stop(), 1500),
+      withShutdownTimeout(
+        "signals consumer",
+        (signal) => this.signalConsumer?.stop(signal) ?? Promise.resolve(),
+        1500,
+      ),
+      withShutdownTimeout(
+        "cascades consumer",
+        (signal) => this.cascadeConsumer?.stop(signal) ?? Promise.resolve(),
+        1500,
+      ),
       withShutdownTimeout("tool workers", Promise.all(this.toolWorkers.map((w) => w.stop())), 1500),
     ]);
     this.server = null;
@@ -2840,6 +2885,7 @@ export class AtlasDaemon {
     // Phase 2 — tear down domain layer in parallel. destroyWorkspaceRuntime
     // calls workspaceManager.updateWorkspaceStatus (which goes through NATS)
     // so NATS + WorkspaceManager must remain alive until this phase ends.
+    this.currentShutdownPhase = "phase-2";
     await Promise.allSettled([
       withShutdownTimeout(
         "workspace runtimes",
@@ -2919,12 +2965,18 @@ export class AtlasDaemon {
 
     // Phase 3 — bottom of the stack. WorkspaceManager.close() may flush
     // through NATS, so close it before NATS stops.
+    this.currentShutdownPhase = "phase-3-nats";
     await withShutdownTimeout("workspace manager", this.workspaceManager?.close(), 2000);
     this.workspaceManager = null;
 
-    await withShutdownTimeout("NATS", this.natsManager?.stop(), 2000);
+    await withShutdownTimeout(
+      "NATS",
+      (signal) => this.natsManager?.stop(signal) ?? Promise.resolve(),
+      2000,
+    );
     this.natsManager = null;
 
+    this.currentShutdownPhase = "complete";
     logger.info("Atlas daemon shutdown complete");
   }
 

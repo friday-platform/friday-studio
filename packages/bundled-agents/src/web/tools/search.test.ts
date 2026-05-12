@@ -25,6 +25,8 @@ vi.mock("@atlas/llm", () => ({
   registry: { languageModel: vi.fn(() => "mock-model") },
   traceModel: vi.fn((m: unknown) => m),
   temporalGroundingMessage: vi.fn(() => ({ role: "system", content: "Today is 2026-03-11" })),
+  getDefaultProviderOpts: vi.fn(() => ({})),
+  getCachingRequestOpts: vi.fn(() => ({})),
 }));
 
 vi.mock("@atlas/agent-sdk", async (importOriginal) => {

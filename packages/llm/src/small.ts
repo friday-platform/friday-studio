@@ -17,10 +17,8 @@ export async function smallLLM(params: {
   try {
     const result = await generateText({
       model: params.platformModels.get("labels"),
-      messages: [
-        { role: "system", content: params.system },
-        { role: "user", content: params.prompt },
-      ],
+      system: params.system,
+      prompt: params.prompt,
       abortSignal: params.abortSignal,
       temperature: 0.4,
       maxOutputTokens: params.maxOutputTokens ?? 250,

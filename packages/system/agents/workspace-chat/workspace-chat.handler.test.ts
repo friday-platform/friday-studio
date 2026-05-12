@@ -300,7 +300,11 @@ function setupDefaultMocks(existingMessages: AtlasUIMessage[] = []): void {
   // convertToModelMessages: pass through
   mockConvertToModelMessages.mockImplementation((msgs: unknown) => msgs);
 
-  // streamText: returns an object with toUIMessageStream
+  // streamText: returns an object with toUIMessageStream + finishReason.
+  // The real workspace-chat now opens an `enterUsageScope` and awaits
+  // `result.finishReason` to keep that scope alive until the underlying
+  // stream settles — the mock must therefore expose `finishReason` as a
+  // resolved promise so the await actually resolves under test.
   mockStreamText.mockImplementation((opts: { onFinish?: (arg: { text: string }) => void }) => {
     opts.onFinish?.({ text: "Hello from LLM" });
     return {
@@ -311,6 +315,7 @@ function setupDefaultMocks(existingMessages: AtlasUIMessage[] = []): void {
           },
         }),
       ),
+      finishReason: Promise.resolve("stop"),
     };
   });
 
@@ -668,6 +673,7 @@ describe("workspace-chat handler", () => {
             },
           }),
         ),
+        finishReason: Promise.resolve("stop"),
       };
     });
 
@@ -753,6 +759,7 @@ describe("workspace-chat handler", () => {
             },
           }),
         ),
+        finishReason: Promise.resolve("stop"),
       };
     });
 
@@ -1050,6 +1057,7 @@ describe("workspace-chat handler", () => {
               },
             }),
           ),
+          finishReason: Promise.resolve("stop"),
         };
       },
     );

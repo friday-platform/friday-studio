@@ -175,13 +175,28 @@
   // metadata response. Disabled (skipToken) when the mime isn't
   // tabular, the metadata already supplied contents, or we're in
   // export mode. Same TanStack cache as the metadata query — multiple
-  // cards for the same tabular artifact share one network request.
+  // cards for the same tabular artifact share one network request,
+  // which is what stops `ERR_INSUFFICIENT_RESOURCES` on heavy-
+  // delegation chats that surface 30+ artifact ids.
   const tabularContentQuery = createQuery(() =>
     artifactQueries.content(
       exportCtx === undefined && isTabularMime && !contents ? artifactId : null,
     ),
   );
   const tabularText = $derived(contents ?? tabularContentQuery.data);
+
+  // text/markdown routes through the bare `/artifacts/<id>` dispatcher
+  // (one redirect hop) so the same disambiguation lives in one place:
+  // table-shaped markdown (heading + one table) lands on /table, prose
+  // lands on /markdown. Linking direct to /markdown would bypass that
+  // and ship every md to the prose viewer — wrong for table-only
+  // artifacts. Without this branch, Open would fall through to
+  // `serveUrl` (the raw /content endpoint, served as a download).
+  const markdownDispatchUrl = $derived(
+    baseMime === "text/markdown" && exportCtx === undefined
+      ? `/artifacts/${encodeURIComponent(artifactId)}`
+      : undefined,
+  );
 
   const tableModel = $derived<TableModel | null>(
     isTabularMime && tabularText && baseMime ? parseTabular(baseMime, tabularText) : null,
@@ -256,6 +271,19 @@
             target="_blank"
             rel="noopener noreferrer"
             title="Open table in new tab"
+          >
+            Open
+          </a>
+        {:else if markdownDispatchUrl}
+          <!-- Markdown artifacts go through the bare /artifacts/<id>
+               dispatcher so the table-vs-prose disambiguation
+               (isPureMarkdownTable) lives in one place. -->
+          <a
+            class="open-btn"
+            href={markdownDispatchUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Open markdown in new tab"
           >
             Open
           </a>

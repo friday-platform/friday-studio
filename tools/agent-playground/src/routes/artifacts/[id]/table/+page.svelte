@@ -3,10 +3,11 @@
   `/table/<artifactId>` (root-level, workspace-agnostic) and runs
   chrome-less — no sidebar, no workspace panel, full bleed edge to
   edge so wide tables get every available pixel. Opened in a new tab
-  by both the ArtifactCard "Open" button (csv/tsv/json/html/markdown
-  artifacts) and the inline-table Actions menu's "Open in dedicated
-  view" path (which auto-snapshots the rendered <table> to a markdown
-  artifact first so the URL is durable + shareable).
+  by both the ArtifactCard "Open" button (csv/tsv/json/html artifacts;
+  markdown routes to /markdown instead) and the inline-table Actions
+  menu's "Open in dedicated view" path (which auto-snapshots the
+  rendered <table> to a markdown artifact first so the URL is durable
+  + shareable, then resolves to /markdown).
 
   Page anatomy:
     Header  Friday-brand (linked home) · filename + dims · Copy /
@@ -22,13 +23,11 @@
 
 <script lang="ts">
   import type { PageData } from "./$types";
+  import TableActionsBar from "$lib/components/chat/table-actions-bar.svelte";
   import {
     parseTabular,
     type TableModel,
   } from "$lib/components/chat/table-parsers.ts";
-  import { tableToCSV } from "$lib/components/chat/table-to-csv.ts";
-  import { tableToSafeHTML } from "$lib/components/chat/table-to-html.ts";
-  import { tableToMarkdown } from "$lib/components/chat/table-to-markdown.ts";
   import TableView from "$lib/components/chat/table-view.svelte";
 
   const { data }: { data: PageData } = $props();
@@ -37,108 +36,6 @@
   // navigating between table artifacts inside the same workspace
   // updates without a full reload.
   const model = $derived<TableModel | null>(parseTabular(data.mimeType, data.text));
-
-  // Lazy-build a detached <table> DOM node from the parsed model so
-  // the existing tableToMarkdown / tableToCSV serializers can be
-  // reused (they consume DOM, not the model). The node is built
-  // exactly once per model — cheap (<10ms even for thousands of
-  // rows) and lets us share the serializers with the inline-chat
-  // copy path so the export formats stay consistent.
-  function buildDetachedTable(m: TableModel): HTMLTableElement {
-    const table = document.createElement("table");
-    const thead = document.createElement("thead");
-    const headerRow = document.createElement("tr");
-    for (const col of m.columns) {
-      const th = document.createElement("th");
-      th.textContent = col;
-      headerRow.appendChild(th);
-    }
-    thead.appendChild(headerRow);
-    table.appendChild(thead);
-    const tbody = document.createElement("tbody");
-    for (const row of m.rows) {
-      const tr = document.createElement("tr");
-      for (const cell of row) {
-        const td = document.createElement("td");
-        td.textContent = cell;
-        tr.appendChild(td);
-      }
-      tbody.appendChild(tr);
-    }
-    table.appendChild(tbody);
-    return table;
-  }
-
-  let copyState = $state<"idle" | "ok" | "err">("idle");
-  function flashCopy(state: "ok" | "err"): void {
-    copyState = state;
-    setTimeout(() => {
-      copyState = "idle";
-    }, 1500);
-  }
-
-  function downloadBlob(text: string, mime: string, filename: string): void {
-    const blob = new Blob([text], { type: mime });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    // Revoke after the click so the browser doesn't dangle the
-    // object URL — small leak in long sessions otherwise.
-    setTimeout(() => URL.revokeObjectURL(url), 0);
-  }
-
-  function onCopy(): void {
-    if (!model) return;
-    const table = buildDetachedTable(model);
-    const md = tableToMarkdown(table);
-    // The detached <table> we just built has only `textContent` in
-    // each cell (no rich HTML) so outerHTML would be safe here today.
-    // Route through the sanitizing serializer anyway so a future
-    // refactor of `buildDetachedTable` that adds links / images /
-    // inline formatting can't slip an XSS shape into someone's
-    // rich-text paste. See `table-to-html.ts` for the threat model.
-    const html = tableToSafeHTML(table);
-    const writeMulti =
-      typeof ClipboardItem !== "undefined" && navigator.clipboard.write
-        ? navigator.clipboard.write([
-            new ClipboardItem({
-              "text/plain": new Blob([md], { type: "text/plain" }),
-              "text/html": new Blob([html], { type: "text/html" }),
-            }),
-          ])
-        : navigator.clipboard.writeText(md);
-    void writeMulti.then(
-      () => flashCopy("ok"),
-      () => flashCopy("err"),
-    );
-  }
-
-  function onDownloadCSV(): void {
-    if (!model) return;
-    const table = buildDetachedTable(model);
-    const csv = tableToCSV(table);
-    downloadBlob(csv, "text/csv", `${withoutExtension(data.filename)}.csv`);
-  }
-
-  function onDownloadMD(): void {
-    if (!model) return;
-    const table = buildDetachedTable(model);
-    const md = tableToMarkdown(table);
-    downloadBlob(md, "text/markdown", `${withoutExtension(data.filename)}.md`);
-  }
-
-  function withoutExtension(name: string): string {
-    const dot = name.lastIndexOf(".");
-    return dot > 0 ? name.slice(0, dot) : name;
-  }
-
-  const copyLabel = $derived(
-    copyState === "ok" ? "Copied!" : copyState === "err" ? "Copy failed" : "Copy",
-  );
 </script>
 
 <div class="table-page">
@@ -190,11 +87,11 @@
         </div>
       </div>
 
-      <div class="actions">
-        <button onclick={onCopy} disabled={!model}>{copyLabel}</button>
-        <button onclick={onDownloadCSV} disabled={!model}>Download CSV</button>
-        <button onclick={onDownloadMD} disabled={!model}>Download MD</button>
-      </div>
+      {#if model}
+        <div class="actions-wrap">
+          <TableActionsBar {model} filename={data.filename} />
+        </div>
+      {/if}
     </div>
   </header>
 
@@ -305,26 +202,8 @@
     color: var(--color-primary);
   }
 
-  .actions {
-    display: flex;
-    gap: var(--size-2);
+  .actions-wrap {
     margin-inline-start: auto;
-  }
-  .actions button {
-    background-color: var(--surface, transparent);
-    border: 1px solid color-mix(in srgb, var(--color-border-1), transparent 30%);
-    border-radius: var(--radius-2);
-    color: var(--color-text);
-    cursor: pointer;
-    font: inherit;
-    padding: var(--size-1) var(--size-3);
-  }
-  .actions button:hover:not(:disabled) {
-    background-color: color-mix(in srgb, var(--color-text), transparent 92%);
-  }
-  .actions button:disabled {
-    cursor: not-allowed;
-    opacity: 0.5;
   }
 
   /* Body fills the remaining vertical space. min-block-size:0 is

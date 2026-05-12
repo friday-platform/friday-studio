@@ -55,7 +55,7 @@ function parseArgs(args: string[]): CliOptions {
 async function readPinnedSdkVersion(): Promise<string> {
   const content = await Deno.readTextFile(LAUNCHER_PATHS_GO);
   const match = content.match(/^const bundledAgentSDKVersion\s*=\s*"([^"]+)"/m);
-  if (!match || !match[1]) {
+  if (!match?.[1]) {
     throw new Error(
       `Could not find bundledAgentSDKVersion in ${LAUNCHER_PATHS_GO}. ` +
         "Re-check the constant name — it's the source of truth for the pinned SDK version.",
