@@ -7,6 +7,7 @@ import {
   InvalidProviderError,
   LinkCredentialExpiredError,
   LinkCredentialNotFoundError,
+  LinkCredentialUnavailableError,
   NoDefaultCredentialError,
   resolveCredentialsByProvider,
   resolveEnvValues,
@@ -60,12 +61,15 @@ type MockFullCredential = {
   secret: Record<string, unknown>;
 };
 
+type MockStatus = "ready" | "expired_no_refresh" | "refresh_failed" | "refresh_unavailable";
+
 /** Default credential lookup by provider (keyed by provider name) */
-type MockDefaultCredentialEntry = {
-  credential: MockFullCredential;
-  status?: "ready" | "expired_no_refresh" | "refresh_failed";
-};
+type MockDefaultCredentialEntry = { credential: MockFullCredential; status?: MockStatus };
 type MockDefaultCredentials = Record<string, MockFullCredential | MockDefaultCredentialEntry>;
+
+/** Per-id credential lookup that can carry a non-"ready" status. */
+type MockFullCredentialEntry = { credential: MockFullCredential; status?: MockStatus };
+type MockFullCredentials = Record<string, MockFullCredential | MockFullCredentialEntry>;
 
 /**
  * Create mock fetch that handles summary, credential-by-id, and default credential endpoints.
@@ -74,7 +78,7 @@ type MockDefaultCredentials = Record<string, MockFullCredential | MockDefaultCre
 function mockLinkFetch(
   provider: string,
   summaryCredentials: MockCredential[],
-  fullCredentials: Record<string, MockFullCredential>,
+  fullCredentials: MockFullCredentials,
   defaultCredentials?: MockDefaultCredentials,
 ): typeof fetch {
   const summaryUrl = `${LINK_BASE_URL}/v1/summary?provider=${provider}`;
@@ -123,9 +127,9 @@ function mockLinkFetch(
     // Handle internal credential-by-id endpoint
     if (requestUrl.startsWith(internalUrlPrefix)) {
       const credId = requestUrl.slice(internalUrlPrefix.length);
-      const credential = fullCredentials[credId];
+      const entry = fullCredentials[credId];
 
-      if (!credential) {
+      if (!entry) {
         return Promise.resolve(
           new Response(JSON.stringify({ error: "Not found" }), {
             status: 404,
@@ -134,8 +138,11 @@ function mockLinkFetch(
         );
       }
 
+      const credential = "credential" in entry ? entry.credential : entry;
+      const status = "credential" in entry ? (entry.status ?? "ready") : "ready";
+
       return Promise.resolve(
-        new Response(JSON.stringify({ credential, status: "valid" }), {
+        new Response(JSON.stringify({ credential, status }), {
           status: 200,
           headers: { "Content-Type": "application/json" },
         }),
@@ -363,6 +370,58 @@ describe("resolveEnvValues with provider-only ref", () => {
     expect((error as LinkCredentialExpiredError).credentialId).toEqual("cred_refresh_fail");
   });
 
+  it("throws LinkCredentialUnavailableError when default credential is refresh_unavailable", async () => {
+    globalThis.fetch = mockLinkFetch(
+      "google-calendar",
+      [],
+      {},
+      {
+        "google-calendar": {
+          credential: {
+            id: "cred_transient",
+            provider: "google-calendar",
+            type: "oauth",
+            secret: { access_token: "still-valid-token" },
+          },
+          status: "refresh_unavailable",
+        },
+      },
+    );
+
+    const env = {
+      GOOGLE_CALENDAR_TOKEN: {
+        from: "link" as const,
+        provider: "google-calendar",
+        key: "access_token",
+      },
+    };
+
+    const error = await resolveEnvValues(env, logger).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(LinkCredentialUnavailableError);
+    expect((error as LinkCredentialUnavailableError).credentialId).toEqual("cred_transient");
+  });
+
+  it("throws LinkCredentialUnavailableError when explicit id credential is refresh_unavailable", async () => {
+    const credId = "cred_id_transient";
+    globalThis.fetch = mockLinkFetch("any-provider", [], {
+      [credId]: {
+        credential: {
+          id: credId,
+          provider: "google-drive",
+          type: "oauth",
+          secret: { access_token: "still-valid-token" },
+        },
+        status: "refresh_unavailable",
+      },
+    });
+
+    const env = { DRIVE_TOKEN: { from: "link" as const, id: credId, key: "access_token" } };
+
+    const error = await resolveEnvValues(env, logger).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(LinkCredentialUnavailableError);
+    expect((error as LinkCredentialUnavailableError).credentialId).toEqual(credId);
+  });
+
   it("throws when default credential is missing requested secret key", async () => {
     const credId = "cred_drive_no_token";
 
@@ -425,11 +484,11 @@ describe("hasUnusableCredentialCause", () => {
     { name: "LinkCredentialNotFoundError", error: new LinkCredentialNotFoundError("cred_1") },
     {
       name: "LinkCredentialExpiredError (expired_no_refresh)",
-      error: new LinkCredentialExpiredError("cred_2", "expired_no_refresh"),
+      error: new LinkCredentialExpiredError("cred_2", "expired_no_refresh", "expired, no refresh"),
     },
     {
       name: "LinkCredentialExpiredError (refresh_failed)",
-      error: new LinkCredentialExpiredError("cred_3", "refresh_failed"),
+      error: new LinkCredentialExpiredError("cred_3", "refresh_failed", "refresh failed"),
     },
     { name: "NoDefaultCredentialError", error: new NoDefaultCredentialError("slack") },
   ])("returns true for direct $name", ({ error }) => {
@@ -454,5 +513,44 @@ describe("hasUnusableCredentialCause", () => {
     { name: "undefined", error: undefined },
   ])("returns false for $name", ({ error }) => {
     expect(hasUnusableCredentialCause(error)).toBe(false);
+  });
+
+  it("returns false for LinkCredentialUnavailableError (transient, not unusable)", () => {
+    const error = new LinkCredentialUnavailableError({
+      credentialId: "cred_pending",
+      serverName: "google-calendar",
+      linkError: "transient refresh failure (network)",
+    });
+    expect(hasUnusableCredentialCause(error)).toBe(false);
+  });
+});
+
+// =============================================================================
+// LinkCredentialUnavailableError
+// =============================================================================
+
+describe("LinkCredentialUnavailableError", () => {
+  it("error message is Link's `error` field verbatim — no rewriting", () => {
+    const linkError =
+      "transient refresh failure (network): tcp connect error: Connection refused (os error 61)";
+    const error = new LinkCredentialUnavailableError({
+      credentialId: "cred_x",
+      linkError,
+      serverName: "slack",
+    });
+    // The .message MUST be exactly what Link returned. Don't translate,
+    // polish, or wrap it — operators and the LLM both need the raw signal.
+    expect(error.message).toBe(linkError);
+  });
+
+  it("exposes linkError + serverName as readable fields for callers", () => {
+    const error = new LinkCredentialUnavailableError({
+      credentialId: "cred_y",
+      linkError: "some upstream detail",
+      serverName: "slack",
+    });
+    expect(error.linkError).toBe("some upstream detail");
+    expect(error.serverName).toBe("slack");
+    expect(error.credentialId).toBe("cred_y");
   });
 });

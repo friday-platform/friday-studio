@@ -98,6 +98,7 @@ export const AtlasDataEventSchemas = {
           "credential_not_found",
           "credential_expired",
           "credential_refresh_failed",
+          "credential_temporarily_unavailable",
           "no_default_credential",
         ]),
         message: z.string(),

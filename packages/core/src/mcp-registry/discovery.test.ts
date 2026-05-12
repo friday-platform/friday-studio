@@ -338,7 +338,13 @@ describe("discoverMCPServers", () => {
       expect(linear?.configured).toBe(true);
     });
 
-    it("returns configured: false when Link has no credential for the provider", async () => {
+    it("returns configured: true for a Link-backed server even when no credential exists yet", async () => {
+      // `configured` is workspace-config-completeness, not runtime credential
+      // health. A `from: link` ref declares where to find the credential —
+      // that wiring is "configured" regardless of whether the user has
+      // connected the integration yet. The actual "is the credential usable
+      // right now" question is answered at runtime (via `list_mcp_tools`'s
+      // verbatim Link error in the tool output), not via this boolean.
       mockRegistryServers.linear = makeStaticServer("linear", {
         configTemplate: {
           transport: { type: "http", url: "https://mcp.linear.app/mcp" },
@@ -351,7 +357,7 @@ describe("discoverMCPServers", () => {
 
       const linear = result.find((r) => r.metadata.id === "linear");
       expect(linear).toBeDefined();
-      expect(linear?.configured).toBe(false);
+      expect(linear?.configured).toBe(true);
     });
 
     it("returns configured: true when multiple Link credentials exist", async () => {
@@ -588,7 +594,11 @@ describe("discoverMCPServers", () => {
       expect(entry?.configured).toBe(true);
     });
 
-    it("returns configured: false when any Link ref provider is missing", async () => {
+    it("returns configured: true when env declares multiple Link refs regardless of credential presence", async () => {
+      // Same principle as the single-Link-ref test above: Link refs are
+      // declarations, not runtime checks. Two Link refs declared = "wiring
+      // is complete" = configured: true. Runtime credential issues surface
+      // through tool I/O, not through this boolean.
       mockRegistryServers.mixed = makeStaticServer("mixed", {
         configTemplate: {
           transport: { type: "stdio", command: "echo" },
@@ -603,7 +613,7 @@ describe("discoverMCPServers", () => {
       const result = await discoverMCPServers("ws-1", makeWorkspaceConfig({}), linkSummary);
       const entry = result.find((r) => r.metadata.id === "mixed");
       expect(entry).toBeDefined();
-      expect(entry?.configured).toBe(false);
+      expect(entry?.configured).toBe(true);
     });
 
     it("returns configured: true when all Link ref providers exist", async () => {

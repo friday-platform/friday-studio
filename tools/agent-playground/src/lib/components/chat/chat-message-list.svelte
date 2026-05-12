@@ -822,24 +822,6 @@
             </div>
           {/if}
 
-          {#if message.disconnectedIntegrations && message.disconnectedIntegrations.length > 0}
-            <!-- Non-fatal info chip: an MCP integration's credential is dead so
-                 its tools were skipped this session. The session still ran;
-                 the user just needs to reconnect the integration to use those
-                 tools again. -->
-            <div class="message-notice" role="status">
-              <span class="message-notice-icon" aria-hidden="true">⚠</span>
-              <div class="message-notice-body">
-                {#each message.disconnectedIntegrations as integration (integration.serverId)}
-                  <div class="message-notice-row">
-                    <strong>{integration.provider ?? integration.serverId}</strong>
-                    is disconnected — reconnect in Settings → Connections to use those tools.
-                  </div>
-                {/each}
-              </div>
-            </div>
-          {/if}
-
           <!-- Per-message actions row. Two shapes:
                  • Live UI — compact (alt→full) timestamp + optional turn
                    duration + UsageBadge + ellipsis menu. Layout flips by
@@ -1014,6 +996,12 @@
   }
 
   .virtual-item {
+    /* Flex column so `.message.user`'s `align-self: flex-end` still
+       right-anchors the bubble. Without this each item is a plain
+       block and the user bubble stretches to the full inset-inline
+       span instead of shrinking to its content. */
+    display: flex;
+    flex-direction: column;
     inset-block-start: 0;
     inset-inline: 0;
     /* The flex `gap` doesn't reach absolute children, so the
@@ -1220,32 +1208,6 @@
     opacity: 0.85;
     overflow-wrap: anywhere;
     white-space: pre-wrap;
-  }
-
-  .message-notice {
-    align-items: flex-start;
-    background-color: light-dark(#fffbeb, color-mix(in srgb, #d97706, black 70%));
-    border: 1px solid light-dark(#fde68a, color-mix(in srgb, #d97706, black 40%));
-    border-radius: var(--radius-3);
-    color: light-dark(#92400e, #fde68a);
-    display: flex;
-    font-size: var(--font-size-2);
-    gap: var(--size-2);
-    line-height: 1.5;
-    padding: var(--size-2-5) var(--size-3);
-  }
-  .message-notice-icon {
-    flex-shrink: 0;
-    font-size: 1.1em;
-  }
-  .message-notice-body {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    min-inline-size: 0;
-  }
-  .message-notice-row {
-    overflow-wrap: anywhere;
   }
 
   .message-content {

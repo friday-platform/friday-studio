@@ -32,7 +32,11 @@ export interface MCPServerCandidate {
 export async function discoverMCPServers(
   workspaceId: string,
   workspaceConfig?: WorkspaceConfig,
-  linkSummary?: LinkSummary,
+  // Kept for back-compat with existing callers that pass a LinkSummary —
+  // the field is no longer read. `configured` is now a workspace-config
+  // completeness check; runtime credential health is surfaced separately
+  // via `/internal/v1/credentials/:id` and tool I/O error envelopes.
+  _linkSummary?: LinkSummary,
 ): Promise<MCPServerCandidate[]> {
   const config = workspaceConfig ?? (await fetchWorkspaceConfig(workspaceId));
 
@@ -53,11 +57,7 @@ export async function discoverMCPServers(
       metadata.platformEnv,
     );
 
-    candidates.set(id, {
-      metadata,
-      mergedConfig,
-      configured: isConfigured(mergedConfig, linkSummary),
-    });
+    candidates.set(id, { metadata, mergedConfig, configured: isConfigured(mergedConfig) });
   }
 
   // Registry-imported servers
@@ -70,11 +70,7 @@ export async function discoverMCPServers(
       metadata.platformEnv,
     );
 
-    candidates.set(metadata.id, {
-      metadata,
-      mergedConfig,
-      configured: isConfigured(mergedConfig, linkSummary),
-    });
+    candidates.set(metadata.id, { metadata, mergedConfig, configured: isConfigured(mergedConfig) });
   }
 
   // Workspace-only servers
@@ -93,7 +89,7 @@ export async function discoverMCPServers(
     candidates.set(id, {
       metadata,
       mergedConfig: workspaceServerConfig,
-      configured: isConfigured(workspaceServerConfig, linkSummary),
+      configured: isConfigured(workspaceServerConfig),
     });
   }
 
@@ -140,10 +136,10 @@ function mergeEnv(
   return { ...(base ?? {}), ...(override ?? {}) };
 }
 
-function isConfigured(config: MCPServerConfig, linkSummary?: LinkSummary): boolean {
+function isConfigured(config: MCPServerConfig): boolean {
   if (config.env) {
     for (const [key, value] of Object.entries(config.env)) {
-      if (!isEnvValueResolved(key, value, linkSummary)) {
+      if (!isEnvValueResolved(key, value)) {
         return false;
       }
     }
@@ -160,16 +156,25 @@ function isConfigured(config: MCPServerConfig, linkSummary?: LinkSummary): boole
   return true;
 }
 
-function isEnvValueResolved(
-  key: string,
-  value: string | LinkCredentialRef,
-  linkSummary?: LinkSummary,
-): boolean {
+function isEnvValueResolved(key: string, value: string | LinkCredentialRef): boolean {
   if (typeof value === "string") {
     return isResolvedStringEnvValue(key, value);
   }
   if (value.from === "link") {
-    return hasLinkCredential(linkSummary, value.provider);
+    // `configured` is a workspace-config completeness check — does the env
+    // wiring declare where to find a credential? — not a runtime health
+    // check. A `from: link` ref is always "configured" at the wiring level
+    // because it explicitly declares the credential source. Whether the
+    // actual credential is currently usable (present, refreshable, not
+    // expired) is a *runtime* concern surfaced via `/internal/v1/credentials/:id`
+    // and the verbatim Link error string on tool I/O — not via this boolean.
+    //
+    // Earlier behavior conflated the two: it called `hasLinkCredential` on
+    // a Link summary fetch and returned false when no credential existed,
+    // which then misled the LLM ("configured: false" → "user needs to
+    // connect") even when the credential was just transiently failing to
+    // refresh.
+    return true;
   }
   return false;
 }
@@ -180,14 +185,6 @@ function isResolvedStringEnvValue(key: string, value: string): boolean {
     return envValue !== undefined && !isPlaceholderValue(envValue);
   }
   return !isPlaceholderValue(value);
-}
-
-function hasLinkCredential(
-  linkSummary: LinkSummary | undefined,
-  provider: string | undefined,
-): boolean {
-  if (!linkSummary || !provider) return false;
-  return linkSummary.credentials.some((c) => c.provider === provider);
 }
 
 function isPlaceholderValue(value: string): boolean {

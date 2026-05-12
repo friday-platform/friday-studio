@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+
+description: OAuth refresh transient-error evals (refresh_token survives + chat surfaces)
+
+prompts:
+  - '{{scenarioId}}'
+
+providers:
+  - id: file://oauth-refresh-transient-provider.cjs
+    label: friday-oauth-refresh-transient
+
+defaultTest:
+  assert:
+    - type: is-json
+    - type: javascript
+      value: |
+        const result = JSON.parse(output);
+        if (result.pass !== true) {
+          throw new Error(`${result.id} failed: ${(result.notes || []).join('; ')}`);
+        }
+        return true;
+
+tests: file://oauth-refresh-transient-tests.yaml

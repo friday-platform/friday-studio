@@ -45,6 +45,15 @@ export const DEFAULT_MAX_STEPS_PER_CALL = 40;
 export const DEFAULT_MAX_OUTPUT_TOKENS = 20000;
 export const DEFAULT_MAX_DEPTH = 1;
 
+// Re-export the system-prompt helpers from their zero-import module so
+// callers can `import { ... } from "@atlas/core/delegate"`. The same
+// helpers are also reachable directly via `@atlas/core/delegate/system-prompt`,
+// which QA evals prefer because it avoids pulling in this module's
+// runtime-heavy transitive imports (streamText, MCP, etc.).
+export { buildDelegateScopeDirective, DELEGATE_MCP_ERROR_CONTRACT } from "./system-prompt.ts";
+
+import { buildDelegateScopeDirective, DELEGATE_MCP_ERROR_CONTRACT } from "./system-prompt.ts";
+
 const DelegateSkillRequestSchema = z.strictObject({
   name: z
     .string()
@@ -415,12 +424,15 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
         const skillsBlock = formatDelegateSkillsBlock(resolvedSkills);
 
         const datetimeMessage = buildTemporalFacts(session.datetime);
+
         const childSystemPrompt = [
           skillsBlock,
           `Goal: ${goal}`,
           `Handoff: ${handoff}`,
           datetimeMessage,
           `You are a terse back-end agent. Your output is consumed by another AI agent, not a human user. Do not narrate your actions, do not produce conversational filler. Make tool calls directly without describing what you are doing. Gather the required facts with the fewest tool calls possible, then emit your final answer.`,
+          buildDelegateScopeDirective(mcpServers),
+          DELEGATE_MCP_ERROR_CONTRACT,
           `Emit your final answer as plain text content — your text reply IS the answer. Do not call the \`finish\` tool on success; do not write the answer inside a tool call argument and then again as text. Call \`finish\` ONLY when the task is impossible to complete, with \`{ ok: false, reason }\` — the supervisor needs the structured failure signal in that case.`,
         ]
           .filter((s) => s.length > 0)

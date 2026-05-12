@@ -19,6 +19,7 @@
     "./artifacts/converters": "./src/artifacts/converters/mod.ts",
     "./delegate": "./src/delegate/index.ts",
     "./delegate/skills-resolver": "./src/delegate/skills-resolver.ts",
+    "./delegate/system-prompt": "./src/delegate/system-prompt.ts",
     "./elicitations": "./src/elicitations/mod.ts",
     "./elicitations/model": "./src/elicitations/model.ts",
     "./elicitations/storage": "./src/elicitations/storage.ts",

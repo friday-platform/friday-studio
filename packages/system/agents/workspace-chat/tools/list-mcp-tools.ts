@@ -79,6 +79,31 @@ export function createListMcpToolsTool(logger: Logger): AtlasTools {
               };
             }
 
+            // 200 with an error envelope — the registry route returns this for
+            // credential-skip cases (dead refresh_token, mid-refresh, etc.).
+            // Pass the specific error + phase through to the LLM verbatim so
+            // the agent can tell the user "google-calendar credential could
+            // not be refreshed" instead of a useless "Unexpected response shape".
+            const errorEnvelope = z
+              .object({
+                ok: z.literal(false),
+                error: z.string(),
+                phase: z.enum(["dns", "connect", "auth", "tools"]),
+              })
+              .safeParse(body);
+            if (errorEnvelope.success) {
+              logger.info("list_mcp_tools: server-side skip", {
+                serverId,
+                error: errorEnvelope.data.error,
+                phase: errorEnvelope.data.phase,
+              });
+              return {
+                ok: false,
+                error: errorEnvelope.data.error,
+                phase: errorEnvelope.data.phase,
+              };
+            }
+
             logger.warn("list_mcp_tools: unexpected success shape", { serverId, body });
             return {
               ok: false,
