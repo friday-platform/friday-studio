@@ -25,9 +25,11 @@
     Dialog,
     IconSmall,
     MarkdownRendered,
-    markdownToHTMLSafe,
+    markdownToHTML,
     SimpleTable,
   } from "@atlas/ui";
+  import { browser } from "$app/environment";
+  import DOMPurify from "dompurify";
   import { writable } from "svelte/store";
   import McpConnectionTest from "./mcp-connection-test.svelte";
   import McpCredentialsPanel from "./mcp-credentials-panel.svelte";
@@ -314,7 +316,9 @@
             <h3 class="section-title">Readme</h3>
             <div class="readme-content">
               <MarkdownRendered>
-                {@html markdownToHTMLSafe(readme)}
+                {@html browser
+                  ? DOMPurify.sanitize(markdownToHTML(readme))
+                  : markdownToHTML(readme)}
               </MarkdownRendered>
             </div>
           </div>

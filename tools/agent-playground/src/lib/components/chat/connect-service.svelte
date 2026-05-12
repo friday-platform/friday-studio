@@ -9,8 +9,9 @@
   @component
 -->
 <script lang="ts">
-  import { Button, MarkdownRendered, markdownToHTMLSafe } from "@atlas/ui";
+  import { Button, MarkdownRendered, markdownToHTML } from "@atlas/ui";
   import { browser } from "$app/environment";
+  import DOMPurify from "dompurify";
   import { useCredentialConnect } from "$lib/use-credential-connect.svelte.ts";
   import CredentialSecretForm from "$lib/components/credential-secret-form.svelte";
   import { z } from "zod";
@@ -148,7 +149,7 @@
     {#if details.setupInstructions}
       <div class="instructions">
         <MarkdownRendered>
-          {@html markdownToHTMLSafe(details.setupInstructions)}
+          {@html browser ? DOMPurify.sanitize(markdownToHTML(details.setupInstructions)) : markdownToHTML(details.setupInstructions)}
         </MarkdownRendered>
       </div>
     {/if}

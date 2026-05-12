@@ -37,11 +37,9 @@ function slugifyHeading(text: string): string {
 const renderer = {
   // Open links in a new tab — except in-page anchors (`#foo`), which must
   // stay same-tab so clicking a TOC entry actually scrolls the page.
-  // `rel="noopener noreferrer"` prevents the opened tab from accessing
-  // `window.opener` (reverse-tabnabbing) and from leaking the referrer.
   link({ href, text }: { href: string; text: string }): string {
-    if (href.startsWith("#")) return `<a href="${href}">${text}</a>`;
-    return `<a href="${href}" target="_blank" rel="noopener noreferrer">${text}</a>`;
+    const target = href.startsWith("#") ? "" : ' target="_blank"';
+    return `<a href="${href}"${target}>${text}</a>`;
   },
   heading({ text, depth }: { text: string; depth: number }): string {
     // H5/H6 → bold paragraph (matches prior behavior).
@@ -523,9 +521,5 @@ export function markdownToHTML(markdown: string): string {
  * `javascript:` hrefs.
  */
 export function markdownToHTMLSafe(markdown: string): string {
-  // DOMPurify strips `target` from anchors by default; allowlist it so the
-  // `target="_blank"` produced by the marked renderer above survives. The
-  // marked renderer also emits `rel="noopener noreferrer"`, which DOMPurify
-  // keeps as-is — so the pair lands intact on the rendered chat link.
-  return DOMPurify.sanitize(markdownToHTML(markdown), { ADD_ATTR: ["target"] });
+  return DOMPurify.sanitize(markdownToHTML(markdown));
 }

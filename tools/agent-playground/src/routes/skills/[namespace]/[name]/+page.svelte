@@ -6,15 +6,17 @@
 -->
 
 <script lang="ts">
+  import { browser } from "$app/environment";
   import {
     Button,
     Dialog,
     DropdownMenu,
     Icons,
     MarkdownRendered,
-    markdownToHTMLSafe,
+    markdownToHTML,
     toast,
   } from "@atlas/ui";
+  import DOMPurify from "dompurify";
   import { createQuery } from "@tanstack/svelte-query";
   import { beforeNavigate, goto } from "$app/navigation";
   import { page } from "$app/state";
@@ -507,7 +509,7 @@
     {:else}
       <div class="preview-content">
         <MarkdownRendered>
-          {@html rebaseRelativeLinks(markdownToHTMLSafe(skill.instructions ?? ""))}
+          {@html browser ? DOMPurify.sanitize(rebaseRelativeLinks(markdownToHTML(skill.instructions ?? ""))) : markdownToHTML(skill.instructions ?? "")}
         </MarkdownRendered>
       </div>
     {/if}
