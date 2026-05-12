@@ -95,8 +95,19 @@
     if (droppedFile) handleFile(droppedFile);
   }
 
+  // Safari requires preventDefault on BOTH dragenter and dragover to register
+  // the element as a valid drop target; without dragenter prevention it falls
+  // back to its default file-open behavior on drop.
+  function handleDragEnter(e: DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+    dragOver = true;
+  }
+
   function handleDragOver(e: DragEvent) {
     e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
     dragOver = true;
   }
 
@@ -123,6 +134,7 @@
       class="dropzone"
       class:drag-over={dragOver}
       ondrop={handleDrop}
+      ondragenter={handleDragEnter}
       ondragover={handleDragOver}
       ondragleave={handleDragLeave}
     >

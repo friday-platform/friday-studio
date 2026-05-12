@@ -76,8 +76,18 @@
     }
   }
 
+  // Safari requires preventDefault on BOTH dragenter and dragover to register
+  // the element as a valid drop target; without dragenter prevention it falls
+  // back to its default file-open behavior on drop.
+  function handleChatDragEnter(e: DragEvent) {
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+    chatDragOver = true;
+  }
+
   function handleChatDragOver(e: DragEvent) {
     e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
     chatDragOver = true;
   }
 
@@ -1310,6 +1320,7 @@
   class="user-chat"
   class:chat-drag-over={chatDragOver}
   ondrop={handleChatDrop}
+  ondragenter={handleChatDragEnter}
   ondragover={handleChatDragOver}
   ondragleave={handleChatDragLeave}
   role="presentation"
