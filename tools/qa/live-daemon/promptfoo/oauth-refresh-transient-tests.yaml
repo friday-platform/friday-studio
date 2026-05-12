@@ -1,4 +1,4 @@
-# Group A — classifier outcomes (don't kill refresh_token on transient)
+# Classifier outcomes (don't kill refresh_token on transient)
 
 - description: classifier 4xx invalid_grant → token_dead
   vars:
@@ -27,21 +27,3 @@
 - description: classifier 2xx success preserves the original refresh_token
   vars:
     scenarioId: classifier-outcome-success-preserves-refresh-token
-
-# Group B — disconnect entry shape (transient state reaches chat)
-
-- description: LinkCredentialUnavailableError → kind credential_temporarily_unavailable
-  vars:
-    scenarioId: disconnect-shape-transient
-
-- description: LinkCredentialNotFoundError → kind credential_not_found (NOT transient)
-  vars:
-    scenarioId: disconnect-shape-not-found
-
-- description: LinkCredentialExpiredError(refresh_failed) → kind credential_refresh_failed (NOT transient)
-  vars:
-    scenarioId: disconnect-shape-refresh-failed
-
-- description: NoDefaultCredentialError → kind no_default_credential (NOT transient)
-  vars:
-    scenarioId: disconnect-shape-no-default

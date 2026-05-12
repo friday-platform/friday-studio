@@ -1101,12 +1101,16 @@ describe("Delegated OAuth refresh classifier integration", async () => {
   let respondTo: RefreshResponder = () => new Response("not configured", { status: 500 });
 
   let mockController: AbortController | undefined;
+  let mockServer: { finished: Promise<void> } | undefined;
   let mockPort = 0;
 
   const startMockRefresh = async () => {
     mockController = new AbortController();
     let ready = false;
-    void Deno.serve(
+    // Capture the server so afterAll can await `.finished` after abort.
+    // Without this the listener socket lingers and vitest's worker
+    // termination times out (CI hang).
+    mockServer = Deno.serve(
       {
         port: 0,
         signal: mockController.signal,
@@ -1284,6 +1288,11 @@ describe("Delegated OAuth refresh classifier integration", async () => {
 
   afterAll(async () => {
     if (mockController) mockController.abort();
+    // Wait for the listener socket to actually close so vitest's worker
+    // can terminate cleanly (otherwise CI hangs on worker timeout).
+    if (mockServer) {
+      await mockServer.finished.catch(() => {});
+    }
     await rm(tempDir, { recursive: true });
   });
 });

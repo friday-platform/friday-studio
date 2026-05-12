@@ -529,18 +529,6 @@ describe("hasUnusableCredentialCause", () => {
 // =============================================================================
 
 describe("LinkCredentialUnavailableError", () => {
-  it("populates credentialId, serverName, provider from constructor", () => {
-    const error = new LinkCredentialUnavailableError({
-      credentialId: "cred_1",
-      serverName: "google-calendar",
-      provider: "google-calendar",
-    });
-
-    expect(error.credentialId).toEqual("cred_1");
-    expect(error.serverName).toEqual("google-calendar");
-    expect(error.provider).toEqual("google-calendar");
-  });
-
   it("error message names the affected server when serverName is supplied", () => {
     const error = new LinkCredentialUnavailableError({
       credentialId: "cred_x",

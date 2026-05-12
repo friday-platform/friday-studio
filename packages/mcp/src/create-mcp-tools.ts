@@ -314,7 +314,7 @@ export async function createMCPTools(
  * names the integration the user recognises (matches the prior re-throw
  * enrichment).
  */
-export function buildDisconnectedEntry(
+function buildDisconnectedEntry(
   error:
     | LinkCredentialNotFoundError
     | LinkCredentialExpiredError

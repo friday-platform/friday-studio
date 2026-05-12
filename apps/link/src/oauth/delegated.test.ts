@@ -171,7 +171,6 @@ describe("refreshDelegatedToken", () => {
 describe("refreshDelegatedTokenClassified", () => {
   afterEach(() => {
     vi.restoreAllMocks();
-    vi.useRealTimers();
   });
 
   it("kind=success on 2xx valid body, preserves refresh_token and converts ms→seconds", async () => {
@@ -204,7 +203,7 @@ describe("refreshDelegatedTokenClassified", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("passes AbortSignal.timeout(15_000) to fetch", async () => {
+  it("passes an AbortSignal to fetch (drives the timeout branch via err.name='AbortError')", async () => {
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValue(
@@ -286,10 +285,12 @@ describe("refreshDelegatedTokenClassified", () => {
     }
   });
 
-  it("kind=transient http_5xx on 5xx", async () => {
-    vi.spyOn(globalThis, "fetch").mockImplementation(() =>
-      Promise.resolve(new Response("internal server error", { status: 500 })),
-    );
+  it("kind=transient http_5xx on 5xx (single attempt, no retry)", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(() =>
+        Promise.resolve(new Response("internal server error", { status: 500 })),
+      );
 
     const outcome = await refreshDelegatedTokenClassified(config, "rt-1");
 
@@ -297,6 +298,8 @@ describe("refreshDelegatedTokenClassified", () => {
     if (outcome.kind === "transient") {
       expect(outcome.reason).toBe("http_5xx");
     }
+    // Classifier makes exactly one attempt — proves no internal retry loop.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("kind=transient http_429 on 429", async () => {
@@ -326,11 +329,7 @@ describe("refreshDelegatedTokenClassified", () => {
     }
   });
 
-  it("kind=transient timeout when fetch rejects with AbortError (simulating AbortSignal.timeout)", async () => {
-    // AbortSignal.timeout internally uses a timer source that vitest fake timers
-    // do not reliably intercept; we instead simulate the post-timeout state — fetch
-    // rejects with an AbortError, which is exactly what the runtime delivers when
-    // the signal aborts.
+  it("kind=transient timeout when fetch rejects with AbortError", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(() => {
       const err = new Error("The operation was aborted due to timeout");
       err.name = "AbortError";
@@ -343,19 +342,5 @@ describe("refreshDelegatedTokenClassified", () => {
     if (outcome.kind === "transient") {
       expect(outcome.reason).toBe("timeout");
     }
-  });
-
-  it("single-attempt behavior: a 500 returns kind=transient (no internal retry)", async () => {
-    const fetchMock = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(new Response("upstream broken", { status: 500 }));
-
-    const outcome = await refreshDelegatedTokenClassified(config, "rt-1");
-
-    expect(outcome.kind).toBe("transient");
-    if (outcome.kind === "transient") {
-      expect(outcome.reason).toBe("http_5xx");
-    }
-    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

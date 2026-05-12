@@ -3,24 +3,19 @@
 /**
  * OAuth refresh transient-error evals.
  *
- * Two groups, each pinning one user-visible goal:
+ * Pins the classifier outcomes that the user-visible "don't kill
+ * refresh_token on transient" + "surface to chat" goals depend on:
+ * `refreshDelegatedTokenClassified` must return `transient` (not
+ * `token_dead`) for 5xx / 429 / network / timeout / non-invalid_grant
+ * 4xx, and a 2xx success must preserve the original refresh_token on
+ * the returned tokens. Without these contracts, Link's storage path
+ * could mark a still-valid credential `refresh_failed` on a transient
+ * blip and kill the refresh_token.
  *
- *   A. classifier-outcome-* — `refreshDelegatedTokenClassified` returns
- *      `transient` (not `token_dead`) for 5xx / 429 / network / timeout /
- *      non-invalid_grant 4xx, and a 2xx success preserves the original
- *      refresh_token on the returned tokens. Without this, Link's
- *      storage path could mark a still-valid credential `refresh_failed`
- *      on a transient blip and kill the refresh_token.
- *
- *   B. disconnect-shape-* — `LinkCredentialUnavailableError` maps to
- *      disconnect kind `credential_temporarily_unavailable` in the
- *      wire shape the chat layer reads; other credential errors map to
- *      kinds OTHER than that. The kind string is the invariant chat
- *      branches on.
- *
- * End-to-end coverage (Link HTTP → storage write-count → refreshed
- * recovery) lives in `apps/link/tests/oauth.test.ts` "Delegated OAuth
- * refresh classifier integration". The `createMCPTools` catch path is
+ * End-to-end coverage (Link HTTP → storage → recovery) lives in
+ * `apps/link/tests/oauth.test.ts` "Delegated OAuth refresh classifier
+ * integration". The `LinkCredentialUnavailableError` →
+ * `credential_temporarily_unavailable` disconnect-entry mapping is
  * covered by `packages/mcp/src/create-mcp-tools.test.ts`.
  *
  * Pure imports — no daemon needed; `fetch` is mocked. Run via:
@@ -32,16 +27,8 @@
 
 import { ensureDir } from "jsr:@std/fs@1.0.13/ensure-dir";
 import { dirname, join } from "jsr:@std/path@1";
-import type { MCPServerConfig } from "@atlas/config";
-import {
-  LinkCredentialExpiredError,
-  LinkCredentialNotFoundError,
-  LinkCredentialUnavailableError,
-  NoDefaultCredentialError,
-} from "@atlas/core/mcp-registry/credential-resolver";
 import { refreshDelegatedTokenClassified } from "../../../../apps/link/src/oauth/delegated.ts";
 import type { OAuthConfig } from "../../../../apps/link/src/providers/types.ts";
-import { buildDisconnectedEntry } from "../../../../packages/mcp/src/create-mcp-tools.ts";
 import { currentGitSha, HARNESS_PATHS } from "../harness.ts";
 
 interface EvalResult {
@@ -65,19 +52,7 @@ const delegatedConfig: Extract<OAuthConfig, { mode: "delegated" }> = {
     btoa(JSON.stringify({ uri: finalRedirectUri, manual: false, csrf: csrfToken })),
 };
 
-const mcpConfig: MCPServerConfig = {
-  transport: { type: "http", url: "http://example.test/mcp" },
-  auth: { type: "bearer", token_env: "GOOGLE_CALENDAR_ACCESS_TOKEN" },
-  env: {
-    GOOGLE_CALENDAR_ACCESS_TOKEN: {
-      from: "link",
-      provider: "google-calendar",
-      key: "access_token",
-    },
-  },
-};
-
-// ─── group A: classifier ────────────────────────────────────────────────────
+// ─── classifier outcomes ────────────────────────────────────────────────────
 
 /**
  * Swap `globalThis.fetch` for the duration of `fn`. Mirrors the
@@ -265,69 +240,6 @@ async function runClassifierGroup(): Promise<EvalResult[]> {
   ];
 }
 
-// ─── group B: disconnect entry shape ────────────────────────────────────────
-
-function evalDisconnectShape(input: {
-  id: string;
-  error: Parameters<typeof buildDisconnectedEntry>[0];
-  expectedKind: string;
-  shouldBeTransient: boolean;
-}): EvalResult {
-  const notes: string[] = [];
-  const metrics: Record<string, unknown> = {};
-  let pass = true;
-  const entry = buildDisconnectedEntry(input.error, "google-calendar", mcpConfig);
-  metrics.kind = entry.kind;
-  metrics.serverId = entry.serverId;
-  metrics.provider = entry.provider;
-  if (entry.kind !== input.expectedKind) {
-    pass = false;
-    notes.push(`expected kind=${input.expectedKind}, got ${entry.kind}`);
-  }
-  const isTransient = entry.kind === "credential_temporarily_unavailable";
-  if (isTransient !== input.shouldBeTransient) {
-    pass = false;
-    notes.push(
-      input.shouldBeTransient
-        ? "expected the transient kind so the chat chip renders 'try again' copy"
-        : "must NOT be the transient kind — chat would render the wrong copy for a dead credential",
-    );
-  }
-  return { id: input.id, pass, notes, metrics };
-}
-
-function runDisconnectShapeGroup(): EvalResult[] {
-  return [
-    evalDisconnectShape({
-      id: "disconnect-shape-transient",
-      error: new LinkCredentialUnavailableError({
-        credentialId: "cred-1",
-        serverName: "google-calendar",
-      }),
-      expectedKind: "credential_temporarily_unavailable",
-      shouldBeTransient: true,
-    }),
-    evalDisconnectShape({
-      id: "disconnect-shape-not-found",
-      error: new LinkCredentialNotFoundError("cred-2"),
-      expectedKind: "credential_not_found",
-      shouldBeTransient: false,
-    }),
-    evalDisconnectShape({
-      id: "disconnect-shape-refresh-failed",
-      error: new LinkCredentialExpiredError("cred-3", "refresh_failed"),
-      expectedKind: "credential_refresh_failed",
-      shouldBeTransient: false,
-    }),
-    evalDisconnectShape({
-      id: "disconnect-shape-no-default",
-      error: new NoDefaultCredentialError("google-calendar"),
-      expectedKind: "no_default_credential",
-      shouldBeTransient: false,
-    }),
-  ];
-}
-
 // ─── runner ─────────────────────────────────────────────────────────────────
 
 async function main() {
@@ -342,15 +254,11 @@ async function main() {
   const writeResult = Deno.args.includes("--write-result");
 
   console.log(`▶ oauth-refresh-transient eval @ ${sha}`);
-  console.log("\n── group A: classifier outcomes ──");
+  console.log("\n── classifier outcomes ──");
   const classifier = await runClassifierGroup();
   for (const r of classifier) console.log(`${r.pass ? "✓" : "✗"} ${r.id}`);
 
-  console.log("\n── group B: disconnect entry shape ──");
-  const disconnect = runDisconnectShapeGroup();
-  for (const r of disconnect) console.log(`${r.pass ? "✓" : "✗"} ${r.id}`);
-
-  const results = [...classifier, ...disconnect];
+  const results = [...classifier];
   const passed = results.filter((r) => r.pass).length;
   const failed = results.length - passed;
   console.log(`\n══ oauth-refresh-transient summary: ${passed}/${results.length} passed ══`);
