@@ -917,6 +917,41 @@
   // would drift on every render and every such message would show "now".
   const firstSeenMs = new Map<string, number>();
 
+  // Per-message converted-display cache. `displayedMessages` re-runs on
+  // every streaming chunk because `chat.messages` is reactive and gets
+  // mutated in place; without this cache, every historical message
+  // re-walks `buildSegments` / `extractImages` / `extractToolCalls` /
+  // `extractTurnUsage` per token, which dominated profiling at high
+  // streaming rates (50-100 chunks/sec × N messages × ~300us per pipe).
+  //
+  // The cache is keyed on the message object identity (`WeakMap`) so it
+  // auto-evicts when the SDK reassigns or drops a message, and a coarse
+  // content signature (`parts.length` + last-part fingerprint) decides
+  // whether the cached entry is still valid. Streaming only mutates the
+  // tail message, so unchanged history hits the cache every tick.
+  type CachedDisplayMessage = { sig: string; result: ChatMessage };
+  const displayCache: WeakMap<AtlasUIMessage, CachedDisplayMessage> = new WeakMap();
+
+  function displaySignature(msg: AtlasUIMessage): string {
+    const parts = Array.isArray(msg.parts) ? msg.parts : [];
+    const lastIdx = parts.length - 1;
+    let lastSig = "0";
+    if (lastIdx >= 0) {
+      const last = parts[lastIdx];
+      if (typeof last === "object" && last !== null) {
+        const type = "type" in last ? String((last as Record<string, unknown>).type) : "?";
+        const text =
+          "text" in last && typeof (last as Record<string, unknown>).text === "string"
+            ? ((last as Record<string, unknown>).text as string).length
+            : 0;
+        const state =
+          "state" in last ? String((last as Record<string, unknown>).state ?? "") : "";
+        lastSig = `${type}:${text}:${state}`;
+      }
+    }
+    return `${parts.length}:${lastSig}`;
+  }
+
   function extractMetadataTimestamp(msg: AtlasUIMessage): number | null {
     const md = msg.metadata ?? {};
     const iso = md.startTimestamp ?? md.timestamp ?? md.endTimestamp;
@@ -992,10 +1027,16 @@
     });
     const timestamps = assignTimestamps(rawMessages);
     const chatMsgs: ChatMessage[] = rawMessages.map((msg) => {
+      const sig = displaySignature(msg);
+      const cached = displayCache.get(msg);
+      const ts = timestamps.get(msg.id) ?? Date.now();
+      if (cached && cached.sig === sig && cached.result.timestamp === ts) {
+        return cached.result;
+      }
       const m = (typeof msg.metadata === "object" && msg.metadata !== null
         ? msg.metadata
         : {}) as Record<string, unknown>;
-      return {
+      const result: ChatMessage = {
         id: msg.id,
         role: (msg.role === "user"
           ? "user"
@@ -1003,7 +1044,7 @@
             ? "system"
             : "assistant") as "user" | "assistant" | "system",
         segments: buildSegments(msg),
-        timestamp: timestamps.get(msg.id) ?? Date.now(),
+        timestamp: ts,
         images: extractImages(msg),
         errorText: extractErrorText(msg),
         disconnectedIntegrations: extractDisconnectedIntegrations(msg),
@@ -1031,6 +1072,8 @@
           usage: extractTurnUsage(msg, m),
         },
       };
+      displayCache.set(msg, { sig, result });
+      return result;
     });
     return chatMsgs;
   });

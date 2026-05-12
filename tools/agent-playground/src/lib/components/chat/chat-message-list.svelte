@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { DropdownMenu, markdownToHTMLSafe } from "@atlas/ui";
+  import { DropdownMenu } from "@atlas/ui";
+  import MarkdownBody from "./markdown-body.svelte";
   import { createVirtualizer } from "@tanstack/svelte-virtual";
   import { tick, untrack } from "svelte";
   import type { ChatMessage } from "./types";
@@ -325,14 +326,28 @@
   // `scrollToBottom` calls land mid-scroll because they fire before
   // the final measurements arrive. Tied to `followBottom` so we don't
   // hijack a user who has scrolled up.
+  //
+  // During streaming the inner spacer resizes on every measured-row
+  // change, which means a naive ResizeObserver callback fires N times
+  // per chunk and each fire reads `scrollHeight` synchronously —
+  // forcing layout flush right after the virtualizer just dirtied
+  // layout. Coalesce to one anchor per frame so streaming pays for at
+  // most one forced reflow per paint, not N.
   $effect(() => {
     if (!containerEl) return;
     const inner = containerEl.querySelector(".virtual-inner");
     if (!inner) return;
+    let anchorScheduled = false;
     const observer = new ResizeObserver(() => {
-      if (followBottom && containerEl) {
-        containerEl.scrollTop = containerEl.scrollHeight;
-      }
+      if (!followBottom || !containerEl) return;
+      if (anchorScheduled) return;
+      anchorScheduled = true;
+      requestAnimationFrame(() => {
+        anchorScheduled = false;
+        if (followBottom && containerEl) {
+          containerEl.scrollTop = containerEl.scrollHeight;
+        }
+      });
     });
     observer.observe(inner);
     return () => observer.disconnect();
@@ -691,7 +706,9 @@
           {#each message.segments as segment}
             {#if segment.type === "text" && segment.content.length > 0}
               {#if message.role === "assistant"}
-                <div class="message-content markdown-body" use:copyButtons>{@html markdownToHTMLSafe(segment.content)}</div>
+                <div class="message-content markdown-body" use:copyButtons>
+                  <MarkdownBody content={segment.content} />
+                </div>
               {:else}
                 <div class="message-content">{segment.content}</div>
               {/if}

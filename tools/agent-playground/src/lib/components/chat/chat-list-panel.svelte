@@ -141,10 +141,14 @@
     void fetchChats();
   });
 
-  // Poll every 15s for new messages (low cost — header+meta only). Skip the
-  // tick when the tab is hidden so a backgrounded playground doesn't keep
-  // hammering the daemon; refetch immediately on the visibilitychange back
-  // to "visible" so the list isn't stale when the user returns.
+  // Poll every 60s for new chats. Used to be 15s, but the active chat
+  // already pushes its own updates through the SSE stream — the sidebar
+  // poll only catches *other* chats arriving (rare in single-user
+  // playground) and metadata drift on existing entries. Cutting to 60s
+  // removes 3-of-every-4 sidebar reactive cascades during streaming with
+  // no functional loss: the visibilitychange hook below refetches on
+  // tab-return, so "I came back from a long break" still shows fresh
+  // titles immediately. Hidden tabs still skip ticks entirely.
   $effect(() => {
     if (!workspaceId) return;
     const interval = setInterval(() => {
@@ -152,7 +156,7 @@
         return;
       }
       void fetchChats();
-    }, 15_000);
+    }, 60_000);
     const onVisible = () => {
       if (document.visibilityState === "visible") void fetchChats();
     };
