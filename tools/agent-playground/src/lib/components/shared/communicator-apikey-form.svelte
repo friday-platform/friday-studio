@@ -15,20 +15,16 @@
 -->
 
 <script lang="ts">
+  import {
+    COMMUNICATOR_KIND_TO_PROVIDER_ID,
+    type CommunicatorKind,
+  } from "@atlas/config";
   import { Button } from "@atlas/ui";
   import { createQuery } from "@tanstack/svelte-query";
   import CredentialSecretForm from "$lib/components/credential-secret-form.svelte";
   import { useConnectCommunicator } from "$lib/queries";
   import { linkProviderQueries } from "$lib/queries/link-provider-queries.ts";
   import { useCredentialConnect } from "$lib/use-credential-connect.svelte.ts";
-
-  type CommunicatorKind =
-    | "slack"
-    | "telegram"
-    | "discord"
-    | "teams"
-    | "whatsapp"
-    | "github";
 
   interface Props {
     workspaceId: string;
@@ -39,11 +35,7 @@
 
   let { workspaceId, kind, onConnected, onCancel }: Props = $props();
 
-  // Communicator kind → Link provider id. They match for slack/telegram/
-  // discord/teams/whatsapp; github diverges because Link's PAT-based
-  // `githubProvider` already owns id `"github"`, so the App provider is
-  // registered as `"github-app"` (see apps/link/src/providers/constants.ts).
-  const providerId = $derived(kind === "github" ? "github-app" : kind);
+  const providerId = $derived(COMMUNICATOR_KIND_TO_PROVIDER_ID[kind]);
 
   const detailsQuery = createQuery(() => linkProviderQueries.providerDetails(providerId));
   const connect = useCredentialConnect(() => providerId);

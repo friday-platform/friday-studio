@@ -76,11 +76,14 @@ const SlackLinkSecretSchema = z.object({
   app_id: z.string().min(1),
 });
 
-// GitHub App secret as stored in Link. `bot_user_slug` (with literal `[bot]`
-// suffix) and `bot_user_id` are populated by the github-app provider's
-// `health()` via the credentials route's metadata merge — both are always
-// present in a successfully saved credential. `app_id` is stored as a
-// number; the chat-sdk adapter expects it as a string, conversion happens
+// GitHub App secret as stored in Link. `bot_user_slug` is the bare App
+// slug (no `[bot]` suffix) — the chat-sdk adapter uses it for the
+// `@${userName}\b` mention regex, which matches what humans type. Self-loop
+// prevention uses the rename-immune numeric `bot_user_id`. Both are
+// populated by the github-app provider's `health()` via the credentials
+// route's metadata merge (`apps/link/src/routes/credentials.ts`) — both are
+// always present in a successfully saved credential. `app_id` is stored as
+// a number; the chat-sdk adapter expects it as a string, conversion happens
 // at the resolver boundary. `installation_id` is intentionally NOT
 // forwarded to the adapter — the chat-sdk multi-tenant mode auto-extracts
 // it from inbound webhook payloads.
@@ -818,9 +821,18 @@ async function resolveGithubFromLink(
 
   const secretParse = GithubLinkSecretSchema.safeParse(credential.secret);
   if (!secretParse.success) {
+    // Most likely cause: the wired credential is from the PAT
+    // `githubProvider` (id `"github"`) instead of the App-based
+    // `githubAppProvider` (id `"github-app"` — the canonical mapping for
+    // kind=github lives in `COMMUNICATOR_KIND_TO_PROVIDER_ID` in
+    // `packages/config/src/communicators.ts`). Re-wire with a github-app
+    // credential to start the adapter.
     logger.warn("github_link_credential_invalid_secret", {
       workspaceId,
       credentialId: wiring.credentialId,
+      credentialProvider: credential.provider,
+      expectedProvider: "github-app",
+      hint: "wired credential is not a github-app; the github adapter will not start. Re-wire with a github-app credential.",
       issues: secretParse.error.issues,
     });
     return null;

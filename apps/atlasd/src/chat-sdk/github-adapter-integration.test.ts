@@ -30,7 +30,7 @@ const githubCreds: PlatformCredentials = {
   appId: "12345",
   privateKey: "-----BEGIN PRIVATE KEY-----\nfake\n-----END PRIVATE KEY-----",
   webhookSecret: "test-webhook-secret",
-  botUserSlug: "friday-bot[bot]",
+  botUserSlug: "friday-bot",
   botUserId: 99999,
 };
 
@@ -108,21 +108,89 @@ describe("GitHub chat-adapter integration: webhook HMAC verification", () => {
   /**
    * Closes the gap left by the `ping`-only tests: `ping` short-circuits in
    * `handleWebhook` right after `verifySignature` (adapter index.js:391-394),
-   * so neither JSON parsing, installation extraction, nor `handleIssueComment`
-   * (with its `encodeThreadId` + `parseIssueComment` chain) are exercised.
+   * so neither JSON parsing, installation extraction, nor the per-event
+   * handler chains (`encodeThreadId` + `parse{Issue,Review}Comment`) are
+   * exercised.
    *
-   * This test fires a signed `issue_comment.created` payload and asserts a 200
-   * response. To reach `handleIssueComment`'s thread-construction path
-   * (`encodeThreadId` → `parseIssueComment` → `chat.processMessage`), the
-   * adapter needs `chat` wired (line 448 early-returns otherwise). We attach a
-   * minimal stub via `initialize()` and assert `processMessage` was called
-   * with the expected `github:owner/repo:issue:42` threadId.
+   * Each row fires a signed payload through the real adapter; to reach the
+   * thread-construction path the adapter needs `chat` wired (line 448
+   * early-returns otherwise). We attach a minimal stub via `initialize()`
+   * and assert `processMessage` was called with the expected threadId.
    *
-   * Regression guard: if the payload Zod schema tightens or `parseIssueComment`
-   * starts requiring a new field, this test will fail loudly — either the
+   * Regression guard: if the payload Zod schema tightens or a parser
+   * starts requiring a new field, the test fails loudly — either the
    * outer 200 flips (JSON/parse error) or `processMessage` won't be invoked.
+   *
+   * threadId formats (per `@chat-adapter/github` encodeThreadId):
+   * - issue: `github:{owner}/{repo}:issue:{issueNumber}`
+   * - PR-level: `github:{owner}/{repo}:{prNumber}`
+   * - review comment: `github:{owner}/{repo}:{prNumber}:rc:{reviewCommentId}`
+   *
+   * `issue_comment` and `pull_request_review_comment` go through distinct
+   * handlers with distinct threadId shapes — both are workspace routing keys
+   * in chat-sdk, so a regression in either silently fans every comment into
+   * a fresh thread.
    */
-  it("routes a signed issue_comment.created webhook to handleIssueComment with the right threadId", async () => {
+  it.each([
+    {
+      name: "issue_comment.created → issue threadId",
+      event: "issue_comment",
+      // No `pull_request` field on `issue` → adapter treats this as an issue
+      // thread, producing the "issue:" threadId form.
+      payload: {
+        action: "created",
+        installation: { id: 67890 },
+        issue: { number: 42, html_url: "https://github.com/acme/widgets/issues/42" },
+        repository: {
+          id: 1,
+          name: "widgets",
+          full_name: "acme/widgets",
+          owner: { login: "acme", id: 100, type: "Organization" },
+        },
+        comment: {
+          id: 555,
+          body: "hey @friday-bot can you take a look?",
+          user: { id: 200, login: "alice", type: "User" },
+          created_at: "2026-05-09T12:00:00Z",
+          updated_at: "2026-05-09T12:00:00Z",
+          html_url: "https://github.com/acme/widgets/issues/42#issuecomment-555",
+        },
+        sender: { id: 200, login: "alice", type: "User" },
+      },
+      expectedThreadId: "github:acme/widgets:issue:42",
+    },
+    {
+      name: "pull_request_review_comment.created → review-comment threadId",
+      event: "pull_request_review_comment",
+      // `handleReviewComment` destructures `comment, pull_request, repository,
+      // sender`; threadId encoding uses `comment.in_reply_to_id ?? comment.id`
+      // as the reviewCommentId. With no `in_reply_to_id`, `comment.id` (777)
+      // becomes the root of the review thread.
+      payload: {
+        action: "created",
+        installation: { id: 67890 },
+        pull_request: { number: 42, html_url: "https://github.com/acme/widgets/pull/42" },
+        repository: {
+          id: 1,
+          name: "widgets",
+          full_name: "acme/widgets",
+          owner: { login: "acme", id: 100, type: "Organization" },
+        },
+        comment: {
+          id: 777,
+          body: "nit on this line @friday-bot",
+          user: { id: 200, login: "alice", type: "User" },
+          created_at: "2026-05-09T12:00:00Z",
+          updated_at: "2026-05-09T12:00:00Z",
+          html_url: "https://github.com/acme/widgets/pull/42#discussion_r777",
+          path: "src/widget.ts",
+          line: 12,
+        },
+        sender: { id: 200, login: "alice", type: "User" },
+      },
+      expectedThreadId: "github:acme/widgets:42:rc:777",
+    },
+  ])("routes a signed $name", async ({ event, payload, expectedThreadId }) => {
     const adapters = buildChatSdkAdapters({
       workspaceId: "ws-1",
       signals: githubSignals,
@@ -135,9 +203,9 @@ describe("GitHub chat-adapter integration: webhook HMAC verification", () => {
     if (!githubAdapter) return;
 
     // Minimal Chat surface — `processMessage` is fire-and-forget in the
-    // adapter (handleIssueComment doesn't await it), and `getState` is only
-    // touched by `storeInstallationId` in multi-tenant mode. Both are spies
-    // so we can assert handleIssueComment actually reached its chat dispatch.
+    // adapter (the handlers don't await it), and `getState` is only touched
+    // by `storeInstallationId` in multi-tenant mode. Both are spies so we
+    // can assert the handler actually reached its chat dispatch.
     const processMessage = vi.fn();
     const chatStub = {
       processMessage,
@@ -149,46 +217,13 @@ describe("GitHub chat-adapter integration: webhook HMAC verification", () => {
     };
     await githubAdapter.initialize?.(chatStub as never);
 
-    // Synthetic issue_comment.created payload — fields chosen by reading
-    // adapter source: handleIssueComment (line 447) destructures
-    // `comment, issue, repository, sender`; encodeThreadId needs
-    // `repository.owner.login`, `repository.name`, `issue.number`;
-    // parseIssueComment touches comment.{id,body,user,created_at,updated_at};
-    // parseAuthor (line 570) touches comment.user.{id,login,type};
-    // sender.id is compared to _botUserId for self-filter.
-    const issueCommentPayload = {
-      action: "created",
-      installation: { id: 67890 },
-      issue: {
-        number: 42,
-        html_url: "https://github.com/acme/widgets/issues/42",
-        // No `pull_request` field → adapter treats this as an issue thread,
-        // producing the "issue:" threadId form.
-      },
-      repository: {
-        id: 1,
-        name: "widgets",
-        full_name: "acme/widgets",
-        owner: { login: "acme", id: 100, type: "Organization" },
-      },
-      comment: {
-        id: 555,
-        body: "hey @friday-bot can you take a look?",
-        user: { id: 200, login: "alice", type: "User" },
-        created_at: "2026-05-09T12:00:00Z",
-        updated_at: "2026-05-09T12:00:00Z",
-        html_url: "https://github.com/acme/widgets/issues/42#issuecomment-555",
-      },
-      sender: { id: 200, login: "alice", type: "User" },
-    };
-    const body = JSON.stringify(issueCommentPayload);
-
+    const body = JSON.stringify(payload);
     const request = new Request("http://localhost/signals/github", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-GitHub-Event": "issue_comment",
-        "X-GitHub-Delivery": "delivery-issue-comment-1",
+        "X-GitHub-Event": event,
+        "X-GitHub-Delivery": `delivery-${event}-1`,
         "X-Hub-Signature-256": signBody(body, githubCreds.webhookSecret),
       },
       body,
@@ -197,14 +232,10 @@ describe("GitHub chat-adapter integration: webhook HMAC verification", () => {
     const response = await githubAdapter.handleWebhook(request);
     expect(response.status).toBe(200);
 
-    // Pin the threadId format — the adapter's encodeThreadId for issues is
-    // `github:{owner}/{repo}:issue:{issueNumber}`. Workspace routing in
-    // chat-sdk keys off this string; a regression here would silently fan
-    // every comment into a fresh thread.
     expect(processMessage).toHaveBeenCalledOnce();
     const [adapterArg, threadIdArg] = processMessage.mock.calls[0] ?? [];
     expect(adapterArg).toBe(githubAdapter);
-    expect(threadIdArg).toBe("github:acme/widgets:issue:42");
+    expect(threadIdArg).toBe(expectedThreadId);
   });
 });
 
@@ -227,14 +258,16 @@ describe("resolveGithubFromLink: snake_case → camelCase secret mapping", () =>
 
   it("maps Link's snake_case secret to camelCase PlatformCredentials, stringifies app_id, drops installation_id", async () => {
     // Stub Link: wiring lookup → credential lookup → secret payload matches
-    // what the github-app provider stores after autoFields() merge (numeric
-    // app_id, populated bot_user_slug / bot_user_id).
+    // what the github-app provider stores via `health()`-returned metadata
+    // (merged by `apps/link/src/routes/credentials.ts`): numeric app_id, bare
+    // bot_user_slug (no `[bot]` suffix — see github-app.ts:179), numeric
+    // bot_user_id.
     const linkSecret = {
       app_id: 12345,
       private_key: "-----BEGIN PRIVATE KEY-----\nstubbed-pem\n-----END PRIVATE KEY-----",
       webhook_secret: "link-webhook-secret",
       installation_id: 67890,
-      bot_user_slug: "friday-bot[bot]",
+      bot_user_slug: "friday-bot",
       bot_user_id: 555,
     };
     const fetchStub = vi.fn((input: string | URL | Request): Promise<Response> => {
@@ -282,7 +315,7 @@ describe("resolveGithubFromLink: snake_case → camelCase secret mapping", () =>
       appId: "12345",
       privateKey: linkSecret.private_key,
       webhookSecret: "link-webhook-secret",
-      botUserSlug: "friday-bot[bot]",
+      botUserSlug: "friday-bot",
       botUserId: 555,
     });
     // Multi-tenant mode pin: installation_id from the secret is intentionally
