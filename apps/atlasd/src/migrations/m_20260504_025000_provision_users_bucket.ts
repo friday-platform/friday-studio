@@ -19,7 +19,7 @@
  */
 
 import { JetStreamNarrativeStore } from "@atlas/adapters-md";
-import { ONBOARDING_VERSION, UserStorage } from "@atlas/core/users/storage";
+import { createJetStreamUserBackend, ONBOARDING_VERSION } from "@atlas/core/users/storage";
 import type { Migration } from "jetstream";
 
 const NAME_EXTRACT = /(?:name is|call me)\s+(.+)/i;
@@ -32,13 +32,20 @@ export const migration: Migration = {
     "type:name-declined entries authored by the legacy onboarding flow, and " +
     "populate the local user's USERS record so onboarding doesn't re-ask.",
   async run({ nc, logger }) {
-    const localUserResult = await UserStorage.resolveLocalUserId();
+    // Construct a local backend from `nc` rather than reaching for the
+    // `UserStorage.*` facade — the facade requires `initUserStorage(nc)`
+    // to have been called at daemon startup, which the standalone CLI
+    // `atlas migrate` path doesn't do. Self-contained migrations work
+    // from either runner.
+    const users = createJetStreamUserBackend(nc);
+
+    const localUserResult = await users.resolveLocalUserId();
     if (!localUserResult.ok) {
       throw new Error(`Failed to resolve local user id: ${localUserResult.error}`);
     }
     const localUserId = localUserResult.data;
 
-    const userResult = await UserStorage.getUser(localUserId);
+    const userResult = await users.getUser(localUserId);
     if (!userResult.ok) {
       throw new Error(`Failed to read local user: ${userResult.error}`);
     }
@@ -82,14 +89,14 @@ export const migration: Migration = {
     }
 
     if (resolved.kind === "provided") {
-      const set = await UserStorage.setUserIdentity(localUserId, {
+      const set = await users.setUserIdentity(localUserId, {
         name: resolved.name,
         nameStatus: "provided",
       });
       if (!set.ok) throw new Error(`setUserIdentity failed: ${set.error}`);
       logger.info("Backfilled identity (name provided)", { name: resolved.name });
     } else {
-      const set = await UserStorage.setUserIdentity(localUserId, {
+      const set = await users.setUserIdentity(localUserId, {
         nameStatus: "declined",
         declinedAt: new Date().toISOString(),
       });
@@ -97,7 +104,7 @@ export const migration: Migration = {
       logger.info("Backfilled identity (name declined)");
     }
 
-    const mark = await UserStorage.markOnboardingComplete(localUserId, ONBOARDING_VERSION);
+    const mark = await users.markOnboardingComplete(localUserId, ONBOARDING_VERSION);
     if (!mark.ok) throw new Error(`markOnboardingComplete failed: ${mark.error}`);
   },
 };

@@ -17,7 +17,7 @@
  */
 
 import { ensureChatsKVBucket } from "@atlas/core/chat/storage";
-import { UserStorage } from "@atlas/core/users/storage";
+import { createJetStreamUserBackend } from "@atlas/core/users/storage";
 import type { Migration } from "jetstream";
 
 const LEGACY_USER_ID = "default-user";
@@ -33,7 +33,10 @@ export const migration: Migration = {
     "stay (they are workspace/chatId, not user-prefixed). Message stream " +
     "contents are unchanged.",
   async run({ nc, logger }) {
-    const localUserResult = await UserStorage.resolveLocalUserId();
+    // Self-contained backend from `nc` — see provision_users_bucket for
+    // the rationale (CLI migrate path doesn't init the facade).
+    const users = createJetStreamUserBackend(nc);
+    const localUserResult = await users.resolveLocalUserId();
     if (!localUserResult.ok) {
       throw new Error(`Failed to resolve local user id: ${localUserResult.error}`);
     }

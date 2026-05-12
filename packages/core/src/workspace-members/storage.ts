@@ -14,8 +14,13 @@ import {
   type WorkspaceMembership,
 } from "./jetstream-backend.ts";
 
-export type { Role, WorkspaceMembership } from "./jetstream-backend.ts";
+export type {
+  JetStreamWorkspaceMemberBackend,
+  Role,
+  WorkspaceMembership,
+} from "./jetstream-backend.ts";
 export {
+  createJetStreamWorkspaceMemberBackend,
   ensureWorkspaceMembersKVBucket,
   RoleSchema,
   WorkspaceMembershipSchema,
