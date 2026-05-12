@@ -29,13 +29,59 @@ interface EvalResult {
   metrics: Record<string, unknown>;
 }
 
-const PROMPTS_DIR = join(dirname(fromFileUrl(import.meta.url)), "..", "promptfoo", "prompts");
+const REPO_ROOT = join(dirname(fromFileUrl(import.meta.url)), "..", "..", "..", "..");
+const WORKSPACE_CHAT_PROMPT = join(REPO_ROOT, "packages/system/agents/workspace-chat/prompt.txt");
 
-async function loadPrompt(
-  name: "connect-service-with-directive" | "connect-service-without-directive",
-): Promise<string> {
-  const path = join(PROMPTS_DIR, `${name}.txt`);
-  return (await Deno.readTextFile(path)).trimEnd();
+// Minimal harness around the directive under test. Workspace context +
+// `connect_service` tool description are eval-specific scaffolding (the
+// production prompt builds those dynamically at chat-start, so we can't
+// re-use them here). The <service_connection> block itself is read from
+// the production prompt at runtime — see extractServiceConnection() — so
+// there's no duplicated copy to drift.
+const HARNESS_HEADER = `You are the workspace-chat supervisor agent inside Friday.
+
+The user is in workspace \`user\`. Workspace context:
+
+  <workspace id="user" name="Personal">
+    <agents>gcal-fetch-agent</agents>
+    <mcp_servers>google-calendar</mcp_servers>
+  </workspace>
+
+You have a tool called \`connect_service(provider)\` that starts an OAuth
+connect flow for the named provider and renders an inline "Connect <X>"
+card the user can click. Provider IDs come from <mcp_servers> or
+list_integrations.`;
+
+// Extract the <service_connection>...</service_connection> block from the
+// production workspace-chat prompt. If the markers move or get renamed,
+// this throws — the eval refuses to silently validate against a stale
+// snapshot.
+async function extractServiceConnection(): Promise<string> {
+  const full = await Deno.readTextFile(WORKSPACE_CHAT_PROMPT);
+  const match = full.match(/<service_connection>[\s\S]*?<\/service_connection>/);
+  if (!match) {
+    throw new Error(
+      `extractServiceConnection: no <service_connection> block found in ${WORKSPACE_CHAT_PROMPT}`,
+    );
+  }
+  return match[0].trim();
+}
+
+// Strip the "Enabled-but-no-credential" paragraph for the control prompt.
+// The paragraph is one logical block delimited by blank lines, so we drop
+// it whole rather than line-by-line — keeps the control faithful to the
+// directive's location in the source.
+function stripEnabledButNoCredentialBranch(block: string): string {
+  return block
+    .replace(/\n\nEnabled-but-no-credential[\s\S]*?(?=\n\n|<\/service_connection>)/, "")
+    .replace(/\n{3,}/g, "\n\n");
+}
+
+async function buildPrompt(variant: "with-directive" | "without-directive"): Promise<string> {
+  const block = await extractServiceConnection();
+  const finalBlock =
+    variant === "with-directive" ? block : stripEnabledButNoCredentialBranch(block);
+  return `${HARNESS_HEADER}\n\n${finalBlock}\n`;
 }
 
 const USER_GOAL = "What's on my Google Calendar today?";
@@ -268,8 +314,8 @@ function tellsUserToVisitSettings(text: string): boolean {
 }
 
 async function runEval(): Promise<EvalResult[]> {
-  const withDirective = await loadPrompt("connect-service-with-directive");
-  const withoutDirective = await loadPrompt("connect-service-without-directive");
+  const withDirective = await buildPrompt("with-directive");
+  const withoutDirective = await buildPrompt("without-directive");
 
   console.log("  → Anthropic: failure path, directive ON");
   const onFail = await drive(withDirective, DELEGATE_AUTH_FAILURE_OUTPUT);

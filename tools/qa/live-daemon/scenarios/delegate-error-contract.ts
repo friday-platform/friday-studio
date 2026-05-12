@@ -28,7 +28,11 @@
  */
 
 import { ensureDir } from "jsr:@std/fs@1.0.13/ensure-dir";
-import { dirname, fromFileUrl, join } from "jsr:@std/path@1";
+import { dirname, join } from "jsr:@std/path@1";
+import {
+  buildDelegateScopeDirective,
+  DELEGATE_MCP_ERROR_CONTRACT,
+} from "@atlas/core/delegate/system-prompt";
 import { currentGitSha, ensureCredentialsLoaded, HARNESS_PATHS } from "../harness.ts";
 
 interface EvalResult {
@@ -38,16 +42,40 @@ interface EvalResult {
   metrics: Record<string, unknown>;
 }
 
-const PROMPTS_DIR = join(dirname(fromFileUrl(import.meta.url)), "..", "promptfoo", "prompts");
+// Reconstruct the delegate sub-agent's system prompt the same way the
+// production code does in `packages/core/src/delegate/index.ts`. The two
+// directives under test (`scopeDirective` and the MCP error contract)
+// are imported live from there — there is no duplicated copy here. The
+// surrounding boilerplate (goal/handoff/datetime/terse-agent rules) is
+// reproduced verbatim because those lines are inline string literals in
+// the production assembly and don't have isolated identifiers to import.
+const GOAL = "List all Google Calendar events for today (2026-05-11, America/Los_Angeles).";
+const HANDOFF =
+  "Use the google-calendar MCP tool get_events with time_min='2026-05-11T00:00:00-07:00' and time_max='2026-05-12T00:00:00-07:00', detailed=true. Return the events.";
+const DATETIME = "Current datetime: 2026-05-11T21:48:00-07:00 (America/Los_Angeles, UTC-07:00)";
+const TERSE_RULES =
+  "You are a terse back-end agent. Your output is consumed by another AI agent, not a human user. Do not narrate your actions, do not produce conversational filler, and do not emit markdown tables, section headers, or other human-facing formatting. Make tool calls directly without describing what you are doing. Gather the required facts with the fewest tool calls possible, then call the `finish` tool immediately with a concise, factual answer.";
+const FINISH_RULE =
+  "When you have produced a final answer (or determined the task is impossible), call the `finish` tool with { ok: true, answer } or { ok: false, reason }. Do not return free-form text after calling `finish`.";
 
-async function loadPrompt(name: "with-directives" | "without-directives"): Promise<string> {
-  const path = join(PROMPTS_DIR, `${name}.txt`);
-  return (await Deno.readTextFile(path)).trimEnd();
+function buildDirectivePrompt(): string {
+  return [
+    `Goal: ${GOAL}`,
+    `Handoff: ${HANDOFF}`,
+    DATETIME,
+    TERSE_RULES,
+    buildDelegateScopeDirective(["google-calendar"]),
+    DELEGATE_MCP_ERROR_CONTRACT,
+    FINISH_RULE,
+  ].join("\n\n");
+}
+
+function buildControlPrompt(): string {
+  return [`Goal: ${GOAL}`, `Handoff: ${HANDOFF}`, DATETIME, TERSE_RULES, FINISH_RULE].join("\n\n");
 }
 
 const LINK_ERROR =
   "transient refresh failure (network): error sending request for url (https://google-workspace-extension.geminicli.com/refreshToken): client error (Connect): tcp connect error: Connection refused (os error 61)";
-const GOAL = "List all Google Calendar events for today (2026-05-11, America/Los_Angeles).";
 
 // Synthetic "happy-path" tool results used by the success scenarios.
 // Mirrors the real workspace-mcp google-calendar response shape so the
@@ -390,8 +418,8 @@ const FORBIDDEN_AGENTS = new Set(["agent_slack", "agent_hubspot", "agent_web"]);
 const FORBIDDEN_MUTATIONS = new Set(["upsert_agent", "delete_agent"]);
 
 async function runEval(): Promise<EvalResult[]> {
-  const withDirectivesPrompt = await loadPrompt("with-directives");
-  const withoutDirectivesPrompt = await loadPrompt("without-directives");
+  const withDirectivesPrompt = buildDirectivePrompt();
+  const withoutDirectivesPrompt = buildControlPrompt();
 
   console.log("  → calling Anthropic (failure path, directives ON)");
   const on = await driveOnce(withDirectivesPrompt);

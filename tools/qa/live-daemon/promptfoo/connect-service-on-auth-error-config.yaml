@@ -2,8 +2,14 @@
 
 description: Supervisor connect_service eval — calls connect_service when an enabled MCP server's credential is missing, and does NOT call it on the happy path
 
+# The prompt under test is the <service_connection> block in
+# packages/system/agents/workspace-chat/prompt.txt — the eval scenario
+# reads that file at runtime and assembles the system prompt from it, so
+# there is no duplicated copy to drift. The full assembled prompt the
+# model saw is carried per-scenario in `metrics.systemPrompt` and is
+# rendered in the scenario details by `npx promptfoo view`.
 prompts:
-  - file://prompts/connect-service-with-directive.txt
+  - "{{scenarioId}}"
 
 providers:
   - id: file://connect-service-on-auth-error-provider.cjs
