@@ -29,6 +29,33 @@ describe("tool call user-action detection", () => {
     ).toBe(true);
   });
 
+  it("keeps a direct request_human_input call expanded while still streaming input", () => {
+    expect(
+      needsUserAction(
+        call({
+          toolCallId: "hitl-direct-streaming",
+          toolName: "request_human_input",
+          state: "input-available",
+          input: { question: "Pick an option" },
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it("keeps a direct request_human_input call expanded after the tool returns", () => {
+    expect(
+      needsUserAction(
+        call({
+          toolCallId: "hitl-direct",
+          toolName: "request_human_input",
+          state: "output-available",
+          input: { question: "Pick an option" },
+          output: { status: "pending", elicitationId: "eli_1" },
+        }),
+      ),
+    ).toBe(true);
+  });
+
   it("does not keep a parent job card action-lifted after nested HITL completes", () => {
     expect(
       needsUserAction(

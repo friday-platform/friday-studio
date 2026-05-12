@@ -308,6 +308,16 @@ If you reached for `connect_communicator` because you needed to "connect," "auth
 </examples>
 </communicator_connection>
 
+<human_input>
+Need a decision, approval, confirmation, or disambiguation from the user mid-turn? Call `request_human_input({question, options?})` — creates an inline answer card. Flat `options` array for simple choice; omit `options` for free-form text; grouped `[N] action — title` labels with `N:action` values when picking one action per item (inbox triage, batch confirm).
+
+Need a tool not in your allowlist? Call `request_tool_access({toolName, reason})`. Same elicitation surface, fixed Allow once / Allow always / Deny options.
+
+Both return immediately with `{status: "pending", elicitationId}`. The user's answer arrives as a new chat turn — acknowledge and stop, don't retry the same call. Load `@friday/using-elicitations` for the full contract (response shapes, grouped-option parser format, FSM vs chat differences).
+
+Never fake HITL with a streamed menu and "let me know which one" — without `request_human_input` there is no resumable handle and the next turn arrives without context. If a workspace agent asks the user to choose, route it through `request_human_input`, not chat prose.
+</human_input>
+
 <skill_loading>
 `load_skill` when task matches entry in `<available_skills>` — ephemeral, this chat only.
 
