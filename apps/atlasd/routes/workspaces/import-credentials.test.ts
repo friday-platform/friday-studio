@@ -313,7 +313,7 @@ describe("POST /create — credential resolution", () => {
     await mountRoutes(app);
 
     mockFetchLinkCredential.mockRejectedValue(
-      new LinkCredentialExpiredError("cred_expired", "expired_no_refresh"),
+      new LinkCredentialExpiredError("cred_expired", "expired_no_refresh", "expired, no refresh"),
     );
 
     const config = makeConfig({
@@ -352,7 +352,7 @@ describe("POST /create — credential resolution", () => {
     await mountRoutes(app);
 
     mockFetchLinkCredential.mockRejectedValue(
-      new LinkCredentialExpiredError("cred_stale", "refresh_failed"),
+      new LinkCredentialExpiredError("cred_stale", "refresh_failed", "refresh failed"),
     );
 
     const config = makeConfig({
@@ -388,7 +388,13 @@ describe("POST /create — credential resolution", () => {
 
     mockFetchLinkCredential.mockImplementation((credId: string) => {
       if (credId === "cred_expired") {
-        return Promise.reject(new LinkCredentialExpiredError("cred_expired", "expired_no_refresh"));
+        return Promise.reject(
+          new LinkCredentialExpiredError(
+            "cred_expired",
+            "expired_no_refresh",
+            "expired, no refresh",
+          ),
+        );
       }
       if (credId === "cred_deleted") {
         return Promise.reject(new LinkCredentialNotFoundError("cred_deleted"));
@@ -440,11 +446,17 @@ describe("POST /create — credential resolution", () => {
     mockFetchLinkCredential.mockImplementation((credId: string) => {
       if (credId === "cred_expired_1") {
         return Promise.reject(
-          new LinkCredentialExpiredError("cred_expired_1", "expired_no_refresh"),
+          new LinkCredentialExpiredError(
+            "cred_expired_1",
+            "expired_no_refresh",
+            "expired, no refresh",
+          ),
         );
       }
       if (credId === "cred_expired_2") {
-        return Promise.reject(new LinkCredentialExpiredError("cred_expired_2", "refresh_failed"));
+        return Promise.reject(
+          new LinkCredentialExpiredError("cred_expired_2", "refresh_failed", "refresh failed"),
+        );
       }
       throw new Error(`Unexpected credential ID: ${credId}`);
     });

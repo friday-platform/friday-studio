@@ -69,6 +69,7 @@ export {
   hasUnusableCredentialCause,
   LinkCredentialExpiredError,
   LinkCredentialNotFoundError,
+  LinkCredentialUnavailableError,
   NoDefaultCredentialError,
   resolveCredentialsByProvider,
 } from "./src/mcp-registry/credential-resolver.ts";

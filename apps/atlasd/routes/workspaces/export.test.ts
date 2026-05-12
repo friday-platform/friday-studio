@@ -261,11 +261,15 @@ describe("GET /:workspaceId/export", () => {
     { label: "not-found", error: new LinkCredentialNotFoundError("cred_gone") },
     {
       label: "expired (no refresh)",
-      error: new LinkCredentialExpiredError("cred_gone", "expired_no_refresh"),
+      error: new LinkCredentialExpiredError(
+        "cred_gone",
+        "expired_no_refresh",
+        "expired, no refresh",
+      ),
     },
     {
       label: "expired (refresh failed)",
-      error: new LinkCredentialExpiredError("cred_gone", "refresh_failed"),
+      error: new LinkCredentialExpiredError("cred_gone", "refresh_failed", "refresh failed"),
     },
   ])("strips $label legacy credential refs and exports successfully", async ({ error }) => {
     const config = {

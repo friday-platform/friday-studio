@@ -1,0 +1,46 @@
+# Failure-path scenarios — delegate returned a credential-missing error
+# envelope; the supervisor must render a connect-service card, not
+# regurgitate the error as prose.
+
+- description: failure-path · supervisor calls connect_service(google-calendar) when delegate reports missing credential
+  vars:
+    scenarioId: connect-service-on-auth-error-fires
+
+- description: failure-path · supervisor does NOT tell the user to visit a Settings UI that no longer exists
+  vars:
+    scenarioId: connect-service-on-auth-error-no-settings-prose
+
+- description: causal pair · directive ON increases connect_service rate vs OFF
+  vars:
+    scenarioId: connect-service-on-auth-error-directive-causal
+
+# Success-path scenarios — delegate returned events; the supervisor must
+# pass them through without spuriously firing connect_service.
+
+- description: success-path · supervisor does NOT call connect_service when the delegate succeeded
+  vars:
+    scenarioId: connect-service-success-path-no-spurious-connect
+
+- description: success-path · supervisor relays the event data to the user
+  vars:
+    scenarioId: connect-service-success-path-relays-events
+
+# Transient-failure scenarios — refresh_token is still valid; the
+# supervisor must NOT call connect_service (that forces re-auth on a
+# working credential) and should surface a retry-flavored message.
+
+- description: transient · supervisor does NOT call connect_service on a network/refresh blip
+  vars:
+    scenarioId: connect-service-transient-no-spurious-connect
+
+- description: transient · supervisor surfaces a retry hint (try again / moment / temporarily)
+  vars:
+    scenarioId: connect-service-transient-surfaces-retry-hint
+
+# Dead-token scenario — invalid_grant means the refresh_token is permanently
+# dead. The supervisor must call connect_service. Pairs with the transient
+# case to prove the model differentiates from the error text alone.
+
+- description: dead-token · supervisor calls connect_service on invalid_grant / revoked refresh_token
+  vars:
+    scenarioId: connect-service-dead-token-fires

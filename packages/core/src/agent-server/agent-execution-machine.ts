@@ -281,26 +281,6 @@ export function createAgentExecutionMachine(
         logger.info("Executing agent", { agentId: context.agentId });
       },
 
-      // Emit a single non-fatal stream event listing any MCP integrations the
-      // agent couldn't load tools from this session. The chat UI renders this
-      // as an info chip alongside the assistant message so the user knows to
-      // reconnect, instead of seeing a fatal "Something went wrong" banner.
-      emitDisconnectedIntegrations: ({ context }) => {
-        const integrations = context.disconnectedIntegrations;
-        if (!integrations || integrations.length === 0) return;
-        const stream = context.preparedContext?.stream;
-        if (!stream) return;
-        try {
-          stream.emit({ type: "data-integration-disconnected", data: { integrations } });
-        } catch (err) {
-          logger.warn("Failed to emit integration-disconnected event", {
-            agentId: context.agentId,
-            count: integrations.length,
-            error: err instanceof Error ? err.message : String(err),
-          });
-        }
-      },
-
       logPersisting: ({ context }) => {
         const duration =
           context.endTime && context.startTime ? context.endTime - context.startTime : 0;
@@ -414,7 +394,7 @@ export function createAgentExecutionMachine(
       },
 
       executing: {
-        entry: ["logExecuting", "emitDisconnectedIntegrations"],
+        entry: "logExecuting",
         exit: "releaseMCPTools",
 
         invoke: {

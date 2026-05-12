@@ -1,0 +1,29 @@
+# Classifier outcomes (don't kill refresh_token on transient)
+
+- description: classifier 4xx invalid_grant → token_dead
+  vars:
+    scenarioId: classifier-outcome-invalid-grant
+
+- description: classifier HTTP 500 → transient (refresh_token survives)
+  vars:
+    scenarioId: classifier-outcome-http-500
+
+- description: classifier HTTP 429 → transient (refresh_token survives)
+  vars:
+    scenarioId: classifier-outcome-http-429
+
+- description: classifier 4xx non-invalid_grant → transient platform_bug
+  vars:
+    scenarioId: classifier-outcome-platform-bug
+
+- description: classifier network failure → transient (refresh_token survives)
+  vars:
+    scenarioId: classifier-outcome-network
+
+- description: classifier fetch timeout → transient (refresh_token survives)
+  vars:
+    scenarioId: classifier-outcome-timeout
+
+- description: classifier 2xx success preserves the original refresh_token
+  vars:
+    scenarioId: classifier-outcome-success-preserves-refresh-token

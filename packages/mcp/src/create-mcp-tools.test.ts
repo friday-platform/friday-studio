@@ -3,6 +3,7 @@ import type { MCPServerConfig } from "@atlas/config";
 import {
   LinkCredentialExpiredError,
   LinkCredentialNotFoundError,
+  LinkCredentialUnavailableError,
   NoDefaultCredentialError,
 } from "@atlas/core/mcp-registry/credential-resolver";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -160,8 +161,12 @@ describe("createMCPTools", () => {
 
   it("skips server with LinkCredentialExpiredError and classifies refresh kind", async () => {
     mockResolveEnvValues
-      .mockRejectedValueOnce(new LinkCredentialExpiredError("cred_456", "refresh_failed"))
-      .mockRejectedValueOnce(new LinkCredentialExpiredError("cred_789", "expired_no_refresh"));
+      .mockRejectedValueOnce(
+        new LinkCredentialExpiredError("cred_456", "refresh_failed", "refresh failed"),
+      )
+      .mockRejectedValueOnce(
+        new LinkCredentialExpiredError("cred_789", "expired_no_refresh", "expired, no refresh"),
+      );
 
     const configs: Record<string, MCPServerConfig> = {
       "refresh-failed": {
@@ -179,6 +184,68 @@ describe("createMCPTools", () => {
     expect(result.disconnected).toHaveLength(2);
     expect(result.disconnected[0]?.kind).toBe("credential_refresh_failed");
     expect(result.disconnected[1]?.kind).toBe("credential_expired");
+  });
+
+  it("skips server with LinkCredentialUnavailableError and emits credential_temporarily_unavailable", async () => {
+    mockResolveEnvValues.mockRejectedValueOnce(
+      new LinkCredentialUnavailableError({
+        credentialId: "cred_transient",
+        serverName: "needs-cred",
+        provider: "google-gmail",
+        linkError: "transient refresh failure (network)",
+      }),
+    );
+
+    const configs: Record<string, MCPServerConfig> = {
+      "needs-cred": {
+        transport: { type: "stdio", command: "echo", args: [] },
+        env: { TOKEN: { from: "link" as const, id: "cred_transient", key: "token" } },
+      },
+    };
+
+    const result = await createMCPTools(configs, fakeLogger);
+
+    expect(Object.keys(result.tools)).toHaveLength(0);
+    expect(result.disconnected).toHaveLength(1);
+    expect(result.disconnected[0]).toMatchObject({
+      serverId: "needs-cred",
+      kind: "credential_temporarily_unavailable",
+    });
+  });
+
+  it("isolates LinkCredentialUnavailableError per server — others still connect", async () => {
+    mockResolveEnvValues
+      .mockRejectedValueOnce(
+        new LinkCredentialUnavailableError({
+          credentialId: "cred_transient",
+          serverName: "transient-server",
+          linkError: "transient refresh failure (network)",
+        }),
+      )
+      .mockResolvedValueOnce({});
+
+    mockCreateMCPClient.mockResolvedValueOnce({
+      tools: vi.fn().mockResolvedValue({ "healthy-tool": { description: "ok" } }),
+      close: vi.fn().mockResolvedValue(undefined),
+    });
+
+    const configs: Record<string, MCPServerConfig> = {
+      "transient-server": {
+        transport: { type: "stdio", command: "echo", args: [] },
+        env: { TOKEN: { from: "link" as const, id: "cred_transient", key: "token" } },
+      },
+      "healthy-server": { transport: { type: "stdio", command: "echo", args: [] } },
+    };
+
+    const result = await createMCPTools(configs, fakeLogger);
+
+    expect(result.tools).toHaveProperty("healthy-tool");
+    expect(result.disconnected).toHaveLength(1);
+    expect(result.disconnected[0]).toMatchObject({
+      serverId: "transient-server",
+      kind: "credential_temporarily_unavailable",
+    });
+    expect(mockCreateMCPClient).toHaveBeenCalledTimes(1);
   });
 
   it("applies allow filter to server tools", async () => {
@@ -314,7 +381,7 @@ describe("createMCPTools", () => {
     expect(closeB).toHaveBeenCalledTimes(1);
   });
 
-  it("disconnected entry message names the server when error lacked it", async () => {
+  it("disconnected entry exposes serverId on the entry itself", async () => {
     mockResolveEnvValues.mockRejectedValue(new LinkCredentialNotFoundError("cred_123"));
 
     const configs: Record<string, MCPServerConfig> = {
@@ -326,14 +393,17 @@ describe("createMCPTools", () => {
 
     const result = await createMCPTools(configs, fakeLogger);
 
+    // The DisconnectedIntegration entry carries serverId structurally — the
+    // `.message` is the upstream error string verbatim (no rewriting), so
+    // we no longer assert that the server name is interpolated into it.
     expect(result.disconnected).toHaveLength(1);
     expect(result.disconnected[0]?.serverId).toBe("my-slack-server");
-    expect(result.disconnected[0]?.message).toContain("my-slack-server");
   });
 
-  it("disconnected entry surfaces the LinkCredentialExpired refresh status", async () => {
+  it("disconnected entry surfaces the LinkCredentialExpired refresh status with Link's error string", async () => {
+    const linkError = "transient refresh failure (network): tcp connect error";
     mockResolveEnvValues.mockRejectedValue(
-      new LinkCredentialExpiredError("cred_456", "refresh_failed"),
+      new LinkCredentialExpiredError("cred_456", "refresh_failed", linkError),
     );
 
     const configs: Record<string, MCPServerConfig> = {
@@ -349,8 +419,8 @@ describe("createMCPTools", () => {
     expect(result.disconnected[0]).toMatchObject({
       serverId: "my-github-server",
       kind: "credential_refresh_failed",
+      message: linkError, // verbatim — not translated, not wrapped
     });
-    expect(result.disconnected[0]?.message).toContain("my-github-server");
   });
 
   it("keeps already-connected clients alive when a later server has a credential error", async () => {

@@ -10,6 +10,7 @@ import { z } from "zod";
 import { AppInstallError } from "../app-install/errors.ts";
 import { factory } from "../factory.ts";
 import * as oauth from "../oauth/client.ts";
+import { refreshDelegatedTokenClassified } from "../oauth/delegated.ts";
 import { discoverAuthorizationServer } from "../oauth/discovery.ts";
 import type { OAuthService } from "../oauth/service.ts";
 import { buildStaticAuthServer, getStaticClientAuth } from "../oauth/static.ts";
@@ -358,9 +359,28 @@ export function createCredentialsRoutes(storage: StorageAdapter, _oauthService: 
 /** Response shape for internal credential endpoints */
 type CredentialResponse = {
   credential: Credential;
-  status: "ready" | "refreshed" | "expired_no_refresh" | "refresh_failed";
+  status: "ready" | "refreshed" | "expired_no_refresh" | "refresh_failed" | "refresh_unavailable";
   error?: string;
 };
+
+/** Stale-token threshold: if access_token has < this many seconds left and
+ * refresh failed transiently, callers can't safely use it. */
+const STALE_TOKEN_THRESHOLD_SECONDS = 60;
+
+/**
+ * Per-credential in-flight dedup for the delegated refresh path.
+ *
+ * `OAuthService.refreshCredential` has its own `refreshLocks` mutex that
+ * collapses concurrent refreshes of the same credential into one upstream
+ * call. The delegated branch below bypasses OAuthService entirely (it
+ * needs the classifier's `RefreshOutcome` to distinguish `token_dead` from
+ * `transient`), so it would also bypass that mutex — two concurrent reads
+ * for the same stale delegated credential could fan out two upstream
+ * refresh calls and race to return inconsistent `refreshed` vs
+ * `refresh_unavailable` statuses, or storage-write the same new token
+ * twice. This map collapses them the same way.
+ */
+const delegatedRefreshInFlight = new Map<string, Promise<CredentialResponse>>();
 
 /** Resolve a credential with proactive OAuth token refresh. */
 async function resolveCredentialWithRefresh(
@@ -431,6 +451,80 @@ async function resolveCredentialWithRefresh(
         status: "refresh_failed",
         error: "Credential does not match OAuth schema",
       };
+    }
+
+    // Delegated mode: use the classifier so we can distinguish a provably
+    // revoked refresh_token (token_dead → refresh_failed) from a transient
+    // upstream issue (transient → refresh_unavailable / silent fallback).
+    if (
+      provider?.type === "oauth" &&
+      provider.oauthConfig.mode === "delegated" &&
+      oauthCredResult.data.secret.refresh_token
+    ) {
+      // Collapse concurrent refresh attempts for the same credential into
+      // one upstream call. See `delegatedRefreshInFlight` comment for why
+      // this exists.
+      const existing = delegatedRefreshInFlight.get(credential.id);
+      if (existing) {
+        return existing;
+      }
+      const oauthConfig = provider.oauthConfig;
+      const refreshToken = oauthCredResult.data.secret.refresh_token;
+      const refreshPromise = (async (): Promise<CredentialResponse> => {
+        const outcome = await refreshDelegatedTokenClassified(oauthConfig, refreshToken, {
+          provider: credential.provider,
+          credentialId: credential.id,
+        });
+
+        if (outcome.kind === "success") {
+          const updatedSecret = {
+            ...oauthCredResult.data.secret,
+            access_token: outcome.tokens.access_token,
+            refresh_token: outcome.tokens.refresh_token,
+            token_type: outcome.tokens.token_type,
+            expires_at: outcome.tokens.expires_at,
+            granted_scopes: outcome.tokens.scope
+              ? outcome.tokens.scope.split(" ")
+              : oauthCredResult.data.secret.granted_scopes,
+          };
+          const credentialInput: CredentialInput = {
+            type: credential.type,
+            provider: credential.provider,
+            userIdentifier: credential.userIdentifier,
+            label: credential.label,
+            secret: updatedSecret,
+          };
+          const metadata = await storage.update(credential.id, credentialInput, userId);
+          return {
+            credential: { ...credential, secret: updatedSecret, metadata },
+            status: "refreshed",
+          };
+        }
+
+        if (outcome.kind === "token_dead") {
+          return { credential, status: "refresh_failed" };
+        }
+
+        const remainingSeconds = expiresAt ? expiresAt - now : 0;
+        if (remainingSeconds >= STALE_TOKEN_THRESHOLD_SECONDS) {
+          logger.info("oauth_refresh.silent_fallback", {
+            credentialId: credential.id,
+            provider: credential.provider,
+            access_token_remaining_s: remainingSeconds,
+            reason: outcome.reason,
+          });
+          return { credential, status: "ready" };
+        }
+        return {
+          credential,
+          status: "refresh_unavailable",
+          error: `transient refresh failure (${outcome.reason}): ${outcome.detail}`,
+        };
+      })().finally(() => {
+        delegatedRefreshInFlight.delete(credential.id);
+      });
+      delegatedRefreshInFlight.set(credential.id, refreshPromise);
+      return refreshPromise;
     }
 
     try {
