@@ -105,7 +105,7 @@ class ToolChoiceProvider {
     return "friday-prompt-tuning-tool-choice";
   }
 
-  async callApi(prompt, context) {
+  async callApi(_prompt, context) {
     const scenarioId = context?.vars?.scenarioId;
     const report = await reportOnce();
     const result = report.results.find((item) => item.id === scenarioId);
@@ -136,10 +136,7 @@ class ToolChoiceProvider {
     };
     return {
       output: JSON.stringify(outputBody),
-      metadata: {
-        systemPrompt: result.systemPrompt,
-        userMessage: result.userMessage,
-      },
+      metadata: { systemPrompt: result.systemPrompt, userMessage: result.userMessage },
     };
   }
 }
