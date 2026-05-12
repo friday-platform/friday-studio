@@ -157,7 +157,10 @@ const chatRoutes = daemonFactory
     }
     await authorizeChatAccess(c, chat.workspaceId);
 
-    ctx.streamRegistry.finishStream(chatId);
+    // streamRegistry is keyed by `(workspaceId, chatId)`. Pass the
+    // resolved chat's workspaceId, not the path's USER_WORKSPACE_ID,
+    // so legacy chats stored under their own workspaceId still match.
+    ctx.streamRegistry.finishStream(chat.workspaceId, chatId);
 
     return c.json({ success: true }, 200);
   })
@@ -173,17 +176,18 @@ const chatRoutes = daemonFactory
     const ctx = c.get("app");
     const chatId = c.req.param("chatId");
 
-    // Resolve to gate on the chat's actual workspaceId — the
-    // streamRegistry is keyed by chatId alone, so without this check
-    // any authed USER_WORKSPACE_ID member could read another
-    // tenant's live stream just by guessing/leaking a chatId.
+    // Resolve to gate on the chat's actual workspaceId. The
+    // streamRegistry is keyed by `(workspaceId, chatId)`, so even if
+    // the gate were bypassed a member of one workspace couldn't reach
+    // another's buffer — but the explicit authorize call keeps the
+    // 404-vs-200 leak shut.
     const chat = await resolveChat(chatId);
     if (!chat) {
       return c.body(null, 204);
     }
     await authorizeChatAccess(c, chat.workspaceId);
 
-    const buffer = ctx.streamRegistry.getStream(chatId);
+    const buffer = ctx.streamRegistry.getStream(chat.workspaceId, chatId);
 
     // No active stream — return 204 so AI SDK's resumeStream() sets status to "ready".
     // We intentionally don't replay finished buffers here: the AI SDK creates a new
@@ -198,16 +202,17 @@ const chatRoutes = daemonFactory
     c.header("X-Turn-Started-At", String(buffer.createdAt));
 
     // Return SSE stream with replay + live events
+    const chatWorkspaceId = chat.workspaceId;
     const stream = new ReadableStream<Uint8Array>({
       start(controller) {
-        const subscribed = ctx.streamRegistry.subscribe(chatId, controller);
+        const subscribed = ctx.streamRegistry.subscribe(chatWorkspaceId, chatId, controller);
         if (!subscribed) {
           controller.close();
           return;
         }
 
         c.req.raw.signal.addEventListener("abort", () => {
-          ctx.streamRegistry.unsubscribe(chatId, controller);
+          ctx.streamRegistry.unsubscribe(chatWorkspaceId, chatId, controller);
         });
       },
     });

@@ -33,7 +33,6 @@ import {
   stripMimeParams,
 } from "@atlas/core/artifacts/file-upload";
 import { ArtifactStorage } from "@atlas/core/artifacts/server";
-import { ChatStorage } from "@atlas/core/chat/storage";
 import { type PlatformModels, smallLLM } from "@atlas/llm";
 import { createLogger } from "@atlas/logger";
 import { stringifyError, truncateUnicode } from "@atlas/utils";
@@ -41,6 +40,7 @@ import { zValidator } from "@hono/zod-validator";
 import { fileTypeFromFile } from "file-type";
 import JSZip from "jszip";
 import { z } from "zod";
+import { requireDevEnv } from "../src/dev-only.ts";
 import { daemonFactory } from "../src/factory.ts";
 import { getAccessibleWorkspaceIds, requireWorkspaceMember } from "../src/workspace-authz.ts";
 
@@ -760,14 +760,13 @@ const artifactsApp = daemonFactory
     }
 
     if (query.chatId) {
-      // Resolve the chat's owning workspace and gate on membership —
-      // a `chatId` is just an opaque string the client guesses at,
-      // not a proof of access. ChatStorage indexes by chatId so the
-      // workspaceId argument is optional here.
-      const chat = await ChatStorage.getChat(query.chatId);
-      if (!chat.ok) return c.json({ error: chat.error }, 500);
-      if (!chat.data) return c.json({ error: "Chat not found" }, 404);
-      await requireWorkspaceMember(c, chat.data.workspaceId);
+      // The chatId alone doesn't carry workspace information, and
+      // `ChatStorage.getChat(chatId)` (no workspace arg) resolves to a
+      // legacy `_global` namespace — not what we want here. Instead
+      // list artifacts by chatId straight from storage and post-filter
+      // each result by the caller's accessible workspaces. Same
+      // workspaceless-passes-through convention as `batch-get` and the
+      // no-filter branch below.
       const result = await ArtifactStorage.listByChat({
         chatId: query.chatId,
         limit: query.limit,
@@ -778,13 +777,20 @@ const artifactsApp = daemonFactory
         return c.json({ error: result.error }, 500);
       }
 
-      return c.json({ artifacts: result.data }, 200);
+      const accessible = await getAccessibleWorkspaceIds(userId);
+      const visible = result.data.filter((a) => !a.workspaceId || accessible.has(a.workspaceId));
+      return c.json({ artifacts: visible }, 200);
     }
 
-    // No filter — return artifacts only from workspaces the caller
-    // belongs to. Workspaceless / legacy artifacts (no workspaceId)
-    // stay visible, mirroring the convention `batch-get` uses below
-    // and the PUT branch above for ungated mutations.
+    // No filter — debug-only listing. `listAll(limit)` followed by a
+    // post-filter would hand back short / empty pages whenever
+    // accessible artifacts sit past the limit cutoff in the global
+    // result, and there's no per-workspace pagination cursor today
+    // that could honor `limit` across the union. Until a real
+    // accessible-listing primitive exists, gate this branch to dev
+    // mode and require callers to scope by workspaceId or chatId in
+    // any non-dev deployment.
+    requireDevEnv(c);
     const accessible = await getAccessibleWorkspaceIds(userId);
     const result = await ArtifactStorage.listAll({
       limit: query.limit,

@@ -14,6 +14,7 @@ import { parse } from "@std/dotenv";
 import { parse as parseYaml, stringify as stringifyYaml } from "@std/yaml";
 import { describeRoute, resolver, validator } from "hono-openapi";
 import z from "zod";
+import { devOnlyMiddleware } from "../src/dev-only.ts";
 
 /**
  * Check if a file or directory exists at the given path.
@@ -116,6 +117,14 @@ const errorResponseSchema = z.object({ success: z.boolean(), error: z.string() }
 
 // Routes
 const configRoutes = daemonFactory.createApp();
+
+// Reading + writing the daemon's `.env` is an operator-level surface
+// (API keys, credentials, port overrides). In multi-user / cloud
+// deployments any logged-in caller hitting these routes is a tenant
+// isolation hole — gate them to dev mode until an instance-admin
+// role lands. Studio + the CLI set `FRIDAY_ENV=dev` automatically so
+// local-first usage is unaffected.
+configRoutes.use("/env", devOnlyMiddleware());
 
 configRoutes.get(
   "/env",

@@ -3,6 +3,7 @@ import { conversationStorage } from "@atlas/core";
 import { stringifyError } from "@atlas/utils";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
+import { devOnlyMiddleware } from "../src/dev-only.ts";
 import { daemonFactory } from "../src/factory.ts";
 
 /**
@@ -16,9 +17,17 @@ const TEMP_UI_MESSAGE_SCHEMA = z.unknown();
  * Provides HTTP endpoints for managing conversation state across sessions.
  * Each streamId maps to a conversation history used by SessionSupervisor
  * for context persistence between signal processing cycles.
+ *
+ * Gated to dev-only: the in-memory `conversationStorage` is keyed by
+ * raw streamId with no workspace scope, so list / get / replace have
+ * no per-tenant authorization story. In single-user Studio that's
+ * fine for debugging; in any multi-user deployment exposing this is
+ * a tenant-isolation hole. Until an instance-admin role lands, 403
+ * outside `FRIDAY_ENV=dev`.
  */
 const chatStorageRoutes = daemonFactory
   .createApp()
+  .use("*", devOnlyMiddleware())
   // GET / - List conversations
   .get("/", (c) => {
     try {

@@ -5,6 +5,12 @@
  * runs alone. Without this, two assistant turns ran concurrently in the same
  * chat — both produced artifacts, both finished, both got persisted.
  *
+ * Entries are keyed by `(workspaceId, chatId)` rather than `chatId` alone.
+ * Chat ids are client-supplied and could collide across workspaces; without
+ * workspace scoping, a POST to `/api/workspaces/A/chat` with a `chatId` that
+ * happens to exist in workspace B would abort B's in-flight turn. Threading
+ * the workspace through every call site keeps the abort surface tenant-safe.
+ *
  * The controller is owned by atlasd (not the inbound HTTP request) because
  * `chat.processMessage` is fire-and-forget: the request that initiated a turn
  * may be long gone by the time the FSM is still working. A request-scoped
@@ -14,55 +20,66 @@ import { createLogger } from "@atlas/logger";
 
 const logger = createLogger({ component: "chat-turn-registry" });
 
+/** Composite key — `${workspaceId}:${chatId}`. Workspace ids and chat ids
+ *  are both opaque strings with no internal `:`, so this round-trips
+ *  cleanly without escaping. */
+function key(workspaceId: string, chatId: string): string {
+  return `${workspaceId}:${chatId}`;
+}
+
 export class ChatTurnRegistry {
   private readonly controllers = new Map<string, AbortController>();
 
   /**
-   * Replace the controller for a chatId. Aborts the prior controller (if any)
-   * with a structured reason so downstream `AbortSignal.aborted`/`.reason`
-   * checks can distinguish "user sent a new message" from generic abort.
-   * Returns the fresh controller to attach to the new turn.
+   * Replace the controller for a (workspace, chat). Aborts the prior
+   * controller (if any) with a structured reason so downstream
+   * `AbortSignal.aborted`/`.reason` checks can distinguish "user sent a
+   * new message" from generic abort. Returns the fresh controller to
+   * attach to the new turn.
    */
-  replace(chatId: string): AbortController {
-    const existing = this.controllers.get(chatId);
+  replace(workspaceId: string, chatId: string): AbortController {
+    const k = key(workspaceId, chatId);
+    const existing = this.controllers.get(k);
     if (existing && !existing.signal.aborted) {
       existing.abort(new ChatTurnSupersededError(chatId));
-      logger.debug("Aborted prior turn on follow-up message", { chatId });
+      logger.debug("Aborted prior turn on follow-up message", { workspaceId, chatId });
     }
     const next = new AbortController();
-    this.controllers.set(chatId, next);
+    this.controllers.set(k, next);
     return next;
   }
 
-  /** Read the live controller for a chatId (or undefined if none). */
-  get(chatId: string): AbortController | undefined {
-    return this.controllers.get(chatId);
+  /** Read the live controller for a (workspace, chat) (or undefined if none). */
+  get(workspaceId: string, chatId: string): AbortController | undefined {
+    return this.controllers.get(key(workspaceId, chatId));
   }
 
   /**
-   * Abort + remove the controller for a chatId. Used by the explicit
-   * `DELETE /:chatId/stream` cancel path.
+   * Abort + remove the controller for a (workspace, chat). Used by the
+   * explicit `DELETE /:chatId/stream` cancel path.
    */
-  abort(chatId: string, reason?: unknown): boolean {
-    const existing = this.controllers.get(chatId);
+  abort(workspaceId: string, chatId: string, reason?: unknown): boolean {
+    const k = key(workspaceId, chatId);
+    const existing = this.controllers.get(k);
     if (!existing) return false;
     if (!existing.signal.aborted) {
       existing.abort(reason ?? new ChatTurnCancelledError(chatId));
     }
-    this.controllers.delete(chatId);
+    this.controllers.delete(k);
     return true;
   }
 
   /**
-   * Drop the entry for a chatId without aborting. Called by the turn's own
-   * completion path so we don't accumulate finished controllers. Identity
-   * check guards against a race where a follow-up POST already replaced the
-   * entry — only delete if it's still ours.
+   * Drop the entry for a (workspace, chat) without aborting. Called by
+   * the turn's own completion path so we don't accumulate finished
+   * controllers. Identity check guards against a race where a follow-up
+   * POST already replaced the entry — only delete if it's still ours.
    */
-  release(chatId: string, controller: AbortController): void {
-    const current = this.controllers.get(chatId);
+  release(workspaceId: string, chatId: string, controller: AbortController): void {
+    const k = key(workspaceId, chatId);
+    const current = this.controllers.get(k);
     if (current === controller) {
-      this.controllers.delete(chatId);
+      this.controllers.delete(k);
     }
   }
 

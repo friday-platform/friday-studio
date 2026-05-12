@@ -113,22 +113,15 @@ const workspaceChatRoutes = daemonFactory
 
     // Register the abort controller BEFORE forwarding so a second POST with
     // the same chatId can stop the prior turn (no two assistant runs racing).
+    // The registry is now keyed by `(workspaceId, chatId)` so a foreign
+    // workspace's controller can't be aborted from this path even if the
+    // chat id collides.
     const chatId =
       typeof body === "object" && body !== null && "id" in body && typeof body.id === "string"
         ? body.id
         : undefined;
     if (chatId) {
-      // If the chat already exists in storage it has to belong to the
-      // path workspace — chatTurnRegistry is keyed by chatId globally
-      // and `.replace` would otherwise let a member of workspace A
-      // abort an in-flight turn on a chatId they happen to know from
-      // workspace B. A first-time chatId (not yet persisted) is fine;
-      // it'll be created as a new chat under this workspace.
-      const existing = await ChatStorage.getChat(chatId);
-      if (existing.ok && existing.data && existing.data.workspaceId !== workspaceId) {
-        return c.json({ error: "Chat not found" }, 404);
-      }
-      ctx.chatTurnRegistry.replace(chatId);
+      ctx.chatTurnRegistry.replace(workspaceId, chatId);
     }
 
     const instance = await ctx.getOrCreateChatSdkInstance(workspaceId).catch((error: unknown) => {
@@ -159,18 +152,22 @@ const workspaceChatRoutes = daemonFactory
       return c.json({ error: "Missing workspaceId" }, 400);
     }
 
-    // Stream + turn registries are keyed by chatId globally — without
-    // verifying the chat belongs to this workspace a member of A could
-    // stop B's in-flight turn by guessing/leaking the chatId.
-    const chat = await ChatStorage.getChat(chatId);
-    if (!chat.ok || !chat.data || chat.data.workspaceId !== workspaceId) {
+    // Confirm the chat actually exists in this workspace before
+    // touching the registry. `getChat(chatId, workspaceId)` reads from
+    // the workspace-scoped namespace — a chat in a different workspace
+    // returns null here, so the 404 fires correctly. The registry is
+    // also keyed by `(workspaceId, chatId)`, so even if a caller
+    // bypassed this check it couldn't reach a foreign workspace's
+    // turn — defense in depth.
+    const chat = await ChatStorage.getChat(chatId, workspaceId);
+    if (!chat.ok || !chat.data) {
       return c.json({ error: "Chat not found" }, 404);
     }
 
     // abort() stops the FSM/model server-side; finishStream() alone would
     // let it keep running and persist a partial message after cancel.
-    ctx.chatTurnRegistry.abort(chatId);
-    ctx.streamRegistry.finishStream(chatId);
+    ctx.chatTurnRegistry.abort(workspaceId, chatId);
+    ctx.streamRegistry.finishStream(workspaceId, chatId);
 
     return c.json({ success: true }, 200);
   })
@@ -183,14 +180,15 @@ const workspaceChatRoutes = daemonFactory
       return c.json({ error: "Missing workspaceId" }, 400);
     }
 
-    // Same chatId-belongs-to-workspace gate as the DELETE above —
-    // streamRegistry.getStream is keyed by chatId only.
-    const chat = await ChatStorage.getChat(chatId);
-    if (!chat.ok || !chat.data || chat.data.workspaceId !== workspaceId) {
+    // Same chat-belongs-to-workspace gate as the DELETE above; without
+    // it a resume request leaks the existence of a chat in another
+    // workspace (200 vs 404).
+    const chat = await ChatStorage.getChat(chatId, workspaceId);
+    if (!chat.ok || !chat.data) {
       return c.json({ error: "Chat not found" }, 404);
     }
 
-    const buffer = ctx.streamRegistry.getStream(chatId);
+    const buffer = ctx.streamRegistry.getStream(workspaceId, chatId);
 
     if (!buffer?.active) {
       return c.body(null, 204);
@@ -218,14 +216,19 @@ const workspaceChatRoutes = daemonFactory
 
     const readableStream = new ReadableStream<Uint8Array>({
       start(controller) {
-        const subscribed = ctx.streamRegistry.subscribe(chatId, controller, lastEventId);
+        const subscribed = ctx.streamRegistry.subscribe(
+          workspaceId,
+          chatId,
+          controller,
+          lastEventId,
+        );
         if (!subscribed) {
           controller.close();
           return;
         }
 
         c.req.raw.signal.addEventListener("abort", () => {
-          ctx.streamRegistry.unsubscribe(chatId, controller);
+          ctx.streamRegistry.unsubscribe(workspaceId, chatId, controller);
         });
       },
     });

@@ -74,15 +74,15 @@ const workspaceChatDebugRoutes: Hono<AppVariables> = new Hono<AppVariables>().ge
       return c.json({ error: "Missing workspaceId or chatId" }, 400);
     }
     await requireWorkspaceMember(c, workspaceId);
-    // Membership on the path workspace isn't enough — the active
-    // stream registry is keyed by `chatId` only, so without this
-    // chat-belongs-to-workspace check a member of A could read B's
-    // in-flight tool events by guessing the chat id. The JetStream
-    // stream name + KV key below are workspace-scoped and naturally
-    // won't materialise for the wrong workspace, but `streamRegistry`
-    // would.
-    const chatCheck = await ChatStorage.getChat(chatId);
-    if (!chatCheck.ok || !chatCheck.data || chatCheck.data.workspaceId !== workspaceId) {
+    // Confirm the chat actually exists in this workspace before
+    // returning any debug payload. The active streamRegistry is
+    // workspace-keyed too, so a foreign chat id would naturally miss,
+    // but this gate keeps the 404-vs-200 existence signal off the wire.
+    // Use the `(chatId, workspaceId)` form — passing no workspaceId
+    // would resolve to the legacy `_global` namespace and 404 every
+    // legitimate workspace chat.
+    const chatCheck = await ChatStorage.getChat(chatId, workspaceId);
+    if (!chatCheck.ok || !chatCheck.data) {
       return c.json({ error: "Chat not found" }, 404);
     }
     const ctx = c.get("app");
@@ -131,7 +131,7 @@ const workspaceChatDebugRoutes: Hono<AppVariables> = new Hono<AppVariables>().ge
 
     let activeStream: ActiveStreamDebug = { exists: false };
     try {
-      const buffer = ctx.streamRegistry.getStream(chatId);
+      const buffer = ctx.streamRegistry.getStream(workspaceId, chatId);
       if (buffer) {
         activeStream = {
           exists: true,

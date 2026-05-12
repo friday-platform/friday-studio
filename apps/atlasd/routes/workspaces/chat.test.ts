@@ -18,7 +18,13 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 const { mockChatStorage, mockValidateMessages } = vi.hoisted(() => ({
   mockChatStorage: {
     listChatsByWorkspace: vi.fn<() => Promise<{ ok: boolean; data?: unknown; error?: string }>>(),
-    getChat: vi.fn<() => Promise<{ ok: boolean; data?: unknown; error?: string }>>(),
+    getChat:
+      vi.fn<
+        (
+          chatId: string,
+          workspaceId?: string,
+        ) => Promise<{ ok: boolean; data?: unknown; error?: string }>
+      >(),
     appendMessage: vi.fn<() => Promise<{ ok: boolean; error?: string }>>(),
     updateChatTitle: vi.fn<() => Promise<{ ok: boolean; data?: unknown; error?: string }>>(),
   },
@@ -539,10 +545,11 @@ describe("GET /:workspaceId/chat/:chatId/stream — SSE stream reconnect", () =>
     });
 
     expect(res.status).toBe(200);
-    // 3rd argument is the parsed integer cursor — anything else lets
+    // 4th argument is the parsed integer cursor — anything else lets
     // resume fall back to full replay, which re-sends already-rendered
-    // text-deltas and produces duplicate content in the UI.
-    expect(subscribe).toHaveBeenCalledWith("chat-1", expect.anything(), 42);
+    // text-deltas and produces duplicate content in the UI. Registry
+    // is now keyed by `(workspaceId, chatId)` so they're args 1 and 2.
+    expect(subscribe).toHaveBeenCalledWith("ws-1", "chat-1", expect.anything(), 42);
   });
 
   test.each([
@@ -564,7 +571,9 @@ describe("GET /:workspaceId/chat/:chatId/stream — SSE stream reconnect", () =>
 
     await app.request("/ws-1/chat/chat-1/stream", { headers: { "Last-Event-ID": header } });
 
-    const callArg = subscribe.mock.calls[0]?.[2];
+    // Registry is keyed by `(workspaceId, chatId)`, so the cursor is
+    // now the 4th positional argument (was 3rd before re-keying).
+    const callArg = subscribe.mock.calls[0]?.[3];
     if (header === "1.5") {
       // parseInt("1.5", 10) === 1 — accepted as a valid non-negative int.
       // This is intentional: any prefix-numeric header is fine; the cursor
@@ -585,7 +594,7 @@ describe("DELETE /:workspaceId/chat/:chatId/stream — cancel stream", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as JsonBody;
     expect(body.success).toBe(true);
-    expect(mockStreamRegistry.finishStream).toHaveBeenCalledWith("chat-1");
+    expect(mockStreamRegistry.finishStream).toHaveBeenCalledWith("ws-1", "chat-1");
   });
 });
 
@@ -746,14 +755,23 @@ describe("POST /:workspaceId/chat — foreground workspace validation", () => {
 });
 
 describe("stream routes — chatId must belong to path workspace", () => {
-  // `streamRegistry` is keyed by `chatId` globally; without the
-  // `chat.workspaceId === path workspaceId` check a member of A could
-  // act on B's in-flight stream by guessing the chat id.
-  test("GET /:chatId/stream returns 404 when chat belongs to another workspace", async () => {
-    mockChatStorage.getChat.mockResolvedValue({
-      ok: true,
-      data: { id: "chat-x", workspaceId: "ws-OTHER", messages: [] },
-    });
+  // Two layers of defence: the route checks the chat is in the path
+  // workspace (404 leak prevention), and the streamRegistry /
+  // chatTurnRegistry themselves are keyed by `(workspaceId, chatId)`
+  // so a misaddressed call still couldn't reach a foreign workspace's
+  // buffer. These tests exercise the route-level gate; the registry
+  // unit tests cover the keying.
+  test("GET /:chatId/stream returns 404 when chat doesn't exist in this workspace", async () => {
+    // Simulate the real storage: `getChat(chatId, "ws-1")` returns
+    // null because the chat lives in `ws-OTHER`. The blanket default
+    // in `beforeEach` would mask this — override per-test.
+    mockChatStorage.getChat.mockImplementation((_chatId: string, workspaceId?: string) =>
+      Promise.resolve(
+        workspaceId === "ws-OTHER"
+          ? { ok: true, data: { id: "chat-x", workspaceId: "ws-OTHER", messages: [] } }
+          : { ok: true, data: null },
+      ),
+    );
     const { app } = createTestApp({
       streamRegistry: {
         getStream: vi.fn().mockReturnValue({ active: true, createdAt: Date.now() }),
@@ -765,11 +783,14 @@ describe("stream routes — chatId must belong to path workspace", () => {
     expect(res.status).toBe(404);
   });
 
-  test("DELETE /:chatId/stream returns 404 when chat belongs to another workspace", async () => {
-    mockChatStorage.getChat.mockResolvedValue({
-      ok: true,
-      data: { id: "chat-x", workspaceId: "ws-OTHER", messages: [] },
-    });
+  test("DELETE /:chatId/stream returns 404 when chat doesn't exist in this workspace", async () => {
+    mockChatStorage.getChat.mockImplementation((_chatId: string, workspaceId?: string) =>
+      Promise.resolve(
+        workspaceId === "ws-OTHER"
+          ? { ok: true, data: { id: "chat-x", workspaceId: "ws-OTHER", messages: [] } }
+          : { ok: true, data: null },
+      ),
+    );
     const { app, mockStreamRegistry } = createTestApp();
 
     const res = await del(app, "/ws-1/chat/chat-x/stream");
@@ -778,11 +799,13 @@ describe("stream routes — chatId must belong to path workspace", () => {
     expect(mockStreamRegistry.finishStream).not.toHaveBeenCalled();
   });
 
-  test("POST / refuses an existing chatId owned by a different workspace", async () => {
-    mockChatStorage.getChat.mockResolvedValue({
-      ok: true,
-      data: { id: "chat-foreign", workspaceId: "ws-OTHER", messages: [] },
-    });
+  test("POST / routes the chatTurnRegistry call through the path workspace, not the chat's foreign workspace", async () => {
+    // The registry is now keyed by `(workspaceId, chatId)`. Even if a
+    // caller smuggles a chatId that exists in another workspace, the
+    // call lands at `(ws-1, chatId)` — workspace B's controller at
+    // `(ws-B, chatId)` is untouched. The test verifies the route
+    // passes the *path* workspaceId to the registry, not anything
+    // derived from the body.
     const { app, mockContext } = createTestApp();
     const chatTurnReplace = vi.mocked(mockContext.chatTurnRegistry.replace);
 
@@ -791,11 +814,12 @@ describe("stream routes — chatId must belong to path workspace", () => {
       message: { role: "user", parts: [{ type: "text", text: "hi" }] },
     });
 
-    expect(res.status).toBe(404);
-    // Crucial side-effect check: the global chatTurnRegistry mustn't
-    // see a `.replace(chat-foreign)` from a non-owner — that would
-    // abort the legitimate turn running on the foreign workspace.
-    expect(chatTurnReplace).not.toHaveBeenCalled();
+    expect(res.status).toBe(200);
+    expect(chatTurnReplace).toHaveBeenCalledWith("ws-1", "chat-foreign");
+    // Negative: a foreign workspaceId must never appear in the call.
+    for (const call of chatTurnReplace.mock.calls) {
+      expect(call[0]).toBe("ws-1");
+    }
   });
 });
 

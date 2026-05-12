@@ -8,8 +8,17 @@
 import process from "node:process";
 import { Hono } from "hono";
 import { proxy } from "hono/proxy";
+import { devOnlyMiddleware } from "../src/dev-only.ts";
 
 const linkRoutes = new Hono();
+
+// `/api/link/*` forwards every request to the Link service with the
+// daemon's own `FRIDAY_KEY` attached as the bearer token. In multi-
+// user deployments that's a shared-credential leak — any logged-in
+// caller impersonates the daemon to Link. Gate the whole proxy to
+// dev mode; Studio + the CLI both stamp `FRIDAY_ENV=dev` so local-
+// first credential management keeps working.
+linkRoutes.use("/*", devOnlyMiddleware());
 
 /**
  * Where the daemon proxies /api/link/* requests to. Resolution order:

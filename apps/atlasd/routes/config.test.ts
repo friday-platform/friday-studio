@@ -36,12 +36,18 @@ interface GetEnvResponse {
 
 let tempHome: string;
 let originalFridayHome: string | undefined;
+let originalFridayEnv: string | undefined;
 
 beforeEach(async () => {
   tempHome = join(tmpdir(), `atlasd-env-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
   await mkdir(tempHome, { recursive: true });
   originalFridayHome = process.env.FRIDAY_HOME;
   process.env.FRIDAY_HOME = tempHome;
+  // `/env` is gated behind dev mode in production; the test exercises
+  // the happy path (read/write the env file) so set FRIDAY_ENV=dev for
+  // these cases. The dev-only gate itself is covered separately.
+  originalFridayEnv = process.env.FRIDAY_ENV;
+  process.env.FRIDAY_ENV = "dev";
 });
 
 afterEach(async () => {
@@ -49,6 +55,11 @@ afterEach(async () => {
     delete process.env.FRIDAY_HOME;
   } else {
     process.env.FRIDAY_HOME = originalFridayHome;
+  }
+  if (originalFridayEnv === undefined) {
+    delete process.env.FRIDAY_ENV;
+  } else {
+    process.env.FRIDAY_ENV = originalFridayEnv;
   }
   await rm(tempHome, { recursive: true, force: true });
 });
@@ -201,5 +212,37 @@ describe("PUT → GET round-trip", () => {
 
     const onDisk = await readFile(envPath, "utf-8");
     expect(onDisk).toBe("ANTHROPIC_API_KEY=sk-ant-legacy");
+  });
+});
+
+describe("/env dev-only gate", () => {
+  // The /env endpoints (read + write of the daemon's .env) are
+  // operator-level — they expose every credential the daemon has and
+  // accept arbitrary writes. In non-dev modes (cloud, multi-user
+  // deployments) they must 403 so a logged-in caller can't extract
+  // or rewrite global credentials.
+  test("GET /env returns 403 when FRIDAY_ENV is not 'dev'", async () => {
+    process.env.FRIDAY_ENV = "production";
+    const app = createApp();
+    const res = await app.request("/env", { method: "GET" });
+    expect(res.status).toBe(403);
+  });
+
+  test("PUT /env returns 403 when FRIDAY_ENV is not 'dev'", async () => {
+    process.env.FRIDAY_ENV = "production";
+    const app = createApp();
+    const res = await app.request("/env", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ envVars: { FOO: "bar" } }),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  test("GET /env returns 403 when FRIDAY_ENV is unset (fail-closed)", async () => {
+    delete process.env.FRIDAY_ENV;
+    const app = createApp();
+    const res = await app.request("/env", { method: "GET" });
+    expect(res.status).toBe(403);
   });
 });

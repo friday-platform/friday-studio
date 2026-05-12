@@ -51,6 +51,7 @@ import { getFridayHome } from "@atlas/utils/paths.server";
 import { zValidator } from "@hono/zod-validator";
 import { parse, stringify } from "@std/yaml";
 import { z } from "zod";
+import { requireDevEnv } from "../../src/dev-only.ts";
 import type { AppContext } from "../../src/factory.ts";
 import { daemonFactory, KERNEL_WORKSPACE_ID } from "../../src/factory.ts";
 import {
@@ -782,6 +783,16 @@ const workspacesRoutes = daemonFactory
       .split(",")
       .map((s) => s.trim())
       .includes("global-skills");
+    // `global-skills` exports skills.db wholesale — every skill in
+    // every namespace, regardless of which workspace they're assigned
+    // to. Per-workspace bundling already filters to accessible
+    // workspaces; this knob is an operator-level escape hatch. Gate
+    // it to dev mode (Studio installer + CLI both set `FRIDAY_ENV=dev`
+    // automatically) so a cloud caller can't extract global skill
+    // state by toggling the query parameter.
+    if (includeGlobalSkills) {
+      requireDevEnv(c);
+    }
     const bundleLogger = createLogger({ component: "workspace-bundle-all-export" });
     try {
       const ctx = c.get("app");
