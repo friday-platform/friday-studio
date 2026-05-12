@@ -1,0 +1,32 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+
+description: Workspace-chat prompt-tuning evals — claude-code carve-out, MCP discipline, save_artifact preference.
+
+# Make the assembled system prompt + user message visible in the promptfoo UI
+# for each test row. promptfoo substitutes {{system_prompt}} / {{user_message}}
+# from each test's vars (the runner populates them when it produces the report).
+prompts:
+  - file://prompt-template.txt
+
+providers:
+  - id: file://tool-choice-provider.cjs
+    label: friday-prompt-tuning-tool-choice
+
+defaultTest:
+  # {{system_prompt}} resolves to the live workspace-chat prompt.txt so the
+  # promptfoo UI shows the literal bytes (modulo per-scenario workspace
+  # sections, which the runner assembles internally and surfaces in the
+  # provider response). {{user_message}} comes from each test's vars.
+  vars:
+    system_prompt: file://../../../../packages/system/agents/workspace-chat/prompt.txt
+  assert:
+    - type: is-json
+    - type: javascript
+      value: |
+        const result = JSON.parse(output);
+        if (result.pass !== true) {
+          throw new Error(`${result.id} failed: ${(result.notes || []).join('; ')}`);
+        }
+        return true;
+
+tests: file://tool-choice-tests.yaml

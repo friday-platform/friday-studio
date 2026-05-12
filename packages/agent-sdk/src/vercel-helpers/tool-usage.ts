@@ -5,6 +5,13 @@ import type { ArtifactRef, AtlasTools, Logger, ToolCall, ToolResult } from "../t
 /** Minimal schema for artifact output — only the fields we extract */
 const ArtifactOutputSchema = z.object({ id: z.string(), type: z.string(), summary: z.string() });
 
+/** Tool names whose output is harvested for artifact refs. The MCP server's
+ * `create_artifact` returns the full artifact shape; the workspace-chat
+ * direct `create_artifact` and `save_artifact` tools return a thinner
+ * `{success, id, type, summary}` envelope that still parses cleanly through
+ * `ArtifactOutputSchema`. */
+const ARTIFACT_PRODUCING_TOOLS = new Set(["create_artifact", "save_artifact"]);
+
 /**
  * Find a tool call by name and return its input if it's an object.
  * Returns undefined if not found or input is null/primitive.
@@ -57,7 +64,7 @@ export function extractArtifactRefsFromToolResults(
   const refs: ArtifactRef[] = [];
 
   for (const result of toolResults) {
-    if (result.toolName === "create_artifact") {
+    if (ARTIFACT_PRODUCING_TOOLS.has(result.toolName)) {
       // Skip error results
       if (result.output.isError) {
         logger?.debug("skipping error tool result", { toolResult: result });
