@@ -18,6 +18,8 @@
  */
 
 import { startNatsTestServer, type TestNatsServer } from "@atlas/core/test-utils/nats-test-server";
+import { UserStorage } from "@atlas/core/users/storage";
+import { WorkspaceMemberStorage } from "@atlas/core/workspace-members/storage";
 import type { Logger } from "@atlas/logger";
 import { createJetStreamFacade } from "jetstream";
 import { connect, type NatsConnection } from "nats";
@@ -42,6 +44,21 @@ const noopLogger: Logger = {
 beforeAll(async () => {
   server = await startNatsTestServer();
   nc = await connect({ servers: server.url });
+
+  // Pin the regression-guard contract: the facade singletons MUST be
+  // uninitialized when this file runs. Today this holds because Vitest's
+  // default `pool: "forks"` + `fileParallelism: true` gives each .test.ts
+  // file its own worker (so a sibling test's `initUserStorage(nc)` can't
+  // leak in). If that config ever flips (e.g. `pool: "threads"` with
+  // `isolate: false`), these assertions fail loudly instead of letting
+  // the regression guard silently pass against a populated singleton.
+  // `getCachedLocalUserId` / `get` both call the internal `b()` guard
+  // synchronously before returning, so a null backend throws here
+  // regardless of the methods' async return types.
+  expect(() => UserStorage.getCachedLocalUserId()).toThrow(/UserStorage not initialized/);
+  expect(() => WorkspaceMemberStorage.get("u", "w")).toThrow(
+    /WorkspaceMemberStorage not initialized/,
+  );
 }, 30_000);
 
 afterAll(async () => {
