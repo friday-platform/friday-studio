@@ -7,10 +7,12 @@
 
 import process from "node:process";
 import type { WorkspaceConfig } from "@atlas/config";
+import { startNatsTestServer, type TestNatsServer } from "@atlas/core/test-utils/nats-test-server";
 import { createStubPlatformModels } from "@atlas/llm";
 import type { WorkspaceManager } from "@atlas/workspace";
 import { Hono } from "hono";
-import { describe, expect, test, vi } from "vitest";
+import { connect, type NatsConnection } from "nats";
+import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import type { AppContext, AppVariables } from "../../src/factory.ts";
 import {
   extractJobIntegrations,
@@ -807,5 +809,182 @@ describe("injectBundledAgentRefs", () => {
     });
     const result = injectBundledAgentRefs(config);
     expect(result).toBe(config);
+  });
+});
+
+// =============================================================================
+// POST /workspaces/:workspaceId/signals/:signalId — client-abort cancellation wiring
+// =============================================================================
+//
+// The cascade-layer cancellation semantics live in `cascade-stream.test.ts`.
+// These tests lock down the route-level wiring that publishes the
+// `signals.cancel.<correlationId>` frame when the HTTP client aborts. A
+// regression here is otherwise silent: TypeScript would compile, cascade
+// tests would stay green, and the only observable failure mode is cascades
+// running to completion (and firing side-effect tools) after the caller has
+// gone away.
+//
+// The test uses two separate NATS connections against one server: the route
+// publishes the cancel frame on the daemon's connection, the test subscribes
+// on its own. Separate connections avoid duplicate-delivery surprises if the
+// route ever grows internal `signals.cancel.*` subscribers.
+
+describe("POST /workspaces/:workspaceId/signals/:signalId — client-abort cancellation wiring", () => {
+  let server: TestNatsServer;
+  let daemonNc: NatsConnection;
+  let testNc: NatsConnection;
+
+  beforeAll(async () => {
+    server = await startNatsTestServer();
+    daemonNc = await connect({ servers: server.url });
+    testNc = await connect({ servers: server.url });
+  }, 30_000);
+
+  afterAll(async () => {
+    await testNc.drain();
+    await daemonNc.drain();
+    await server.stop();
+  });
+
+  function createAbortTestApp() {
+    const publishSignalToJetStream = vi.fn().mockResolvedValue({ seq: 1 });
+
+    const mockWorkspaceManager = {
+      find: vi.fn().mockResolvedValue({ id: "ws-1", path: "/tmp/ws-1", name: "Test" }),
+      list: vi.fn().mockResolvedValue([]),
+      getWorkspaceConfig: vi.fn().mockResolvedValue(null),
+      registerWorkspace: vi.fn(),
+      deleteWorkspace: vi.fn(),
+    } as unknown as WorkspaceManager;
+
+    const mockContext: AppContext = {
+      runtimes: new Map(),
+      startTime: Date.now(),
+      sseClients: new Map(),
+      sseStreams: new Map(),
+      getWorkspaceManager: () => mockWorkspaceManager,
+      getOrCreateWorkspaceRuntime: vi.fn(),
+      resetIdleTimeout: vi.fn(),
+      getWorkspaceRuntime: vi.fn(),
+      destroyWorkspaceRuntime: vi.fn(),
+      getAgentRegistry: vi.fn(),
+      getOrCreateChatSdkInstance: vi.fn(),
+      evictChatSdkInstance: vi.fn(),
+      daemon: {
+        getWorkspaceManager: () => mockWorkspaceManager,
+        getNatsConnection: () => daemonNc,
+        publishSignalToJetStream,
+        triggerWorkspaceSignal: vi.fn(),
+        runtimes: new Map(),
+      } as unknown as AppContext["daemon"],
+      streamRegistry: {} as AppContext["streamRegistry"],
+      chatTurnRegistry: {} as AppContext["chatTurnRegistry"],
+      sessionStreamRegistry: {} as AppContext["sessionStreamRegistry"],
+      sessionHistoryAdapter: {} as AppContext["sessionHistoryAdapter"],
+      exposeKernel: false,
+      platformModels: createStubPlatformModels(),
+    };
+
+    const app = new Hono<AppVariables>();
+    app.use("*", async (c, next) => {
+      c.set("app", mockContext);
+      c.set("userId", "test-user");
+      await next();
+    });
+    app.route("/workspaces", workspacesRoutes);
+
+    return { app };
+  }
+
+  // Subscribe to the wildcard cancel subject and wait for the first frame.
+  // `*` matches exactly one token, locking down the assumption that
+  // correlationId is a single UUID without dots — if that ever changes the
+  // test fails loudly. `nc.flush()` after subscribe waits for the server to
+  // register interest before the test publishes anything that should hit it.
+  async function awaitFirstCancelFrame(timeoutMs: number) {
+    const sub = testNc.subscribe("signals.cancel.*");
+    await testNc.flush();
+    const iter = sub[Symbol.asyncIterator]();
+    try {
+      const winner = await Promise.race([
+        iter.next(),
+        new Promise<never>((_, reject) =>
+          setTimeout(
+            () => reject(new Error(`no cancel frame received within ${timeoutMs}ms`)),
+            timeoutMs,
+          ),
+        ),
+      ]);
+      if (winner.done || !winner.value) {
+        throw new Error("cancel subscription closed without a frame");
+      }
+      return winner.value;
+    } finally {
+      sub.unsubscribe();
+    }
+  }
+
+  const CORRELATION_ID_RE = /^signals\.cancel\.[0-9a-f-]{36}$/;
+
+  test("JSON variant: aborting before the response arrives publishes a cancel frame", async () => {
+    const { app } = createAbortTestApp();
+    const framePromise = awaitFirstCancelFrame(2000);
+
+    const ac = new AbortController();
+    const reqPromise = Promise.resolve(
+      app.request("/workspaces/ws-1/signals/sig-1", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ payload: {} }),
+        signal: ac.signal,
+      }),
+    ).catch(() => undefined);
+
+    // Yield long enough for the route to attach its abort listener and park
+    // in awaitSignalCompletion. The stub on publishSignalToJetStream resolves
+    // immediately; no response is ever published on signals.responses.<id>,
+    // so the route stays parked until the abort fires.
+    await new Promise((r) => setTimeout(r, 50));
+    ac.abort();
+
+    const msg = await framePromise;
+    expect(msg.subject).toMatch(CORRELATION_ID_RE);
+    const body = JSON.parse(new TextDecoder().decode(msg.data)) as {
+      reason: string;
+      requestedAt: string;
+    };
+    expect(body.reason).toBe("Client disconnected");
+    expect(body.requestedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+
+    await reqPromise;
+  });
+
+  test("SSE variant: aborting before data-session-start publishes a cancel frame", async () => {
+    const { app } = createAbortTestApp();
+    const framePromise = awaitFirstCancelFrame(2000);
+
+    const ac = new AbortController();
+    const reqPromise = Promise.resolve(
+      app.request("/workspaces/ws-1/signals/sig-1", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+        body: JSON.stringify({ payload: {} }),
+        signal: ac.signal,
+      }),
+    ).catch(() => undefined);
+
+    await new Promise((r) => setTimeout(r, 50));
+    ac.abort();
+
+    const msg = await framePromise;
+    expect(msg.subject).toMatch(CORRELATION_ID_RE);
+    const body = JSON.parse(new TextDecoder().decode(msg.data)) as {
+      reason: string;
+      requestedAt: string;
+    };
+    expect(body.reason).toBe("Client disconnected");
+    expect(body.requestedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+
+    await reqPromise;
   });
 });
