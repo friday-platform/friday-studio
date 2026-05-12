@@ -258,6 +258,15 @@ describe("createDelegateTool", () => {
     mockDiscoverMCPServers.mockReset();
     mockCreateMCPTools.mockReset();
     mockResolveDelegateSkills.mockReset().mockResolvedValue([]);
+    // Default behavior: passthrough — most tests don't exercise the lift,
+    // and a stale `mockResolvedValue` from a prior test would otherwise
+    // leak the marker into their `result.answer` assertions.
+    mockLiftAnswerForModel
+      .mockReset()
+      .mockImplementation(
+        (value: string, _opts: unknown): Promise<{ value: string; artifactId?: string }> =>
+          Promise.resolve({ value }),
+      );
   });
 
   it("happy path — finish ok=true drives answer, envelopes carry namespaced toolCallIds", async () => {
@@ -385,38 +394,37 @@ describe("createDelegateTool", () => {
     });
   });
 
-  it("routes successful answers through liftAnswerForModel and stamps answerArtifactId on lift", async () => {
-    mockLiftAnswerForModel
-      .mockReset()
-      .mockResolvedValue({ value: "[lifted: synthetic-marker]", artifactId: "art-xyz" });
+  it("routes successful answers through liftAnswerForModel and projects the lifted marker into answer", async () => {
+    const liftReturn = { value: "[lifted: synthetic-marker]", artifactId: "art-xyz" };
+    mockLiftAnswerForModel.mockResolvedValue(liftReturn);
     const captured: CapturedStreamTextArgs = { args: undefined };
+    const finalText = "long enough answer that the lift walker would have hit threshold";
     setupMockStreamText(captured, {
       steps: [{ toolCalls: [{ toolCallId: "c1", toolName: "web_search" }] }],
-      finalText: "long enough answer that the lift walker would have hit threshold",
+      finalText,
     });
 
     const { delegateTool } = makeDelegate();
     const result = await runDelegate(delegateTool);
 
-    expect(mockLiftAnswerForModel).toHaveBeenCalledTimes(1);
-    const [arg, opts] = mockLiftAnswerForModel.mock.calls[0] ?? [];
-    expect(arg).toBe("long enough answer that the lift walker would have hit threshold");
-    expect(opts).toMatchObject({
-      workspaceId: "w1",
-      chatId: "s1",
-      serverId: "pre-model",
-      toolName: "delegate",
-    });
+    expect(mockLiftAnswerForModel).toHaveBeenCalledWith(
+      finalText,
+      expect.objectContaining({
+        workspaceId: "w1",
+        chatId: "s1",
+        serverId: "pre-model",
+        toolName: "delegate",
+      }),
+    );
     expect(result).toEqual({
       ok: true,
-      answer: "[lifted: synthetic-marker]",
-      answerArtifactId: "art-xyz",
+      answer: liftReturn.value,
       toolsUsed: [{ name: "web_search", outcome: "success" }],
     });
   });
 
-  it("leaves answer raw and omits answerArtifactId when lift returns no artifact (under threshold)", async () => {
-    mockLiftAnswerForModel.mockReset().mockResolvedValue({ value: "short answer" });
+  it("leaves answer raw when lift returns no artifact (under threshold)", async () => {
+    mockLiftAnswerForModel.mockResolvedValue({ value: "short answer" });
     setupMockStreamText(
       { args: undefined },
       {
@@ -436,7 +444,6 @@ describe("createDelegateTool", () => {
   });
 
   it("skips lift when liftAnswer=false (judge-style direct-execute callers)", async () => {
-    mockLiftAnswerForModel.mockReset();
     setupMockStreamText(
       { args: undefined },
       {
@@ -459,7 +466,6 @@ describe("createDelegateTool", () => {
   });
 
   it("does not lift the failure path's reason (lift fires only on ok=true)", async () => {
-    mockLiftAnswerForModel.mockReset();
     setupMockStreamText(
       { args: undefined },
       { steps: [{ finish: { ok: false, reason: "task impossible" } }], finalText: "" },
@@ -472,6 +478,38 @@ describe("createDelegateTool", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.reason).toBe("task impossible");
+    }
+  });
+
+  it("returns ok=false when child produces no finish call and no text", async () => {
+    setupMockStreamText(
+      { args: undefined },
+      { steps: [{ toolCalls: [{ toolCallId: "c1", toolName: "web_search" }] }], finalText: "" },
+    );
+
+    const { delegateTool } = makeDelegate();
+    const result = await runDelegate(delegateTool);
+
+    expect(mockLiftAnswerForModel).not.toHaveBeenCalled();
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toBe("delegate produced no answer");
+    }
+  });
+
+  it("returns ok=false when finish.answer is empty (whitespace-only)", async () => {
+    setupMockStreamText(
+      { args: undefined },
+      { steps: [{ finish: { ok: true, answer: "   \n" } }], finalText: "ignored" },
+    );
+
+    const { delegateTool } = makeDelegate();
+    const result = await runDelegate(delegateTool);
+
+    expect(mockLiftAnswerForModel).not.toHaveBeenCalled();
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toBe("delegate produced no answer");
     }
   });
 

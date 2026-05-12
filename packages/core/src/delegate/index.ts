@@ -145,10 +145,11 @@ export interface DelegateDeps {
   archiveCache?: SkillArchiveCache;
   /**
    * When true (default), large successful-answer strings are lifted to an
-   * artifact before `execute` returns. The returned `answer` is the marker
-   * text; `answerArtifactId` carries the structured signal. Persistence
-   * short-circuits on the marker prefix, so a single artifact represents
-   * the answer end-to-end.
+   * artifact before `execute` returns. The returned `answer` is then the
+   * marker text. The persist-time scrub short-circuits on the marker
+   * prefix at `scrubber.ts:REF_MARKER_PREFIX`, so a single artifact
+   * represents the answer end-to-end (no double-lift at the persistence
+   * boundary).
    *
    * Direct-execute callers that consume the answer themselves (the judge
    * agent's verdict parser) opt out with `false` — they need the raw text,
@@ -181,16 +182,6 @@ export type DelegateResult =
   | {
       ok: true;
       answer: string;
-      /**
-       * Structured "answer was lifted to an artifact" signal. Stamped by
-       * `execute` when the child's answer exceeded the text-lift threshold
-       * and a successful upload happened. Downstream consumers (stop
-       * predicates, display-artifact callers, judges) should branch on the
-       * presence of this field rather than parsing marker text out of
-       * `answer` — the marker is a human-readable rendering, this is the
-       * machine signal.
-       */
-      answerArtifactId?: string;
       toolsUsed: DelegateToolsUsedEntry[];
       serverFailures?: ServerFailure[];
     }
@@ -617,31 +608,33 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
       if (executionError) {
         return { ok: false, reason: executionError.message, ...resultBase };
       }
-      // Successful answers above the shared text threshold are uploaded
-      // to an artifact and stamped with `answerArtifactId`. The raw
-      // `answer` stays in the execute return so chat persistence, the
-      // UI's `tool-delegate` part renderer, and direct-execute callers
-      // (judge) keep getting the full text. The supervisor LLM's view
-      // is the artifact marker — substituted by `toModelOutput` below,
-      // not by mutating execute's return.
-      const stampLift = async (
-        raw: string,
-      ): Promise<{ answer: string; answerArtifactId?: string }> => {
-        if (!liftAnswer) return { answer: raw };
-        const { value, artifactId } = await liftAnswerForModel(raw, {
+      // Successful answers above the shared text threshold are routed
+      // through the artifact-lift walker inside `execute` so the returned
+      // `answer` is already the marker string. Persistence's
+      // `REF_MARKER_PREFIX` short-circuit at `scrubber.ts` then skips
+      // re-lifting the same content at persist time — one artifact
+      // represents the answer end-to-end. Direct-execute callers that
+      // need the raw text (the judge agent) opt out via `liftAnswer:
+      // false` on their deps.
+      const projectAnswer = async (raw: string): Promise<string> => {
+        if (!liftAnswer) return raw;
+        const { value } = await liftAnswerForModel(raw, {
           workspaceId: session.workspaceId,
           chatId: session.sessionId,
           logger,
           serverId: "pre-model",
           toolName: DELEGATE_TOOL_NAME,
         });
-        return artifactId ? { answer: value, answerArtifactId: artifactId } : { answer: raw };
+        return value;
       };
 
       if (finishInput) {
         if (finishInput.ok) {
-          const lifted = await stampLift(finishInput.answer);
-          return { ok: true, ...lifted, ...resultBase };
+          if (!finishInput.answer.trim()) {
+            return { ok: false, reason: "delegate produced no answer", ...resultBase };
+          }
+          const answer = await projectAnswer(finishInput.answer);
+          return { ok: true, answer, ...resultBase };
         }
         return { ok: false, reason: finishInput.reason, ...resultBase };
       }
@@ -651,8 +644,14 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
       if (textError) {
         return { ok: false, reason: textError.message, ...resultBase };
       }
-      const lifted = await stampLift(finalText);
-      return { ok: true, ...lifted, ...resultBase };
+      // No finish call and no text — the child completed cleanly but
+      // produced nothing. Treat as a failure so the supervisor surfaces
+      // it rather than silently relaying an empty success.
+      if (!finalText.trim()) {
+        return { ok: false, reason: "delegate produced no answer", ...resultBase };
+      }
+      const answer = await projectAnswer(finalText);
+      return { ok: true, answer, ...resultBase };
     },
   });
 }

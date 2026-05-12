@@ -446,33 +446,6 @@ export interface ToolCallForLift {
 }
 
 /**
- * Lift a single value before it's passed to the model.
- *
- * Same walker as the persist-boundary entry, but lets the caller stamp the
- * marker's provenance (`serverId/toolName`) so post-hoc readers can tell
- * "this was lifted before the supervisor LLM saw it" apart from "this was
- * lifted on the way to durable history."
- *
- * Used by the delegate tool's `toModelOutput` hook to keep the parent LLM's
- * tool-result view compact while the consumer/persistence view of the same
- * call retains the full payload. The user-visible UI stream (the child's
- * text-deltas via `data-delegate-chunk`) is unaffected — that runs through
- * a different channel and is what the user actually reads.
- */
-export function liftValueForModel(
-  value: unknown,
-  opts: ScrubberOptions & { serverId: string; toolName: string },
-): Promise<unknown> {
-  const ctx: ScrubContext = {
-    workspaceId: opts.workspaceId,
-    chatId: opts.chatId,
-    logger: opts.logger,
-    uploads: new Map(),
-  };
-  return scrubValue(value, ctx, { serverId: opts.serverId, toolName: opts.toolName }, 0);
-}
-
-/**
  * Lift a single text answer above the text threshold to an artifact and
  * return both the replacement marker and the artifact id as separate
  * fields. The artifact id is what downstream consumers (stop predicates,

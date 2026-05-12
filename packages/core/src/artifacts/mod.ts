@@ -50,7 +50,6 @@ export type { ScrubberOptions } from "./scrubber.ts";
 export {
   liftAnswerForModel,
   liftToolResultsForPersist,
-  liftValueForModel,
   scrubAssistantMessage,
 } from "./scrubber.ts";
 // Storage adapter types
