@@ -86,8 +86,10 @@ const FILE_CHECKS: FileCheck[] = [
       "__atlas_validate",
     ],
     required: [
-      // Keep the complete tool — load-bearing contract for outputTo.
-      "complete",
+      // Pin the literal injection site — `complete: {` is the object-literal
+      // assignment in the `toolsWithOutputContract` spread. Matching
+      // `"complete"` alone would also match `status: "completed"`.
+      "complete: {",
     ],
   },
   {
@@ -104,8 +106,9 @@ const FILE_CHECKS: FileCheck[] = [
       "runJudge",
     ],
     required: [
-      // Complete-tool injection preserved.
-      "complete",
+      // Pin the literal injection site — `tools.complete = {` is the
+      // assignment statement that puts the complete tool on the tool map.
+      "tools.complete = {",
     ],
   },
   {
@@ -123,6 +126,102 @@ const FILE_CHECKS: FileCheck[] = [
     required: [],
   },
 ];
+
+/**
+ * Ripple scan — tree-walks high-blast-radius directories looking for any
+ * leftover identifier from the removed validation/judge/hallucination
+ * subsystem. Anything that survived the file-by-file rip would show up
+ * here as a single hit with file:line.
+ */
+const RIPPLE_ROOTS = [
+  "packages/system/skills",
+  "packages/system/agents",
+  "apps/atlasd",
+  "deno.json",
+  "deno.compile.json",
+];
+
+const RIPPLE_FORBIDDEN = [
+  "record_validation",
+  "RECORD_VALIDATION",
+  "@friday/validating-llm-outputs",
+  "@friday/judge-agent",
+  "judge-agent",
+  "composeValidationBlock",
+  "validate-classifier",
+  "@atlas/hallucination",
+  "JudgeAgentRunner",
+  "JudgeInput",
+];
+
+interface RippleHit {
+  path: string;
+  line: number;
+  needle: string;
+  text: string;
+}
+
+async function* walkFiles(root: string): AsyncGenerator<string> {
+  let stat: Deno.FileInfo;
+  try {
+    stat = await Deno.stat(root);
+  } catch {
+    return;
+  }
+  if (stat.isFile) {
+    yield root;
+    return;
+  }
+  if (!stat.isDirectory) return;
+  for await (const entry of Deno.readDir(root)) {
+    const full = join(root, entry.name);
+    if (entry.isDirectory) {
+      // Skip transient build/test output that would generate noise.
+      if (entry.name === "node_modules" || entry.name === ".git") continue;
+      yield* walkFiles(full);
+    } else if (entry.isFile) {
+      yield full;
+    }
+  }
+}
+
+async function runRippleScan(): Promise<EvalResult> {
+  const hits: RippleHit[] = [];
+  for (const root of RIPPLE_ROOTS) {
+    const full = join(ROOT, root);
+    for await (const path of walkFiles(full)) {
+      let text: string;
+      try {
+        text = await Deno.readTextFile(path);
+      } catch {
+        continue;
+      }
+      const lines = text.split("\n");
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i] ?? "";
+        for (const needle of RIPPLE_FORBIDDEN) {
+          if (line.includes(needle)) {
+            hits.push({ path, line: i + 1, needle, text: line.trim().slice(0, 200) });
+          }
+        }
+      }
+    }
+  }
+  const notes =
+    hits.length === 0
+      ? [`no leftover validation/judge/hallucination identifiers in ${RIPPLE_ROOTS.join(", ")}`]
+      : hits.map((h) => `HIT ${h.path}:${h.line}  needle=${h.needle}  text=${h.text}`);
+  return {
+    id: "validation-removed-ripple-scan",
+    pass: hits.length === 0,
+    notes,
+    metrics: {
+      rootsScanned: RIPPLE_ROOTS.length,
+      forbiddenCount: RIPPLE_FORBIDDEN.length,
+      hitCount: hits.length,
+    },
+  };
+}
 
 async function runDeletedDirChecks(): Promise<EvalResult[]> {
   const results: EvalResult[] = [];
@@ -186,7 +285,8 @@ async function runFileChecks(): Promise<EvalResult[]> {
 async function runEval(): Promise<EvalResult[]> {
   const dirResults = await runDeletedDirChecks();
   const fileResults = await runFileChecks();
-  return [...dirResults, ...fileResults];
+  const rippleResult = await runRippleScan();
+  return [...dirResults, ...fileResults, rippleResult];
 }
 
 const args = Object.fromEntries(

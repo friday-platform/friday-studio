@@ -57,7 +57,7 @@ runtime auto-injects a `complete` tool. The agent MUST call it.
   '<the full final text>'}`. This is how the FSM captures your
   output."
 
-See [[contracts/agent-action-handshake]] for the full contract.
+See `@friday/agent-action-handshake` for the full contract.
 
 ### 3. Check the agent prompt's instructions
 
@@ -84,7 +84,7 @@ After updating the prompt, fire the job again. The new session should
 show `complete` in toolCalls and a populated `summary`/`artifactIds`.
 
 If still empty → recurse to step 2 with the new session's data, OR
-load [[debugging-tool-loops]] (the agent might be stuck calling
+load `@friday/debugging-tool-loops` (the agent might be stuck calling
 search/fetch tools instead of finishing).
 
 ## What NOT to do
@@ -103,9 +103,9 @@ search/fetch tools instead of finishing).
 
 ## Cross-references
 
-- [[contracts/agent-action-handshake]] — the `outputTo` + `complete`
+- `@friday/agent-action-handshake` — the `outputTo` + `complete`
   injection contract.
-- [[debugging-broken-jobs]] — the triage entry point.
-- [[debugging-tool-loops]] — sibling skill for agent-stuck-in-tools.
-- [[author/writing-workspace-jobs]] — Pattern A vs B; what
+- `@friday/debugging-broken-jobs` — the triage entry point.
+- `@friday/debugging-tool-loops` — sibling skill for agent-stuck-in-tools.
+- `@friday/writing-workspace-jobs` — Pattern A vs B; what
   `outputTo` does.

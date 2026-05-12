@@ -35,25 +35,26 @@ Regardless of invocation kind, the LLM-side agent (any agent that's
 `type: llm`) sees:
 
 - **Platform tools** — full `PLATFORM_TOOL_NAMES` set from
-  `packages/agent-sdk/src/platform-tools.ts`: memory, artifacts,
-  fs, shell/data, state, HITL (`request_human_input`,
-  `request_tool_access`), `delegate`, `load_skill`. These inject on
-  top of the agent's `config.tools` allowlist regardless of what's
-  in `tools:`.
+  `packages/agent-sdk/src/platform-tools.ts` (~35 entries spanning
+  memory, artifacts, fs, shell/data, state, HITL, and flow-control
+  like `delegate`). These inject on top of the agent's
+  `config.tools` allowlist regardless of what's in `tools:`. See
+  source for the exact set.
 - **`complete` tool** — injected when the action declares `outputTo`.
   The LLM MUST call this to surface output (see "The `complete`
   contract" below).
-- **`failStep` tool** — always injected. The LLM calls this to
-  deliberately fail the step with a structured reason.
+- **`failStep` tool** — injected for inline `type: llm` FSM actions
+  (see `fsm-engine.ts case "llm"`). The LLM calls this to
+  deliberately fail the step with a structured reason. NOT injected
+  on the `type: agent` → `type: llm` path that goes through
+  `from-llm.ts`; an agent reachable through both shapes can't
+  assume the tool is present.
 
 What's NOT auto-injected:
 
 - MCP server tools — those come from `agents.<id>.config.tools`
   (workspace-scope MCP only) or from the inline `type: llm`
   action's `tools:` array.
-- `record_validation` — removed. The validation/judge subsystem was
-  ripped out; if you're authoring an agent that calls
-  `record_validation`, drop the call.
 
 ## The `complete` contract
 
@@ -86,10 +87,6 @@ Without this instruction, the LLM streams prose, never calls
 ```
 LLM action with outputTo 'response' did not call complete
 ```
-
-(Or, if the LLM ends with no text either, the prior buggy behavior
-returned silent empty output. That bug was fixed by the validation
-rip — empty `complete` calls now error out cleanly.)
 
 ## `outputType` and structured output
 
@@ -165,20 +162,13 @@ the single most common source of empty-output failures. If a
 Pattern A job is producing empty output, fix the agent's prompt
 first.
 
-## Workspaces with stale `validate:` fields
-
-Workspaces authored before the validation rip may have `validate:
-self` or `validate: external` on actions. The field is silently
-dropped by Zod; no migration needed. If you see it in a workspace
-yml, just remove it for cleanliness.
-
 ## Cross-references
 
-- [[author/writing-workspace-jobs]] — FSM authoring shapes.
-- [[author/workspace-api]] — agent CRUD.
-- [[contracts/delegate-handoff]] — sibling contract for the
+- `@friday/writing-workspace-jobs` — FSM authoring shapes.
+- `@friday/workspace-api` — agent CRUD.
+- `@friday/delegate-handoff` — sibling contract for the
   parent ↔ delegate-child boundary.
-- [[debugging-empty-output]] — what happens when this contract is
+- `@friday/debugging-empty-output` — what happens when this contract is
   violated.
-- [[debugging-runtime-errors]] — `did not call complete` and
+- `@friday/debugging-runtime-errors` — `did not call complete` and
   related errors.

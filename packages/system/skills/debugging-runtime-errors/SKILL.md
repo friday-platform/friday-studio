@@ -32,7 +32,7 @@ The LLM finished without calling it.
 from this call."
 ```
 
-See [[contracts/agent-action-handshake]] for the full contract.
+See `@friday/agent-action-handshake` for the full contract.
 
 ### `LLM action with outputTo '<doc>' emitted empty output`
 
@@ -74,7 +74,7 @@ Zod rejected the job config on upsert. Common causes:
 - `outputTo` placed on an inline `type: llm` action without the
   outer FSM wrapper.
 
-**Fix:** load [[author/writing-workspace-jobs]] for the canonical
+**Fix:** load `@friday/writing-workspace-jobs` for the canonical
 Pattern A vs Pattern B shapes. The error message names the exact
 path that failed.
 
@@ -96,7 +96,7 @@ Zod rejected the signal config. Common cause: missed the inner
 }
 ```
 
-See [[author/writing-workspace-signals]] for templates.
+See `@friday/writing-workspace-signals` for templates.
 
 ### `Signal payload validation failed for '<signalId>': ...`
 
@@ -117,8 +117,8 @@ shape is correct.
 
 ## Cross-references
 
-- [[debugging-broken-jobs]] — the triage entry point.
-- [[contracts/agent-action-handshake]] — the cross-boundary
+- `@friday/debugging-broken-jobs` — the triage entry point.
+- `@friday/agent-action-handshake` — the cross-boundary
   contract most of these errors violate.
-- [[author/writing-workspace-jobs]] — FSM authoring.
-- [[author/writing-workspace-signals]] — signal config templates.
+- `@friday/writing-workspace-jobs` — FSM authoring.
+- `@friday/writing-workspace-signals` — signal config templates.

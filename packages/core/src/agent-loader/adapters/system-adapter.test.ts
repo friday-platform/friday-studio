@@ -2,7 +2,8 @@
  * Covers the synchronous `getSystemAgentType` lookup that
  * `WorkspaceRuntime`'s `resolveAgentType` callback delegates to for
  * bundled system agents (workspace-chat). Must report "atlas" so the
- * validate-classifier's user/atlas → skip rule fires.
+ * FSM action resolver treats bundled chat the same as a workspace-
+ * config `type: atlas` entry.
  */
 
 import { describe, expect, test } from "vitest";

@@ -19,7 +19,6 @@
     "@atlas/config": "workspace:*",
     "@atlas/core": "workspace:*",
     "@atlas/fsm-engine": "workspace:*",
-    "@atlas/hallucination": "workspace:*",
     "@atlas/llm": "workspace:*",
     "@atlas/logger": "workspace:*",
     "@atlas/mcp": "workspace:*",

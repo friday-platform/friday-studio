@@ -52,7 +52,7 @@ delegate({
   skills: [
     { name: "@friday/using-mcp-servers" },
     // surgical: only the references you need, not the full body
-    { name: "@friday/composing-emails", refs: ["references/tone.md"] },
+    { name: "@friday/friday-cli", refs: ["references/recipes.md"] },
   ],
 })
 ```
@@ -156,9 +156,9 @@ Bad delegate cases:
 
 ## Cross-references
 
-- [[contracts/agent-action-handshake]] — sibling contract for the
+- `@friday/agent-action-handshake` — sibling contract for the
   FSM action ↔ agent boundary.
-- [[author/using-mcp-servers]] — MCP-tool allowlist semantics for
+- `@friday/using-mcp-servers` — MCP-tool allowlist semantics for
   the `mcpServers:` arg.
-- [[debugging-broken-jobs]] — what to load when a delegate
+- `@friday/debugging-broken-jobs` — what to load when a delegate
   sub-task returns garbage.

@@ -57,7 +57,7 @@ original Pattern A would have worked with a small prompt change.
 empty output, the fix is in the agent's prompt, not in the FSM
 shape. Migrating Pattern A → Pattern B introduces the
 `complete`-injection contract that is itself a common failure
-source — see [[debugging-empty-output]].
+source — see `@friday/debugging-empty-output`.
 
 ## `manual` is a string, not a magic value
 
@@ -89,8 +89,8 @@ config.
 
 ## Cross-references
 
-- [[debugging-broken-jobs]] — the triage entry point.
-- [[debugging-empty-output]] — Pattern A → B migration is rarely
+- `@friday/debugging-broken-jobs` — the triage entry point.
+- `@friday/debugging-empty-output` — Pattern A → B migration is rarely
   the right fix for empty output.
-- [[author/writing-workspace-jobs]] — Pattern A vs B authoring.
-- [[author/writing-workspace-signals]] — signal authoring.
+- `@friday/writing-workspace-jobs` — Pattern A vs B authoring.
+- `@friday/writing-workspace-signals` — signal authoring.

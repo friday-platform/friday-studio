@@ -33,7 +33,7 @@ Look for:
 - Final assistant text is empty.
 
 If the agent IS calling `complete` but with empty args, that's
-[[debugging-empty-output]] step 2, not this skill.
+`@friday/debugging-empty-output` step 2, not this skill.
 
 ### 2. Check the agent prompt's termination criterion
 
@@ -81,8 +81,8 @@ and still not done, the prompt is wrong, not the budget.
 
 ## Cross-references
 
-- [[debugging-broken-jobs]] — the triage entry point.
-- [[debugging-empty-output]] — sibling for "complete present but
+- `@friday/debugging-broken-jobs` — the triage entry point.
+- `@friday/debugging-empty-output` — sibling for "complete present but
   empty" cases.
-- [[contracts/agent-action-handshake]] — the `outputTo` + `complete`
+- `@friday/agent-action-handshake` — the `outputTo` + `complete`
   injection contract that gives a terminal exit.

@@ -64,7 +64,7 @@ ASSISTANT [calls describe_session(sessionId)]
 ASSISTANT [reads agentBlocks[0].toolCalls]
 ASSISTANT [observes complete was not called; agent emitted text only]
 ASSISTANT: The job ran successfully but the agent emitted prose without
-calling `complete`. Per the [[contracts/agent-action-handshake]]
+calling `complete`. Per the `@friday/agent-action-handshake`
 contract, an `outputTo` action requires the agent to call complete
 with the final text. Fix the agent's prompt to instruct it explicitly.
 ```
@@ -84,9 +84,9 @@ diagnose properly.
 
 ## Cross-references
 
-- [[contracts/agent-action-handshake]] — the FSM action ↔ agent
+- `@friday/agent-action-handshake` — the FSM action ↔ agent
   prompt contract that most empty-output failures violate.
-- [[author/writing-workspace-jobs]] — FSM authoring once you know
+- `@friday/writing-workspace-jobs` — FSM authoring once you know
   what to fix.
-- [[author/workspace-api]] — agent CRUD once you know the agent
+- `@friday/workspace-api` — agent CRUD once you know the agent
   prompt is the broken part.

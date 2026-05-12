@@ -13,11 +13,10 @@ import type { AgentAdapter, AgentSourceData, AgentSummary } from "./types.ts";
 const SYSTEM_AGENT_IDS: ReadonlySet<string> = new Set([workspaceChatAgent.metadata.id]);
 
 /**
- * Synchronous lookup: returns the FSM-classifier agent type for a bundled
- * system agent. System agents have fixed prompts baked into TypeScript code
- * — from the validate-classifier's perspective they're indistinguishable
- * from `type: atlas` workspace-config agents. The classifier short-circuits
- * both to `skip` (rule 1).
+ * Synchronous lookup: returns the agent type for a bundled system agent.
+ * System agents have fixed prompts baked into TypeScript code, so they
+ * report as `type: "atlas"` for the FSM action resolver — same shape as
+ * a workspace-config `type: atlas` entry.
  *
  * Returns `undefined` for any agentId not registered as a system agent so
  * callers can chain into other resolution paths (e.g. `workspace.agents`
