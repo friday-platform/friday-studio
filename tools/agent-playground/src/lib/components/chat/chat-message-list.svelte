@@ -8,8 +8,6 @@
   import ToolBurst from "./tool-burst.svelte";
   import ToolCallCard from "./tool-call-card.svelte";
   import { needsUserAction } from "./tool-call-utils";
-  import ValidationPillRow from "./validation-pill-row.svelte";
-  import type { ValidationAttemptDisplay } from "./validation-accumulator.ts";
   import UsageBadge from "./usage-badge.svelte";
   import { formatMessageTimestamp } from "@atlas/core/chat/export/render";
   import { tableToMarkdown } from "./table-to-markdown";
@@ -128,13 +126,6 @@
      */
     thinking?: boolean;
     /**
-     * Validation lifecycle attempts grouped by sessionId, then by FSM
-     * actionId. The chat surfaces one `<ValidationPillRow>` per attempt
-     * after the tool calls of the assistant message that owns the
-     * session. Empty / undefined → no pills render.
-     */
-    validationAttemptsBySession?: Map<string, Map<string, ValidationAttemptDisplay[]>>;
-    /**
      * Workspace + chat ids for the inline-table Actions menu's "Open in
      * dedicated view" path. The handler auto-snapshots the rendered
      * <table> to a markdown artifact tagged with these ids, then
@@ -162,46 +153,10 @@
     messages,
     onCredentialConnected,
     thinking = false,
-    validationAttemptsBySession,
     workspaceId,
     chatId,
     unsettledMessageId,
   }: Props = $props();
-
-  /**
-   * Flatten the per-action attempts map for a single session into a
-   * stable render order: sort actions by first-seen attempt index
-   * (tracked implicitly by Map insertion order from the accumulator),
-   * then attempts within an action ascending by `attempt`. The
-   * accumulator already sorts attempts within an action.
-   */
-  function pillsForSession(
-    sessionId: string | undefined,
-  ): Array<{ actionId: string; attempt: ValidationAttemptDisplay }> {
-    if (!sessionId || !validationAttemptsBySession) return [];
-    const byAction = validationAttemptsBySession.get(sessionId);
-    if (!byAction) return [];
-    const flat: Array<{ actionId: string; attempt: ValidationAttemptDisplay }> = [];
-    for (const [actionId, attempts] of byAction) {
-      for (const attempt of attempts) {
-        flat.push({ actionId, attempt });
-      }
-    }
-    return flat;
-  }
-
-  /**
-   * Detect whether any pill in this message reached terminal failure.
-   * Triggers an additional system-level error chunk matching the
-   * existing job-failure UI pattern (Resolved Decision §7).
-   */
-  function hasTerminalFail(
-    pills: ReturnType<typeof pillsForSession>,
-  ): boolean {
-    return pills.some(
-      (p) => p.attempt.status === "failed" && p.attempt.terminal === true,
-    );
-  }
 
   let containerEl: HTMLDivElement | undefined = $state();
 
@@ -763,42 +718,6 @@
               {/if}
             {/if}
           {/each}
-
-          {@const sessionPills = message.role === "assistant"
-            ? pillsForSession(message.metadata?.sessionId)
-            : []}
-          {#if sessionPills.length > 0}
-            <!-- Validation pills sit after all segments — the validator runs
-                 after the LLM returns, so chronological order matches what
-                 actually happened. -->
-            <div class="validation-pill-list">
-              {#each sessionPills as { actionId, attempt } (`${actionId}-${attempt.attempt}`)}
-                <ValidationPillRow
-                  attempt={attempt.attempt}
-                  status={attempt.status}
-                  terminal={attempt.terminal}
-                  verdict={attempt.verdict}
-                />
-              {/each}
-            </div>
-          {/if}
-
-          {#if hasTerminalFail(sessionPills)}
-            <!-- Terminal-fail second surface (Resolved Decision §7): a
-                 system-level error chunk matching the existing
-                 job-failure pattern, alongside the failed-terminal pill
-                 above. Two layers of state, two surfaces — the user does
-                 not have to learn a new "this job is dead" affordance. -->
-            <div class="message-error" role="alert" aria-live="assertive">
-              <span class="message-error-icon" aria-hidden="true">⚠</span>
-              <div class="message-error-body">
-                <div class="message-error-title">Job stopped: validation failed</div>
-                <div class="message-error-detail">
-                  Output validation failed after retry. See the validation pill above for details.
-                </div>
-              </div>
-            </div>
-          {/if}
 
           {#if message.images && message.images.length > 0}
             <div class="message-images">
@@ -1471,14 +1390,6 @@
     display: flex;
     flex-direction: column;
     gap: var(--size-1-5);
-  }
-
-  /* Validation pills sit alongside (and after) tool-call cards — same
-     indent and gap so the visual hierarchy stays consistent. */
-  .validation-pill-list {
-    display: flex;
-    flex-direction: column;
-    gap: var(--size-1);
   }
 
   /* ─── Inline images ─────────────────────────────────────────────────── */

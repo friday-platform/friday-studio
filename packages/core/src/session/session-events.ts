@@ -9,7 +9,6 @@
  */
 
 import type { AtlasUIMessageChunk } from "@atlas/agent-sdk";
-import { ValidationVerdictSchema } from "@atlas/hallucination/verdict";
 import { z } from "zod";
 
 // ---------------------------------------------------------------------------
@@ -106,58 +105,6 @@ export const StepUsageSchema = z.object({
 });
 export type StepUsage = z.infer<typeof StepUsageSchema>;
 
-/**
- * Resolved validation strategy for a `type: llm` (or `case "agent" → type: llm`)
- * action — the runtime's per-action decision after factoring action / job /
- * workspace tiers and the auto classifier.
- *
- * - `skip`     — no validation ran; the classifier or an explicit decision
- *                marked the action as not requiring it.
- * - `self`     — the LLM self-validated inline via the `record_validation`
- *                platform tool; the verdict is what the LLM emitted.
- * - `external` — a separate hallucination-judge call ran post-LLM and
- *                produced the verdict.
- */
-export const ValidationStrategySchema = z.enum(["skip", "self", "external"]);
-export type ValidationStrategy = z.infer<typeof ValidationStrategySchema>;
-
-/**
- * Issue surfaced by validation — minimal shape that's a structural superset
- * of `@atlas/hallucination`'s `ValidationIssueSchema`. The hallucination
- * judge's stricter category enum and severity buckets parse cleanly into
- * this looser shape; the looser shape lets `record_validation` accept any
- * author-supplied category/severity strings without coupling the session
- * event schema to the judge's evolving taxonomy.
- */
-export const StepValidationIssueSchema = z.object({
-  category: z.string().optional(),
-  claim: z.string(),
-  reasoning: z.string().optional(),
-  severity: z.enum(["low", "medium", "high", "info", "warn", "error"]).optional(),
-  citation: z.string().nullable().optional(),
-});
-export type StepValidationIssue = z.infer<typeof StepValidationIssueSchema>;
-
-/**
- * Structured validation outcome attached to every `type: llm` action's
- * `step:complete` event. Three emit shapes mirror the three resolved strategies:
- *
- *   { strategy: "skip", skipReason }                  — classifier reason
- *   { strategy: "self", verdict?, issues? }           — LLM-emitted via record_validation
- *   { strategy: "external", verdict?, issues? }       — judge-derived
- *
- * `verdict` is intentionally optional so a `self` action whose LLM forgot
- * to call `record_validation` still emits — observable as missing-verdict
- * without erroring the action.
- */
-export const StepValidationOutputSchema = z.object({
-  strategy: ValidationStrategySchema,
-  verdict: z.enum(["pass", "advisory", "blocking"]).optional(),
-  issues: z.array(StepValidationIssueSchema).optional(),
-  skipReason: z.string().optional(),
-});
-export type StepValidationOutput = z.infer<typeof StepValidationOutputSchema>;
-
 export const StepCompleteEventSchema = z.object({
   type: z.literal("step:complete"),
   sessionId: z.string(),
@@ -175,13 +122,6 @@ export const StepCompleteEventSchema = z.object({
    * {@link StepUsageSchema}.
    */
   usage: StepUsageSchema.optional(),
-  /**
-   * Structured validation outcome — present on every `type: llm` and
-   * `case "agent" → type: llm` action's step:complete event. Absent on
-   * pure-agent (`type: user` / `type: atlas`) steps. See
-   * {@link StepValidationOutputSchema}.
-   */
-  validation: StepValidationOutputSchema.optional(),
   timestamp: z.string(),
 });
 export type StepCompleteEvent = z.infer<typeof StepCompleteEventSchema>;
@@ -204,30 +144,6 @@ export const SessionCompleteEventSchema = z.object({
 });
 export type SessionCompleteEvent = z.infer<typeof SessionCompleteEventSchema>;
 
-/**
- * One LLM-output validation attempt's lifecycle event for the session stream.
- *
- * Mirrors `FSMValidationAttemptEvent` from @atlas/fsm-engine: each attempt emits
- * one `running` event before the judge call and one terminal event (`passed` or
- * `failed`) after. `terminal` is present only on `failed` events — `false` for
- * the first failure (a retry follows), `true` for the second failure (the action
- * throws). `verdict` is present on terminal events; absent on `running`.
- *
- * `actionId` mirrors the parent action event's identifier so clients can render
- * pills inline with that action's tool calls — no new identifier is introduced.
- */
-export const StepValidationEventSchema = z.object({
-  type: z.literal("step:validation"),
-  sessionId: z.string(),
-  actionId: z.string(),
-  attempt: z.number().int().positive(),
-  status: z.enum(["running", "passed", "failed"]),
-  terminal: z.boolean().optional(),
-  verdict: ValidationVerdictSchema.optional(),
-  timestamp: z.string(),
-});
-export type StepValidationEvent = z.infer<typeof StepValidationEventSchema>;
-
 export const SessionSummaryEventSchema = z.object({
   type: z.literal("session:summary"),
   timestamp: z.string(),
@@ -243,7 +159,6 @@ export const SessionStreamEventSchema = z.discriminatedUnion("type", [
   StepStartEventSchema,
   StepCompleteEventSchema,
   StepSkippedEventSchema,
-  StepValidationEventSchema,
   SessionCompleteEventSchema,
   SessionSummaryEventSchema,
 ]);

@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+
+description: Phases 6+7+8 — debug catalog skills, agent-action-handshake, delegate-handoff, and chat-agent prompt directives
+
+prompts:
+  - '{{scenarioId}}'
+
+providers:
+  - id: file://skill-catalog-and-directives-provider.cjs
+    label: friday-skill-catalog-and-directives
+
+defaultTest:
+  assert:
+    - type: is-json
+    - type: javascript
+      value: |
+        const result = JSON.parse(output);
+        if (result.pass !== true) {
+          throw new Error(`${result.id} failed: ${(result.notes || []).join('; ')}`);
+        }
+        return true;
+
+tests: file://skill-catalog-and-directives-tests.yaml

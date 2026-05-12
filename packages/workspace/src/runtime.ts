@@ -46,7 +46,6 @@ import {
   mapActionToStepStart,
   mapFsmEventToSessionEvent,
   mapStateSkippedToStepSkipped,
-  mapValidationAttemptToStepValidation,
   ReasoningResultStatus,
   type SessionAISummary,
   SessionHistoryStorage,
@@ -57,7 +56,6 @@ import {
   type WorkspaceSessionStatusType,
   wrapPlatformToolsWithScope,
 } from "@atlas/core";
-import { buildValidateDecisionConfig } from "@atlas/core/agent-context/validate-decision";
 import { getSystemAgentType, UserAdapter } from "@atlas/core/agent-loader";
 import type { ArtifactLifecycle } from "@atlas/core/artifacts";
 import { ArtifactStorage } from "@atlas/core/artifacts/storage";
@@ -104,7 +102,6 @@ import {
   buildAgentPrompt,
   composeAgentPrompt,
   extractAgentConfig,
-  validateAgentOutput,
 } from "../../../apps/atlasd/src/agent-helpers.ts";
 import { generateSessionSummary } from "../../../apps/atlasd/src/session-summarizer.ts";
 import type {
@@ -259,9 +256,9 @@ interface WorkspaceRuntimeInit {
  *
  * Exhaustive over the FSMEvent union — `data-fsm-state-transition` and
  * `data-fsm-action-execution` map to AtlasUIMessageChunk data events. The
- * remaining variants (tool-call/tool-result/state-skipped/validation-attempt)
- * ride the `sessionStream` pipeline instead, so this function returns `null`
- * for them. The `never` tail forces a compile error if a new FSMEvent variant
+ * remaining variants (tool-call/tool-result/state-skipped) ride the
+ * `sessionStream` pipeline instead, so this function returns `null` for
+ * them. The `never` tail forces a compile error if a new FSMEvent variant
  * is added without an explicit case here.
  */
 function fsmEventToStreamChunk(event: FSMEvent): AtlasUIMessageChunk | null {
@@ -299,7 +296,6 @@ function fsmEventToStreamChunk(event: FSMEvent): AtlasUIMessageChunk | null {
     case "data-fsm-tool-call":
     case "data-fsm-tool-result":
     case "data-fsm-state-skipped":
-    case "data-fsm-validation-attempt":
       return null;
     default: {
       const _exhaustive: never = event;
@@ -394,15 +390,6 @@ interface WorkspaceRuntimeOptions {
    * wraps `ChatSdkNotifier` + `broadcastDestinations` and supplies it here.
    */
   broadcastNotifier?: FSMBroadcastNotifier;
-  /**
-   * Judge agent runner injected by the daemon. The daemon owns the system-agent
-   * registry (workspace can't
-   * import `@atlas/system` without a layering violation) and supplies a
-   * function that delegates to `judgeAgent.execute(...)` (or the override
-   * named in `validate.agent`). When unset, FSM external-validation
-   * branches synthesize an advisory verdict so actions still emit.
-   */
-  runJudge?: import("@atlas/fsm-engine").JudgeAgentRunner;
 }
 
 /**
@@ -443,14 +430,6 @@ interface FSMJob {
   permissions?: import("@atlas/config").PermissionsConfig;
   /** Parsed `jobSpec.config.timeout` in milliseconds. See doc above. */
   timeoutMs?: number;
-  /**
-   * Per-job validation override from `JobSpecification.validation`. Forwarded
-   * into FSMEngineOptions so
-   * the engine resolves action-level `validate:` against this and the
-   * workspace-level default. Optional; undefined = "no per-job
-   * override; fall through to workspace then to "auto" classifier".
-   */
-  validation?: import("@atlas/config").ValidationDefaults;
 }
 
 /**
@@ -864,6 +843,23 @@ export function buildSynchronousFallbackAiSummary(
   return { summary, keyDetails: deriveKeyDetailsFromOutputDoc(outputDoc) };
 }
 
+/**
+ * Sentinel summary surfaced when a session genuinely produces no
+ * documents and no other source can synthesize prose. Better than
+ * `""` for downstream consumers (chat-tool wrappers, Activity page,
+ * supervisor LLMs) that previously had to special-case the empty
+ * string. Reads as "the session ran but emitted nothing surfaceable"
+ * — usually a prompt or contract bug worth flagging to the user.
+ */
+const EMPTY_SESSION_SUMMARY =
+  "Session completed without producing a summarizable document. " +
+  "This usually means the agent's prompt did not call `complete()` or " +
+  "the FSM had no `outputTo` action.";
+
+function nonEmptySummary(candidate: string): string {
+  return candidate.trim().length > 0 ? candidate : EMPTY_SESSION_SUMMARY;
+}
+
 export function buildSessionJobResult(args: {
   artifactRefs: SessionArtifactRef[];
   aiSummary?: SessionAISummary;
@@ -877,7 +873,7 @@ export function buildSessionJobResult(args: {
   }
 
   if (!args.definition) {
-    return { artifactIds, summary: synthesizeFallbackSummary(args.documents) };
+    return { artifactIds, summary: nonEmptySummary(synthesizeFallbackSummary(args.documents)) };
   }
 
   const terminalIds = buildDocumentTerminalIndex(args.definition);
@@ -888,10 +884,10 @@ export function buildSessionJobResult(args: {
     if (declared && declared.length > 0) {
       return { artifactIds, summary: declared };
     }
-    return { artifactIds, summary: synthesizeArtifactSummary(doc) };
+    return { artifactIds, summary: nonEmptySummary(synthesizeArtifactSummary(doc)) };
   }
 
-  return { artifactIds, summary: synthesizeFallbackSummary(args.documents) };
+  return { artifactIds, summary: nonEmptySummary(synthesizeFallbackSummary(args.documents)) };
 }
 
 /**
@@ -1412,7 +1408,6 @@ export class WorkspaceRuntime {
         maxSteps: jobSpec.config?.max_steps,
         delegationOverride: jobSpec.delegation,
         ...(jobSpec.permissions && { permissions: jobSpec.permissions }),
-        ...(jobSpec.validation && { validation: jobSpec.validation }),
         // Review N3 follow-up: parse `jobSpec.config.timeout` once at
         // registration so the engine path doesn't re-parse on every signal.
         // Becomes the source for FSMEngineOptions.jobTimeoutMs at engine
@@ -1653,12 +1648,6 @@ export class WorkspaceRuntime {
       }),
       agentExecutor,
       mcpServerConfigs,
-      // External validation calls `@friday/judge-agent` (or the per-action
-      // override). The
-      // daemon supplies the runner via `WorkspaceRuntimeOptions.runJudge`;
-      // when unset, fsm-engine synthesizes an advisory verdict so actions
-      // still emit on the no-judge path.
-      ...(this.options.runJudge ? { runJudge: this.options.runJudge } : {}),
       artifactStorage: ArtifactStorage,
       broadcastNotifier: this.options.broadcastNotifier,
       // Wires the optional `delegate` tool for FSM type:llm actions.
@@ -1688,23 +1677,14 @@ export class WorkspaceRuntime {
       ...(this.config.workspace.permissions && {
         workspacePermissions: this.config.workspace.permissions,
       }),
-      // Workspace + per-job validation defaults. Resolved at action-execution
-      // time inside `resolveValidateDecision` (action >
-      // job > workspace > "auto" classifier). No merge here: the engine
-      // itself walks the precedence chain, so unsetting one tier doesn't
-      // require the other to clone.
-      ...(this.config.workspace.validation && {
-        workspaceValidation: this.config.workspace.validation,
-      }),
-      ...(job.validation && { jobValidation: job.validation }),
       // Resolve agent type for the FSM classifier's user/atlas → skip rule.
-      // Workspace-config-declared
-      // agents (`workspace.agents.<id>`) are the common case. Bundled
-      // system agents like `workspace-chat` and `judge-agent` don't appear
-      // in workspace config — they resolve through `SystemAgentAdapter`.
-      // Without this fall-through, `case "agent"` on `workspace-chat`
-      // produced `resolvedAgentType: undefined` → classifier hit
-      // `default-self` instead of `non-llm-agent-type:atlas`.
+      // Workspace-config-declared agents (`workspace.agents.<id>`) are the
+      // common case. Bundled system agents like `workspace-chat` don't
+      // appear in workspace config — they resolve through
+      // `SystemAgentAdapter`. Without this fall-through, `case "agent"` on
+      // `workspace-chat` produced `resolvedAgentType: undefined` →
+      // classifier hit `default-self` instead of
+      // `non-llm-agent-type:atlas`.
       resolveAgentType: (agentId: string): "llm" | "user" | "atlas" | undefined => {
         const declared = this.config.workspace.agents?.[agentId]?.type;
         if (declared === "llm" || declared === "user" || declared === "atlas") {
@@ -1715,7 +1695,7 @@ export class WorkspaceRuntime {
         if (declared === "system") {
           return "atlas";
         }
-        // Bundled system agents (workspace-chat, judge-agent) — see
+        // Bundled system agents (workspace-chat) — see
         // `getSystemAgentType` in `@atlas/core/agent-loader`.
         const bundled = getSystemAgentType(agentId);
         if (bundled) return bundled;
@@ -2023,14 +2003,6 @@ export class WorkspaceRuntime {
               // Session history v2: map skipped states to step:skipped events
               if (sessionStream && event.type === "data-fsm-state-skipped") {
                 sessionStream.emit(mapStateSkippedToStepSkipped(event as FSMStateSkippedEvent));
-              }
-
-              // mapValidationAttemptToStepValidation returns null when the
-              // source event is missing actionId — keeps the wire schema's
-              // actionId required without emitting orphan UI pills.
-              if (sessionStream && event.type === "data-fsm-validation-attempt") {
-                const stepEvent = mapValidationAttemptToStepValidation(event);
-                if (stepEvent) sessionStream.emit(stepEvent);
               }
             },
             // Agent UIMessageChunks (text, reasoning, tool-call, etc.) flow through
@@ -2526,18 +2498,8 @@ export class WorkspaceRuntime {
     fsmContext: Context,
     job: FSMJob,
     signal: SignalWithContext,
-    options?: {
-      outputSchema?: Record<string, unknown>;
-      validateDecision?: "skip" | "self" | "external";
-      validateSkill?: string;
-    },
+    options?: { outputSchema?: Record<string, unknown> },
   ): Promise<AgentResult> {
-    // When the FSM engine resolved an `outputSchema` for this action (i.e.
-    // the action declared an
-    // `outputType:`), thread that fact through `__atlas_validate` so the
-    // orchestrator's prompt-assembly site (`convertLLMToAgent`) can skip
-    // `record_validation` injection on the structured + self path.
-    const hasOutputType = !!options?.outputSchema;
     const agentId = action.agentId;
 
     logger.debug("Executing agent via orchestrator", {
@@ -2642,36 +2604,13 @@ export class WorkspaceRuntime {
 
     const runtimeAgentId = resolveRuntimeAgentId(agentConfig, agentId);
 
-    // Map config types to validateAgentOutput's expected parameter.
-    // "atlas" and "user" agents map to "sdk"; default to "sdk" for unconfigured agents.
-    const agentType: "llm" | "system" | "sdk" =
-      agentConfig?.type === "llm" ? "llm" : agentConfig?.type === "system" ? "system" : "sdk";
-
     // Merge workspace agent config with prepare function's config.
     // Prepare config (from FSM `return { task, config }`) takes precedence
     // so workspace.yml prepare functions can pass data like workDir to agents.
     const prepareConfig = fsmContext.input?.config;
-    const baseMergedConfig = prepareConfig
+    const mergedConfig = prepareConfig
       ? { ...agentCustomConfig, ...prepareConfig }
       : agentCustomConfig;
-
-    // Thread the resolved validation decision under the reserved
-    // `__atlas_validate` key so the agent
-    // orchestrator's prompt-assembly site (`convertLLMToAgent` in
-    // `@atlas/core/agent-conversion/from-llm.ts`) can compose the
-    // validating-llm-outputs skill body and inject the `record_validation`
-    // platform tool when the strategy is `self`. The reserved key prevents
-    // collisions with author-supplied `agents.<id>.config:` blocks.
-    const mergedConfig = options?.validateDecision
-      ? {
-          ...baseMergedConfig,
-          ...buildValidateDecisionConfig(
-            options.validateDecision,
-            options.validateSkill,
-            hasOutputType,
-          ),
-        }
-      : baseMergedConfig;
 
     // Resolve memory mounts scoped to this agent
     const agentMounts = this.getMountsForAgent(agentId, job.name);
@@ -2747,9 +2686,6 @@ export class WorkspaceRuntime {
         if (agentOtelSpan) {
           agentOtelSpan.setAttribute("atlas.agent.result.ok", agentResult.ok);
         }
-
-        // Validate agent output (hallucination detection only runs for LLM agents)
-        await validateAgentOutput(agentResult, fsmContext, agentType, this.options.platformModels);
 
         return agentResult;
       },

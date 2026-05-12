@@ -208,8 +208,11 @@ export function createBoundUpsertTools(logger: Logger, workspaceId: string): Atl
         'Use when the work is open-ended ("figure out what to do") and no bundled agent fits.\n' +
         '- `type: "atlas"` — bundled platform agent (web, slack, gh, etc.). Shape: ' +
         "`{ type, agent, description, prompt, config?, env? }`. " +
-        "Does not accept a `tools` array — the bundled agent is a self-contained black box and " +
-        "does NOT invoke MCP tools. Each atlas agent is tightly scope-limited — some are " +
+        "Does not accept a `tools` array — bundled agents don't invoke workspace MCP tools " +
+        "(the transport is hard-wired, e.g. Playwright for `web`). " +
+        "They DO get the standard platform tools (memory, artifacts, fs, HITL " +
+        "— see packages/agent-sdk/src/platform-tools.ts) alongside their bundled behavior. " +
+        "Each atlas agent is tightly scope-limited — some are " +
         "outbound-only (e.g. message senders), some are read-only (e.g. scrapers), and none " +
         "maintain authenticated session state across calls. " +
         "Before picking `type: atlas`, call `list_capabilities` and verify the agent's " +

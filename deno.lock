@@ -6487,14 +6487,6 @@
           ]
         }
       },
-      "packages/hallucination": {
-        "packageJson": {
-          "dependencies": [
-            "npm:vitest@^4.1.0",
-            "npm:zod@^4.3.5"
-          ]
-        }
-      },
       "packages/jetstream": {
         "packageJson": {
           "dependencies": [

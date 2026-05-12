@@ -100,7 +100,6 @@ export {
   mapActionToStepComplete,
   mapActionToStepStart,
   mapStateSkippedToStepSkipped,
-  mapValidationAttemptToStepValidation,
 } from "./src/session/event-emission-mapper.ts";
 // Session History
 export { mapFsmEventToSessionEvent } from "./src/session/fsm-event-mapper.ts";
@@ -139,16 +138,8 @@ export {
   StepCompleteEventSchema,
   type StepStartEvent,
   StepStartEventSchema,
-  type StepValidationEvent,
-  StepValidationEventSchema,
-  type StepValidationIssue,
-  StepValidationIssueSchema,
-  type StepValidationOutput,
-  StepValidationOutputSchema,
   type ToolCallSummary,
   ToolCallSummarySchema,
-  type ValidationStrategy,
-  ValidationStrategySchema,
 } from "./src/session/session-events.ts";
 export type { SessionHistoryAdapter } from "./src/session/session-history-adapter.ts";
 // Session Reducer

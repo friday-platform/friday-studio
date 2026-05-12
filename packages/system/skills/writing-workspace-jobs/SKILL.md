@@ -179,7 +179,7 @@ the handoff mechanism for multi-step `outputTo`/`inputFrom` pipelines.
 
 There is no separate `outputs:` block on a job that pipes the FSM result to the caller. The schema has an `outputs:` field but it's a memory-write declaration (`{ memory, entryKind }`) — unrelated.
 
-**Mechanical output contract:** every LLM-backed action with `outputTo` must finish by calling the runtime-injected `complete` tool. If the action declares `outputType`, `complete` args must match that document schema. If it does not, emit the full final text as `complete({ response: "..." })`. Do not rely on prose after the last MCP/tool call; if `complete` is not called, the session fails instead of persisting an empty/stub document.
+**Mechanical output contract:** every LLM-backed action with `outputTo` must finish by calling the runtime-injected `complete` tool. If the action declares `outputType`, `complete` args must match that document schema. If it does not, emit the full final text as `complete({ response: "..." })`. Do not rely on prose after the last MCP/tool call; if `complete` is not called, the session fails instead of persisting an empty/stub document. The full agent ↔ FSM-action contract — invocation kinds, `inputFrom` resolution, what the runtime auto-injects per kind — is in `@friday/agent-action-handshake`. Load it when authoring agents that will be invoked from FSM actions.
 
 **Single-step jobs that need to return data:** put `outputTo` on the entry action even when the state is `type: final`. Entry actions still execute on entering a final state, and the doc is captured before session completion.
 
@@ -631,9 +631,12 @@ filtering.
 ```
 
 Semantics:
-- `tools: []` (empty array) — no MCP/platform tools available; only the
-  auto-injected built-ins (memory + artifacts; see below). Useful for a
-  pure-reasoning action.
+- `tools: []` (empty array) — no MCP server tools available, but
+  platform tools still inject (full set in
+  `packages/agent-sdk/src/platform-tools.ts`: memory, artifacts, fs,
+  shell/data, state, HITL, `complete` when `outputTo` set,
+  `load_skill`, `delegate`). Useful for a pure-reasoning action that
+  shouldn't reach external integrations.
 - `tools: [...]` (populated) — exactly those tools, plus the built-ins.
 - `tools` absent — inherits the agent/workspace tool surface, which may
   itself be permissive.

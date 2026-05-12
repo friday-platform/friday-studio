@@ -1,0 +1,27 @@
+- description: hallucination package directory removed
+  vars:
+    scenarioId: deleted-packages-hallucination
+
+- description: judge-agent system agent removed
+  vars:
+    scenarioId: deleted-packages-system-agents-judge-agent
+
+- description: validating-llm-outputs system skill removed
+  vars:
+    scenarioId: deleted-packages-system-skills-validating-llm-outputs
+
+- description: fsm-engine schema dropped the `validate:` field on action schemas
+  vars:
+    scenarioId: fsm-engine-schema-no-validate-field
+
+- description: from-llm.ts no longer injects record_validation; complete tool intact
+  vars:
+    scenarioId: from-llm-no-record-validation-injection
+
+- description: fsm-engine.ts validation/judge code paths removed; complete preserved
+  vars:
+    scenarioId: fsm-engine-no-record-validation-injection
+
+- description: workspace runtime drops validateDecision/validateSkill threading
+  vars:
+    scenarioId: runtime-no-validate-decision-config

@@ -1,13 +1,12 @@
 /**
- * Tests for agent prompt composition + output validation.
+ * Tests for agent prompt composition.
  *
  * These tests verify:
  * 1. agentConfig.prompt and action.prompt are concatenated (config first) by buildFinalAgentPrompt
  * 2. composeAgentPrompt wires extract + interpolate + concat in the same order as runtime.executeAgent
- * 3. validateAgentOutput hallucination-detection branching
  */
 
-import type { AgentResult, AtlasAgentConfig } from "@atlas/agent-sdk";
+import type { AtlasAgentConfig } from "@atlas/agent-sdk";
 import type { Context } from "@atlas/fsm-engine";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -15,7 +14,6 @@ import {
   buildFinalAgentPrompt,
   composeAgentPrompt,
   extractAgentConfigPrompt,
-  validateAgentOutput,
 } from "./agent-helpers.ts";
 
 // `@atlas/fsm-engine`'s `mod.ts` transitively pulls in Deno-only modules, so
@@ -331,51 +329,6 @@ describe("composeAgentPrompt", () => {
 
     // Sentinel wrap from the interpolation mock — see top-of-file comment.
     expect(prompt).toBe(`INTERP[Bundled task instructions]\n\n${documentContext}`);
-  });
-});
-
-describe("validateAgentOutput", () => {
-  const fsmContext: Context = { documents: [], state: "idle", results: {} };
-
-  function buildSuccessResult(data: unknown = "agent output"): AgentResult {
-    return {
-      agentId: "test-agent",
-      timestamp: "2026-04-28T00:00:00Z",
-      input: "test input",
-      ok: true,
-      data,
-      durationMs: 1,
-    };
-  }
-
-  it("does not throw on a normal successful result", async () => {
-    await expect(
-      validateAgentOutput(buildSuccessResult(), fsmContext, "llm"),
-    ).resolves.toBeUndefined();
-  });
-
-  it("throws when output is the empty string", async () => {
-    const empty = { ...buildSuccessResult(""), data: "" };
-    await expect(validateAgentOutput(empty, fsmContext, "llm")).rejects.toThrow(/empty output/i);
-  });
-
-  it("does not throw when the agent returned an error envelope", async () => {
-    const errResult: AgentResult = {
-      agentId: "test-agent",
-      timestamp: "2026-04-28T00:00:00Z",
-      input: "test input",
-      ok: false,
-      error: { reason: "boom" },
-      durationMs: 1,
-    };
-    await expect(validateAgentOutput(errResult, fsmContext, "llm")).resolves.toBeUndefined();
-  });
-
-  it("throws when output references a docId not present in fsmContext", async () => {
-    const result = buildSuccessResult({ docId: "missing-doc" });
-    await expect(validateAgentOutput(result, fsmContext, "llm")).rejects.toThrow(
-      /hallucinated document references/i,
-    );
   });
 });
 

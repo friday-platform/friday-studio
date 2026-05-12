@@ -7,14 +7,11 @@ import type { AgentResult, AtlasUIMessageChunk, ToolCall, ToolResult } from "@at
 // Re-export ToolCall and ToolResult for FSM event consumers
 export type { ToolCall, ToolResult };
 
-import type { ValidationVerdict } from "@atlas/hallucination/verdict";
 import type { ModelMessage, Tool } from "ai";
 import type { DocumentScope } from "../document-store/mod.ts";
-import type { ValidateStrategy } from "./schema.ts";
 
-// Re-export ValidateStrategy for consumers of this types module.
 // Re-export DocumentScope for convenience
-export type { DocumentScope, ValidateStrategy };
+export type { DocumentScope };
 
 export interface JSONSchema {
   [key: string]: unknown;
@@ -79,18 +76,8 @@ export interface LLMAction {
    */
   summary?: string;
   /**
-   * Per-action validation strategy. See `ValidateStrategySchema` in schema.ts
-   * for full semantics. Absent or `"auto"` ⇒ runtime classifier picks `skip`
-   * or `self`. The classifier never auto-resolves to `external`.
-   */
-  validate?: ValidateStrategy;
-  /**
-   * Author opt-in to treat `run_code` as read-only for this action. See
-   * `LLMActionSchema.run_code` in schema.ts.
-   * `run_code` is excluded from the default `READ_ONLY_ALLOWLIST` because
-   * it can mutate state; this knob lets a deterministic SQL `SELECT` /
-   * HTTP `GET` / arithmetic transform skip self-validation. Combined with
-   * `outputType:`, the action then resolves to `validate: skip`.
+   * Advisory marker preserved for back-compat with workspaces authored
+   * when the validation classifier consumed it. Currently a no-op.
    */
   run_code?: { readOnly: boolean };
   outputTo?: string;
@@ -123,11 +110,6 @@ export interface AgentAction {
    * `LLMActionSchema.summary` in schema.ts.
    */
   summary?: string;
-  /**
-   * Per-action validation strategy — see `ValidateStrategySchema` in
-   * schema.ts. Mirrors the field on LLMAction.
-   */
-  validate?: ValidateStrategy;
   /**
    * Document id(s) whose `data` becomes the agent's task input. String form
    * chains a single prior step's `outputTo`; array form concatenates
@@ -240,26 +222,6 @@ export interface FSMActionExecutionEvent {
         cacheWriteTokens?: number;
         model?: string;
       };
-      /**
-       * Per-action validation outcome — present on every `type: llm` and
-       * `case "agent" → type: llm` action. Three shapes mirror the resolved
-       * strategy: `skip` carries `skipReason`; `self` carries the LLM's
-       * `record_validation` args; `external` carries the judge-derived
-       * verdict. See `@atlas/core/session-events` `StepValidationOutputSchema`
-       * for the on-the-wire shape.
-       */
-      validation?: {
-        strategy: "skip" | "self" | "external";
-        verdict?: "pass" | "advisory" | "blocking";
-        issues?: Array<{
-          category?: string;
-          claim: string;
-          reasoning?: string;
-          severity?: "low" | "medium" | "high" | "info" | "warn" | "error";
-          citation?: string | null;
-        }>;
-        skipReason?: string;
-      };
     };
   };
 }
@@ -315,42 +277,12 @@ export interface FSMStateSkippedEvent {
   };
 }
 
-/**
- * Lifecycle event for a single LLM-output validation attempt.
- *
- * Each attempt emits exactly one `running` event before the judge call and
- * exactly one terminal event (`passed` or `failed`) after. `terminal` is
- * present only on `failed` events: `false` for the first failure (a retry
- * follows), `true` for the second failure (the action throws).
- *
- * actionId MUST match the actionId from the parent FSMActionExecutionEvent
- * to allow UI correlation.
- */
-export interface FSMValidationAttemptEvent {
-  type: "data-fsm-validation-attempt";
-  data: {
-    sessionId: string;
-    workspaceId: string;
-    jobName: string;
-    actionId?: string;
-    state: string;
-    attempt: number;
-    status: "running" | "passed" | "failed";
-    /** Present on `failed` events; `true` only on terminal failure. */
-    terminal?: boolean;
-    /** Present on `passed` and `failed` terminal events; absent on `running`. */
-    verdict?: ValidationVerdict;
-    timestamp: number;
-  };
-}
-
 export type FSMEvent =
   | FSMStateTransitionEvent
   | FSMActionExecutionEvent
   | FSMToolCallEvent
   | FSMToolResultEvent
-  | FSMStateSkippedEvent
-  | FSMValidationAttemptEvent;
+  | FSMStateSkippedEvent;
 
 /**
  * Signal with additional context for execution tracking and event streaming
@@ -387,73 +319,6 @@ export type FSMLLMOutput = Record<string, unknown>;
  * Re-export AgentResult for FSM consumers
  */
 export type { AgentResult };
-
-/** Trace data from an LLM action for hallucination detection */
-export interface LLMActionTrace {
-  content: string;
-  /** Model reasoning text (e.g., extended-thinking output), if the model produced any. */
-  reasoning?: string;
-  toolCalls?: ToolCall[];
-  toolResults?: ToolResult[];
-  model: string;
-  prompt: string;
-}
-
-/**
- * One tool call's projection in the judge handoff manifest. The runtime walks
- * the action's `traceToolResults` and builds one entry per call:
- *
- *   - `resultArtifactId` + `resultSummary` for scrubber-lifted (A2) results
- *     so the judge sees a short ref string and fetches via `artifacts_get`
- *     only for the specific claims it needs to verify.
- *   - `resultInline` otherwise — small payloads inline up to the cap.
- */
-export interface JudgeToolCallEntry {
-  toolName: string;
-  args?: unknown;
-  /** Set when the tool result was lifted to an artifact by the scrubber. */
-  resultArtifactId?: string;
-  /** Human-readable preview of the lifted artifact (mime / size / source). */
-  resultSummary?: string;
-  /** Set when the tool result was small enough to inline directly. */
-  resultInline?: string;
-}
-
-/**
- * Distilled handoff the FSM engine builds for the judge agent's delegate
- * call. Refs-not-bytes: scrubber-lifted results carry only the artifact id
- * + summary, so cost scales with judgment work rather than input size.
- */
-export interface JudgeHandoff {
-  /** The action's input prompt — what the LLM was asked to produce. */
-  actionInput: string;
-  /** The action's output — the LLM's draft to be judged. */
-  actionOutput: string;
-  /** Per-tool-call manifest with refs for lifted artifacts and inline for small payloads. */
-  toolCalls: JudgeToolCallEntry[];
-}
-
-/**
- * Function type the FSM engine calls when an action's resolved validation
- * decision is `external`. External validation is a separate system-level judge
- * agent (default `judge-agent`, overridable via `validate.agent`).
- *
- * Implementations live outside fsm-engine (workspace runtime wires this to
- * the agent orchestrator). Returns the verdict the judge emitted, or `ok:
- * false` when the judge failed (budget exhausted, agent not found,
- * exception). The runtime synthesizes an advisory verdict on `ok: false`
- * so the action still emits.
- */
-export type JudgeAgentRunner = (input: {
-  /** Default `"judge-agent"`; can be overridden via `validate.agent`. */
-  agentId: string;
-  /** Distilled handoff the judge agent reads. */
-  handoff: JudgeHandoff;
-  /** Parent workspace/session context for artifact-aware judge tools. */
-  workspaceId?: string;
-  sessionId?: string;
-  abortSignal?: AbortSignal;
-}) => Promise<{ ok: true; verdict: ValidationVerdict } | { ok: false; error: string }>;
 
 export interface LLMProvider {
   call(params: {
