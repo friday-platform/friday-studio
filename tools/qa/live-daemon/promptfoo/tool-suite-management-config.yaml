@@ -2,14 +2,21 @@
 
 description: Friday tool-suite management daemon evals (chat-driven retrieval-tool coverage)
 
+# Surface the actual workspace-chat system prompt + the user message each
+# scenario sends, so the promptfoo UI shows what the model saw rather than
+# just the scenarioId. {{system_prompt}} resolves to workspace-chat's live
+# prompt.txt; {{user_message}} comes from each test's vars (mirroring the
+# literal text postChatMessage forwards to the chat endpoint).
 prompts:
-  - file://scenario-prompt.txt
+  - file://prompt-template.txt
 
 providers:
   - id: file://tool-suite-management-provider.cjs
     label: friday-tool-suite-management-daemon
 
 defaultTest:
+  vars:
+    system_prompt: file://../../../../packages/system/agents/workspace-chat/prompt.txt
   assert:
     - type: is-json
     - type: javascript

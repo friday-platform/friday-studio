@@ -1,9 +1,0 @@
-Scenario: {{scenarioId}}
-
-What this checks:
-{{description}}
-
-(Daemon-level eval — the scenario script spins up an ephemeral daemon and
-runs a multi-step flow; there is no single LLM prompt. The actual prompts
-the scenario constructs internally are visible in the scenario's source
-under tools/qa/live-daemon/scenarios/.)

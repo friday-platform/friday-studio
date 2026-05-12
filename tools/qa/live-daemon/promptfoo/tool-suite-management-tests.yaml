@@ -1,29 +1,35 @@
 - description: chat picks list_skills/search_skills/describe_skill/load_skill instead of guessing from inline names
   vars:
     scenarioId: skills-retrieval-via-tool
-    description: "chat picks list_skills/search_skills/describe_skill/load_skill instead of guessing from inline names"
+    user_message: |
+      List my workspace's skills and pick the one that helps with workspace authoring (creating/editing workspaces). Tell me what it does in one sentence — pull the description from the right tool rather than guessing or echoing the names index.
 
 - description: chat calls register_agent (not run_code curl) to install a user agent
   vars:
     scenarioId: agent-registry-via-tool
-    description: "chat calls register_agent (not run_code curl) to install a user agent"
+    user_message: |
+      Register a new user agent in the global registry. The entrypoint is at <entrypoint path>. Call the right tool. Do not curl any HTTP endpoints with run_code. If the call fails, report the error and stop — don't substitute a different path.
 
 - description: chat fetches connection status via list_integrations/describe_integration on demand
   vars:
     scenarioId: integrations-retrieval-via-tool
-    description: "chat fetches connection status via list_integrations/describe_integration on demand"
+    user_message: |
+      Is my Gmail connected? If not, tell me what to do to connect it. Check the integration status with the right tool — don't guess from your prior knowledge.
 
 - description: inventory questions route to per-domain list_X tools, not list_capabilities
   vars:
     scenarioId: domain-list-tool-pick
-    description: "inventory questions route to per-domain list_X tools, not list_capabilities"
+    user_message: |
+      Give me a quick inventory of this workspace. List the agents, jobs, and signals — use the right per-domain inventory tool for each. Don't reach for list_capabilities (that's for cross-domain routing); use the per-domain list_X tools.
 
 - description: pinned foreground workspace surfaces via describe_workspace(id) instead of inline injection
   vars:
     scenarioId: foreground-via-describe
-    description: "pinned foreground workspace surfaces via describe_workspace(id) instead of inline injection"
+    user_message: |
+      I have another workspace pinned in foreground. What's in it? Get its name + description + workspace config — use the right tool to fetch the details on demand.
 
 - description: cross-domain "where do I look?" questions either use list_capabilities or walk ≥2 distinct domains
   vars:
     scenarioId: router-vs-domain-list
-    description: "cross-domain \"where do I look?\" questions either use list_capabilities or walk ≥2 distinct domains"
+    user_message: |
+      I want to send a Slack message. I don't know what's available in this workspace yet — could be a bundled agent, an enabled MCP server, or something I need to install. Find me the right capability across all the domains.

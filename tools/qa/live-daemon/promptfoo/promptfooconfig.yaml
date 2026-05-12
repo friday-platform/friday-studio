@@ -3,7 +3,7 @@
 description: Friday first-principles daemon evals
 
 prompts:
-  - file://scenario-prompt.txt
+  - '{{scenarioId}}'
 
 providers:
   - id: file://provider.cjs

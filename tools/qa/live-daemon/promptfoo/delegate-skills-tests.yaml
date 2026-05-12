@@ -1,14 +1,11 @@
 - description: skills-on case produces Polish response (skill content reached the child)
   vars:
     scenarioId: delegate-skill-injection-polish-on
-    description: "skills-on case produces Polish response (skill content reached the child)"
 
 - description: skills-off control produces non-Polish response (baseline behavior)
   vars:
     scenarioId: delegate-skill-injection-control-off
-    description: "skills-off control produces non-Polish response (baseline behavior)"
 
 - description: causal pair — Polish only when the skill is threaded
   vars:
     scenarioId: delegate-skill-injection-pair-causal
-    description: "causal pair — Polish only when the skill is threaded"

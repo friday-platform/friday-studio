@@ -3,7 +3,7 @@
 description: Friday table-outcomes daemon evals — artifact-roundtrip coverage for every mime the /artifacts/[id]/table route claims to render
 
 prompts:
-  - file://scenario-prompt.txt
+  - '{{scenarioId}}'
 
 providers:
   - id: file://table-outcomes-provider.cjs
