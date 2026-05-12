@@ -3,7 +3,7 @@
 description: Friday load_skill compliance evals — proves the parent agent honors the loaded skill body when injected via system-reminder
 
 prompts:
-  - "{{scenarioId}}"
+  - '{{scenarioId}}'
 
 providers:
   - id: file://load-skill-injection-provider.cjs

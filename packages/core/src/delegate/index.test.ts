@@ -22,6 +22,15 @@ const mockStepCountIs = vi.hoisted(() => vi.fn((n: number) => ({ __stepCountIs: 
 const mockDiscoverMCPServers = vi.hoisted(() => vi.fn());
 const mockCreateMCPTools = vi.hoisted(() => vi.fn());
 const mockResolveDelegateSkills = vi.hoisted(() => vi.fn());
+// `liftAnswerForModel` lives under `../artifacts/scrubber.ts`. The default
+// passthrough keeps existing tests deterministic (no actual scrub call);
+// individual cases override the implementation to assert the wiring.
+const mockLiftAnswerForModel = vi.hoisted(() =>
+  vi.fn(
+    (value: string, _opts: unknown): Promise<{ value: string; artifactId?: string }> =>
+      Promise.resolve({ value }),
+  ),
+);
 
 vi.mock("ai", async () => {
   const actual = await vi.importActual<typeof import("ai")>("ai");
@@ -33,6 +42,15 @@ vi.mock("ai", async () => {
 vi.mock("../mcp-registry/discovery.ts", () => ({ discoverMCPServers: mockDiscoverMCPServers }));
 
 vi.mock("@atlas/mcp", () => ({ createMCPTools: mockCreateMCPTools }));
+
+// Scrubber is the lift seam — tests assert call/no-call shape rather than
+// running real artifact uploads.
+vi.mock("../artifacts/scrubber.ts", async () => {
+  const actual = await vi.importActual<typeof import("../artifacts/scrubber.ts")>(
+    "../artifacts/scrubber.ts",
+  );
+  return { ...actual, liftAnswerForModel: mockLiftAnswerForModel };
+});
 
 // Skills resolver is its own module with full coverage in
 // `skills-resolver.test.ts`; here we stub it so this file does not need to
@@ -240,6 +258,15 @@ describe("createDelegateTool", () => {
     mockDiscoverMCPServers.mockReset();
     mockCreateMCPTools.mockReset();
     mockResolveDelegateSkills.mockReset().mockResolvedValue([]);
+    // Default behavior: passthrough — most tests don't exercise the lift,
+    // and a stale `mockResolvedValue` from a prior test would otherwise
+    // leak the marker into their `result.answer` assertions.
+    mockLiftAnswerForModel
+      .mockReset()
+      .mockImplementation(
+        (value: string, _opts: unknown): Promise<{ value: string; artifactId?: string }> =>
+          Promise.resolve({ value }),
+      );
   });
 
   it("happy path — finish ok=true drives answer, envelopes carry namespaced toolCallIds", async () => {
@@ -365,6 +392,125 @@ describe("createDelegateTool", () => {
       answer: "the final assistant text",
       toolsUsed: [{ name: "web_search", outcome: "success" }],
     });
+  });
+
+  it("routes successful answers through liftAnswerForModel and projects the lifted marker into answer", async () => {
+    const liftReturn = { value: "[lifted: synthetic-marker]", artifactId: "art-xyz" };
+    mockLiftAnswerForModel.mockResolvedValue(liftReturn);
+    const captured: CapturedStreamTextArgs = { args: undefined };
+    const finalText = "long enough answer that the lift walker would have hit threshold";
+    setupMockStreamText(captured, {
+      steps: [{ toolCalls: [{ toolCallId: "c1", toolName: "web_search" }] }],
+      finalText,
+    });
+
+    const { delegateTool } = makeDelegate();
+    const result = await runDelegate(delegateTool);
+
+    expect(mockLiftAnswerForModel).toHaveBeenCalledWith(
+      finalText,
+      expect.objectContaining({
+        workspaceId: "w1",
+        chatId: "s1",
+        serverId: "pre-model",
+        toolName: "delegate",
+      }),
+    );
+    expect(result).toEqual({
+      ok: true,
+      answer: liftReturn.value,
+      toolsUsed: [{ name: "web_search", outcome: "success" }],
+    });
+  });
+
+  it("leaves answer raw when lift returns no artifact (under threshold)", async () => {
+    mockLiftAnswerForModel.mockResolvedValue({ value: "short answer" });
+    setupMockStreamText(
+      { args: undefined },
+      {
+        steps: [{ toolCalls: [{ toolCallId: "c1", toolName: "web_search" }] }],
+        finalText: "short answer",
+      },
+    );
+
+    const { delegateTool } = makeDelegate();
+    const result = await runDelegate(delegateTool);
+
+    expect(result).toEqual({
+      ok: true,
+      answer: "short answer",
+      toolsUsed: [{ name: "web_search", outcome: "success" }],
+    });
+  });
+
+  it("skips lift when liftAnswer=false (judge-style direct-execute callers)", async () => {
+    setupMockStreamText(
+      { args: undefined },
+      {
+        steps: [{ toolCalls: [{ toolCallId: "c1", toolName: "web_search" }] }],
+        finalText: "raw answer the consumer parses directly",
+      },
+    );
+
+    const { delegateTool } = makeDelegate(undefined, undefined, undefined, undefined, {
+      liftAnswer: false,
+    });
+    const result = await runDelegate(delegateTool);
+
+    expect(mockLiftAnswerForModel).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      ok: true,
+      answer: "raw answer the consumer parses directly",
+      toolsUsed: [{ name: "web_search", outcome: "success" }],
+    });
+  });
+
+  it("does not lift the failure path's reason (lift fires only on ok=true)", async () => {
+    setupMockStreamText(
+      { args: undefined },
+      { steps: [{ finish: { ok: false, reason: "task impossible" } }], finalText: "" },
+    );
+
+    const { delegateTool } = makeDelegate();
+    const result = await runDelegate(delegateTool);
+
+    expect(mockLiftAnswerForModel).not.toHaveBeenCalled();
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toBe("task impossible");
+    }
+  });
+
+  it("returns ok=false when child produces no finish call and no text", async () => {
+    setupMockStreamText(
+      { args: undefined },
+      { steps: [{ toolCalls: [{ toolCallId: "c1", toolName: "web_search" }] }], finalText: "" },
+    );
+
+    const { delegateTool } = makeDelegate();
+    const result = await runDelegate(delegateTool);
+
+    expect(mockLiftAnswerForModel).not.toHaveBeenCalled();
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toBe("delegate produced no answer");
+    }
+  });
+
+  it("returns ok=false when finish.answer is empty (whitespace-only)", async () => {
+    setupMockStreamText(
+      { args: undefined },
+      { steps: [{ finish: { ok: true, answer: "   \n" } }], finalText: "ignored" },
+    );
+
+    const { delegateTool } = makeDelegate();
+    const result = await runDelegate(delegateTool);
+
+    expect(mockLiftAnswerForModel).not.toHaveBeenCalled();
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toBe("delegate produced no answer");
+    }
   });
 
   it("returns ok=false when finish reports failure", async () => {
