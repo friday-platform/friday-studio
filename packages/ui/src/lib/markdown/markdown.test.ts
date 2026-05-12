@@ -571,6 +571,7 @@ describe("markdownToHTMLSafe", () => {
   it("does not set target=_blank on in-page anchors", () => {
     const result = markdownToHTMLSafe("[toc](#section)");
     expect(result).toContain('href="#section"');
+    expect(result).toContain(">toc</a>");
     expect(result).not.toContain('target="_blank"');
   });
 
