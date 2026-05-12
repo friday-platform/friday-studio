@@ -189,12 +189,17 @@ describe("bundle-all endpoints (end-to-end)", () => {
     await seedWorkspaceDir(wsA, "alpha");
     await seedWorkspaceDir(wsB, "beta");
     mockFetchLinkCredential.mockReset();
+    // `/bundle-all?include=global-skills` is gated behind `requireDevEnv`;
+    // the runner sets DEV_MODE/LINK_DEV_MODE but not FRIDAY_ENV, so opt in
+    // here for the duration of the test.
+    vi.stubEnv("FRIDAY_ENV", "dev");
   });
 
   afterEach(async () => {
     await rm(wsA, { recursive: true, force: true });
     await rm(wsB, { recursive: true, force: true });
     await rm(homeDir, { recursive: true, force: true });
+    vi.unstubAllEnvs();
   });
 
   test("GET /bundle-all returns a zip-of-zips with every on-disk workspace", async () => {
