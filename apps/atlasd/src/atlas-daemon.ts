@@ -19,7 +19,13 @@ import { initArtifactStorage } from "@atlas/core/artifacts/server";
 import { ensureChatsKVBucket, initChatStorage } from "@atlas/core/chat/storage";
 import { bootstrapElicitationsStream, initElicitationStorage } from "@atlas/core/elicitations";
 import { initMCPRegistryAdapter } from "@atlas/core/mcp-registry/storage";
+import { ensureSessionsKVBucket, initSessionStorage } from "@atlas/core/sessions/storage";
 import { ensureUsersKVBucket, initUserStorage, UserStorage } from "@atlas/core/users/storage";
+import {
+  ensureWorkspaceMembersKVBucket,
+  initWorkspaceMemberStorage,
+  WorkspaceMemberStorage,
+} from "@atlas/core/workspace-members/storage";
 import { CronManager } from "@atlas/cron";
 import { initDocumentStore } from "@atlas/document-store";
 import { createPlatformModels, type PlatformModels, prewarmCatalog } from "@atlas/llm";
@@ -49,6 +55,7 @@ import type {
 import { StreamableHTTPTransport } from "@hono/mcp";
 import type { Context, Next } from "hono";
 import { cors } from "hono/cors";
+import { HTTPException } from "hono/http-exception";
 import { type RunMigrationsResult, readJetStreamConfig, runMigrations } from "jetstream";
 import type { NatsConnection } from "nats";
 import { agents as agentsRoutes } from "../routes/agents/index.ts";
@@ -70,6 +77,7 @@ import { jobsRoutes } from "../routes/jobs.ts";
 import { linkRoutes } from "../routes/link.ts";
 import { mcpRegistryRouter } from "../routes/mcp-registry.ts";
 import { meRoutes } from "../routes/me/index.ts";
+import { meStreamRoutes } from "../routes/me/stream.ts";
 import { memoryNarrativeRoutes } from "../routes/memory/index.ts";
 import reportRoutes from "../routes/report.ts";
 // O5 (review-2): scratchpad route deleted alongside the rest of the
@@ -499,10 +507,11 @@ export class AtlasDaemon {
     // (FRIDAY_CASCADE_QUEUE_TIMEOUT, default 5min).
     await ensureCascadesStream(nc);
 
-    // INSTANCE_EVENTS — instance-wide operational feed, consumed via SSE
-    // by /api/instance/events. Used today for cascade backlog / replace /
-    // queue-timeout signals; intentionally open to other instance-level
-    // event types (daemon, health, …) without a stream split.
+    // INSTANCE_EVENTS — instance-wide operational feed. Live updates
+    // ride the per-user firehose at /api/me/stream; /api/instance/events
+    // is the paginated replay endpoint. Used today for cascade backlog /
+    // replace / queue-timeout signals; intentionally open to other
+    // instance-level event types (daemon, health, …) without a split.
     await ensureInstanceEventsStream(nc);
 
     // Wire chat storage to JetStream + eagerly create the CHATS KV bucket
@@ -524,6 +533,21 @@ export class AtlasDaemon {
       }
       logger.info("Resolved local user id", { userId: localUser.data });
     }
+
+    // Sessions: opaque-token middleware authority. Auto-mint in local
+    // mode happens lazily on first request; the bucket just needs to
+    // exist before the middleware reads from it.
+    initSessionStorage(nc);
+    await ensureSessionsKVBucket(nc);
+
+    // Workspace memberships: per-user-per-workspace role rows. The
+    // firehose handshake and HTTP authz middleware both read from
+    // this bucket; migration below backfills owner rows for existing
+    // workspaces, steady-state writes happen in WorkspaceManager via
+    // the injected MembershipWriter (wired below, after the manager
+    // is constructed).
+    initWorkspaceMemberStorage(nc);
+    await ensureWorkspaceMembersKVBucket(nc);
 
     // Wire MCP registry to JetStream KV. Routes / discovery code call
     // the zero-arg `getMCPRegistryAdapter()` and get back the JS-KV-backed
@@ -604,6 +628,21 @@ export class AtlasDaemon {
 
     // Wire up runtime invalidation callback so file watcher changes clear both maps
     this.workspaceManager.setRuntimeInvalidateCallback(this.destroyWorkspaceRuntime.bind(this));
+
+    // Stamp an `owner` membership row on every workspace registration.
+    // The manager doesn't import @atlas/core directly — the writer is
+    // injected here so the storage facade stays the daemon's concern.
+    this.workspaceManager.setMembershipWriter({
+      async stampOwner({ wsId, ownerUserId }) {
+        const result = await WorkspaceMemberStorage.putIfAbsent({
+          userId: ownerUserId,
+          wsId,
+          role: "owner",
+          addedAt: new Date().toISOString(),
+        });
+        if (!result.ok) throw new Error(result.error);
+      },
+    });
 
     // Initialize CronManager with JetStream-KV-backed storage. Cron
     // only uses get/set/delete/list — JS KV's per-key model fits
@@ -725,8 +764,12 @@ export class AtlasDaemon {
 
     const signalRegistrars: WorkspaceSignalRegistrar[] = [fsRegistrar, cronRegistrar];
 
-    // Initialize WorkspaceManager with registrars and watcher (manager owns lifecycle)
-    await this.workspaceManager.initialize(signalRegistrars);
+    // Initialize WorkspaceManager with registrars and watcher (manager owns lifecycle).
+    // `defaultOwnerId` is threaded through to ensureDefaultUserWorkspace so the
+    // user-workspace gets stamped with an owner membership row on first run.
+    await this.workspaceManager.initialize(signalRegistrars, {
+      defaultOwnerId: UserStorage.getCachedLocalUserId(),
+    });
 
     // SignalConsumer — thin forwarder. Pulls from SIGNALS, parses the
     // envelope, publishes onto CASCADES, acks. No FSM execution here;
@@ -1388,6 +1431,10 @@ export class AtlasDaemon {
     this.app.route("/api/link", linkRoutes);
     this.app.route("/api/mcp-registry", mcpRegistryRouter);
     this.app.route("/api/me", meRoutes);
+    // Mount the user-firehose under the same prefix. Kept as its own
+    // route module because the long-lived SSE handling is distinct
+    // from the request/response shape of the rest of /api/me.
+    this.app.route("/api/me", meStreamRoutes);
     this.app.route("/api/jobs", jobsRoutes);
     this.app.route("/api/skills", skillsRoutes);
     this.app.route("/api/report", reportRoutes);
@@ -1397,8 +1444,19 @@ export class AtlasDaemon {
     // Platform signal routes (Discord/Slack via Signal Gateway)
     this.app.route("/signals", createPlatformSignalRoutes(this));
 
-    // Global error handler - catches all uncaught errors from all routes
+    // Global error handler - catches all uncaught errors from all routes.
+    // `HTTPException`s (e.g. `requireWorkspaceMember` → 403, missing
+    // session → 401) carry their own status + body; let them flow through
+    // instead of flattening every thrown error to a 500. Otherwise the
+    // route-level tests pass (they call the handler directly and see the
+    // throw) but production turns every authz failure into "Internal
+    // server error" — which both leaks the wrong status to the client
+    // and stops clients from distinguishing "you don't have access" from
+    // "the daemon is broken".
     this.app.onError((err, c) => {
+      if (err instanceof HTTPException) {
+        return err.getResponse();
+      }
       logger.error("API error", { error: err, path: c.req.path, method: c.req.method });
       return c.json({ error: "Internal server error" }, 500);
     });

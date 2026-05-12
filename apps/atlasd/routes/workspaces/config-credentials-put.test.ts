@@ -17,6 +17,7 @@ import {
   createTestApp,
   createTestConfig,
   type JsonBody,
+  membershipMocks,
   useTempDir,
 } from "./config.test-fixtures.ts";
 
@@ -37,6 +38,54 @@ describe("PUT /config/credentials/:path", () => {
 
   beforeEach(() => {
     mockFetchLinkCredential.mockReset();
+  });
+
+  describe("authz", () => {
+    test("returns 403 when caller has only member role (admin tier required)", async () => {
+      // Override the default `owner` mock for the next two get() calls
+      // (the chained `use("*", member)` + `.on(["PUT",…], "*", admin)`
+      // middlewares each call get() once). After the member check passes,
+      // the admin check sees `role: "member"` and 403s.
+      const memberRow = {
+        ok: true as const,
+        data: {
+          userId: "test-user",
+          wsId: "ws-test-id",
+          role: "member" as const,
+          addedAt: "2026-05-11T00:00:00.000Z",
+        },
+      };
+      membershipMocks.get.mockResolvedValueOnce(memberRow);
+      membershipMocks.get.mockResolvedValueOnce(memberRow);
+
+      const workspace = createMockWorkspace();
+      const config = createMergedConfig(createTestConfig());
+      const { app } = createTestApp({ workspace, config });
+
+      const response = await app.request("/ws-test-id/config/credentials/mcp:github:TOKEN", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ credentialId: "new-cred" }),
+      });
+
+      expect(response.status).toBe(403);
+    });
+
+    test("returns 403 when caller has no membership row at all", async () => {
+      membershipMocks.get.mockResolvedValueOnce({ ok: true, data: null });
+
+      const workspace = createMockWorkspace();
+      const config = createMergedConfig(createTestConfig());
+      const { app } = createTestApp({ workspace, config });
+
+      const response = await app.request("/ws-test-id/config/credentials/mcp:github:TOKEN", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ credentialId: "new-cred" }),
+      });
+
+      expect(response.status).toBe(403);
+    });
   });
 
   describe("validation errors", () => {

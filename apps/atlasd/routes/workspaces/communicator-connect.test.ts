@@ -17,6 +17,27 @@ import type { AppContext, AppVariables } from "../../src/factory.ts";
 
 vi.mock("../me/adapter.ts", () => ({ getCurrentUser: vi.fn().mockResolvedValue({ ok: false }) }));
 
+vi.mock("@atlas/core/workspace-members/storage", () => ({
+  WorkspaceMemberStorage: {
+    get: vi
+      .fn()
+      .mockImplementation((userId: string, wsId: string) =>
+        Promise.resolve({
+          ok: true,
+          data: { userId, wsId, role: "owner", addedAt: "2026-05-11T00:00:00.000Z" },
+        }),
+      ),
+    listByUser: vi.fn().mockResolvedValue({ ok: true, data: [] }),
+    listByWorkspace: vi.fn().mockResolvedValue({ ok: true, data: [] }),
+    put: vi.fn().mockResolvedValue({ ok: true, data: null }),
+    putIfAbsent: vi.fn().mockResolvedValue({ ok: true, data: null }),
+    delete: vi.fn().mockResolvedValue({ ok: true, data: undefined }),
+  },
+  ensureWorkspaceMembersKVBucket: vi.fn(),
+  initWorkspaceMemberStorage: vi.fn(),
+  resetWorkspaceMemberStorageForTests: vi.fn(),
+}));
+
 const mockDeriveConnectionId = vi.hoisted(() =>
   vi.fn<(kind: string, credentialId: string) => Promise<string>>(),
 );
@@ -144,6 +165,7 @@ async function createTestApp() {
   const app = new Hono<AppVariables>();
   app.use("*", async (c, next) => {
     c.set("app", mockContext);
+    c.set("userId", "test-user");
     await next();
   });
 

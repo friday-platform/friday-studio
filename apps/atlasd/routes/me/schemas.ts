@@ -8,8 +8,11 @@ import { z } from "zod";
  */
 export const UserIdentitySchema = z.object({
   id: z.string().meta({ description: "Unique user identifier (opaque string)" }),
-  full_name: z.string().meta({ description: "User's full legal/display name" }),
-  email: z.email().meta({ description: "Primary email address" }),
+  full_name: z
+    .string()
+    .nullable()
+    .meta({ description: "User's full legal/display name, null if not set" }),
+  email: z.email().nullable().meta({ description: "Primary email address, null if not set" }),
   created_at: z.iso.datetime().meta({ description: "Account creation timestamp (ISO 8601)" }),
   updated_at: z.iso.datetime().meta({ description: "Last profile update (ISO 8601)" }),
   display_name: z
@@ -20,6 +23,14 @@ export const UserIdentitySchema = z.object({
     .string()
     .nullable()
     .meta({ description: "Profile photo URL or relative path, null if not set" }),
+  timezone: z
+    .string()
+    .nullable()
+    .meta({ description: "IANA timezone (e.g. America/New_York), null if not set" }),
+  locale: z
+    .string()
+    .nullable()
+    .meta({ description: "BCP-47 locale tag (e.g. en-US), null if not set" }),
   usage: z
     .number()
     .min(0)

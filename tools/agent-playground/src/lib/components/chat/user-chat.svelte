@@ -6,9 +6,12 @@
   import { createQuery, useQueryClient } from "@tanstack/svelte-query";
   import { page } from "$app/state";
   import { browser } from "$app/environment";
-  import { ElicitationSchema, type Elicitation } from "@atlas/core/elicitations/model";
   import { workspaceQueries } from "$lib/queries";
   import { mergeElicitationIntoCache } from "$lib/queries/elicitation-queries.ts";
+  import {
+    subscribeToSessionEvents,
+    subscribeToWorkspaceElicitations,
+  } from "$lib/shared-worker/client.ts";
   import { DefaultChatTransport } from "ai";
   import ChatInput, { type ImageAttachment } from "./chat-input.svelte";
   import ChatInspector from "./chat-inspector.svelte";
@@ -32,7 +35,6 @@
     type ValidationAttemptDisplay,
   } from "./validation-accumulator.ts";
   import type { SessionStreamEvent } from "@atlas/core/session/session-events";
-  import { sessionEventStream } from "$lib/utils/session-event-stream";
 
   const wsId = $derived(page.params.workspaceId ?? "user");
   const queryClient = useQueryClient();
@@ -160,25 +162,20 @@
   $effect(() => {
     if (!browser || !wsId) return;
 
-    const url = new URL("/api/daemon/api/elicitations/stream", globalThis.location.origin);
-    url.searchParams.set("workspaceId", wsId);
-
-    const es = new EventSource(url.toString());
-    es.addEventListener("message", (e) => {
-      let parsed: Elicitation;
+    const controller = new AbortController();
+    void (async () => {
       try {
-        parsed = ElicitationSchema.parse(JSON.parse(e.data));
-      } catch (err) {
-        console.error("Failed to parse elicitation SSE event", err);
-        return;
+        for await (const elicitation of subscribeToWorkspaceElicitations(wsId, {
+          signal: controller.signal,
+        })) {
+          mergeElicitationIntoCache(queryClient, elicitation);
+        }
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        console.warn("Workspace elicitations stream errored", error);
       }
-      mergeElicitationIntoCache(queryClient, parsed);
-    });
-    es.addEventListener("error", () => {
-      console.warn("Elicitations SSE feed errored (EventSource will retry)");
-    });
-
-    return () => es.close();
+    })();
+    return () => controller.abort();
   });
 
   /**
@@ -597,7 +594,7 @@
 
     (async () => {
       try {
-        for await (const event of sessionEventStream(sid, { signal: controller.signal })) {
+        for await (const event of subscribeToSessionEvents(sid, { signal: controller.signal })) {
           if (controller.signal.aborted) return;
           if ("type" in event && event.type === "step:validation") {
             untrack(() => {
@@ -920,6 +917,41 @@
   // would drift on every render and every such message would show "now".
   const firstSeenMs = new Map<string, number>();
 
+  // Per-message converted-display cache. `displayedMessages` re-runs on
+  // every streaming chunk because `chat.messages` is reactive and gets
+  // mutated in place; without this cache, every historical message
+  // re-walks `buildSegments` / `extractImages` / `extractToolCalls` /
+  // `extractTurnUsage` per token, which dominated profiling at high
+  // streaming rates (50-100 chunks/sec × N messages × ~300us per pipe).
+  //
+  // The cache is keyed on the message object identity (`WeakMap`) so it
+  // auto-evicts when the SDK reassigns or drops a message, and a coarse
+  // content signature (`parts.length` + last-part fingerprint) decides
+  // whether the cached entry is still valid. Streaming only mutates the
+  // tail message, so unchanged history hits the cache every tick.
+  type CachedDisplayMessage = { sig: string; result: ChatMessage };
+  const displayCache: WeakMap<AtlasUIMessage, CachedDisplayMessage> = new WeakMap();
+
+  function displaySignature(msg: AtlasUIMessage): string {
+    const parts = Array.isArray(msg.parts) ? msg.parts : [];
+    const lastIdx = parts.length - 1;
+    let lastSig = "0";
+    if (lastIdx >= 0) {
+      const last = parts[lastIdx];
+      if (typeof last === "object" && last !== null) {
+        const type = "type" in last ? String((last as Record<string, unknown>).type) : "?";
+        const text =
+          "text" in last && typeof (last as Record<string, unknown>).text === "string"
+            ? ((last as Record<string, unknown>).text as string).length
+            : 0;
+        const state =
+          "state" in last ? String((last as Record<string, unknown>).state ?? "") : "";
+        lastSig = `${type}:${text}:${state}`;
+      }
+    }
+    return `${parts.length}:${lastSig}`;
+  }
+
   function extractMetadataTimestamp(msg: AtlasUIMessage): number | null {
     const md = msg.metadata ?? {};
     const iso = md.startTimestamp ?? md.timestamp ?? md.endTimestamp;
@@ -994,11 +1026,27 @@
       return hasRenderableContent(msg);
     });
     const timestamps = assignTimestamps(rawMessages);
-    const chatMsgs: ChatMessage[] = rawMessages.map((msg) => {
+    const lastIdx = rawMessages.length - 1;
+    const chatMsgs: ChatMessage[] = rawMessages.map((msg, idx) => {
+      // Skip the cache for the tail message: streaming chunks (text
+      // deltas, delegate sub-chunks, data-usage appends) can arrive
+      // without changing the *last* part of `msg.parts`, which is what
+      // `displaySignature` fingerprints. The conservative fix is to
+      // recompute the tail every tick — it's a single message per
+      // render, so the cost is bounded — and rely on the cache for the
+      // (much larger) immutable history. Markdown body throttling
+      // covers the per-chunk marked + DOMPurify cost separately.
+      const isTail = idx === lastIdx;
+      const sig = displaySignature(msg);
+      const cached = isTail ? undefined : displayCache.get(msg);
+      const ts = timestamps.get(msg.id) ?? Date.now();
+      if (cached && cached.sig === sig && cached.result.timestamp === ts) {
+        return cached.result;
+      }
       const m = (typeof msg.metadata === "object" && msg.metadata !== null
         ? msg.metadata
         : {}) as Record<string, unknown>;
-      return {
+      const result: ChatMessage = {
         id: msg.id,
         role: (msg.role === "user"
           ? "user"
@@ -1006,7 +1054,7 @@
             ? "system"
             : "assistant") as "user" | "assistant" | "system",
         segments: buildSegments(msg),
-        timestamp: timestamps.get(msg.id) ?? Date.now(),
+        timestamp: ts,
         images: extractImages(msg),
         errorText: extractErrorText(msg),
         disconnectedIntegrations: extractDisconnectedIntegrations(msg),
@@ -1034,6 +1082,10 @@
           usage: extractTurnUsage(msg, m),
         },
       };
+      if (!isTail) {
+        displayCache.set(msg, { sig, result });
+      }
+      return result;
     });
     return chatMsgs;
   });

@@ -23,6 +23,7 @@ import { zValidator } from "@hono/zod-validator";
 import { stepCountIs, streamText } from "ai";
 import { z } from "zod";
 import { daemonFactory } from "../src/factory.ts";
+import { requireWorkspaceMember } from "../src/workspace-authz.ts";
 import {
   classifyProbeError,
   getCachedTools,
@@ -732,6 +733,10 @@ export const mcpRegistryRouter = daemonFactory
       const { id } = c.req.valid("param");
       const { workspaceId } = c.req.valid("query");
       const { message } = c.req.valid("json");
+
+      if (workspaceId) {
+        await requireWorkspaceMember(c, workspaceId);
+      }
 
       let server: MCPServerMetadata | undefined = mcpServersRegistry.servers[id];
       if (!server) {

@@ -31,6 +31,36 @@ import { sessionsRoutes } from "./index.ts";
 const mockAtlasHome = vi.hoisted(() => ({ value: "" }));
 vi.mock("@atlas/utils/paths.server", () => ({ getFridayHome: () => mockAtlasHome.value }));
 
+vi.mock("@atlas/core/workspace-members/storage", () => ({
+  WorkspaceMemberStorage: {
+    get: vi
+      .fn()
+      .mockImplementation((userId: string, wsId: string) =>
+        Promise.resolve({
+          ok: true,
+          data: { userId, wsId, role: "owner", addedAt: "2026-05-11T00:00:00.000Z" },
+        }),
+      ),
+    // listByUser feeds the accessible-workspace filter on the
+    // unscoped `GET /` sessions list. Seed the wsIds the fixtures use
+    // so the listing doesn't drop them.
+    listByUser: vi.fn().mockResolvedValue({
+      ok: true,
+      data: [
+        { userId: "test-user", wsId: "ws-1", role: "owner", addedAt: "2026-05-11T00:00:00.000Z" },
+        { userId: "test-user", wsId: "ws-2", role: "owner", addedAt: "2026-05-11T00:00:00.000Z" },
+      ],
+    }),
+    listByWorkspace: vi.fn().mockResolvedValue({ ok: true, data: [] }),
+    put: vi.fn().mockResolvedValue({ ok: true, data: null }),
+    putIfAbsent: vi.fn().mockResolvedValue({ ok: true, data: null }),
+    delete: vi.fn().mockResolvedValue({ ok: true, data: undefined }),
+  },
+  ensureWorkspaceMembersKVBucket: vi.fn(),
+  initWorkspaceMemberStorage: vi.fn(),
+  resetWorkspaceMemberStorageForTests: vi.fn(),
+}));
+
 /**
  * In-memory `SessionHistoryAdapter` for tests. Replaces the deleted
  * `LocalSessionHistoryAdapter` (filesystem-JSONL) with a Map-backed
@@ -232,6 +262,7 @@ function createTestApp(options: {
   const app = new Hono<AppVariables>();
   app.use("*", async (c, next) => {
     c.set("app", mockContext);
+    c.set("userId", "test-user");
     await next();
   });
   app.route("/", sessionsRoutes);

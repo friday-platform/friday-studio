@@ -78,6 +78,7 @@
     "npm:@lezer/highlight@^1.2.3": "1.2.3",
     "npm:@lezer/markdown@^1.6.3": "1.6.3",
     "npm:@libpdf/core@~0.3.4": "0.3.4",
+    "npm:@melt-ui/pp@~0.3.2": "0.3.2_@melt-ui+svelte@0.86.6__svelte@5.55.5_svelte@5.55.5",
     "npm:@melt-ui/svelte@~0.86.6": "0.86.6_svelte@5.55.5",
     "npm:@modelcontextprotocol/sdk@1.28": "1.28.0_zod@4.3.6",
     "npm:@opentelemetry/api@^1.9.0": "1.9.1",
@@ -93,6 +94,7 @@
     "npm:@tanstack/svelte-query@^6.1.28": "6.1.28_svelte@5.55.5",
     "npm:@tanstack/svelte-table@9.0.0-alpha.41": "9.0.0-alpha.41_svelte@5.55.5",
     "npm:@tanstack/svelte-table@^9.0.0-alpha.41": "9.0.0-alpha.41_svelte@5.55.5",
+    "npm:@tanstack/svelte-virtual@~3.13.24": "3.13.24_svelte@5.55.5",
     "npm:@tauri-apps/api@2.11.0": "2.11.0",
     "npm:@tauri-apps/cli@2.11.0": "2.11.0",
     "npm:@tauri-apps/plugin-opener@2.5.4": "2.5.4",
@@ -1424,6 +1426,15 @@
     "@marijn/find-cluster-break@1.0.2": {
       "integrity": "sha512-l0h88YhZFyKdXIFNfSWpyjStDjGHwZ/U7iobcK1cQQD8sejsONdQtTVU+1wVN1PBw40PiiHB1vA5S7VTfQiP9g=="
     },
+    "@melt-ui/pp@0.3.2_@melt-ui+svelte@0.86.6__svelte@5.55.5_svelte@5.55.5": {
+      "integrity": "sha512-xKkPvaIAFinklLXcQOpwZ8YSpqAFxykjWf8Y/fSJQwsixV/0rcFs07hJ49hJjPy5vItvw5Qa0uOjzFUbXzBypQ==",
+      "dependencies": [
+        "@melt-ui/svelte",
+        "estree-walker",
+        "magic-string",
+        "svelte"
+      ]
+    },
     "@melt-ui/svelte@0.86.6_svelte@5.55.5": {
       "integrity": "sha512-Jer+M7DgIwT5IHfTayb4Iw/fkkxWNmC/mqn/nMh9JrbPbkxmyabfLQnhJ+JDn5HK77f84j34lubO3iqFtYAfMg==",
       "dependencies": [
@@ -2197,11 +2208,21 @@
         "svelte"
       ]
     },
+    "@tanstack/svelte-virtual@3.13.24_svelte@5.55.5": {
+      "integrity": "sha512-Up3LOD5Cj+oJ3GuKfM1Li06jzzZMIZnRPmu3aik9rJQgk7jq7LgPo4yumfUw4+I4edjYfyPKSZnXGwZ9Vjlebw==",
+      "dependencies": [
+        "@tanstack/virtual-core",
+        "svelte"
+      ]
+    },
     "@tanstack/table-core@9.0.0-alpha.41": {
       "integrity": "sha512-Tcxf7A8Z+X333axHB87gk63wR2awDruhQFCiswnZD/NW0dIv82gP/Lb5b4a6bU2BvEdIpOsNTWjvwPO33hPhRQ==",
       "dependencies": [
         "@tanstack/store"
       ]
+    },
+    "@tanstack/virtual-core@3.14.0": {
+      "integrity": "sha512-JLANqGy/D6k4Ujmh8Tr25lGimuOXNiaVyXaCAZS0W+1390sADdGnyUdSWNIfd49gebtIxGMij4IktRVzrdr12Q=="
     },
     "@tauri-apps/api@2.11.0": {
       "integrity": "sha512-7CinYODhky9lmO23xHnUFv0Xt43fbtWMyxZcLcRBlFkcgXKuEirBvHpmtJ89YMhyeGcq20Wuc47Fa4XjyniywA=="
@@ -6581,6 +6602,7 @@
             "npm:@codemirror/view@^6.42.1",
             "npm:@hono/zod-validator@~0.7.6",
             "npm:@lezer/highlight@^1.2.3",
+            "npm:@melt-ui/pp@~0.3.2",
             "npm:@melt-ui/svelte@~0.86.6",
             "npm:@opentelemetry/api@^1.9.1",
             "npm:@sveltejs/adapter-static@^3.0.10",
@@ -6589,6 +6611,7 @@
             "npm:@tanstack/query-core@^5.100.8",
             "npm:@tanstack/svelte-query@^6.1.28",
             "npm:@tanstack/svelte-table@9.0.0-alpha.41",
+            "npm:@tanstack/svelte-virtual@~3.13.24",
             "npm:@types/deno@2.5.0",
             "npm:ai@^6.0.177",
             "npm:codemirror@^6.0.2",

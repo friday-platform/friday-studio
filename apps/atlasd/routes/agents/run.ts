@@ -24,6 +24,7 @@ import { createBashTool } from "@atlas/workspace/bash-tool";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { daemonFactory } from "../../src/factory.ts";
+import { requireWorkspaceMember } from "../../src/workspace-authz.ts";
 
 const logger = createLogger({ name: "agent-run-api" });
 
@@ -44,6 +45,10 @@ runAgentRoute.post(
     const { id } = c.req.param();
     const { workspaceId } = c.req.valid("query");
     const { input, env } = c.req.valid("json");
+
+    if (workspaceId) {
+      await requireWorkspaceMember(c, workspaceId);
+    }
 
     const executor = c.get("app").daemon.getProcessAgentExecutor();
     if (!executor) {

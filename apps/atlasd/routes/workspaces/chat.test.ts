@@ -18,17 +18,19 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 const { mockChatStorage, mockValidateMessages } = vi.hoisted(() => ({
   mockChatStorage: {
     listChatsByWorkspace: vi.fn<() => Promise<{ ok: boolean; data?: unknown; error?: string }>>(),
-    getChat: vi.fn<() => Promise<{ ok: boolean; data?: unknown; error?: string }>>(),
+    getChat:
+      vi.fn<
+        (
+          chatId: string,
+          workspaceId?: string,
+        ) => Promise<{ ok: boolean; data?: unknown; error?: string }>
+      >(),
     appendMessage: vi.fn<() => Promise<{ ok: boolean; error?: string }>>(),
     updateChatTitle: vi.fn<() => Promise<{ ok: boolean; data?: unknown; error?: string }>>(),
   },
   mockValidateMessages: vi
     .fn<(msgs: unknown[]) => Promise<unknown[]>>()
     .mockImplementation((msgs: unknown[]) => Promise.resolve(msgs)),
-}));
-
-vi.mock("@atlas/core/credentials", () => ({
-  extractTempestUserId: vi.fn().mockReturnValue("user-123"),
 }));
 
 vi.mock("@atlas/core/chat/storage", () => ({ ChatStorage: mockChatStorage }));
@@ -40,6 +42,27 @@ vi.mock("@atlas/core/users/storage", () => ({
 vi.mock("@atlas/agent-sdk", () => ({
   validateAtlasUIMessages: mockValidateMessages,
   normalizeToUIMessages: (message: unknown) => [message],
+}));
+
+vi.mock("@atlas/core/workspace-members/storage", () => ({
+  WorkspaceMemberStorage: {
+    get: vi
+      .fn()
+      .mockImplementation((userId: string, wsId: string) =>
+        Promise.resolve({
+          ok: true,
+          data: { userId, wsId, role: "owner", addedAt: "2026-05-11T00:00:00.000Z" },
+        }),
+      ),
+    listByUser: vi.fn().mockResolvedValue({ ok: true, data: [] }),
+    listByWorkspace: vi.fn().mockResolvedValue({ ok: true, data: [] }),
+    put: vi.fn().mockResolvedValue({ ok: true, data: null }),
+    putIfAbsent: vi.fn().mockResolvedValue({ ok: true, data: null }),
+    delete: vi.fn().mockResolvedValue({ ok: true, data: undefined }),
+  },
+  ensureWorkspaceMembersKVBucket: vi.fn(),
+  initWorkspaceMemberStorage: vi.fn(),
+  resetWorkspaceMemberStorageForTests: vi.fn(),
 }));
 
 // Shrink the byte cap so the cap branch is testable without allocating
@@ -120,9 +143,10 @@ function createTestApp(
     sessionHistoryAdapter: {},
   };
 
-  const app = new Hono<{ Variables: { app: typeof mockContext } }>();
+  const app = new Hono<{ Variables: { app: typeof mockContext; userId?: string } }>();
   app.use("*", async (c, next) => {
     c.set("app", mockContext);
+    c.set("userId", "test-local-user");
     await next();
   });
   app.route("/:workspaceId/chat", workspaceChatRoutes);
@@ -156,13 +180,34 @@ function del(app: ReturnType<typeof createTestApp>["app"], path: string) {
 
 // Hoisted mocks share state across tests — reset call history and any
 // queued mockResolvedValueOnce values between cases.
-beforeEach(() => {
+beforeEach(async () => {
   mockChatStorage.listChatsByWorkspace.mockReset();
   mockChatStorage.getChat.mockReset();
   mockChatStorage.appendMessage.mockReset();
   mockChatStorage.updateChatTitle.mockReset();
   mockValidateMessages.mockReset();
   mockValidateMessages.mockImplementation((msgs: unknown[]) => Promise.resolve(msgs));
+  // Default chat lookup — covers the routes that now consult
+  // ChatStorage to prove a chatId belongs to the path workspace
+  // (POST `/` with existing chatId, GET/DELETE `:chatId/stream`).
+  // Tests that need a 404 / cross-workspace miss override this with
+  // `mockResolvedValue` / `mockResolvedValueOnce`.
+  mockChatStorage.getChat.mockResolvedValue({
+    ok: true,
+    data: { id: "chat-1", workspaceId: "ws-1", messages: [] },
+  });
+  // Reset the WorkspaceMemberStorage mock back to the permissive
+  // default. Individual tests override per-case (see the
+  // foreground-cross-tenant case below), and without this reset the
+  // override would leak into subsequent tests and 403 routes that
+  // were never meant to exercise the gate.
+  const { WorkspaceMemberStorage } = await import("@atlas/core/workspace-members/storage");
+  vi.mocked(WorkspaceMemberStorage.get).mockImplementation((userId, wsId) =>
+    Promise.resolve({
+      ok: true,
+      data: { userId, wsId, role: "owner" as const, addedAt: "2026-05-11T00:00:00.000Z" },
+    }),
+  );
 });
 
 describe("GET /:workspaceId/chat — list chats", () => {
@@ -500,10 +545,11 @@ describe("GET /:workspaceId/chat/:chatId/stream — SSE stream reconnect", () =>
     });
 
     expect(res.status).toBe(200);
-    // 3rd argument is the parsed integer cursor — anything else lets
+    // 4th argument is the parsed integer cursor — anything else lets
     // resume fall back to full replay, which re-sends already-rendered
-    // text-deltas and produces duplicate content in the UI.
-    expect(subscribe).toHaveBeenCalledWith("chat-1", expect.anything(), 42);
+    // text-deltas and produces duplicate content in the UI. Registry
+    // is now keyed by `(workspaceId, chatId)` so they're args 1 and 2.
+    expect(subscribe).toHaveBeenCalledWith("ws-1", "chat-1", expect.anything(), 42);
   });
 
   test.each([
@@ -525,7 +571,9 @@ describe("GET /:workspaceId/chat/:chatId/stream — SSE stream reconnect", () =>
 
     await app.request("/ws-1/chat/chat-1/stream", { headers: { "Last-Event-ID": header } });
 
-    const callArg = subscribe.mock.calls[0]?.[2];
+    // Registry is keyed by `(workspaceId, chatId)`, so the cursor is
+    // now the 4th positional argument (was 3rd before re-keying).
+    const callArg = subscribe.mock.calls[0]?.[3];
     if (header === "1.5") {
       // parseInt("1.5", 10) === 1 — accepted as a valid non-negative int.
       // This is intentional: any prefix-numeric header is fine; the cursor
@@ -546,7 +594,7 @@ describe("DELETE /:workspaceId/chat/:chatId/stream — cancel stream", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as JsonBody;
     expect(body.success).toBe(true);
-    expect(mockStreamRegistry.finishStream).toHaveBeenCalledWith("chat-1");
+    expect(mockStreamRegistry.finishStream).toHaveBeenCalledWith("ws-1", "chat-1");
   });
 });
 
@@ -671,6 +719,107 @@ describe("POST /:workspaceId/chat — foreground workspace validation", () => {
 
     expect(res.status).toBe(200);
     expect(mockWebhooksAtlas).toHaveBeenCalledTimes(1);
+  });
+
+  // Regression for the foreground-context cross-tenant leak: the path
+  // workspace's member check is no longer enough — every
+  // `foreground_workspace_ids` entry has to pass requireWorkspaceMember
+  // for the caller, otherwise a member of `ws-1` could read `ws-2`'s
+  // config / chats by stuffing `ws-2` into the foreground list.
+  test("returns 403 when caller is not a member of a foreground workspace", async () => {
+    const { WorkspaceMemberStorage } = await import("@atlas/core/workspace-members/storage");
+    const memberGet = vi.mocked(WorkspaceMemberStorage.get);
+    memberGet.mockImplementation((userId, wsId) =>
+      Promise.resolve({
+        ok: true,
+        data:
+          wsId === "ws-1"
+            ? { userId, wsId, role: "owner" as const, addedAt: "2026-05-11T00:00:00.000Z" }
+            : null,
+      }),
+    );
+    const { app, mockContext } = createTestApp();
+    const manager = mockContext.getWorkspaceManager();
+    manager.find.mockImplementation(({ id }: { id: string }) =>
+      Promise.resolve({ id, name: `ws-${id}` }),
+    );
+
+    const res = await post(app, "/ws-1/chat", {
+      id: "chat-fg-leak",
+      message: { role: "user", parts: [{ type: "text", text: "hello" }] },
+      foreground_workspace_ids: ["ws-2"],
+    });
+
+    expect(res.status).toBe(403);
+  });
+});
+
+describe("stream routes — chatId must belong to path workspace", () => {
+  // Two layers of defence: the route checks the chat is in the path
+  // workspace (404 leak prevention), and the streamRegistry /
+  // chatTurnRegistry themselves are keyed by `(workspaceId, chatId)`
+  // so a misaddressed call still couldn't reach a foreign workspace's
+  // buffer. These tests exercise the route-level gate; the registry
+  // unit tests cover the keying.
+  test("GET /:chatId/stream returns 404 when chat doesn't exist in this workspace", async () => {
+    // Simulate the real storage: `getChat(chatId, "ws-1")` returns
+    // null because the chat lives in `ws-OTHER`. The blanket default
+    // in `beforeEach` would mask this — override per-test.
+    mockChatStorage.getChat.mockImplementation((_chatId: string, workspaceId?: string) =>
+      Promise.resolve(
+        workspaceId === "ws-OTHER"
+          ? { ok: true, data: { id: "chat-x", workspaceId: "ws-OTHER", messages: [] } }
+          : { ok: true, data: null },
+      ),
+    );
+    const { app } = createTestApp({
+      streamRegistry: {
+        getStream: vi.fn().mockReturnValue({ active: true, createdAt: Date.now() }),
+      },
+    });
+
+    const res = await app.request("/ws-1/chat/chat-x/stream");
+
+    expect(res.status).toBe(404);
+  });
+
+  test("DELETE /:chatId/stream returns 404 when chat doesn't exist in this workspace", async () => {
+    mockChatStorage.getChat.mockImplementation((_chatId: string, workspaceId?: string) =>
+      Promise.resolve(
+        workspaceId === "ws-OTHER"
+          ? { ok: true, data: { id: "chat-x", workspaceId: "ws-OTHER", messages: [] } }
+          : { ok: true, data: null },
+      ),
+    );
+    const { app, mockStreamRegistry } = createTestApp();
+
+    const res = await del(app, "/ws-1/chat/chat-x/stream");
+
+    expect(res.status).toBe(404);
+    expect(mockStreamRegistry.finishStream).not.toHaveBeenCalled();
+  });
+
+  test("POST / routes the chatTurnRegistry call through the path workspace, not the chat's foreign workspace", async () => {
+    // The registry is now keyed by `(workspaceId, chatId)`. Even if a
+    // caller smuggles a chatId that exists in another workspace, the
+    // call lands at `(ws-1, chatId)` — workspace B's controller at
+    // `(ws-B, chatId)` is untouched. The test verifies the route
+    // passes the *path* workspaceId to the registry, not anything
+    // derived from the body.
+    const { app, mockContext } = createTestApp();
+    const chatTurnReplace = vi.mocked(mockContext.chatTurnRegistry.replace);
+
+    const res = await post(app, "/ws-1/chat", {
+      id: "chat-foreign",
+      message: { role: "user", parts: [{ type: "text", text: "hi" }] },
+    });
+
+    expect(res.status).toBe(200);
+    expect(chatTurnReplace).toHaveBeenCalledWith("ws-1", "chat-foreign");
+    // Negative: a foreign workspaceId must never appear in the call.
+    for (const call of chatTurnReplace.mock.calls) {
+      expect(call[0]).toBe("ws-1");
+    }
   });
 });
 

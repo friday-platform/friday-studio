@@ -8,8 +8,10 @@
  * Path under daemon mount: GET /api/workspaces/:workspaceId/chat/:chatId/_debug
  */
 
+import { ChatStorage } from "@atlas/core/chat/storage";
 import { Hono } from "hono";
 import type { AppVariables } from "../../src/factory.ts";
+import { requireWorkspaceMember } from "../../src/workspace-authz.ts";
 
 type StreamDebug = {
   name: string;
@@ -71,6 +73,18 @@ const workspaceChatDebugRoutes: Hono<AppVariables> = new Hono<AppVariables>().ge
     if (!chatId || !workspaceId) {
       return c.json({ error: "Missing workspaceId or chatId" }, 400);
     }
+    await requireWorkspaceMember(c, workspaceId);
+    // Confirm the chat actually exists in this workspace before
+    // returning any debug payload. The active streamRegistry is
+    // workspace-keyed too, so a foreign chat id would naturally miss,
+    // but this gate keeps the 404-vs-200 existence signal off the wire.
+    // Use the `(chatId, workspaceId)` form — passing no workspaceId
+    // would resolve to the legacy `_global` namespace and 404 every
+    // legitimate workspace chat.
+    const chatCheck = await ChatStorage.getChat(chatId, workspaceId);
+    if (!chatCheck.ok || !chatCheck.data) {
+      return c.json({ error: "Chat not found" }, 404);
+    }
     const ctx = c.get("app");
 
     const sanitize = (s: string) => s.replace(/[^A-Za-z0-9_-]/g, "_");
@@ -117,7 +131,7 @@ const workspaceChatDebugRoutes: Hono<AppVariables> = new Hono<AppVariables>().ge
 
     let activeStream: ActiveStreamDebug = { exists: false };
     try {
-      const buffer = ctx.streamRegistry.getStream(chatId);
+      const buffer = ctx.streamRegistry.getStream(workspaceId, chatId);
       if (buffer) {
         activeStream = {
           exists: true,

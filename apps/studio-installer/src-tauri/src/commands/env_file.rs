@@ -204,7 +204,7 @@ fn apply_platform_vars(
     // daemon + tunnel — auto-derive isn't possible because the URLs
     // may also include user-controlled hostnames or schemes.
     let platform_vars: Vec<(&str, String)> = vec![
-        ("FRIDAY_LOCAL_ONLY", "true".to_string()),
+        ("FRIDAY_ENV", "dev".to_string()),
         ("LINK_DEV_MODE", "true".to_string()),
         ("FRIDAY_PORT_FRIDAY", "18080".to_string()),
         ("FRIDAY_PORT_LINK", "13100".to_string()),
@@ -340,7 +340,7 @@ pub fn write_env_file(
     // fs::write returned Ok but the file didn't actually land
     // (filesystem quirk, snapshotting, race with another writer).
     let written = fs::read_to_string(&path).map_err(|e| format!("verify .env after write: {e}"))?;
-    if !written.contains("FRIDAY_LOCAL_ONLY") {
+    if !written.contains("FRIDAY_ENV") {
         return Err(format!(
             ".env at {} did not contain expected platform vars after write",
             path.display()

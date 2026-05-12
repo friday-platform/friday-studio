@@ -47,8 +47,8 @@ export async function fetchUserIdentitySection(
       const apiMe = await parseResult(client.me.index.$get());
       if (apiMe.ok && apiMe.data.user) {
         const u = apiMe.data.user;
-        apiMeName = u.display_name ?? u.full_name;
-        apiMeEmail = u.email;
+        apiMeName = u.display_name ?? u.full_name ?? undefined;
+        apiMeEmail = u.email ?? undefined;
         name = name ?? apiMeName;
         email = email ?? apiMeEmail;
       } else if (!apiMe.ok) {
@@ -76,9 +76,12 @@ export async function fetchUserIdentitySection(
   if (shouldSync) {
     void (async () => {
       try {
+        // `/api/me` now returns `null` for unset name/email — coerce to
+        // `undefined` so the patch's `Partial<UserIdentity>` shape stays
+        // valid (UserIdentity's optional fields don't accept `null`).
         const set = await UserStorage.setUserIdentity(userId, {
-          name: apiMeName,
-          email: apiMeEmail,
+          name: apiMeName ?? undefined,
+          email: apiMeEmail ?? undefined,
           nameStatus: "provided",
         });
         if (!set.ok) {

@@ -4,10 +4,10 @@
 
   Two-column: filtered list on the left, detail panel on the right.
 
-  Workspace pages receive full-envelope live updates via
-  `/api/elicitations/stream?workspaceId=...`. The global page is refreshed by
-  the sanitized app-root stream at `/api/elicitations/stream/global`, avoiding
-  both full-envelope global leakage and per-workspace EventSource fanout.
+  Live updates ride the per-user firehose via the SharedWorker client —
+  one EventSource per browser, fanned out by channel. The daemon does
+  workspace-scope authz before publishing, so workspace and global views
+  consume the same full-envelope frames.
 
   @component
 -->
@@ -15,7 +15,6 @@
 <script lang="ts">
   import {
     ElicitationKindSchema,
-    ElicitationSchema,
     ElicitationStatusSchema,
     type Elicitation,
     type ElicitationKind,
@@ -25,12 +24,17 @@
   import { createQuery, useQueryClient } from "@tanstack/svelte-query";
   import { browser } from "$app/environment";
   import { page } from "$app/state";
-  import { countPendingElicitations, effectiveElicitationStatus } from "$lib/elicitation-counts.ts";
+  import {
+    countPendingElicitations,
+    effectiveElicitationStatus,
+    nextElicitationTickMs,
+  } from "$lib/elicitation-counts.ts";
   import { workspaceQueries } from "$lib/queries";
   import {
     elicitationQueries,
     mergeElicitationIntoCache,
   } from "$lib/queries/elicitation-queries.ts";
+  import { subscribeToWorkspaceElicitations } from "$lib/shared-worker/client.ts";
   import ElicitationDetail from "./elicitation-detail.svelte";
   import ElicitationRow from "./elicitation-row.svelte";
 
@@ -62,13 +66,26 @@
   // ---------------------------------------------------------------------------
   // Live tick — drives the countdown + lazy-expired status
   // ---------------------------------------------------------------------------
+  // The Activity surface was previously polling `Date.now()` once a second
+  // forever, regardless of whether any elicitation was actually counting
+  // down or near expiry. Replace that with a one-shot `setTimeout` aimed
+  // at the next interesting moment: either a pending entry's `expiresAt`
+  // (for the lazy `pending → expired` flip the server's 60s sweeper
+  // hasn't gotten to yet) or the next second-boundary while any pending
+  // entry is in the last-minute "in Xs" countdown window. When the timer
+  // fires the effect re-runs and arms the next one; when nothing is
+  // pending the effect quiesces. SSE-driven cache merges already deliver
+  // status transitions to subscribers.
   let nowMs = $state<number>(Date.now());
   $effect(() => {
     if (!browser) return;
-    const t = setInterval(() => {
+    const next = nextElicitationTickMs(elicitations, nowMs, true);
+    if (next === null) return;
+    const delay = Math.max(0, next - Date.now());
+    const id = setTimeout(() => {
       nowMs = Date.now();
-    }, 1_000);
-    return () => clearInterval(t);
+    }, delay);
+    return () => clearTimeout(id);
   });
 
   // ---------------------------------------------------------------------------
@@ -80,26 +97,20 @@
 
     if (!workspaceId) return;
 
-    const url = new URL("/api/daemon/api/elicitations/stream", globalThis.location.origin);
-    url.searchParams.set("workspaceId", workspaceId);
-
-    const es = new EventSource(url.toString());
-    es.addEventListener("error", () => {
-      // EventSource auto-reconnects; surfacing for devtools when the
-      // daemon's NATS isn't ready (503) or the tab gets a transient drop.
-      console.error("Elicitations SSE feed errored (EventSource will retry)");
-    });
-    es.addEventListener("message", (e) => {
-      let parsed: Elicitation;
+    const controller = new AbortController();
+    void (async () => {
       try {
-        parsed = ElicitationSchema.parse(JSON.parse(e.data));
-      } catch (err) {
-        console.error("Failed to parse elicitation SSE event", err);
-        return;
+        for await (const elicitation of subscribeToWorkspaceElicitations(workspaceId, {
+          signal: controller.signal,
+        })) {
+          mergeElicitationIntoCache(queryClient, elicitation);
+        }
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        console.error("Workspace elicitations stream errored", error);
       }
-      mergeElicitationIntoCache(queryClient, parsed);
-    });
-    return () => es.close();
+    })();
+    return () => controller.abort();
   });
 
   // ---------------------------------------------------------------------------

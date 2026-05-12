@@ -17,57 +17,18 @@
 <script lang="ts">
   import { toast } from "@atlas/ui";
   import { browser } from "$app/environment";
-  import { z } from "zod";
+  import {
+    subscribeToCascadeEvents,
+    type InstanceCascadeEvent,
+  } from "$lib/shared-worker/client.ts";
 
-  // The four shapes match `apps/atlasd/src/instance-events.ts`. We
-  // parse defensively because the stream is open for future
-  // `instance.daemon.*` / `instance.health.*` event types we don't
-  // care about here — unknown events fall through.
-  const SaturatedSchema = z.object({
-    type: z.literal("cascade.queue_saturated"),
-    at: z.string(),
-    inFlight: z.number(),
-    cap: z.number(),
-    backlog: z.number(),
-    deepestSignal: z.string().optional(),
-  });
-  const DrainedSchema = z.object({
-    type: z.literal("cascade.queue_drained"),
-    at: z.string(),
-    inFlight: z.number(),
-    cap: z.number(),
-  });
-  const TimeoutSchema = z.object({
-    type: z.literal("cascade.queue_timeout"),
-    at: z.string(),
-    workspaceId: z.string(),
-    signalId: z.string(),
-    queuedMs: z.number(),
-    correlationId: z.string().optional(),
-  });
-  const ReplacedSchema = z.object({
-    type: z.literal("cascade.replaced"),
-    at: z.string(),
-    workspaceId: z.string(),
-    signalId: z.string(),
-    cancelledSessionId: z.string(),
-    newSessionId: z.string(),
-  });
-  const InstanceEventSchema = z.union([
-    SaturatedSchema,
-    DrainedSchema,
-    TimeoutSchema,
-    ReplacedSchema,
-  ]);
-  const ReplayResponseSchema = z.object({ events: z.array(InstanceEventSchema) });
-  type SaturatedEvent = z.infer<typeof SaturatedSchema>;
-  type InstanceEvent = z.infer<typeof InstanceEventSchema>;
+  type SaturatedEvent = Extract<InstanceCascadeEvent, { type: "cascade.queue_saturated" }>;
 
   // The most recent saturated event when there's no matching drained
   // after it. Reset to null when a drained event arrives.
   let saturatedState = $state<SaturatedEvent | null>(null);
 
-  function applyEvent(event: InstanceEvent): void {
+  function applyEvent(event: InstanceCascadeEvent): void {
     switch (event.type) {
       case "cascade.queue_saturated":
         saturatedState = event;
@@ -100,63 +61,24 @@
   $effect(() => {
     if (!browser) return;
 
-    let cancelled = false;
-    let es: EventSource | null = null;
-
-    // Hydrate FIRST, then open the SSE stream. Awaiting the replay
-    // resolves the ordering race where a `cascade.queue_drained`
-    // arrives over SSE before the hydrate's older snapshot lands —
-    // the snapshot would otherwise clobber the fresher SSE state and
-    // re-render a banner that should be cleared. The blind window
-    // equals hydrate latency (single round-trip to the local daemon),
-    // which is acceptable for cascade events.
+    // The wrapper handles replay-then-subscribe internally: it yields
+    // the recent past first (so a banner state existing before the
+    // page loaded is restored on mount), then live transitions. The
+    // SharedWorker keeps one upstream /api/me/stream per browser
+    // shared across every tab.
+    const controller = new AbortController();
     void (async () => {
       try {
-        const res = await fetch("/api/daemon/api/instance/events?type=cascade.&limit=50");
-        if (cancelled) return;
-        if (res.ok) {
-          const json = await res.json();
-          if (cancelled) return;
-          const parsed = ReplayResponseSchema.safeParse(json);
-          if (parsed.success) {
-            for (const ev of parsed.data.events) {
-              if (ev.type === "cascade.queue_saturated") {
-                saturatedState = ev;
-                break;
-              }
-              if (ev.type === "cascade.queue_drained") {
-                saturatedState = null;
-                break;
-              }
-            }
-          }
+        for await (const event of subscribeToCascadeEvents({ signal: controller.signal })) {
+          applyEvent(event);
         }
-      } catch (err) {
-        console.error("Failed to hydrate cascade state", err);
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        console.error("Cascade events stream errored", error);
       }
-
-      if (cancelled) return;
-      es = new EventSource("/api/daemon/api/instance/events?stream=true");
-      es.addEventListener("message", (e) => {
-        try {
-          const parsed = InstanceEventSchema.safeParse(JSON.parse(e.data));
-          if (parsed.success) applyEvent(parsed.data);
-        } catch (err) {
-          console.error("Failed to parse instance SSE event", err);
-        }
-      });
-      // EventSource auto-reconnects on transient errors; surfacing
-      // them gives a developer running the playground a console
-      // signal that the live feed has stopped delivering.
-      es.addEventListener("error", () => {
-        console.error("Cascade SSE feed errored (EventSource will retry)");
-      });
     })();
 
-    return () => {
-      cancelled = true;
-      es?.close();
-    };
+    return () => controller.abort();
   });
 </script>
 

@@ -127,6 +127,10 @@ export class AtlasWebAdapter implements Adapter<string, WebChatPayload> {
   private chat: ChatInstance | null = null;
   private readonly streamRegistry: StreamRegistry;
   private readonly chatTurnRegistry: ChatTurnRegistry | undefined;
+  /** Stored so every registry call can scope its key to `(workspaceId,
+   *  chatId)` — the route layer no longer threads workspaceId through
+   *  the `Request` and chat ids alone aren't tenant-unique. */
+  private readonly workspaceId: string;
 
   constructor(opts: {
     streamRegistry: StreamRegistry;
@@ -136,6 +140,7 @@ export class AtlasWebAdapter implements Adapter<string, WebChatPayload> {
   }) {
     this.streamRegistry = opts.streamRegistry;
     this.chatTurnRegistry = opts.chatTurnRegistry;
+    this.workspaceId = opts.workspaceId;
     this.userName = opts.userName ?? "Friday";
   }
 
@@ -239,15 +244,15 @@ export class AtlasWebAdapter implements Adapter<string, WebChatPayload> {
     // Create the buffer BEFORE dispatching so we don't lose early events.
     // Capture the buffer reference so the delayed finishStream only closes
     // THIS turn's buffer, even if a follow-up POST has already replaced it.
-    const turnBuffer = this.streamRegistry.createStream(chatId);
+    const turnBuffer = this.streamRegistry.createStream(this.workspaceId, chatId);
 
-    // The route handler called `chatTurnRegistry.replace(chatId)` before
-    // forwarding here — read the controller it registered. Falls back to
-    // undefined when the registry isn't wired (test scaffolding); the
+    // The route handler called `chatTurnRegistry.replace(workspaceId, chatId)`
+    // before forwarding here — read the controller it registered. Falls back
+    // to undefined when the registry isn't wired (test scaffolding); the
     // handler chain treats abortSignal as optional throughout. Capture the
     // controller reference so the post-turn cleanup below only releases
     // entries this turn owns (a follow-up POST would have replaced it).
-    const turnController = this.chatTurnRegistry?.get(chatId);
+    const turnController = this.chatTurnRegistry?.get(this.workspaceId, chatId);
     const abortSignal = turnController?.signal;
 
     const payload: WebChatPayload = {
@@ -278,10 +283,10 @@ export class AtlasWebAdapter implements Adapter<string, WebChatPayload> {
         // queued follow-up messages with only the session-start chunk.
         task.finally(() => {
           setTimeout(() => {
-            this.streamRegistry.finishStreamIfCurrent(chatId, turnBuffer);
+            this.streamRegistry.finishStreamIfCurrent(this.workspaceId, chatId, turnBuffer);
           }, 500);
           if (turnController) {
-            this.chatTurnRegistry?.release(chatId, turnController);
+            this.chatTurnRegistry?.release(this.workspaceId, chatId, turnController);
           }
         });
       },
@@ -292,12 +297,13 @@ export class AtlasWebAdapter implements Adapter<string, WebChatPayload> {
 
   private createSSEResponse(chatId: string): Response {
     const registry = this.streamRegistry;
+    const workspaceId = this.workspaceId;
     let sseController: ReadableStreamDefaultController<Uint8Array>;
 
     const readableStream = new ReadableStream<Uint8Array>({
       start: (controller) => {
         sseController = controller;
-        const subscribed = registry.subscribe(chatId, controller);
+        const subscribed = registry.subscribe(workspaceId, chatId, controller);
         if (!subscribed) {
           try {
             controller.close();
@@ -307,8 +313,8 @@ export class AtlasWebAdapter implements Adapter<string, WebChatPayload> {
         }
       },
       cancel: () => {
-        registry.unsubscribe(chatId, sseController);
-        logger.debug("SSE client disconnected", { chatId });
+        registry.unsubscribe(workspaceId, chatId, sseController);
+        logger.debug("SSE client disconnected", { workspaceId, chatId });
       },
     });
 

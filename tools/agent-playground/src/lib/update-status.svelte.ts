@@ -50,9 +50,15 @@ let status: UpdateStatus = $state(emptyStatus());
 let dismiss: Dismiss | null = $state(null);
 let dismissLoadAttempted = false;
 // deno-lint-ignore prefer-const
-let now: number = $state(Date.now());
-// deno-lint-ignore prefer-const
 let checking: boolean = $state(false);
+// `checkWindowEndsAt` doubles as the reactive flag for both
+// `checkInFlight` and `justChecked`: the `checkNow()` setTimeout flips
+// it back to `null` at the 10s window edge, so consumers can read
+// presence (`!== null`) directly. That made the 1Hz `setInterval` (which
+// previously drove a `now` $state used to compare against this deadline)
+// redundant; removing it eliminates the per-second reactive cascade
+// through every component reading the banner / checking / just-checked
+// flags — visible during streaming as a recurring main-thread tick.
 // deno-lint-ignore prefer-const
 let checkWindowEndsAt: number | null = $state(null);
 // deno-lint-ignore prefer-const
@@ -60,7 +66,6 @@ let lastCheckedJustNow: boolean = $state(false);
 /* eslint-enable prefer-const */
 
 let loaded = false;
-let nowTimer: ReturnType<typeof setInterval> | null = null;
 
 /**
  * Pure predicate for "is the banner currently dismissed?". Exposed for tests
@@ -116,14 +121,6 @@ function ensureDismissLoaded(): void {
   dismiss = loadDismiss();
 }
 
-function ensureClock(): void {
-  if (nowTimer !== null) return;
-  if (typeof globalThis === "undefined") return;
-  nowTimer = setInterval(() => {
-    now = Date.now();
-  }, 1_000);
-}
-
 /** Reactive snapshot of the current update status. */
 export const updateStatus: UpdateStatus = status;
 
@@ -131,31 +128,38 @@ export const updateStatus: UpdateStatus = status;
  * Reactive boolean: true iff the user dismissed the banner for the current
  * `latest` version and the 24h window hasn't elapsed. A newer `latest`
  * silently invalidates an older dismissal.
+ *
+ * The 24h window is intentionally read against `Date.now()` at call time
+ * rather than a reactive clock. Within a single session the user won't
+ * sit through the entire dismiss window; a fresh `latest` from
+ * `refreshFromServer` already invalidates the dismissal reactively, and
+ * on next page load the check runs again. Trading a 1Hz reactive tick
+ * against the rare "banner reappears N minutes late" case is the right
+ * deal — the tick paid for itself across every reactive subscriber.
  */
 export const bannerDismissed = {
   get value(): boolean {
     ensureDismissLoaded();
-    return isDismissed(dismiss, status.latest, now);
+    return isDismissed(dismiss, status.latest, Date.now());
   },
 };
 
 /** Reactive boolean: the manual "Check for updates" button is in its 10s window. */
 export const checkInFlight = {
   get value(): boolean {
-    return checking || (checkWindowEndsAt !== null && now < checkWindowEndsAt);
+    return checking || checkWindowEndsAt !== null;
   },
 };
 
 /** Reactive boolean: between response landing and window expiry. */
 export const justChecked = {
   get value(): boolean {
-    return lastCheckedJustNow && checkWindowEndsAt !== null && now < checkWindowEndsAt;
+    return lastCheckedJustNow && checkWindowEndsAt !== null;
   },
 };
 
 /** Mount-time loader. Idempotent. */
 export async function loadUpdateStatus(): Promise<void> {
-  ensureClock();
   if (loaded) return;
   loaded = true;
   await refreshFromServer();
@@ -205,7 +209,6 @@ export function dismissBanner(): void {
  */
 export async function checkNow(): Promise<void> {
   if (checkInFlight.value) return;
-  ensureClock();
   const startedAt = Date.now();
   checking = true;
   lastCheckedJustNow = false;

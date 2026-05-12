@@ -38,12 +38,29 @@
     findMatchingHumanInputElicitation(call, elicitations, routeWorkspaceId),
   );
 
+  // `nowMs` only exists so `effectiveStatus` can flip `pending → expired`
+  // the moment the matched elicitation's deadline passes — there's no
+  // countdown label on this card. A 1Hz `setInterval` writing
+  // `nowMs = Date.now()` ran continuously regardless of whether any
+  // elicitation was actually approaching its deadline, and the reactive
+  // write cascaded through every chat-message render. Replace with a
+  // one-shot `setTimeout` armed exactly at `matched.expiresAt`: zero
+  // ticks while pending entries are far from expiry, one wakeup at the
+  // boundary, then quiescence after the flip.
   let nowMs = $state(Date.now());
   $effect(() => {
-    const timer = setInterval(() => {
+    if (!matched || matched.status !== "pending") return;
+    const expiresAt = new Date(matched.expiresAt).getTime();
+    if (!Number.isFinite(expiresAt)) return;
+    const delay = expiresAt - Date.now();
+    if (delay <= 0) {
       nowMs = Date.now();
-    }, 1_000);
-    return () => clearInterval(timer);
+      return;
+    }
+    const id = setTimeout(() => {
+      nowMs = Date.now();
+    }, delay);
+    return () => clearTimeout(id);
   });
 
   const effectiveStatus = $derived<ElicitationStatus | null>(

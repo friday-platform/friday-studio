@@ -14,6 +14,7 @@
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { daemonFactory } from "../src/factory.ts";
+import { getAccessibleWorkspaceIds, requireWorkspaceMember } from "../src/workspace-authz.ts";
 import {
   listAllWorkspaceEvents,
   listWorkspaceEvents,
@@ -24,16 +25,6 @@ import {
 
 const ParamSchema = z.object({ workspaceId: z.string() });
 const QuerySchema = z.object({ limit: z.coerce.number().int().positive().max(500).optional() });
-
-/**
- * Adds `stream=true` for the SSE feed branch on top of the replay-only
- * QuerySchema. Mirrors `apps/atlasd/routes/instance-events.ts` so the two
- * event surfaces (instance-wide cascade events; workspace operational
- * events) consume the same shape.
- */
-const ListQuerySchema = QuerySchema.extend({ stream: z.coerce.boolean().optional() });
-
-const enc = new TextEncoder();
 
 /**
  * Body for `POST /api/events/fire` and `/dismiss`. The composite
@@ -74,6 +65,7 @@ export const workspaceEventsRoutes = daemonFactory
     zValidator("query", QuerySchema),
     async (c) => {
       const { workspaceId } = c.req.valid("param");
+      await requireWorkspaceMember(c, workspaceId);
       const { limit } = c.req.valid("query");
       const ctx = c.get("app");
       const nc = ctx.daemon.getNatsConnection();
@@ -90,108 +82,31 @@ export const workspaceEventsRoutes = daemonFactory
  * the top-level `/schedules` page; per-workspace pages use the
  * `/api/workspaces/:workspaceId/events` variant above.
  *
- * Two read modes on the same path:
- *   - `?stream=true` — SSE feed; subscribes to `events.>` and forwards
- *                      each entry as a `data:` frame. The /schedules
- *                      UI listens here for live updates so it doesn't
- *                      poll the replay endpoint every minute.
- *   - default        — paginated replay (newest first) for first-load
- *                      hydration and reload-after-disconnect. Resolves
- *                      manual-event KV state and runs the pending
- *                      self-heal — the SSE feed only forwards new
- *                      publishes and skips that work.
+ * Replay-only: paginated newest-first for first-load hydration and
+ * reload-after-disconnect, with manual-event KV state joined in and the
+ * pending self-heal run inline. Live updates flow through the per-user
+ * firehose at `/api/me/stream`; operator-action POSTs (`/fire`,
+ * `/dismiss`, `/group`) invalidate the query and refetch on every flip.
  */
 export const eventsRoutes = daemonFactory
   .createApp()
-  .get("/", zValidator("query", ListQuerySchema), async (c) => {
-    const { limit, stream } = c.req.valid("query");
+  .get("/", zValidator("query", QuerySchema), async (c) => {
+    const userId = c.get("userId");
+    if (!userId) return c.json({ error: "Unauthorized" }, 401);
+
+    const { limit } = c.req.valid("query");
     const ctx = c.get("app");
     const nc = ctx.daemon.getNatsConnection();
     if (!nc) return c.json({ error: "NATS connection not ready" }, 503);
 
-    if (!stream) {
-      const events = await listAllWorkspaceEvents(nc, {
-        ...(limit !== undefined ? { limit } : {}),
-      });
-      return c.json({ events }, 200);
-    }
-
-    // SSE branch — subscribe to the raw NATS subject and forward each
-    // event JSON as a `data:` frame. Operator-action lifecycle (the
-    // KV-backed `status` / `pending` / `actionedAt` fields resolved by
-    // the replay path) is intentionally NOT joined here: stream
-    // entries are immutable, so the UI hydrates lifecycle from the
-    // replay endpoint at first load and treats the SSE feed as a feed
-    // of new publishes only. After a fire/dismiss, the UI updates
-    // optimistically — the KV write is the source of truth, the
-    // stream just carries the original event.
-    // Core NATS subscription, not a JetStream consumer — the daemon
-    // re-subscribes automatically on reconnect, but messages published
-    // while the daemon's NATS connection was disconnected are LOST.
-    // Acceptable here because the playground is a dev tool and the
-    // replay endpoint covers reload-after-disconnect; the operator-
-    // action POSTs invalidate the query and refetch on every flip.
-    // For a production-grade ops UI an ordered ephemeral push consumer
-    // (DeliverPolicy=New) would survive disconnects with replay, at
-    // the cost of one consumer per HTTP client.
-    const sub = nc.subscribe(`events.>`);
-    // The `subscribe()` call returns before the broker actually
-    // registers the subscription. Without this flush, an event
-    // published in the window between subscribe-returns and
-    // broker-registers would be silently dropped. Once the flush
-    // resolves the subscription is live server-side and the SSE
-    // handshake honestly means "from now on, you get every event."
-    await nc.flush();
-
-    const body = new ReadableStream<Uint8Array>({
-      start(controller) {
-        c.req.raw.signal.addEventListener("abort", () => {
-          try {
-            sub.unsubscribe();
-          } catch {
-            // already gone
-          }
-          try {
-            controller.close();
-          } catch {
-            // already closed
-          }
-        });
-
-        void (async () => {
-          try {
-            for await (const msg of sub) {
-              const payload = msg.string();
-              controller.enqueue(enc.encode(`data: ${payload}\n\n`));
-            }
-          } catch {
-            // for-await exited early — most often because the SSE
-            // controller threw in `enqueue` after the consumer cancelled
-            // (e.g. browser closed the EventSource). The abort listener
-            // normally tears down the NATS subscription on its own, but
-            // controller-cancel can land first; defense-in-depth in the
-            // finally below ensures we never leak the subscription.
-          } finally {
-            try {
-              sub.unsubscribe();
-            } catch {
-              // already gone — abort listener fired first
-            }
-            try {
-              controller.close();
-            } catch {
-              // already closed
-            }
-          }
-        })();
-      },
-    });
-
-    return c.body(body, 200, {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      Connection: "keep-alive",
-    });
+    // Filter the global events list to workspaces the caller is a
+    // member of. `listAllWorkspaceEvents` enumerates every workspace
+    // in the bucket; without the filter the response leaks
+    // `schedule.missed` event metadata across tenants.
+    const accessible = await getAccessibleWorkspaceIds(userId);
+    const all = await listAllWorkspaceEvents(nc, { ...(limit !== undefined ? { limit } : {}) });
+    const events = all.filter((e) => accessible.has(e.workspaceId));
+    return c.json({ events }, 200);
   })
   /**
    * Fire a pending manual `schedule.missed` event. Triggers the
@@ -201,6 +116,7 @@ export const eventsRoutes = daemonFactory
    */
   .post("/fire", zValidator("json", ManualActionBodySchema), async (c) => {
     const { workspaceId, signalId, scheduledAt } = c.req.valid("json");
+    await requireWorkspaceMember(c, workspaceId);
     const ctx = c.get("app");
     const nc = ctx.daemon.getNatsConnection();
     if (!nc) return c.json({ error: "NATS connection not ready" }, 503);
@@ -232,6 +148,7 @@ export const eventsRoutes = daemonFactory
    */
   .post("/dismiss", zValidator("json", ManualActionBodySchema), async (c) => {
     const { workspaceId, signalId, scheduledAt } = c.req.valid("json");
+    await requireWorkspaceMember(c, workspaceId);
     const ctx = c.get("app");
     const nc = ctx.daemon.getNatsConnection();
     if (!nc) return c.json({ error: "NATS connection not ready" }, 503);
@@ -249,6 +166,7 @@ export const eventsRoutes = daemonFactory
    */
   .post("/group", zValidator("json", GroupActionBodySchema), async (c) => {
     const { workspaceId, signalId, action } = c.req.valid("json");
+    await requireWorkspaceMember(c, workspaceId);
     const ctx = c.get("app");
     const nc = ctx.daemon.getNatsConnection();
     if (!nc) return c.json({ error: "NATS connection not ready" }, 503);

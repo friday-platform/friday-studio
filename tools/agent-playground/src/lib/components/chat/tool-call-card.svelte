@@ -411,8 +411,13 @@
   <!-- Always render ArtifactCard for display_artifact tool calls — including
        during input-streaming when artifactId isn't parseable yet. The card
        sits in its loading state until artifactId lands, then fetches. This
-       avoids a flash where the call would briefly render as a generic tool
-       card before swapping to the artifact card. -->
+       avoids a flash where the card would briefly render as a generic tool
+       card before swapping to the artifact card.
+
+       Mounted eagerly (no LazyMount): display_artifact is the explicit
+       user-facing surface, and intersection-observer can't recover a
+       card that scrolled above the user before the page loaded (the
+       observer only fires on enter, never on initial off-screen state). -->
   <ArtifactCard artifactId={artifactDisplay?.artifactId ?? ""} />
 {:else if call.children && call.children.length > 0}
   <DelegateToolCard {call} {onCredentialConnected} {depth} />

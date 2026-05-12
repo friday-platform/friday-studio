@@ -19,6 +19,7 @@ import { stringifyError } from "@atlas/utils";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { daemonFactory } from "../src/factory.ts";
+import { requireWorkspaceMember } from "../src/workspace-authz.ts";
 import { createArtifactFromFile, replaceArtifactFromFile, streamToFile } from "./artifacts.ts";
 
 const logger = createLogger({ name: "chunked-upload" });
@@ -184,6 +185,9 @@ export const chunkedUploadApp = daemonFactory
     }
     if (workspaceId && isInvalidChatId(workspaceId)) {
       return c.json({ error: "Invalid workspaceId" }, 400);
+    }
+    if (workspaceId) {
+      await requireWorkspaceMember(c, workspaceId);
     }
 
     const uploadId = crypto.randomUUID();

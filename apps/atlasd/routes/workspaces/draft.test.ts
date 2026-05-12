@@ -38,6 +38,27 @@ vi.mock("@atlas/utils/paths.server", async (importOriginal) => ({
   getFridayHome: vi.fn(() => "/tmp"),
 }));
 
+vi.mock("@atlas/core/workspace-members/storage", () => ({
+  WorkspaceMemberStorage: {
+    get: vi
+      .fn()
+      .mockImplementation((userId: string, wsId: string) =>
+        Promise.resolve({
+          ok: true,
+          data: { userId, wsId, role: "owner", addedAt: "2026-05-11T00:00:00.000Z" },
+        }),
+      ),
+    listByUser: vi.fn().mockResolvedValue({ ok: true, data: [] }),
+    listByWorkspace: vi.fn().mockResolvedValue({ ok: true, data: [] }),
+    put: vi.fn().mockResolvedValue({ ok: true, data: null }),
+    putIfAbsent: vi.fn().mockResolvedValue({ ok: true, data: null }),
+    delete: vi.fn().mockResolvedValue({ ok: true, data: undefined }),
+  },
+  ensureWorkspaceMembersKVBucket: vi.fn(),
+  initWorkspaceMemberStorage: vi.fn(),
+  resetWorkspaceMemberStorageForTests: vi.fn(),
+}));
+
 function createMinimalConfig(): WorkspaceConfig {
   return {
     version: "1.0",
@@ -89,6 +110,7 @@ function createApp(opts: { workspaceDir: string; workspaceId: string }) {
   const app = new Hono<AppVariables>();
   app.use("*", async (c, next) => {
     c.set("app", mockContext);
+    c.set("userId", "test-user");
     await next();
   });
   app.route("/workspaces", workspacesRoutes);
@@ -291,6 +313,7 @@ describe("Draft file flow", () => {
     const app = new Hono<AppVariables>();
     app.use("*", async (c, next) => {
       c.set("app", mockContext);
+      c.set("userId", "test-user");
       await next();
     });
     app.route("/workspaces", workspacesRoutes);
@@ -352,6 +375,7 @@ describe("Draft file flow", () => {
     const app = new Hono<AppVariables>();
     app.use("*", async (c, next) => {
       c.set("app", mockContext);
+      c.set("userId", "test-user");
       await next();
     });
     app.route("/workspaces", workspacesRoutes);
@@ -881,6 +905,7 @@ describe("Draft file flow", () => {
     const app = new Hono<AppVariables>();
     app.use("*", async (c, next) => {
       c.set("app", mockContext);
+      c.set("userId", "test-user");
       await next();
     });
     app.route("/workspaces", workspacesRoutes);

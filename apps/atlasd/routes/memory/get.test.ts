@@ -2,8 +2,34 @@ import { NarrativeEntrySchema } from "@atlas/agent-sdk";
 import { startNatsTestServer, type TestNatsServer } from "@atlas/core/test-utils/nats-test-server";
 import { Hono } from "hono";
 import { connect, type NatsConnection } from "nats";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
+
+vi.mock("@atlas/core/workspace-members/storage", () => ({
+  WorkspaceMemberStorage: {
+    get: vi
+      .fn()
+      .mockImplementation((userId: string, wsId: string) =>
+        Promise.resolve({
+          ok: true,
+          data: { userId, wsId, role: "owner", addedAt: "2026-05-11T00:00:00.000Z" },
+        }),
+      ),
+    // listByUser is consumed by `getAccessibleWorkspaceIds` (which gates
+    // GET /). Return the universe of test workspace IDs lazily — they're
+    // generated per-test, so we resolve via a passthrough that approves
+    // every wsId the listing surfaces.
+    listByUser: vi.fn().mockResolvedValue({ ok: true, data: [] }),
+    listByWorkspace: vi.fn().mockResolvedValue({ ok: true, data: [] }),
+    put: vi.fn().mockResolvedValue({ ok: true, data: null }),
+    putIfAbsent: vi.fn().mockResolvedValue({ ok: true, data: null }),
+    delete: vi.fn().mockResolvedValue({ ok: true, data: undefined }),
+  },
+  ensureWorkspaceMembersKVBucket: vi.fn(),
+  initWorkspaceMemberStorage: vi.fn(),
+  resetWorkspaceMemberStorageForTests: vi.fn(),
+}));
+
 import { memoryNarrativeRoutes } from "./index.ts";
 
 const EntryArraySchema = z.array(NarrativeEntrySchema);
@@ -31,7 +57,9 @@ beforeAll(async () => {
     // Hono's typed Variables narrow `c.set` to specific keys; cast to any
     // here because this test uses a vanilla Hono instance without the
     // app's typed factory. The runtime behavior is identical.
-    (c as unknown as { set: (key: string, value: unknown) => void }).set("app", minimalCtx);
+    const set = (c as unknown as { set: (key: string, value: unknown) => void }).set;
+    set.call(c, "app", minimalCtx);
+    set.call(c, "userId", "test-user");
     await next();
   });
   app.route("/", memoryNarrativeRoutes);

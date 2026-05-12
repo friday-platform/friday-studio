@@ -16,6 +16,7 @@ import { createLogger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
 import { z } from "zod";
 import { daemonFactory } from "../../src/factory.ts";
+import { requireWorkspaceMember } from "../../src/workspace-authz.ts";
 
 const log = createLogger({ component: "integrations-preflight" });
 
@@ -220,6 +221,7 @@ const integrationRoutes = daemonFactory.createApp().get("/preflight", async (c) 
   if (!workspaceId) {
     return c.json({ error: "Missing workspaceId" }, 400);
   }
+  await requireWorkspaceMember(c, workspaceId);
   const ctx = c.get("app");
 
   try {

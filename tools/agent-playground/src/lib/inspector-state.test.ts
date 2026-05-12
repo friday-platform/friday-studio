@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("./utils/session-event-stream.ts", () => ({
-  sessionEventStream: vi.fn(),
+vi.mock("./shared-worker/client.ts", () => ({
+  subscribeToSessionEvents: vi.fn(),
 }));
 
 vi.mock("./daemon-client.ts", () => ({

@@ -2,14 +2,13 @@ import { readFile, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import process from "node:process";
 import { client, parseResult } from "@atlas/client/v2";
-import { extractTempestUserId, fetchCredentials, setToEnv } from "@atlas/core/credentials";
+import { fetchCredentials, setToEnv } from "@atlas/core/credentials";
 import { logger } from "@atlas/logger";
 import { exists } from "@atlas/utils/fs.server";
 import { getFridayHome } from "@atlas/utils/paths.server";
 import { makeTempDir } from "@atlas/utils/temp.server";
 import { load, parse } from "@std/dotenv";
 import { fetchCypherToken } from "../../services/cypher-token.ts";
-import { ensureLocalFridayKey } from "../../services/local-friday-key.ts";
 import { displayDaemonStatus } from "../../utils/daemon-status.ts";
 import { errorOutput, infoOutput, successOutput } from "../../utils/output.ts";
 import type { YargsInstance } from "../../utils/yargs.ts";
@@ -79,24 +78,15 @@ function buildDaemonArgs(argv: StartArgs): string[] {
 /**
  * Build OTEL environment variables from FRIDAY_KEY.
  * The Authorization header must be URL-encoded (space becomes %20).
- * Resource attributes are added for telemetry identification.
+ * Host name is included as a standard OTEL semantic-convention
+ * resource attribute.
  */
 function buildOtelEnv(atlasKey: string): Record<string, string> {
-  const tempestUserId = extractTempestUserId(atlasKey);
-
-  // Build resource attributes for telemetry identification
   const resourceAttrs: string[] = [];
-
-  // Add hostname (standard OTEL semantic convention)
   try {
     resourceAttrs.push(`host.name=${Deno.hostname()}`);
   } catch {
     // hostname() may fail in sandboxed environments
-  }
-
-  // Add tempest user ID if available
-  if (tempestUserId) {
-    resourceAttrs.push(`tempest.user_id=${tempestUserId}`);
   }
 
   const env: Record<string, string> = {
@@ -166,12 +156,12 @@ async function peekAtlasKey(): Promise<string | undefined> {
     }
   }
 
-  // Priority 5: Generate an ephemeral self-signed FRIDAY_KEY for this daemon
-  // process. Friday Studio runs single-user-local-first; without a key,
-  // authenticated routes (skill publish, workspace creation) return 401 and
-  // leave the user with no clear path to recovery. Mirrors the Docker
-  // entrypoint's auto-generate behavior so the desktop binary works offline.
-  return ensureLocalFridayKey();
+  // Single-user local-first: no FRIDAY_KEY = no upstream gateway / OTEL
+  // / persona calls. The daemon's session middleware handles request
+  // authn via opaque session cookies, not via FRIDAY_KEY. Outbound-
+  // service routes (link, mcp-registry, report, share) null-check the
+  // env and skip cleanly when it's absent.
+  return undefined;
 }
 
 /**
@@ -477,9 +467,19 @@ export const handler = async (argv: StartArgs): Promise<void> => {
 
     // Check for FRIDAY_KEY and fetch credentials if present
     const atlasKey = process.env.FRIDAY_KEY;
-    const localOnlyMode = isLocalOnlyMode(process.env.FRIDAY_LOCAL_ONLY);
+    const isDev = isDevEnv(process.env.FRIDAY_ENV);
 
-    if (atlasKey && !localOnlyMode) {
+    // The session middleware fail-closes when `FRIDAY_ENV` is unset. The
+    // CLI's local-first UX treats unset as dev (see `isDevEnv` below),
+    // so when we infer dev we mirror that into the env so the daemon —
+    // running either in this same process via `startForeground` or as
+    // an inherited-env child via `startDetached` — sees an explicit
+    // `FRIDAY_ENV=dev` rather than an ambiguous unset.
+    if (isDev && !process.env.FRIDAY_ENV) {
+      process.env.FRIDAY_ENV = "dev";
+    }
+
+    if (atlasKey && !isDev) {
       logger.info("Atlas key detected, fetching credentials...");
 
       try {
@@ -501,14 +501,10 @@ export const handler = async (argv: StartArgs): Promise<void> => {
         );
         process.exit(1);
       }
-    } else if (atlasKey && localOnlyMode) {
-      logger.info("FRIDAY_LOCAL_ONLY mode enabled - skipping Atlas API credential fetch");
-      logger.info("Using only locally configured environment variables");
+    } else if (isDev) {
       logger.info(
-        "Ensure all required API keys (ANTHROPIC_API_KEY, etc.) are set in your environment",
+        "FRIDAY_ENV=dev — using only local environment variables; remote credential fetch skipped",
       );
-    } else if (localOnlyMode) {
-      logger.info("FRIDAY_LOCAL_ONLY mode enabled - using only local environment variables");
     }
 
     // Set atlas config path if provided
@@ -528,12 +524,15 @@ export const handler = async (argv: StartArgs): Promise<void> => {
 };
 
 /**
- * Check if FRIDAY_LOCAL_ONLY mode is enabled
+ * Friday Studio is local-first: `FRIDAY_ENV` defaults to "dev" when
+ * unset, meaning the daemon runs in single-user mode without any
+ * remote credential fetch, persona service, or OTEL export. Setting
+ * `FRIDAY_ENV` to anything else (e.g. "production") opts into the
+ * remote auth + telemetry path.
  */
-function isLocalOnlyMode(value: string | undefined): boolean {
-  if (!value) return false;
-  const normalizedValue = value.toLowerCase().trim();
-  return ["true", "1", "yes", "on"].includes(normalizedValue);
+function isDevEnv(value: string | undefined): boolean {
+  if (!value) return true;
+  return value.toLowerCase().trim() === "dev";
 }
 
 async function startDetached(argv: StartArgs): Promise<void> {

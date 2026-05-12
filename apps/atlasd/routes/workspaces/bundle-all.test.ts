@@ -11,6 +11,47 @@ import { workspacesRoutes } from "./index.ts";
 
 vi.mock("@atlas/storage", () => ({ FilesystemWorkspaceCreationAdapter: vi.fn() }));
 
+// Track the workspaceIds the test user is a member of, mutated by
+// `createAppMulti` from each test's `opts.workspaces`. The GET `/bundle-all`
+// handler now filters by membership; without this the mock'd member
+// list defaults to empty and the export response includes zero bundles.
+const memberWorkspaceIds = vi.hoisted(() => new Set<string>());
+
+vi.mock("@atlas/core/workspace-members/storage", () => ({
+  WorkspaceMemberStorage: {
+    get: vi
+      .fn()
+      .mockImplementation((userId: string, wsId: string) =>
+        Promise.resolve({
+          ok: true,
+          data: memberWorkspaceIds.has(wsId)
+            ? { userId, wsId, role: "owner", addedAt: "2026-05-11T00:00:00.000Z" }
+            : null,
+        }),
+      ),
+    listByUser: vi
+      .fn()
+      .mockImplementation((userId: string) =>
+        Promise.resolve({
+          ok: true,
+          data: Array.from(memberWorkspaceIds, (wsId) => ({
+            userId,
+            wsId,
+            role: "owner" as const,
+            addedAt: "2026-05-11T00:00:00.000Z",
+          })),
+        }),
+      ),
+    listByWorkspace: vi.fn().mockResolvedValue({ ok: true, data: [] }),
+    put: vi.fn().mockResolvedValue({ ok: true, data: null }),
+    putIfAbsent: vi.fn().mockResolvedValue({ ok: true, data: null }),
+    delete: vi.fn().mockResolvedValue({ ok: true, data: undefined }),
+  },
+  ensureWorkspaceMembersKVBucket: vi.fn(),
+  initWorkspaceMemberStorage: vi.fn(),
+  resetWorkspaceMemberStorageForTests: vi.fn(),
+}));
+
 const mockFetchLinkCredential = vi.hoisted(() => vi.fn());
 vi.mock("@atlas/core/mcp-registry/credential-resolver", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@atlas/core/mcp-registry/credential-resolver")>()),
@@ -44,6 +85,14 @@ function createAppMulti(opts: {
   homeDir: string;
   registeredId?: (index: number) => string;
 }): { app: Hono<AppVariables>; registerSpy: ReturnType<typeof vi.fn> } {
+  // Reset + populate the membership mock for this fixture. The
+  // `WorkspaceMemberStorage` mock above reads from `memberWorkspaceIds`
+  // for both `listByUser` (drives `getAccessibleWorkspaceIds`) and
+  // `get` (drives `requireWorkspaceMember`), so the export filter
+  // sees the test user as an owner of every fixture workspace.
+  memberWorkspaceIds.clear();
+  for (const w of opts.workspaces) memberWorkspaceIds.add(w.id);
+
   let callCount = 0;
   // deno-lint-ignore require-await
   const registerSpy = vi.fn().mockImplementation(async (path: string, meta: { name: string }) => {
@@ -110,6 +159,7 @@ function createAppMulti(opts: {
   const app = new Hono<AppVariables>();
   app.use("*", async (c, next) => {
     c.set("app", mockContext);
+    c.set("userId", "test-user");
     await next();
   });
   app.route("/", workspacesRoutes);
