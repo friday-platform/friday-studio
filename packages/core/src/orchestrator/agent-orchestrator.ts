@@ -20,10 +20,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { z } from "zod";
 import type { AgentToolParams } from "../agent-server/types.ts";
 import { createErrorCause, getErrorDisplayMessage } from "../errors.ts";
-import {
-  type CancellationNotification,
-  StreamContentNotificationSchema,
-} from "../streaming/stream-emitters.ts";
+import { StreamContentNotificationSchema } from "../streaming/stream-emitters.ts";
 
 const INACTIVE_SESSION_MAX_AGE_MS = 5 * 60 * 1000;
 
@@ -254,7 +251,6 @@ export class AgentOrchestrator implements IAgentOrchestrator {
     const startTime = Date.now();
     const logger = this.logger.child({ agentId, sessionId: context.sessionId });
 
-    let abortListener: (() => void) | undefined;
     const buildCancelledResult = () =>
       ({
         agentId,
@@ -326,29 +322,6 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         sessionId: context.sessionId,
       });
 
-      const sendCancellationNotification = async () => {
-        const notification: CancellationNotification = {
-          method: "notifications/cancelled",
-          params: { requestId, reason: "Session cancelled by user" },
-        };
-        try {
-          await mcpSetup.client.notification(notification);
-        } catch (error) {
-          logger.warn("Failed to send cancellation notification", { error, requestId });
-        }
-      };
-
-      if (context.abortSignal) {
-        abortListener = () => {
-          void sendCancellationNotification();
-        };
-        if (context.abortSignal.aborted) {
-          await sendCancellationNotification();
-        } else {
-          context.abortSignal.addEventListener("abort", abortListener, { once: true });
-        }
-      }
-
       const toolCallArgs: AgentToolParams = {
         prompt: prompt,
         context: {
@@ -385,7 +358,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
             _meta: { requestId, traceparent: traceHeaders.traceparent },
           },
           undefined,
-          { timeout: 1_200_000 },
+          { signal: context.abortSignal, timeout: 1_200_000 },
         );
       } finally {
         this.activeMCPRequests.delete(`${context.sessionId}:${agentId}`);
@@ -422,10 +395,6 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         durationMs: Date.now() - startTime,
       } satisfies AgentExecutionError<string>;
     } finally {
-      if (abortListener) {
-        context.abortSignal?.removeEventListener("abort", abortListener);
-      }
-
       // Must cleanup here to avoid race with late-arriving notifications after finish
       if (context.onStreamEvent) {
         const handlerKey = this.getStreamHandlerKey(context.sessionId, agentId);

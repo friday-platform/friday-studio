@@ -354,6 +354,48 @@ describe("AgentOrchestrator - MCP transport fatal error handling", () => {
     expect(orchestrator["mcpSessions"].has("mock-session-id")).toBe(false);
   });
 
+  it("forwards abortSignal into client.callTool and does not double-publish cancel frame", async () => {
+    const ac = new AbortController();
+
+    const executionPromise = orchestrator.executeAgent("test-agent", "hello", {
+      sessionId: "session-1",
+      workspaceId: "workspace-1",
+      abortSignal: ac.signal,
+    });
+
+    await vi.waitFor(() => {
+      expect(mockClient.callTool).toHaveBeenCalled();
+    });
+
+    expect(mockClient.callTool).toHaveBeenCalledWith(
+      expect.anything(),
+      undefined,
+      expect.objectContaining({ signal: ac.signal, timeout: 1_200_000 }),
+    );
+
+    // Mirror the real SDK contract: on signal abort the SDK rejects the
+    // pending request with an AbortError-shaped DOMException.
+    ac.signal.addEventListener(
+      "abort",
+      () => {
+        if (callToolReject) {
+          callToolReject(new DOMException("Request cancelled", "AbortError"));
+          callToolReject = undefined;
+        }
+      },
+      { once: true },
+    );
+    ac.abort();
+
+    const result = await executionPromise;
+    expect(result.ok).toBe(false);
+
+    // Regression guard against double-publish: with the manual abort
+    // listener removed, the orchestrator must NOT call client.notification
+    // itself — the SDK handles cancel frame emission internally.
+    expect(mockClient.notification).not.toHaveBeenCalled();
+  });
+
   it("releaseSession removes active stream handlers and request bookkeeping for all aliases", async () => {
     const executionPromise = orchestrator.executeAgent("test-agent", "hello", {
       sessionId: "session-1",
