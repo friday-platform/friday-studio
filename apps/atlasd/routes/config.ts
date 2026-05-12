@@ -122,8 +122,13 @@ const envVarsPutRequestSchema = z.object({
  * `process.env`. Otherwise a Settings save could brick the daemon by
  * changing its own loader paths or FRIDAY_HOME. The next daemon spawn
  * picks up the file value via `--env-file`.
+ *
+ * The `FRIDAY_*` subprocess-spawn vars (uv path, agent SDK version,
+ * agent python, claude path) are read per-spawn by agent-spawn.ts and
+ * the claude-code provider — mutating them on the running daemon would
+ * partition reality between already-spawned and future-spawned agents.
  */
-const HOT_RELOAD_DENYLIST: ReadonlySet<string> = new Set([
+export const HOT_RELOAD_DENYLIST: ReadonlySet<string> = new Set([
   "PATH",
   "HOME",
   "USER",
@@ -135,6 +140,10 @@ const HOT_RELOAD_DENYLIST: ReadonlySet<string> = new Set([
   "DYLD_LIBRARY_PATH",
   "FRIDAY_HOME",
   "FRIDAY_ENV",
+  "FRIDAY_UV_PATH",
+  "FRIDAY_AGENT_SDK_VERSION",
+  "FRIDAY_AGENT_PYTHON",
+  "FRIDAY_CLAUDE_PATH",
 ]);
 
 const envVarsPutResponseSchema = z.object({ success: z.boolean(), error: z.string().optional() });

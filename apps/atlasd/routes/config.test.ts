@@ -33,7 +33,7 @@ vi.mock("@atlas/llm", async (importOriginal) => ({
   invalidateCatalog: mockInvalidateCatalog,
 }));
 
-const { configRoutes } = await import("./config.ts");
+const { configRoutes, HOT_RELOAD_DENYLIST } = await import("./config.ts");
 
 interface PutEnvResponse {
   success: boolean;
@@ -51,14 +51,15 @@ let tempHome: string;
 let originalFridayHome: string | undefined;
 let originalFridayEnv: string | undefined;
 // process.env keys the sync tests mutate — snapshotted so they don't
-// leak across tests.
-const SYNC_TEST_KEYS = [
+// leak across tests. Includes every denylist entry so the parameterized
+// denylist test (which sets each key to a sentinel pre-PUT) can't leak
+// to the real environment.
+const SYNC_TEST_KEYS: readonly string[] = [
   "ANTHROPIC_API_KEY",
   "DEPRECATED_KEY",
   "KEPT_KEY",
-  "PATH",
-  "FRIDAY_HOME",
-] as const;
+  ...HOT_RELOAD_DENYLIST,
+];
 const syncTestSnapshot: Record<string, string | undefined> = {};
 
 beforeEach(async () => {
@@ -262,13 +263,26 @@ describe("PUT /env in-memory sync (hot reload)", () => {
     expect(process.env.KEPT_KEY).toBe("kept");
   });
 
-  test("denylist keys are written to .env but not mutated on process.env", async () => {
-    const originalPath = process.env.PATH;
-    await putEnv({ PATH: "/totally/different/path" });
+  // Every denylist entry: PUT writes the new value to .env, but
+  // `process.env[key]` must retain its pre-PUT value. Parameterized so
+  // any future addition to HOT_RELOAD_DENYLIST gets coverage for free.
+  // FRIDAY_HOME / FRIDAY_ENV are load-bearing for the test harness
+  // itself (route lookup, dev-only gate), so we keep their beforeEach
+  // values rather than overwriting with a fresh sentinel.
+  const KEYS_PRESERVED_FROM_BEFORE_EACH = new Set(["FRIDAY_HOME", "FRIDAY_ENV"]);
+  test.each([
+    ...HOT_RELOAD_DENYLIST,
+  ])("denylist key %s is written to .env but not mutated on process.env", async (key) => {
+    if (!KEYS_PRESERVED_FROM_BEFORE_EACH.has(key)) {
+      process.env[key] = `pre-put-sentinel-${key}`;
+    }
+    const expected = process.env[key];
+
+    await putEnv({ [key]: `/totally/different/${key}` });
 
     const onDisk = await readFile(join(tempHome, ".env"), "utf-8");
-    expect(onDisk).toContain("PATH=/totally/different/path");
-    expect(process.env.PATH).toBe(originalPath);
+    expect(onDisk).toContain(`${key}=/totally/different/${key}`);
+    expect(process.env[key]).toBe(expected);
   });
 
   test("busts both the provider registry and the model catalog cache", async () => {
