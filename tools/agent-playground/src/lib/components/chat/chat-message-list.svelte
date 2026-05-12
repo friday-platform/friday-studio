@@ -144,6 +144,18 @@
      */
     workspaceId?: string;
     chatId?: string;
+    /**
+     * Id of the tail message while the chat is in any non-terminal
+     * status (streaming, submitted, errored mid-turn). `undefined` when
+     * every visible message is settled. Used to gate DOM-mutating
+     * affordances per-message — `copyButtons` skips wrapping a bubble
+     * while its message id matches this value, and MarkdownBody skips
+     * its trailing-throttle flush. Wider than "currently streaming" on
+     * purpose: a stream that drops into "error" can auto-resume back
+     * into "streaming" on the same id, and we want to keep the bubble
+     * gated across that window.
+     */
+    unsettledMessageId?: string | undefined;
   }
 
   const {
@@ -153,6 +165,7 @@
     validationAttemptsBySession,
     workspaceId,
     chatId,
+    unsettledMessageId,
   }: Props = $props();
 
   /**
@@ -375,14 +388,36 @@
   const isExport = getExportContext() !== undefined;
 
   /**
-   * Svelte action: inject a "Copy" button on every <pre> and <table> inside
-   * a `.markdown-body` container. Runs after initial render and re-scans
-   * when the DOM subtree changes (streaming content). No-ops in export
-   * mode so the static HTML is button-free.
+   * Svelte action: inject a "Copy" button on every <pre> and <table>
+   * inside a `.markdown-body` container.
+   *
+   * Wrapping pre/table moves DOM that Svelte owns via `{@html html}`
+   * (MarkdownBody). If we wrap mid-stream, Svelte's stored anchor refs
+   * for `{@html}` become stale and its next clear-then-write silently
+   * fails to update the DOM — bubble appears full to MarkdownBody (html
+   * state holds the rendered markdown) but renders blank in the page.
+   *
+   * Fix: callers pass `enabled=false` while the message is mid-stream
+   * and `enabled=true` once it's settled. The action no-ops while
+   * disabled; on the false→true transition (or `true` at mount for
+   * history) it wraps once. From that point Svelte is done writing
+   * `{@html}` for this message (segments are deterministic from
+   * settled parts), so the wrappers stick.
+   *
+   * Anything that pretends to know "settled" via a timer is unsafe —
+   * LLM streams have natural pauses (between tool result and final
+   * text, while the model thinks) that outlast any reasonable timer,
+   * so we'd wrap during a pause and then get clobbered when the next
+   * chunk arrives.
+   *
+   * No-ops in export mode so the static HTML is button-free.
    */
-  function copyButtons(node: HTMLElement) {
+  function copyButtons(node: HTMLElement, enabled: boolean) {
     if (isExport) return;
+    let injected = false;
     function injectButtons() {
+      if (injected) return;
+      injected = true;
       for (const el of node.querySelectorAll("pre, table")) {
         // Skip if already wrapped (closest handles either flat <pre>
         // wrapping or the nested <table> wrapping introduced below).
@@ -415,29 +450,25 @@
       }
     }
 
-    injectButtons();
-
-    // Streaming markdown re-renders `{@html ...}` on every token, which
-    // fires this observer per delta. The naive callback would re-scan
-    // the whole subtree (`querySelectorAll('pre, table')`) for each
-    // mutation record — quadratic on long answers and the actual
-    // main-thread cost behind the heavy-delegation lockup. Coalesce
-    // pending scans to one per animation frame; the result is the same
-    // (every block eventually gets a button) at O(rendered-blocks/frame).
-    let scanScheduled = false;
-    const observer = new MutationObserver(() => {
-      if (scanScheduled) return;
-      scanScheduled = true;
-      requestAnimationFrame(() => {
-        scanScheduled = false;
-        injectButtons();
-      });
-    });
-    observer.observe(node, { childList: true, subtree: true });
+    if (enabled) {
+      // Wait a microtask so MarkdownBody's initial `{@html}` write has
+      // hit the DOM before we go scanning for `<pre>` / `<table>`.
+      queueMicrotask(injectButtons);
+    }
 
     return {
+      update(nextEnabled: boolean) {
+        // Defer the same microtask on the false→true transition. The
+        // parent flips `unsettledMessageId` and MarkdownBody's settled
+        // prop in the same Svelte flush; MarkdownBody's flush effect
+        // then writes its trailing-throttle `html` synchronously, and
+        // Svelte commits that to the DOM. Running `injectButtons` from
+        // a microtask runs us *after* that DOM commit, so we wrap the
+        // final `{@html}` content rather than a stale snapshot that
+        // would be clobbered ~80ms later.
+        if (nextEnabled) queueMicrotask(injectButtons);
+      },
       destroy() {
-        observer.disconnect();
         // Tear down any Actions menu that was open when the list
         // unmounts (navigate to another chat, close the inspector,
         // HMR refresh). Without this, the document-level pointerdown
@@ -706,8 +737,9 @@
           {#each message.segments as segment}
             {#if segment.type === "text" && segment.content.length > 0}
               {#if message.role === "assistant"}
-                <div class="message-content markdown-body" use:copyButtons>
-                  <MarkdownBody content={segment.content} />
+                {@const settled = message.id !== unsettledMessageId}
+                <div class="message-content markdown-body" use:copyButtons={settled}>
+                  <MarkdownBody content={segment.content} {settled} />
                 </div>
               {:else}
                 <div class="message-content">{segment.content}</div>
@@ -1298,11 +1330,27 @@
 
   .message-content.markdown-body :global(table) {
     border-collapse: collapse;
+    display: block;
     font-size: var(--font-size-1);
     margin-block: 0.5em;
-    /* Horizontal overflow lives on the .copyable-wrapper below.
-       `overflow-x` on a <table> itself is a no-op — tables size to
-       content and aren't scroll containers. */
+    max-inline-size: 100%;
+    overflow-x: auto;
+    /* `display: block` turns the table into its own horizontal
+       scroll container so wide tables stay inside the bubble
+       *during* streaming, before `copyButtons` can wrap the table
+       in `.copyable-scroll` (which only happens once the message
+       has settled — see the action's docstring). The browser
+       generates an anonymous table box around the cells so they
+       still lay out as table-cells.
+       Once wrapped post-stream, the `.copyable-scroll table` rule
+       below reverts to `display: table` so border-collapse and
+       intrinsic cell sizing work normally. */
+  }
+
+  .message-content.markdown-body :global(.copyable-scroll table) {
+    display: table;
+    max-inline-size: none;
+    overflow-x: visible;
   }
 
   .message-content.markdown-body :global(th),
