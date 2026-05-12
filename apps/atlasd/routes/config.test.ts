@@ -37,9 +37,8 @@ interface GetEnvResponse {
 let tempHome: string;
 let originalFridayHome: string | undefined;
 let originalFridayEnv: string | undefined;
-// Keys the in-memory-sync tests touch on `process.env`. Snapshotted in
-// beforeEach so afterEach can restore them — otherwise a sync test
-// that sets ANTHROPIC_API_KEY would leak into the next test.
+// process.env keys the sync tests mutate — snapshotted so they don't
+// leak across tests.
 const SYNC_TEST_KEYS = [
   "ANTHROPIC_API_KEY",
   "DEPRECATED_KEY",
@@ -233,12 +232,6 @@ describe("PUT → GET round-trip", () => {
 });
 
 describe("PUT /env in-memory sync (hot reload)", () => {
-  // The PR that introduced this block claims newly-added API keys are
-  // usable without restarting the daemon. These tests lock down the
-  // three load-bearing mutations: process.env adds, process.env deletes
-  // for keys removed from the payload, and denylist protection for
-  // keys that must never mutate at runtime.
-
   test("adds new keys to process.env so they're usable without restart", async () => {
     delete process.env.ANTHROPIC_API_KEY;
     await putEnv({ ANTHROPIC_API_KEY: "sk-ant-hot-reload" });
@@ -258,12 +251,8 @@ describe("PUT /env in-memory sync (hot reload)", () => {
     const originalPath = process.env.PATH;
     await putEnv({ PATH: "/totally/different/path" });
 
-    // File got the new value (UI round-trips it cleanly).
     const onDisk = await readFile(join(tempHome, ".env"), "utf-8");
     expect(onDisk).toContain("PATH=/totally/different/path");
-
-    // But the running daemon's PATH is untouched — Settings can't brick
-    // the daemon by saving a bad PATH.
     expect(process.env.PATH).toBe(originalPath);
   });
 });

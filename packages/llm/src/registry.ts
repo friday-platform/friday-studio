@@ -133,11 +133,10 @@ function createRegistry() {
 let _registry: ReturnType<typeof createRegistry> | null = null;
 
 /**
- * Reset the lazy registry singleton. The next call into the registry
- * re-runs `createRegistry()`, which re-reads `process.env` and rebuilds
- * each provider client. Used after a runtime env update (PUT
- * /api/config/env) so newly-added API keys are picked up without a
- * daemon restart.
+ * Reset the lazy registry singleton. The next call re-runs
+ * `createRegistry()`, re-reading `process.env` and rebuilding every
+ * provider client — required after a runtime env mutation since each
+ * provider captures its `apiKey` at construction.
  */
 export function resetRegistry(): void {
   _registry = null;

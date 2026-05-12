@@ -242,22 +242,15 @@ function resolveRole(
 /**
  * Construct a `PlatformModels` resolver from optional friday.yml configuration.
  *
- * Validates each role eagerly at construction so bad `friday.yml` fails fast
- * at startup with every error aggregated into a single
- * `PlatformModelsConfigError`. After that pass the constructor returns —
- * `get(role)` then re-runs the resolver on every call so a runtime env
- * mutation (e.g. `PUT /api/config/env` adding a Groq key) is reflected
- * immediately. Eager validation + lazy resolution keeps the boot-time
- * fail-fast contract while letting the registry's hot-reload reach the
- * daemon's actual LLM call sites.
+ * Boot validates every role eagerly and aggregates errors into a single
+ * `PlatformModelsConfigError` so bad config fails fast. `get(role)` then
+ * re-resolves on every call so a runtime `process.env` mutation reaches
+ * the daemon's LLM call sites without a restart.
  */
 export function createPlatformModels(config: PlatformModelsInput | null): PlatformModels {
   const userConfig = config?.models;
   const roles: PlatformRole[] = ["labels", "classifier", "planner", "conversational"];
 
-  // Boot-time validation pass — aggregates every role's errors so the
-  // operator sees them all at once. We discard the resolved instances
-  // because the lazy `get()` below re-resolves on every call.
   const bootErrors: ResolutionError[] = [];
   for (const role of roles) {
     const result = resolveRole(role, userConfig?.[role], bootErrors);
@@ -275,11 +268,6 @@ export function createPlatformModels(config: PlatformModelsInput | null): Platfo
 
   return {
     get(role: PlatformRole): LanguageModelV3 {
-      // Re-resolve on each call so PUT /api/config/env updates (which
-      // mutate process.env + reset the registry) are picked up without
-      // a daemon restart. `resolveRole` is cheap: a credential check,
-      // one `registry.languageModel(…)` call (lazy on cache miss), and
-      // a tracing wrapper.
       const errors: ResolutionError[] = [];
       const result = resolveRole(role, userConfig?.[role], errors);
       if (!result) {

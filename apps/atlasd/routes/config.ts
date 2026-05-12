@@ -118,13 +118,10 @@ const envVarsPutRequestSchema = z.object({
 });
 
 /**
- * Keys we never mutate on the running daemon's `process.env`, even though
- * we still write them to `.env`. The in-memory hot-reload below would
- * otherwise let a Settings save change the daemon's own `PATH` / loader
- * paths / FRIDAY_HOME — bricking the daemon or (once the dev-only gate
- * is lifted) opening a privilege-escalation primitive. Disk and runtime
- * are allowed to diverge on these keys by design; the next daemon spawn
- * picks up the new values via `--env-file`.
+ * Keys still written to `.env` but never mutated on the running daemon's
+ * `process.env`. Otherwise a Settings save could brick the daemon by
+ * changing its own loader paths or FRIDAY_HOME. The next daemon spawn
+ * picks up the file value via `--env-file`.
  */
 const HOT_RELOAD_DENYLIST: ReadonlySet<string> = new Set([
   "PATH",
@@ -233,17 +230,10 @@ configRoutes.put(
         count: Object.keys(envVars).length,
       });
 
-      // Snapshot the prior on-disk state so we can compute the
-      // delete-set (keys removed by this PUT) for the in-memory sync
-      // below. Treat a missing file as an empty map.
-      //
-      // Known limitation: this set only covers keys that were on disk.
-      // Shell-inherited env (e.g. the user `export`s GROQ_API_KEY before
-      // launching the daemon) is never in `priorKeys`, so the delete
-      // loop won't remove it from `process.env` — the daemon keeps the
-      // shell value even after the user "removes" the key from the UI.
-      // Fixing that would require snapshotting `process.env` at startup;
-      // out of scope here.
+      // Prior on-disk keys feed the delete-set for the in-memory sync.
+      // Shell-inherited env (`export FOO=…` before daemon launch) is
+      // never in this set, so the user "removing" such a key in the UI
+      // leaves the shell value sticky in `process.env`.
       let priorKeys: Set<string> = new Set();
       if (await exists(envPath)) {
         try {
@@ -264,18 +254,10 @@ configRoutes.put(
       const content = stringifyEnv(envVars);
       await writeFile(envPath, content, "utf-8");
 
-      // Sync the running daemon's `process.env` with the file we just
-      // wrote so newly-added API keys are usable without a restart.
-      // Deno's `--env-file` reads once at startup; the catalog +
-      // provider registry read `process.env` and memoize the result,
-      // so we also reset both so the next call rebuilds against the
-      // current env. Subprocess agents spawned by the launcher inherit
-      // env at spawn time and are NOT updated by this — that gap
-      // requires a separate launcher-IPC fix.
-      //
-      // Keys in `HOT_RELOAD_DENYLIST` are still written to `.env` but
-      // skipped here, so a Settings save can't mutate the running
-      // daemon's `PATH` / loader paths / FRIDAY_HOME.
+      // Deno's `--env-file` reads once at startup, and the catalog +
+      // provider registry memoize `process.env` reads, so mirror the
+      // file write into the running process and bust both caches.
+      // Subprocess agents already running keep their spawn-time env.
       try {
         for (const k of priorKeys) {
           if (HOT_RELOAD_DENYLIST.has(k)) continue;
@@ -293,9 +275,7 @@ configRoutes.put(
         resetRegistry();
         invalidateCatalog();
       } catch (error) {
-        // The write succeeded; only the in-memory sync failed. Log
-        // and continue — the user falls back to a manual restart,
-        // which is the prior contract.
+        // File write already succeeded; restart fallback still works.
         logger.warn("In-memory env sync failed after .env write", { error: stringifyError(error) });
       }
 
