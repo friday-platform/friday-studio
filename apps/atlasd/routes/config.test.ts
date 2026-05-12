@@ -37,6 +37,17 @@ interface GetEnvResponse {
 let tempHome: string;
 let originalFridayHome: string | undefined;
 let originalFridayEnv: string | undefined;
+// Keys the in-memory-sync tests touch on `process.env`. Snapshotted in
+// beforeEach so afterEach can restore them — otherwise a sync test
+// that sets ANTHROPIC_API_KEY would leak into the next test.
+const SYNC_TEST_KEYS = [
+  "ANTHROPIC_API_KEY",
+  "DEPRECATED_KEY",
+  "KEPT_KEY",
+  "PATH",
+  "FRIDAY_HOME",
+] as const;
+const syncTestSnapshot: Record<string, string | undefined> = {};
 
 beforeEach(async () => {
   tempHome = join(tmpdir(), `atlasd-env-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -48,6 +59,7 @@ beforeEach(async () => {
   // these cases. The dev-only gate itself is covered separately.
   originalFridayEnv = process.env.FRIDAY_ENV;
   process.env.FRIDAY_ENV = "dev";
+  for (const k of SYNC_TEST_KEYS) syncTestSnapshot[k] = process.env[k];
 });
 
 afterEach(async () => {
@@ -60,6 +72,11 @@ afterEach(async () => {
     delete process.env.FRIDAY_ENV;
   } else {
     process.env.FRIDAY_ENV = originalFridayEnv;
+  }
+  for (const k of SYNC_TEST_KEYS) {
+    const orig = syncTestSnapshot[k];
+    if (orig === undefined) delete process.env[k];
+    else process.env[k] = orig;
   }
   await rm(tempHome, { recursive: true, force: true });
 });
@@ -212,6 +229,42 @@ describe("PUT → GET round-trip", () => {
 
     const onDisk = await readFile(envPath, "utf-8");
     expect(onDisk).toBe("ANTHROPIC_API_KEY=sk-ant-legacy");
+  });
+});
+
+describe("PUT /env in-memory sync (hot reload)", () => {
+  // The PR that introduced this block claims newly-added API keys are
+  // usable without restarting the daemon. These tests lock down the
+  // three load-bearing mutations: process.env adds, process.env deletes
+  // for keys removed from the payload, and denylist protection for
+  // keys that must never mutate at runtime.
+
+  test("adds new keys to process.env so they're usable without restart", async () => {
+    delete process.env.ANTHROPIC_API_KEY;
+    await putEnv({ ANTHROPIC_API_KEY: "sk-ant-hot-reload" });
+    expect(process.env.ANTHROPIC_API_KEY).toBe("sk-ant-hot-reload");
+  });
+
+  test("removes keys absent from the new payload from process.env", async () => {
+    await putEnv({ DEPRECATED_KEY: "old-value" });
+    expect(process.env.DEPRECATED_KEY).toBe("old-value");
+
+    await putEnv({ KEPT_KEY: "kept" });
+    expect(process.env.DEPRECATED_KEY).toBeUndefined();
+    expect(process.env.KEPT_KEY).toBe("kept");
+  });
+
+  test("denylist keys are written to .env but not mutated on process.env", async () => {
+    const originalPath = process.env.PATH;
+    await putEnv({ PATH: "/totally/different/path" });
+
+    // File got the new value (UI round-trips it cleanly).
+    const onDisk = await readFile(join(tempHome, ".env"), "utf-8");
+    expect(onDisk).toContain("PATH=/totally/different/path");
+
+    // But the running daemon's PATH is untouched — Settings can't brick
+    // the daemon by saving a bad PATH.
+    expect(process.env.PATH).toBe(originalPath);
   });
 });
 

@@ -172,3 +172,29 @@ describe("createPlatformModels — chain resolution", () => {
     ).toThrow(PlatformModelsConfigError);
   });
 });
+
+describe("createPlatformModels — lazy resolution", () => {
+  // Regression guard for the hot-reload contract: a runtime env mutation
+  // (e.g. PUT /api/config/env) must be reflected the next time `get()`
+  // is called. Eager-resolve would freeze the model instance at boot
+  // and the daemon's classifier/planner would keep using stale creds
+  // even after the catalog UI says "live".
+
+  it("re-resolves get() against the current process.env on each call", () => {
+    stubEnv({ ANTHROPIC_API_KEY: "sk-ant-test", GROQ_API_KEY: "gsk_test" });
+    const pm = createPlatformModels({
+      models: {
+        // Chain: groq primary → anthropic fallback. With both creds set,
+        // primary wins.
+        labels: ["groq:llama-3.3-70b", "anthropic:claude-haiku-4-5"],
+      },
+    });
+    expect(pm.get("labels").modelId).toBe("llama-3.3-70b");
+
+    // Simulate the hot-reload deleting the groq credential. Eager-resolve
+    // would keep returning the cached groq instance; lazy must fail over
+    // to the anthropic fallback.
+    delete process.env.GROQ_API_KEY;
+    expect(pm.get("labels").modelId).toBe("claude-haiku-4-5");
+  });
+});

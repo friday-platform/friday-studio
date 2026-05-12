@@ -241,41 +241,49 @@ function resolveRole(
 
 /**
  * Construct a `PlatformModels` resolver from optional friday.yml configuration.
- * Validates each role eagerly, applies tracing middleware, and throws a
- * single `PlatformModelsConfigError` aggregating every problem found.
+ *
+ * Validates each role eagerly at construction so bad `friday.yml` fails fast
+ * at startup with every error aggregated into a single
+ * `PlatformModelsConfigError`. After that pass the constructor returns —
+ * `get(role)` then re-runs the resolver on every call so a runtime env
+ * mutation (e.g. `PUT /api/config/env` adding a Groq key) is reflected
+ * immediately. Eager validation + lazy resolution keeps the boot-time
+ * fail-fast contract while letting the registry's hot-reload reach the
+ * daemon's actual LLM call sites.
  */
 export function createPlatformModels(config: PlatformModelsInput | null): PlatformModels {
   const userConfig = config?.models;
-  const errors: ResolutionError[] = [];
-  const resolved = new Map<PlatformRole, LanguageModelV3>();
-
   const roles: PlatformRole[] = ["labels", "classifier", "planner", "conversational"];
-  for (const role of roles) {
-    const result = resolveRole(role, userConfig?.[role], errors);
-    if (result) resolved.set(role, result);
-  }
 
-  if (errors.length > 0) {
-    throw new PlatformModelsConfigError(errors);
-  }
-
-  // Log resolved models so operators can verify friday.yml took effect
+  // Boot-time validation pass — aggregates every role's errors so the
+  // operator sees them all at once. We discard the resolved instances
+  // because the lazy `get()` below re-resolves on every call.
+  const bootErrors: ResolutionError[] = [];
   for (const role of roles) {
-    const model = resolved.get(role);
-    if (model) {
+    const result = resolveRole(role, userConfig?.[role], bootErrors);
+    if (result) {
       logger.info("Platform model resolved", {
         role,
-        provider: model.provider,
-        modelId: model.modelId,
+        provider: result.provider,
+        modelId: result.modelId,
       });
     }
+  }
+  if (bootErrors.length > 0) {
+    throw new PlatformModelsConfigError(bootErrors);
   }
 
   return {
     get(role: PlatformRole): LanguageModelV3 {
-      const result = resolved.get(role);
+      // Re-resolve on each call so PUT /api/config/env updates (which
+      // mutate process.env + reset the registry) are picked up without
+      // a daemon restart. `resolveRole` is cheap: a credential check,
+      // one `registry.languageModel(…)` call (lazy on cache miss), and
+      // a tracing wrapper.
+      const errors: ResolutionError[] = [];
+      const result = resolveRole(role, userConfig?.[role], errors);
       if (!result) {
-        throw new Error(`Unreachable: platform model for role '${role}' was not resolved`);
+        throw new PlatformModelsConfigError(errors);
       }
       return result;
     },
