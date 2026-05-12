@@ -58,10 +58,12 @@ import { migration as m_20260511_120000_cleanup_userid_as_name } from "./m_20260
 
 /**
  * Static manifest. Ordered by id ascending — keep new entries in
- * lexicographic position. `runMigrations` re-sorts defensively, so
- * an accidentally out-of-order insert is benign, but a missing entry
- * is silently broken on shipped binaries (the dynamic loader before
- * this change hid the same class of failure for `deno compile`).
+ * lexicographic position. `getAllMigrations()` re-sorts by id before
+ * returning, so an accidentally out-of-order insert here is benign;
+ * `runMigrations` itself iterates the array in input order. A
+ * missing entry, in contrast, is silently broken on shipped binaries
+ * (the dynamic loader before this change hid the same class of
+ * failure for `deno compile`).
  */
 const MIGRATIONS: readonly Migration[] = [
   m_20260501_120000_chat_to_jetstream,

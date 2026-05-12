@@ -49,6 +49,23 @@ function extractMigrationId(source: string): string | null {
   return match?.[1] ?? null;
 }
 
+/**
+ * Slice the body of the `MIGRATIONS` array literal in `index.ts` and
+ * strip `//` line comments. Lets the manifest check look for `m_<id>`
+ * inside the array specifically — a bare `m_<id>` reference in a doc
+ * comment elsewhere in the file (or a temporarily-commented-out entry
+ * inside the array) would otherwise satisfy a whole-file scan and let
+ * a missing array entry through. Local to this test file; the unit
+ * tests below cover it directly so we don't have to re-read the real
+ * `index.ts` to verify the predicate.
+ */
+function extractMigrationsArrayBody(indexSource: string): string | null {
+  const re = /const MIGRATIONS:\s*readonly Migration\[\]\s*=\s*\[([\s\S]*?)\];/;
+  const slice = indexSource.match(re)?.[1];
+  if (slice === undefined) return null;
+  return slice.replace(/\/\/.*$/gm, "");
+}
+
 describe("migration manifest convention", () => {
   it("each m_*.ts filename matches the YYYYMMDD_HHMMSS_slug shape", async () => {
     const files = await listMigrationFiles();
@@ -95,14 +112,25 @@ describe("migration manifest convention", () => {
    * it pulls in `@db/sqlite` transitively, which breaks under vitest
    * the same way the other tests in this file avoid.
    *
-   * We require the local-symbol `m_<id>` to appear at least twice:
-   * once in the `import { migration as m_<id> }` line and once in
-   * the `MIGRATIONS` array. Catches both "imported but not added to
-   * the array" and "added to the array without an import."
+   * Two separate assertions per migration file:
+   *  - `from "./<file>"` appears anywhere in `index.ts` (import line).
+   *  - `m_<id>` appears inside the sliced `MIGRATIONS = [ ... ]` body
+   *    (array entry). The slice is essential — a bare `m_<id>` in a
+   *    doc comment elsewhere in the file would otherwise satisfy a
+   *    whole-file scan and let a missing array entry through.
+   *
+   * Plus a size check that the array has exactly the same number of
+   * entries as `m_*.ts` files on disk, so deleting a file but
+   * forgetting to delete its array entry (or vice versa) trips here.
    */
   it("every m_*.ts file appears in the static manifest in index.ts", async () => {
     const files = await listMigrationFiles();
     const indexSource = await readFileContent("index.ts");
+    const arrayBody = extractMigrationsArrayBody(indexSource);
+    expect(
+      arrayBody,
+      "could not locate `const MIGRATIONS: readonly Migration[] = [...]` in index.ts",
+    ).not.toBeNull();
     for (const file of files) {
       const id = file.match(FILENAME_RE)?.[1];
       expect(id, `${file}: failed to derive id from filename`).toBeTruthy();
@@ -110,11 +138,67 @@ describe("migration manifest convention", () => {
         indexSource,
         `${file}: missing \`import ... from "./${file}";\` in index.ts`,
       ).toContain(`from "./${file}"`);
-      const symbolHits = indexSource.match(new RegExp(`\\bm_${id}\\b`, "g")) ?? [];
       expect(
-        symbolHits.length,
-        `${file}: expected \`m_${id}\` in both the import and the MIGRATIONS array of index.ts, found ${symbolHits.length} occurrence(s)`,
-      ).toBeGreaterThanOrEqual(2);
+        arrayBody,
+        `${file}: missing \`m_${id}\` entry inside the MIGRATIONS array literal of index.ts`,
+      ).toMatch(new RegExp(`\\bm_${id}\\b`));
     }
+  });
+
+  it("MIGRATIONS array has exactly one entry per m_*.ts file on disk", async () => {
+    const files = await listMigrationFiles();
+    const indexSource = await readFileContent("index.ts");
+    const arrayBody = extractMigrationsArrayBody(indexSource);
+    if (arrayBody === null) {
+      throw new Error("could not locate the MIGRATIONS array literal in index.ts");
+    }
+    const entries = arrayBody
+      .split("\n")
+      .map((line) => line.trim().replace(/,$/, ""))
+      .filter((line) => /^m_\d{8}_\d{6}_[a-z][a-z0-9_]*$/.test(line));
+    expect(
+      entries.length,
+      `MIGRATIONS has ${entries.length} entries; ${files.length} m_*.ts files on disk — fix index.ts`,
+    ).toBe(files.length);
+  });
+
+  /**
+   * Lock in the predicate independently of the real `index.ts` so a
+   * future refactor of the assertion shape doesn't quietly weaken the
+   * guard. The manual negative test the author ran (delete an entry,
+   * see the test fail) is encoded here.
+   */
+  describe("extractMigrationsArrayBody", () => {
+    const sample = [
+      'import { migration as m_20260101_000000_a } from "./m_20260101_000000_a.ts";',
+      'import { migration as m_20260101_000001_b } from "./m_20260101_000001_b.ts";',
+      "",
+      "const MIGRATIONS: readonly Migration[] = [",
+      "  m_20260101_000000_a,",
+      "  m_20260101_000001_b,",
+      "];",
+    ].join("\n");
+
+    it("returns just the slice between [ and ]", () => {
+      const body = extractMigrationsArrayBody(sample);
+      expect(body).not.toBeNull();
+      expect(body).toContain("m_20260101_000000_a");
+      expect(body).toContain("m_20260101_000001_b");
+      expect(body).not.toContain("import");
+    });
+
+    it("fails to find an entry that's only in a comment outside the array", () => {
+      const withCommentOnly = sample.replace(
+        "  m_20260101_000001_b,\n",
+        "  // m_20260101_000001_b removed temporarily\n",
+      );
+      const body = extractMigrationsArrayBody(withCommentOnly);
+      expect(body).not.toBeNull();
+      expect(body).not.toMatch(/\bm_20260101_000001_b\b/);
+    });
+
+    it("returns null when the array literal isn't present", () => {
+      expect(extractMigrationsArrayBody("// no manifest here")).toBeNull();
+    });
   });
 });
