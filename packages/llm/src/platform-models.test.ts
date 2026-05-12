@@ -177,9 +177,7 @@ describe("createPlatformModels — lazy resolution", () => {
   it("re-resolves get() against the current process.env on each call", () => {
     stubEnv({ ANTHROPIC_API_KEY: "sk-ant-test", GROQ_API_KEY: "gsk_test" });
     const pm = createPlatformModels({
-      models: {
-        labels: ["groq:llama-3.3-70b", "anthropic:claude-haiku-4-5"],
-      },
+      models: { labels: ["groq:llama-3.3-70b", "anthropic:claude-haiku-4-5"] },
     });
     expect(pm.get("labels").modelId).toBe("llama-3.3-70b");
 
