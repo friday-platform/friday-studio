@@ -373,8 +373,6 @@ export interface SignalWithContext extends Signal {
      * counter regardless of how the child is invoked.
      */
     delegationDepth?: number;
-    /** True when a human is attached to this session (direct chat or chat-communicator). Used for telemetry / observability. */
-    sessionInteractive?: boolean;
   };
 }
 

@@ -136,11 +136,6 @@ const AgentSessionDataSchema = z.object({
   actionId: z.string().optional(),
   /** Parent job timeout in milliseconds for blocking HITL expiry. */
   jobTimeoutMs: z.number().int().positive().optional(),
-  /** True when a human is attached to this session (direct chat /
-   *  chat-communicator). Threaded for telemetry / observability. Must
-   *  stay in sync with AgentSessionDataSchema in
-   *  packages/agent-sdk/src/types.ts. */
-  sessionInteractive: z.boolean().optional(),
 });
 
 /**

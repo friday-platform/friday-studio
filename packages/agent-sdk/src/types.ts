@@ -312,8 +312,6 @@ export const AgentSessionDataSchema = z.object({
     .optional(),
   memoryContextKey: z.string().optional(),
   foregroundWorkspaceIds: z.array(z.string()).optional(),
-  /** True when a human is attached to this session (direct chat or chat-communicator). Used for telemetry / observability. */
-  sessionInteractive: z.boolean().optional(),
 });
 
 export type AgentSessionData = z.infer<typeof AgentSessionDataSchema>;

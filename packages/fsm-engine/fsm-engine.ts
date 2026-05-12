@@ -1108,8 +1108,6 @@ export class FSMEngine {
        * max_depth`.
        */
       delegationDepth?: number;
-      /** True when a human is attached to this session (direct chat / chat-communicator). Used for telemetry / observability. */
-      sessionInteractive?: boolean;
     },
   ): Promise<void> {
     const signalWithContext: SignalWithContext = context ? { ...sig, _context: context } : sig;
@@ -3265,7 +3263,6 @@ export class FSMEngine {
     // result lifting happens when side-channel tool results are persisted,
     // via `liftToolResultsForPersist`; the pre-persist scrubber retains its
     // defense-in-depth role.
-    //
     let mcpResult: MCPToolsResult;
     try {
       mcpResult = await createMCPTools(effectiveConfigs, logger, {

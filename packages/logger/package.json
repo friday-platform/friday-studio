@@ -5,8 +5,7 @@
   "exports": {
     ".": "./mod.ts",
     "./console": "./src/console-only.ts",
-    "./telemetry": "./src/telemetry.ts",
-    "./oauth-metrics": "./src/oauth-metrics.ts"
+    "./telemetry": "./src/telemetry.ts"
   },
   "main": "./mod.ts",
   "devDependencies": { "vitest": "^4.1.0" },

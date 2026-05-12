@@ -18,7 +18,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { clearMountContextRegistry, setMountContext } from "../mount-context-registry.ts";
 import { createAgentContextBuilder } from "./index.ts";
 
-// Mock createMCPTools — default returns empty tools, no disconnected, noop dispose.
+// Mock createMCPTools — default returns empty tools, no disconnected, noop dispose
 const mockDispose = vi.fn().mockResolvedValue(undefined);
 const mockCreateMCPTools = vi
   .fn()

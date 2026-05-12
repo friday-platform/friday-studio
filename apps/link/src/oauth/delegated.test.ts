@@ -1,9 +1,5 @@
 import { Buffer } from "node:buffer";
-import {
-  InMemoryOAuthMetricsSink,
-  setOAuthMetricsSinkForTesting,
-} from "@atlas/logger/oauth-metrics";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import type { OAuthConfig } from "../providers/types.ts";
 import {
@@ -359,75 +355,5 @@ describe("refreshDelegatedTokenClassified", () => {
       expect(outcome.reason).toBe("http_5xx");
     }
     expect(fetchMock).toHaveBeenCalledTimes(1);
-  });
-});
-
-describe("refreshDelegatedTokenClassified telemetry", () => {
-  let restoreSink: (() => void) | null = null;
-  let sink: InMemoryOAuthMetricsSink;
-
-  beforeEach(() => {
-    sink = new InMemoryOAuthMetricsSink();
-    restoreSink = setOAuthMetricsSinkForTesting(sink);
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
-    vi.useRealTimers();
-    if (restoreSink) {
-      restoreSink();
-      restoreSink = null;
-    }
-  });
-
-  it("records refresh.outcome counter for success", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          access_token: "at-1",
-          expiry_date: 1800000000000,
-          scope: "openid",
-          token_type: "Bearer",
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      ),
-    );
-
-    await refreshDelegatedTokenClassified(config, "rt-1", { provider: "google-calendar" });
-
-    expect(sink.getCount("link.oauth.refresh.outcome")).toEqual(1);
-    expect(
-      sink.getCount("link.oauth.refresh.outcome", { kind: "success", provider: "google-calendar" }),
-    ).toEqual(1);
-  });
-
-  it("records refresh.outcome for token_dead and does NOT retry", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({ error: "invalid_grant" }), {
-        status: 400,
-        headers: { "Content-Type": "application/json" },
-      }),
-    );
-
-    await refreshDelegatedTokenClassified(config, "rt-1", { provider: "google-calendar" });
-
-    expect(sink.getCount("link.oauth.refresh.outcome")).toEqual(1);
-    expect(sink.getCount("link.oauth.refresh.outcome", { kind: "token_dead" })).toEqual(1);
-  });
-
-  it("emits the platform_bug counter for platform_bug transients", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({ error: "invalid_client" }), {
-        status: 400,
-        headers: { "Content-Type": "application/json" },
-      }),
-    );
-
-    await refreshDelegatedTokenClassified(config, "rt-1", { provider: "google-calendar" });
-
-    expect(sink.getCount("link.oauth.refresh.platform_bug")).toEqual(1);
-    expect(
-      sink.getCount("link.oauth.refresh.platform_bug", { provider: "google-calendar" }),
-    ).toEqual(1);
   });
 });

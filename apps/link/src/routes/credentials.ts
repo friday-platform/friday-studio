@@ -4,7 +4,6 @@
  */
 
 import { logger } from "@atlas/logger";
-import { getOAuthMetrics } from "@atlas/logger/oauth-metrics";
 import { stringifyError } from "@atlas/utils";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
@@ -488,10 +487,6 @@ async function resolveCredentialWithRefresh(
           credentialId: credential.id,
           provider: credential.provider,
           access_token_remaining_s: remainingSeconds,
-          reason: outcome.reason,
-        });
-        getOAuthMetrics().recordSilentFallback({
-          provider: credential.provider,
           reason: outcome.reason,
         });
         return { credential, status: "ready" };

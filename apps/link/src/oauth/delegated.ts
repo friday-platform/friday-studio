@@ -8,7 +8,6 @@
  */
 
 import { logger } from "@atlas/logger";
-import { getOAuthMetrics } from "@atlas/logger/oauth-metrics";
 import { z } from "zod";
 import type { OAuthConfig } from "../providers/types.ts";
 
@@ -283,10 +282,7 @@ async function classifyRefreshAttempt(
   };
 }
 
-/**
- * Caller context used for telemetry only. Both fields are optional so the
- * function remains usable in isolated tests; production callers pass both.
- */
+/** Caller context used for log correlation. Both fields are optional. */
 export interface RefreshClassifyMeta {
   provider?: string;
   credentialId?: string;
@@ -299,13 +295,6 @@ export interface RefreshClassifyMeta {
  * Trust contract: only `kind === "token_dead"` means the refresh_token is
  * provably revoked. Everything else is either usable (`success`) or a
  * non-actionable platform/transport failure (`transient`).
- *
- * Telemetry:
- *   - `link.oauth.refresh.outcome` counter with `{kind, reason, provider}`.
- *   - `link.oauth.refresh.platform_bug` counter for every transient with
- *     `reason === "platform_bug"`.
- *   - `oauth.refresh.outcome` structured log line with `{credentialId,
- *     provider, outcome.kind, outcome.reason, latency_ms}`.
  */
 export async function refreshDelegatedTokenClassified(
   config: Extract<OAuthConfig, { mode: "delegated" }>,
@@ -315,38 +304,14 @@ export async function refreshDelegatedTokenClassified(
   const provider = meta.provider ?? "unknown";
   const startedAt = Date.now();
   const outcome = await classifyRefreshAttempt(config, refreshToken);
-  recordAttemptTelemetry({
-    outcome,
-    provider,
-    latencyMs: Date.now() - startedAt,
-    credentialId: meta.credentialId,
-  });
-  return outcome;
-}
-
-function recordAttemptTelemetry(input: {
-  outcome: RefreshOutcome;
-  provider: string;
-  latencyMs: number;
-  credentialId?: string;
-}): void {
-  const { outcome, provider, latencyMs, credentialId } = input;
-  const metrics = getOAuthMetrics();
   const reason = outcome.kind === "transient" ? outcome.reason : undefined;
-  metrics.recordRefreshOutcome({
-    kind: outcome.kind,
-    ...(reason !== undefined ? { reason } : {}),
-    provider,
-  });
-  if (outcome.kind === "transient" && outcome.reason === "platform_bug") {
-    metrics.recordPlatformBug({ provider, reason: outcome.detail.slice(0, 80) });
-  }
   logger.info("oauth.refresh.outcome", {
-    ...(credentialId !== undefined ? { credentialId } : {}),
+    ...(meta.credentialId !== undefined ? { credentialId: meta.credentialId } : {}),
     provider,
     outcome: { kind: outcome.kind, ...(reason !== undefined ? { reason } : {}) },
-    latency_ms: latencyMs,
+    latency_ms: Date.now() - startedAt,
   });
+  return outcome;
 }
 
 /**

@@ -77,7 +77,6 @@ export function createAgentContextBuilder(deps: AgentContextBuilderDeps) {
           sessionId: sessionData.sessionId,
           actionId: sessionData.actionId,
           jobTimeoutMs: sessionData.jobTimeoutMs,
-          sessionInteractive: sessionData.sessionInteractive,
         },
       );
       allTools = fetched.tools;
@@ -263,12 +262,7 @@ async function fetchAllTools(
   agentMCPConfig: Record<string, MCPServerConfig> | undefined,
   logger: Logger,
   signal?: AbortSignal,
-  scope?: {
-    sessionId?: string;
-    actionId?: string;
-    jobTimeoutMs?: number;
-    sessionInteractive?: boolean;
-  },
+  scope?: { sessionId?: string; actionId?: string; jobTimeoutMs?: number },
 ): Promise<{
   tools: Record<string, AtlasTool>;
   release: () => Promise<void>;

@@ -818,10 +818,7 @@
                  its tools were skipped this session. The session still ran;
                  the user just needs to reconnect the integration to use those
                  tools again. Deduped at the list level so two agents in the
-                 same turn don't both render the same banner.
-                 `credential_temporarily_unavailable` is a transient-refresh
-                 variant — the elicitation chip provides the Retry button so
-                 the chip itself stays Reconnect-free. -->
+                 same turn don't both render the same banner. -->
             <div
               class="message-notice"
               role="status"
@@ -840,12 +837,7 @@
                       this turn — try again in a moment.
                     {:else}
                       <strong>{integration.provider ?? integration.serverId}</strong>
-                      is disconnected —
-                      <a
-                        href={`/mcp/${integration.serverId}`}
-                        class="message-notice-link"
-                      >reconnect on the {integration.serverId} page</a>
-                      to use its tools.
+                      is disconnected — reconnect in Settings → Connections to use those tools.
                     {/if}
                   </div>
                 {/each}
@@ -1259,13 +1251,6 @@
   }
   .message-notice-row {
     overflow-wrap: anywhere;
-  }
-  .message-notice-link {
-    color: inherit;
-    text-decoration: underline;
-  }
-  .message-notice-link:hover {
-    text-decoration: none;
   }
 
   .message-content {

@@ -304,32 +304,30 @@
         </label>
       {/if}
 
-      {#if !isAuthRefresh}
-        <label class="field">
-          <span class="field-label">Note (optional)</span>
-          <textarea
-            bind:value={note}
-            disabled={inFlight}
-            rows="2"
-            placeholder="Context for the audit log"
-          ></textarea>
-        </label>
+      <label class="field">
+        <span class="field-label">Note (optional)</span>
+        <textarea
+          bind:value={note}
+          disabled={inFlight}
+          rows="2"
+          placeholder="Context for the audit log"
+        ></textarea>
+      </label>
 
-        <div class="actions">
-          <Button onclick={onAnswer} disabled={!canAnswer}>
-            {answerMutation.isPending ? "Answering…" : "Answer"}
-          </Button>
-          <Button variant="destructive" onclick={onDecline} disabled={inFlight}>
-            {declineMutation.isPending ? "Declining…" : "Decline"}
-          </Button>
-        </div>
+      <div class="actions">
+        <Button onclick={onAnswer} disabled={!canAnswer}>
+          {answerMutation.isPending ? "Answering…" : "Answer"}
+        </Button>
+        <Button variant="destructive" onclick={onDecline} disabled={inFlight}>
+          {declineMutation.isPending ? "Declining…" : "Decline"}
+        </Button>
+      </div>
 
-        {#if answerMutation.isError}
-          <p class="error">Answer failed: {answerMutation.error?.message ?? "unknown"}</p>
-        {/if}
-        {#if declineMutation.isError}
-          <p class="error">Decline failed: {declineMutation.error?.message ?? "unknown"}</p>
-        {/if}
+      {#if answerMutation.isError}
+        <p class="error">Answer failed: {answerMutation.error?.message ?? "unknown"}</p>
+      {/if}
+      {#if declineMutation.isError}
+        <p class="error">Decline failed: {declineMutation.error?.message ?? "unknown"}</p>
       {/if}
     </section>
   {:else}

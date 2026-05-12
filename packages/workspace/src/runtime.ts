@@ -89,7 +89,6 @@ import {
   type GenerateSessionTitleInput,
   generateSessionTitle,
   type PlatformModels,
-  type ProvenanceSource,
   provenanceForSignalProvider,
 } from "@atlas/llm";
 import { logger } from "@atlas/logger";
@@ -124,7 +123,6 @@ import {
 import type { CodeAgentExecutorOptions } from "./agent-executor-utils.ts";
 import { createBashTool } from "./bash-tool.ts";
 import type { MemoryMount } from "./config-schema.ts";
-import { WORKSPACE_DIRECT_CHAT_SIGNAL_TYPE } from "./constants.ts";
 import { compileExecutionToFsm, ExecutionCompileError } from "./execution-to-fsm.ts";
 import { assertGlobalWriteAllowed, isGlobalWriteAttempt } from "./global-scope-guard.ts";
 import { MountSourceNotFoundError } from "./mount-errors.ts";
@@ -208,29 +206,6 @@ function asAbortError(reason: unknown): Error {
   );
   err.name = "AbortError";
   return err;
-}
-
-/**
- * Decide whether a session is *interactive* — i.e. there is a human attached
- * to the workspace session. Sessions launched from `chat` are always
- * interactive; non-chat signals are interactive only when the provider is
- * a chat communicator that emits user-authored payloads (Slack, Telegram,
- * Discord, …). Schedule / HTTP / fs-watch sessions are not interactive.
- *
- * Used purely for telemetry / observability — the OAuth refresh flow no
- * longer branches on this flag (transient failures surface to chat
- * regardless of interactivity).
- *
- * @internal Exported for testing
- */
-export function computeSessionInteractive(args: {
-  signalType: string;
-  signalProvenance: ProvenanceSource;
-}): boolean {
-  return (
-    args.signalType === WORKSPACE_DIRECT_CHAT_SIGNAL_TYPE ||
-    args.signalProvenance === "user-authored"
-  );
 }
 
 /**
@@ -1354,11 +1329,11 @@ export class WorkspaceRuntime {
 
     const configJobs = this.config.workspace.jobs || {};
 
-    // Reserved signal name validation — the direct-chat signal is system-owned
+    // Reserved signal name validation — "chat" is system-owned
     const configSignals = this.config.workspace.signals || {};
-    if (configSignals[WORKSPACE_DIRECT_CHAT_SIGNAL_TYPE]) {
+    if (configSignals.chat) {
       throw new Error(
-        `Workspace "${this.workspace.id}" defines a "${WORKSPACE_DIRECT_CHAT_SIGNAL_TYPE}" signal, but "${WORKSPACE_DIRECT_CHAT_SIGNAL_TYPE}" is reserved for workspace direct chat. Rename your signal.`,
+        `Workspace "${this.workspace.id}" defines a "chat" signal, but "chat" is reserved for workspace direct chat. Rename your signal.`,
       );
     }
 
@@ -1372,7 +1347,7 @@ export class WorkspaceRuntime {
         id: `${this.workspace.id}-chat`,
         initial: "idle",
         states: {
-          idle: { on: { [WORKSPACE_DIRECT_CHAT_SIGNAL_TYPE]: { target: "processing" } } },
+          idle: { on: { chat: { target: "processing" } } },
           processing: {
             entry: [
               { type: "agent", agentId: "workspace-chat", outputTo: "chat-result" },
@@ -1386,7 +1361,7 @@ export class WorkspaceRuntime {
       this.jobs.set("handle-chat", {
         name: "handle-chat",
         fsmPath: "",
-        signals: [WORKSPACE_DIRECT_CHAT_SIGNAL_TYPE],
+        signals: ["chat"],
         fsmDefinition: chatFSM,
         description: "Direct chat with workspace",
       });
@@ -1990,13 +1965,6 @@ export class WorkspaceRuntime {
         // consumer reading the records. Source of truth for "what
         // happened in workspace X" is the SESSIONS JetStream stream.)
 
-        const sessionInteractive = computeSessionInteractive({
-          signalType: signal.id,
-          signalProvenance: provenanceForSignalProvider(
-            this.config.workspace.signals?.[signal.id]?.provider,
-          ),
-        });
-
         // Capture the engine.signal promise so we can race it against the
         // abort signal (see `awaitWithAbort`). If the engine is wedged on
         // non-cooperative work, the await rejects immediately on cancel,
@@ -2008,7 +1976,6 @@ export class WorkspaceRuntime {
             workspaceId: this.workspace.id,
             abortSignal: effectiveAbortSignal,
             skipStates,
-            sessionInteractive,
             // FSM lifecycle events only (state transitions, action executions, tool calls/results)
             onEvent: (event) => {
               // Drop events from an orphaned engine.signal that's still
@@ -2595,20 +2562,6 @@ export class WorkspaceRuntime {
     const signalConfig = this.config.workspace.signals?.[signal.type];
     const signalProvenance = provenanceForSignalProvider(signalConfig?.provider);
 
-    // Is there a human attached to this session? Threaded through to the
-    // agent context purely for telemetry / observability.
-    const sessionInteractive = computeSessionInteractive({
-      signalType: signal.type,
-      signalProvenance,
-    });
-    logger.debug("Resolved session interactivity", {
-      agentId,
-      signalType: signal.type,
-      signalProvider: signalConfig?.provider,
-      signalProvenance,
-      sessionInteractive,
-    });
-
     const context = await buildAgentPrompt(
       agentId,
       fsmContext,
@@ -2746,7 +2699,6 @@ export class WorkspaceRuntime {
         "atlas.agent.type": agentConfig?.type ?? "sdk",
         "atlas.workspace.id": workspaceId,
         "atlas.session.id": sessionId,
-        "atlas.session.interactive": sessionInteractive,
       },
       async (agentOtelSpan) => {
         // User agents bypass the MCP orchestrator — execute via ProcessAgentExecutor (NATS)
@@ -2766,7 +2718,6 @@ export class WorkspaceRuntime {
                 agentEnv: agentConfig.env,
                 foregroundWorkspaceIds,
                 abortSignal: signal._context?.abortSignal,
-                sessionInteractive,
               })
             : await this.orchestrator.executeAgent(runtimeAgentId, finalPrompt, {
                 sessionId,
@@ -2791,7 +2742,6 @@ export class WorkspaceRuntime {
                 // DELETE /api/sessions/:id actually stops in-flight LLM work
                 // instead of just detaching the client.
                 abortSignal: signal._context?.abortSignal,
-                sessionInteractive,
               });
 
         if (agentOtelSpan) {
@@ -2835,8 +2785,6 @@ export class WorkspaceRuntime {
       agentEnv?: Record<string, string | LinkCredentialRef>;
       foregroundWorkspaceIds?: string[];
       abortSignal?: AbortSignal;
-      /** True when a human is attached to this session. Used for telemetry / observability. */
-      sessionInteractive?: boolean;
     },
   ): Promise<AgentResult> {
     // Resolve agent source location from disk
@@ -2989,7 +2937,7 @@ export class WorkspaceRuntime {
       }
     }
 
-    const { tools: rawMcpTools, dispose } = await createMCPTools(mcpConfigs, logger, {});
+    const { tools: rawMcpTools, dispose } = await createMCPTools(mcpConfigs, logger);
 
     // Filter platform tools to LLM_AGENT_ALLOWED — same surface workspace LLM
     // agents see (memory, artifacts, state, fs, csv, bash, webfetch,
@@ -3294,9 +3242,7 @@ export class WorkspaceRuntime {
       memoryStoreNames: string[];
       aiSummary?: () => Promise<Array<{ url?: string }>>;
     } = { memoryStoreNames: (this.config.workspace.memory?.own ?? []).map((m) => m.name) };
-    if (this.options.memoryAdapter) {
-      ctx.memoryAdapter = this.options.memoryAdapter;
-    }
+    if (this.options.memoryAdapter) ctx.memoryAdapter = this.options.memoryAdapter;
     return ctx;
   }
 

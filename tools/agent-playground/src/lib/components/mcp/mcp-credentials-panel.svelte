@@ -199,8 +199,9 @@
     {#if discovery.idRefs.length > 0}
       <div class="id-ref-notice">
         <p>
-          This server references a credential by ID. Manage it from this MCP
-          server's detail page.
+          This server references a credential by ID. Manage it in
+          <strong>Settings &gt; Connections</strong>
+          .
         </p>
       </div>
     {/if}
