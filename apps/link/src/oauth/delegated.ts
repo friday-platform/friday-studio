@@ -149,23 +149,27 @@ export type RefreshOutcome =
 const REFRESH_FETCH_TIMEOUT_MS = 15_000;
 
 /**
- * Scrub token-like values out of a raw response-body snippet before it
- * lands in logs or in an internal-API `detail` string. The delegated
- * endpoint is a secret boundary — if it ever returns or echoes an
- * `access_token` / `refresh_token` / `id_token` in a body shape we
- * don't expect, we still don't want the secret to leak into structured
- * logs (which often ship to long-lived storage) or into JSON returned
- * from `/internal/v1/credentials/:id`.
+ * The delegated refresh endpoint is a secret boundary — its response
+ * body can contain `access_token` / `refresh_token` / `id_token`. We
+ * therefore NEVER embed raw response-body bytes into:
+ *   • `RefreshOutcome.detail`, which is exposed via
+ *     `/internal/v1/credentials/:id` JSON;
+ *   • `logger.warn` / `logger.info` fields, which ship to long-lived
+ *     telemetry storage.
  *
- * Matches both JSON quoted values (`"access_token":"…"`) and bare
- * `key=value` pairs (form-encoded body / URL-fragment style). Returns
- * the snippet with the value replaced by `[REDACTED]`, length-capped
- * to keep one bad upstream from blowing up log lines.
+ * Instead we surface only **structural** signals — status code,
+ * `statusText`, body length, content-type, and schema-validated error
+ * codes from a Zod-parsed body. The diagnostic value covers the actual
+ * platform-bug shapes we see in practice (non-JSON, missing fields,
+ * unexpected error codes) without ever opening a "what if the upstream
+ * echoed our refresh_token back?" leak channel. This is safe by
+ * construction; no regex redaction step to forget on the next branch.
  */
-function redactTokens(snippet: string): string {
-  return snippet
-    .replace(/"(access_token|refresh_token|id_token)"\s*:\s*"[^"]*"/g, '"$1":"[REDACTED]"')
-    .replace(/\b(access_token|refresh_token|id_token)=[^&\s]+/g, "$1=[REDACTED]");
+function bodyShape(
+  body: string,
+  contentType: string | null,
+): { body_length: number; content_type: string | null } {
+  return { body_length: body.length, content_type: contentType };
 }
 
 async function classifyRefreshAttempt(
@@ -189,6 +193,8 @@ async function classifyRefreshAttempt(
     return { kind: "transient", reason: "network", detail };
   }
 
+  const contentType = response.headers.get("content-type");
+
   if (response.ok) {
     // Body-read can fail AFTER headers are received — e.g. upstream
     // truncates the stream, the TLS connection dies mid-body, or fetch's
@@ -208,16 +214,15 @@ async function classifyRefreshAttempt(
     try {
       json = JSON.parse(rawBody);
     } catch {
-      const redacted = redactTokens(rawBody.slice(0, 500));
       logger.warn("oauth_refresh_platform_bug", {
         reason: "non_json_success_body",
         status: response.status,
-        body: redacted,
+        ...bodyShape(rawBody, contentType),
       });
       return {
         kind: "transient",
         reason: "platform_bug",
-        detail: `2xx with non-JSON body: ${redactTokens(rawBody.slice(0, 200))}`,
+        detail: `2xx with non-JSON body (${rawBody.length} bytes)`,
       };
     }
     const parsed = DelegatedRefreshResponseSchema.safeParse(json);
@@ -250,7 +255,7 @@ async function classifyRefreshAttempt(
     return {
       kind: "transient",
       reason: "http_429",
-      detail: `HTTP 429 ${response.statusText} ${redactTokens(body.slice(0, 200))}`,
+      detail: `HTTP 429 ${response.statusText} (${body.length} bytes)`,
     };
   }
 
@@ -259,7 +264,7 @@ async function classifyRefreshAttempt(
     return {
       kind: "transient",
       reason: "http_5xx",
-      detail: `HTTP ${response.status} ${response.statusText} ${redactTokens(body.slice(0, 200))}`,
+      detail: `HTTP ${response.status} ${response.statusText} (${body.length} bytes)`,
     };
   }
 
@@ -272,12 +277,12 @@ async function classifyRefreshAttempt(
     logger.warn("oauth_refresh_platform_bug", {
       reason: "non_json_4xx_body",
       status: response.status,
-      body: redactTokens(rawBody.slice(0, 500)),
+      ...bodyShape(rawBody, contentType),
     });
     return {
       kind: "transient",
       reason: "platform_bug",
-      detail: `HTTP ${response.status} with non-JSON body: ${redactTokens(rawBody.slice(0, 200))}`,
+      detail: `HTTP ${response.status} with non-JSON body (${rawBody.length} bytes)`,
     };
   }
 
@@ -286,14 +291,12 @@ async function classifyRefreshAttempt(
     logger.warn("oauth_refresh_platform_bug", {
       reason: "4xx_missing_error_field",
       status: response.status,
-      body: redactTokens(rawBody.slice(0, 500)),
+      ...bodyShape(rawBody, contentType),
     });
     return {
       kind: "transient",
       reason: "platform_bug",
-      detail: `HTTP ${response.status} with JSON body missing 'error' field: ${redactTokens(
-        rawBody.slice(0, 200),
-      )}`,
+      detail: `HTTP ${response.status} with JSON body missing 'error' field (${rawBody.length} bytes)`,
     };
   }
 
