@@ -485,6 +485,21 @@
   const streaming = $derived(chat?.status === "streaming" || chat?.status === "submitted");
 
   /**
+   * Id of the tail message while the chat is in any non-terminal status
+   * (streaming, submitted, errored mid-turn). Wider than `streaming` on
+   * purpose: a stream that drops into "error" can auto-resume back into
+   * "streaming" on the same id (see `resumeStream` below), so we keep
+   * the tail gated through that window. `chat-message-list` uses this
+   * to skip post-stream DOM affordances per-message — see its
+   * `unsettledMessageId` prop docstring.
+   */
+  const unsettledMessageId = $derived(
+    chat && chat.status !== "ready" && chat.messages.length > 0
+      ? chat.messages[chat.messages.length - 1]?.id
+      : undefined,
+  );
+
+  /**
    * "Working on it" indicator: shown after the user sends a message but
    * before anything renders in the assistant bubble. Flips off as soon as
    * the last assistant message has real content (text tokens or a tool
@@ -1360,6 +1375,7 @@
         {validationAttemptsBySession}
         workspaceId={wsId}
         {chatId}
+        {unsettledMessageId}
       />
 
       {#if wasInterrupted}
