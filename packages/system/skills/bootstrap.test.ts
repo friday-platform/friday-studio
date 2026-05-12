@@ -17,10 +17,23 @@
  * (no churn writes).
  */
 
-import type { Skill, SkillSummary } from "@atlas/skills";
+import type { Skill, SkillStorageAdapter, SkillSummary } from "@atlas/skills";
 import { _setSkillStorageForTest } from "@atlas/skills";
 import type { Result } from "@atlas/utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+// Mock `computeSkillHash` so the resurrection test can pin a stored
+// hash that MATCHES the on-disk hash — that's the path where the
+// `publishOne` shortcut fires and the bug manifests. Other tests rely
+// on the default `"matches-nothing"` to keep their publish paths
+// exercised. Hoisted because vi.mock hoists imports — must be in
+// scope when bootstrap.ts is first evaluated.
+const mockComputeSkillHash = vi.hoisted(() => vi.fn(() => Promise.resolve("matches-nothing")));
+vi.mock("@atlas/skills", async () => {
+  const actual = await vi.importActual<typeof import("@atlas/skills")>("@atlas/skills");
+  return { ...actual, computeSkillHash: mockComputeSkillHash };
+});
+
 import { ensureSystemSkills } from "./bootstrap.ts";
 
 interface StoredSkill {
@@ -43,7 +56,7 @@ function makeStorageStub(initial: StoredSkill[]) {
     for (const s of store.values()) {
       if (s.skillId === skillId) {
         s.disabled = disabled;
-        return Promise.resolve(ok(undefined as void));
+        return Promise.resolve(ok<void>(undefined));
       }
     }
     return Promise.resolve({ ok: false as const, error: `not found: ${skillId}` });
@@ -124,15 +137,23 @@ function makeStorageStub(initial: StoredSkill[]) {
     assignToJob: vi.fn(),
     unassignFromJob: vi.fn(),
     listAssignmentsForJob: vi.fn(),
+    // Stub adapter — every method bootstrap doesn't touch is a vi.fn()
+    // no-op. Cast through `unknown` so we don't have to re-declare all 16
+    // SkillStorageAdapter signatures with their full Result envelopes
+    // just for test value the bootstrap pass doesn't read.
     listJobOnlySkillIds: vi.fn(),
-    // deno-lint-ignore no-explicit-any
-  } as any;
+  } as unknown as SkillStorageAdapter;
   return { adapter, store, setDisabled, list };
 }
 
 describe("ensureSystemSkills — orphan tombstone pass", () => {
+  // Stub `vi.fn()`s are created fresh inside `makeStorageStub()` per
+  // test, so call history can't leak across cases. The hoisted
+  // `mockComputeSkillHash` IS shared and needs an explicit reset to
+  // its default, since the resurrection test overrides it.
   beforeEach(() => {
-    vi.clearAllMocks();
+    mockComputeSkillHash.mockReset();
+    mockComputeSkillHash.mockResolvedValue("matches-nothing");
   });
   afterEach(() => {
     _setSkillStorageForTest(null);
@@ -203,5 +224,37 @@ describe("ensureSystemSkills — orphan tombstone pass", () => {
     // No setDisabled call against this skillId (regardless of value).
     const calls = setDisabled.mock.calls.filter((c) => c[0] === "sk_already_disabled");
     expect(calls).toHaveLength(0);
+  });
+
+  it("re-enables a previously-tombstoned skill when its source dir is restored (hash-match path)", async () => {
+    // Resurrection scenario: skill X was published, then deleted and
+    // tombstoned, then the source dir came back (git revert, backup
+    // restore, etc.) with byte-identical content. Naive content-hash
+    // shortcut would skip publish entirely, leave `disabled: true`
+    // sticky, and the resurrected skill stays invisible forever
+    // despite being on disk.
+    //
+    // We force the bug's path by mocking `computeSkillHash` to return
+    // a fixed value AND seeding the registry with the exact same hash —
+    // the shortcut at `publishOne:163-171` then fires for sure. The
+    // resurrection fix must intercept this case and call setDisabled
+    // (or fall through to publish) regardless of hash match.
+    mockComputeSkillHash.mockResolvedValue("identical-content-hash");
+    const { adapter, store } = makeStorageStub([
+      {
+        skillId: "sk_resurrected",
+        name: "agent-action-handshake",
+        disabled: true, // was tombstoned in a prior boot
+        sourceHash: "identical-content-hash", // matches what computeSkillHash returns now
+      },
+    ]);
+    _setSkillStorageForTest(adapter);
+
+    await ensureSystemSkills();
+
+    // After bootstrap, the skill must be enabled — either because
+    // publish ran (which writes disabled:false) or because setDisabled
+    // was called explicitly.
+    expect(store.get("agent-action-handshake")?.disabled).toBe(false);
   });
 });

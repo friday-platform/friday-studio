@@ -161,11 +161,32 @@ async function publishOne(dir: string): Promise<string | null> {
   const sourceHash = await computeSkillHash(dir);
 
   // Shortcut: if the stored version already has this hash, don't touch.
+  // EXCEPT: if the stored row is disabled (a previous boot tombstoned
+  // it as an orphan), the source dir has clearly come back since the
+  // tombstone — re-enable it before short-circuiting. Without this,
+  // a deleted-then-restored skill stays invisible to
+  // `resolveVisibleSkills` despite being on disk.
   const existing = await SkillStorage.get(SYSTEM_SKILL_NAMESPACE, name);
   if (existing.ok && existing.data) {
     const storedHash = existing.data.frontmatter["source-hash"];
     if (typeof storedHash === "string" && storedHash === sourceHash) {
-      logger.debug("bundled skill up to date", { name, hash: sourceHash.slice(0, 12) });
+      if (existing.data.disabled) {
+        const reEnable = await SkillStorage.setDisabled(existing.data.skillId, false);
+        if (!reEnable.ok) {
+          logger.warn("resurrection re-enable failed", {
+            name,
+            skillId: existing.data.skillId,
+            error: reEnable.error,
+          });
+        } else {
+          logger.info("re-enabled previously-tombstoned skill", {
+            name: `@${SYSTEM_SKILL_NAMESPACE}/${name}`,
+            skillId: existing.data.skillId,
+          });
+        }
+      } else {
+        logger.debug("bundled skill up to date", { name, hash: sourceHash.slice(0, 12) });
+      }
       return name;
     }
   }
