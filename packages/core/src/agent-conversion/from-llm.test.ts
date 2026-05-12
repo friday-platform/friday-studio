@@ -11,27 +11,27 @@
  * unexpectedly, the spread is broken, or a future refactor moves the
  * injection site without keeping the literal.
  *
- * This test mocks `streamText` to capture the `tools` map the handler
- * passes in and asserts:
- *   1. With `outputSchema` set, `tools.complete` is present.
- *   2. The injected `complete` carries the expected `inputSchema` (derived
- *      via `jsonSchema(outputSchema)`), so the LLM is forced to emit data
- *      matching the document contract.
- *   3. With `outputSchema` AND no other tools, `toolChoice` pins the LLM
+ * This test mocks `streamText` to capture the `tools` map and `toolChoice`
+ * the handler passes in and asserts both branches of the
+ * `hasRuntimeOutputSchema` ternary at `from-llm.ts:73-83`:
+ *   1. With `outputSchema` set, `tools.complete` is present with the
+ *      expected `inputSchema` (derived via `jsonSchema(outputSchema)`).
+ *   2. With `outputSchema` AND no other tools, `toolChoice` pins the LLM
  *      to `complete` (the load-bearing exit when nothing else is callable).
- *
- * Note: a "no outputSchema → no complete tool" branch would be appealing
- * to test, but `createAgent` supplies `LLMOutputSchema` as the default,
- * so production code never reaches the handler with `outputSchema: undefined`.
- * The branch in the source survives only as defensive code; testing it
- * would assert against an unreachable path.
+ *   3. With `outputSchema` undefined, `tools.complete` is absent and
+ *      `toolChoice` falls through to the configured default. The
+ *      false-branch is reachable in production: Pattern A signals (no
+ *      `outputTo`), `case "agent"` actions where `outputTo` is unset, and
+ *      `type: agent` references whose resolved agent type is not `llm` all
+ *      hit the handler with `context.outputSchema === undefined` (FSM
+ *      omits the field unconditionally per `fsm-engine.ts:1812`).
  */
 
 import type { AtlasTools } from "@atlas/agent-sdk";
 import type { LLMAgentConfig } from "@atlas/config";
 import { createStubPlatformModels } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockStreamText = vi.hoisted(() => vi.fn());
 const mockStepCountIs = vi.hoisted(() => vi.fn((n: number) => ({ __stepCountIs: n })));
@@ -112,6 +112,16 @@ function makeContext(opts: { tools?: AtlasTools; outputSchema?: Record<string, u
 }
 
 describe("convertLLMToAgent — orchestrator-side complete injection", () => {
+  // `vi.hoisted()` mocks aren't reset by `vi.restoreAllMocks()` and the
+  // global `clearMocks` flag isn't set — without this, `mock.calls[0]`
+  // and `toHaveBeenCalledOnce()` would silently leak state across tests
+  // and pass only because the suite runs in declaration order.
+  beforeEach(() => {
+    mockStreamText.mockReset();
+    mockStepCountIs.mockClear();
+    mockHasToolCall.mockClear();
+  });
+
   it("injects a `complete` tool when outputSchema is set", async () => {
     mockStreamText.mockReturnValue(makeStreamTextResult());
 
@@ -151,5 +161,28 @@ describe("convertLLMToAgent — orchestrator-side complete injection", () => {
       toolChoice?: { type?: string; toolName?: string };
     };
     expect(callArgs.toolChoice).toEqual({ type: "tool", toolName: "complete" });
+  });
+
+  it("does NOT inject `complete` and falls through to the default toolChoice when outputSchema is omitted", async () => {
+    // Omit `complete` from the synthetic toolCalls — handler's post-call
+    // resolution looks for it via `findCompleteToolArgs`; without it the
+    // handler falls back to `{ response: resolvedText }` rather than
+    // throwing.
+    mockStreamText.mockReturnValue({ ...makeStreamTextResult(), toolCalls: Promise.resolve([]) });
+
+    const agent = convertLLMToAgent(makeConfig(), "test-agent", makeLogger());
+    // No `outputSchema` in the context — this is what Pattern A FSM
+    // signals and `case "agent"` actions without `outputTo` produce.
+    await agent.execute("prompt", makeContext({ outputSchema: undefined }));
+
+    const callArgs = mockStreamText.mock.calls[0]?.[0] as {
+      tools?: Record<string, unknown>;
+      toolChoice?: unknown;
+    };
+    expect(callArgs.tools?.complete).toBeUndefined();
+    // `toolChoice` should fall through to `config.config.tool_choice ||
+    // "auto"` per from-llm.ts:108-110. The fixture config doesn't set
+    // tool_choice, so the default is `"auto"`.
+    expect(callArgs.toolChoice).toBe("auto");
   });
 });

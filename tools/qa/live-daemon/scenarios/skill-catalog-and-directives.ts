@@ -299,8 +299,21 @@ async function* walkAudienceRefFiles(root: string): AsyncGenerator<string> {
       if (entry.name === "node_modules" || entry.name === ".git") continue;
       yield* walkAudienceRefFiles(full);
     } else if (entry.isFile) {
-      // Limit to text formats that prose lives in.
-      if (entry.name.endsWith(".md") || entry.name.endsWith(".txt") || entry.name.endsWith(".ts")) {
+      // Text formats prose can land in. Wider than just `.md` because
+      // the skill catalog also carries inline `.ts` agent prompts,
+      // `.yml`/`.yaml` workspace fixtures, `.json` capability manifests,
+      // and `.svelte` UI components — any of which could pick up a
+      // broken audience-prefix ref over time.
+      if (
+        entry.name.endsWith(".md") ||
+        entry.name.endsWith(".txt") ||
+        entry.name.endsWith(".ts") ||
+        entry.name.endsWith(".tsx") ||
+        entry.name.endsWith(".yaml") ||
+        entry.name.endsWith(".yml") ||
+        entry.name.endsWith(".json") ||
+        entry.name.endsWith(".svelte")
+      ) {
         yield full;
       }
     }
