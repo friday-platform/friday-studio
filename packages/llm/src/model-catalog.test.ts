@@ -5,7 +5,7 @@ import {
   type CatalogEntry,
   type CatalogProvider,
   getCatalog,
-  resetCatalogCacheForTests,
+  invalidateCatalog,
 } from "./model-catalog.ts";
 
 /**
@@ -74,7 +74,7 @@ function restoreEnv() {
 }
 
 beforeEach(() => {
-  resetCatalogCacheForTests();
+  invalidateCatalog();
   stubEnv({
     ANTHROPIC_API_KEY: undefined,
     OPENAI_API_KEY: undefined,

@@ -6,7 +6,13 @@
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import process from "node:process";
-import { createPlatformModels, getCatalog, PlatformModelsConfigError } from "@atlas/llm";
+import {
+  createPlatformModels,
+  getCatalog,
+  invalidateCatalog,
+  PlatformModelsConfigError,
+  resetRegistry,
+} from "@atlas/llm";
 import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
 import { getFridayHome } from "@atlas/utils/paths.server";
@@ -204,6 +210,21 @@ configRoutes.put(
         count: Object.keys(envVars).length,
       });
 
+      // Snapshot the prior on-disk state so we can compute the
+      // delete-set (keys removed by this PUT) for the in-memory sync
+      // below. Treat a missing file as an empty map.
+      let priorKeys: Set<string> = new Set();
+      if (await exists(envPath)) {
+        try {
+          priorKeys = new Set(Object.keys(parse(await readFile(envPath, "utf-8"))));
+        } catch (error) {
+          logger.warn("Could not parse prior .env for in-memory sync; deletes will be skipped", {
+            envPath,
+            error: stringifyError(error),
+          });
+        }
+      }
+
       // Create .atlas directory if it doesn't exist
       if (!(await exists(atlasDir))) {
         await mkdir(atlasDir, { recursive: true });
@@ -211,6 +232,28 @@ configRoutes.put(
 
       const content = stringifyEnv(envVars);
       await writeFile(envPath, content, "utf-8");
+
+      // Sync the running daemon's `process.env` with the file we just
+      // wrote so newly-added API keys are usable without a restart.
+      // Deno's `--env-file` reads once at startup; the catalog +
+      // provider registry read `process.env` and memoize the result,
+      // so we also reset both so the next call rebuilds against the
+      // current env. Subprocess agents spawned by the launcher inherit
+      // env at spawn time and are NOT updated by this — that gap
+      // requires a separate launcher-IPC fix.
+      try {
+        for (const k of priorKeys) {
+          if (!(k in envVars)) delete process.env[k];
+        }
+        Object.assign(process.env, envVars);
+        resetRegistry();
+        invalidateCatalog();
+      } catch (error) {
+        // The write succeeded; only the in-memory sync failed. Log
+        // and continue — the user falls back to a manual restart,
+        // which is the prior contract.
+        logger.warn("In-memory env sync failed after .env write", { error: stringifyError(error) });
+      }
 
       logger.info("Environment variables updated successfully", {
         envPath,

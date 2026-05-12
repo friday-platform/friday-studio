@@ -416,8 +416,14 @@ export async function prewarmCatalog(): Promise<void> {
   }
 }
 
-/** Clear the cache. Intended for tests. */
-export function resetCatalogCacheForTests(): void {
+/**
+ * Clear the cached catalog. The next {@link getCatalog} call re-fetches
+ * the gateway + Groq listings and re-evaluates {@link resolveCredential}
+ * against the current `process.env`. Called from PUT /api/config/env
+ * after a runtime env update so the Settings page reflects a newly-added
+ * key without waiting on the 1h TTL. Also used by tests.
+ */
+export function invalidateCatalog(): void {
   cache = null;
   inflight = null;
 }
