@@ -16,8 +16,8 @@
  * untouched.
  */
 
-import { UserStorage } from "@atlas/core/users/storage";
-import { WorkspaceMemberStorage } from "@atlas/core/workspace-members/storage";
+import { createJetStreamUserBackend } from "@atlas/core/users/storage";
+import { createJetStreamWorkspaceMemberBackend } from "@atlas/core/workspace-members/storage";
 import { createRegistryStorageJS } from "@atlas/workspace";
 import type { Migration } from "jetstream";
 
@@ -29,7 +29,13 @@ export const migration: Migration = {
     "workspace, derived from metadata.createdBy with a local-user-id fallback " +
     "when createdBy is unset (single-tenant local mode).",
   async run({ nc, logger }) {
-    const localUserResult = await UserStorage.resolveLocalUserId();
+    // Self-contained backends from `nc` — the `UserStorage` /
+    // `WorkspaceMemberStorage` facades require daemon-side init that
+    // the standalone CLI `atlas migrate` path doesn't perform.
+    const users = createJetStreamUserBackend(nc);
+    const members = createJetStreamWorkspaceMemberBackend(nc);
+
+    const localUserResult = await users.resolveLocalUserId();
     if (!localUserResult.ok) {
       throw new Error(`Failed to resolve local user id: ${localUserResult.error}`);
     }
@@ -45,7 +51,7 @@ export const migration: Migration = {
 
     for (const ws of workspaces) {
       const ownerUserId = ws.metadata?.createdBy ?? localUserId;
-      const result = await WorkspaceMemberStorage.putIfAbsent({
+      const result = await members.putIfAbsent({
         userId: ownerUserId,
         wsId: ws.id,
         role: "owner",

@@ -18,8 +18,15 @@ import {
   type UserIdentity,
 } from "./jetstream-backend.ts";
 
-export type { NameStatus, OnboardingState, User, UserIdentity } from "./jetstream-backend.ts";
+export type {
+  JetStreamUserBackend,
+  NameStatus,
+  OnboardingState,
+  User,
+  UserIdentity,
+} from "./jetstream-backend.ts";
 export {
+  createJetStreamUserBackend,
   ensureUsersKVBucket,
   ONBOARDING_VERSION,
   OnboardingSchema,
