@@ -383,7 +383,7 @@ describe("createMessageHandler", () => {
 
     const thread = makeThread("github-thread-1");
     (thread as unknown as { adapter: { name: string } }).adapter = { name: "github" };
-    registry.createStream("github-thread-1");
+    registry.createStream(WS, "github-thread-1");
 
     await handler(thread, makeMessage({ threadId: "github-thread-1" }));
 
