@@ -1014,6 +1014,12 @@
   }
 
   .virtual-item {
+    /* Flex column so `.message.user`'s `align-self: flex-end` still
+       right-anchors the bubble. Without this each item is a plain
+       block and the user bubble stretches to the full inset-inline
+       span instead of shrinking to its content. */
+    display: flex;
+    flex-direction: column;
     inset-block-start: 0;
     inset-inline: 0;
     /* The flex `gap` doesn't reach absolute children, so the
