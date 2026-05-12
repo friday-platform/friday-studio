@@ -53,7 +53,7 @@ One question, one answer. Flat `options` array, each `{ label, value }`. `label`
 
 ```json
 {
-  "question": "Send the invoice to ken@tempest.team now?",
+  "question": "Send the invoice now?",
   "options": [
     { "label": "Send now", "value": "send" },
     { "label": "Save as draft", "value": "draft" },
@@ -75,15 +75,15 @@ Question body — short intro, then numbered items with detail lines:
 ```
 Review your inbox — select an action for each email.
 
-[1] Subject: Your receipt from Stripe
-    From: notifications@stripe.com
+[1] Subject: Your receipt
+    From: billing@example.com
     Date: May 7, 2026
-    Preview: $90.00 paid — Monthly Subscription
+    Preview: Monthly subscription paid
 
-[2] Subject: Reminder to Register: Community 5K
-    From: events@gunder.com
+[2] Subject: Meetup reminder
+    From: events@example.com
     Date: May 7, 2026
-    Preview: AAPI Heritage Month event
+    Preview: Quarterly community meetup tomorrow
 ```
 
 Detail line keys the parser recognises: `Subject:`, `From:`, `Date:`, `Preview:`. Use them — the UI lifts those values into the per-item header. Anything else under a `[N]` block is shown as supporting text.
@@ -92,7 +92,7 @@ Options — one entry per (item, action). `label` is `[N] ActionLabel — Title`
 
 ```json
 {
-  "label": "[1] Archive — Stripe receipt",
+  "label": "[1] Archive — Receipt",
   "value": "1:archive"
 }
 ```
@@ -103,12 +103,12 @@ A full grouped call:
 {
   "question": "Review your inbox — select an action for each email.\n\n[1] Subject: ...\n[2] Subject: ...",
   "options": [
-    { "label": "[1] Archive — Stripe receipt", "value": "1:archive" },
-    { "label": "[1] Keep — Stripe receipt", "value": "1:keep" },
-    { "label": "[1] Delete — Stripe receipt", "value": "1:delete" },
-    { "label": "[2] Archive — Community 5K", "value": "2:archive" },
-    { "label": "[2] Keep — Community 5K", "value": "2:keep" },
-    { "label": "[2] Delete — Community 5K", "value": "2:delete" }
+    { "label": "[1] Archive — Receipt", "value": "1:archive" },
+    { "label": "[1] Keep — Receipt", "value": "1:keep" },
+    { "label": "[1] Delete — Receipt", "value": "1:delete" },
+    { "label": "[2] Archive — Meetup reminder", "value": "2:archive" },
+    { "label": "[2] Keep — Meetup reminder", "value": "2:keep" },
+    { "label": "[2] Delete — Meetup reminder", "value": "2:delete" }
   ]
 }
 ```
