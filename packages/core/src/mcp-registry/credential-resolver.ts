@@ -59,16 +59,16 @@ export class NoDefaultCredentialError extends Error {
   }
 }
 
-/** Error thrown when a credential exists but is expired or its refresh has failed */
+/** Error thrown when a credential exists but is expired or its refresh has failed.
+ *  Message is Link's `error` field verbatim — we don't rewrite it. */
 export class LinkCredentialExpiredError extends Error {
   constructor(
     public readonly credentialId: string,
     public readonly status: "expired_no_refresh" | "refresh_failed",
+    public readonly linkError: string,
     public readonly serverName?: string,
   ) {
-    const integration = serverName ? `'${serverName}'` : "this integration";
-    const action = status === "refresh_failed" ? "could not be refreshed" : "has expired";
-    super(`The credential for ${integration} ${action}. Reconnect the integration to continue.`);
+    super(linkError);
     this.name = "LinkCredentialExpiredError";
   }
 }
@@ -77,21 +77,26 @@ export class LinkCredentialExpiredError extends Error {
  * Error thrown when a credential is temporarily unavailable — typically
  * because a refresh failed transiently and the caller should treat the
  * credential as "try again in a moment" rather than "reconnect now".
+ * Message is Link's `error` field verbatim — we don't rewrite it.
  */
 export class LinkCredentialUnavailableError extends Error {
   readonly credentialId: string;
   readonly serverName?: string;
   readonly provider?: string;
+  readonly linkError: string;
 
-  constructor(input: { credentialId: string; serverName?: string; provider?: string }) {
-    const integration = input.serverName ? `'${input.serverName}'` : "an integration";
-    super(
-      `The credential for ${integration} is temporarily unavailable. Please try again in a moment.`,
-    );
+  constructor(input: {
+    credentialId: string;
+    linkError: string;
+    serverName?: string;
+    provider?: string;
+  }) {
+    super(input.linkError);
     this.name = "LinkCredentialUnavailableError";
     this.credentialId = input.credentialId;
     this.serverName = input.serverName;
     this.provider = input.provider;
+    this.linkError = input.linkError;
   }
 }
 
@@ -151,17 +156,22 @@ async function fetchDefaultCredential(provider: string, logger: Logger): Promise
   }
 
   const { credential, status } = result.data;
+  // Link returns the technical reason in `error` for failure statuses
+  // (e.g. "transient refresh failure (network): tcp connect error: Connection refused").
+  // Pass it through verbatim — no translation, no polishing.
+  const linkError =
+    "error" in result.data && typeof result.data.error === "string" ? result.data.error : status;
 
   if (status === "expired_no_refresh") {
-    throw new LinkCredentialExpiredError(credential.id, "expired_no_refresh");
+    throw new LinkCredentialExpiredError(credential.id, "expired_no_refresh", linkError);
   }
 
   if (status === "refresh_failed") {
-    throw new LinkCredentialExpiredError(credential.id, "refresh_failed");
+    throw new LinkCredentialExpiredError(credential.id, "refresh_failed", linkError);
   }
 
   if (status === "refresh_unavailable") {
-    throw new LinkCredentialUnavailableError({ credentialId: credential.id });
+    throw new LinkCredentialUnavailableError({ credentialId: credential.id, linkError });
   }
 
   return credential;
@@ -196,17 +206,19 @@ export async function fetchLinkCredential(
   }
 
   const { credential, status } = result.data;
+  const linkError =
+    "error" in result.data && typeof result.data.error === "string" ? result.data.error : status;
 
   if (status === "expired_no_refresh") {
-    throw new LinkCredentialExpiredError(credentialId, "expired_no_refresh");
+    throw new LinkCredentialExpiredError(credentialId, "expired_no_refresh", linkError);
   }
 
   if (status === "refresh_failed") {
-    throw new LinkCredentialExpiredError(credentialId, "refresh_failed");
+    throw new LinkCredentialExpiredError(credentialId, "refresh_failed", linkError);
   }
 
   if (status === "refresh_unavailable") {
-    throw new LinkCredentialUnavailableError({ credentialId });
+    throw new LinkCredentialUnavailableError({ credentialId, linkError });
   }
 
   return credential;

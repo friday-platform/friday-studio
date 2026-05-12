@@ -323,18 +323,16 @@ function buildDisconnectedEntry(
   serverId: string,
   config: MCPServerConfig,
 ): DisconnectedIntegration {
+  // Message on every branch is the underlying error's `.message` verbatim —
+  // Link's `error` field for refresh-failure cases, or the constructor-built
+  // string for "not found" / "no default" cases that have no Link error
+  // to forward. We never rewrite Link's actual error string.
   if (error instanceof LinkCredentialUnavailableError) {
-    const enriched = error.serverName
-      ? error
-      : new LinkCredentialUnavailableError({
-          credentialId: error.credentialId,
-          serverName: serverId,
-        });
     return {
       serverId,
       provider: extractProviderFromConfig(config),
       kind: "credential_temporarily_unavailable",
-      message: enriched.message,
+      message: error.message,
     };
   }
   if (error instanceof NoDefaultCredentialError) {
@@ -346,25 +344,19 @@ function buildDisconnectedEntry(
     };
   }
   if (error instanceof LinkCredentialNotFoundError) {
-    const enriched = error.serverName
-      ? error
-      : new LinkCredentialNotFoundError(error.credentialId, serverId);
     return {
       serverId,
       provider: extractProviderFromConfig(config),
       kind: "credential_not_found",
-      message: enriched.message,
+      message: error.message,
     };
   }
-  const enriched = error.serverName
-    ? error
-    : new LinkCredentialExpiredError(error.credentialId, error.status, serverId);
   return {
     serverId,
     provider: extractProviderFromConfig(config),
     kind:
       error.status === "expired_no_refresh" ? "credential_expired" : "credential_refresh_failed",
-    message: enriched.message,
+    message: error.message,
   };
 }
 

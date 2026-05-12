@@ -375,7 +375,7 @@ describe("createMCPTools", () => {
     expect(closeB).toHaveBeenCalledTimes(1);
   });
 
-  it("disconnected entry message names the server when error lacked it", async () => {
+  it("disconnected entry exposes serverId on the entry itself", async () => {
     mockResolveEnvValues.mockRejectedValue(new LinkCredentialNotFoundError("cred_123"));
 
     const configs: Record<string, MCPServerConfig> = {
@@ -387,14 +387,17 @@ describe("createMCPTools", () => {
 
     const result = await createMCPTools(configs, fakeLogger);
 
+    // The DisconnectedIntegration entry carries serverId structurally — the
+    // `.message` is the upstream error string verbatim (no rewriting), so
+    // we no longer assert that the server name is interpolated into it.
     expect(result.disconnected).toHaveLength(1);
     expect(result.disconnected[0]?.serverId).toBe("my-slack-server");
-    expect(result.disconnected[0]?.message).toContain("my-slack-server");
   });
 
-  it("disconnected entry surfaces the LinkCredentialExpired refresh status", async () => {
+  it("disconnected entry surfaces the LinkCredentialExpired refresh status with Link's error string", async () => {
+    const linkError = "transient refresh failure (network): tcp connect error";
     mockResolveEnvValues.mockRejectedValue(
-      new LinkCredentialExpiredError("cred_456", "refresh_failed"),
+      new LinkCredentialExpiredError("cred_456", "refresh_failed", linkError),
     );
 
     const configs: Record<string, MCPServerConfig> = {
@@ -410,8 +413,8 @@ describe("createMCPTools", () => {
     expect(result.disconnected[0]).toMatchObject({
       serverId: "my-github-server",
       kind: "credential_refresh_failed",
+      message: linkError, // verbatim — not translated, not wrapped
     });
-    expect(result.disconnected[0]?.message).toContain("my-github-server");
   });
 
   it("keeps already-connected clients alive when a later server has a credential error", async () => {

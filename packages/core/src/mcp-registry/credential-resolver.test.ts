@@ -529,17 +529,27 @@ describe("hasUnusableCredentialCause", () => {
 // =============================================================================
 
 describe("LinkCredentialUnavailableError", () => {
-  it("error message names the affected server when serverName is supplied", () => {
+  it("error message is Link's `error` field verbatim — no rewriting", () => {
+    const linkError =
+      "transient refresh failure (network): tcp connect error: Connection refused (os error 61)";
     const error = new LinkCredentialUnavailableError({
       credentialId: "cred_x",
+      linkError,
       serverName: "slack",
     });
-    expect(error.message).toContain("'slack'");
-    expect(error.message).toContain("temporarily unavailable");
+    // The .message MUST be exactly what Link returned. Don't translate,
+    // polish, or wrap it — operators and the LLM both need the raw signal.
+    expect(error.message).toBe(linkError);
   });
 
-  it("error message falls back to 'an integration' when serverName is omitted", () => {
-    const error = new LinkCredentialUnavailableError({ credentialId: "cred_y" });
-    expect(error.message).toContain("an integration");
+  it("exposes linkError + serverName as readable fields for callers", () => {
+    const error = new LinkCredentialUnavailableError({
+      credentialId: "cred_y",
+      linkError: "some upstream detail",
+      serverName: "slack",
+    });
+    expect(error.linkError).toBe("some upstream detail");
+    expect(error.serverName).toBe("slack");
+    expect(error.credentialId).toBe("cred_y");
   });
 });
