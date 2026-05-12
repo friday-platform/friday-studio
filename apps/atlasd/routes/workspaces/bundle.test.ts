@@ -93,12 +93,14 @@ function createApp(opts: {
         lastSeen: new Date().toISOString(),
         metadata: {},
       }),
-    getWorkspaceConfig: vi.fn().mockResolvedValue(
-      opts.workspaceConfig ?? {
-        atlas: null,
-        workspace: { version: "1.0", workspace: { name: "demo-space" } },
-      },
-    ),
+    getWorkspaceConfig: vi
+      .fn()
+      .mockResolvedValue(
+        opts.workspaceConfig ?? {
+          atlas: null,
+          workspace: { version: "1.0", workspace: { name: "demo-space" } },
+        },
+      ),
     registerWorkspace: registerSpy,
     list: vi.fn().mockResolvedValue([]),
     deleteWorkspace: vi.fn(),
