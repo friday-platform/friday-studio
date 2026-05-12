@@ -13,9 +13,7 @@
 -->
 
 <script lang="ts">
-  import { browser } from "$app/environment";
-  import { MarkdownRendered, markdownToHTML } from "@atlas/ui";
-  import DOMPurify from "dompurify";
+  import { MarkdownRendered, markdownToHTMLSafe } from "@atlas/ui";
   import ExecutionStream from "$lib/components/execution/execution-stream.svelte";
   import JsonTree from "$lib/components/shared/json-tree.svelte";
   import TracePanel from "$lib/components/shared/trace-panel.svelte";
@@ -93,7 +91,7 @@
         <div class="result-pane">
           {#if typeof result === "string"}
             <MarkdownRendered>
-              {@html browser ? DOMPurify.sanitize(markdownToHTML(result)) : markdownToHTML(result)}
+              {@html markdownToHTMLSafe(result)}
             </MarkdownRendered>
           {:else}
             <JsonTree data={result} defaultExpanded={2} />

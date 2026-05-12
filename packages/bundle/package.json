@@ -6,9 +6,11 @@
   "exports": { ".": "./mod.ts" },
   "main": "./mod.ts",
   "dependencies": {
+    "@atlas/skills": "workspace:*",
+    "@atlas/utils": "workspace:*",
     "@std/yaml": "npm:@jsr/std__yaml@^1.0.10",
     "jszip": "^3.10.1",
-    "zod": "^4.3.5"
+    "zod": "^4.4.3"
   },
-  "devDependencies": { "vitest": "^4.1.0" }
+  "devDependencies": { "jetstream": "workspace:*", "nats": "^2.29.3", "vitest": "^4.1.0" }
 }

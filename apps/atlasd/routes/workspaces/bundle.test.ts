@@ -65,6 +65,7 @@ function createApp(opts: {
   workspaceId?: string;
   homeDir: string;
   registeredWorkspace?: { id: string; name: string; path: string };
+  workspaceConfig?: unknown;
 }): { app: Hono<AppVariables>; registerSpy: ReturnType<typeof vi.fn> } {
   const workspaceId = opts.workspaceId ?? "ws-demo";
   const registerSpy = vi
@@ -94,10 +95,12 @@ function createApp(opts: {
       }),
     getWorkspaceConfig: vi
       .fn()
-      .mockResolvedValue({
-        atlas: null,
-        workspace: { version: "1.0", workspace: { name: "demo-space" } },
-      }),
+      .mockResolvedValue(
+        opts.workspaceConfig ?? {
+          atlas: null,
+          workspace: { version: "1.0", workspace: { name: "demo-space" } },
+        },
+      ),
     registerWorkspace: registerSpy,
     list: vi.fn().mockResolvedValue([]),
     deleteWorkspace: vi.fn(),
@@ -207,6 +210,81 @@ describe("workspace bundle endpoints (end-to-end)", () => {
     await access(join(registeredPath, "skills", "hello", "SKILL.md"));
     const yml = await readFile(join(registeredPath, "workspace.yml"), "utf-8");
     expect(yml).toContain("demo-space");
+  });
+
+  test("GET /:id/bundle includes user agents installed under <atlasHome>/agents", async () => {
+    // User agent referenced by workspace.yml lives globally at
+    // <atlasHome>/agents/<id>@<version>/ — bundle-helpers must resolve it.
+    const agentSrc = join(homeDir, "agents", "spritesheet-normalizer@1.0.0");
+    await mkdir(agentSrc, { recursive: true });
+    await writeFile(
+      join(agentSrc, "metadata.json"),
+      JSON.stringify({
+        id: "spritesheet-normalizer",
+        version: "1.0.0",
+        description: "Normalizes a spritesheet",
+      }),
+    );
+    await writeFile(join(agentSrc, "agent.py"), "print('normalize')\n");
+
+    const { app } = createApp({
+      workspaceDir,
+      homeDir,
+      workspaceConfig: {
+        atlas: null,
+        workspace: {
+          version: "1.0",
+          workspace: { name: "demo-space" },
+          agents: {
+            "spritesheet-normalizer": {
+              type: "user",
+              agent: "spritesheet-normalizer",
+              description: "Normalizes a spritesheet",
+            },
+          },
+        },
+      },
+    });
+
+    const response = await app.request("/ws-demo/bundle");
+    expect(response.status).toBe(200);
+
+    const zip = await JSZip.loadAsync(new Uint8Array(await response.arrayBuffer()));
+    expect(zip.file("agents/spritesheet-normalizer/agent.py")).toBeTruthy();
+    expect(zip.file("agents/spritesheet-normalizer/metadata.json")).toBeTruthy();
+    const lockfile = await zip.file("workspace.lock")?.async("string");
+    expect(lockfile).toContain("spritesheet-normalizer");
+    expect(lockfile).toContain("agents/spritesheet-normalizer");
+  });
+
+  test("GET /:id/bundle fails when a referenced user agent isn't installed", async () => {
+    // Nothing seeded under <homeDir>/agents/ — referenced user agent is
+    // unresolvable, export should fail loudly instead of producing a
+    // half-empty bundle.
+    const { app } = createApp({
+      workspaceDir,
+      homeDir,
+      workspaceConfig: {
+        atlas: null,
+        workspace: {
+          version: "1.0",
+          workspace: { name: "demo-space" },
+          agents: {
+            ghost: {
+              type: "user",
+              agent: "ghost",
+              description: "agent that does not exist on disk",
+            },
+          },
+        },
+      },
+    });
+
+    const response = await app.request("/ws-demo/bundle");
+    expect(response.status).toBe(500);
+    const body = (await response.json()) as { error: string };
+    expect(body.error).toMatch(/user agent.*could not be resolved/i);
+    expect(body.error).toContain("ghost");
   });
 
   test("POST /import-bundle rejects a tampered bundle", async () => {

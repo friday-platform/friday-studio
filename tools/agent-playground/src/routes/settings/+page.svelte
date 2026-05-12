@@ -782,6 +782,8 @@
     if (kind === "skipped-existing")
       return "skills library saved separately — existing library preserved";
     if (kind === "integrity-failed") return "skills library failed integrity check";
+    if (kind === "legacy-archive-rejected")
+      return "skills library archive predates the May 2026 migration — re-export from the source daemon";
     return null;
   }
 </script>

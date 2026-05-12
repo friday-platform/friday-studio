@@ -4,6 +4,6 @@
   "type": "module",
   "exports": { ".": "./mod.ts", "./verdict": "./src/verdict.ts" },
   "main": "./mod.ts",
-  "dependencies": { "zod": "^4.3.5" },
+  "dependencies": { "zod": "^4.4.3" },
   "devDependencies": { "vitest": "^4.1.0" }
 }

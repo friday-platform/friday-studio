@@ -12,9 +12,7 @@
 -->
 
 <script lang="ts">
-  import { MarkdownRendered, markdownToHTML } from "@atlas/ui";
-  import { browser } from "$app/environment";
-  import DOMPurify from "dompurify";
+  import { MarkdownRendered, markdownToHTMLSafe } from "@atlas/ui";
   import type { PageData } from "./$types";
   import TableActionsBar from "$lib/components/chat/table-actions-bar.svelte";
   import {
@@ -28,14 +26,8 @@
   const segments = $derived<MarkdownSegment[]>(splitMarkdownByTables(data.text));
   const tableCount = $derived(segments.filter((s) => s.kind === "table").length);
 
-  // SSR renders raw HTML from `markdownToHTML`; the browser re-runs after
-  // hydration and re-sanitises through DOMPurify so any prose-side XSS
-  // shape (rare from a known-markdown artifact, but cheap to defend) is
-  // stripped before the final DOM lands. Mirrors the pattern used in
-  // execution-stream.svelte.
   function renderProse(md: string): string {
-    const html = markdownToHTML(md);
-    return browser ? DOMPurify.sanitize(html) : html;
+    return markdownToHTMLSafe(md);
   }
 </script>
 
