@@ -131,7 +131,12 @@ describe("GitHub chat-adapter integration: webhook HMAC verification", () => {
    * in chat-sdk, so a regression in either silently fans every comment into
    * a fresh thread.
    */
-  it.each([
+  it.each<{
+    name: string;
+    event: string;
+    payload: Record<string, unknown>;
+    expectedThreadId: string;
+  }>([
     {
       name: "issue_comment.created → issue threadId",
       event: "issue_comment",

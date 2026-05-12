@@ -1419,14 +1419,16 @@
               : `${queuedMessages.length} messages queued — will send when the assistant finishes`}
           </div>
         {/if}
-        <ChatInput
-          onsubmit={handleSubmit}
-          {streaming}
-          {stopping}
-          onstop={handleStop}
-          {ttsEnabled}
-          onttsToggle={ttsSupported ? toggleTts : undefined}
-        />
+        {#key chatId}
+          <ChatInput
+            onsubmit={handleSubmit}
+            {streaming}
+            {stopping}
+            onstop={handleStop}
+            {ttsEnabled}
+            onttsToggle={ttsSupported ? toggleTts : undefined}
+          />
+        {/key}
       </div>
     </div>
 

@@ -232,7 +232,9 @@ describe("markdownToHTML", () => {
   it("in-page anchor links skip target=_blank", () => {
     const html = markdownToHTML("[see](#foo) and [out](https://example.com)");
     expect(html).toContain('<a href="#foo">see</a>');
-    expect(html).toContain('<a href="https://example.com" target="_blank">out</a>');
+    expect(html).toContain(
+      '<a href="https://example.com" target="_blank" rel="noopener noreferrer">out</a>',
+    );
   });
 
   it("H5 to bold paragraph", () => {
@@ -262,10 +264,11 @@ describe("markdownToHTML", () => {
     expect(markdownToHTML("")).toEqual("");
   });
 
-  it("links open in new tab", () => {
+  it("links open in new tab with reverse-tabnabbing protection", () => {
     const result = markdownToHTML("[link text](https://example.com)");
     expect(result).toContain('href="https://example.com"');
     expect(result).toContain('target="_blank"');
+    expect(result).toContain('rel="noopener noreferrer"');
     expect(result).toContain("link text");
   });
 
@@ -552,6 +555,24 @@ describe("markdownToHTMLSafe", () => {
     expect(result).toContain("<strong>bold</strong>");
     expect(result).toContain('href="https://example.com"');
     expect(result).toContain(">link</a>");
+  });
+
+  it("keeps target=_blank and rel through sanitisation so chat links open in a new tab (#263)", () => {
+    // DOMPurify 2.x strips `target` by default; without the ADD_ATTR
+    // allowlist the marked renderer's `target="_blank"` was silently
+    // dropped here, and chat links navigated the host tab. Re-asserting
+    // both attrs survive guards against future config drift.
+    const result = markdownToHTMLSafe("[click](https://example.com)");
+    expect(result).toContain('href="https://example.com"');
+    expect(result).toContain('target="_blank"');
+    expect(result).toContain('rel="noopener noreferrer"');
+  });
+
+  it("does not set target=_blank on in-page anchors", () => {
+    const result = markdownToHTMLSafe("[toc](#section)");
+    expect(result).toContain('href="#section"');
+    expect(result).toContain(">toc</a>");
+    expect(result).not.toContain('target="_blank"');
   });
 
   it("preserves text content of stripped script tags as harmless text", () => {
