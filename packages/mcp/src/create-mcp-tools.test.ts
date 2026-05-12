@@ -47,9 +47,7 @@ vi.mock("@atlas/core/mcp-registry/credential-resolver", async (importOriginal) =
 });
 
 // Import after mocks
-const { buildDisconnectedEntry, createMCPTools, MCPTimeoutError } = await import(
-  "./create-mcp-tools.ts"
-);
+const { createMCPTools, MCPTimeoutError } = await import("./create-mcp-tools.ts");
 
 // Fake logger
 const fakeLogger = {
@@ -968,37 +966,5 @@ describe("createMCPTools", () => {
         if (originalAtlasHome !== undefined) process.env.FRIDAY_HOME = originalAtlasHome;
       }
     });
-  });
-});
-
-describe("buildDisconnectedEntry", () => {
-  const stdioConfig: MCPServerConfig = {
-    transport: { type: "stdio", command: "echo", args: [] },
-    env: { TOKEN: { from: "link" as const, provider: "google-calendar", key: "access_token" } },
-  };
-
-  it("returns credential_temporarily_unavailable kind for LinkCredentialUnavailableError", () => {
-    const error = new LinkCredentialUnavailableError({
-      credentialId: "cred_pending",
-      serverName: "google-calendar",
-    });
-
-    const entry = buildDisconnectedEntry(error, "google-calendar", stdioConfig);
-
-    expect(entry).toMatchObject({
-      serverId: "google-calendar",
-      kind: "credential_temporarily_unavailable",
-      provider: "google-calendar",
-    });
-    expect(entry.message).toContain("'google-calendar'");
-  });
-
-  it("enriches the message with serverId when the error lacks a serverName", () => {
-    const error = new LinkCredentialUnavailableError({ credentialId: "cred_pending" });
-
-    const entry = buildDisconnectedEntry(error, "my-server", stdioConfig);
-
-    expect(entry.kind).toBe("credential_temporarily_unavailable");
-    expect(entry.message).toContain("'my-server'");
   });
 });

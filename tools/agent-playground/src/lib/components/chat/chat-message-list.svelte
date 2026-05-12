@@ -812,13 +812,12 @@
             </div>
           {/if}
 
-          {@const dedupedDisconnects = disconnectIntegrationsByMessageId.get(message.id)}
-          {#if dedupedDisconnects && dedupedDisconnects.length > 0}
-            <!-- Non-fatal info chip: an MCP integration's credential is dead so
-                 its tools were skipped this session. The session still ran;
-                 the user just needs to reconnect the integration to use those
-                 tools again. Deduped at the list level so two agents in the
-                 same turn don't both render the same banner. -->
+          {#if message.disconnectedIntegrations && message.disconnectedIntegrations.length > 0}
+            <!-- Non-fatal info chip: an MCP integration's credential is dead
+                 (or temporarily unavailable) so its tools were skipped this
+                 session. The session still ran; the user just needs to
+                 reconnect the integration — or, for transient failures,
+                 try again in a moment. -->
             <div
               class="message-notice"
               role="status"
@@ -826,7 +825,7 @@
             >
               <span class="message-notice-icon" aria-hidden="true">⚠</span>
               <div class="message-notice-body">
-                {#each dedupedDisconnects as integration (integration.serverId)}
+                {#each message.disconnectedIntegrations as integration (integration.serverId)}
                   <div
                     class="message-notice-row"
                     data-testid={`integration-chip-${integration.kind}`}

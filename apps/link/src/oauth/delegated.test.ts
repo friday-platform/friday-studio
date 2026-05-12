@@ -220,11 +220,29 @@ describe("refreshDelegatedTokenClassified", () => {
     expect(init?.signal).toBeInstanceOf(AbortSignal);
   });
 
-  it("kind=token_dead on 4xx invalid_grant; does NOT retry; propagates subtype", async () => {
+  // The classifier branches only on `error === "invalid_grant"`. Each body
+  // variant Google can return (bare, with description, with error_subtype)
+  // must map to the same `kind: "token_dead"` outcome. One row per
+  // documented shape pins the contract without testing the type system.
+  it.each([
+    { label: "bare invalid_grant", body: { error: "invalid_grant" } },
+    {
+      label: "with error_description (Google's documented revoked shape)",
+      body: { error: "invalid_grant", error_description: "Token has been expired or revoked." },
+    },
+    {
+      label: "with error_subtype (Google's documented session-control failure)",
+      body: {
+        error: "invalid_grant",
+        error_subtype: "invalid_rapt",
+        error_description: "Reauth related error (invalid_rapt)",
+      },
+    },
+  ])("kind=token_dead on 400 invalid_grant — $label", async ({ body }) => {
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValue(
-        new Response(JSON.stringify({ error: "invalid_grant", error_subtype: "user_revoked" }), {
+        new Response(JSON.stringify(body), {
           status: 400,
           headers: { "Content-Type": "application/json" },
         }),
@@ -232,66 +250,11 @@ describe("refreshDelegatedTokenClassified", () => {
 
     const outcome = await refreshDelegatedTokenClassified(config, "rt-1");
 
-    expect(outcome).toEqual({ kind: "token_dead", subtype: "user_revoked" });
+    expect(outcome).toEqual({ kind: "token_dead" });
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("kind=token_dead on 4xx invalid_grant without subtype", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({ error: "invalid_grant" }), {
-        status: 400,
-        headers: { "Content-Type": "application/json" },
-      }),
-    );
-
-    const outcome = await refreshDelegatedTokenClassified(config, "rt-1");
-
-    expect(outcome.kind).toBe("token_dead");
-    if (outcome.kind === "token_dead") {
-      expect(outcome.subtype).toBeUndefined();
-    }
-  });
-
-  it("kind=token_dead on Google's documented refresh-revoked shape (400 + invalid_grant + error_description)", async () => {
-    // Verbatim Google response per developers.google.com/identity/protocols/oauth2
-    // when a refresh_token is revoked / expired / never-issued. Pins the
-    // exact wire shape so a future refactor can't accidentally regress
-    // on Google's canonical revocation signal.
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          error: "invalid_grant",
-          error_description: "Token has been expired or revoked.",
-        }),
-        { status: 400, headers: { "Content-Type": "application/json" } },
-      ),
-    );
-
-    const outcome = await refreshDelegatedTokenClassified(config, "rt-1");
-    expect(outcome.kind).toBe("token_dead");
-  });
-
-  it("kind=token_dead with subtype=invalid_rapt on Google's session-control policy failure", async () => {
-    // Documented at developers.google.com/identity/protocols/oauth2 —
-    // "the error_subtype field can be used to distinguish between a
-    // revoked token and a failure due to a session control policy
-    // (for example, "error_subtype": "invalid_rapt")".
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          error: "invalid_grant",
-          error_subtype: "invalid_rapt",
-          error_description: "Reauth related error (invalid_rapt)",
-        }),
-        { status: 400, headers: { "Content-Type": "application/json" } },
-      ),
-    );
-
-    const outcome = await refreshDelegatedTokenClassified(config, "rt-1");
-    expect(outcome).toEqual({ kind: "token_dead", subtype: "invalid_rapt" });
-  });
-
-  it("kind=transient platform_bug on 4xx with other error code (loud log)", async () => {
+  it("kind=transient platform_bug on 4xx with other error code", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(() =>
       Promise.resolve(
         new Response(JSON.stringify({ error: "invalid_client", error_description: "bad client" }), {

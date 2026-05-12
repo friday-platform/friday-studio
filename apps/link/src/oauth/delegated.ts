@@ -120,7 +120,6 @@ const DelegatedRefreshResponseSchema = z.object({
 
 const DelegatedRefreshErrorBodySchema = z.object({
   error: z.string(),
-  error_subtype: z.string().optional(),
   error_description: z.string().optional(),
 });
 
@@ -144,7 +143,7 @@ export type TransientReason = "network" | "timeout" | "http_5xx" | "http_429" | 
  */
 export type RefreshOutcome =
   | { kind: "success"; tokens: DelegatedTokens }
-  | { kind: "token_dead"; subtype?: string }
+  | { kind: "token_dead" }
   | { kind: "transient"; reason: TransientReason; detail: string };
 
 const REFRESH_FETCH_TIMEOUT_MS = 15_000;
@@ -176,7 +175,7 @@ async function classifyRefreshAttempt(
     try {
       json = JSON.parse(rawBody);
     } catch {
-      logger.error("oauth_refresh_platform_bug", {
+      logger.warn("oauth_refresh_platform_bug", {
         reason: "non_json_success_body",
         status: response.status,
         body: rawBody.slice(0, 500),
@@ -189,7 +188,7 @@ async function classifyRefreshAttempt(
     }
     const parsed = DelegatedRefreshResponseSchema.safeParse(json);
     if (!parsed.success) {
-      logger.error("oauth_refresh_platform_bug", {
+      logger.warn("oauth_refresh_platform_bug", {
         reason: "malformed_success_body",
         status: response.status,
         zodError: parsed.error.message,
@@ -236,7 +235,7 @@ async function classifyRefreshAttempt(
   try {
     json = JSON.parse(rawBody);
   } catch {
-    logger.error("oauth_refresh_platform_bug", {
+    logger.warn("oauth_refresh_platform_bug", {
       reason: "non_json_4xx_body",
       status: response.status,
       body: rawBody.slice(0, 500),
@@ -250,7 +249,7 @@ async function classifyRefreshAttempt(
 
   const parsedError = DelegatedRefreshErrorBodySchema.safeParse(json);
   if (!parsedError.success) {
-    logger.error("oauth_refresh_platform_bug", {
+    logger.warn("oauth_refresh_platform_bug", {
       reason: "4xx_missing_error_field",
       status: response.status,
       body: rawBody.slice(0, 500),
@@ -266,10 +265,10 @@ async function classifyRefreshAttempt(
   }
 
   if (parsedError.data.error === "invalid_grant") {
-    return { kind: "token_dead", subtype: parsedError.data.error_subtype };
+    return { kind: "token_dead" };
   }
 
-  logger.error("oauth_refresh_platform_bug", {
+  logger.warn("oauth_refresh_platform_bug", {
     reason: "4xx_non_invalid_grant",
     status: response.status,
     errorCode: parsedError.data.error,
@@ -302,10 +301,7 @@ export interface RefreshClassifyMeta {
  *
  *   HTTP 400 Bad Request
  *   { "error": "invalid_grant",
- *     "error_description": "Token has been expired or revoked.",
- *     "error_subtype": "invalid_rapt"          // optional — present
- *                                              //  for session-control
- *                                              //  policy failures }
+ *     "error_description": "Token has been expired or revoked." }
  *
  * Per RFC 6749 § 5.2, `invalid_grant` means the refresh_token is
  * "invalid, expired, revoked, does not match the redirect URI, or was
@@ -361,11 +357,7 @@ export async function refreshDelegatedToken(
     case "success":
       return outcome.tokens;
     case "token_dead":
-      throw new Error(
-        `Delegated refresh failed: token_dead${
-          outcome.subtype ? ` (subtype=${outcome.subtype})` : ""
-        }`,
-      );
+      throw new Error(`Delegated refresh failed: token_dead`);
     case "transient":
       throw new Error(
         `Delegated refresh failed: transient reason=${outcome.reason} detail=${outcome.detail}`,

@@ -529,59 +529,29 @@ describe("hasUnusableCredentialCause", () => {
 // =============================================================================
 
 describe("LinkCredentialUnavailableError", () => {
-  it("singular constructor produces entries array of length 1", () => {
+  it("populates credentialId, serverName, provider from constructor", () => {
     const error = new LinkCredentialUnavailableError({
       credentialId: "cred_1",
       serverName: "google-calendar",
       provider: "google-calendar",
     });
 
-    expect(error.entries.length).toEqual(1);
-    expect(error.entries[0]).toEqual({
-      credentialId: "cred_1",
-      serverName: "google-calendar",
-      provider: "google-calendar",
-    });
     expect(error.credentialId).toEqual("cred_1");
     expect(error.serverName).toEqual("google-calendar");
+    expect(error.provider).toEqual("google-calendar");
   });
 
-  it("multi-entry constructor preserves order in entries", () => {
-    const entries = [
-      { credentialId: "cred_a", serverName: "calendar", provider: "google-calendar" },
-      { credentialId: "cred_b", serverName: "drive", provider: "google-drive" },
-      { credentialId: "cred_c", serverName: "gmail", provider: "google-gmail" },
-    ];
-    const error = new LinkCredentialUnavailableError({ entries });
-
-    expect(error.entries).toEqual(entries);
-    expect(error.credentialId).toEqual("cred_a");
-    expect(error.serverName).toEqual("calendar");
-  });
-
-  it("throws at construction when entries array is empty", () => {
-    expect(() => new LinkCredentialUnavailableError({ entries: [] })).toThrow(
-      "LinkCredentialUnavailableError requires at least one entry",
-    );
-  });
-
-  it("error message lists all affected servers", () => {
-    const error = new LinkCredentialUnavailableError({
-      entries: [
-        { credentialId: "cred_a", serverName: "calendar" },
-        { credentialId: "cred_b", serverName: "drive" },
-      ],
-    });
-
-    expect(error.message).toContain("'calendar'");
-    expect(error.message).toContain("'drive'");
-  });
-
-  it("error message names a single server", () => {
+  it("error message names the affected server when serverName is supplied", () => {
     const error = new LinkCredentialUnavailableError({
       credentialId: "cred_x",
       serverName: "slack",
     });
     expect(error.message).toContain("'slack'");
+    expect(error.message).toContain("temporarily unavailable");
+  });
+
+  it("error message falls back to 'an integration' when serverName is omitted", () => {
+    const error = new LinkCredentialUnavailableError({ credentialId: "cred_y" });
+    expect(error.message).toContain("an integration");
   });
 });
