@@ -20,7 +20,7 @@ import type { AtlasTool, AtlasTools, AtlasUIMessage, AtlasUIMessageChunk } from 
 import type { DelegationBudget, MCPServerConfig, WorkspaceConfig } from "@atlas/config";
 import { buildTemporalFacts, getDefaultProviderOpts, type PlatformModels } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
-import { createMCPToolsWithRetry } from "@atlas/mcp";
+import { createMCPTools } from "@atlas/mcp";
 import { truncateForLedger } from "@atlas/utils";
 import type { ToolCallRepairFunction, UIMessageStreamWriter } from "ai";
 import { stepCountIs, streamText, tool } from "ai";
@@ -331,23 +331,14 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
           const serverResults = await Promise.allSettled(
             serverEntries.map(([serverId, config]) => {
               const prefix = serverEntries.length > 1 ? serverId : undefined;
-              // v8 decision 18: delegate execution is non-interactive — no
-              // elicitation surface, no chat user to answer. Pass `undefined`
-              // for interactiveCtx so transients throw immediately (the
-              // catch-by-allSettled below records them as serverFailures).
-              return createMCPToolsWithRetry(
-                { [serverId]: config },
-                logger,
-                {
-                  // Use the parent's abort signal (not the composed one) for
-                  // MCP startup — wall-clock budget is for the LLM call, not
-                  // the connection handshake. Connection failures bubble up
-                  // as a `serverFailures` entry on their own.
-                  signal: abortSignal,
-                  toolPrefix: prefix,
-                },
-                undefined,
-              );
+              return createMCPTools({ [serverId]: config }, logger, {
+                // Use the parent's abort signal (not the composed one) for
+                // MCP startup — wall-clock budget is for the LLM call, not
+                // the connection handshake. Connection failures bubble up
+                // as a `serverFailures` entry on their own.
+                signal: abortSignal,
+                toolPrefix: prefix,
+              });
             }),
           );
 

@@ -73,14 +73,7 @@ export interface AgentExecutionContext {
   actionId?: string;
   /** Parent job timeout in milliseconds for blocking HITL expiry. */
   jobTimeoutMs?: number;
-  /**
-   * True when a human is attached to this session and can respond to a
-   * transient-recovery elicitation (direct chat or chat-communicator
-   * signals). Computed by the workspace runtime via
-   * `computeSessionInteractive`. Phase 3's createMCPTools retry wrapper
-   * uses this to decide between raising an MCP elicitation and surfacing
-   * the disconnect synchronously.
-   */
+  /** True when a human is attached to this session (direct chat or chat-communicator). Used for telemetry / observability. */
   sessionInteractive?: boolean;
 }
 
@@ -223,7 +216,9 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         throw error;
       }
       throw new Error(
-        `Invalid JSON in MCP response: ${error instanceof Error ? error.message : String(error)}. Response text: ${textContent.substring(0, 200)}`,
+        `Invalid JSON in MCP response: ${
+          error instanceof Error ? error.message : String(error)
+        }. Response text: ${textContent.substring(0, 200)}`,
       );
     }
   }

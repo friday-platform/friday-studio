@@ -157,7 +157,7 @@ describe("refreshDelegatedToken", () => {
     await expect(refreshDelegatedToken(config, "rt-1")).rejects.toThrow(/token_dead/);
   });
 
-  it("throws transient platform_bug after retry on 2xx with malformed body", async () => {
+  it("throws transient platform_bug on 2xx with malformed body", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(() =>
       Promise.resolve(
         new Response(JSON.stringify({ unexpected: "shape" }), {
@@ -347,56 +347,10 @@ describe("refreshDelegatedTokenClassified", () => {
     }
   });
 
-  it("one-retry behavior: first attempt 500, second 200 → kind=success", async () => {
+  it("single-attempt behavior: a 500 returns kind=transient (no internal retry)", async () => {
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(new Response("upstream broken", { status: 500 }))
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ access_token: "at-recovered", expiry_date: 1800000000000 }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }),
-      );
-
-    const outcome = await refreshDelegatedTokenClassified(config, "rt-1");
-
-    expect(outcome.kind).toBe("success");
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-  });
-
-  it("500ms retry delay before the second attempt", async () => {
-    vi.useFakeTimers();
-    const fetchMock = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(new Response("upstream broken", { status: 500 }))
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ access_token: "at-recovered", expiry_date: 1800000000000 }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }),
-      );
-
-    const promise = refreshDelegatedTokenClassified(config, "rt-1");
-
-    // Let the first attempt's microtasks resolve so the retry sleep is scheduled.
-    await vi.advanceTimersByTimeAsync(0);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-
-    // Just before 500ms — retry must NOT have fired yet.
-    await vi.advanceTimersByTimeAsync(499);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-
-    // Cross the 500ms threshold — retry fires.
-    await vi.advanceTimersByTimeAsync(1);
-    await promise;
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-  });
-
-  it("two consecutive transients return the second outcome (final)", async () => {
-    const fetchMock = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(new Response("rate limited", { status: 429 }))
-      .mockResolvedValueOnce(new Response("internal server error", { status: 500 }));
+      .mockResolvedValue(new Response("upstream broken", { status: 500 }));
 
     const outcome = await refreshDelegatedTokenClassified(config, "rt-1");
 
@@ -404,7 +358,7 @@ describe("refreshDelegatedTokenClassified", () => {
     if (outcome.kind === "transient") {
       expect(outcome.reason).toBe("http_5xx");
     }
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -426,7 +380,7 @@ describe("refreshDelegatedTokenClassified telemetry", () => {
     }
   });
 
-  it("records refresh.outcome counter for success on attempt 1", async () => {
+  it("records refresh.outcome counter for success", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(
         JSON.stringify({
@@ -443,73 +397,11 @@ describe("refreshDelegatedTokenClassified telemetry", () => {
 
     expect(sink.getCount("link.oauth.refresh.outcome")).toEqual(1);
     expect(
-      sink.getCount("link.oauth.refresh.outcome", {
-        kind: "success",
-        provider: "google-calendar",
-        retry_attempt: "1",
-      }),
+      sink.getCount("link.oauth.refresh.outcome", { kind: "success", provider: "google-calendar" }),
     ).toEqual(1);
   });
 
-  it("records refresh.outcome twice on a transient → success retry path and increments retry_saved", async () => {
-    vi.useFakeTimers();
-    vi.spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(new Response("upstream 500", { status: 500 }))
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            access_token: "at-2",
-            expiry_date: 1800000000000,
-            scope: "openid",
-            token_type: "Bearer",
-          }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        ),
-      );
-
-    const promise = refreshDelegatedTokenClassified(config, "rt-1", {
-      provider: "google-calendar",
-    });
-    await vi.advanceTimersByTimeAsync(500);
-    await promise;
-
-    expect(sink.getCount("link.oauth.refresh.outcome")).toEqual(2);
-    expect(
-      sink.getCount("link.oauth.refresh.outcome", {
-        kind: "transient",
-        reason: "http_5xx",
-        retry_attempt: "1",
-      }),
-    ).toEqual(1);
-    expect(
-      sink.getCount("link.oauth.refresh.outcome", { kind: "success", retry_attempt: "2" }),
-    ).toEqual(1);
-    expect(sink.getCount("link.oauth.refresh.retry_saved")).toEqual(1);
-    expect(
-      sink.getCount("link.oauth.refresh.retry_saved", {
-        provider: "google-calendar",
-        first_reason: "http_5xx",
-      }),
-    ).toEqual(1);
-  });
-
-  it("does NOT increment retry_saved when both attempts are transient", async () => {
-    vi.useFakeTimers();
-    vi.spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(new Response("rate limited", { status: 429 }))
-      .mockResolvedValueOnce(new Response("upstream 500", { status: 500 }));
-
-    const promise = refreshDelegatedTokenClassified(config, "rt-1", {
-      provider: "google-calendar",
-    });
-    await vi.advanceTimersByTimeAsync(500);
-    await promise;
-
-    expect(sink.getCount("link.oauth.refresh.outcome")).toEqual(2);
-    expect(sink.getCount("link.oauth.refresh.retry_saved")).toEqual(0);
-  });
-
-  it("does NOT retry on token_dead and records only attempt 1", async () => {
+  it("records refresh.outcome for token_dead and does NOT retry", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify({ error: "invalid_grant" }), {
         status: 400,
@@ -520,14 +412,10 @@ describe("refreshDelegatedTokenClassified telemetry", () => {
     await refreshDelegatedTokenClassified(config, "rt-1", { provider: "google-calendar" });
 
     expect(sink.getCount("link.oauth.refresh.outcome")).toEqual(1);
-    expect(
-      sink.getCount("link.oauth.refresh.outcome", { kind: "token_dead", retry_attempt: "1" }),
-    ).toEqual(1);
-    expect(sink.getCount("link.oauth.refresh.retry_saved")).toEqual(0);
+    expect(sink.getCount("link.oauth.refresh.outcome", { kind: "token_dead" })).toEqual(1);
   });
 
   it("emits the platform_bug counter for platform_bug transients", async () => {
-    vi.useFakeTimers();
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify({ error: "invalid_client" }), {
         status: 400,
@@ -535,16 +423,11 @@ describe("refreshDelegatedTokenClassified telemetry", () => {
       }),
     );
 
-    const promise = refreshDelegatedTokenClassified(config, "rt-1", {
-      provider: "google-calendar",
-    });
-    await vi.advanceTimersByTimeAsync(500);
-    await promise;
+    await refreshDelegatedTokenClassified(config, "rt-1", { provider: "google-calendar" });
 
-    // Both attempts surface platform_bug — counter should tick twice.
-    expect(sink.getCount("link.oauth.refresh.platform_bug")).toEqual(2);
+    expect(sink.getCount("link.oauth.refresh.platform_bug")).toEqual(1);
     expect(
       sink.getCount("link.oauth.refresh.platform_bug", { provider: "google-calendar" }),
-    ).toEqual(2);
+    ).toEqual(1);
   });
 });

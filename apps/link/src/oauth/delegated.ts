@@ -92,7 +92,9 @@ export function parseDelegatedCallback(
   const parsed = DelegatedCallbackQuerySchema.safeParse(rawQuery);
   if (!parsed.success) {
     throw new Error(
-      `Delegated callback missing required fields: ${parsed.error.issues.map((i) => i.path.join(".")).join(", ")}`,
+      `Delegated callback missing required fields: ${parsed.error.issues
+        .map((i) => i.path.join("."))
+        .join(", ")}`,
     );
   }
 
@@ -147,11 +149,6 @@ export type RefreshOutcome =
   | { kind: "transient"; reason: TransientReason; detail: string };
 
 const REFRESH_FETCH_TIMEOUT_MS = 15_000;
-const REFRESH_RETRY_DELAY_MS = 500;
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 async function classifyRefreshAttempt(
   config: Extract<OAuthConfig, { mode: "delegated" }>,
@@ -262,7 +259,10 @@ async function classifyRefreshAttempt(
     return {
       kind: "transient",
       reason: "platform_bug",
-      detail: `HTTP ${response.status} with JSON body missing 'error' field: ${rawBody.slice(0, 200)}`,
+      detail: `HTTP ${response.status} with JSON body missing 'error' field: ${rawBody.slice(
+        0,
+        200,
+      )}`,
     };
   }
 
@@ -294,29 +294,18 @@ export interface RefreshClassifyMeta {
 
 /**
  * Refresh an access token via the delegated endpoint, returning a typed
- * outcome rather than throwing.
- *
- * One retry policy: on a `transient` first attempt, sleeps
- * `REFRESH_RETRY_DELAY_MS` and retries ONCE. The second attempt's outcome
- * is final regardless of kind. `success` and `token_dead` never retry —
- * `success` is done, `token_dead` is a permanent state.
+ * outcome rather than throwing. Single attempt — no retry.
  *
  * Trust contract: only `kind === "token_dead"` means the refresh_token is
  * provably revoked. Everything else is either usable (`success`) or a
  * non-actionable platform/transport failure (`transient`).
  *
  * Telemetry:
- *   - `link.oauth.refresh.outcome` counter per attempt with `{kind, reason,
- *     provider, retry_attempt}` attributes.
- *   - `link.oauth.refresh.retry_saved` counter when attempt 2 produces a
- *     non-transient outcome (success OR token_dead) after attempt 1 was
- *     transient. Recording on `token_dead` too keeps the counter aligned
- *     with "the retry produced a definitive answer."
+ *   - `link.oauth.refresh.outcome` counter with `{kind, reason, provider}`.
  *   - `link.oauth.refresh.platform_bug` counter for every transient with
  *     `reason === "platform_bug"`.
- *   - `oauth.refresh.outcome` structured log line per attempt with
- *     `{credentialId, provider, outcome.kind, outcome.reason, retry_count,
- *     latency_ms}`.
+ *   - `oauth.refresh.outcome` structured log line with `{credentialId,
+ *     provider, outcome.kind, outcome.reason, latency_ms}`.
  */
 export async function refreshDelegatedTokenClassified(
   config: Extract<OAuthConfig, { mode: "delegated" }>,
@@ -324,52 +313,30 @@ export async function refreshDelegatedTokenClassified(
   meta: RefreshClassifyMeta = {},
 ): Promise<RefreshOutcome> {
   const provider = meta.provider ?? "unknown";
-  const metrics = getOAuthMetrics();
-
-  const firstStartedAt = Date.now();
-  const first = await classifyRefreshAttempt(config, refreshToken);
+  const startedAt = Date.now();
+  const outcome = await classifyRefreshAttempt(config, refreshToken);
   recordAttemptTelemetry({
-    outcome: first,
+    outcome,
     provider,
-    retryAttempt: 1,
-    latencyMs: Date.now() - firstStartedAt,
+    latencyMs: Date.now() - startedAt,
     credentialId: meta.credentialId,
   });
-
-  if (first.kind !== "transient") return first;
-  await sleep(REFRESH_RETRY_DELAY_MS);
-
-  const secondStartedAt = Date.now();
-  const second = await classifyRefreshAttempt(config, refreshToken);
-  recordAttemptTelemetry({
-    outcome: second,
-    provider,
-    retryAttempt: 2,
-    latencyMs: Date.now() - secondStartedAt,
-    credentialId: meta.credentialId,
-  });
-
-  if (second.kind !== "transient") {
-    metrics.recordRetrySaved({ provider, first_reason: first.reason });
-  }
-  return second;
+  return outcome;
 }
 
 function recordAttemptTelemetry(input: {
   outcome: RefreshOutcome;
   provider: string;
-  retryAttempt: 1 | 2;
   latencyMs: number;
   credentialId?: string;
 }): void {
-  const { outcome, provider, retryAttempt, latencyMs, credentialId } = input;
+  const { outcome, provider, latencyMs, credentialId } = input;
   const metrics = getOAuthMetrics();
   const reason = outcome.kind === "transient" ? outcome.reason : undefined;
   metrics.recordRefreshOutcome({
     kind: outcome.kind,
     ...(reason !== undefined ? { reason } : {}),
     provider,
-    retry_attempt: retryAttempt,
   });
   if (outcome.kind === "transient" && outcome.reason === "platform_bug") {
     metrics.recordPlatformBug({ provider, reason: outcome.detail.slice(0, 80) });
@@ -378,7 +345,6 @@ function recordAttemptTelemetry(input: {
     ...(credentialId !== undefined ? { credentialId } : {}),
     provider,
     outcome: { kind: outcome.kind, ...(reason !== undefined ? { reason } : {}) },
-    retry_count: retryAttempt,
     latency_ms: latencyMs,
   });
 }
@@ -391,9 +357,9 @@ function recordAttemptTelemetry(input: {
  * `refresh_token` — Google never returns one on refresh, so the caller
  * must preserve the original.
  *
- * Throws on `token_dead` and on `transient` after the one-retry policy.
- * Callers wanting to distinguish those cases should use
- * `refreshDelegatedTokenClassified` directly.
+ * Throws on `token_dead` and on `transient`. Callers wanting to
+ * distinguish those cases should use `refreshDelegatedTokenClassified`
+ * directly.
  */
 export async function refreshDelegatedToken(
   config: Extract<OAuthConfig, { mode: "delegated" }>,
@@ -406,7 +372,9 @@ export async function refreshDelegatedToken(
       return outcome.tokens;
     case "token_dead":
       throw new Error(
-        `Delegated refresh failed: token_dead${outcome.subtype ? ` (subtype=${outcome.subtype})` : ""}`,
+        `Delegated refresh failed: token_dead${
+          outcome.subtype ? ` (subtype=${outcome.subtype})` : ""
+        }`,
       );
     case "transient":
       throw new Error(

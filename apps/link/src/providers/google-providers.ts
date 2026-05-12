@@ -134,7 +134,6 @@ function createGoogleProvider(
   const { exchangeUri, refreshUri } = resolveDelegatedUris();
   return defineOAuthProvider({
     id: `google-${service}`,
-    family: "google",
     displayName,
     description,
     oauthConfig: {

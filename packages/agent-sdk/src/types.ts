@@ -312,13 +312,7 @@ export const AgentSessionDataSchema = z.object({
     .optional(),
   memoryContextKey: z.string().optional(),
   foregroundWorkspaceIds: z.array(z.string()).optional(),
-  /**
-   * True when a human is attached to this session and can respond to a
-   * transient-recovery elicitation (direct chat or chat-communicator
-   * signals). Threaded across the orchestrator → agent-server boundary so
-   * `fetchAllTools` can decide whether to surface an interactive
-   * `auth-refresh` elicitation when an OAuth refresh fails.
-   */
+  /** True when a human is attached to this session (direct chat or chat-communicator). Used for telemetry / observability. */
   sessionInteractive: z.boolean().optional(),
 });
 

@@ -255,6 +255,28 @@
     return sum;
   });
 
+  // Dedupe disconnect chips across messages: once a (serverId, kind) pair
+  // has shown up in an earlier message, the same pair on a later message
+  // should not re-render its banner. Two agents (workspace-chat + a
+  // delegated sub-agent) hitting the same dead MCP in one turn would
+  // otherwise emit two identical "is disconnected — reconnect" banners.
+  const disconnectIntegrationsByMessageId = $derived.by(() => {
+    const map = new Map<string, ChatMessage["disconnectedIntegrations"]>();
+    const seen = new Set<string>();
+    for (const m of messages) {
+      const raw = m.disconnectedIntegrations;
+      if (!raw || raw.length === 0) continue;
+      const kept = raw.filter((i) => {
+        const key = `${i.serverId}::${i.kind}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+      if (kept.length > 0) map.set(m.id, kept);
+    }
+    return map;
+  });
+
   // "Sticky-follow" state: true while the viewport is anchored at/near the
   // bottom, false the moment the user scrolls up to read history. Without
   // this, every streaming token would re-snap the scroll to the bottom and
@@ -790,11 +812,13 @@
             </div>
           {/if}
 
-          {#if message.disconnectedIntegrations && message.disconnectedIntegrations.length > 0}
+          {@const dedupedDisconnects = disconnectIntegrationsByMessageId.get(message.id)}
+          {#if dedupedDisconnects && dedupedDisconnects.length > 0}
             <!-- Non-fatal info chip: an MCP integration's credential is dead so
                  its tools were skipped this session. The session still ran;
                  the user just needs to reconnect the integration to use those
-                 tools again.
+                 tools again. Deduped at the list level so two agents in the
+                 same turn don't both render the same banner.
                  `credential_temporarily_unavailable` is a transient-refresh
                  variant — the elicitation chip provides the Retry button so
                  the chip itself stays Reconnect-free. -->
@@ -805,17 +829,23 @@
             >
               <span class="message-notice-icon" aria-hidden="true">⚠</span>
               <div class="message-notice-body">
-                {#each message.disconnectedIntegrations as integration (integration.serverId)}
+                {#each dedupedDisconnects as integration (integration.serverId)}
                   <div
                     class="message-notice-row"
                     data-testid={`integration-chip-${integration.kind}`}
                   >
                     {#if integration.kind === "credential_temporarily_unavailable"}
                       Friday couldn't reach
-                      <strong>{integration.provider ?? integration.serverId}</strong>. Retry?
+                      <strong>{integration.provider ?? integration.serverId}</strong>
+                      this turn — try again in a moment.
                     {:else}
                       <strong>{integration.provider ?? integration.serverId}</strong>
-                      is disconnected — reconnect in Settings → Connections to use those tools.
+                      is disconnected —
+                      <a
+                        href={`/mcp/${integration.serverId}`}
+                        class="message-notice-link"
+                      >reconnect on the {integration.serverId} page</a>
+                      to use its tools.
                     {/if}
                   </div>
                 {/each}
@@ -1229,6 +1259,13 @@
   }
   .message-notice-row {
     overflow-wrap: anywhere;
+  }
+  .message-notice-link {
+    color: inherit;
+    text-decoration: underline;
+  }
+  .message-notice-link:hover {
+    text-decoration: none;
   }
 
   .message-content {

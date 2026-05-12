@@ -365,7 +365,7 @@ type CredentialResponse = {
 };
 
 /** Stale-token threshold: if access_token has < this many seconds left and
- * refresh failed transiently, callers can't safely use it. v8 decision 7. */
+ * refresh failed transiently, callers can't safely use it. */
 const STALE_TOKEN_THRESHOLD_SECONDS = 60;
 
 /** Resolve a credential with proactive OAuth token refresh. */

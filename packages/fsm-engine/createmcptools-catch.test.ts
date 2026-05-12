@@ -1,12 +1,11 @@
 /**
- * Pins the v8 design decision 9 ("Unusable-credential predicate
- * semantics") invariant that the `createMCPTools` catch at
- * `fsm-engine.ts:3268-3284` depends on. That catch gates the wrap into
- * `UserConfigurationError.credentialRefreshFailed` on
- * `hasUnusableCredentialCause(error)`. If that predicate ever starts
- * returning `true` for `LinkCredentialUnavailableError`, the catch will
- * silently start wrapping transient errors and the v8 plan loses its
- * SKIPPED-vs-FAILED distinction for cron sessions.
+ * Pins the invariant that the `createMCPTools` catch in fsm-engine wraps
+ * `UserConfigurationError.credentialRefreshFailed` only when
+ * `hasUnusableCredentialCause(error)` is true. Transient
+ * `LinkCredentialUnavailableError` MUST NOT be in the unusable set —
+ * otherwise the catch wraps transients and conflates them with
+ * permanently-revoked credentials, losing the SKIPPED-vs-FAILED
+ * distinction for cron sessions.
  *
  * The companion FAILED-routing assertion lives in
  * `packages/workspace/src/runtime.test.ts` against `classifySessionError`.

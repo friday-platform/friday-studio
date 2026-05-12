@@ -43,11 +43,7 @@ import type { LinkSummary } from "@atlas/core/mcp-registry/discovery";
 import { ValidationFailedError, type ValidationVerdict } from "@atlas/hallucination/verdict";
 import { buildTemporalFacts, type PlatformModels, wrapRetrieved } from "@atlas/llm";
 import { logger } from "@atlas/logger";
-import {
-  createMCPToolsWithRetry,
-  type InteractiveContext as MCPInteractiveContext,
-  type MCPToolsResult,
-} from "@atlas/mcp";
+import { createMCPTools, type MCPToolsResult } from "@atlas/mcp";
 import { getAtlasPlatformServerConfig } from "@atlas/oapi-client";
 import type { SkillSummary } from "@atlas/skills";
 import {
@@ -1112,14 +1108,7 @@ export class FSMEngine {
        * max_depth`.
        */
       delegationDepth?: number;
-      /**
-       * v8 decision 17 — true when a human is attached to this session
-       * (direct chat / chat-communicator). The LLM-action MCP setup uses
-       * this to decide whether to pass an `InteractiveContext` to
-       * `createMCPToolsWithRetry`; when false/undefined, transient
-       * credential failures throw synchronously instead of raising an
-       * elicitation.
-       */
+      /** True when a human is attached to this session (direct chat / chat-communicator). Used for telemetry / observability. */
       sessionInteractive?: boolean;
     },
   ): Promise<void> {
@@ -3277,35 +3266,11 @@ export class FSMEngine {
     // via `liftToolResultsForPersist`; the pre-persist scrubber retains its
     // defense-in-depth role.
     //
-    // v8 decision 18: foreground LLM-action MCP setup uses the retry wrapper
-    // so a transient `credential_temporarily_unavailable` raises a Retry/
-    // Cancel elicitation in interactive sessions instead of failing the
-    // action. The wrapper is a no-op when no transients are present and
-    // when no `interactiveCtx` is provided (cron/non-chat). Interactive
-    // gate: `signalContext.sessionInteractive === true` — set by the
-    // workspace runtime via `computeSessionInteractive` at signal arrival.
-    const interactiveCtx: MCPInteractiveContext | undefined =
-      signalContext?.sessionInteractive === true &&
-      signalContext.workspaceId &&
-      signalContext.sessionId
-        ? {
-            workspaceId: signalContext.workspaceId,
-            sessionId: signalContext.sessionId,
-            ...(actionId && { actionId }),
-            ...(this.options.jobTimeoutMs !== undefined && {
-              jobTimeoutMs: this.options.jobTimeoutMs,
-            }),
-            ...(signalContext.abortSignal && { sessionAbortSignal: signalContext.abortSignal }),
-          }
-        : undefined;
     let mcpResult: MCPToolsResult;
     try {
-      mcpResult = await createMCPToolsWithRetry(
-        effectiveConfigs,
-        logger,
-        { signal: signalContext?.abortSignal },
-        interactiveCtx,
-      );
+      mcpResult = await createMCPTools(effectiveConfigs, logger, {
+        signal: signalContext?.abortSignal,
+      });
     } catch (error) {
       if (hasUnusableCredentialCause(error)) {
         let provider = "unknown";

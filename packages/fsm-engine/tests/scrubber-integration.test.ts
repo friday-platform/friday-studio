@@ -60,18 +60,8 @@ const mockCreateMCPTools = vi.hoisted(() =>
   >(),
 );
 
-// fsm-engine LLM-action path now calls `createMCPToolsWithRetry` (v8 decision
-// 18). For the non-transient happy path the wrapper forwards to
-// `createMCPTools` unchanged, so the test mock plumbs both names to the same
-// fake — existing call-arg assertions on configs/logger/options still match.
 vi.mock("@atlas/mcp", () => ({
   createMCPTools: mockCreateMCPTools,
-  createMCPToolsWithRetry: (
-    configs: Record<string, unknown>,
-    logger: Parameters<typeof mockCreateMCPTools>[1],
-    options: Parameters<typeof mockCreateMCPTools>[2],
-    _interactiveCtx: unknown,
-  ) => mockCreateMCPTools(configs, logger, options),
   MCPStartupError: class MCPStartupError extends Error {},
   sharedMCPProcesses: { shutdown: () => Promise.resolve() },
 }));

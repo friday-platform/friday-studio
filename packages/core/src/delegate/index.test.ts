@@ -32,19 +32,7 @@ vi.mock("ai", async () => {
 // `mcp-registry/discovery.ts` after the Phase 7 move into `@atlas/core`).
 vi.mock("../mcp-registry/discovery.ts", () => ({ discoverMCPServers: mockDiscoverMCPServers }));
 
-// Delegate now calls `createMCPToolsWithRetry` (v8 decision 18) with
-// `undefined` interactiveCtx — the wrapper, when no transients are present,
-// is a pass-through to `createMCPTools`. The test mock forwards the wrapper
-// straight to the same fake so existing assertions on call args remain valid.
-vi.mock("@atlas/mcp", () => ({
-  createMCPTools: mockCreateMCPTools,
-  createMCPToolsWithRetry: (
-    configs: unknown,
-    logger: unknown,
-    opts: unknown,
-    _interactiveCtx: unknown,
-  ) => mockCreateMCPTools(configs, logger, opts),
-}));
+vi.mock("@atlas/mcp", () => ({ createMCPTools: mockCreateMCPTools }));
 
 // Skills resolver is its own module with full coverage in
 // `skills-resolver.test.ts`; here we stub it so this file does not need to

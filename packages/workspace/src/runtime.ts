@@ -93,10 +93,7 @@ import {
   provenanceForSignalProvider,
 } from "@atlas/llm";
 import { logger } from "@atlas/logger";
-import {
-  createMCPToolsWithRetry,
-  type InteractiveContext as MCPInteractiveContext,
-} from "@atlas/mcp";
+import { createMCPTools } from "@atlas/mcp";
 import { getAtlasPlatformServerConfig } from "@atlas/oapi-client";
 import { extractArchiveContents, SkillStorage, validateSkillReferences } from "@atlas/skills";
 import { stringifyError } from "@atlas/utils";
@@ -215,18 +212,14 @@ function asAbortError(reason: unknown): Error {
 
 /**
  * Decide whether a session is *interactive* — i.e. there is a human attached
- * to the workspace session who can be prompted to recover from a transient
- * failure (e.g. complete an OAuth re-auth elicitation). Sessions launched
- * from `chat` are always interactive; non-chat signals are interactive only
- * when the provider is a chat communicator that emits user-authored payloads
- * (Slack, Telegram, Discord, …). Schedule / HTTP / fs-watch sessions are
- * not interactive — failures must route to the alerting path instead of
- * blocking on a human response.
+ * to the workspace session. Sessions launched from `chat` are always
+ * interactive; non-chat signals are interactive only when the provider is
+ * a chat communicator that emits user-authored payloads (Slack, Telegram,
+ * Discord, …). Schedule / HTTP / fs-watch sessions are not interactive.
  *
- * v8 design decision 17 ("Module: workspace runtime classifier"). The
- * downstream consumer is Phase 3's createMCPTools retry wrapper, which uses
- * this flag to decide whether to raise an MCP elicitation or surface the
- * disconnect synchronously.
+ * Used purely for telemetry / observability — the OAuth refresh flow no
+ * longer branches on this flag (transient failures surface to chat
+ * regardless of interactivity).
  *
  * @internal Exported for testing
  */
@@ -1997,11 +1990,6 @@ export class WorkspaceRuntime {
         // consumer reading the records. Source of truth for "what
         // happened in workspace X" is the SESSIONS JetStream stream.)
 
-        // v8 decision 17: classify session interactivity at the signal level
-        // so the fsm-engine LLM-action path can pass an InteractiveContext to
-        // createMCPToolsWithRetry. Same classifier the per-agent executor
-        // uses; safe to compute eagerly here since signal.id and the
-        // workspace's signal config are both known.
         const sessionInteractive = computeSessionInteractive({
           signalType: signal.id,
           signalProvenance: provenanceForSignalProvider(
@@ -2607,10 +2595,8 @@ export class WorkspaceRuntime {
     const signalConfig = this.config.workspace.signals?.[signal.type];
     const signalProvenance = provenanceForSignalProvider(signalConfig?.provider);
 
-    // Phase 2 (v8 design decision 17): is there a human attached to this
-    // session who can respond to a transient-recovery elicitation? Threaded
-    // through to the agent context here so Phase 3's createMCPTools wrapper
-    // can gate the chat-vs-alert decision when an OAuth refresh fails.
+    // Is there a human attached to this session? Threaded through to the
+    // agent context purely for telemetry / observability.
     const sessionInteractive = computeSessionInteractive({
       signalType: signal.type,
       signalProvenance,
@@ -2849,9 +2835,7 @@ export class WorkspaceRuntime {
       agentEnv?: Record<string, string | LinkCredentialRef>;
       foregroundWorkspaceIds?: string[];
       abortSignal?: AbortSignal;
-      // Phase 2 (v8 design decision 17): true when a human is attached to
-      // this session. Phase 3's createMCPTools wrapper reads this off the
-      // execution context to gate chat-vs-alert recovery.
+      /** True when a human is attached to this session. Used for telemetry / observability. */
       sessionInteractive?: boolean;
     },
   ): Promise<AgentResult> {
@@ -3005,27 +2989,7 @@ export class WorkspaceRuntime {
       }
     }
 
-    // v8 decision 18: user-agent (NATS subprocess) ephemeral MCP setup uses
-    // the retry wrapper so a transient `credential_temporarily_unavailable`
-    // raises a Retry/Cancel elicitation in interactive sessions. Wrapper is
-    // pass-through when no transients are present or when interactiveCtx is
-    // omitted (cron/non-chat).
-    const interactiveCtx: MCPInteractiveContext | undefined =
-      opts.sessionInteractive === true
-        ? {
-            workspaceId: opts.workspaceId,
-            sessionId: opts.sessionId,
-            ...(opts.actionId && { actionId: opts.actionId }),
-            ...(opts.jobTimeoutMs !== undefined && { jobTimeoutMs: opts.jobTimeoutMs }),
-            ...(opts.abortSignal && { sessionAbortSignal: opts.abortSignal }),
-          }
-        : undefined;
-    const { tools: rawMcpTools, dispose } = await createMCPToolsWithRetry(
-      mcpConfigs,
-      logger,
-      {},
-      interactiveCtx,
-    );
+    const { tools: rawMcpTools, dispose } = await createMCPTools(mcpConfigs, logger, {});
 
     // Filter platform tools to LLM_AGENT_ALLOWED — same surface workspace LLM
     // agents see (memory, artifacts, state, fs, csv, bash, webfetch,
@@ -3330,7 +3294,9 @@ export class WorkspaceRuntime {
       memoryStoreNames: string[];
       aiSummary?: () => Promise<Array<{ url?: string }>>;
     } = { memoryStoreNames: (this.config.workspace.memory?.own ?? []).map((m) => m.name) };
-    if (this.options.memoryAdapter) ctx.memoryAdapter = this.options.memoryAdapter;
+    if (this.options.memoryAdapter) {
+      ctx.memoryAdapter = this.options.memoryAdapter;
+    }
     return ctx;
   }
 

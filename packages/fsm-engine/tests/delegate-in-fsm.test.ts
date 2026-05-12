@@ -39,16 +39,8 @@ const mockCreateMCPTools = vi.hoisted(() =>
   >(),
 );
 
-// fsm-engine LLM-action path now calls `createMCPToolsWithRetry` (v8 decision
-// 18). Pass-through to the same fake for non-transient paths.
 vi.mock("@atlas/mcp", () => ({
   createMCPTools: mockCreateMCPTools,
-  createMCPToolsWithRetry: (
-    configs: Record<string, unknown>,
-    logger: unknown,
-    options: unknown,
-    _interactiveCtx: unknown,
-  ) => mockCreateMCPTools(configs, logger, options),
   MCPStartupError: class MCPStartupError extends Error {},
   sharedMCPProcesses: { shutdown: () => Promise.resolve() },
 }));

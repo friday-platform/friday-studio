@@ -373,15 +373,7 @@ export interface SignalWithContext extends Signal {
      * counter regardless of how the child is invoked.
      */
     delegationDepth?: number;
-    /**
-     * True when a human is attached to this session and can respond to a
-     * transient-recovery elicitation (direct chat or chat-communicator
-     * signals). Computed by the workspace runtime via
-     * `computeSessionInteractive`. The fsm-engine's LLM-action path reads
-     * this to decide whether to pass an `InteractiveContext` to
-     * `createMCPToolsWithRetry` — without it, transient credential
-     * failures throw synchronously instead of raising an elicitation.
-     */
+    /** True when a human is attached to this session (direct chat or chat-communicator). Used for telemetry / observability. */
     sessionInteractive?: boolean;
   };
 }

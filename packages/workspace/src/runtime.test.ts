@@ -53,9 +53,9 @@ describe("classifySessionError", () => {
       expected: "skipped",
     },
     {
-      // v8 design decision 9 — transient unavailable is NOT in the unusable
-      // set, so cron sessions surface as FAILED (alertable platform failure)
-      // rather than SKIPPED (user reconnect needed).
+      // Transient unavailable is NOT in the unusable set, so cron sessions
+      // surface as FAILED (alertable platform failure) rather than SKIPPED
+      // (user reconnect needed).
       name: "LinkCredentialUnavailableError",
       error: new LinkCredentialUnavailableError({
         credentialId: "cred_unavailable",
