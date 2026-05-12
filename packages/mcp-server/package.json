@@ -18,7 +18,7 @@
     "nats": "^2.29.3",
     "papaparse": "^5.5.3",
     "turndown": "7.2.4",
-    "zod": "^4.3.5"
+    "zod": "^4.4.3"
   },
   "devDependencies": { "vitest": "^4.1.0" }
 }

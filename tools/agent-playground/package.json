@@ -50,7 +50,7 @@
     "svelte": "^5.55.5",
     "dompurify": "^3.4.2",
     "yaml": "^2.8.4",
-    "zod": "^4.3.6"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@melt-ui/pp": "^0.3.2",
