@@ -3,7 +3,7 @@ name: delegate-handoff
 description: |
   Loads when the agent calls `delegate({...})` for a non-trivial sub-task.
   Covers what the child sees and doesn't see (the child has NO `load_skill`
-  and NO `<available_skills>` — the parent must pre-push skills via
+  and NO available-skills index — the parent must pre-push skills via
   `delegate({skills: [{name, refs?}]})`); how to write a good `handoff`;
   when to push specific reference files via `refs:`; the `mcpServers:`
   allowlist; budget envelope (`max_steps`, `max_output_tokens`,

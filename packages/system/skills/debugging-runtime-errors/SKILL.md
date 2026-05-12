@@ -5,7 +5,7 @@ description: |
   message. Recognize: `did not call complete` (agent never called the
   injected complete tool); `emitted empty output` (called complete with
   `{}`); `emitted an empty response` (called complete with empty string);
-  `LLM step failed:` (agent called failStep); `output does not match <type>
+  `LLM step failed:` (agent called failStep); `output does not match
   schema` (outputType validation failed); `Invalid job config` /
   `Invalid signal config` (Zod schema rejection on upsert). Each pattern
   has a one-line fix in the table below.

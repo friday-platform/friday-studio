@@ -178,6 +178,18 @@ async function checkSkill(c: SkillCheck): Promise<EvalResult> {
       notes.push(`cross-reference missing: ${ref}`);
     }
   }
+
+  // Frontmatter rejects `<` and `>` in description (XML-injection guard
+  // in packages/skills/src/schemas.ts). The bootstrap fails loud at daemon
+  // start when this is violated, so catch it in the eval rather than
+  // discovering it via daemon logs.
+  const fmEnd = text.indexOf("\n---", 4);
+  const frontmatter = fmEnd > 0 ? text.slice(0, fmEnd) : "";
+  if (/[<>]/.test(frontmatter)) {
+    pass = false;
+    notes.push(`frontmatter contains < or > — bootstrap rejects (XML-injection guard)`);
+  }
+
   if (pass) notes.push(`all assertions passed`);
 
   return {
