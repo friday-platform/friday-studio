@@ -88,24 +88,40 @@ The user mentioned that they would like newsletters from substack.com to be arch
 
 Anything over ~500 chars (result sets, reports, structured data, analyses) must not go directly into memory — it will bloat every future turn's system prompt.
 
-**Step 1 — call `create_artifact` with the content inline:**
+**Step 1 — register the content as an artifact in one call.**
+
+If you're in the **workspace-chat assistant** (the main user-facing surface), use `save_artifact` for text content:
+```
+save_artifact(
+  filename="q1-analysis.md",
+  content="<full content>",
+  title="Q1 email analysis",
+  summary="..."
+)
+→ { success: true, id: "art_abc123", type: "file", summary: "..." }
+```
+
+If you're in a **user agent** (Python/TS SDK) calling the MCP server, use the MCP `create_artifact` tool, which accepts the inline `data` object:
 ```
 create_artifact(
   data={type:"file", content:"<full content>", originalName:"q1-analysis.md"},
   title="Q1 email analysis",
   summary="..."
 )
-→ { artifactId: "art_abc123" }
+→ { id: "art_abc123", type: "file", summary: "..." }
 ```
 
-The storage layer hashes the bytes (SHA-256), sniffs the mime type from
-the magic bytes if you don't pass `mimeType`, and writes to the JetStream
-Object Store named by hash — identical bytes dedup automatically. No
-filesystem hop, no `write_file → create_artifact(path)` two-step.
+Either way the storage layer hashes the bytes (SHA-256), sniffs the mime
+type from the magic bytes if you don't pass `mimeType`, and writes to the
+JetStream Object Store named by hash — identical bytes dedup automatically.
+No filesystem hop, no `write_file → create_artifact(path)` two-step.
 
-For binary content over a JSON wire (e.g. images returned by a tool),
-base64-encode the bytes and pass `contentEncoding: "base64"`:
+For **binary content** (e.g. images returned by a tool), use the MCP
+`create_artifact` with `contentEncoding: "base64"` (user agent), or use
+`run_code` to write the bytes to scratch and then `create_artifact({path})`
+(workspace-chat — `save_artifact` rejects binary-MIME filenames):
 ```
+# MCP / user-agent path:
 create_artifact(
   data={type:"file", content:"<base64>", contentEncoding:"base64", mimeType:"image/png", originalName:"chart.png"},
   ...

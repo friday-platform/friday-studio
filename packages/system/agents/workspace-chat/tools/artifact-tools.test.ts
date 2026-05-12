@@ -125,4 +125,146 @@ describe("create_artifact", () => {
       | undefined;
     expect(call?.json.data).not.toHaveProperty("mimeType");
   });
+
+  it("returns harvester-compatible { id, type, summary } shape on success", async () => {
+    const tools = createCreateArtifactTool({
+      sessionId: "session-1",
+      workspaceId: "ws-1",
+      streamId: undefined,
+    });
+
+    const result = await tools.create_artifact!.execute!(
+      { path: "SKILL.md", title: "A skill", summary: "A test skill artifact." },
+      TOOL_CALL_OPTS,
+    );
+
+    expect(result).toEqual({
+      success: true,
+      id: "art-1",
+      type: "file",
+      summary: "A test skill artifact.",
+    });
+  });
+
+  it("surfaces scratch-file read failures without throwing", async () => {
+    mockReadFile.mockRejectedValueOnce(new Error("ENOENT: no such file"));
+    const tools = createCreateArtifactTool({
+      sessionId: "session-1",
+      workspaceId: "ws-1",
+      streamId: undefined,
+    });
+
+    const result = await tools.create_artifact!.execute!(
+      { path: "missing.md", title: "Missing", summary: "Should fail to read." },
+      TOOL_CALL_OPTS,
+    );
+
+    expect(result).toMatchObject({
+      success: false,
+      error: expect.stringContaining("Failed to read scratch file"),
+    });
+  });
+});
+
+describe("save_artifact", () => {
+  it("encodes content as base64 and stamps text-MIME from filename", async () => {
+    const tools = createCreateArtifactTool({
+      sessionId: "session-1",
+      workspaceId: "ws-1",
+      streamId: undefined,
+    });
+
+    await tools.save_artifact!.execute!(
+      {
+        filename: "notes.md",
+        content: "# hello",
+        title: "Notes",
+        summary: "Short notes for the test.",
+      },
+      TOOL_CALL_OPTS,
+    );
+
+    expect(mockArtifactsCreatePost).toHaveBeenCalledWith(
+      expect.objectContaining({
+        json: expect.objectContaining({
+          data: expect.objectContaining({
+            type: "file",
+            contentEncoding: "base64",
+            originalName: "notes.md",
+            mimeType: "text/markdown",
+          }),
+        }),
+      }),
+    );
+  });
+
+  it("returns harvester-compatible { id, type, summary } shape on success", async () => {
+    const tools = createCreateArtifactTool({
+      sessionId: "session-1",
+      workspaceId: "ws-1",
+      streamId: undefined,
+    });
+
+    const result = await tools.save_artifact!.execute!(
+      {
+        filename: "data.json",
+        content: '{"a":1}',
+        title: "Config",
+        summary: "Inline JSON payload for the harvester test.",
+      },
+      TOOL_CALL_OPTS,
+    );
+
+    expect(result).toEqual({
+      success: true,
+      id: "art-1",
+      type: "file",
+      summary: "Inline JSON payload for the harvester test.",
+    });
+  });
+
+  it("rejects filenames with binary MIME (sandbox-escape via fake png)", async () => {
+    const tools = createCreateArtifactTool({
+      sessionId: "session-1",
+      workspaceId: "ws-1",
+      streamId: undefined,
+    });
+
+    const result = await tools.save_artifact!.execute!(
+      {
+        filename: "chart.png",
+        content: "iVBORw0KGgo...not actually a PNG...",
+        title: "Fake PNG",
+        summary: "Model put base64 into the content string by mistake.",
+      },
+      TOOL_CALL_OPTS,
+    );
+
+    expect(result).toMatchObject({
+      success: false,
+      error: expect.stringContaining("filename implies binary MIME"),
+    });
+    expect(mockArtifactsCreatePost).not.toHaveBeenCalled();
+  });
+
+  it("rejects path-traversal in filename via resolveInScratch", async () => {
+    const tools = createCreateArtifactTool({
+      sessionId: "session-1",
+      workspaceId: "ws-1",
+      streamId: undefined,
+    });
+
+    const result = await tools.save_artifact!.execute!(
+      {
+        filename: "../escape.md",
+        content: "x",
+        title: "Escape",
+        summary: "Attempt to write outside the scratch dir.",
+      },
+      TOOL_CALL_OPTS,
+    );
+
+    expect(result).toMatchObject({ success: false });
+    expect(mockArtifactsCreatePost).not.toHaveBeenCalled();
+  });
 });

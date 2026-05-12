@@ -103,10 +103,74 @@ export const artifactTools: AtlasTools = {
   parse_artifact: parseArtifact,
 };
 
+type ArtifactToolResult =
+  | { success: true; id: string; type: "file"; summary: string }
+  | { success: false; error: string };
+
+async function uploadArtifact({
+  bytes,
+  filename,
+  title,
+  summary,
+  workspaceId,
+  streamId,
+}: {
+  bytes: Uint8Array;
+  filename: string;
+  title: string;
+  summary: string;
+  workspaceId: string;
+  streamId: string | undefined;
+}): Promise<ArtifactToolResult> {
+  // Send over the JSON wire: base64-encode bytes. The route's
+  // FileDataInput parser decodes when contentEncoding === "base64".
+  const base64 = encodeBase64(bytes);
+  const inferredMime = inferMimeFromFilename(filename);
+  const data = {
+    type: "file" as const,
+    content: base64,
+    contentEncoding: "base64" as const,
+    originalName: filename,
+    ...(inferredMime && isTextMimeType(inferredMime) ? { mimeType: inferredMime } : {}),
+  };
+
+  const response = await parseResult(
+    client.artifactsStorage.index.$post({
+      json: { data, title, summary, workspaceId, chatId: streamId },
+    }),
+  );
+
+  if (!response.ok) {
+    return {
+      success: false,
+      error: `Failed to create artifact: ${stringifyError(response.error)}`,
+    };
+  }
+  // Return shape matches the harvester's ArtifactOutputSchema
+  // ({ id, type, summary }) at packages/agent-sdk/src/vercel-helpers/tool-usage.ts
+  // so artifact refs are picked up automatically.
+  return { success: true, id: response.data.artifact.id, type: "file", summary };
+}
+
+/** A filename whose extension implies binary content can't be safely
+ * encoded as a UTF-8 string. Block these at the schema level so the LLM
+ * can't accidentally stuff base64 into the `content` field and produce
+ * a corrupted artifact. */
+function isTextSafeFilename(filename: string): boolean {
+  const mime = inferMimeFromFilename(filename);
+  // Unknown extension → trust the caller (no MIME inferred means the
+  // server-side magic-byte sniff is the only signal anyway).
+  if (!mime) return true;
+  return isTextMimeType(mime);
+}
+
 /**
- * Build the `create_artifact` tool scoped to the current session.
- * Takes a scratch-relative path, registers it as a file artifact, and
- * returns the artifact ID so the caller can immediately `display_artifact`.
+ * Build the `create_artifact` + `save_artifact` tools scoped to the current session.
+ *
+ * - `save_artifact` is the preferred path when the content is already in-hand
+ *   (LLM-authored text, JSON, markdown, etc.) — one call, no `write_file` round-trip.
+ * - `create_artifact` registers a scratch-dir file produced by `run_code` or
+ *   `write_file` — kept for binaries the LLM can't materialize inline.
  */
 export function createCreateArtifactTool({
   sessionId,
@@ -118,9 +182,59 @@ export function createCreateArtifactTool({
   streamId: string | undefined;
 }): AtlasTools {
   return {
+    save_artifact: tool({
+      description:
+        "Register inline UTF-8 text content as a displayable artifact in one call. Preferred over write_file → create_artifact whenever you already have the content as a string (markdown, JSON, code, prose, CSV). Binary content must go through run_code + create_artifact — filenames implying binary MIME (.png, .pdf, .zip, etc.) are rejected. Immediately call display_artifact with the returned `id`.",
+      inputSchema: z.object({
+        filename: z
+          .string()
+          .min(1)
+          .describe(
+            "Filename including extension (e.g. report.md, data.json). Used to infer MIME type and as the artifact's original-name. Must be text-MIME (markdown, json, csv, html, code, plain text).",
+          ),
+        content: z
+          .string()
+          .min(1)
+          .describe(
+            "Text content of the artifact. UTF-8 string. For binary content, write the bytes via run_code and register with create_artifact instead.",
+          ),
+        title: z.string().min(1).max(200).describe("Short descriptive title for the artifact."),
+        summary: z
+          .string()
+          .min(10)
+          .max(500)
+          .describe("1-2 sentence description of what the artifact contains."),
+      }),
+      execute: async ({ filename, content, title, summary }) => {
+        // Path-traversal / sandbox-escape guard. `save_artifact` doesn't
+        // touch the scratch dir today, but reusing `resolveInScratch` keeps
+        // filename validation aligned with the rest of the tool surface and
+        // blocks `..` / absolute paths at the schema boundary.
+        const resolved = resolveInScratch(sessionId, filename);
+        if (!resolved.ok) return { success: false, error: resolved.error };
+
+        if (!isTextSafeFilename(filename)) {
+          return {
+            success: false,
+            error: `Refusing to save '${filename}' via save_artifact: filename implies binary MIME. Generate the file via run_code and register it with create_artifact.`,
+          };
+        }
+
+        logger.info("save_artifact called", { sessionId, filename, workspaceId });
+
+        return await uploadArtifact({
+          bytes: new TextEncoder().encode(content),
+          filename: basename(filename),
+          title,
+          summary,
+          workspaceId,
+          streamId,
+        });
+      },
+    }),
     create_artifact: tool({
       description:
-        "Register a file written to the scratch directory as a displayable artifact. Call this after write_file or run_code has produced a file you want to show the user, then immediately call display_artifact with the returned artifactId.",
+        "Register a file already written to the scratch directory (by run_code or write_file) as a displayable artifact. For inline LLM-authored text content prefer save_artifact — it skips the write_file round-trip. After registering, immediately call display_artifact with the returned `id`.",
       inputSchema: z.object({
         path: z
           .string()
@@ -143,36 +257,19 @@ export function createCreateArtifactTool({
         try {
           bytes = new Uint8Array(await readFile(resolved.absolute));
         } catch (err) {
-          return { success: false, error: `Failed to read scratch file: ${String(err)}` };
+          return { success: false, error: `Failed to read scratch file: ${stringifyError(err)}` };
         }
-
-        // Send over the JSON wire: base64-encode bytes. The route's
-        // FileDataInput parser decodes when contentEncoding === "base64".
-        const base64 = encodeBase64(bytes);
-
-        const filename = basename(path);
-        const inferredMime = inferMimeFromFilename(filename);
-        const data = {
-          type: "file" as const,
-          content: base64,
-          contentEncoding: "base64" as const,
-          originalName: filename,
-          ...(inferredMime && isTextMimeType(inferredMime) ? { mimeType: inferredMime } : {}),
-        };
 
         logger.info("create_artifact called", { sessionId, path, workspaceId });
 
-        const response = await parseResult(
-          client.artifactsStorage.index.$post({
-            json: { data, title, summary, workspaceId, chatId: streamId },
-          }),
-        );
-
-        if (!response.ok) {
-          return { success: false, error: `Failed to create artifact: ${String(response.error)}` };
-        }
-
-        return { success: true, artifactId: response.data.artifact.id };
+        return uploadArtifact({
+          bytes,
+          filename: basename(path),
+          title,
+          summary,
+          workspaceId,
+          streamId,
+        });
       },
     }),
   };
