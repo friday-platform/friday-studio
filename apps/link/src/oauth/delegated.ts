@@ -292,9 +292,18 @@ export interface RefreshClassifyMeta {
  * Refresh an access token via the delegated endpoint, returning a typed
  * outcome rather than throwing. Single attempt — no retry.
  *
- * Trust contract: only `kind === "token_dead"` means the refresh_token is
- * provably revoked. Everything else is either usable (`success`) or a
- * non-actionable platform/transport failure (`transient`).
+ * Trust contract: only `kind === "token_dead"` means the refresh_token
+ * is provably no longer usable — i.e. the upstream Cloud Function
+ * forwarded Google's `400 invalid_grant`, which per RFC 6749 § 5.2
+ * covers "invalid, expired, revoked, does not match the original
+ * redirect URI, or was issued to another client". Verified against
+ * the Cloud Function at
+ * https://github.com/gemini-cli-extensions/workspace
+ * (`cloud_function/index.js:328-337` forwards Google's status + body;
+ * the success response at `:321-326` deliberately omits any
+ * `refresh_token` because Google never rotates it on refresh).
+ * Everything else is either usable (`success`) or a non-actionable
+ * platform/transport failure (`transient`).
  */
 export async function refreshDelegatedTokenClassified(
   config: Extract<OAuthConfig, { mode: "delegated" }>,
