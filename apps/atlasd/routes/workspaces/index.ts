@@ -8,6 +8,7 @@ import {
   importAll,
   importBundle,
   importGlobalSkills,
+  LegacyArchiveError,
 } from "@atlas/bundle";
 import { bundledAgentsRegistry } from "@atlas/bundled-agents/registry";
 import type { Registry, WorkspaceConfig } from "@atlas/config";
@@ -845,13 +846,12 @@ const workspacesRoutes = daemonFactory
       let globalSkillsBytes: Uint8Array | undefined;
       let globalSkillsStatus = "not-requested";
       if (includeGlobalSkills) {
-        const skillsDbPath = join(getFridayHome(), "skills.db");
-        const exported = await exportGlobalSkills({ skillsDbPath });
+        const exported = await exportGlobalSkills({ adapter: SkillStorage });
         if (exported.bytes) {
           globalSkillsBytes = exported.bytes;
           globalSkillsStatus = "included";
         } else {
-          globalSkillsStatus = "missing-source-db";
+          globalSkillsStatus = "empty-library";
         }
       }
 
@@ -946,15 +946,23 @@ const workspacesRoutes = daemonFactory
       }
 
       let globalSkills:
-        | { kind: string; targetPath?: string; sideloadedAs?: string; bytesWritten?: number }
+        | { kind: "imported"; skillsPublished: number; skillsSkipped: number }
+        | { kind: "integrity-failed"; expected: string; actual: string; row?: string }
+        | { kind: "legacy-archive-rejected" }
         | undefined;
       if (result.globalSkillsBytes) {
         try {
-          const skillsDbPath = join(atlasHome, "skills.db");
-          const gs = await importGlobalSkills({ zipBytes: result.globalSkillsBytes, skillsDbPath });
+          const gs = await importGlobalSkills({
+            zipBytes: result.globalSkillsBytes,
+            adapter: SkillStorage,
+          });
           globalSkills = gs.status;
         } catch (err) {
-          errors.push({ name: "global.skills", error: stringifyError(err) });
+          if (err instanceof LegacyArchiveError) {
+            globalSkills = { kind: "legacy-archive-rejected" };
+          } else {
+            errors.push({ name: "global.skills", error: stringifyError(err) });
+          }
         }
       }
 

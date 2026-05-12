@@ -1,10 +1,12 @@
 import { createLogger } from "@atlas/logger";
 import type { Result } from "@atlas/utils";
 import type { NatsConnection } from "nats";
-import { JetStreamSkillAdapter } from "./jetstream-adapter.ts";
+import { JetStreamSkillAdapter, type SkillReplayer } from "./jetstream-adapter.ts";
 import type { PublishSkillInput, Skill, SkillSort, SkillSummary, VersionInfo } from "./schemas.ts";
 
 const logger = createLogger({ name: "skill-storage" });
+
+export { SYSTEM_USER_ID } from "./constants.ts";
 
 export interface SkillStorageAdapter {
   create(namespace: string, createdBy: string): Promise<Result<{ skillId: string }, string>>;
@@ -74,13 +76,22 @@ export interface SkillStorageAdapter {
  * and lose every published skill on restart.
  */
 let _storage: SkillStorageAdapter | null = null;
+let _replayer: SkillReplayer | null = null;
 
 export function initSkillStorage(nc: NatsConnection): void {
-  _storage = new JetStreamSkillAdapter(nc);
+  const adapter = new JetStreamSkillAdapter(nc);
+  _storage = adapter;
+  _replayer = adapter;
   logger.info("Skill storage initialized (JetStream)");
 }
 
-/** Inject a custom adapter — tests only. */
+/**
+ * Inject a custom adapter — tests only. Accepts the narrow
+ * `SkillStorageAdapter` so unrelated tests can pass minimal mocks without
+ * stubbing `replayVersion`. Tests that exercise replay-using code paths
+ * must wire a real `JetStreamSkillAdapter` via the in-process NATS harness
+ * rather than this seam.
+ */
 export function _setSkillStorageForTest(adapter: SkillStorageAdapter | null): void {
   _storage = adapter;
 }
@@ -95,14 +106,25 @@ function getStorage(): SkillStorageAdapter {
   return _storage;
 }
 
+function getReplayer(): SkillReplayer {
+  if (!_replayer) {
+    throw new Error(
+      "SkillReplayer not initialized — replay-using tests must use a real " +
+        "JetStreamSkillAdapter via the NATS test harness, not _setSkillStorageForTest.",
+    );
+  }
+  return _replayer;
+}
+
 /**
  * Lazily-initialized skill storage adapter.
  * Defers adapter creation until first method call, allowing tests to
  * configure environment variables before initialization.
  */
-export const SkillStorage: SkillStorageAdapter = {
+export const SkillStorage: SkillStorageAdapter & SkillReplayer = {
   create: (...args) => getStorage().create(...args),
   publish: (...args) => getStorage().publish(...args),
+  replayVersion: (...args) => getReplayer().replayVersion(...args),
   get: (...args) => getStorage().get(...args),
   getById: (...args) => getStorage().getById(...args),
   getBySkillId: (...args) => getStorage().getBySkillId(...args),

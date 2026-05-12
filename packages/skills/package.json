@@ -4,6 +4,7 @@
   "exports": {
     ".": "./src/mod.ts",
     "./archive": "./src/archive.ts",
+    "./constants": "./src/constants.ts",
     "./schemas": "./src/schemas.ts",
     "./storage": "./src/storage.ts"
   },
