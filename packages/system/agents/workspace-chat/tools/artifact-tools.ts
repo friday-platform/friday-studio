@@ -152,17 +152,25 @@ async function uploadArtifact({
   return { success: true, id: response.data.artifact.id, type: "file", summary };
 }
 
-/** A filename whose extension implies binary content can't be safely
- * encoded as a UTF-8 string. Block these at the schema level so the LLM
- * can't accidentally stuff base64 into the `content` field and produce
- * a corrupted artifact. */
+/** Block filenames whose extension doesn't resolve to a known text MIME
+ * — i.e. the LLM must commit to a recognizable text format
+ * (`.md`/`.json`/`.csv`/`.txt`/`.html`/`.yaml`/…) before save_artifact
+ * accepts the call. The default is "deny on unknown" so claims like
+ * "rejects .zip/.exe/.bin" stay true even for extensions outside the
+ * MIME table. The matching create_artifact path handles binary outputs
+ * registered from disk; this surface is text-only. */
 function isTextSafeFilename(filename: string): boolean {
   const mime = inferMimeFromFilename(filename);
-  // Unknown extension → trust the caller (no MIME inferred means the
-  // server-side magic-byte sniff is the only signal anyway).
-  if (!mime) return true;
+  if (!mime) return false;
   return isTextMimeType(mime);
 }
+
+/** Maximum content length for save_artifact. Mirrors write_file's
+ * MAX_WRITE_BYTES (2 MB) so the two ways of staging text content have
+ * the same ceiling. The artifact route's JSON POST has no per-field
+ * limit, so this is the only guard against a runaway transcript landing
+ * in the JetStream object store. */
+const MAX_SAVE_ARTIFACT_CONTENT_BYTES = 2 * 1024 * 1024;
 
 /**
  * Build the `create_artifact` + `save_artifact` tools scoped to the current session.
@@ -184,19 +192,20 @@ export function createCreateArtifactTool({
   return {
     save_artifact: tool({
       description:
-        "Register inline UTF-8 text content as a displayable artifact in one call. Preferred over write_file → create_artifact whenever you already have the content as a string (markdown, JSON, code, prose, CSV). Binary content must go through run_code + create_artifact — filenames implying binary MIME (.png, .pdf, .zip, etc.) are rejected. Immediately call display_artifact with the returned `id`.",
+        "Register inline UTF-8 text content as a displayable artifact in one call. Preferred over write_file → create_artifact whenever you already have the content as a string (markdown, JSON, code, prose, CSV). Filenames must resolve to a known text MIME — anything else (binary or unrecognized extension) is rejected; route those through run_code + create_artifact. Immediately call display_artifact with the returned `id`.",
       inputSchema: z.object({
         filename: z
           .string()
           .min(1)
           .describe(
-            "Filename including extension (e.g. report.md, data.json). Used to infer MIME type and as the artifact's original-name. Must be text-MIME (markdown, json, csv, html, code, plain text).",
+            "Filename including extension (e.g. report.md, data.json). Must resolve to a known text MIME (markdown, json, csv, html, plain text, source code). Unknown extensions are rejected — disambiguate before calling.",
           ),
         content: z
           .string()
           .min(1)
+          .max(MAX_SAVE_ARTIFACT_CONTENT_BYTES)
           .describe(
-            "Text content of the artifact. UTF-8 string. For binary content, write the bytes via run_code and register with create_artifact instead.",
+            "Text content of the artifact. UTF-8 string, up to 2 MB. For binary content or anything larger, write the bytes via run_code and register with create_artifact instead.",
           ),
         title: z.string().min(1).max(200).describe("Short descriptive title for the artifact."),
         summary: z
@@ -216,7 +225,7 @@ export function createCreateArtifactTool({
         if (!isTextSafeFilename(filename)) {
           return {
             success: false,
-            error: `Refusing to save '${filename}' via save_artifact: filename implies binary MIME. Generate the file via run_code and register it with create_artifact.`,
+            error: `Refusing to save '${filename}' via save_artifact: filename does not resolve to a known text MIME. Use a recognized text extension (.md, .json, .csv, .txt, .html, …), or generate the file via run_code and register it with create_artifact for binary outputs.`,
           };
         }
 

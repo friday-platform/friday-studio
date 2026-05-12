@@ -74,32 +74,29 @@ const WORKSPACE_CHAT_PROMPT = await readFile(PROMPT_PATH, "utf8");
 const CLAUDE_CODE_AGENT_SRC = await readFile(CLAUDE_CODE_AGENT_PATH, "utf8");
 
 /**
- * Extract the `description: "…"` literal from claude-code/agent.ts so the
- * eval always uses the bytes the bundled agent actually ships. Falls back
- * to a short stub on parse failure — the eval is still meaningful, just
- * slightly less faithful.
+ * Pull the literal `description: "…"` string out of the bundled-agent
+ * source so the eval always tests against the bytes shipped to the model.
+ *
+ * Whitespace-tolerant regex so a formatter change (line-length, single-line
+ * vs wrapped) doesn't silently degrade fidelity. THROWS on miss — a stub
+ * fallback would let `claude-code-overreach-*` scenarios report "pass"
+ * while actually measuring whether the model rejects a placeholder, which
+ * is worse than failing loudly.
  */
 function extractClaudeCodeDescription(src: string): string {
-  const marker = 'description:\n      "';
-  const start = src.indexOf(marker);
-  if (start < 0) {
-    console.warn(
-      "[tool-choice.ts] could not extract claude-code description from agent.ts — formatter likely changed indentation. Eval is running with a stub description; results are not faithful to the production agent metadata. Update the marker regex.",
+  // `description:` (optional whitespace) `"…"` where the body may contain
+  // escaped quotes. Non-greedy across the body via the [^"\\] / \\. class.
+  const match = src.match(/description:\s*"((?:\\.|[^"\\])*)"/);
+  if (!match || !match[1]) {
+    throw new Error(
+      "[tool-choice.ts] could not extract claude-code description from agent.ts. " +
+        "Source layout likely changed; update the regex. Stub fallback removed on purpose — " +
+        "running the eval against a placeholder description is worse than failing here.",
     );
-    return "Heavyweight code agent — sandboxed Claude Code SDK.";
   }
-  const literalStart = start + marker.length;
-  // Walk until the closing un-escaped quote.
-  let i = literalStart;
-  while (i < src.length) {
-    if (src[i] === "\\") {
-      i += 2;
-      continue;
-    }
-    if (src[i] === '"') break;
-    i++;
-  }
-  return src.slice(literalStart, i).replace(/\\"/g, '"').replace(/\\n/g, "\n");
+  // Reverse the TS source-level escapes (\" → ", \n → newline) so the
+  // extracted string matches the bytes the AI SDK ships to the model.
+  return match[1].replace(/\\"/g, '"').replace(/\\n/g, "\n");
 }
 
 const CLAUDE_CODE_DESCRIPTION = extractClaudeCodeDescription(CLAUDE_CODE_AGENT_SRC);
@@ -765,9 +762,17 @@ async function runScenario(scenario: Scenario): Promise<ScenarioOutcome> {
   const tools = buildTools(captures);
   const systemPrompt = buildSystemPrompt(scenario.systemPromptOpts ?? {});
 
+  // temperature: 0 is the standard determinism knob for evals. The AI SDK
+  // emits a warning + ignores it for reasoning-class models like
+  // claude-opus-4-X (they sample via internal thinking, not temp); we
+  // skip the field on those so the eval log isn't drowned in warnings.
+  // For temp-supporting models (Sonnet 4.x, Haiku 4.5, …) it pins
+  // outcomes scenario-by-scenario across runs.
+  const supportsTemperature = !/opus-4-/.test(MODEL_NAME);
   const result = streamText({
     model: anthropic(MODEL_NAME),
     system: systemPrompt,
+    ...(supportsTemperature ? { temperature: 0 } : {}),
     messages: [{ role: "user", content: scenario.userMessage }],
     tools,
     // 8 steps is generous enough for the multi-server MCP cases

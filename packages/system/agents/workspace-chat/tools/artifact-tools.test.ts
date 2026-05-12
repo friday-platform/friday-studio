@@ -242,8 +242,37 @@ describe("save_artifact", () => {
 
     expect(result).toMatchObject({
       success: false,
-      error: expect.stringContaining("filename implies binary MIME"),
+      error: expect.stringContaining("does not resolve to a known text MIME"),
     });
+    expect(mockArtifactsCreatePost).not.toHaveBeenCalled();
+  });
+
+  it("rejects filenames with unknown extensions (.zip, .exe, etc. that aren't in the MIME table)", async () => {
+    // Description and SKILL.md both promise that binary-looking filenames
+    // are rejected. The MIME table only knows the curated text extensions,
+    // so "unknown extension" must also reject (otherwise .zip/.exe leak
+    // through silently because they have no MIME entry).
+    const tools = createCreateArtifactTool({
+      sessionId: "session-1",
+      workspaceId: "ws-1",
+      streamId: undefined,
+    });
+
+    for (const filename of ["archive.zip", "binary.exe", "blob.weirdext"]) {
+      const result = await tools.save_artifact!.execute!(
+        {
+          filename,
+          content: "irrelevant",
+          title: "Test",
+          summary: "Unknown extension should be rejected.",
+        },
+        TOOL_CALL_OPTS,
+      );
+      expect(result).toMatchObject({
+        success: false,
+        error: expect.stringContaining("does not resolve to a known text MIME"),
+      });
+    }
     expect(mockArtifactsCreatePost).not.toHaveBeenCalled();
   });
 
