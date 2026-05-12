@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Chat input clears when switching chats in agent-playground.** `ChatInput` owned its own `value` / `images` `$state` that only cleared on submit, and `UserChat` is reused across chat switches (same route, different `chatId` prop) — so unsent drafts and attached images leaked between chats. Wrapped `<ChatInput>` in `{#key chatId}` so Svelte remounts it on every switch, resetting all of its local state. (#287, fixes #222)
+
 ## [0.1.7] - 2026-05-12
 
 Delegate sub-agent answers stop double-decoding through artifact pre-return lift (#271); the new `@friday/using-elicitations` skill documents the HITL surface job authors have had to discover by reading source (#275); a static migration manifest unblocks `deno compile` binaries that were silently enumerating zero migrations (#277). Cleanup pass on stale `FRIDAY_LOCAL_ONLY` references missed by #265 (#274).
