@@ -139,10 +139,7 @@ export function registerSignalTriggerTool(server: McpServer, ctx: ToolContext) {
         // payload validation.
         const result = await parseResult(
           client.workspace[":workspaceId"].signals[":signalId"].$post(
-            {
-              param: { workspaceId, signalId },
-              json: { payload: enrichedPayload },
-            },
+            { param: { workspaceId, signalId }, json: { payload: enrichedPayload } },
             { init: { signal: extra.signal } },
           ),
         );

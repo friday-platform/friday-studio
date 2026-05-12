@@ -417,10 +417,9 @@ describe("createJobTools execute", () => {
 
     // Surgical assertion: the second arg to $post is the init bag carrying the
     // parent signal. This is the contract this task adds.
-    expect(mockSignalPost).toHaveBeenCalledWith(
-      expect.anything(),
-      { init: { signal: abortController.signal } },
-    );
+    expect(mockSignalPost).toHaveBeenCalledWith(expect.anything(), {
+      init: { signal: abortController.signal },
+    });
     expect(result).toMatchObject({ success: false });
   }, 2000);
 });

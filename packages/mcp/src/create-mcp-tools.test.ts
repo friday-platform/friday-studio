@@ -893,7 +893,9 @@ describe("createMCPTools", () => {
       mockCreateMCPClient.mockResolvedValueOnce({
         tools: vi
           .fn()
-          .mockResolvedValue({ "abort-tool": { description: "honors abort", execute: signalExecute } }),
+          .mockResolvedValue({
+            "abort-tool": { description: "honors abort", execute: signalExecute },
+          }),
         close: vi.fn().mockResolvedValue(undefined),
       });
 
@@ -908,12 +910,10 @@ describe("createMCPTools", () => {
       // Attach the catch synchronously so the rejection isn't briefly
       // unhandled between `controller.abort` and the awaited assertion —
       // vitest's process-level unhandled-rejection capture is eager.
-      const abortingPromise = abortTool
-        .execute!(
-          {},
-          { toolCallId: "tc_signal", messages: [], abortSignal: controller.signal },
-        )
-        .catch((err: unknown) => err);
+      const abortingPromise = abortTool.execute!(
+        {},
+        { toolCallId: "tc_signal", messages: [], abortSignal: controller.signal },
+      ).catch((err: unknown) => err);
 
       const advance = vi as unknown as { advanceTimersByTimeAsync: (ms: number) => Promise<void> };
       await advance.advanceTimersByTimeAsync(100);

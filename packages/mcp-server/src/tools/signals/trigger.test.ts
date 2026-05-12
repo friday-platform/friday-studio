@@ -36,10 +36,7 @@ vi.mock("@atlas/client/v2", () => ({
               get: (_t2, prop) => {
                 if (prop === "$get") return mockState.workspaceGet;
                 if (prop === "signals") {
-                  return new Proxy(
-                    {},
-                    { get: () => ({ $post: mockState.signalPost }) },
-                  );
+                  return new Proxy({}, { get: () => ({ $post: mockState.signalPost }) });
                 }
                 return undefined;
               },
@@ -127,10 +124,7 @@ describe("workspace_signal_trigger — extra.signal forwarding", () => {
     // parent extra.signal. A regression that drops this back to a single
     // arg (or undefined init) fails here loudly.
     expect(mockState.signalPost).toHaveBeenCalledWith(
-      {
-        param: { workspaceId: "ws-1", signalId: "sig-1" },
-        json: { payload: { foo: "bar" } },
-      },
+      { param: { workspaceId: "ws-1", signalId: "sig-1" }, json: { payload: { foo: "bar" } } },
       { init: { signal: controller.signal } },
     );
     expect(result.isError).toBeFalsy();

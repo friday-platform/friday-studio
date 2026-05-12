@@ -24,10 +24,7 @@ const mcpToolsHandles = vi.hoisted(() => ({
 
 vi.mock("@atlas/mcp", async (importActual) => {
   const actual = await importActual<typeof import("@atlas/mcp")>();
-  return {
-    ...actual,
-    createMCPTools: vi.fn(async () => mcpToolsHandles),
-  };
+  return { ...actual, createMCPTools: vi.fn(async () => mcpToolsHandles) };
 });
 
 function emptyConfig(): MergedConfig {
@@ -75,7 +72,9 @@ describe("executeCodeAgent forwards opts.abortSignal into mcpToolCall tool.execu
     // `metadata.useWorkspaceSkills`, `metadata.mcp`, `metadata.llm`.
     const r = runtime as unknown as {
       userAdapter: {
-        loadAgent: (id: string) => Promise<{
+        loadAgent: (
+          id: string,
+        ) => Promise<{
           type: "user";
           id: string;
           metadata: {
@@ -91,21 +90,13 @@ describe("executeCodeAgent forwards opts.abortSignal into mcpToolCall tool.execu
       executeCodeAgent: (
         userAgentId: string,
         prompt: string,
-        opts: {
-          sessionId: string;
-          workspaceId: string;
-          abortSignal?: AbortSignal;
-        },
+        opts: { sessionId: string; workspaceId: string; abortSignal?: AbortSignal },
       ) => Promise<AgentResult>;
     };
     r.userAdapter.loadAgent = async (id: string) => ({
       type: "user",
       id,
-      metadata: {
-        sourceLocation: testDir,
-        version: "0.0.0",
-        useWorkspaceSkills: false,
-      },
+      metadata: { sourceLocation: testDir, version: "0.0.0", useWorkspaceSkills: false },
     });
 
     // Capture the AbortSignal handed to the stub tool's execute().

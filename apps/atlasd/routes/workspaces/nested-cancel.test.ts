@@ -82,9 +82,7 @@ vi.mock("@atlas/client/v2", () => {
   };
 
   return {
-    client: {
-      workspace: { ":workspaceId": { signals: { ":signalId": { $post } } } },
-    },
+    client: { workspace: { ":workspaceId": { signals: { ":signalId": { $post } } } } },
     parseResult: async (promise: Promise<Response>) => {
       try {
         const res = await promise;

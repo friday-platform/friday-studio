@@ -8,11 +8,7 @@ async function exec(
   id: string,
   abortSignal?: AbortSignal,
 ): Promise<BashToolOutput> {
-  const result = await bashTool.execute?.(input, {
-    toolCallId: id,
-    messages: [],
-    abortSignal,
-  });
+  const result = await bashTool.execute?.(input, { toolCallId: id, messages: [], abortSignal });
   if (!result) throw new Error("execute returned undefined");
   // execute always returns a single object for this tool, never an async iterable
   if (!("stdout" in result)) throw new Error("unexpected stream");
