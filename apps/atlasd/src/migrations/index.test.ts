@@ -86,4 +86,35 @@ describe("migration manifest convention", () => {
     expect(ids.length, "every file should declare an id").toBe(files.length);
     expect(new Set(ids).size, "duplicate migration ids detected").toBe(ids.length);
   });
+
+  /**
+   * The static manifest in `index.ts` is what ships in the compiled
+   * binary; `readdir`-based discovery returns nothing under
+   * `deno compile`. So a forgotten manifest entry would silently skip
+   * a migration on every install. Scan `index.ts` as text — importing
+   * it pulls in `@db/sqlite` transitively, which breaks under vitest
+   * the same way the other tests in this file avoid.
+   *
+   * We require the local-symbol `m_<id>` to appear at least twice:
+   * once in the `import { migration as m_<id> }` line and once in
+   * the `MIGRATIONS` array. Catches both "imported but not added to
+   * the array" and "added to the array without an import."
+   */
+  it("every m_*.ts file appears in the static manifest in index.ts", async () => {
+    const files = await listMigrationFiles();
+    const indexSource = await readFileContent("index.ts");
+    for (const file of files) {
+      const id = file.match(FILENAME_RE)?.[1];
+      expect(id, `${file}: failed to derive id from filename`).toBeTruthy();
+      expect(
+        indexSource,
+        `${file}: missing \`import ... from "./${file}";\` in index.ts`,
+      ).toContain(`from "./${file}"`);
+      const symbolHits = indexSource.match(new RegExp(`\\bm_${id}\\b`, "g")) ?? [];
+      expect(
+        symbolHits.length,
+        `${file}: expected \`m_${id}\` in both the import and the MIGRATIONS array of index.ts, found ${symbolHits.length} occurrence(s)`,
+      ).toBeGreaterThanOrEqual(2);
+    }
+  });
 });
