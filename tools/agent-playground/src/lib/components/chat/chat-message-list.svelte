@@ -727,6 +727,41 @@
         {:else}
           <span class="role-badge">{message.role === "user" ? "You" : "Friday"}</span>
 
+          {@const dedupedDisconnects = disconnectIntegrationsByMessageId.get(message.id)}
+          {#if dedupedDisconnects && dedupedDisconnects.length > 0}
+            <!-- Non-fatal info chip: an MCP integration's credential is dead
+                 (or temporarily unavailable) so its tools were skipped this
+                 session. The session still ran; the user just needs to
+                 reconnect the integration — or, for transient failures,
+                 try again in a moment. Rendered ABOVE segments so the user
+                 sees the "this integration is unavailable" context before
+                 the answer text and tool cards, not as a trailing footer. -->
+            <div
+              class="message-notice"
+              role="status"
+              data-integration-disconnected="true"
+            >
+              <span class="message-notice-icon" aria-hidden="true">⚠</span>
+              <div class="message-notice-body">
+                {#each dedupedDisconnects as integration (integration.serverId)}
+                  <div
+                    class="message-notice-row"
+                    data-testid={`integration-chip-${integration.kind}`}
+                  >
+                    {#if integration.kind === "credential_temporarily_unavailable"}
+                      Friday couldn't reach
+                      <strong>{integration.provider ?? integration.serverId}</strong>
+                      this turn — try again in a moment.
+                    {:else}
+                      <strong>{integration.provider ?? integration.serverId}</strong>
+                      is disconnected — reconnect in Settings → Connections to use those tools.
+                    {/if}
+                  </div>
+                {/each}
+              </div>
+            </div>
+          {/if}
+
           {#each message.segments as segment}
             {#if segment.type === "text" && segment.content.length > 0}
               {#if message.role === "assistant"}
@@ -810,39 +845,6 @@
               <div class="message-error-body">
                 <div class="message-error-title">Something went wrong.</div>
                 <div class="message-error-detail">{message.errorText}</div>
-              </div>
-            </div>
-          {/if}
-
-          {@const dedupedDisconnects = disconnectIntegrationsByMessageId.get(message.id)}
-          {#if dedupedDisconnects && dedupedDisconnects.length > 0}
-            <!-- Non-fatal info chip: an MCP integration's credential is dead
-                 (or temporarily unavailable) so its tools were skipped this
-                 session. The session still ran; the user just needs to
-                 reconnect the integration — or, for transient failures,
-                 try again in a moment. -->
-            <div
-              class="message-notice"
-              role="status"
-              data-integration-disconnected="true"
-            >
-              <span class="message-notice-icon" aria-hidden="true">⚠</span>
-              <div class="message-notice-body">
-                {#each dedupedDisconnects as integration (integration.serverId)}
-                  <div
-                    class="message-notice-row"
-                    data-testid={`integration-chip-${integration.kind}`}
-                  >
-                    {#if integration.kind === "credential_temporarily_unavailable"}
-                      Friday couldn't reach
-                      <strong>{integration.provider ?? integration.serverId}</strong>
-                      this turn — try again in a moment.
-                    {:else}
-                      <strong>{integration.provider ?? integration.serverId}</strong>
-                      is disconnected — reconnect in Settings → Connections to use those tools.
-                    {/if}
-                  </div>
-                {/each}
               </div>
             </div>
           {/if}
