@@ -2,7 +2,7 @@ import { Buffer } from "node:buffer";
 import { rm } from "node:fs/promises";
 import process from "node:process";
 import { makeTempDir } from "@atlas/utils/temp.server";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { NoOpCommunicatorWiringRepository } from "../src/adapters/communicator-wiring-repository.ts";
 import { FileSystemStorageAdapter } from "../src/adapters/filesystem-adapter.ts";
@@ -1186,6 +1186,12 @@ describe("Delegated OAuth refresh classifier integration", async () => {
       "refresh_unavailable",
     ]),
     error: z.string().optional(),
+  });
+
+  // Reset the shared responder so a test that throws before assigning
+  // its own respondTo can't leak the previous test's responder.
+  beforeEach(() => {
+    respondTo = () => new Response("not configured", { status: 500 });
   });
 
   it("HTTP 4xx invalid_grant → refresh_failed (token_dead)", async () => {
