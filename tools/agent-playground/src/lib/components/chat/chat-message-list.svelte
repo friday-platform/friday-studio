@@ -814,7 +814,8 @@
             </div>
           {/if}
 
-          {#if message.disconnectedIntegrations && message.disconnectedIntegrations.length > 0}
+          {@const dedupedDisconnects = disconnectIntegrationsByMessageId.get(message.id)}
+          {#if dedupedDisconnects && dedupedDisconnects.length > 0}
             <!-- Non-fatal info chip: an MCP integration's credential is dead
                  (or temporarily unavailable) so its tools were skipped this
                  session. The session still ran; the user just needs to
@@ -827,7 +828,7 @@
             >
               <span class="message-notice-icon" aria-hidden="true">⚠</span>
               <div class="message-notice-body">
-                {#each message.disconnectedIntegrations as integration (integration.serverId)}
+                {#each dedupedDisconnects as integration (integration.serverId)}
                   <div
                     class="message-notice-row"
                     data-testid={`integration-chip-${integration.kind}`}
