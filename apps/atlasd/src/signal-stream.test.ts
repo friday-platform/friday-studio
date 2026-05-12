@@ -121,6 +121,45 @@ describe("publishSignal + SignalConsumer", () => {
     await expect(awaitSignalCompletion(nc, correlationId, 200)).rejects.toThrow(/timeout/);
   });
 
+  it("breaks the in-flight batch iterator on stop(signal) — synchronous close path", async () => {
+    // Without `currentBatch?.close()` in stop(), the for-await waits up to
+    // `expiresMs` for the batch to fill naturally before the runLoop returns.
+    const consumerName = `test-stop-abort-${crypto.randomUUID()}`;
+    let handlerResolve: (() => void) | undefined;
+    const handlerCalled = new Promise<void>((r) => {
+      handlerResolve = r;
+    });
+
+    const consumer = new SignalConsumer(
+      nc,
+      () => {
+        handlerResolve?.();
+        return Promise.resolve();
+      },
+      { name: consumerName, expiresMs: 1000, batchSize: 16 },
+    );
+    await consumer.start();
+    await publishSignal(nc, { workspaceId: "ws-stop-abort", signalId: "msg-1" });
+
+    await handlerCalled;
+
+    const controller = new AbortController();
+    controller.abort();
+
+    const start = Date.now();
+    await consumer.stop(controller.signal);
+    const elapsed = Date.now() - start;
+
+    // 500ms bound: well above the ~50ms close path, below the 1000ms
+    // expiresMs that would elapse if the iterator-close regressed.
+    expect(elapsed).toBeLessThan(500);
+
+    // SIGNALS isn't reset between tests in this file (unlike CASCADES);
+    // delete the durable so the next test's consumer doesn't collide on
+    // the workqueue stream.
+    await consumer.destroy();
+  }, 15_000);
+
   it("awaitSignalCompletion unsubscribes promptly when aborted", async () => {
     const correlationId = crypto.randomUUID();
     const unsubscribe = vi.fn();

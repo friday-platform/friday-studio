@@ -4,6 +4,10 @@ import { StreamRegistry } from "../stream-registry.ts";
 import type { WebChatPayload } from "./atlas-web-adapter.ts";
 import { AtlasWebAdapter } from "./atlas-web-adapter.ts";
 
+vi.mock("@atlas/core/users/storage", () => ({
+  UserStorage: { getCachedLocalUserId: () => "test-local-user" },
+}));
+
 /** Mock ChatInstance — processMessage is fire-and-forget. */
 function createMockChat() {
   return {
@@ -124,14 +128,14 @@ describe("AtlasWebAdapter.handleWebhook", () => {
     // Dedup safety: every dispatch gets a fresh UUID, never the chatId
     expect(message.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
 
-    expect(registry.getStream("chat-webhook")?.active).toBe(true);
+    expect(registry.getStream("ws-test-001", "chat-webhook")?.active).toBe(true);
     // Wire-up contract: handleWebhook must stash the StreamBuffer it
     // creates on `Message.raw.turnBuffer` so the shared chat-sdk handler
     // can capture this turn's buffer deterministically (closes the
     // subscribe-window race in #192). Asserting identity here means a
     // refactor that drops the assignment fails this test instead of
     // only manifesting at runtime in the live SSE handler.
-    expect(message.raw.turnBuffer).toBe(registry.getStream("chat-webhook"));
+    expect(message.raw.turnBuffer).toBe(registry.getStream("ws-test-001", "chat-webhook"));
   });
 
   it("preserves data-artifact-attached parts on WebChatPayload.uiMessage", async () => {
@@ -193,7 +197,7 @@ describe("AtlasWebAdapter.handleWebhook", () => {
     await adapter.handleWebhook(request);
 
     const message = chat.processMessage.mock.calls[0]?.[2] as Message<WebChatPayload>;
-    expect(message.author.userId).toBe("default-user");
+    expect(message.author.userId).toBe("test-local-user");
   });
 
   it("streams events written to StreamRegistry through the SSE response", async () => {
@@ -207,15 +211,20 @@ describe("AtlasWebAdapter.handleWebhook", () => {
     });
     const response = await adapter.handleWebhook(request);
 
-    // Simulate the shared handler writing events to StreamRegistry
-    registry.appendEvent("chat-sse", { type: "text-delta", delta: "hello" } as never);
-    registry.appendEvent("chat-sse", {
+    // Simulate the shared handler writing events to StreamRegistry.
+    // The registry is keyed by `(workspaceId, chatId)`; the adapter
+    // creates the buffer under the workspaceId it was constructed with.
+    registry.appendEvent("ws-test-001", "chat-sse", {
+      type: "text-delta",
+      delta: "hello",
+    } as never);
+    registry.appendEvent("ws-test-001", "chat-sse", {
       type: "tool-input-available",
       toolCallId: "tc1",
       toolName: "search",
       input: {},
     } as never);
-    registry.finishStream("chat-sse");
+    registry.finishStream("ws-test-001", "chat-sse");
 
     if (!response.body) throw new Error("expected response body");
     const reader = response.body.getReader();

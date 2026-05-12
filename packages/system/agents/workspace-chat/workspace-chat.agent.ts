@@ -15,32 +15,36 @@ import {
 import { bundledAgents } from "@atlas/bundled-agents";
 import { client, parseResult } from "@atlas/client/v2";
 import { CommunicatorKindSchema, type WorkspaceConfig } from "@atlas/config";
+import { composePreface, type PrefaceEntry } from "@atlas/core/agent-context/compose-preface";
 import { scrubAssistantMessage } from "@atlas/core/artifacts/scrubber";
 import { ChatStorage } from "@atlas/core/chat/storage";
 import { createDelegateTool } from "@atlas/core/delegate";
 import { createErrorCause, getErrorDisplayMessage } from "@atlas/core/errors";
 import {
   buildTemporalFacts,
-  getDefaultProviderOpts,
+  enterUsageScope,
   type PlatformModels,
   smallLLM,
+  type UsageCounter,
 } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
+import { getAtlasDaemonUrl } from "@atlas/oapi-client";
 import type { SkillSummary } from "@atlas/skills";
 import { createLoadSkillTool, resolveVisibleSkills, SkillStorage } from "@atlas/skills";
 import {
   convertToModelMessages,
   createUIMessageStream,
+  type ModelMessage,
   smoothStream,
   stepCountIs,
   streamText,
 } from "ai";
 import { z } from "zod";
-import { fetchLinkSummary, formatIntegrationsSection } from "../link-context.ts";
+import { fetchLinkSummary } from "../link-context.ts";
+import { getBlock2Inputs } from "./block2-cache.ts";
 import {
   composeArtifactBlocks,
   composeMemoryBlocks,
-  composeSkills,
   composeTools,
   composeWorkspaceSections,
   fetchForegroundContexts,
@@ -48,7 +52,15 @@ import {
 import { buildOnboardingClause, buildUserProfileClause } from "./onboarding.ts";
 import SYSTEM_PROMPT from "./prompt.txt" with { type: "text" };
 import { connectCommunicatorSucceeded, connectServiceSucceeded } from "./stop-conditions.ts";
-import { artifactTools, createArtifactsCreateTool } from "./tools/artifact-tools.ts";
+import {
+  createDeleteAgentFromRegistryTool,
+  createRegisterAgentTool,
+} from "./tools/agent-registry-tools.ts";
+import { artifactTools, createCreateArtifactTool } from "./tools/artifact-tools.ts";
+import {
+  createDescribeBundledAgentTool,
+  createListBundledAgentsTool,
+} from "./tools/bundled-agent-discovery-tools.ts";
 import { createAgentTool, rebindAgentTool } from "./tools/bundled-agent-tools.ts";
 import { createRunCodeTool } from "./tools/code-exec.ts";
 import { createConnectCommunicatorTool } from "./tools/connect-communicator.ts";
@@ -59,14 +71,49 @@ import { createBoundDraftTools } from "./tools/draft-tools.ts";
 import { createEnableMcpServerTool } from "./tools/enable-mcp-server.ts";
 import { createFileIOTools } from "./tools/file-io.ts";
 import { createInstallMcpServerTool } from "./tools/install-mcp-server.ts";
+import {
+  createDescribeIntegrationTool,
+  createListIntegrationsTool,
+} from "./tools/integration-tools.ts";
+import {
+  createDescribeAgentTool,
+  createDescribeDraftTool,
+  createDescribeJobTool,
+  createDescribeMemoryStoreTool,
+  createDescribeSignalTool,
+  createDescribeUserIdentityTool,
+  createDescribeWorkspaceTool,
+  createListAgentsTool,
+  createListArtifactsTool,
+  createListCommunicatorsTool,
+  createListJobsTool,
+  createListMemoryStoresTool,
+  createListSignalsTool,
+  createListWorkspacesTool,
+} from "./tools/inventory-tools.ts";
 import { createJobTools } from "./tools/job-tools.ts";
 import { createListCapabilitiesTool } from "./tools/list-capabilities.ts";
 import { createListMcpToolsTool } from "./tools/list-mcp-tools.ts";
-import { createMcpDependenciesTool } from "./tools/mcp-dependencies.ts";
+import {
+  createDescribeSkillTool,
+  createListSkillsTool,
+  createSearchSkillsTool,
+} from "./tools/list-skills.ts";
+import {
+  createDescribeMcpServerTool,
+  createDescribeMcpToolTool,
+  createListMcpServersTool,
+} from "./tools/mcp-discovery-tools.ts";
+import {
+  createDescribeMemoryEntryTool,
+  createListMemoryEntriesTool,
+} from "./tools/memory-entry-tools.ts";
 import { createMemorySaveTool } from "./tools/memory-save.ts";
 import { createPublishSkillTool } from "./tools/publish-skill.ts";
 import { createRequestToolAccessTool } from "./tools/request-tool-access.ts";
 import { createSearchMcpServersTool } from "./tools/search-mcp-servers.ts";
+import { createDescribeSessionTool, createListSessionsTool } from "./tools/session-tools.ts";
+import { createSetUserIdentityTool } from "./tools/set-user-identity.ts";
 import {
   createAssignWorkspaceSkillTool,
   createUnassignWorkspaceSkillTool,
@@ -242,16 +289,13 @@ export function formatWorkspaceSection(
     section += `\n<agents>${details.agents.join(", ")}</agents>`;
   }
 
-  if (details.jobs.length > 0) {
-    const jobEntries = details.jobs.map((j) => {
-      const desc = j.description ? ` - ${j.description}` : "";
-      return `${j.name}${desc}`;
-    });
-    section += `\n<jobs>\n${jobEntries.join("\n")}\n</jobs>`;
-  }
+  // Jobs are already bound as callable tools by createJobTools — each job's
+  // name + description ride on the tool schema and are visible to the model
+  // through the AI SDK's tools array. The earlier per-job description block
+  // here was duplicate signal that mutated alongside `upsert_job`. Drop it.
 
   if (details.signals.length > 0) {
-    const signalConfigs = (config?.workspace as { signals?: Record<string, unknown> })?.signals;
+    const signalConfigs = config?.signals;
     const signalEntries = details.signals.map((s) => {
       const trigger = signalConfigs ? describeSignalTrigger(signalConfigs[s.name]) : "";
       return trigger ? `${s.name} (${trigger})` : s.name;
@@ -287,81 +331,136 @@ export function formatWorkspaceSection(
 }
 
 /**
- * Build skills section from workspace skills.
+ * Cap a skill description at the first line break / sentence boundary, then a
+ * fixed character limit, so the inline `<available_skills>` index stays
+ * cheap. The full description is still retrievable via `describe_skill`,
+ * and the body via `load_skill`. Trims trailing whitespace + dangling
+ * partial-word tails, appends `…` when truncated.
+ *
+ * The 80-char cap is a soft target — at ~25 skills per workspace it keeps
+ * the index under ~600 tokens regardless of skill-author description length.
+ */
+const SKILL_SUMMARY_MAX_CHARS = 80;
+
+/**
+ * Truncate by code points, not UTF-16 code units. `String#slice(n)` cuts at
+ * the n-th code unit and can split an astral-plane code point (emoji, some
+ * CJK, mathematical symbols) into a lone high surrogate that renders as a
+ * replacement character downstream. Iterating with `Array.from` yields one
+ * entry per code point, so the cap is grapheme-safe to a first
+ * approximation (combining marks remain code-point-pair-only, but we don't
+ * assemble graphemes).
+ */
+function sliceByCodePoints(s: string, n: number): string {
+  const points = Array.from(s);
+  return points.length <= n ? s : points.slice(0, n).join("");
+}
+
+export function summarizeSkillDescription(description: string): string {
+  const collapsed = description.replace(/\s+/g, " ").trim();
+  if (!collapsed) return "";
+  const firstLine = collapsed.split(/(?<=[.!?])\s/)[0] ?? collapsed;
+  const candidate = firstLine.length <= collapsed.length ? firstLine : collapsed;
+  if (Array.from(candidate).length <= SKILL_SUMMARY_MAX_CHARS) return candidate;
+  const cut = sliceByCodePoints(candidate, SKILL_SUMMARY_MAX_CHARS);
+  const lastSpace = cut.lastIndexOf(" ");
+  const safe = lastSpace > SKILL_SUMMARY_MAX_CHARS / 2 ? cut.slice(0, lastSpace) : cut;
+  return `${safe.replace(/[\s,;:.!?-]+$/, "")}…`;
+}
+
+/**
+ * Build the `<available_skills>` index that ships in block 2.
+ *
+ * Each entry carries name + ref + a one-line summary capped at
+ * SKILL_SUMMARY_MAX_CHARS — full descriptions are retrievable via
+ * `describe_skill(ref)` and bodies via `load_skill(ref)`. Keeping the
+ * inline section bounded means a workspace with N skills costs O(N) bytes
+ * at ~30 tokens each instead of ~120 tokens of per-skill description text.
  */
 export function buildSkillsSection(workspaceSkills: SkillSummary[]): string {
   if (workspaceSkills.length === 0) return "";
 
-  const entries = workspaceSkills.map(
-    (s) => `<skill name="@${s.namespace}/${s.name}">${s.description}</skill>`,
-  );
+  const entries = workspaceSkills.map((s) => {
+    const summary = summarizeSkillDescription(s.description);
+    const body = summary.length > 0 ? summary : "";
+    return `<skill name="@${s.namespace}/${s.name}">${body}</skill>`;
+  });
 
   return `<available_skills>
-<instruction>Load skills with load_skill when task matches.</instruction>
+<instruction>Index of skills visible to this workspace. Each entry is ref + one-line summary. Use describe_skill for full descriptions, load_skill to bring instructions into chat, search_skills/list_skills to discover.</instruction>
 ${entries.join("\n")}
 </available_skills>`;
 }
 
 /**
- * Build workspace-chat system prompt.
+ * Build workspace-chat system prompt blocks.
+ *
+ * Returns three logical tiers matching the prompt-cache layout:
+ *   - block1: weeks-stable static instructions (prompt.txt)
+ *   - block2: workspace-stable inventory + identity (workspace XML,
+ *     skills, integrations, user identity)
+ *   - block3: session-stable turn-context (onboarding clause, user profile)
+ *
+ * Block 4 (memory + temporal facts) is NOT in the system prompt — it
+ * rides as a synthetic user-message preface so the system stays
+ * byte-stable across turns and the Anthropic prompt cache hits the
+ * prefix.
+ *
+ * Anthropic supports up to 4 cache breakpoints per request. We wire
+ * one each at block1/block2/block3 boundaries (see
+ * `buildSystemMessages`), leaving headroom for a turn-level marker.
  */
-export function getSystemPrompt(
+export interface SystemBlocks {
+  block1: string;
+  block2: string;
+  block3: string;
+}
+
+export function getSystemBlocks(
   workspaceSection: string,
   options?: {
-    integrations?: string;
     skills?: string;
     userIdentity?: string;
-    resources?: string;
-    memory?: string;
-    /**
-     * Phase 9 retrieval-gated artifact injection. Joined
-     * `<retrieved_content>` envelopes built from artifacts created in
-     * the current chat session. Sits next to `memory` in the prompt
-     * because the two are semantic siblings — one carries narrative
-     * recall, the other carries byte-level recall.
-     */
-    artifacts?: string;
     onboarding?: string;
     userProfile?: string;
+    /**
+     * Optional cache-salt tag prepended to block 2. The /debug page
+     * "force fresh next turn" button bumps a workspace-scoped salt;
+     * the chat handler reads it and threads the rendered tag here so
+     * a one-byte change at block 2's prefix invalidates the cached
+     * breakpoint for every chat in the workspace. Empty string when
+     * the workspace has never bumped — no behavior change in that
+     * case.
+     */
+    cacheSaltTag?: string;
   },
-): string {
-  let prompt = SYSTEM_PROMPT;
+): SystemBlocks {
+  const block2Parts: string[] = [];
+  if (options?.cacheSaltTag) block2Parts.push(options.cacheSaltTag.trimEnd());
+  block2Parts.push(workspaceSection);
+  if (options?.skills) block2Parts.push(options.skills);
+  if (options?.userIdentity) block2Parts.push(options.userIdentity);
 
-  prompt = `${prompt}\n\n${workspaceSection}`;
+  const block3Parts: string[] = [];
+  if (options?.onboarding) block3Parts.push(options.onboarding);
+  if (options?.userProfile) block3Parts.push(options.userProfile);
 
-  if (options?.memory) {
-    prompt = `${prompt}\n\n${options.memory}`;
-  }
+  return {
+    block1: SYSTEM_PROMPT,
+    block2: block2Parts.join("\n\n"),
+    block3: block3Parts.join("\n\n"),
+  };
+}
 
-  if (options?.artifacts) {
-    prompt = `${prompt}\n\n${options.artifacts}`;
-  }
-
-  if (options?.onboarding) {
-    prompt = `${prompt}\n\n${options.onboarding}`;
-  }
-
-  if (options?.resources) {
-    prompt = `${prompt}\n\n${options.resources}`;
-  }
-
-  if (options?.integrations) {
-    prompt = `${prompt}\n\n${options.integrations}`;
-  }
-
-  if (options?.skills) {
-    prompt = `${prompt}\n\n${options.skills}`;
-  }
-
-  if (options?.userIdentity) {
-    prompt = `${prompt}\n\n${options.userIdentity}`;
-  }
-
-  if (options?.userProfile) {
-    prompt = `${prompt}\n\n${options.userProfile}`;
-  }
-
-  return prompt;
+/**
+ * Concatenate blocks into a single system-prompt string. Used when the
+ * provider doesn't support per-block cache control — non-anthropic
+ * providers see the full prompt as one string.
+ */
+export function flattenSystemBlocks(blocks: SystemBlocks): string {
+  const parts = [blocks.block1, blocks.block2];
+  if (blocks.block3) parts.push(blocks.block3);
+  return parts.join("\n\n");
 }
 
 /**
@@ -410,6 +509,17 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
       throw new Error("Workspace ID is required for workspace chat");
     }
 
+    // userId is required for the new identity-aware code paths
+    // (USERS-bucket reads, set_user_identity tool). The HTTP route
+    // middleware in routes/workspaces/chat.ts populates it from the
+    // X-Atlas-User-Id header (set server-side from getUserId()), so it
+    // is always present in production. Guard explicitly so the SDK
+    // type narrowing works for the rest of the handler.
+    const userId = session.userId;
+    if (!userId) {
+      throw new Error("User ID is required for workspace chat");
+    }
+
     // Load and validate chat history via workspace-scoped HTTP endpoint.
     // chatId may contain `/` (e.g. github thread ids) — encode so Hono's
     // single-segment `:chatId` matcher captures it; the daemon's param()
@@ -417,7 +527,9 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
     const encodedChatId = encodeURIComponent(session.streamId);
     let messages: AtlasUIMessage[] = [];
     const res = await parseResult(
-      client.workspaceChat(workspaceId)[":chatId"].$get({ param: { chatId: encodedChatId } }),
+      client
+        .workspaceChat(workspaceId)
+        [":chatId"].$get({ param: { chatId: encodedChatId }, query: {} }),
     );
     if (res.ok) {
       messages = await validateAtlasUIMessages(res.data.messages);
@@ -426,6 +538,27 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
     }
 
     let finalText: string | undefined;
+    // Per-turn token + cache usage. Mutated in place by traceModel
+    // middleware on every wrapped LLM call inside `enterUsageScope`
+    // below — that includes the parent streamText (one entry per step),
+    // every nested call fired from a tool execute (bundled agents,
+    // from-llm agents, delegate, fsm, supervisor), and user-agent
+    // `ctx.llm` requests bridged via `CapabilityContext.usageCounter`.
+    // Read in `onFinish` and written to the persisted message metadata.
+    const usageCounter: UsageCounter = {
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+    };
+    let turnUsage:
+      | {
+          inputTokens?: number;
+          outputTokens?: number;
+          cacheReadTokens?: number;
+          cacheWriteTokens?: number;
+        }
+      | undefined;
     // Capture the bundled-agent's internal tool calls so the workspace-runtime
     // side-channel (runtime.ts:executeAgent) can mirror them onto
     // `step:complete.toolCalls`. This keeps `case "agent" → workspace-chat`
@@ -529,6 +662,18 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
             });
           }
 
+          // Stamp final per-turn token + cache usage onto the persisted
+          // assistant message. `turnUsage` is captured in streamText's
+          // own onFinish callback (which fires before this UIMessageStream
+          // onFinish), so it's always settled by the time we get here.
+          // The messageMetadata callback during streaming runs too early
+          // — it sees `turnUsage = undefined` and the SDK doesn't
+          // re-invoke it after the stream's terminal usage event. Writing
+          // to `metadata.usage` here is the reliable path.
+          if (turnUsage) {
+            lastMessage.metadata = { ...(lastMessage.metadata ?? {}), usage: turnUsage };
+          }
+
           const appendResult = await ChatStorage.appendMessage(
             session.streamId,
             lastMessage,
@@ -558,33 +703,19 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           workspaceId,
           foregroundCount: foregroundIds.length,
         });
-        const [
-          workspaceDetails,
-          wsConfigResult,
-          linkSummary,
-          userIdentitySection,
-          foregrounds,
-          profileState,
-        ] = await Promise.all([
-          fetchWorkspaceDetails(workspaceId, logger),
-          parseResult(client.workspace[":workspaceId"].config.$get({ param: { workspaceId } })),
-          fetchLinkSummary(logger),
-          fetchUserIdentitySection(logger),
-          foregroundIds.length > 0
-            ? fetchForegroundContexts(foregroundIds, logger)
-            : Promise.resolve([]),
-          fetchUserProfileState(workspaceId, logger),
-        ]);
+        const [block2, linkSummary, userIdentitySection, foregrounds, profileState] =
+          await Promise.all([
+            getBlock2Inputs(workspaceId, logger),
+            fetchLinkSummary(logger),
+            fetchUserIdentitySection(userId, logger),
+            foregroundIds.length > 0
+              ? fetchForegroundContexts(foregroundIds, logger)
+              : Promise.resolve([]),
+            fetchUserProfileState(userId, logger),
+          ]);
 
-        let wsConfig: WorkspaceConfig | undefined;
-        if (wsConfigResult.ok) {
-          wsConfig = wsConfigResult.data.config;
-        } else {
-          logger.warn("Failed to fetch workspace config", {
-            workspaceId,
-            error: wsConfigResult.error,
-          });
-        }
+        const workspaceDetails = block2.details;
+        const wsConfig = block2.config;
 
         // Format sections — compose with foreground workspaces. wsConfig
         // carries the workspace.yml details (signal triggers, MCP server names)
@@ -596,14 +727,14 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           wsConfig,
         );
         const workspaceSection = composeWorkspaceSections(primaryWorkspaceSection, foregrounds);
-        const integrationsSection = linkSummary
-          ? formatIntegrationsSection(linkSummary)
-          : undefined;
 
-        // Skills — scoped to this workspace (unassigned ∪ directly assigned), merged with foregrounds
+        // Skills — scoped to the primary workspace only. Foreground skills
+        // used to merge into <available_skills>, which made any pinned
+        // foreground's skill assignment burst the prefix cache. Now the
+        // chat reaches across via list_skills(scope=...) / describe_skill
+        // when it actually needs a foreground's skill.
         const primarySkills = await resolveVisibleSkills(workspaceId, SkillStorage);
-        const mergedSkills = composeSkills(primarySkills, foregrounds);
-        const skillsSection = buildSkillsSection(mergedSkills);
+        const skillsSection = buildSkillsSection(primarySkills);
 
         // Connect service tool
         const connectServiceTool: AtlasTools = {};
@@ -642,14 +773,80 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
         const listMcpToolsTool = createListMcpToolsTool(logger);
 
         // Workspace-scoped MCP management tools
-        const mcpDependenciesTool = createMcpDependenciesTool(workspaceId, logger);
         const enableMcpServerTool = createEnableMcpServerTool(workspaceId, logger);
         const disableMcpServerTool = createDisableMcpServerTool(workspaceId, logger);
+
+        // MCP discovery tools — list/describe servers and tools.
+        // describe_mcp_server (scope=workspace) subsumes the prior
+        // get_mcp_dependencies tool: it returns the wired config plus the
+        // agents/jobs that reference each enabled server.
+        const listMcpServersTool = createListMcpServersTool(workspaceId, logger);
+        const describeMcpServerTool = createDescribeMcpServerTool(workspaceId, logger);
+        const describeMcpToolTool = createDescribeMcpToolTool(logger);
 
         // Workspace skill management tools
         const publishSkillTool = createPublishSkillTool(logger);
         const assignSkillTool = createAssignWorkspaceSkillTool(workspaceId, logger);
         const unassignSkillTool = createUnassignWorkspaceSkillTool(workspaceId, logger);
+
+        // Skill discovery tools — pair with the names+summary index in
+        // <available_skills>. The chat reads names from the index and pulls
+        // descriptions/bodies on demand, so skill assignment doesn't burst
+        // the prefix cache for every other skill in the workspace.
+        const listSkillsTool = createListSkillsTool(workspaceId, logger);
+        const searchSkillsTool = createSearchSkillsTool(workspaceId, logger);
+        const describeSkillTool = createDescribeSkillTool(logger);
+
+        // Agent registry tools — replace the run_code + curl workaround for
+        // user-agent registration. register_agent is idempotent so it doubles
+        // as the update path; delete_agent_from_registry removes an installed
+        // agent's on-disk artifacts.
+        const registerAgentTool = createRegisterAgentTool(logger);
+        const deleteAgentFromRegistryTool = createDeleteAgentFromRegistryTool(logger);
+
+        // Integration retrieval — the chat fetches Link credential status on
+        // demand instead of carrying a per-provider XML index in block 2.
+        // Connect/disconnect events used to bust the 1h workspace-stable
+        // cache; pulling the data per-turn-when-needed keeps the prefix
+        // stable across connect_service calls.
+        const listIntegrationsTool = createListIntegrationsTool(logger);
+        const describeIntegrationTool = createDescribeIntegrationTool(logger);
+
+        // Per-domain inventory tools — workspaces, agents, jobs, signals,
+        // memory stores, communicators, drafts, user identity. Each
+        // surfaces a list_X / describe_X pair scoped to the current
+        // chat's workspace by default; scope opt-ins reach broader views.
+        const listWorkspacesTool = createListWorkspacesTool(logger);
+        const describeWorkspaceTool = createDescribeWorkspaceTool(workspaceId, logger);
+        const listAgentsTool = createListAgentsTool(workspaceId, logger);
+        const describeAgentTool = createDescribeAgentTool(workspaceId, logger);
+        const listJobsTool = createListJobsTool(workspaceId, logger);
+        const describeJobTool = createDescribeJobTool(workspaceId, logger);
+        const listSignalsTool = createListSignalsTool(workspaceId, logger);
+        const describeSignalTool = createDescribeSignalTool(workspaceId, logger);
+        const listMemoryStoresTool = createListMemoryStoresTool(workspaceId, logger);
+        const describeMemoryStoreTool = createDescribeMemoryStoreTool(workspaceId, logger);
+        const listCommunicatorsTool = createListCommunicatorsTool(workspaceId, logger);
+        const describeUserIdentityTool = createDescribeUserIdentityTool(logger);
+        const describeDraftTool = createDescribeDraftTool(workspaceId, logger);
+        const listArtifactsTool = createListArtifactsTool(workspaceId, logger);
+
+        // Bundled atlas agent discovery — distinct from the
+        // `agent_<id>` invocation wrappers; these list/describe the
+        // bundled-agent catalog with input/output schemas.
+        const listBundledAgentsTool = createListBundledAgentsTool(logger);
+        const describeBundledAgentTool = createDescribeBundledAgentTool(logger);
+
+        // Session observability — fills the audit-flagged gap (the
+        // chat couldn't answer "did my Slack signal fire?" without
+        // run_code curl).
+        const listSessionsTool = createListSessionsTool(workspaceId, logger);
+        const describeSessionTool = createDescribeSessionTool(logger);
+
+        // Memory-entry retrieval (replaces the old list_memory_entries shape
+        // with rich substring + time + metadata filters and pagination).
+        const listMemoryEntriesTool = createListMemoryEntriesTool(workspaceId, logger);
+        const describeMemoryEntryTool = createDescribeMemoryEntryTool(workspaceId, logger);
 
         // Job tools — pass session.streamId so nested job sessions inherit
         // the chat thread ID. The daemon's broadcast hook reads it to skip
@@ -690,7 +887,7 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
         const adHocSessionId = session.sessionId || `session-${Date.now()}`;
         const webFetchTool = createWebFetchTool(logger);
         const webSearchTool = createWebSearchTool(logger);
-        const runCodeTool = createRunCodeTool(adHocSessionId, logger);
+        const runCodeTool = createRunCodeTool(adHocSessionId, logger, abortSignal);
         const fileIOTools = createFileIOTools(adHocSessionId, logger);
 
         // delegate runs nested streamText sub-agents in-process. The child's
@@ -707,7 +904,7 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
               sessionId: adHocSessionId,
               workspaceId,
               streamId: session.streamId,
-              userId: session.userId,
+              userId: userId,
               datetime: session.datetime,
             },
             platformModels,
@@ -747,7 +944,7 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
             sessionId: adHocSessionId,
             workspaceId,
             streamId: session.streamId,
-            userId: session.userId,
+            userId: userId,
             datetime: session.datetime,
           },
           platformModels,
@@ -766,12 +963,13 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           ...connectCommunicatorTool,
           ...jobTools,
           ...artifactTools,
-          ...createArtifactsCreateTool({
+          ...createCreateArtifactTool({
             sessionId: adHocSessionId,
             workspaceId,
             streamId: session.streamId,
           }),
           ...createMemorySaveTool(workspaceId, logger),
+          ...createSetUserIdentityTool(userId, logger),
           ...createRequestToolAccessTool({
             workspaceId,
             sessionId: adHocSessionId,
@@ -790,13 +988,42 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           ...searchMcpServersTool,
           ...installMcpServerTool,
           ...createMcpServerTool,
-          ...mcpDependenciesTool,
           ...enableMcpServerTool,
           ...disableMcpServerTool,
           ...listMcpToolsTool,
+          ...listMcpServersTool,
+          ...describeMcpServerTool,
+          ...describeMcpToolTool,
           ...publishSkillTool,
           ...assignSkillTool,
           ...unassignSkillTool,
+          ...listSkillsTool,
+          ...searchSkillsTool,
+          ...describeSkillTool,
+          ...registerAgentTool,
+          ...deleteAgentFromRegistryTool,
+          ...listIntegrationsTool,
+          ...describeIntegrationTool,
+          ...listWorkspacesTool,
+          ...describeWorkspaceTool,
+          ...listAgentsTool,
+          ...describeAgentTool,
+          ...listJobsTool,
+          ...describeJobTool,
+          ...listSignalsTool,
+          ...describeSignalTool,
+          ...listMemoryStoresTool,
+          ...describeMemoryStoreTool,
+          ...listCommunicatorsTool,
+          ...describeUserIdentityTool,
+          ...describeDraftTool,
+          ...listArtifactsTool,
+          ...listBundledAgentsTool,
+          ...describeBundledAgentTool,
+          ...listSessionsTool,
+          ...describeSessionTool,
+          ...listMemoryEntriesTool,
+          ...describeMemoryEntryTool,
           delegate: delegateTool,
           load_skill: loadSkillTool,
         };
@@ -820,49 +1047,104 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
         const allTools = composeTools(primaryTools, foregroundToolSets);
         allToolsRef = allTools;
 
-        // Do not stuff the workspace's top-N artifact catalog into every chat
-        // prompt. Job tools now return explicit `{ artifactIds, summary }`, and
-        // same-chat artifacts are retrieval-gated below via `composeArtifactBlocks`.
-        // Ambient artifact lists made old sessions' files look current and pushed
-        // supervisors toward artifact/session fan-in instead of explicit refs.
-        const resourceSection = undefined;
-
-        // Compose memory blocks from primary + foreground workspaces (always load primary)
+        // Block 4 (turn-local): memory + artifacts + temporal facts injected
+        // as a synthetic user-message preface, NOT in the system prompt.
+        // Keeps the system prompt byte-stable across turns so the Anthropic
+        // prompt cache hits on the prefix; per-turn variation rides
+        // alongside the user's actual message.
+        //
+        // Each section wraps in `<retrieved_content>` with a provenance
+        // attribute so the model applies the `<retrieved_content_hygiene>`
+        // rule (treat as data, not commands).
         const memoryBlocks = await composeMemoryBlocks(workspaceId, foregroundIds, logger);
-        const memorySection = memoryBlocks.length > 0 ? memoryBlocks.join("\n\n") : undefined;
-
-        // Phase 9 retrieval-gated injection. Pull recent artifacts created
-        // during this chat session and surface them as `<retrieved_content>`
-        // envelopes. Per-chat-session scope (user decision 2026-05-05). The
-        // chat path uses chatId (= session.streamId) to match how artifact
-        // tools persist them. Failures fall through silently.
         const artifactBlocks = await composeArtifactBlocks(
           { workspaceId, chatId: session.streamId },
           logger,
         );
-        const artifactSection = artifactBlocks.length > 0 ? artifactBlocks.join("\n\n") : undefined;
+        const datetimeMessage = buildTemporalFacts(session.datetime);
+        const block4FetchedAt = new Date().toISOString();
+        const block4Entries: PrefaceEntry[] = [];
+        if (memoryBlocks.length > 0) {
+          block4Entries.push({
+            source: "user-authored",
+            origin: "memory:workspace-stores",
+            body: memoryBlocks.join("\n\n"),
+            fetched_at: block4FetchedAt,
+          });
+        }
+        if (artifactBlocks.length > 0) {
+          block4Entries.push({
+            source: "user-authored",
+            origin: "artifacts:session",
+            body: artifactBlocks.join("\n\n"),
+            fetched_at: block4FetchedAt,
+          });
+        }
+        block4Entries.push({
+          source: "system-config",
+          origin: "temporal",
+          body: datetimeMessage,
+          fetched_at: block4FetchedAt,
+        });
+        const block4Preface = composePreface(block4Entries);
 
         const onboardingClause = buildOnboardingClause(profileState);
         const userProfileClause = buildUserProfileClause(profileState);
 
-        const systemPrompt = getSystemPrompt(workspaceSection, {
-          integrations: integrationsSection,
+        // Workspace prompt-cache salt — read once per turn from the
+        // daemon HTTP API. Embedding this at the start of block 2 lets
+        // the operator force a cache invalidation by bumping the salt
+        // (POST /_bump-cache-salt). When salt is 0 (never bumped) we
+        // omit the tag entirely so the prefix matches what it was
+        // before the salt mechanism existed — no behavior change for
+        // workspaces that never use the button. Failures fall through
+        // to "no salt"; a transient KV problem doesn't block a turn.
+        let cacheSaltTag = "";
+        try {
+          const saltRes = await fetch(
+            `${getAtlasDaemonUrl()}/api/workspaces/${encodeURIComponent(workspaceId)}/_cache-salt`,
+          );
+          if (saltRes.ok) {
+            const data = (await saltRes.json()) as { salt?: number };
+            const salt = typeof data.salt === "number" ? data.salt : 0;
+            if (salt > 0) {
+              cacheSaltTag = `<cache_salt workspace="${workspaceId}" version="${salt}"/>\n\n`;
+            }
+          }
+        } catch (err) {
+          logger.debug("cache-salt fetch failed; proceeding with no salt", {
+            workspaceId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+
+        const systemBlocks = getSystemBlocks(workspaceSection, {
           skills: skillsSection,
           userIdentity: userIdentitySection,
-          resources: resourceSection,
-          memory: memorySection,
-          artifacts: artifactSection,
           onboarding: onboardingClause,
           userProfile: userProfileClause,
+          cacheSaltTag,
         });
+        const systemPrompt = flattenSystemBlocks(systemBlocks);
 
-        const datetimeMessage = buildTemporalFacts(session.datetime);
-
-        // Capture system prompt context on first turn (fire-and-forget)
-        if (messages.length <= 1 && session.streamId) {
+        // Capture system prompt context on every turn (fire-and-forget). The
+        // stored snapshot reflects what the model actually saw on the latest
+        // turn — useful for debugging stale-context bugs and replays.
+        if (session.streamId) {
+          // Capture each cache block separately so the chat-inspector can
+          // render the breakpoint layout the model actually saw — block 1
+          // (weeks-stable), block 2 (workspace-stable), block 3 (session-
+          // stable, optional), and block 4 (volatile preface). The
+          // operator can spot prefix drift by comparing block-by-block
+          // across turns instead of squinting at a single 26K-char blob.
+          const capturedSystemMessages: string[] = [systemBlocks.block1, systemBlocks.block2];
+          if (systemBlocks.block3) {
+            capturedSystemMessages.push(systemBlocks.block3);
+          }
+          capturedSystemMessages.push(block4Preface);
           ChatStorage.setSystemPromptContext(
             session.streamId,
-            { systemMessages: [systemPrompt, datetimeMessage] },
+            { systemMessages: capturedSystemMessages },
             workspaceId,
           ).catch((err: unknown) =>
             logger.warn("Failed to capture system prompt context", { error: err }),
@@ -911,15 +1193,24 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           return !hasReasoning;
         });
 
-        // Use AI SDK's `system` parameter rather than `role: "system"`
-        // entries inside `messages`. The latter triggers a security
-        // warning ("System messages in the prompt or messages fields
-        // can be a security risk … may enable prompt injection attacks")
-        // because some providers don't isolate them from user content.
-        // Concatenating the two system blocks keeps the same content;
-        // the datetime block is a tiny suffix.
-        const combinedSystem = `${systemPrompt}\n\n${datetimeMessage}`;
-        const modelMessages = await convertToModelMessages(sanitizedMessages, {
+        // Block 4 preface (memory + datetime) injected as a synthetic
+        // user-message at position 0 — NOT inside `system`. This keeps
+        // `system` byte-stable across turns so the Anthropic prompt
+        // cache hits the prefix; turn-local variation lives in the
+        // messages array where it doesn't poison the cacheable prefix.
+        // The synthetic message is ephemeral — it isn't appended to
+        // ChatStorage so it doesn't accumulate in the conversation.
+        const messagesWithBlock4Preface: AtlasUIMessage[] = block4Preface
+          ? [
+              {
+                id: crypto.randomUUID(),
+                role: "user",
+                parts: [{ type: "text", text: block4Preface }],
+              },
+              ...sanitizedMessages,
+            ]
+          : sanitizedMessages;
+        const modelMessages = await convertToModelMessages(messagesWithBlock4Preface, {
           convertDataPart: (part) => {
             if (part.type === "data-credential-linked") {
               const data = (
@@ -932,75 +1223,204 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           },
         });
 
-        try {
-          const result = streamText({
-            model: conversationalModel,
-            experimental_repairToolCall: repairToolCall,
-            system: combinedSystem,
-            messages: modelMessages,
-            tools: allTools,
-            toolChoice: "auto",
-            stopWhen: [stepCountIs(40), connectServiceSucceeded(), connectCommunicatorSucceeded()],
-            maxOutputTokens: 20000,
-            experimental_transform: smoothStream({ chunking: "word" }),
-            maxRetries: 3,
-            abortSignal,
-            providerOptions: getDefaultProviderOpts("anthropic"),
-            onFinish: ({ text, steps, toolCalls, toolResults, reasoningText }) => {
-              finalText = text;
-              // J3: harvest internal tool calls from streamText's terminal
-              // event. `collectToolUsageFromSteps` flattens per-step calls
-              // (the AI SDK populates them under `steps[*].toolCalls` /
-              // `.toolResults`) and falls back to top-level arrays. Mirrors
-              // the canonical pattern in `from-llm.ts:195-211`.
-              const collected = collectToolUsageFromSteps({ steps, toolCalls, toolResults });
-              assembledToolCalls = collected.assembledToolCalls;
-              assembledToolResults = collected.assembledToolResults;
-              assembledReasoning = reasoningText || undefined;
-            },
-            onError: ({ error }) => {
-              if (!error) return;
-
-              logger.error("Stream error in workspace-chat agent", { error });
-
-              const errorCause = createErrorCause(error);
-              const displayMessage = getErrorDisplayMessage(errorCause);
-
-              if (stream && !errorEmitted) {
-                writer.write({
-                  id: crypto.randomUUID(),
-                  type: "data-error",
-                  data: { error: displayMessage, errorCause },
+        // For Anthropic, split the system prompt into 3 cache breakpoints
+        // (block1 weeks-stable, block2 workspace-stable, block3 session-
+        // stable). The Anthropic provider in the AI SDK collects
+        // consecutive system messages into a `system` array of text parts,
+        // each carrying its own `cache_control`. Anthropic allows up to 4
+        // breakpoints per request; we use 3 here, leaving 1 for future
+        // turn-level use. Other providers see a single `system` string —
+        // multi-system messages are not portable.
+        // The AI SDK's Anthropic provider sets `.provider` to surface-
+        // qualified ids like "anthropic.messages" and "anthropic.tools",
+        // never the bare registry key. Match the family prefix so any
+        // future Anthropic surface (Vertex, Bedrock, future endpoints)
+        // also gets the multi-system-block + cache_control layout. A
+        // strict `=== "anthropic"` check silently bypassed the entire
+        // caching path — every turn went through the conventional
+        // top-level `system` string, no cache_control was attached, and
+        // every prefix wrote fresh.
+        const isAnthropic = conversationalModel.provider.startsWith("anthropic");
+        const systemModelMessages: ModelMessage[] = isAnthropic
+          ? (() => {
+              // Anthropic enforces non-increasing TTL across the
+              // tools → system → messages block sequence — a 1h
+              // cache_control cannot come after a 5m one — but the
+              // reverse (1h, 1h, 5m, ...) is valid. Block 1 and 2 are
+              // weeks-stable / workspace-stable; block 3 is session-
+              // stable so it gets the cheaper 5m TTL (~0.6× write cost
+              // vs 1h).
+              const longTtl = { type: "ephemeral", ttl: "1h" } as const;
+              const shortTtl = { type: "ephemeral" } as const;
+              const msgs: ModelMessage[] = [
+                {
+                  role: "system",
+                  content: systemBlocks.block1,
+                  providerOptions: { anthropic: { cacheControl: longTtl } },
+                },
+                {
+                  role: "system",
+                  content: systemBlocks.block2,
+                  providerOptions: { anthropic: { cacheControl: longTtl } },
+                },
+              ];
+              if (systemBlocks.block3) {
+                msgs.push({
+                  role: "system",
+                  content: systemBlocks.block3,
+                  providerOptions: { anthropic: { cacheControl: shortTtl } },
                 });
-                errorEmitted = true;
               }
-            },
-          });
+              return msgs;
+            })()
+          : [];
 
-          // Start piping the UI message stream
-          let startTimestamp: string | undefined;
-          let endTimestamp: string | undefined;
-
-          writer.merge(
-            result.toUIMessageStream({
-              originalMessages: messages,
-              messageMetadata: (metadata) => {
-                if (!startTimestamp) {
-                  startTimestamp = new Date().toISOString();
-                }
-                if (metadata.part.type === "finish") {
-                  endTimestamp = new Date().toISOString();
-                }
-                return {
-                  startTimestamp,
-                  endTimestamp,
-                  provider: conversationalModel.provider,
-                  modelId: conversationalModel.modelId,
-                  agentId: "workspace-chat",
+        try {
+          // Open the usage scope around streamText creation AND stream
+          // consumption. `traceModel`'s wrapStream middleware captures
+          // the counter reference at scope entry (during the first
+          // `model.doStream` invocation); the mutation happens later
+          // when the transform sees the `finish` chunk, by which point
+          // the captured closure does the work — ALS context at finish
+          // time doesn't matter. The await on `result.finishReason`
+          // keeps the scope alive until every nested call (tool
+          // executes, sub-agents) has settled. Nested in-process calls
+          // ride this same scope through async/await propagation;
+          // user-agent `ctx.llm` calls cross NATS, so they bridge via
+          // `CapabilityContext.usageCounter` (see
+          // ProcessAgentExecutor).
+          await enterUsageScope(usageCounter, async () => {
+            const result = streamText({
+              model: conversationalModel,
+              experimental_repairToolCall: repairToolCall,
+              system: isAnthropic ? undefined : systemPrompt,
+              messages: isAnthropic ? [...systemModelMessages, ...modelMessages] : modelMessages,
+              allowSystemInMessages: isAnthropic ? true : undefined,
+              tools: allTools,
+              toolChoice: "auto",
+              stopWhen: [
+                stepCountIs(40),
+                connectServiceSucceeded(),
+                connectCommunicatorSucceeded(),
+              ],
+              maxOutputTokens: 20000,
+              experimental_transform: smoothStream({ chunking: "word" }),
+              maxRetries: 3,
+              abortSignal,
+              // Provider-level cache controls.
+              //
+              // Anthropic — per-block `cacheControl` markers sit on the
+              //   system messages above. Setting a top-level
+              //   `cache_control` here would land on the messages block
+              //   AFTER block 3, violating Anthropic's non-increasing-
+              //   TTL rule (1h cannot come after 5m). Leave it off.
+              //
+              // OpenAI — caching is automatic for prefixes ≥1024 tokens;
+              //   no explicit markers are needed. The optional
+              //   `promptCacheKey` is a routing hint that pins requests
+              //   sharing a long common prefix to the same backend, which
+              //   improves cache hit rate when the serving fleet would
+              //   otherwise scatter them. Keying on `workspaceId` groups
+              //   every chat in the same workspace onto the same cache.
+              //
+              // Other providers (Gemini, Groq) auto-cache without any
+              // markers; their unused providerOptions are no-ops.
+              providerOptions: { openai: { promptCacheKey: workspaceId } },
+              onFinish: ({ text, steps, toolCalls, toolResults, reasoningText }) => {
+                finalText = text;
+                // J3: harvest internal tool calls from streamText's terminal
+                // event. `collectToolUsageFromSteps` flattens per-step calls
+                // (the AI SDK populates them under `steps[*].toolCalls` /
+                // `.toolResults`) and falls back to top-level arrays. Mirrors
+                // the canonical pattern in `from-llm.ts:195-211`.
+                const collected = collectToolUsageFromSteps({ steps, toolCalls, toolResults });
+                assembledToolCalls = collected.assembledToolCalls;
+                assembledToolResults = collected.assembledToolResults;
+                assembledReasoning = reasoningText || undefined;
+                // Snapshot the accumulator at turn-end. By the time
+                // onFinish fires the wrapStream middleware has already
+                // processed the parent's `finish` chunk, and every
+                // nested call's `wrapGenerate`/`wrapStream` has
+                // resolved, so the counter holds the full turn total
+                // (parent multi-step + all in-process nested calls +
+                // any cross-NATS user-agent LLM calls).
+                turnUsage = {
+                  inputTokens: usageCounter.inputTokens,
+                  outputTokens: usageCounter.outputTokens,
+                  cacheReadTokens: usageCounter.cacheReadTokens,
+                  cacheWriteTokens: usageCounter.cacheWriteTokens,
                 };
+                // Emit a `data-usage` chunk so the UI can render the
+                // badge live for the in-flight assistant turn instead of
+                // waiting for a page reload to read the persisted
+                // metadata. The persisted message metadata (set just
+                // before append, below) is the source of truth on
+                // refresh; this chunk is a peer signal for the live
+                // render path.
+                if (stream) {
+                  writer.write({ id: crypto.randomUUID(), type: "data-usage", data: turnUsage });
+                }
               },
-            }),
-          );
+              onError: ({ error }) => {
+                if (!error) return;
+
+                logger.error("Stream error in workspace-chat agent", { error });
+
+                const errorCause = createErrorCause(error);
+                const displayMessage = getErrorDisplayMessage(errorCause);
+
+                if (stream && !errorEmitted) {
+                  writer.write({
+                    id: crypto.randomUUID(),
+                    type: "data-error",
+                    data: { error: displayMessage, errorCause },
+                  });
+                  errorEmitted = true;
+                }
+              },
+            });
+
+            // Start piping the UI message stream
+            let startTimestamp: string | undefined;
+            let endTimestamp: string | undefined;
+
+            writer.merge(
+              result.toUIMessageStream({
+                originalMessages: messages,
+                messageMetadata: (metadata) => {
+                  if (!startTimestamp) {
+                    startTimestamp = new Date().toISOString();
+                  }
+                  if (metadata.part.type === "finish") {
+                    endTimestamp = new Date().toISOString();
+                  }
+                  return {
+                    startTimestamp,
+                    endTimestamp,
+                    provider: conversationalModel.provider,
+                    modelId: conversationalModel.modelId,
+                    agentId: "workspace-chat",
+                    // Usage is set by `onFinish` (above) once the stream
+                    // settles. On in-flight metadata frames this is
+                    // undefined — UI consumers treat absence as
+                    // "still streaming".
+                    ...(turnUsage ? { usage: turnUsage } : {}),
+                  };
+                },
+              }),
+            );
+
+            // Keep the usage scope alive until the stream actually
+            // completes. Awaiting any of `result.finishReason`,
+            // `result.usage`, etc. blocks here until the underlying
+            // stream settles — at which point every wrapStream
+            // middleware (parent + nested) has already mutated the
+            // counter and the onFinish snapshot above has fired. The
+            // outer pipeUIMessageStream consumer continues to pull
+            // chunks while we're parked here, so this await doesn't
+            // deadlock the merge.
+            await result.finishReason;
+          });
         } catch (error) {
           const errorCause = createErrorCause(error);
           const displayMessage = getErrorDisplayMessage(errorCause);

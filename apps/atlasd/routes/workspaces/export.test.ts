@@ -24,6 +24,27 @@ vi.mock("../me/adapter.ts", () => ({
   getCurrentUser: vi.fn().mockResolvedValue({ id: "user-1", email: "test@test.com" }),
 }));
 
+vi.mock("@atlas/core/workspace-members/storage", () => ({
+  WorkspaceMemberStorage: {
+    get: vi
+      .fn()
+      .mockImplementation((userId: string, wsId: string) =>
+        Promise.resolve({
+          ok: true,
+          data: { userId, wsId, role: "owner", addedAt: "2026-05-11T00:00:00.000Z" },
+        }),
+      ),
+    listByUser: vi.fn().mockResolvedValue({ ok: true, data: [] }),
+    listByWorkspace: vi.fn().mockResolvedValue({ ok: true, data: [] }),
+    put: vi.fn().mockResolvedValue({ ok: true, data: null }),
+    putIfAbsent: vi.fn().mockResolvedValue({ ok: true, data: null }),
+    delete: vi.fn().mockResolvedValue({ ok: true, data: undefined }),
+  },
+  ensureWorkspaceMembersKVBucket: vi.fn(),
+  initWorkspaceMemberStorage: vi.fn(),
+  resetWorkspaceMemberStorageForTests: vi.fn(),
+}));
+
 type WorkspaceConfig = Record<string, unknown>;
 
 /** Extract a credential ref from parsed YAML export output. */
@@ -115,6 +136,7 @@ function createExportTestApp(options: {
   const app = new Hono<AppVariables>();
   app.use("*", async (c, next) => {
     c.set("app", mockContext);
+    c.set("userId", "test-user");
     await next();
   });
 
@@ -239,11 +261,15 @@ describe("GET /:workspaceId/export", () => {
     { label: "not-found", error: new LinkCredentialNotFoundError("cred_gone") },
     {
       label: "expired (no refresh)",
-      error: new LinkCredentialExpiredError("cred_gone", "expired_no_refresh"),
+      error: new LinkCredentialExpiredError(
+        "cred_gone",
+        "expired_no_refresh",
+        "expired, no refresh",
+      ),
     },
     {
       label: "expired (refresh failed)",
-      error: new LinkCredentialExpiredError("cred_gone", "refresh_failed"),
+      error: new LinkCredentialExpiredError("cred_gone", "refresh_failed", "refresh failed"),
     },
   ])("strips $label legacy credential refs and exports successfully", async ({ error }) => {
     const config = {

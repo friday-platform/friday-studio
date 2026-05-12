@@ -3,7 +3,7 @@
  *
  * An ephemeral artifact is promoted to durable when something else in
  * the workspace points at it. The "decide" signal is implicit — the
- * supervisor's choice to remember it (memory_save), or to surface it as
+ * supervisor's choice to remember it (save_memory_entry), or to surface it as
  * a key result (aiSummary.keyDetails url), or the user's choice to view
  * it (display_artifact). No author opt-in required.
  *
@@ -14,7 +14,7 @@
  * are vanishingly unlikely.
  *
  * v2 path: index inbound edges in a KV bucket (`ARTIFACT_REFS`) keyed
- * by artifactId, populated at memory_save / aiSummary write time. That
+ * by artifactId, populated at save_memory_entry / aiSummary write time. That
  * turns this into an O(1) lookup, but is unnecessary at expected
  * cardinality (low thousands of artifacts per workspace, dozens of
  * memory stores).

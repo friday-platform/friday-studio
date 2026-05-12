@@ -7,7 +7,7 @@ import { wrapLanguageModel } from "ai";
 function endSpanWithError(span: Span | null, err: unknown): void {
   if (!span) return;
   if (err instanceof Error) span.recordException(err);
-  span.setStatus({ code: 2 /* SpanStatusCode.ERROR */, message: String(err) });
+  span.setStatus({ code: 2, /* SpanStatusCode.ERROR */ message: String(err) });
   span.end();
 }
 
@@ -37,6 +37,58 @@ interface TraceStore {
 }
 
 const traceStorage = new AsyncLocalStorage<TraceStore>();
+
+/**
+ * Running per-turn LLM usage counter. One object, mutated in place by every
+ * traceModel-wrapped call inside the active `enterUsageScope`. Memory is
+ * O(1) per scope regardless of call count — we never retain per-call detail
+ * here (that's what `TraceEntry` is for).
+ */
+export interface UsageCounter {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+}
+
+const usageStorage = new AsyncLocalStorage<UsageCounter>();
+
+/**
+ * Open a usage-accumulation scope. Every traceModel-wrapped LLM call made
+ * inside `fn` (including across async/await boundaries, including nested
+ * tool executes) increments the counter in place. Call sites read the
+ * counter after `fn` resolves.
+ *
+ * The scope does NOT propagate across process or NATS boundaries — for
+ * out-of-process LLM work (user agents going through the daemon's LLM
+ * capability handler), pass a `usageAccumulator` callback via
+ * `CapabilityContext` and have the handler invoke it explicitly.
+ */
+export function enterUsageScope<T>(counter: UsageCounter, fn: () => Promise<T>): Promise<T> {
+  return usageStorage.run(counter, fn);
+}
+
+/**
+ * Returns the active usage counter, if any. Used by code that bridges
+ * across an ALS boundary (e.g. registering a callback on a NATS capability
+ * handler) and needs to forward usage back to the calling scope.
+ */
+export function getActiveUsageCounter(): UsageCounter | undefined {
+  return usageStorage.getStore();
+}
+
+function addUsage(
+  counter: UsageCounter,
+  usage: {
+    inputTokens: { total?: number; cacheRead?: number; cacheWrite?: number };
+    outputTokens: { total?: number };
+  },
+): void {
+  counter.inputTokens += usage.inputTokens.total ?? 0;
+  counter.outputTokens += usage.outputTokens.total ?? 0;
+  counter.cacheReadTokens += usage.inputTokens.cacheRead ?? 0;
+  counter.cacheWriteTokens += usage.inputTokens.cacheWrite ?? 0;
+}
 
 /** Parse JSON, falling back to the raw string on malformed input. */
 function tryParseJson(raw: string): unknown {
@@ -76,12 +128,15 @@ export function traceModel(model: LanguageModelV3): LanguageModelV3 {
           },
           async (span) => {
             const store = traceStorage.getStore();
+            const counter = usageStorage.getStore();
             const t0 = performance.now();
             const result = await doGenerate();
             const latencyMs = performance.now() - t0;
 
             const inTok = result.usage.inputTokens.total ?? 0;
             const outTok = result.usage.outputTokens.total ?? 0;
+
+            if (counter) addUsage(counter, result.usage);
 
             if (span) {
               span.setAttributes({
@@ -130,6 +185,13 @@ export function traceModel(model: LanguageModelV3): LanguageModelV3 {
           { "llm.model": model.modelId, "llm.provider": model.provider, "llm.operation": "stream" },
           async (span) => {
             const store = traceStorage.getStore();
+            // Capture at scope entry — the TransformStream's transform()
+            // is invoked by the consumer's read loop, which may run in a
+            // different async context (writer.merge, server tee, etc.).
+            // ALS lookup at finish-time could miss the workspace-chat
+            // scope; capture the counter reference here while we're
+            // still in it.
+            const counter = usageStorage.getStore();
             const t0 = performance.now();
 
             let result: Awaited<ReturnType<typeof doStream>>;
@@ -175,6 +237,7 @@ export function traceModel(model: LanguageModelV3): LanguageModelV3 {
                   const latencyMs = performance.now() - t0;
                   const finishInTok = chunk.usage.inputTokens.total ?? 0;
                   const finishOutTok = chunk.usage.outputTokens.total ?? 0;
+                  if (counter) addUsage(counter, chunk.usage);
                   if (span && !spanEnded) {
                     span.setAttributes({
                       "llm.input_tokens": finishInTok,

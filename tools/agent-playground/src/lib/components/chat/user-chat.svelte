@@ -2,35 +2,34 @@
   import { untrack } from "svelte";
   import { Chat as ChatImpl } from "@ai-sdk/svelte";
   import type { AtlasUIMessage } from "@atlas/agent-sdk";
+  import { toast } from "@atlas/ui";
   import { createQuery, useQueryClient } from "@tanstack/svelte-query";
   import { page } from "$app/state";
   import { browser } from "$app/environment";
-  import { ElicitationSchema, type Elicitation } from "@atlas/core/elicitations/model";
   import { workspaceQueries } from "$lib/queries";
   import { mergeElicitationIntoCache } from "$lib/queries/elicitation-queries.ts";
+  import {
+    subscribeToSessionEvents,
+    subscribeToWorkspaceElicitations,
+  } from "$lib/shared-worker/client.ts";
   import { DefaultChatTransport } from "ai";
   import ChatInput, { type ImageAttachment } from "./chat-input.svelte";
   import ChatInspector from "./chat-inspector.svelte";
   import ChatMessageList from "./chat-message-list.svelte";
+  import ChatSessionUsage from "./chat-session-usage.svelte";
   import { createCursorTrackingFetch } from "./cursor-tracking-fetch.ts";
   import { nextQueueStep } from "./chat-queue.ts";
   import { nextResumeBudgetStep } from "./resume-budget.ts";
   import { nextSpeechChunk } from "./chat-tts.ts";
-  import { extractToolCalls, flattenToolCalls } from "./extract-tool-calls.ts";
-  import {
-    extractDisconnectedIntegrations,
-    extractErrorText,
-    hasErrorPart,
-    hasRenderableContent,
-  } from "./message-error.ts";
-  import type { ChatMessage, ImageDisplay, Segment, ToolCallDisplay } from "./types";
+  import { buildSegments, extractImages } from "@atlas/core/chat/export/render";
+  import { extractErrorText, hasErrorPart, hasRenderableContent } from "./message-error.ts";
+  import type { ChatMessage, ToolCallDisplay } from "./types";
   import { GetChatResponseSchema } from "./types";
   import {
     accumulateValidationAttempts,
     type ValidationAttemptDisplay,
   } from "./validation-accumulator.ts";
   import type { SessionStreamEvent } from "@atlas/core/session/session-events";
-  import { sessionEventStream } from "$lib/utils/session-event-stream";
 
   const wsId = $derived(page.params.workspaceId ?? "user");
   const queryClient = useQueryClient();
@@ -158,25 +157,20 @@
   $effect(() => {
     if (!browser || !wsId) return;
 
-    const url = new URL("/api/daemon/api/elicitations/stream", globalThis.location.origin);
-    url.searchParams.set("workspaceId", wsId);
-
-    const es = new EventSource(url.toString());
-    es.addEventListener("message", (e) => {
-      let parsed: Elicitation;
+    const controller = new AbortController();
+    void (async () => {
       try {
-        parsed = ElicitationSchema.parse(JSON.parse(e.data));
-      } catch (err) {
-        console.error("Failed to parse elicitation SSE event", err);
-        return;
+        for await (const elicitation of subscribeToWorkspaceElicitations(wsId, {
+          signal: controller.signal,
+        })) {
+          mergeElicitationIntoCache(queryClient, elicitation);
+        }
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        console.warn("Workspace elicitations stream errored", error);
       }
-      mergeElicitationIntoCache(queryClient, parsed);
-    });
-    es.addEventListener("error", () => {
-      console.warn("Elicitations SSE feed errored (EventSource will retry)");
-    });
-
-    return () => es.close();
+    })();
+    return () => controller.abort();
   });
 
   /**
@@ -486,6 +480,21 @@
   const streaming = $derived(chat?.status === "streaming" || chat?.status === "submitted");
 
   /**
+   * Id of the tail message while the chat is in any non-terminal status
+   * (streaming, submitted, errored mid-turn). Wider than `streaming` on
+   * purpose: a stream that drops into "error" can auto-resume back into
+   * "streaming" on the same id (see `resumeStream` below), so we keep
+   * the tail gated through that window. `chat-message-list` uses this
+   * to skip post-stream DOM affordances per-message — see its
+   * `unsettledMessageId` prop docstring.
+   */
+  const unsettledMessageId = $derived(
+    chat && chat.status !== "ready" && chat.messages.length > 0
+      ? chat.messages[chat.messages.length - 1]?.id
+      : undefined,
+  );
+
+  /**
    * "Working on it" indicator: shown after the user sends a message but
    * before anything renders in the assistant bubble. Flips off as soon as
    * the last assistant message has real content (text tokens or a tool
@@ -595,7 +604,7 @@
 
     (async () => {
       try {
-        for await (const event of sessionEventStream(sid, { signal: controller.signal })) {
+        for await (const event of subscribeToSessionEvents(sid, { signal: controller.signal })) {
           if (controller.signal.aborted) return;
           if ("type" in event && event.type === "step:validation") {
             untrack(() => {
@@ -846,130 +855,68 @@
   }
 
   /**
-   * Build chronological {@link Segment}s from an {@link AtlasUIMessage}'s
-   * `parts[]` array.  Consecutive text parts coalesce into a single `text`
-   * segment; consecutive tool-call parts (and any reasoning that arrived
-   * between them) group into a `tool-burst` segment.  This preserves the
-   * true stream order so the UI can render prose and tool activity exactly
-   * where they happened.
+   * Pull per-turn token + cache usage off a UI message. Reads
+   * `metadata.usage` first (the persisted shape, set by the chat
+   * handler just before append) and falls back to a `data-usage`
+   * part on the message (the live-stream shape, emitted from
+   * `streamText.onFinish` so the UsageBadge can render the in-flight
+   * turn before the first page refresh).
+   *
+   * Returns `undefined` when neither source is present — legacy chat
+   * messages, or turns that haven't reported usage yet.
    */
-  function buildSegments(msg: AtlasUIMessage): Segment[] {
-    if (!Array.isArray(msg.parts)) return [];
-    const allToolCalls = extractToolCalls(msg);
-    const toolMap = flattenToolCalls(allToolCalls);
-
-    const segments: Segment[] = [];
-    let textBuffer = "";
-    let toolBuffer: ToolCallDisplay[] = [];
-    let reasoningBuffer = "";
-    let burstIndex = 0;
-
-    function flushText() {
-      if (textBuffer.length > 0) {
-        segments.push({ type: "text", content: textBuffer });
-        textBuffer = "";
+  function extractTurnUsage(
+    msg: AtlasUIMessage,
+    metadataRecord: Record<string, unknown>,
+  ):
+    | {
+        inputTokens?: number;
+        outputTokens?: number;
+        cacheReadTokens?: number;
+        cacheWriteTokens?: number;
       }
+    | undefined {
+    function pickNumber(source: unknown, key: string): number | undefined {
+      if (typeof source !== "object" || source === null) return undefined;
+      const v = (source as Record<string, unknown>)[key];
+      return typeof v === "number" ? v : undefined;
     }
 
-    function flushBurst() {
-      if (toolBuffer.length > 0) {
-        segments.push({
-          type: "tool-burst",
-          id: `${msg.id}-burst-${burstIndex++}`,
-          calls: [...toolBuffer],
-          reasoning: reasoningBuffer || undefined,
-        });
-        toolBuffer = [];
-        reasoningBuffer = "";
-      }
-    }
-
-    for (const part of msg.parts) {
-      if (typeof part !== "object" || part === null || !("type" in part)) continue;
-      const type = (part as { type: string }).type;
-
-      if (type === "text" && "text" in part && typeof (part as { text: string }).text === "string") {
-        flushBurst();
-        textBuffer += (part as { text: string }).text;
-        continue;
-      }
-
-      if (type === "reasoning" || type === "reasoning-delta") {
-        const delta =
-          type === "reasoning"
-            ? "text" in part && typeof (part as { text: string }).text === "string"
-              ? (part as { text: string }).text
-              : ""
-            : "delta" in part && typeof (part as { delta: string }).delta === "string"
-              ? (part as { delta: string }).delta
-              : "";
-        if (toolBuffer.length > 0) {
-          reasoningBuffer += delta;
-        } else {
-          textBuffer += delta;
+    function shape(source: unknown):
+      | {
+          inputTokens?: number;
+          outputTokens?: number;
+          cacheReadTokens?: number;
+          cacheWriteTokens?: number;
         }
-        continue;
-      }
+      | undefined {
+      if (typeof source !== "object" || source === null) return undefined;
+      return {
+        inputTokens: pickNumber(source, "inputTokens"),
+        outputTokens: pickNumber(source, "outputTokens"),
+        cacheReadTokens: pickNumber(source, "cacheReadTokens"),
+        cacheWriteTokens: pickNumber(source, "cacheWriteTokens"),
+      };
+    }
 
-      if (type === "data-credential-linked") {
-        const data = (part as { data?: unknown }).data;
-        if (
-          typeof data === "object" &&
-          data !== null &&
-          "displayName" in data &&
-          typeof (data as Record<string, unknown>).displayName === "string"
-        ) {
-          flushBurst();
-          textBuffer += `Connected ${(data as Record<string, unknown>).displayName as string}.`;
-        }
-        continue;
-      }
+    const fromMetadata = shape(metadataRecord.usage);
+    if (fromMetadata) return fromMetadata;
 
-      const isTool = type.startsWith("tool-") || type === "dynamic-tool";
-      if (isTool) {
-        const toolCallId =
-          "toolCallId" in part && typeof (part as { toolCallId: string }).toolCallId === "string"
-            ? (part as { toolCallId: string }).toolCallId
-            : "";
-        const display = toolMap.get(toolCallId);
-        if (display) {
-          flushText();
-          toolBuffer.push(display);
+    if (Array.isArray(msg.parts)) {
+      // Walk in reverse so the latest data-usage part wins on the
+      // (rare) case the stream emits more than one.
+      for (let i = msg.parts.length - 1; i >= 0; i--) {
+        const part = msg.parts[i];
+        if (typeof part !== "object" || part === null || !("type" in part)) continue;
+        const p = part as { type: unknown; data?: unknown };
+        if (p.type === "data-usage") {
+          const fromPart = shape(p.data);
+          if (fromPart) return fromPart;
         }
-        continue;
       }
     }
 
-    flushText();
-    flushBurst();
-    return segments;
-  }
-
-  /**
-   * True if a message has anything worth rendering — a text part, a tool
-   * call (in any state), or a reasoning part. Used as the phantom filter
-   * replacement: the old version required a text part, which hid
-   * tool-in-progress messages for 2–6 s while web_fetch / run_code ran.
-   * Empty assistants with only `[data-session-start]` (the AI SDK +
-   * Svelte $state race-bug phantom) still get filtered because their
-   * only part is data-*.
-   */
-  function extractImages(msg: AtlasUIMessage): ImageDisplay[] {
-    if (!Array.isArray(msg.parts)) return [];
-    const imgs: ImageDisplay[] = [];
-    for (const part of msg.parts) {
-      if (typeof part !== "object" || part === null || !("type" in part)) continue;
-      const p = part as { type: unknown; url?: unknown; mediaType?: unknown; filename?: unknown };
-      if (p.type !== "file" || typeof p.url !== "string") continue;
-      const mediaType = typeof p.mediaType === "string" ? p.mediaType : "image/png";
-      if (!mediaType.startsWith("image/")) continue;
-      imgs.push({
-        url: p.url,
-        mediaType,
-        filename: typeof p.filename === "string" ? p.filename : undefined,
-      });
-    }
-    return imgs;
+    return undefined;
   }
 
 
@@ -979,6 +926,41 @@
   // Map keeps the value constant across $derived reruns; Date.now() inline
   // would drift on every render and every such message would show "now".
   const firstSeenMs = new Map<string, number>();
+
+  // Per-message converted-display cache. `displayedMessages` re-runs on
+  // every streaming chunk because `chat.messages` is reactive and gets
+  // mutated in place; without this cache, every historical message
+  // re-walks `buildSegments` / `extractImages` / `extractToolCalls` /
+  // `extractTurnUsage` per token, which dominated profiling at high
+  // streaming rates (50-100 chunks/sec × N messages × ~300us per pipe).
+  //
+  // The cache is keyed on the message object identity (`WeakMap`) so it
+  // auto-evicts when the SDK reassigns or drops a message, and a coarse
+  // content signature (`parts.length` + last-part fingerprint) decides
+  // whether the cached entry is still valid. Streaming only mutates the
+  // tail message, so unchanged history hits the cache every tick.
+  type CachedDisplayMessage = { sig: string; result: ChatMessage };
+  const displayCache: WeakMap<AtlasUIMessage, CachedDisplayMessage> = new WeakMap();
+
+  function displaySignature(msg: AtlasUIMessage): string {
+    const parts = Array.isArray(msg.parts) ? msg.parts : [];
+    const lastIdx = parts.length - 1;
+    let lastSig = "0";
+    if (lastIdx >= 0) {
+      const last = parts[lastIdx];
+      if (typeof last === "object" && last !== null) {
+        const type = "type" in last ? String((last as Record<string, unknown>).type) : "?";
+        const text =
+          "text" in last && typeof (last as Record<string, unknown>).text === "string"
+            ? ((last as Record<string, unknown>).text as string).length
+            : 0;
+        const state =
+          "state" in last ? String((last as Record<string, unknown>).state ?? "") : "";
+        lastSig = `${type}:${text}:${state}`;
+      }
+    }
+    return `${parts.length}:${lastSig}`;
+  }
 
   function extractMetadataTimestamp(msg: AtlasUIMessage): number | null {
     const md = msg.metadata ?? {};
@@ -1054,11 +1036,27 @@
       return hasRenderableContent(msg);
     });
     const timestamps = assignTimestamps(rawMessages);
-    const chatMsgs: ChatMessage[] = rawMessages.map((msg) => {
+    const lastIdx = rawMessages.length - 1;
+    const chatMsgs: ChatMessage[] = rawMessages.map((msg, idx) => {
+      // Skip the cache for the tail message: streaming chunks (text
+      // deltas, delegate sub-chunks, data-usage appends) can arrive
+      // without changing the *last* part of `msg.parts`, which is what
+      // `displaySignature` fingerprints. The conservative fix is to
+      // recompute the tail every tick — it's a single message per
+      // render, so the cost is bounded — and rely on the cache for the
+      // (much larger) immutable history. Markdown body throttling
+      // covers the per-chunk marked + DOMPurify cost separately.
+      const isTail = idx === lastIdx;
+      const sig = displaySignature(msg);
+      const cached = isTail ? undefined : displayCache.get(msg);
+      const ts = timestamps.get(msg.id) ?? Date.now();
+      if (cached && cached.sig === sig && cached.result.timestamp === ts) {
+        return cached.result;
+      }
       const m = (typeof msg.metadata === "object" && msg.metadata !== null
         ? msg.metadata
         : {}) as Record<string, unknown>;
-      return {
+      const result: ChatMessage = {
         id: msg.id,
         role: (msg.role === "user"
           ? "user"
@@ -1066,21 +1064,117 @@
             ? "system"
             : "assistant") as "user" | "assistant" | "system",
         segments: buildSegments(msg),
-        timestamp: timestamps.get(msg.id) ?? Date.now(),
+        timestamp: ts,
         images: extractImages(msg),
         errorText: extractErrorText(msg),
-        disconnectedIntegrations: extractDisconnectedIntegrations(msg),
         metadata: {
           agentId: typeof m.agentId === "string" ? m.agentId : undefined,
           jobName: typeof m.jobName === "string" ? m.jobName : undefined,
           provider: typeof m.provider === "string" ? m.provider : undefined,
           modelId: typeof m.modelId === "string" ? m.modelId : undefined,
           sessionId: typeof m.sessionId === "string" ? m.sessionId : undefined,
+          startTimestamp: typeof m.startTimestamp === "string" ? m.startTimestamp : undefined,
+          timestamp: typeof m.timestamp === "string" ? m.timestamp : undefined,
+          endTimestamp: typeof m.endTimestamp === "string" ? m.endTimestamp : undefined,
+          // Token + cache usage. Two sources, in priority order:
+          //
+          //   1. The persisted `metadata.usage` field (set by the chat
+          //      handler just before append). Available on reload and
+          //      after the turn has fully settled.
+          //   2. A `data-usage` part emitted from streamText.onFinish.
+          //      Streamed during the live turn so the UsageBadge can
+          //      render before the first reload.
+          //
+          // The data-part path lets the UI update without waiting for
+          // the SDK to re-fetch chat history; both paths produce the
+          // same shape, so the UsageBadge consumes either uniformly.
+          usage: extractTurnUsage(msg, m),
         },
       };
+      if (!isTail) {
+        displayCache.set(msg, { sig, result });
+      }
+      return result;
     });
     return chatMsgs;
   });
+
+  /**
+   * Trigger a chat export. Uses `fetch` + Blob + a programmatic anchor
+   * click rather than `window.location.href = …` so non-2xx responses
+   * (413 over the message/byte cap, 504 timeout, 502 daemon failure)
+   * surface as a toast instead of dropping the user on a raw JSON page
+   * with no way back.
+   *
+   * The download filename comes from the response's
+   * `content-disposition: attachment; filename="…"` header so the
+   * orchestrator stays the source of truth for naming. Falls back to a
+   * chatId-derived name if the header is missing.
+   */
+  let exportInFlight = $state(false);
+  async function handleExportChat(): Promise<void> {
+    if (exportInFlight) return;
+    exportInFlight = true;
+    // Outer try/finally guarantees `exportInFlight` is cleared on EVERY
+    // exit path — early returns, thrown errors, blob-read failures. A
+    // sticky in-flight rune leaves the button permanently disabled until
+    // page reload, which is worse than a stale toast.
+    try {
+      const url = `/platform/${encodeURIComponent(wsId)}/chat/${encodeURIComponent(chatId)}/export`;
+
+      let res: Response;
+      try {
+        res = await fetch(url);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        toast({ title: "Export failed", description: msg, error: true });
+        return;
+      }
+
+      if (!res.ok) {
+        // Try to surface the structured error body the orchestrator/daemon
+        // returns ({error, payloadBytes, limit} for 413, {error} for 504/502).
+        // Fall back to status text if the body isn't JSON.
+        let description = `HTTP ${res.status}`;
+        try {
+          const body = (await res.json()) as { error?: unknown };
+          if (typeof body.error === "string" && body.error.length > 0) {
+            description = body.error;
+          }
+        } catch {
+          // body wasn't JSON — keep the HTTP fallback
+        }
+        toast({ title: "Export failed", description, error: true });
+        return;
+      }
+
+      let blob: Blob;
+      try {
+        blob = await res.blob();
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        toast({ title: "Export failed", description: msg, error: true });
+        return;
+      }
+
+      const objectUrl = URL.createObjectURL(blob);
+      try {
+        const cd = res.headers.get("content-disposition") ?? "";
+        const filename =
+          /filename="?([^"]+)"?/.exec(cd)?.[1] ?? `friday-chat-${chatId.slice(0, 8)}.zip`;
+        const a = document.createElement("a");
+        a.href = objectUrl;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      } finally {
+        URL.revokeObjectURL(objectUrl);
+      }
+    } finally {
+      exportInFlight = false;
+    }
+  }
 
   async function handleSubmit(text: string, inputImages: ImageAttachment[] = []) {
     if (!chat) return;
@@ -1135,7 +1229,8 @@
   /**
    * Called when the user successfully connects a credential via an inline
    * connect_service card. Sends a lightweight user message so the agent
-   * retries on its next turn with the updated <integrations> state.
+   * retries on its next turn — the agent re-fetches credential status via
+   * `list_integrations` / `describe_integration` on demand.
    */
   function handleCredentialConnected(provider: string): void {
     if (!chat) return;
@@ -1165,11 +1260,14 @@
   const WORKSPACE_INVALIDATING_TOOLS = new Set([
     "create_workspace",
     "workspace_create",
+    "delete_workspace",
     "publish_draft",
     "upsert_agent",
     "upsert_signal",
     "upsert_job",
-    "remove_item",
+    "delete_agent",
+    "delete_signal",
+    "delete_job",
     "begin_draft",
     "discard_draft",
     "enable_mcp_server",
@@ -1240,6 +1338,24 @@
     </div>
   {/if}
 
+  {#if chat && chat.messages.length > 0}
+    <header class="chat-header">
+      <!-- Session stats sit at the leading edge of the header; the
+           Export button auto-pushes to the trailing edge via its own
+           `margin-inline-start: auto`. When the chat has no recorded
+           usage yet (legacy chats from before the metric existed),
+           `ChatSessionUsage` renders nothing and the button sits alone
+           against the leading edge — wrapping in `header-spacer` would
+           waste a flex item for the same effect. -->
+      <ChatSessionUsage messages={displayedMessages} />
+      <button
+        class="new-chat-button"
+        onclick={handleExportChat}
+        disabled={exportInFlight}
+      >{exportInFlight ? "Exporting…" : "Export chat"}</button>
+    </header>
+  {/if}
+
   <div class="chat-body">
     <div class="chat-main">
       {#if rehydrating}
@@ -1251,6 +1367,9 @@
         onCredentialConnected={handleCredentialConnected}
         {thinking}
         {validationAttemptsBySession}
+        workspaceId={wsId}
+        {chatId}
+        {unsettledMessageId}
       />
 
       {#if wasInterrupted}
@@ -1355,6 +1474,38 @@
     font-size: var(--font-size-2);
     margin-inline: var(--size-4);
     padding: var(--size-2) var(--size-3);
+  }
+
+  .chat-header {
+    align-items: center;
+    border-block-end: 1px solid var(--color-border-1);
+    display: flex;
+    flex-shrink: 0;
+    gap: var(--size-2);
+    padding: var(--size-2) var(--size-4);
+  }
+
+  .new-chat-button {
+    background: none;
+    border: 1px solid var(--color-border-1);
+    border-radius: var(--radius-1);
+    color: inherit;
+    cursor: pointer;
+    font-size: var(--font-size-2);
+    /* Pushes to the trailing edge regardless of how wide the leading-
+       edge ChatSessionUsage row is (or whether it rendered at all,
+       for legacy chats with no recorded usage). */
+    margin-inline-start: auto;
+    padding: var(--size-1) var(--size-3);
+  }
+
+  .new-chat-button:hover:not(:disabled) {
+    background-color: color-mix(in srgb, var(--color-text), transparent 95%);
+  }
+
+  .new-chat-button:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
   }
 
   .chat-body {

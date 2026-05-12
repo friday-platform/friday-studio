@@ -31,6 +31,12 @@ import {
   resolvePlatformCredentials,
 } from "./chat-sdk-instance.ts";
 
+/** Matches the workspaceId passed into `createMessageHandler` below.
+ *  StreamRegistry is now keyed by `(workspaceId, chatId)`, so the
+ *  test-side reads have to use the same workspace the handler writes
+ *  under. */
+const WS = "ws-test";
+
 function makeMessage(overrides?: Partial<Message>): Message {
   return {
     id: "msg-1",
@@ -102,7 +108,7 @@ describe("createMessageHandler", () => {
     };
 
     const thread = makeThread("chat-abc");
-    const turnBuffer = registry.createStream("chat-abc");
+    const turnBuffer = registry.createStream(WS, "chat-abc");
 
     await handler(
       thread,
@@ -131,7 +137,7 @@ describe("createMessageHandler", () => {
     expect(thread.post).toHaveBeenCalledOnce();
     expect(thread.posted).toEqual(chunks);
 
-    const buffer = registry.getStream("chat-abc");
+    const buffer = registry.getStream(WS, "chat-abc");
     expect(buffer?.events).toEqual(chunks);
     expect(buffer?.active).toBe(false);
   });
@@ -160,7 +166,7 @@ describe("createMessageHandler", () => {
 
     const handler = createMessageHandler("ws-test", triggerFn, registry);
     const thread = makeThread("chat-cross");
-    const turn1Buffer = registry.createStream("chat-cross");
+    const turn1Buffer = registry.createStream(WS, "chat-cross");
 
     await handler(
       thread,
@@ -169,7 +175,7 @@ describe("createMessageHandler", () => {
 
     // Simulate a follow-up turn replacing the buffer mid-flight, then a
     // late producer from turn 1 emits one more chunk.
-    const turn2Buffer = registry.createStream("chat-cross");
+    const turn2Buffer = registry.createStream(WS, "chat-cross");
     captureChunkCallback?.({ type: "text-delta", delta: "stale" });
 
     expect(turn1Buffer.events).toEqual([]); // turn 1's buffer was closed by createStream replacement
@@ -199,7 +205,7 @@ describe("createMessageHandler", () => {
     const handler = createMessageHandler("ws-test", triggerFn, registry);
     const appendEventSpy = vi.spyOn(registry, "appendEvent");
 
-    const turn1Buffer = registry.createStream("chat-race");
+    const turn1Buffer = registry.createStream(WS, "chat-race");
 
     // Model the actual race window: turn 2 replaces the chatId-keyed buffer
     // *during* turn 1's `await ChatStorage.appendMessage()` call, not before
@@ -208,7 +214,7 @@ describe("createMessageHandler", () => {
     // fixed here used to be visible.
     let turn2Buffer: ReturnType<typeof registry.createStream> | undefined;
     mockAppendMessage.mockImplementationOnce(() => {
-      turn2Buffer = registry.createStream("chat-race");
+      turn2Buffer = registry.createStream(WS, "chat-race");
       return Promise.resolve({ ok: true });
     });
 
@@ -222,8 +228,10 @@ describe("createMessageHandler", () => {
     // `expectedBuffer`. Pre-fix the third arg was `getStream(chatId)`, which
     // would resolve to `turn2Buffer` by now. This catches a regression that
     // disables the tap entirely (in which case the negative-only assertions
-    // below would still pass).
+    // below would still pass). `appendEvent` is now keyed by
+    // `(workspaceId, chatId)` so the args are 4-tuple.
     expect(appendEventSpy).toHaveBeenCalledWith(
+      WS,
       "chat-race",
       expect.objectContaining({ type: "text-delta" }),
       turn1Buffer,
@@ -248,14 +256,14 @@ describe("createMessageHandler", () => {
     // resolves immediately so the handler proceeds to its `finally`.
     const triggerFn = vi.fn(
       (_s: string, _p: Record<string, unknown>, _id: string, _cb: (c: unknown) => void) => {
-        registry.createStream("chat-no-rip"); // turn 2 replaces turn 1's buffer
+        registry.createStream(WS, "chat-no-rip"); // turn 2 replaces turn 1's buffer
         return Promise.resolve({ sessionId: "sess-1" });
       },
     );
 
     const handler = createMessageHandler("ws-test", triggerFn, registry);
     const thread = makeThread("chat-no-rip");
-    const turn1Buffer = registry.createStream("chat-no-rip"); // turn 1's buffer
+    const turn1Buffer = registry.createStream(WS, "chat-no-rip"); // turn 1's buffer
 
     await handler(
       thread,
@@ -264,7 +272,7 @@ describe("createMessageHandler", () => {
 
     // After turn 1's handler ran its finally, turn 2's buffer must still be
     // active — the identity check made the finishStream call a no-op.
-    const current = registry.getStream("chat-no-rip");
+    const current = registry.getStream(WS, "chat-no-rip");
     expect(current?.active).toBe(true);
   });
 
@@ -280,12 +288,12 @@ describe("createMessageHandler", () => {
     const handler = createMessageHandler("ws-test", triggerFn, registry);
 
     const thread = makeThread("chat-filter");
-    const turnBuffer = registry.createStream("chat-filter");
+    const turnBuffer = registry.createStream(WS, "chat-filter");
     await handler(thread, makeMessage({ threadId: "chat-filter", raw: { turnBuffer } }));
 
     // Only client-safe events reach StreamRegistry; thread.post sees them all.
     const types = registry
-      .getStream("chat-filter")
+      .getStream(WS, "chat-filter")
       ?.events.map((e) => (e as { type: string }).type);
     expect(types).toEqual(["text-delta", "data-session-start"]);
     expect(thread.posted).toHaveLength(4);
@@ -300,7 +308,7 @@ describe("createMessageHandler", () => {
     );
 
     const thread = makeThread("chat-multipart");
-    registry.createStream("chat-multipart");
+    registry.createStream(WS, "chat-multipart");
 
     const preValidated = {
       id: "msg-with-files",
@@ -396,14 +404,14 @@ describe("createMessageHandler", () => {
     (thread as unknown as { post: ReturnType<typeof vi.fn> }).post = vi
       .fn()
       .mockRejectedValue(new Error("Slack API down"));
-    const turnBuffer = registry.createStream("chat-err");
+    const turnBuffer = registry.createStream(WS, "chat-err");
 
     await expect(
       handler(thread, makeMessage({ threadId: "chat-err", raw: { turnBuffer } })),
     ).rejects.toThrow("Slack API down");
     expect(mockAppendMessage).toHaveBeenCalled();
     // finally block ran even though post threw
-    expect(registry.getStream("chat-err")?.active).toBe(false);
+    expect(registry.getStream(WS, "chat-err")?.active).toBe(false);
   });
 });
 
@@ -421,7 +429,7 @@ describe("createMessageHandler — kernel filtering", () => {
     });
 
     const thread = makeThread("chat-kernel-1");
-    registry.createStream("chat-kernel-1");
+    registry.createStream(WS, "chat-kernel-1");
     const preValidated = {
       id: "msg-k1",
       role: "user" as const,
@@ -456,7 +464,7 @@ describe("createMessageHandler — kernel filtering", () => {
     });
 
     const thread = makeThread("chat-kernel-2");
-    registry.createStream("chat-kernel-2");
+    registry.createStream(WS, "chat-kernel-2");
     const preValidated = {
       id: "msg-k2",
       role: "user" as const,
@@ -488,7 +496,7 @@ describe("createMessageHandler — kernel filtering", () => {
     });
 
     const thread = makeThread("chat-kernel-3");
-    registry.createStream("chat-kernel-3");
+    registry.createStream(WS, "chat-kernel-3");
     await handler(thread, makeMessage({ threadId: "chat-kernel-3" }));
 
     const payload = triggerFn.mock.calls[0]?.[1];
@@ -503,7 +511,7 @@ describe("createMessageHandler — kernel filtering", () => {
     });
 
     const thread = makeThread("chat-kernel-4");
-    registry.createStream("chat-kernel-4");
+    registry.createStream(WS, "chat-kernel-4");
     const preValidated = {
       id: "msg-k4",
       role: "user" as const,

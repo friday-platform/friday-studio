@@ -5,6 +5,8 @@
  */
 export { agentQueries, invalidateAgentPreflight } from "./agent-queries.ts";
 export type { AgentMetadata, AgentPreflightCredential, AgentPreflightResponse } from "./agent-queries.ts";
+export { artifactQueries } from "./artifact-queries.ts";
+export type { ArtifactResponse } from "./artifact-queries.ts";
 export { integrationQueries } from "./integration-queries.ts";
 export type { WorkspaceWiring } from "./link-wiring-queries.ts";
 export {

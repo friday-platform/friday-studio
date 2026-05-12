@@ -4,7 +4,7 @@ import {
   extractArtifactRefsFromToolResults,
   streamTextWithEvents,
 } from "@atlas/agent-sdk/vercel-helpers";
-import { getDefaultProviderOpts, registry, traceModel } from "@atlas/llm";
+import { getCachingRequestOpts, getDefaultProviderOpts, registry, traceModel } from "@atlas/llm";
 import { stringifyError } from "@atlas/utils";
 import { stepCountIs } from "ai";
 import { z } from "zod";
@@ -88,6 +88,7 @@ export const summaryAgent = createAgent<string, SummaryOutput>({
           model: traceModel(registry.languageModel("anthropic:claude-haiku-4-5")),
           abortSignal,
           maxRetries: 3,
+          allowSystemInMessages: true,
           messages: [
             {
               role: "system",
@@ -98,7 +99,10 @@ export const summaryAgent = createAgent<string, SummaryOutput>({
           ],
           tools,
           maxOutputTokens: 2000,
-          providerOptions: { anthropic: { thinking: { type: "enabled", budgetTokens: 12000 } } },
+          providerOptions: {
+            anthropic: { thinking: { type: "enabled", budgetTokens: 12000 } },
+            ...getCachingRequestOpts({ cacheKey: "summary" }),
+          },
           stopWhen: stepCountIs(10),
           experimental_repairToolCall: repairToolCall,
         },

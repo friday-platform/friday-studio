@@ -8,15 +8,17 @@
  * DELETE /:chatId/stream — Stop stream (cosmetic)
  */
 
-import process from "node:process";
+import { Buffer } from "node:buffer";
 import { normalizeToUIMessages, validateAtlasUIMessages } from "@atlas/agent-sdk";
 import { ChatStorage } from "@atlas/core/chat/storage";
-import { extractTempestUserId } from "@atlas/core/credentials";
 import { WorkspaceNotFoundError } from "@atlas/core/errors/workspace-not-found";
+import { UserStorage } from "@atlas/core/users/storage";
 import { logger } from "@atlas/logger";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { daemonFactory } from "../../src/factory.ts";
+import { requireWorkspaceMember } from "../../src/workspace-authz.ts";
+import { MAX_FULL_EXPORT_BYTES, MAX_FULL_EXPORT_MESSAGES } from "./chat-limits.ts";
 
 const listChatsQuerySchema = z.object({
   limit: z.coerce.number().min(1).max(100).optional(),
@@ -24,13 +26,18 @@ const listChatsQuerySchema = z.object({
 });
 
 /**
- * Extract userId from FRIDAY_KEY JWT.
- * Falls back to "default-user" in dev mode (no FRIDAY_KEY).
+ * Query schema for `GET /:chatId`. `?full=true` returns the entire message
+ * list; absent value or any other string preserves the legacy last-100 trim
+ * used by the live chat UI rehydrate path. The schema accepts an optional
+ * raw string and narrows to a boolean so callers branch on `full` without
+ * re-parsing — only the literal string "true" opts in.
  */
-function getUserId(): string {
-  const atlasKey = process.env.FRIDAY_KEY;
-  return (atlasKey && extractTempestUserId(atlasKey)) || "default-user";
-}
+const getChatQuerySchema = z.object({
+  full: z
+    .string()
+    .optional()
+    .transform((value) => value === "true"),
+});
 
 const workspaceChatRoutes = daemonFactory
   .createApp()
@@ -39,6 +46,11 @@ const workspaceChatRoutes = daemonFactory
     if (!workspaceId) {
       return c.json({ error: "Missing workspaceId" }, 400);
     }
+    // Gate every chat route on workspace membership before the
+    // existence check — fail-closed for non-members even if the
+    // workspace is real. requireWorkspaceMember throws HTTPException;
+    // Hono's outer handler maps it to 401/403 cleanly.
+    await requireWorkspaceMember(c, workspaceId);
     const ctx = c.get("app");
     const manager = ctx.getWorkspaceManager();
     const workspace = await manager.find({ id: workspaceId });
@@ -91,17 +103,25 @@ const workspaceChatRoutes = daemonFactory
         if (!found) {
           return c.json({ error: `Unknown foreground workspace: ${fgId}` }, 400);
         }
+        // Foreground context is fed into the prompt builder; without
+        // this check a member of workspace A could ask the model to
+        // see workspace B's config / chats by passing B as a
+        // foreground id.
+        await requireWorkspaceMember(c, fgId);
       }
     }
 
     // Register the abort controller BEFORE forwarding so a second POST with
     // the same chatId can stop the prior turn (no two assistant runs racing).
+    // The registry is now keyed by `(workspaceId, chatId)` so a foreign
+    // workspace's controller can't be aborted from this path even if the
+    // chat id collides.
     const chatId =
       typeof body === "object" && body !== null && "id" in body && typeof body.id === "string"
         ? body.id
         : undefined;
     if (chatId) {
-      ctx.chatTurnRegistry.replace(chatId);
+      ctx.chatTurnRegistry.replace(workspaceId, chatId);
     }
 
     const instance = await ctx.getOrCreateChatSdkInstance(workspaceId).catch((error: unknown) => {
@@ -119,28 +139,56 @@ const workspaceChatRoutes = daemonFactory
 
     // `set` (not `append`) so a client can't smuggle their own identity.
     const headers = new Headers(c.req.raw.headers);
-    headers.set("X-Atlas-User-Id", getUserId());
+    headers.set("X-Atlas-User-Id", c.get("userId") ?? UserStorage.getCachedLocalUserId());
     const request = new Request(c.req.raw, { headers });
     return handler(request);
   })
 
-  .delete("/:chatId/stream", (c) => {
+  .delete("/:chatId/stream", async (c) => {
     const ctx = c.get("app");
     const chatId = c.req.param("chatId");
+    const workspaceId = c.req.param("workspaceId");
+    if (!workspaceId) {
+      return c.json({ error: "Missing workspaceId" }, 400);
+    }
+
+    // Confirm the chat actually exists in this workspace before
+    // touching the registry. `getChat(chatId, workspaceId)` reads from
+    // the workspace-scoped namespace — a chat in a different workspace
+    // returns null here, so the 404 fires correctly. The registry is
+    // also keyed by `(workspaceId, chatId)`, so even if a caller
+    // bypassed this check it couldn't reach a foreign workspace's
+    // turn — defense in depth.
+    const chat = await ChatStorage.getChat(chatId, workspaceId);
+    if (!chat.ok || !chat.data) {
+      return c.json({ error: "Chat not found" }, 404);
+    }
 
     // abort() stops the FSM/model server-side; finishStream() alone would
     // let it keep running and persist a partial message after cancel.
-    ctx.chatTurnRegistry.abort(chatId);
-    ctx.streamRegistry.finishStream(chatId);
+    ctx.chatTurnRegistry.abort(workspaceId, chatId);
+    ctx.streamRegistry.finishStream(workspaceId, chatId);
 
     return c.json({ success: true }, 200);
   })
 
-  .get("/:chatId/stream", (c) => {
+  .get("/:chatId/stream", async (c) => {
     const ctx = c.get("app");
     const chatId = c.req.param("chatId");
+    const workspaceId = c.req.param("workspaceId");
+    if (!workspaceId) {
+      return c.json({ error: "Missing workspaceId" }, 400);
+    }
 
-    const buffer = ctx.streamRegistry.getStream(chatId);
+    // Same chat-belongs-to-workspace gate as the DELETE above; without
+    // it a resume request leaks the existence of a chat in another
+    // workspace (200 vs 404).
+    const chat = await ChatStorage.getChat(chatId, workspaceId);
+    if (!chat.ok || !chat.data) {
+      return c.json({ error: "Chat not found" }, 404);
+    }
+
+    const buffer = ctx.streamRegistry.getStream(workspaceId, chatId);
 
     if (!buffer?.active) {
       return c.body(null, 204);
@@ -168,14 +216,19 @@ const workspaceChatRoutes = daemonFactory
 
     const readableStream = new ReadableStream<Uint8Array>({
       start(controller) {
-        const subscribed = ctx.streamRegistry.subscribe(chatId, controller, lastEventId);
+        const subscribed = ctx.streamRegistry.subscribe(
+          workspaceId,
+          chatId,
+          controller,
+          lastEventId,
+        );
         if (!subscribed) {
           controller.close();
           return;
         }
 
         c.req.raw.signal.addEventListener("abort", () => {
-          ctx.streamRegistry.unsubscribe(chatId, controller);
+          ctx.streamRegistry.unsubscribe(workspaceId, chatId, controller);
         });
       },
     });
@@ -187,9 +240,10 @@ const workspaceChatRoutes = daemonFactory
     });
   })
 
-  .get("/:chatId", async (c) => {
+  .get("/:chatId", zValidator("query", getChatQuerySchema), async (c) => {
     const chatId = c.req.param("chatId");
     const workspaceId = c.req.param("workspaceId");
+    const { full } = c.req.valid("query");
 
     const chatResult = await ChatStorage.getChat(chatId, workspaceId);
     if (!chatResult.ok || !chatResult.data) {
@@ -197,13 +251,58 @@ const workspaceChatRoutes = daemonFactory
     }
 
     const { messages, systemPromptContext, ...chat } = chatResult.data;
-    const limitedMessages = messages.slice(-100);
-    const sanitized = await validateAtlasUIMessages(limitedMessages);
+    // Export preview (`?full=true`) needs the whole conversation; the live
+    // UI rehydrate path keeps the last-100 trim to bound payload size.
+    // Reject `?full=true` for chats above the export cap before sanitising
+    // — `validateAtlasUIMessages` is unbounded work per message, so a giant
+    // chat would otherwise pin the daemon. The trimmed view is always
+    // bounded at 100 so it doesn't need the guard.
+    if (full && messages.length > MAX_FULL_EXPORT_MESSAGES) {
+      return c.json(
+        {
+          error: "Chat too large to export",
+          messageCount: messages.length,
+          limit: MAX_FULL_EXPORT_MESSAGES,
+        },
+        413,
+      );
+    }
+    const selectedMessages = full ? messages : messages.slice(-100);
+    const sanitized = await validateAtlasUIMessages(selectedMessages);
 
-    return c.json(
-      { chat, messages: sanitized, systemPromptContext: systemPromptContext ?? null },
-      200,
-    );
+    const responseBody = {
+      chat,
+      messages: sanitized,
+      systemPromptContext: systemPromptContext ?? null,
+    };
+
+    if (full) {
+      // Cap the serialised payload before shipping. Stringify once for the
+      // size check; `c.json` re-stringifies for the response body, which is
+      // a small cost vs. preserving Hono RPC's response-type inference (a
+      // raw `c.body(string, …)` widens the return type to `string | {…}`
+      // and breaks downstream typed callers). The trimmed live-UI path is
+      // bounded at 100 messages so it skips this branch entirely.
+      //
+      // `Buffer.byteLength` measures the actual UTF-8 wire size, not the
+      // JS string length (UTF-16 code units). For ASCII content the two
+      // match; for emoji-heavy or CJK chats the wire bytes can be 3-4×
+      // the code-unit count, so the field name `payloadBytes` would be a
+      // lie if we kept the cheaper `.length`.
+      const serializedBytes = Buffer.byteLength(JSON.stringify(responseBody), "utf8");
+      if (serializedBytes > MAX_FULL_EXPORT_BYTES) {
+        return c.json(
+          {
+            error: "Chat too large to export",
+            payloadBytes: serializedBytes,
+            limit: MAX_FULL_EXPORT_BYTES,
+          },
+          413,
+        );
+      }
+    }
+
+    return c.json(responseBody, 200);
   })
 
   .delete("/:chatId", async (c) => {

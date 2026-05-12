@@ -1,7 +1,8 @@
 <script lang="ts">
-  import type { Component } from "svelte";
-  import { Icons, IconSmall, markdownToHTML } from "@atlas/ui";
+  import { untrack, type Component } from "svelte";
+  import { Icons, IconSmall, markdownToHTMLSafe } from "@atlas/ui";
   import ToolCallCard from "./tool-call-card.svelte";
+  import { getExportContext } from "./export-context";
   import { jsonHighlighter } from "./json-highlighter";
   import {
     argPreview,
@@ -48,15 +49,15 @@
         return { icon: Icons.RectangleStack, label: "Delegating", color: "var(--color-accent)", category: "agent" };
       case "load_skill":
         return { icon: Icons.Bolt, label: "Loading skill", color: "var(--yellow-primary)", category: "memory" };
-      case "memory_save":
+      case "save_memory_entry":
         return { icon: Icons.Bookmark, label: "Saving memory", color: "var(--color-accent)", category: "memory" };
       case "connect_service":
         return { icon: Icons.Link, label: "Connecting", color: "var(--text-faded)", category: "connect" };
       case "display_artifact":
         return { icon: Icons.DocumentText, label: "Displaying", color: "var(--color-accent)", category: "file" };
-      case "artifacts_get":
+      case "get_artifact":
         return { icon: Icons.DocumentText, label: "Reading artifact", color: "var(--color-accent)", category: "file" };
-      case "artifacts_create":
+      case "create_artifact":
         return { icon: Icons.DocumentArrowUp, label: "Saving artifact", color: "var(--color-accent)", category: "file" };
       case "parse_artifact":
         return { icon: Icons.DocumentText, label: "Parsing", color: "var(--color-accent)", category: "file" };
@@ -168,35 +169,39 @@
 
   const status = $derived(statusBadgeContent(call.state, call.toolCallId, call.durationMs, call.errorText));
 
-  /* ─── Toggle latch ───────────────────────────────────────────────── */
-
-  /** Undefined = no user choice yet; true/false = explicit open/close. */
-  let userChoice: boolean | undefined = $state(undefined);
+  /* ─── Auto-open shim ─────────────────────────────────────────────── */
 
   /**
-   * Once children have been observed running, latch this so the card stays
-   * open after they finish.
+   * A delegate card is initially open if its children are already running
+   * — e.g. mounting mid-stream after delegation has begun. `untrack` keeps
+   * this snapshot frozen at mount; `bind:open` below makes the user's click
+   * + the force-open effect the two sources of truth for runtime state.
    */
-  let childrenWereRunning = $state(false);
+  let isOpen = $state(untrack(() => childrenAnyRunning(call.children ?? [])));
 
+  const childrenRunningNow = $derived(childrenAnyRunning(call.children ?? []));
+
+  /**
+   * Live-only shim: when children begin running mid-stream, force open.
+   * Writes to state (not DOM) so the user's manual collapse is preserved
+   * across parent re-renders. Edge case: if the user explicitly closes the
+   * card while children are still running, the next reactivity tick will
+   * re-open it — same behavior as the previous `childrenWereRunning` latch.
+   */
   $effect(() => {
-    if (call.children && childrenAnyRunning(call.children)) {
-      childrenWereRunning = true;
+    if (childrenRunningNow && !isOpen) {
+      isOpen = true;
     }
   });
 
-  function handleToggleClick(e: Event, childrenRunning: boolean) {
-    const current = userChoice ?? (childrenAnyRunning(call.children ?? []) || childrenWereRunning);
-    userChoice = !current;
-  }
-
-  const delegateOpen = $derived.by(() => {
-    if (userChoice !== undefined) return userChoice;
-    if (call.children) return childrenAnyRunning(call.children) || childrenWereRunning;
-    return false;
-  });
-
   /* ─── Copy to clipboard ──────────────────────────────────────────── */
+
+  /**
+   * Suppresses the clipboard buttons (which depend on JS) when the card
+   * is rendered inside an export. The data still renders; only the copy
+   * affordance is hidden.
+   */
+  const isExport = getExportContext() !== undefined;
 
   function copyToClipboard(value: unknown, btn: HTMLButtonElement) {
     let text: string;
@@ -239,16 +244,20 @@
 </script>
 
 {#snippet jsonCopyBlock(label: string, data: unknown)}
-  <div class="json-copy-wrapper">
-    <button
-      class="json-copy-btn"
-      aria-label={`Copy ${label}`}
-      onclick={(e: MouseEvent) => copyToClipboard(data, e.currentTarget as HTMLButtonElement)}
-    >
-      Copy
-    </button>
-    <pre>{@html formatRawOutput(data)}</pre>
-  </div>
+  {#if isExport}
+    <pre class="json-render">{@html formatRawOutput(data)}</pre>
+  {:else}
+    <div class="json-copy-wrapper">
+      <button
+        class="json-copy-btn"
+        aria-label={`Copy ${label}`}
+        onclick={(e: MouseEvent) => copyToClipboard(data, e.currentTarget as HTMLButtonElement)}
+      >
+        Copy
+      </button>
+      <pre class="json-render">{@html formatRawOutput(data)}</pre>
+    </div>
+  {/if}
 {/snippet}
 
 {#snippet outputDrawer(c: ToolCallDisplay)}
@@ -285,16 +294,20 @@
             <span class="chevron-icon"><IconSmall.ChevronRight /></span>
             error
           </summary>
-          <div class="json-copy-wrapper">
-            <button
-              class="json-copy-btn"
-              aria-label="Copy error"
-              onclick={(e: MouseEvent) => copyToClipboard(c.errorText, e.currentTarget as HTMLButtonElement)}
-            >
-              Copy
-            </button>
-            <pre class="error-text">{c.errorText}</pre>
-          </div>
+          {#if isExport}
+            <pre class="json-render error-text">{c.errorText}</pre>
+          {:else}
+            <div class="json-copy-wrapper">
+              <button
+                class="json-copy-btn"
+                aria-label="Copy error"
+                onclick={(e: MouseEvent) => copyToClipboard(c.errorText, e.currentTarget as HTMLButtonElement)}
+              >
+                Copy
+              </button>
+              <pre class="json-render error-text">{c.errorText}</pre>
+            </div>
+          {/if}
         </details>
       {/if}
     </div>
@@ -302,20 +315,13 @@
 {/snippet}
 
 {#if call.children && call.children.length > 0}
-  {@const childrenRunning = childrenAnyRunning(call.children)}
-  <div
+  <details
     class="delegate-card"
-    class:open={delegateOpen}
     class:in-progress={isInProgress(call.state)}
     class:error={isError(call.state)}
+    bind:open={isOpen}
   >
-    <div
-      class="delegate-header"
-      role="button"
-      tabindex="0"
-      onclick={(e) => handleToggleClick(e, childrenRunning)}
-      onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") handleToggleClick(e, childrenRunning); }}
-    >
+    <summary class="delegate-header">
       <div class="delegate-header-inner">
         <div class="delegate-header-content">
           <div class="delegate-row-primary">
@@ -356,57 +362,51 @@
         </div>
       </div>
       <span class="delegate-chevron">
-        {#if delegateOpen}
-          <IconSmall.ChevronDown />
-        {:else}
-          <IconSmall.ChevronRight />
-        {/if}
+        <IconSmall.ChevronRight />
       </span>
-    </div>
-    {#if delegateOpen}
-      {#if call.reasoning || call.progress}
-        <div class="delegate-ephemeral">
-          {#if call.reasoning}
-            <div class="reasoning-feed">
-              {#each call.reasoning.split("\n").filter(l => l.trim()) as line}
-                <div class="reasoning-line">
-                  <span class="reasoning-dot" aria-hidden="true"></span>
-                  <span class="reasoning-text">{line}</span>
-                </div>
-              {/each}
-            </div>
-          {/if}
-          {#if call.progress}
-            <div class="progress-feed">
-              {#each call.progress as line}
-                <div class="progress-line">
-                  <span class="progress-dot" aria-hidden="true"></span>
-                  <span class="progress-text">{line}</span>
-                </div>
-              {/each}
-            </div>
-          {/if}
-        </div>
-      {/if}
-      <div class="delegate-children" style="--depth: {depth}">
-        {#each call.children as child (child.toolCallId || child.toolName)}
-          <ToolCallCard call={child} {onCredentialConnected} depth={depth + 1} />
-        {/each}
-      </div>
-      {#if call.delegateText}
-        <details class="tool-card-details">
-          <summary>
-            <span class="chevron-icon"><IconSmall.ChevronRight /></span>
-            response
-          </summary>
-          <div class="delegate-text markdown-body">
-            {@html markdownToHTML(call.delegateText)}
+    </summary>
+    {#if call.reasoning || call.progress}
+      <div class="delegate-ephemeral">
+        {#if call.reasoning}
+          <div class="reasoning-feed">
+            {#each call.reasoning.split("\n").filter(l => l.trim()) as line}
+              <div class="reasoning-line">
+                <span class="reasoning-dot" aria-hidden="true"></span>
+                <span class="reasoning-text">{line}</span>
+              </div>
+            {/each}
           </div>
-        </details>
-      {/if}
-      {@render outputDrawer(call)}
+        {/if}
+        {#if call.progress}
+          <div class="progress-feed">
+            {#each call.progress as line}
+              <div class="progress-line">
+                <span class="progress-dot" aria-hidden="true"></span>
+                <span class="progress-text">{line}</span>
+              </div>
+            {/each}
+          </div>
+        {/if}
+      </div>
     {/if}
-  </div>
+    <div class="delegate-children" style="--depth: {depth}">
+      {#each call.children as child (child.toolCallId || child.toolName)}
+        <ToolCallCard call={child} {onCredentialConnected} depth={depth + 1} />
+      {/each}
+    </div>
+    {#if call.delegateText}
+      <details class="tool-card-details">
+        <summary>
+          <span class="chevron-icon"><IconSmall.ChevronRight /></span>
+          response
+        </summary>
+        <div class="delegate-text markdown-body">
+          {@html markdownToHTMLSafe(call.delegateText)}
+        </div>
+      </details>
+    {/if}
+    {@render outputDrawer(call)}
+  </details>
 {/if}
 
 <style>
@@ -421,7 +421,12 @@
     cursor: pointer;
     display: flex;
     gap: var(--size-1);
+    list-style: none;
     user-select: none;
+  }
+
+  .delegate-header::-webkit-details-marker {
+    display: none;
   }
 
   .delegate-header-inner {
@@ -490,6 +495,10 @@
   .delegate-chevron :global(svg) {
     inline-size: 100%;
     block-size: 100%;
+  }
+
+  .delegate-card[open] > .delegate-header .delegate-chevron {
+    transform: rotate(90deg);
   }
 
   .delegate-row-secondary {
@@ -676,16 +685,12 @@
   /* ─── Nested children ────────────────────────────────────────────── */
 
   .delegate-children {
-    display: none;
+    display: flex;
     flex-direction: column;
     gap: var(--size-1);
     margin-inline-start: calc(var(--size-3) + var(--depth, 0) * var(--size-1));
     padding-block-start: var(--size-1);
     padding-inline-start: var(--size-2);
-  }
-
-  .delegate-card.open > .delegate-children {
-    display: flex;
   }
 
   /* ─── Output drawer ────────────────────────────────────────────────── */
@@ -753,7 +758,7 @@
     position: relative;
   }
 
-  .json-copy-wrapper pre {
+  .json-render {
     background-color: var(--surface-bright);
     border-radius: var(--radius-1);
     font-family: var(--font-family-mono, ui-monospace, monospace);
@@ -766,7 +771,7 @@
     word-break: break-word;
   }
 
-  .json-copy-wrapper pre.error-text {
+  .json-render.error-text {
     color: var(--red-primary);
   }
 

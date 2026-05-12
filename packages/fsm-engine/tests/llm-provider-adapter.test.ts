@@ -307,6 +307,70 @@ describe("AtlasLLMProviderAdapter", () => {
     expect(stored.doStreamCalls[0]?.topP).toBe(0.9);
   });
 
+  it("Anthropic: system param flows as a system message with ephemeral cacheControl", async () => {
+    const stored = createMockModel({ provider: "anthropic", modelId: "stored-model" });
+    const adapter = new AtlasLLMProviderAdapter(stored.model);
+
+    const result = await adapter.call({
+      agentId: "test-agent",
+      model: "",
+      system: "You are a code review assistant.",
+      prompt: "Review this diff:",
+    });
+
+    expect(result.ok).toBe(true);
+    expect(stored.doStreamCalls).toHaveLength(1);
+
+    // The system surface lands as a system entry inside the prompt array
+    // (not the top-level system field) so the per-block cache_control
+    // marker rides with it.
+    const promptParts = stored.doStreamCalls[0]?.prompt;
+    expect(Array.isArray(promptParts)).toBe(true);
+    const systemPart = (promptParts as { role: string; content: unknown }[]).find(
+      (p) => p.role === "system",
+    );
+    expect(systemPart).toBeDefined();
+
+    // The system block carries Anthropic's ephemeral 1h cache_control marker —
+    // a repeated call with the same prefix hits the prompt cache.
+    const provOpts = (
+      systemPart as {
+        providerOptions?: { anthropic?: { cacheControl?: { type?: string; ttl?: string } } };
+      }
+    ).providerOptions;
+    expect(provOpts?.anthropic?.cacheControl?.type).toBe("ephemeral");
+    expect(provOpts?.anthropic?.cacheControl?.ttl).toBe("1h");
+  });
+
+  it("non-Anthropic: system param flows as the top-level system field", async () => {
+    const stored = createMockModel({ provider: "openai", modelId: "stored-model" });
+    const adapter = new AtlasLLMProviderAdapter(stored.model);
+
+    const result = await adapter.call({
+      agentId: "test-agent",
+      model: "",
+      system: "You are a code review assistant.",
+      prompt: "Review this diff:",
+    });
+
+    expect(result.ok).toBe(true);
+    expect(stored.doStreamCalls).toHaveLength(1);
+
+    // Non-Anthropic providers see the conventional top-level system text.
+    // OpenAI converts that to a system message internally and applies its
+    // automatic prefix cache without explicit markers.
+    const promptParts = stored.doStreamCalls[0]?.prompt;
+    const systemPart = (promptParts as { role: string; content: unknown }[]).find(
+      (p) => p.role === "system",
+    );
+    expect(systemPart).toBeDefined();
+    // No Anthropic-keyed cache_control on the system message for non-Anthropic providers.
+    const provOpts = (
+      systemPart as { providerOptions?: { anthropic?: { cacheControl?: unknown } } }
+    ).providerOptions;
+    expect(provOpts?.anthropic?.cacheControl).toBeUndefined();
+  });
+
   it("per-call override uses provider param to resolve model", async () => {
     // AI SDK providers set .provider to surface-qualified names like "anthropic.messages",
     // not bare registry keys like "anthropic". The adapter must use the explicit

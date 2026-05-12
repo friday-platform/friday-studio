@@ -256,7 +256,7 @@ export const claudeCodeAgent = createAgent<string, ClaudeCodeAgentResult | Recor
     displayName: "Claude Code",
     version: "1.0.0",
     description:
-      "Execute coding tasks in a sandboxed environment via Claude Code SDK. Clones repos, reads/writes files, runs commands, analyzes codebases, and debugs issues. USE FOR: code generation, code changes, codebase analysis, debugging, root cause analysis.",
+      "Heavyweight code agent — sandboxed Claude Code SDK with shell, file edits, and full repo clone. Use for substantive code work: multi-file refactors, debugging across a codebase, root-cause analysis, writing/modifying non-trivial programs against a real repo. Lighter tasks (one-off scripts, document parsing, URL fetches, prose) should go to the appropriate direct tool — see the consumer's tool-selection guidance.",
     constraints:
       "Runs in isolated sandbox. Requires Anthropic API key and GitHub token. Cannot access workspace resource tables or artifacts directly. For reading GitHub data (PRs, issues, commits, repos), use the github MCP server. For data analysis, use data-analyst.",
     outputSchema: ClaudeCodeOutputSchema,

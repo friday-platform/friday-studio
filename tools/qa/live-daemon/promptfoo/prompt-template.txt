@@ -1,0 +1,9 @@
+SYSTEM PROMPT (workspace-chat, assembled for this test):
+
+{{system_prompt}}
+
+────────────────────────────────────────────────────────────────────────
+
+USER MESSAGE:
+
+{{user_message}}

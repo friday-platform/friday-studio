@@ -408,7 +408,7 @@ describe("validateWorkspaceConfig", () => {
     // Regression: a workspace where `agents.kb-agent` declared with SQLite
     // tools, but no job wraps it. Chat can't reach agents directly, so the
     // SQLite tools were silently ignored and the "save" fell back to
-    // memory_save. The user said "disaster." This rule catches it at
+    // save_memory_entry. The user said "disaster." This rule catches it at
     // create time rather than letting the author ship a broken workspace.
     it("rejects an agent that no FSM or execution invokes", async () => {
       const config = makeConfig({

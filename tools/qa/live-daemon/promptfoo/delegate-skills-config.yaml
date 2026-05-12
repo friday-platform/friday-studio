@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+
+description: Friday delegate skill-threading evals — verifies parent-injected skills reach the child LLM
+
+prompts:
+  - '{{scenarioId}}'
+
+providers:
+  - id: file://delegate-skills-provider.cjs
+    label: friday-delegate-skills
+
+defaultTest:
+  assert:
+    - type: is-json
+    - type: javascript
+      value: |
+        const result = JSON.parse(output);
+        if (result.pass !== true) {
+          throw new Error(`${result.id} failed: ${(result.notes || []).join('; ')}`);
+        }
+        return true;
+
+tests: file://delegate-skills-tests.yaml

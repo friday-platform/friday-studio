@@ -44,7 +44,7 @@ def execute(prompt: str, ctx: AgentContext):
             })
 
         if "Consume Python inputFrom artifact" in prompt:
-            ctx.stream.progress("Reading compact inputFrom artifact", tool_name="artifacts_get")
+            ctx.stream.progress("Reading compact inputFrom artifact", tool_name="get_artifact")
             payload = ctx.input.artifact_json("python-emails-result")
             messages = payload.get("messages", []) if isinstance(payload, dict) else []
             return ok({

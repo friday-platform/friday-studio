@@ -12,7 +12,7 @@
 export const PLATFORM_TOOL_NAMES = new Set([
   // Workspace management
   "workspace_list",
-  "workspace_delete",
+  "delete_workspace",
   "workspace_describe",
   "workspace_set_persistence",
   "convert_task_to_workspace",
@@ -35,8 +35,8 @@ export const PLATFORM_TOOL_NAMES = new Set([
   "fs_read_file",
   "fs_write_file",
   // Artifacts
-  "artifacts_create",
-  "artifacts_get",
+  "create_artifact",
+  "get_artifact",
   "artifacts_update",
   "artifacts_get_by_chat",
   "artifacts_delete",
@@ -52,10 +52,10 @@ export const PLATFORM_TOOL_NAMES = new Set([
   // Memory — canonical surface for ephemeral and durable working state.
   // The legacy scratchpad primitive (`{kind, body}` chunks) was removed;
   // agents needing chunked working state use a `short_term` memory store
-  // via memory_save / memory_read.
-  "memory_save",
-  "memory_read",
-  "memory_remove",
+  // via save_memory_entry / list_memory_entries.
+  "save_memory_entry",
+  "list_memory_entries",
+  "delete_memory_entry",
   // Human-in-the-loop / permissions
   "request_tool_access",
   "request_human_input",

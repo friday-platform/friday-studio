@@ -1,6 +1,6 @@
 import { createAgent, err, ok, repairJson } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
-import { getDefaultProviderOpts } from "@atlas/llm";
+import { getCachingRequestOpts, getDefaultProviderOpts } from "@atlas/llm";
 import { stringifyError } from "@atlas/utils";
 import type { SystemModelMessage, UserModelMessage } from "ai";
 import { generateObject } from "ai";
@@ -142,6 +142,7 @@ export const sessionSupervisorAgent = createAgent<SupervisorInput, SupervisorOut
         messages,
         maxOutputTokens: 16384,
         maxRetries: 3,
+        providerOptions: getCachingRequestOpts({ cacheKey: "session-supervisor" }),
         abortSignal,
       });
 

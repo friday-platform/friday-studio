@@ -15,12 +15,6 @@ const MemorySaveInput = z.object({
   metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
-const MemoryReadInput = z.object({
-  memoryName: z.string(),
-  since: z.string().optional().describe("ISO 8601 — return entries after this timestamp"),
-  limit: z.number().int().positive().optional(),
-});
-
 const MemoryRemoveInput = z.object({
   memoryName: z.string(),
   entryId: z.string().describe("The id field of the entry to remove"),
@@ -30,12 +24,10 @@ export function createMemorySaveTool(workspaceId: string, logger: Logger): Atlas
   const daemonUrl = getAtlasDaemonUrl();
 
   return {
-    memory_save: tool({
+    save_memory_entry: tool({
       description:
-        "Save an entry to a named memory store in this workspace. " +
-        "Choose the store from <memory_stores> in your workspace context that best fits the content " +
-        "(e.g. preferences → `preferences`, facts → `memory`, working notes → `notes`). " +
-        "Persists across sessions.",
+        "Save an entry to a named memory store in this workspace. Persists across sessions. " +
+        "Pairs with `list_memory_entries` (read) and `delete_memory_entry` (remove).",
       inputSchema: MemorySaveInput,
       execute: async ({ memoryName, text, id, metadata }) => {
         const url = `${daemonUrl}/api/memory/${encodeURIComponent(workspaceId)}/narrative/${encodeURIComponent(memoryName)}`;
@@ -52,7 +44,7 @@ export function createMemorySaveTool(workspaceId: string, logger: Logger): Atlas
           });
           if (!res.ok) {
             const body = await res.text();
-            logger.error("memory_save failed", {
+            logger.error("save_memory_entry failed", {
               workspaceId,
               memoryName,
               status: res.status,
@@ -60,50 +52,29 @@ export function createMemorySaveTool(workspaceId: string, logger: Logger): Atlas
             });
             return { error: `Failed to save: HTTP ${res.status}` };
           }
-          logger.info("memory_save succeeded", { workspaceId, memoryName });
+          logger.info("save_memory_entry succeeded", { workspaceId, memoryName });
           return { saved: true };
         } catch (err) {
-          logger.error("memory_save fetch error", { workspaceId, memoryName, error: err });
+          logger.error("save_memory_entry fetch error", { workspaceId, memoryName, error: err });
           return { error: "Failed to save: network error" };
         }
       },
     }),
 
-    memory_read: tool({
+    delete_memory_entry: tool({
       description:
-        "Read entries from a named memory in this workspace, newest-first. " +
-        "Note: narrative memory is auto-injected into the system prompt — call this only for explicit lookup, time filtering, or reading beyond the default window.",
-      inputSchema: MemoryReadInput,
-      execute: async ({ memoryName, since, limit }) => {
-        const params = new URLSearchParams();
-        if (since) params.set("since", since);
-        if (limit !== undefined) params.set("limit", String(limit));
-        const query = params.toString();
-        const url = `${daemonUrl}/api/memory/${encodeURIComponent(workspaceId)}/narrative/${encodeURIComponent(memoryName)}${query ? `?${query}` : ""}`;
-        try {
-          const res = await fetch(url);
-          if (!res.ok) return { error: `Failed to read: HTTP ${res.status}` };
-          const entries: unknown = await res.json();
-          return { entries, count: Array.isArray(entries) ? entries.length : 0 };
-        } catch (err) {
-          logger.error("memory_read fetch error", { workspaceId, memoryName, error: err });
-          return { error: "Failed to read: network error" };
-        }
-      },
-    }),
-
-    memory_remove: tool({
-      description: "Remove a single entry from a named memory in this workspace by its id.",
+        "Remove a single entry from a named memory in this workspace by its id. Pairs with " +
+        "`save_memory_entry` and `list_memory_entries`.",
       inputSchema: MemoryRemoveInput,
       execute: async ({ memoryName, entryId }) => {
         const url = `${daemonUrl}/api/memory/${encodeURIComponent(workspaceId)}/narrative/${encodeURIComponent(memoryName)}/${encodeURIComponent(entryId)}`;
         try {
           const res = await fetch(url, { method: "DELETE" });
           if (!res.ok) return { error: `Failed to remove: HTTP ${res.status}` };
-          logger.info("memory_remove succeeded", { workspaceId, memoryName, entryId });
+          logger.info("delete_memory_entry succeeded", { workspaceId, memoryName, entryId });
           return { removed: true };
         } catch (err) {
-          logger.error("memory_remove fetch error", {
+          logger.error("delete_memory_entry fetch error", {
             workspaceId,
             memoryName,
             entryId,

@@ -4,10 +4,11 @@
   import { createQuery } from "@tanstack/svelte-query";
   import { browser } from "$app/environment";
   import { page } from "$app/state";
+  import FridayMark from "$lib/components/shared/friday-mark.svelte";
   import CreateWorkspaceForm from "$lib/components/workspace/create-workspace-form.svelte";
   import WorkspaceLoader from "$lib/components/workspace/workspace-loader.svelte";
   import { daemonHealth } from "$lib/daemon-health.svelte";
-  import { countPendingElicitations } from "$lib/elicitation-counts.ts";
+  import { countPendingElicitations, nextElicitationTickMs } from "$lib/elicitation-counts.ts";
   import { workspaceQueries } from "$lib/queries";
   import { elicitationQueries } from "$lib/queries/elicitation-queries.ts";
   import type { Component } from "svelte";
@@ -25,13 +26,26 @@
   const elicitationsQuery = createQuery(() => elicitationQueries.list(null));
   const elicitations = $derived<Elicitation[]>(elicitationsQuery.data ?? []);
 
+  // Sidebar pending-elicitation badges only care about the count flipping
+  // — no countdown text. A blanket 30s `setInterval` polling
+  // `Date.now()` ran on every layout, mutating reactive state every
+  // tick whether or not any elicitation was actually approaching its
+  // deadline. Replace with a one-shot timer aimed at the soonest
+  // pending `expiresAt`: zero ticks when nothing is pending, one wakeup
+  // per deadline. The global-elicitations SSE stream already merges
+  // status transitions into the cache reactively, so this only covers
+  // the lazy `pending → expired` flip the server's sweeper hasn't
+  // caught yet.
   let nowMs = $state<number>(Date.now());
   $effect(() => {
     if (!browser) return;
-    const timer = setInterval(() => {
+    const next = nextElicitationTickMs(elicitations, nowMs, false);
+    if (next === null) return;
+    const delay = Math.max(0, next - Date.now());
+    const timer = setTimeout(() => {
       nowMs = Date.now();
-    }, 30_000);
-    return () => clearInterval(timer);
+    }, delay);
+    return () => clearTimeout(timer);
   });
 
   const globalPendingElicitations = $derived(countPendingElicitations(elicitations, nowMs));
@@ -61,6 +75,7 @@
     { label: "Schedules", href: "/schedules", icon: IconLarge.Target },
     { label: "MCP Catalog", href: "/mcp", icon: IconLarge.Wrench },
     { label: "Skills", href: "/skills", icon: IconLarge.Compass },
+    { label: "Usage", href: "/usage", icon: IconLarge.Target },
     // { label: "Discover Spaces", href: "/discover", icon: IconLarge.OpenSquare },
     { label: "Settings", href: "/settings", icon: IconLarge.Gear },
   ];
@@ -85,12 +100,7 @@
 
 <header class="sidebar">
   <div class="sidebar-header">
-    <svg class="logo" xmlns="http://www.w3.org/2000/svg" viewBox="-4.1 -0.2 26 26">
-      <path
-        d="M9.9375 14.9014C10.344 14.9014 10.6738 15.2312 10.6738 15.6377V20.2383C10.6737 23.1855 8.28412 25.5751 5.33691 25.5752C2.38962 25.5752 0.000158184 23.1855 0 20.2383C0 17.2909 2.38953 14.9014 5.33691 14.9014H9.9375ZM11.1377 0C14.8218 0.00013192 17.8086 2.98674 17.8086 6.6709C17.8086 10.3551 14.8218 13.3417 11.1377 13.3418H5.21289C4.80079 13.3418 4.46696 13.0078 4.4668 12.5957V6.6709C4.4668 2.98666 7.45346 0 11.1377 0Z"
-        fill="#1171DF"
-      />
-    </svg>
+    <FridayMark class="logo" />
     <h1>Friday</h1>
   </div>
 

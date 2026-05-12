@@ -7,7 +7,7 @@ export { default as FormattedData } from "./formatted-data.svelte";
 export { IconLarge, IconSmall, Icons } from "./icons/index.js";
 export { default as JsonHighlight } from "./json-highlight.svelte";
 export { default as MarkdownRendered } from "./markdown/markdown-rendered.svelte";
-export { markdownToHTML } from "./markdown/markdown.js";
+export { markdownToHTML, markdownToHTMLSafe } from "./markdown/markdown.js";
 export { jsonHighlighter } from "./json-highlighter.js";
 export { codeHighlighter, highlightCode, languageFromPath } from "./code-highlighter.js";
 export { ListDetail } from "./list-detail/index.js";

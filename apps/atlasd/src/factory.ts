@@ -7,6 +7,7 @@ import { cors } from "hono/cors";
 import { createFactory } from "hono/factory";
 import type { ChatSdkInstance } from "./chat-sdk/chat-sdk-instance.ts";
 import type { ChatTurnRegistry } from "./chat-turn-registry.ts";
+import { createSessionMiddleware } from "./session-middleware.ts";
 import type { SessionStreamRegistry } from "./session-stream-registry.ts";
 import type { StreamRegistry } from "./stream-registry.ts";
 
@@ -74,7 +75,7 @@ export interface CreateAppOptions {
 }
 
 // Define variables available in context
-export type AppVariables = { Variables: { app: AppContext } };
+export type AppVariables = { Variables: { app: AppContext; userId?: string } };
 
 // Create the factory with our types
 export const daemonFactory = createFactory<AppVariables>();
@@ -91,6 +92,17 @@ export const createApp = (context: AppContext, options: CreateAppOptions = {}) =
 
   // Configure CORS - Hono natively handles string, string[], or "*"
   app.use("*", cors({ origin: options.corsOrigins ?? "*", exposeHeaders: ["X-Turn-Started-At"] }));
+
+  // Stamp `ctx.userId` from the opaque session cookie (or Bearer header).
+  // Local mode auto-mints; non-local 401s on missing/invalid token.
+  //
+  // Scoped to `/api/*` so the public + signed + side-channel surfaces
+  // mounted at root — `/health` (liveness probes), `/signals/*` (signed
+  // provider webhooks like Slack / Discord), `/mcp` and `/agents`
+  // (MCP transports that authenticate via `Mcp-Session-Id` headers,
+  // not Friday session cookies) — keep working in non-dev where the
+  // middleware would otherwise 401 anything without a browser cookie.
+  app.use("/api/*", createSessionMiddleware());
 
   return app;
 };

@@ -31,6 +31,7 @@ import type { Context } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import { type AppVariables, daemonFactory } from "../../src/factory.ts";
+import { requireWorkspaceAdmin, requireWorkspaceMember } from "../../src/workspace-authz.ts";
 import { applyDraftAwareMutation, getEditableConfig } from "./draft-helpers.ts";
 import { injectBundledAgentRefs } from "./index.ts";
 import { mapMutationError } from "./mutation-errors.ts";
@@ -711,6 +712,24 @@ const handleUpdateAgent = createMutationHandler({
  */
 const configRoutes = daemonFactory
   .createApp()
+  // Gate every config sub-route on workspace membership. Reads (`.get`)
+  // require any role; mutations (`.put`, `.patch`, `.post`, `.delete`)
+  // require admin tier — config edits, credential updates, and signal
+  // CRUD are operator surfaces, not member-tier act-on-workspace ops.
+  // The two middleware mounts compose: reads check member; mutations
+  // check member first (passes for admins), then check admin.
+  .use("*", async (c, next) => {
+    const workspaceId = c.req.param("workspaceId");
+    if (!workspaceId) return c.json({ error: "Missing workspaceId" }, 400);
+    await requireWorkspaceMember(c, workspaceId);
+    await next();
+  })
+  .on(["PUT", "PATCH", "POST", "DELETE"], "*", async (c, next) => {
+    const workspaceId = c.req.param("workspaceId");
+    if (!workspaceId) return c.json({ error: "Missing workspaceId" }, 400);
+    await requireWorkspaceAdmin(c, workspaceId);
+    await next();
+  })
   // Signals - read + full CRUD
   .get("/signals", handleListSignals)
   .get("/signals/:signalId", handleGetSignal)

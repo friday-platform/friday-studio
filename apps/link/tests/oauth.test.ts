@@ -2,7 +2,7 @@ import { Buffer } from "node:buffer";
 import { rm } from "node:fs/promises";
 import process from "node:process";
 import { makeTempDir } from "@atlas/utils/temp.server";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { NoOpCommunicatorWiringRepository } from "../src/adapters/communicator-wiring-repository.ts";
 import { FileSystemStorageAdapter } from "../src/adapters/filesystem-adapter.ts";
@@ -108,7 +108,13 @@ describe("OAuth Integration", async () => {
     const internalJson = z
       .object({
         credential: CredentialSchema,
-        status: z.enum(["ready", "refreshed", "expired_no_refresh", "refresh_failed"]),
+        status: z.enum([
+          "ready",
+          "refreshed",
+          "expired_no_refresh",
+          "refresh_failed",
+          "refresh_unavailable",
+        ]),
       })
       .parse(await internalRes.json());
     expect(internalJson.status).toEqual("ready");
@@ -349,7 +355,13 @@ describe("OAuth Integration", async () => {
     const internalJson = z
       .object({
         credential: CredentialSchema,
-        status: z.enum(["ready", "refreshed", "expired_no_refresh", "refresh_failed"]),
+        status: z.enum([
+          "ready",
+          "refreshed",
+          "expired_no_refresh",
+          "refresh_failed",
+          "refresh_unavailable",
+        ]),
       })
       .parse(await internalRes.json());
     expect(internalJson.status).toEqual("refreshed");
@@ -925,7 +937,13 @@ describe("Delegated OAuth Integration", async () => {
     const internalJson = z
       .object({
         credential: CredentialSchema,
-        status: z.enum(["ready", "refreshed", "expired_no_refresh", "refresh_failed"]),
+        status: z.enum([
+          "ready",
+          "refreshed",
+          "expired_no_refresh",
+          "refresh_failed",
+          "refresh_unavailable",
+        ]),
       })
       .parse(await internalRes.json());
     expect(internalJson.status).toEqual("ready");
@@ -1046,7 +1064,13 @@ describe("Delegated OAuth Integration", async () => {
     const internalJson = z
       .object({
         credential: CredentialSchema,
-        status: z.enum(["ready", "refreshed", "expired_no_refresh", "refresh_failed"]),
+        status: z.enum([
+          "ready",
+          "refreshed",
+          "expired_no_refresh",
+          "refresh_failed",
+          "refresh_unavailable",
+        ]),
       })
       .parse(await internalRes.json());
     expect(internalJson.status).toEqual("refreshed");
@@ -1057,6 +1081,224 @@ describe("Delegated OAuth Integration", async () => {
 
   afterAll(async () => {
     if (refreshController) refreshController.abort();
+    await rm(tempDir, { recursive: true });
+  });
+});
+
+describe("Delegated OAuth refresh classifier integration", async () => {
+  const tempDir = makeTempDir();
+  const storage = new FileSystemStorageAdapter(tempDir);
+  const oauthService = new OAuthService(registry, storage);
+  const app = await createApp(
+    storage,
+    oauthService,
+    new NoOpPlatformRouteRepository(),
+    new NoOpCommunicatorWiringRepository(),
+  );
+
+  /** Per-test override: the mock refresh endpoint asks this for each request. */
+  type RefreshResponder = (req: Request) => Promise<Response> | Response;
+  let respondTo: RefreshResponder = () => new Response("not configured", { status: 500 });
+
+  let mockController: AbortController | undefined;
+  let mockServer: { finished: Promise<void> } | undefined;
+  let mockPort = 0;
+
+  const startMockRefresh = async () => {
+    mockController = new AbortController();
+    let ready = false;
+    // Capture the server so afterAll can await `.finished` after abort.
+    // Without this the listener socket lingers and vitest's worker
+    // termination times out (CI hang).
+    mockServer = Deno.serve(
+      {
+        port: 0,
+        signal: mockController.signal,
+        onListen: ({ port }) => {
+          mockPort = port;
+          ready = true;
+        },
+      },
+      (req) => respondTo(req),
+    );
+    while (!ready) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  };
+
+  await startMockRefresh();
+  const mockRefreshUrl = () => `http://localhost:${mockPort}/refreshToken`;
+
+  const registerProvider = (id: string, refreshUri: string) => {
+    if (!registry.has(id)) {
+      registry.register(
+        defineOAuthProvider({
+          id,
+          displayName: `Test Delegated Classifier ${id}`,
+          description: "Test delegated OAuth refresh classifier",
+          oauthConfig: {
+            mode: "delegated",
+            authorizationEndpoint: "https://accounts.google.com/o/oauth2/v2/auth",
+            delegatedExchangeUri: "https://exchange.example.com",
+            delegatedRefreshUri: refreshUri,
+            clientId: "test-delegated-client-id",
+            scopes: ["openid", "email"],
+            extraAuthParams: { access_type: "offline", prompt: "consent" },
+            encodeState: ({ csrfToken, finalRedirectUri }) =>
+              Buffer.from(
+                JSON.stringify({ uri: finalRedirectUri, manual: false, csrf: csrfToken }),
+              ).toString("base64"),
+          },
+          identify: (tokens) =>
+            Promise.resolve(`delegated-classifier-user:${tokens.access_token.slice(0, 8)}`),
+        }),
+      );
+    }
+  };
+
+  /** Create a delegated credential directly via storage so each test can control
+   * expires_at and avoid running the full OAuth callback flow. */
+  const seedCredential = async (providerId: string, remainingSeconds: number) => {
+    const credentialInput = {
+      type: "oauth" as const,
+      provider: providerId,
+      userIdentifier: `user-${providerId}`,
+      label: `user-${providerId}`,
+      secret: {
+        access_token: "seed_access_token",
+        refresh_token: "seed_refresh_token",
+        token_type: "Bearer",
+        expires_at: Math.floor(Date.now() / 1000) + remainingSeconds,
+        client_id: "test-delegated-client-id",
+      },
+    };
+    const { id } = await storage.save(credentialInput, "dev");
+    return id;
+  };
+
+  const InternalCredentialResponseSchema = z.object({
+    credential: CredentialSchema,
+    status: z.enum([
+      "ready",
+      "refreshed",
+      "expired_no_refresh",
+      "refresh_failed",
+      "refresh_unavailable",
+    ]),
+    error: z.string().optional(),
+  });
+
+  // Reset the shared responder so a test that throws before assigning
+  // its own respondTo can't leak the previous test's responder.
+  beforeEach(() => {
+    respondTo = () => new Response("not configured", { status: 500 });
+  });
+
+  it("HTTP 4xx invalid_grant → refresh_failed (token_dead)", async () => {
+    respondTo = () => Response.json({ error: "invalid_grant" }, { status: 400 });
+    registerProvider("test-classifier-invalid-grant", mockRefreshUrl());
+    const credId = await seedCredential("test-classifier-invalid-grant", 30);
+
+    const res = await app.request(`/internal/v1/credentials/${credId}`);
+    expect(res.status).toEqual(200);
+    const body = InternalCredentialResponseSchema.parse(await res.json());
+    expect(body.status).toEqual("refresh_failed");
+    // Original credential preserved (no rotation on token_dead).
+    expect(body.credential.secret.access_token).toEqual("seed_access_token");
+  });
+
+  it("HTTP 4xx invalid_client → refresh_unavailable (platform_bug)", async () => {
+    respondTo = () => Response.json({ error: "invalid_client" }, { status: 400 });
+    registerProvider("test-classifier-invalid-client", mockRefreshUrl());
+    const credId = await seedCredential("test-classifier-invalid-client", 30);
+
+    const res = await app.request(`/internal/v1/credentials/${credId}`);
+    expect(res.status).toEqual(200);
+    const body = InternalCredentialResponseSchema.parse(await res.json());
+    expect(body.status).toEqual("refresh_unavailable");
+    expect(body.credential.secret.access_token).toEqual("seed_access_token");
+  });
+
+  it("Plain-text HTTP 500 with access_token < 60s → refresh_unavailable", async () => {
+    respondTo = () => new Response("upstream is on fire", { status: 500 });
+    registerProvider("test-classifier-5xx-short", mockRefreshUrl());
+    const credId = await seedCredential("test-classifier-5xx-short", 30);
+
+    const res = await app.request(`/internal/v1/credentials/${credId}`);
+    expect(res.status).toEqual(200);
+    const body = InternalCredentialResponseSchema.parse(await res.json());
+    expect(body.status).toEqual("refresh_unavailable");
+    expect(body.credential.secret.access_token).toEqual("seed_access_token");
+  });
+
+  it("Plain-text HTTP 500 with access_token ≥ 60s → ready (silent fallback)", async () => {
+    respondTo = () => new Response("upstream is on fire", { status: 500 });
+    registerProvider("test-classifier-5xx-long", mockRefreshUrl());
+    // 90s of life: < 5min refresh buffer triggers refresh, ≥ 60s threshold
+    // means the access_token is still safe to hand to the caller.
+    const credId = await seedCredential("test-classifier-5xx-long", 90);
+
+    const res = await app.request(`/internal/v1/credentials/${credId}`);
+    expect(res.status).toEqual(200);
+    const body = InternalCredentialResponseSchema.parse(await res.json());
+    expect(body.status).toEqual("ready");
+    expect(body.credential.secret.access_token).toEqual("seed_access_token");
+  });
+
+  it("Network ECONNREFUSED with access_token < 60s → refresh_unavailable", async () => {
+    // 127.0.0.1:1 reliably refuses TCP connections — exercises the
+    // classifier's `network` transient branch without standing up a server.
+    registerProvider("test-classifier-econnrefused", "http://127.0.0.1:1/refreshToken");
+    const credId = await seedCredential("test-classifier-econnrefused", 30);
+
+    const res = await app.request(`/internal/v1/credentials/${credId}`);
+    expect(res.status).toEqual(200);
+    const body = InternalCredentialResponseSchema.parse(await res.json());
+    expect(body.status).toEqual("refresh_unavailable");
+    expect(body.credential.secret.access_token).toEqual("seed_access_token");
+  });
+
+  it("transient Cloud Function failure surfaces refresh_unavailable, then recovers to refreshed on retry", async () => {
+    // Regression seal: a transient 5xx from the delegated refresh endpoint
+    // must NOT collapse into refresh_failed (which forces a reconnect prompt).
+    // It surfaces refresh_unavailable so the caller can retry, and a
+    // subsequent successful refresh transitions cleanly to refreshed with
+    // the original refresh_token preserved.
+    respondTo = () => new Response("upstream is on fire", { status: 500 });
+    registerProvider("test-classifier-transient-then-success", mockRefreshUrl());
+    const credId = await seedCredential("test-classifier-transient-then-success", 30);
+
+    const firstRes = await app.request(`/internal/v1/credentials/${credId}`);
+    expect(firstRes.status).toEqual(200);
+    const firstBody = InternalCredentialResponseSchema.parse(await firstRes.json());
+    expect(firstBody.status).toEqual("refresh_unavailable");
+    expect(firstBody.credential.secret.access_token).toEqual("seed_access_token");
+    expect(firstBody.credential.secret.refresh_token).toEqual("seed_refresh_token");
+
+    respondTo = () =>
+      Response.json({
+        access_token: "recovered_access_token",
+        expiry_date: 1900000000000,
+        scope: "openid email",
+        token_type: "Bearer",
+      });
+
+    const secondRes = await app.request(`/internal/v1/credentials/${credId}`);
+    expect(secondRes.status).toEqual(200);
+    const secondBody = InternalCredentialResponseSchema.parse(await secondRes.json());
+    expect(secondBody.status).toEqual("refreshed");
+    expect(secondBody.credential.secret.access_token).toEqual("recovered_access_token");
+    // Cloud Function never returns a new refresh_token — original preserved.
+    expect(secondBody.credential.secret.refresh_token).toEqual("seed_refresh_token");
+  });
+
+  afterAll(async () => {
+    if (mockController) mockController.abort();
+    // Wait for the listener socket to actually close so vitest's worker
+    // can terminate cleanly (otherwise CI hangs on worker timeout).
+    if (mockServer) {
+      await mockServer.finished.catch(() => {});
+    }
     await rm(tempDir, { recursive: true });
   });
 });

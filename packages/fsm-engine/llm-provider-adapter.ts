@@ -59,6 +59,7 @@ export class AtlasLLMProviderAdapter implements LLMProvider {
     agentId: string;
     provider?: string;
     model: string;
+    system?: string;
     prompt: string;
     messages?: Array<ModelMessage>;
     tools?: Record<string, Tool>;
@@ -99,22 +100,57 @@ export class AtlasLLMProviderAdapter implements LLMProvider {
       const defaultUserProviderOptions = isDefaultOptsProvider(providerName)
         ? getDefaultProviderOpts(providerName)
         : {};
-      const promptOrMessages = params.messages
-        ? { messages: params.messages }
-        : {
-            messages: [
+
+      // Anthropic caches a prefix up to and including any content block
+      // marked with `cache_control`. Putting the static instruction surface
+      // (action prompt + skills + validation) into a system message with
+      // an explicit ephemeral marker lets a repeated call hit the cached
+      // prefix even when the user message changes turn-to-turn. Other
+      // providers ignore the anthropic-keyed providerOptions and either
+      // see this as a plain system message (when passed in `messages`)
+      // or fall back to the top-level `system` field.
+      //
+      // `allowSystemInMessages` opts in to system entries inside the
+      // `messages` array — without it the AI SDK rejects them. The flag
+      // is Anthropic-specific because the multi-system-block layout is
+      // what the Anthropic provider uses to fan out per-block cache_control
+      // markers; non-Anthropic providers keep the conventional top-level
+      // `system` string.
+      // The AI SDK's Anthropic provider sets `.provider` to the
+      // surface-qualified id ("anthropic.messages", "anthropic.tools"),
+      // never the bare "anthropic". Match the family prefix so any
+      // future Anthropic surface gets the cache_control + system-
+      // message layout. A strict `=== "anthropic"` would silently fall
+      // through to the conventional `system` field with no cache
+      // markers attached.
+      const isAnthropic = providerName.startsWith("anthropic");
+      const systemMessages: ModelMessage[] =
+        isAnthropic && params.system
+          ? [
               {
-                role: "user" as const,
-                content: params.prompt,
-                providerOptions: defaultUserProviderOptions,
+                role: "system",
+                content: params.system,
+                providerOptions: { anthropic: { cacheControl: { type: "ephemeral", ttl: "1h" } } },
               },
-            ],
-          };
+            ]
+          : [];
+
+      const userMessages: ModelMessage[] = params.messages
+        ? params.messages
+        : [
+            {
+              role: "user" as const,
+              content: params.prompt,
+              providerOptions: defaultUserProviderOptions,
+            },
+          ];
 
       const emitChunk = params.onStreamEvent;
       const result = streamText({
         model: modelForCall,
-        ...promptOrMessages,
+        system: !isAnthropic ? params.system : undefined,
+        messages: [...systemMessages, ...userMessages],
+        allowSystemInMessages: isAnthropic ? true : undefined,
         tools: params.tools,
         toolChoice: params.toolChoice,
         experimental_repairToolCall: repairToolCall,

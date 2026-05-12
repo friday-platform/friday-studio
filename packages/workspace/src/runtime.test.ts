@@ -37,12 +37,20 @@ describe("classifySessionError", () => {
     },
     {
       name: "LinkCredentialExpiredError (expired_no_refresh)",
-      error: new LinkCredentialExpiredError("cred_expired", "expired_no_refresh"),
+      error: new LinkCredentialExpiredError(
+        "cred_expired",
+        "expired_no_refresh",
+        "expired, no refresh",
+      ),
       expected: "skipped",
     },
     {
       name: "LinkCredentialExpiredError (refresh_failed)",
-      error: new LinkCredentialExpiredError("cred_refresh_fail", "refresh_failed"),
+      error: new LinkCredentialExpiredError(
+        "cred_refresh_fail",
+        "refresh_failed",
+        "refresh failed",
+      ),
       expected: "skipped",
     },
     {

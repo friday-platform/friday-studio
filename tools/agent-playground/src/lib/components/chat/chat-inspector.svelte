@@ -400,6 +400,63 @@
   });
 
   /**
+   * Per-session cache health roll-up. Walks every assistant turn and
+   * sums input / output / cache-read / cache-write tokens. The "hit ratio"
+   * is the fraction of input tokens served from the cache averaged across
+   * every turn that reported usage. Turns with no usage (legacy messages
+   * that pre-date the field) are excluded from the denominator.
+   *
+   * The first-turn cache write — the cost of populating the prefix —
+   * shows up as cacheWriteTokens; every subsequent turn that hits the
+   * same prefix contributes to cacheReadTokens. A healthy chat session
+   * shows write-heavy turn 1 followed by read-dominant turns 2+.
+   */
+  const cacheHealth = $derived.by(() => {
+    if (!open) {
+      return {
+        turnsWithUsage: 0,
+        turnsWithCacheHit: 0,
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+      };
+    }
+    let turnsWithUsage = 0;
+    let turnsWithCacheHit = 0;
+    let inputTokens = 0;
+    let outputTokens = 0;
+    let cacheReadTokens = 0;
+    let cacheWriteTokens = 0;
+    for (const msg of snapshotMessages) {
+      if (msg.role !== "assistant") continue;
+      const usage = msg.metadata?.usage;
+      if (!usage) continue;
+      turnsWithUsage++;
+      const turnRead = usage.cacheReadTokens ?? 0;
+      if (turnRead > 0) turnsWithCacheHit++;
+      inputTokens += usage.inputTokens ?? 0;
+      outputTokens += usage.outputTokens ?? 0;
+      cacheReadTokens += turnRead;
+      cacheWriteTokens += usage.cacheWriteTokens ?? 0;
+    }
+    return {
+      turnsWithUsage,
+      turnsWithCacheHit,
+      inputTokens,
+      outputTokens,
+      cacheReadTokens,
+      cacheWriteTokens,
+    };
+  });
+
+  const cacheHitRatio = $derived(
+    cacheHealth.inputTokens > 0
+      ? cacheHealth.cacheReadTokens / cacheHealth.inputTokens
+      : 0,
+  );
+
+  /**
    * Session-wide loaded skills. Aggregates `load_skill` tool calls across
    * every assistant turn (not just the latest) so the Context tab still
    * shows a skill that was loaded 10 turns ago. Keyed by skill name.
@@ -729,16 +786,71 @@
         </div>
 
         {#if systemPromptContext}
+          {@const blockLabels = [
+            "Block 1 — weeks-stable (1h cache)",
+            "Block 2 — workspace-stable (1h cache)",
+            "Block 3 — session-stable (5m cache)",
+            "Block 4 — volatile preface (uncached)",
+          ]}
+          {@const blocks = systemPromptContext.systemMessages}
+          {@const hasBlock3 = blocks.length === 4}
           <div class="section">
-            <h4>System Prompt</h4>
+            <h4>Cache blocks</h4>
             <dl class="kv-list">
               <dt>Captured</dt>
               <dd class="mono">{new Date(systemPromptContext.timestamp).toLocaleTimeString()}</dd>
-              <dt>Parts</dt>
-              <dd>{systemPromptContext.systemMessages.length}</dd>
-              <dt>Chars</dt>
-              <dd>{systemPromptContext.systemMessages.reduce((s, m) => s + m.length, 0).toLocaleString()}</dd>
+              <dt>Total chars</dt>
+              <dd class="mono">{blocks.reduce((s, m) => s + m.length, 0).toLocaleString()}</dd>
             </dl>
+            <ul class="block-list">
+              {#each blocks as content, i (i)}
+                {@const isVolatile = i === blocks.length - 1}
+                {@const labelIndex = !hasBlock3 && i === blocks.length - 1 ? 3 : i}
+                <li class="block-row" class:volatile={isVolatile}>
+                  <div class="block-label">{blockLabels[labelIndex]}</div>
+                  <div class="block-meta">
+                    <span class="mono">{content.length.toLocaleString()} chars</span>
+                    <span class="mono dim">~{Math.round(content.length / 4).toLocaleString()} tok</span>
+                  </div>
+                  <details class="block-details">
+                    <summary>show contents</summary>
+                    <pre class="block-preview">{content}</pre>
+                  </details>
+                </li>
+              {/each}
+            </ul>
+            <p class="hint">
+              Anthropic's `cache_control` markers sit on blocks 1, 2, and 3
+              (when present). The volatile preface — temporal facts plus
+              memory and artifact retrievals — rides as a synthetic user
+              message and is intentionally NOT cached.
+            </p>
+          </div>
+        {/if}
+
+        {#if cacheHealth.turnsWithUsage > 0}
+          <div class="section">
+            <h4>Cache health</h4>
+            <dl class="kv-list">
+              <dt>Cached turns</dt>
+              <dd>{cacheHealth.turnsWithCacheHit} / {cacheHealth.turnsWithUsage}</dd>
+              <dt>Hit ratio</dt>
+              <dd>{Math.round(cacheHitRatio * 100)}% of input tokens</dd>
+              <dt>Input</dt>
+              <dd class="mono">{cacheHealth.inputTokens.toLocaleString()}</dd>
+              <dt>Output</dt>
+              <dd class="mono">{cacheHealth.outputTokens.toLocaleString()}</dd>
+              <dt>Cache read</dt>
+              <dd class="mono">{cacheHealth.cacheReadTokens.toLocaleString()}</dd>
+              <dt>Cache write</dt>
+              <dd class="mono">{cacheHealth.cacheWriteTokens.toLocaleString()}</dd>
+            </dl>
+            <p class="hint">
+              Hit ratio averages every assistant turn that reported usage. A
+              fresh chat shows write-heavy turn 1 followed by read-dominant
+              turns 2+; persistent 0% beyond turn 2 signals an unstable
+              prefix.
+            </p>
           </div>
         {/if}
 
@@ -922,7 +1034,7 @@
                               {/if}
                             </dl>
 
-                          {:else if name === "memory_save"}
+                          {:else if name === "save_memory_entry"}
                             {@const text = typeof inp.text === "string" ? inp.text : ""}
                             {@const memType = typeof inp.type === "string" ? inp.type : "general"}
                             <div class="call-headline">{text.length > 60 ? `${text.slice(0, 60)}…` : text}</div>
@@ -951,7 +1063,7 @@
                               {/if}
                             </dl>
 
-                          {:else if name === "artifacts_get"}
+                          {:else if name === "get_artifact"}
                             {@const artifactId = typeof inp.artifactId === "string" ? inp.artifactId : ""}
                             {@const revision = typeof inp.revision === "number" ? inp.revision : null}
                             <div class="call-headline mono-sm">{artifactId}{revision !== null ? ` @r${revision}` : ""}</div>
@@ -1053,10 +1165,19 @@
 
       {:else if activeTab === "prompt"}
         {#if systemPromptContext}
+          {@const promptBlocks = systemPromptContext.systemMessages}
+          {@const promptHasBlock3 = promptBlocks.length === 4}
+          {@const promptBlockLabels = [
+            "Block 1 — weeks-stable (1h cache)",
+            "Block 2 — workspace-stable (1h cache)",
+            "Block 3 — session-stable (5m cache)",
+            "Block 4 — volatile preface (uncached)",
+          ]}
           <div class="prompt-viewer">
-            {#each systemPromptContext.systemMessages as msg, i (i)}
+            {#each promptBlocks as msg, i (i)}
+              {@const labelIndex = !promptHasBlock3 && i === promptBlocks.length - 1 ? 3 : i}
               <details class="prompt-section" open={i === 0}>
-                <summary>Part {i + 1} ({msg.length.toLocaleString()} chars)</summary>
+                <summary>{promptBlockLabels[labelIndex]} ({msg.length.toLocaleString()} chars)</summary>
                 <pre class="prompt-text">{msg}</pre>
               </details>
             {/each}
@@ -1186,6 +1307,77 @@
 
   .mono {
     font-family: var(--font-family-mono, ui-monospace, monospace);
+  }
+
+  .hint {
+    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    font-size: var(--font-size-1);
+    line-height: 1.4;
+    margin-block: var(--size-2) 0;
+  }
+
+  .block-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-2);
+    list-style: none;
+    margin: var(--size-2) 0 0;
+    padding: 0;
+  }
+
+  .block-row {
+    border: 1px solid var(--border, var(--cream-800));
+    border-radius: var(--radius-1, 0.4rem);
+    padding: var(--size-2);
+  }
+
+  .block-row.volatile {
+    border-style: dashed;
+    opacity: 0.85;
+  }
+
+  .block-label {
+    color: color-mix(in srgb, var(--color-text), transparent 20%);
+    font-size: var(--font-size-1);
+    font-weight: var(--font-weight-6);
+  }
+
+  .block-meta {
+    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    display: flex;
+    font-size: var(--font-size-0);
+    gap: var(--size-3);
+    margin-block-start: var(--size-1);
+  }
+
+  .block-meta .dim {
+    color: color-mix(in srgb, var(--color-text), transparent 60%);
+  }
+
+  .block-details {
+    margin-block-start: var(--size-1);
+  }
+
+  .block-details summary {
+    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    cursor: pointer;
+    font-size: var(--font-size-0);
+    user-select: none;
+  }
+
+  .block-preview {
+    background: var(--highlight);
+    border-radius: var(--radius-1, 0.3rem);
+    color: var(--text);
+    font-family: var(--font-family-mono, ui-monospace, monospace);
+    font-size: var(--font-size-0);
+    line-height: 1.4;
+    margin: var(--size-1) 0 0;
+    max-block-size: 60vh;
+    overflow: auto;
+    padding: var(--size-2);
+    white-space: pre-wrap;
+    word-break: break-word;
   }
 
   .status-dot {

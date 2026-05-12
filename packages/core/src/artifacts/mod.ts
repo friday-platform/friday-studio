@@ -47,6 +47,10 @@ export {
 // tool results into artifacts. Two entry points — `liftToolResultsForPersist`
 // at the persistence boundary, `scrubAssistantMessage` at chat pre-persist.
 export type { ScrubberOptions } from "./scrubber.ts";
-export { liftToolResultsForPersist, scrubAssistantMessage } from "./scrubber.ts";
+export {
+  liftAnswerForModel,
+  liftToolResultsForPersist,
+  scrubAssistantMessage,
+} from "./scrubber.ts";
 // Storage adapter types
 export type { ArtifactStorageAdapter } from "./types.ts";

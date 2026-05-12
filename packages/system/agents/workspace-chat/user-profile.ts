@@ -1,64 +1,47 @@
-import { USER_PROFILE_STORE } from "@atlas/agent-sdk";
+/**
+ * Onboarding gate state derived from the USERS KV bucket.
+ *
+ * Source of truth is `USERS[userId].onboarding.completedAt + version`.
+ * The gate only opens when both are present and the version matches the
+ * current `ONBOARDING_VERSION` — a version bump re-onboards every user,
+ * which is the design intent (declined users re-prompted when the
+ * onboarding script meaningfully changes).
+ *
+ * `identity.name` rides along when known so the prompt assembly can
+ * inline it via `<user_identity>` without a second read.
+ */
+
+import { ONBOARDING_VERSION, UserStorage } from "@atlas/core/users/storage";
 import type { Logger } from "@atlas/logger";
-import { getAtlasDaemonUrl } from "@atlas/oapi-client";
-import { z } from "zod";
 
 export type UserProfileState =
   | { status: "known"; name: string }
   | { status: "declined" }
   | { status: "unknown" };
 
-const NAME_EXTRACT = /(?:name is|call me)\s+(.+)/i;
-
-const NarrativeEntrySchema = z.object({
-  id: z.string(),
-  text: z.string(),
-  author: z.string().optional(),
-  createdAt: z.string(),
-  metadata: z.record(z.string(), z.unknown()).optional(),
-});
-
-export function parseUserProfileState(
-  entries: Array<{ text: string; metadata?: Record<string, unknown> }>,
-): UserProfileState {
-  for (const entry of entries) {
-    if (entry.metadata?.type === "user-name") {
-      const match = NAME_EXTRACT.exec(entry.text);
-      const name = match?.[1] ?? entry.text;
-      return { status: "known", name: name.trim() };
-    }
-  }
-
-  for (const entry of entries) {
-    if (entry.metadata?.type === "name-declined") {
-      return { status: "declined" };
-    }
-  }
-
-  return { status: "unknown" };
-}
-
 export async function fetchUserProfileState(
-  workspaceId: string,
+  userId: string,
   logger: Logger,
 ): Promise<UserProfileState> {
-  const daemonUrl = getAtlasDaemonUrl();
-  const url = `${daemonUrl}/api/memory/${encodeURIComponent(workspaceId)}/narrative/${USER_PROFILE_STORE}?limit=50`;
-
   try {
-    const res = await fetch(url);
-    if (!res.ok) {
-      logger.warn("user-notes fetch failed", { workspaceId, status: res.status });
+    const result = await UserStorage.getUser(userId);
+    if (!result.ok) {
+      logger.warn("UserStorage.getUser failed", { userId, error: result.error });
       return { status: "unknown" };
     }
-    const parsed = z.array(NarrativeEntrySchema).safeParse(await res.json());
-    if (!parsed.success) {
-      logger.warn("user-notes response invalid", { workspaceId });
-      return { status: "unknown" };
-    }
-    return parseUserProfileState(parsed.data);
+    const user = result.data;
+    if (!user) return { status: "unknown" };
+
+    const onboardingDone =
+      user.onboarding.completedAt !== undefined && user.onboarding.version >= ONBOARDING_VERSION;
+    if (!onboardingDone) return { status: "unknown" };
+
+    const { nameStatus, name } = user.identity;
+    if (nameStatus === "provided" && name) return { status: "known", name };
+    if (nameStatus === "declined") return { status: "declined" };
+    return { status: "unknown" };
   } catch (err) {
-    logger.warn("user-notes fetch error", { workspaceId, error: err });
+    logger.warn("fetchUserProfileState threw", { userId, error: err });
     return { status: "unknown" };
   }
 }

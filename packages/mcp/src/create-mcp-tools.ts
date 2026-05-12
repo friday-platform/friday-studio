@@ -19,6 +19,7 @@ import type { MCPServerConfig, MCPServerToolFilter } from "@atlas/config";
 import {
   LinkCredentialExpiredError,
   LinkCredentialNotFoundError,
+  LinkCredentialUnavailableError,
   NoDefaultCredentialError,
   resolveEnvValues,
 } from "@atlas/core/mcp-registry/credential-resolver";
@@ -48,6 +49,7 @@ export type DisconnectedIntegrationKind =
   | "credential_not_found"
   | "credential_expired"
   | "credential_refresh_failed"
+  | "credential_temporarily_unavailable"
   | "no_default_credential";
 
 /** A skipped MCP server whose credentials are unusable. Carries enough info for the UI to prompt a reconnect. */
@@ -189,6 +191,7 @@ export async function createMCPTools(
         if (
           error instanceof LinkCredentialNotFoundError ||
           error instanceof LinkCredentialExpiredError ||
+          error instanceof LinkCredentialUnavailableError ||
           error instanceof NoDefaultCredentialError
         ) {
           const entry = buildDisconnectedEntry(error, serverId, config);
@@ -312,10 +315,26 @@ export async function createMCPTools(
  * enrichment).
  */
 function buildDisconnectedEntry(
-  error: LinkCredentialNotFoundError | LinkCredentialExpiredError | NoDefaultCredentialError,
+  error:
+    | LinkCredentialNotFoundError
+    | LinkCredentialExpiredError
+    | LinkCredentialUnavailableError
+    | NoDefaultCredentialError,
   serverId: string,
   config: MCPServerConfig,
 ): DisconnectedIntegration {
+  // Message on every branch is the underlying error's `.message` verbatim —
+  // Link's `error` field for refresh-failure cases, or the constructor-built
+  // string for "not found" / "no default" cases that have no Link error
+  // to forward. We never rewrite Link's actual error string.
+  if (error instanceof LinkCredentialUnavailableError) {
+    return {
+      serverId,
+      provider: extractProviderFromConfig(config),
+      kind: "credential_temporarily_unavailable",
+      message: error.message,
+    };
+  }
   if (error instanceof NoDefaultCredentialError) {
     return {
       serverId,
@@ -325,25 +344,19 @@ function buildDisconnectedEntry(
     };
   }
   if (error instanceof LinkCredentialNotFoundError) {
-    const enriched = error.serverName
-      ? error
-      : new LinkCredentialNotFoundError(error.credentialId, serverId);
     return {
       serverId,
       provider: extractProviderFromConfig(config),
       kind: "credential_not_found",
-      message: enriched.message,
+      message: error.message,
     };
   }
-  const enriched = error.serverName
-    ? error
-    : new LinkCredentialExpiredError(error.credentialId, error.status, serverId);
   return {
     serverId,
     provider: extractProviderFromConfig(config),
     kind:
       error.status === "expired_no_refresh" ? "credential_expired" : "credential_refresh_failed",
-    message: enriched.message,
+    message: error.message,
   };
 }
 

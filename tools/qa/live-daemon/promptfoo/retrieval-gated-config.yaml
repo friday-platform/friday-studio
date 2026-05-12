@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+
+description: Friday retrieval-gated injection + user identity daemon evals
+
+prompts:
+  - '{{scenarioId}}'
+
+providers:
+  - id: file://retrieval-gated-provider.cjs
+    label: friday-retrieval-gated-daemon
+
+defaultTest:
+  assert:
+    - type: is-json
+    - type: javascript
+      value: |
+        const result = JSON.parse(output);
+        if (result.pass !== true) {
+          throw new Error(`${result.id} failed: ${(result.notes || []).join('; ')}`);
+        }
+        return true;
+
+tests: file://retrieval-gated-tests.yaml

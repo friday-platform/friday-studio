@@ -5,9 +5,23 @@ description: "How to read and write Friday memory stores correctly: store select
 
 # Writing to Memory
 
+## Memory tool surface
+
+Three verbs, one canonical name each across every caller (chat, FSM `type: llm` actions, `type: atlas` / `type: user` agents):
+
+| Verb | Tool | Notes |
+|---|---|---|
+| Save an entry | `save_memory_entry({ memoryName, text, metadata? })` | Appends; persists across sessions. |
+| Read entries | `list_memory_entries({ memoryName, query?, since?, until?, metadata?, limit?, cursor? })` | Newest-first by default; `truncate` caps each entry's text at 500 chars. |
+| Remove an entry | `delete_memory_entry({ memoryName, entryId })` | Idempotent. |
+
+Same verb-first pattern for artifacts: `create_artifact` / `get_artifact` / `parse_artifact` / `display_artifact`.
+
+**Repair note:** these tools were renamed from `memory_save` / `memory_read` / `memory_remove` (and `artifacts_create` / `artifacts_get`) in 2026-05. Installed Python agents that hard-coded the old names need a grep-and-replace — see `@friday/repairing-workspaces-agents` for the recipe.
+
 ## Narrative is the only memory strategy
 
-Friday memory is markdown narrative stores — append-only, auto-injected into agent prompts, queryable via `memory_read`. There is no separate retrieval, dedup, or kv backend; if a user asks for "vector search over my notes" or "KV-style lookup", surface the limitation instead.
+Friday memory is markdown narrative stores — append-only, auto-injected into agent prompts, queryable via `list_memory_entries`. There is no separate retrieval, dedup, or kv backend; if a user asks for "vector search over my notes" or "KV-style lookup", surface the limitation instead.
 
 For everything narrative covers — preferences, standing instructions, durable facts, working notes, anything you want the agent to remember and reference next turn — declare a narrative store and you're done.
 
@@ -22,14 +36,14 @@ At the start of every turn, the 20 most recent entries from each narrative store
 </memory>
 ```
 
-Each block is labeled with `workspace` and `store` so you know exactly what you're reading. You do not need to call `memory_read` to access this content — it's already there.
+Each block is labeled with `workspace` and `store` so you know exactly what you're reading. You do not need to call `list_memory_entries` to access this content — it's already there.
 
 For explicit lookup, time-filtering, or reading beyond the 20-entry window:
 ```
-memory_read(memoryName="preferences", since="2026-01-01T00:00:00Z", limit=50)
+list_memory_entries(memoryName="preferences", since="2026-01-01T00:00:00Z", limit=50)
 ```
 
-To remove a stale entry: `memory_remove(memoryName, entryId)`.
+To remove a stale entry: `delete_memory_entry(memoryName, entryId)`.
 
 ## Store selection
 
@@ -42,9 +56,9 @@ Check `<memory_stores>` in your workspace context for what's available. Pick the
 | `preferences` | long_term | **durable** | User standing instructions, formatting rules, explicit preferences |
 | custom | any | follows `type:` default; override with `ttl:` | Domain-specific; declared via `upsert_memory_own` |
 
-`type: short_term` is genuinely short-term post-Phase-6: notes you write during a session don't survive past it unless you explicitly write the same content to a long_term store. `type: long_term` persists across sessions until explicitly removed via `memory_remove`. Override per-store via `memory.own[].ttl: <duration>` in workspace.yml when you want a specific TTL different from the type default.
+`type: short_term` is genuinely short-term: notes you write during a session don't survive past it unless you explicitly write the same content to a long_term store. `type: long_term` persists across sessions until explicitly removed via `delete_memory_entry`. Override per-store via `memory.own[].ttl: <duration>` in workspace.yml when you want a specific TTL different from the type default.
 
-If the right store doesn't exist yet, call `upsert_memory_own` to declare it before writing. A store must exist in `workspace.yml` (or the active draft) before `memory_save` will accept it.
+If the right store doesn't exist yet, call `upsert_memory_own` to declare it before writing. A store must exist in `workspace.yml` (or the active draft) before `save_memory_entry` will accept it.
 
 ## Entry format
 
@@ -55,7 +69,7 @@ Rules:
 - Keep entries under ~100 chars. Longer content belongs in an artifact (see below).
 - Write the fact directly — no preamble ("The user told me that...", "I noticed that...").
 - Suffix time-sensitive facts with `(YYYY-MM-DD)`.
-- Never duplicate. Call `memory_read` first if unsure whether a fact is already stored; update via `memory_remove` + `memory_save` rather than appending a conflicting entry.
+- Never duplicate. Call `list_memory_entries` first if unsure whether a fact is already stored; update via `delete_memory_entry` + `save_memory_entry` rather than appending a conflicting entry.
 
 ✅ Good:
 ```
@@ -74,25 +88,41 @@ The user mentioned that they would like newsletters from substack.com to be arch
 
 Anything over ~500 chars (result sets, reports, structured data, analyses) must not go directly into memory — it will bloat every future turn's system prompt.
 
-**Step 1 — call `artifacts_create` with the content inline:**
+**Step 1 — register the content as an artifact in one call.**
+
+If you're in the **workspace-chat assistant** (the main user-facing surface), use `save_artifact` for text content:
 ```
-artifacts_create(
+save_artifact(
+  filename="q1-analysis.md",
+  content="<full content>",
+  title="Q1 email analysis",
+  summary="..."
+)
+→ { success: true, id: "art_abc123", type: "file", summary: "..." }
+```
+
+If you're in a **user agent** (Python/TS SDK) calling the MCP server, use the MCP `create_artifact` tool, which accepts the inline `data` object:
+```
+create_artifact(
   data={type:"file", content:"<full content>", originalName:"q1-analysis.md"},
   title="Q1 email analysis",
   summary="..."
 )
-→ { artifactId: "art_abc123" }
+→ { id: "art_abc123", type: "file", summary: "..." }
 ```
 
-The storage layer hashes the bytes (SHA-256), sniffs the mime type from
-the magic bytes if you don't pass `mimeType`, and writes to the JetStream
-Object Store named by hash — identical bytes dedup automatically. No
-filesystem hop, no `write_file → artifacts_create(path)` two-step.
+Either way the storage layer hashes the bytes (SHA-256), sniffs the mime
+type from the magic bytes if you don't pass `mimeType`, and writes to the
+JetStream Object Store named by hash — identical bytes dedup automatically.
+No filesystem hop, no `write_file → create_artifact(path)` two-step.
 
-For binary content over a JSON wire (e.g. images returned by a tool),
-base64-encode the bytes and pass `contentEncoding: "base64"`:
+For **binary content** (e.g. images returned by a tool), use the MCP
+`create_artifact` with `contentEncoding: "base64"` (user agent), or use
+`run_code` to write the bytes to scratch and then `create_artifact({path})`
+(workspace-chat — `save_artifact` rejects binary-MIME filenames):
 ```
-artifacts_create(
+# MCP / user-agent path:
+create_artifact(
   data={type:"file", content:"<base64>", contentEncoding:"base64", mimeType:"image/png", originalName:"chart.png"},
   ...
 )
@@ -100,19 +130,19 @@ artifacts_create(
 
 **Step 2 — save a terse reference to memory:**
 ```
-memory_save(memoryName="memory", text="Q1 email analysis → art_abc123 (2026-04-29)")
+save_memory_entry(memoryName="memory", text="Q1 email analysis → art_abc123 (2026-04-29)")
 ```
 
 **Step 3 — retrieve later:**
-When you see `→ art_abc123` in an injected memory entry, call `artifacts_get(id="art_abc123")` to load the full content on demand.
+When you see `→ art_abc123` in an injected memory entry, call `get_artifact(id="art_abc123")` to load the full content on demand.
 
 This keeps the injection window lean while making large results durable across sessions.
 
 ### Memory references promote artifacts to durable
 
-FSM-emitted artifacts default to **ephemeral** with a grace window (default 24h after job completion); a background sweeper deletes them once the window closes. **An artifact stays durable iff something references it before the sweep**: a `memory_save` text containing the artifact ID, a `display_artifact` call, or an `aiSummary.keyDetails[].url` pointing at it.
+FSM-emitted artifacts default to **ephemeral** with a grace window (default 24h after job completion); a background sweeper deletes them once the window closes. **An artifact stays durable iff something references it before the sweep**: a `save_memory_entry` text containing the artifact ID, a `display_artifact` call, or an `aiSummary.keyDetails[].url` pointing at it.
 
-So step 2 above isn't just bookkeeping — it's the durability decision. If you don't `memory_save` a reference (or surface the artifact some other way), it'll be gone in 24h.
+So step 2 above isn't just bookkeeping — it's the durability decision. If you don't `save_memory_entry` a reference (or surface the artifact some other way), it'll be gone in 24h.
 
 If you *want* something gone — intermediate working state — write the artifact and never reference it. The sweeper handles cleanup. Don't try to manage lifetimes manually.
 
@@ -122,11 +152,11 @@ Per-session artifact context auto-injects into LLM prompts as
 `<retrieved_content provenance="artifact:..." origin="..." fetched_at="...">`
 blocks at action start (chat: per-chat-session; FSM: per-FSM-session). The block carries each artifact's **summary**, not its content — the LLM sees a 1-line digest plus the artifactId. If a digest looks relevant, call `parse_artifact(artifactId)` to load the content.
 
-Practical implication for `summary` field: when you `artifacts_create`, write a useful 1-2 sentence summary. The LLM's later turns rely on it to decide whether to expand the artifact.
+Practical implication for `summary` field: when you `create_artifact`, write a useful 1-2 sentence summary. The LLM's later turns rely on it to decide whether to expand the artifact.
 
 ## Availability
 
-`memory_save`, `memory_read`, `memory_remove`, the `state_*` tools, the
+`save_memory_entry`, `list_memory_entries`, `delete_memory_entry`, the `state_*` tools, the
 `artifacts_*` tools, and `webfetch` are wired into every execution context with
 `workspaceId` auto-injected from the runtime scope. You never pass
 `workspaceId` — the runtime overrides it (defense in depth: a foreign
@@ -134,7 +164,7 @@ workspaceId in args is replaced before the tool runs).
 
 **Authoring rule for FSM `type: llm` actions: do NOT redeclare these in
 the action's `tools:` array.** They are auto-injected on top of any
-allowlist you provide. Listing `memory_save` or `artifacts_create` in
+allowlist you provide. Listing `save_memory_entry` or `create_artifact` in
 `tools:` is harmless but adds noise. To genuinely lock an action down
 to "memory + artifacts only," declare `tools: []` (empty) — the
 auto-injected built-ins still work, the workspace MCP catalog gets
@@ -142,11 +172,11 @@ narrowed away.
 
 | Context | Tool surface | Call shape |
 |---|---|---|
-| Workspace-chat / conversation | direct tool call | `memory_save({ memoryName, text })` |
-| `type: "llm"` workspace agents | LLM tool call | `memory_save({ memoryName, text })` |
+| Workspace-chat / conversation | direct tool call | `save_memory_entry({ memoryName, text })` |
+| `type: "llm"` workspace agents | LLM tool call | `save_memory_entry({ memoryName, text })` |
 | `type: "atlas"` SDK agents | `tools.execute(...)` | `{ memoryName, text }` |
-| FSM LLM action steps | LLM tool call | `memory_save({ memoryName, text })` |
-| `type: "user"` Python/TS agents | `ctx.tools.call(name, args)` | `ctx.tools.call("memory_save", { memoryName, text })` |
+| FSM LLM action steps | LLM tool call | `save_memory_entry({ memoryName, text })` |
+| `type: "user"` Python/TS agents | `ctx.tools.call(name, args)` | `ctx.tools.call("save_memory_entry", { memoryName, text })` |
 
 Stores must be declared in `workspace.yml` under `memory.own` (or reachable
 via an `rw` mount). Undeclared stores are rejected with the list of declared

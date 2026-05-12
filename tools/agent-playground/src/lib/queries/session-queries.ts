@@ -19,7 +19,7 @@ import {
 import { experimental_streamedQuery, queryOptions, skipToken } from "@tanstack/svelte-query";
 import { z } from "zod";
 import { getDaemonClient } from "../daemon-client.ts";
-import { sessionEventStream } from "../utils/session-event-stream.ts";
+import { subscribeToSessionEvents } from "../shared-worker/client.ts";
 
 // ==============================================================================
 // QUERY FACTORIES
@@ -54,7 +54,7 @@ export const sessionQueries = {
             SessionStreamEvent | EphemeralChunk,
             ReturnType<typeof initialSessionView>
           >({
-            streamFn: ({ signal }) => sessionEventStream(sessionId, { signal }),
+            streamFn: ({ signal }) => subscribeToSessionEvents(sessionId, { signal }),
             reducer: reduceSessionEvent,
             initialValue: initialSessionView(),
           })

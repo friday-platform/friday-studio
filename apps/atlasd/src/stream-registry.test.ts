@@ -10,6 +10,13 @@ import {
   StreamRegistry,
 } from "./stream-registry.ts";
 
+/** Single workspace for all tests except the cross-tenant block below.
+ *  Registry methods now take `(workspaceId, chatId)`; using one
+ *  workspace per test keeps the existing assertions readable while
+ *  the new cross-tenant case proves keys don't collide across
+ *  workspaces. */
+const WS = "ws-test";
+
 /** Create a minimal test event */
 function makeEvent(id: number): AtlasUIMessageChunk {
   return { type: "text-delta", id: `msg-${id}`, delta: `event-${id}` };
@@ -35,10 +42,10 @@ describe("StreamRegistry", () => {
   describe("createStream", () => {
     it("creates buffer with correct initial state", () => {
       const before = Date.now();
-      registry.createStream("chat-1");
+      registry.createStream(WS, "chat-1");
       const after = Date.now();
 
-      const buffer = registry.getStream("chat-1");
+      const buffer = registry.getStream(WS, "chat-1");
       expect.assert(buffer !== undefined, "buffer should exist");
 
       expect(buffer.chatId).toBe("chat-1");
@@ -52,11 +59,11 @@ describe("StreamRegistry", () => {
     });
 
     it("cancels existing stream for same chatId", () => {
-      registry.createStream("chat-1");
-      const first = registry.getStream("chat-1");
+      registry.createStream(WS, "chat-1");
+      const first = registry.getStream(WS, "chat-1");
 
-      registry.createStream("chat-1");
-      const second = registry.getStream("chat-1");
+      registry.createStream(WS, "chat-1");
+      const second = registry.getStream(WS, "chat-1");
 
       // Should be a new buffer (different reference)
       expect(first).not.toBe(second);
@@ -65,7 +72,7 @@ describe("StreamRegistry", () => {
     });
 
     it("sends [DONE] to old subscribers when cancelling", () => {
-      registry.createStream("chat-1");
+      registry.createStream(WS, "chat-1");
 
       const received: Uint8Array[] = [];
       let closeCalled = false;
@@ -75,10 +82,10 @@ describe("StreamRegistry", () => {
           closeCalled = true;
         },
       });
-      registry.subscribe("chat-1", controller);
+      registry.subscribe(WS, "chat-1", controller);
 
       // Creating a new stream for the same chatId cancels the old one
-      registry.createStream("chat-1");
+      registry.createStream(WS, "chat-1");
 
       // Old subscriber should have received [DONE] before close
       const decoder = new TextDecoder();
@@ -91,25 +98,25 @@ describe("StreamRegistry", () => {
 
   describe("getStream", () => {
     it("returns undefined for nonexistent chatId", () => {
-      const buffer = registry.getStream("nonexistent");
+      const buffer = registry.getStream(WS, "nonexistent");
       expect(buffer).toBeUndefined();
     });
 
     it("returns buffer for existing chatId", () => {
-      registry.createStream("chat-1");
-      const buffer = registry.getStream("chat-1");
+      registry.createStream(WS, "chat-1");
+      const buffer = registry.getStream(WS, "chat-1");
       expect(buffer?.chatId).toBe("chat-1");
     });
   });
 
   describe("appendEvent", () => {
     it("appends event to buffer and updates lastEventAt", () => {
-      registry.createStream("chat-1");
+      registry.createStream(WS, "chat-1");
       const beforeAppend = Date.now();
 
-      registry.appendEvent("chat-1", makeEvent(1));
+      registry.appendEvent(WS, "chat-1", makeEvent(1));
 
-      const buffer = registry.getStream("chat-1");
+      const buffer = registry.getStream(WS, "chat-1");
       expect.assert(buffer !== undefined, "buffer should exist");
       expect(buffer.events).toHaveLength(1);
       expect(buffer.events[0]?.type).toBe("text-delta");
@@ -117,16 +124,16 @@ describe("StreamRegistry", () => {
     });
 
     it("returns false for nonexistent stream", () => {
-      const result = registry.appendEvent("nonexistent", makeEvent(1));
+      const result = registry.appendEvent(WS, "nonexistent", makeEvent(1));
       expect(result).toBe(false);
     });
 
     it("returns false for inactive stream", () => {
-      registry.createStream("chat-1");
-      const buffer = registry.getStream("chat-1");
+      registry.createStream(WS, "chat-1");
+      const buffer = registry.getStream(WS, "chat-1");
       if (buffer) buffer.active = false;
 
-      const result = registry.appendEvent("chat-1", makeEvent(1));
+      const result = registry.appendEvent(WS, "chat-1", makeEvent(1));
       expect(result).toBe(false);
     });
 
@@ -135,17 +142,17 @@ describe("StreamRegistry", () => {
     // otherwise write into the next turn's buffer — the UI then sees a
     // text-delta with no preceding text-start and the AI SDK throws.
     it("drops the event when expectedBuffer no longer matches the current buffer", () => {
-      const turn1 = registry.createStream("chat-1");
-      const turn2 = registry.createStream("chat-1"); // replaces turn1
+      const turn1 = registry.createStream(WS, "chat-1");
+      const turn2 = registry.createStream(WS, "chat-1"); // replaces turn1
 
-      const result = registry.appendEvent("chat-1", makeEvent(1), turn1);
+      const result = registry.appendEvent(WS, "chat-1", makeEvent(1), turn1);
       expect(result).toBe(false);
       expect(turn2.events).toHaveLength(0);
     });
 
     it("appends when expectedBuffer matches the current buffer", () => {
-      const turn = registry.createStream("chat-1");
-      const result = registry.appendEvent("chat-1", makeEvent(1), turn);
+      const turn = registry.createStream(WS, "chat-1");
+      const result = registry.appendEvent(WS, "chat-1", makeEvent(1), turn);
       expect(result).toBe(true);
       expect(turn.events).toHaveLength(1);
     });
@@ -158,13 +165,13 @@ describe("StreamRegistry", () => {
     // keeping the following `text-delta` chunks crashes the AI SDK v6
     // client with "Received text-delta for missing text part with ID".
     it("stops recording events past MAX_EVENTS and flags replay disabled", () => {
-      registry.createStream("chat-1");
+      registry.createStream(WS, "chat-1");
 
       for (let i = 0; i < MAX_EVENTS + 100; i++) {
-        registry.appendEvent("chat-1", makeEvent(i));
+        registry.appendEvent(WS, "chat-1", makeEvent(i));
       }
 
-      const buffer = registry.getStream("chat-1");
+      const buffer = registry.getStream(WS, "chat-1");
       expect.assert(buffer !== undefined, "buffer should exist");
       expect(buffer.events).toHaveLength(MAX_EVENTS);
       expect(buffer.replayDisabled).toBe(true);
@@ -177,13 +184,13 @@ describe("StreamRegistry", () => {
     });
 
     it("still broadcasts post-overflow events to already-connected subscribers", () => {
-      registry.createStream("chat-1");
+      registry.createStream(WS, "chat-1");
 
       const received: Uint8Array[] = [];
-      registry.subscribe("chat-1", createController({ onEnqueue: (d) => received.push(d) }));
+      registry.subscribe(WS, "chat-1", createController({ onEnqueue: (d) => received.push(d) }));
 
       for (let i = 0; i < MAX_EVENTS + 10; i++) {
-        registry.appendEvent("chat-1", makeEvent(i));
+        registry.appendEvent(WS, "chat-1", makeEvent(i));
       }
 
       // Live subscriber sees every event regardless of buffer overflow —
@@ -192,13 +199,13 @@ describe("StreamRegistry", () => {
     });
 
     it("refuses new subscribers once replay is disabled", () => {
-      registry.createStream("chat-1");
+      registry.createStream(WS, "chat-1");
 
       for (let i = 0; i < MAX_EVENTS + 1; i++) {
-        registry.appendEvent("chat-1", makeEvent(i));
+        registry.appendEvent(WS, "chat-1", makeEvent(i));
       }
 
-      const result = registry.subscribe("chat-1", createController());
+      const result = registry.subscribe(WS, "chat-1", createController());
       expect(result).toBe(false);
     });
 
@@ -207,20 +214,20 @@ describe("StreamRegistry", () => {
     // at stream-registry.ts:214 (off-by-one would either silently drop the
     // last legal event or buffer one too many).
     it("accepts exactly MAX_EVENTS appends; the (N+1)th trips replayDisabled", () => {
-      registry.createStream("chat-1");
+      registry.createStream(WS, "chat-1");
 
       for (let i = 0; i < MAX_EVENTS; i++) {
-        registry.appendEvent("chat-1", makeEvent(i));
+        registry.appendEvent(WS, "chat-1", makeEvent(i));
       }
 
-      let buffer = registry.getStream("chat-1");
+      let buffer = registry.getStream(WS, "chat-1");
       expect.assert(buffer !== undefined, "buffer should exist");
       expect(buffer.events).toHaveLength(MAX_EVENTS);
       expect(buffer.replayDisabled).toBe(false);
 
-      registry.appendEvent("chat-1", makeEvent(MAX_EVENTS));
+      registry.appendEvent(WS, "chat-1", makeEvent(MAX_EVENTS));
 
-      buffer = registry.getStream("chat-1");
+      buffer = registry.getStream(WS, "chat-1");
       expect.assert(buffer !== undefined, "buffer should exist");
       expect(buffer.events).toHaveLength(MAX_EVENTS);
       expect(buffer.replayDisabled).toBe(true);
@@ -233,10 +240,10 @@ describe("StreamRegistry", () => {
     it("logs stream_buffer_overflow_replay_disabled exactly once per stream", () => {
       const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
       try {
-        registry.createStream("chat-1");
+        registry.createStream(WS, "chat-1");
 
         for (let i = 0; i < MAX_EVENTS + 100; i++) {
-          registry.appendEvent("chat-1", makeEvent(i));
+          registry.appendEvent(WS, "chat-1", makeEvent(i));
         }
 
         const overflowCalls = warnSpy.mock.calls.filter(
@@ -251,15 +258,15 @@ describe("StreamRegistry", () => {
 
   describe("subscribe", () => {
     it("replays buffered events to new subscriber with id: lines", () => {
-      registry.createStream("chat-1");
-      registry.appendEvent("chat-1", makeEvent(1));
-      registry.appendEvent("chat-1", makeEvent(2));
+      registry.createStream(WS, "chat-1");
+      registry.appendEvent(WS, "chat-1", makeEvent(1));
+      registry.appendEvent(WS, "chat-1", makeEvent(2));
 
       // Collect data sent to controller
       const received: Uint8Array[] = [];
       const controller = createController({ onEnqueue: (data) => received.push(data) });
 
-      registry.subscribe("chat-1", controller);
+      registry.subscribe(WS, "chat-1", controller);
 
       // Should have received 2 events (replay)
       expect(received).toHaveLength(2);
@@ -277,16 +284,16 @@ describe("StreamRegistry", () => {
     });
 
     it("replays only events past lastEventId when given a cursor", () => {
-      registry.createStream("chat-1");
-      registry.appendEvent("chat-1", makeEvent(1));
-      registry.appendEvent("chat-1", makeEvent(2));
-      registry.appendEvent("chat-1", makeEvent(3));
+      registry.createStream(WS, "chat-1");
+      registry.appendEvent(WS, "chat-1", makeEvent(1));
+      registry.appendEvent(WS, "chat-1", makeEvent(2));
+      registry.appendEvent(WS, "chat-1", makeEvent(3));
 
       const received: Uint8Array[] = [];
       const controller = createController({ onEnqueue: (data) => received.push(data) });
 
       // Client says "I have id 0, send me only what's after."
-      registry.subscribe("chat-1", controller, 0);
+      registry.subscribe(WS, "chat-1", controller, 0);
 
       expect(received).toHaveLength(2);
       const decoder = new TextDecoder();
@@ -295,32 +302,37 @@ describe("StreamRegistry", () => {
     });
 
     it("replays nothing when cursor is at the buffer tail (caught up)", () => {
-      registry.createStream("chat-1");
-      registry.appendEvent("chat-1", makeEvent(1));
-      registry.appendEvent("chat-1", makeEvent(2));
+      registry.createStream(WS, "chat-1");
+      registry.appendEvent(WS, "chat-1", makeEvent(1));
+      registry.appendEvent(WS, "chat-1", makeEvent(2));
 
       const received: Uint8Array[] = [];
       const controller = createController({ onEnqueue: (data) => received.push(data) });
 
       // Client already has id 1 (the last one). Subscribing with that
       // cursor must not replay anything — it just attaches for live events.
-      const ok = registry.subscribe("chat-1", controller, 1);
+      const ok = registry.subscribe(WS, "chat-1", controller, 1);
       expect(ok).toBe(true);
       expect(received).toHaveLength(0);
 
       // Confirms attach worked: a fresh broadcast lands.
-      registry.appendEvent("chat-1", makeEvent(3));
+      registry.appendEvent(WS, "chat-1", makeEvent(3));
       expect(received).toHaveLength(1);
       expect(new TextDecoder().decode(received[0])).toMatch(/^id: 2\ndata: /);
     });
 
     it("clamps a negative cursor to 0 (full replay)", () => {
-      registry.createStream("chat-1");
-      registry.appendEvent("chat-1", makeEvent(1));
-      registry.appendEvent("chat-1", makeEvent(2));
+      registry.createStream(WS, "chat-1");
+      registry.appendEvent(WS, "chat-1", makeEvent(1));
+      registry.appendEvent(WS, "chat-1", makeEvent(2));
 
       const received: Uint8Array[] = [];
-      registry.subscribe("chat-1", createController({ onEnqueue: (d) => received.push(d) }), -5);
+      registry.subscribe(
+        WS,
+        "chat-1",
+        createController({ onEnqueue: (d) => received.push(d) }),
+        -5,
+      );
 
       expect(received).toHaveLength(2);
     });
@@ -331,20 +343,23 @@ describe("StreamRegistry", () => {
       // client cursor is past the tool-input-start. On resume, the server
       // must re-send tool-input-start so the AI SDK's fresh activeResponse
       // can register the tool before processing the deltas.
-      registry.createStream("chat-1");
-      registry.appendEvent("chat-1", { type: "text-start", id: "txt-1" } as AtlasUIMessageChunk); // index 0
-      registry.appendEvent("chat-1", { type: "text-end", id: "txt-1" } as AtlasUIMessageChunk); // index 1
-      registry.appendEvent("chat-1", {
+      registry.createStream(WS, "chat-1");
+      registry.appendEvent(WS, "chat-1", {
+        type: "text-start",
+        id: "txt-1",
+      } as AtlasUIMessageChunk); // index 0
+      registry.appendEvent(WS, "chat-1", { type: "text-end", id: "txt-1" } as AtlasUIMessageChunk); // index 1
+      registry.appendEvent(WS, "chat-1", {
         type: "tool-input-start",
         toolCallId: "tc-1",
         toolName: "do-thing",
       } as AtlasUIMessageChunk); // index 2 — STILL OPEN
-      registry.appendEvent("chat-1", {
+      registry.appendEvent(WS, "chat-1", {
         type: "tool-input-delta",
         toolCallId: "tc-1",
         inputTextDelta: "{",
       } as AtlasUIMessageChunk); // index 3
-      registry.appendEvent("chat-1", {
+      registry.appendEvent(WS, "chat-1", {
         type: "tool-input-delta",
         toolCallId: "tc-1",
         inputTextDelta: "}",
@@ -355,7 +370,7 @@ describe("StreamRegistry", () => {
 
       // Client says it has up to id 3 (the first delta). It does NOT
       // have tool-input-start in its fresh activeResponse state.
-      registry.subscribe("chat-1", controller, 3);
+      registry.subscribe(WS, "chat-1", controller, 3);
 
       // Expect: tool-input-start (re-emit) + index 4 delta. The
       // closed text part (txt-1) does NOT get re-emitted.
@@ -370,20 +385,20 @@ describe("StreamRegistry", () => {
     });
 
     it("does not re-emit *-start when no cursor is given (full replay covers it)", () => {
-      registry.createStream("chat-1");
-      registry.appendEvent("chat-1", {
+      registry.createStream(WS, "chat-1");
+      registry.appendEvent(WS, "chat-1", {
         type: "tool-input-start",
         toolCallId: "tc-1",
         toolName: "do-thing",
       } as AtlasUIMessageChunk);
-      registry.appendEvent("chat-1", {
+      registry.appendEvent(WS, "chat-1", {
         type: "tool-input-delta",
         toolCallId: "tc-1",
         inputTextDelta: "{}",
       } as AtlasUIMessageChunk);
 
       const received: Uint8Array[] = [];
-      registry.subscribe("chat-1", createController({ onEnqueue: (d) => received.push(d) }));
+      registry.subscribe(WS, "chat-1", createController({ onEnqueue: (d) => received.push(d) }));
 
       // Full replay sends both events. Re-emit logic only fires when
       // startIdx > 0 — without a cursor we'd otherwise duplicate the
@@ -392,29 +407,29 @@ describe("StreamRegistry", () => {
     });
 
     it("forgets parts once their close event is recorded", () => {
-      registry.createStream("chat-1");
-      registry.appendEvent("chat-1", {
+      registry.createStream(WS, "chat-1");
+      registry.appendEvent(WS, "chat-1", {
         type: "tool-input-start",
         toolCallId: "tc-1",
         toolName: "do-thing",
       } as AtlasUIMessageChunk); // index 0
-      registry.appendEvent("chat-1", {
+      registry.appendEvent(WS, "chat-1", {
         type: "tool-output-available",
         toolCallId: "tc-1",
         output: "ok",
       } as AtlasUIMessageChunk); // index 1 — CLOSES the part
-      registry.appendEvent("chat-1", {
+      registry.appendEvent(WS, "chat-1", {
         type: "text-start",
         id: "txt-after",
       } as AtlasUIMessageChunk); // index 2
-      registry.appendEvent("chat-1", {
+      registry.appendEvent(WS, "chat-1", {
         type: "text-delta",
         id: "txt-after",
         delta: "post",
       } as AtlasUIMessageChunk); // index 3
 
       const received: Uint8Array[] = [];
-      registry.subscribe("chat-1", createController({ onEnqueue: (d) => received.push(d) }), 2);
+      registry.subscribe(WS, "chat-1", createController({ onEnqueue: (d) => received.push(d) }), 2);
 
       // Only text-start (open) gets re-emitted; tool-input-start does
       // NOT, because its close event landed before the cursor.
@@ -431,25 +446,25 @@ describe("StreamRegistry", () => {
     // leak the part into `openParts` forever and re-emit a stale
     // `tool-input-start` past every subsequent cursor.
     it("forgets a tool part when tool-output-error closes it", () => {
-      registry.createStream("chat-1");
-      registry.appendEvent("chat-1", {
+      registry.createStream(WS, "chat-1");
+      registry.appendEvent(WS, "chat-1", {
         type: "tool-input-start",
         toolCallId: "tc-err",
         toolName: "do-thing",
       } as AtlasUIMessageChunk); // index 0
-      registry.appendEvent("chat-1", {
+      registry.appendEvent(WS, "chat-1", {
         type: "tool-output-error",
         toolCallId: "tc-err",
         errorText: "boom",
       } as AtlasUIMessageChunk); // index 1 — CLOSES the part
-      registry.appendEvent("chat-1", {
+      registry.appendEvent(WS, "chat-1", {
         type: "text-delta",
         id: "msg-1",
         delta: "post",
       } as AtlasUIMessageChunk); // index 2
 
       const received: Uint8Array[] = [];
-      registry.subscribe("chat-1", createController({ onEnqueue: (d) => received.push(d) }), 1);
+      registry.subscribe(WS, "chat-1", createController({ onEnqueue: (d) => received.push(d) }), 1);
 
       // No open parts left — only the post-cursor text-delta replays.
       expect(received).toHaveLength(1);
@@ -459,17 +474,23 @@ describe("StreamRegistry", () => {
     // `reasoning-end` closes a reasoning part. Same risk as
     // `tool-output-error`: untested = silent regression.
     it("forgets a reasoning part when reasoning-end closes it", () => {
-      registry.createStream("chat-1");
-      registry.appendEvent("chat-1", { type: "reasoning-start", id: "r-1" } as AtlasUIMessageChunk); // index 0
-      registry.appendEvent("chat-1", { type: "reasoning-end", id: "r-1" } as AtlasUIMessageChunk); // index 1 — CLOSES
-      registry.appendEvent("chat-1", {
+      registry.createStream(WS, "chat-1");
+      registry.appendEvent(WS, "chat-1", {
+        type: "reasoning-start",
+        id: "r-1",
+      } as AtlasUIMessageChunk); // index 0
+      registry.appendEvent(WS, "chat-1", {
+        type: "reasoning-end",
+        id: "r-1",
+      } as AtlasUIMessageChunk); // index 1 — CLOSES
+      registry.appendEvent(WS, "chat-1", {
         type: "text-delta",
         id: "msg-1",
         delta: "post",
       } as AtlasUIMessageChunk); // index 2
 
       const received: Uint8Array[] = [];
-      registry.subscribe("chat-1", createController({ onEnqueue: (d) => received.push(d) }), 1);
+      registry.subscribe(WS, "chat-1", createController({ onEnqueue: (d) => received.push(d) }), 1);
 
       // Closed reasoning part must not re-emit.
       expect(received).toHaveLength(1);
@@ -485,24 +506,24 @@ describe("StreamRegistry", () => {
     // `input-streaming` with no `input` recorded. We MUST re-emit the
     // latest open frame (here, `tool-input-available`).
     it("re-emits tool-input-available when cursor lands between it and tool-output-available", () => {
-      registry.createStream("chat-1");
-      registry.appendEvent("chat-1", {
+      registry.createStream(WS, "chat-1");
+      registry.appendEvent(WS, "chat-1", {
         type: "tool-input-start",
         toolCallId: "tc-1",
         toolName: "do-thing",
       } as AtlasUIMessageChunk); // index 0
-      registry.appendEvent("chat-1", {
+      registry.appendEvent(WS, "chat-1", {
         type: "tool-input-delta",
         toolCallId: "tc-1",
         inputTextDelta: '{"x":1}',
       } as AtlasUIMessageChunk); // index 1
-      registry.appendEvent("chat-1", {
+      registry.appendEvent(WS, "chat-1", {
         type: "tool-input-available",
         toolCallId: "tc-1",
         toolName: "do-thing",
         input: { x: 1 },
       } as AtlasUIMessageChunk); // index 2 — UPDATES the open frame
-      registry.appendEvent("chat-1", {
+      registry.appendEvent(WS, "chat-1", {
         type: "text-delta",
         id: "msg-1",
         delta: "post",
@@ -510,6 +531,7 @@ describe("StreamRegistry", () => {
 
       const received: Uint8Array[] = [];
       registry.subscribe(
+        WS,
         "chat-1",
         createController({ onEnqueue: (d) => received.push(d) }),
         2, // client has up to tool-input-available
@@ -533,21 +555,21 @@ describe("StreamRegistry", () => {
     // still register it as an opener so resume re-emits it past the
     // cursor.
     it("treats tool-input-available as an opener even without a prior tool-input-start", () => {
-      registry.createStream("chat-1");
-      registry.appendEvent("chat-1", {
+      registry.createStream(WS, "chat-1");
+      registry.appendEvent(WS, "chat-1", {
         type: "tool-input-available",
         toolCallId: "tc-direct",
         toolName: "do-thing",
         input: { y: 2 },
       } as AtlasUIMessageChunk); // index 0
-      registry.appendEvent("chat-1", {
+      registry.appendEvent(WS, "chat-1", {
         type: "text-delta",
         id: "msg-1",
         delta: "post",
       } as AtlasUIMessageChunk); // index 1
 
       const received: Uint8Array[] = [];
-      registry.subscribe("chat-1", createController({ onEnqueue: (d) => received.push(d) }), 0);
+      registry.subscribe(WS, "chat-1", createController({ onEnqueue: (d) => received.push(d) }), 0);
 
       // tool-input-available re-emits at its original frame id, then
       // post-cursor text-delta lands.
@@ -565,21 +587,22 @@ describe("StreamRegistry", () => {
     // to `partKey`) trips an obvious red and forces the author to revisit
     // the rationale.
     it("does NOT track start-step or finish-step in openParts", () => {
-      registry.createStream("chat-1");
-      registry.appendEvent("chat-1", { type: "start-step" } as AtlasUIMessageChunk);
-      registry.appendEvent("chat-1", { type: "finish-step" } as AtlasUIMessageChunk);
+      registry.createStream(WS, "chat-1");
+      registry.appendEvent(WS, "chat-1", { type: "start-step" } as AtlasUIMessageChunk);
+      registry.appendEvent(WS, "chat-1", { type: "finish-step" } as AtlasUIMessageChunk);
 
-      const buffer = registry.getStream("chat-1");
+      const buffer = registry.getStream(WS, "chat-1");
       expect.assert(buffer !== undefined, "buffer should exist");
       expect(buffer.openParts.size).toBe(0);
     });
 
     it("replays nothing when cursor is past the buffer tail", () => {
-      registry.createStream("chat-1");
-      registry.appendEvent("chat-1", makeEvent(1));
+      registry.createStream(WS, "chat-1");
+      registry.appendEvent(WS, "chat-1", makeEvent(1));
 
       const received: Uint8Array[] = [];
       const ok = registry.subscribe(
+        WS,
         "chat-1",
         createController({ onEnqueue: (d) => received.push(d) }),
         99,
@@ -593,59 +616,59 @@ describe("StreamRegistry", () => {
     });
 
     it("adds controller to subscribers set", () => {
-      registry.createStream("chat-1");
+      registry.createStream(WS, "chat-1");
 
       const controller = createController();
 
-      registry.subscribe("chat-1", controller);
+      registry.subscribe(WS, "chat-1", controller);
 
-      const buffer = registry.getStream("chat-1");
+      const buffer = registry.getStream(WS, "chat-1");
       expect(buffer?.subscribers.has(controller)).toBe(true);
     });
 
     it("returns false for nonexistent stream", () => {
       const controller = createController();
 
-      const result = registry.subscribe("nonexistent", controller);
+      const result = registry.subscribe(WS, "nonexistent", controller);
       expect(result).toBe(false);
     });
 
     it("returns false for finished stream", () => {
-      registry.createStream("chat-1");
-      registry.appendEvent("chat-1", makeEvent(1));
-      registry.finishStream("chat-1");
+      registry.createStream(WS, "chat-1");
+      registry.appendEvent(WS, "chat-1", makeEvent(1));
+      registry.finishStream(WS, "chat-1");
 
       const controller = createController();
-      const result = registry.subscribe("chat-1", controller);
+      const result = registry.subscribe(WS, "chat-1", controller);
       expect(result).toBe(false);
     });
   });
 
   describe("unsubscribe", () => {
     it("removes controller from subscribers set", () => {
-      registry.createStream("chat-1");
+      registry.createStream(WS, "chat-1");
 
       const controller = createController();
 
-      registry.subscribe("chat-1", controller);
-      registry.unsubscribe("chat-1", controller);
+      registry.subscribe(WS, "chat-1", controller);
+      registry.unsubscribe(WS, "chat-1", controller);
 
-      const buffer = registry.getStream("chat-1");
+      const buffer = registry.getStream(WS, "chat-1");
       expect(buffer?.subscribers.has(controller)).toBe(false);
     });
   });
 
   describe("broadcast", () => {
     it("broadcasts new events to all subscribers", () => {
-      registry.createStream("chat-1");
+      registry.createStream(WS, "chat-1");
 
       const received1: Uint8Array[] = [];
       const received2: Uint8Array[] = [];
 
-      registry.subscribe("chat-1", createController({ onEnqueue: (d) => received1.push(d) }));
-      registry.subscribe("chat-1", createController({ onEnqueue: (d) => received2.push(d) }));
+      registry.subscribe(WS, "chat-1", createController({ onEnqueue: (d) => received1.push(d) }));
+      registry.subscribe(WS, "chat-1", createController({ onEnqueue: (d) => received2.push(d) }));
 
-      registry.appendEvent("chat-1", makeEvent(99));
+      registry.appendEvent(WS, "chat-1", makeEvent(99));
 
       // Both subscribers should receive the new event (on top of empty replay)
       expect(received1).toHaveLength(1);
@@ -657,13 +680,13 @@ describe("StreamRegistry", () => {
     });
 
     it("broadcasts new events with monotonic id: lines", () => {
-      registry.createStream("chat-1");
+      registry.createStream(WS, "chat-1");
       const received: Uint8Array[] = [];
-      registry.subscribe("chat-1", createController({ onEnqueue: (d) => received.push(d) }));
+      registry.subscribe(WS, "chat-1", createController({ onEnqueue: (d) => received.push(d) }));
 
-      registry.appendEvent("chat-1", makeEvent(1));
-      registry.appendEvent("chat-1", makeEvent(2));
-      registry.appendEvent("chat-1", makeEvent(3));
+      registry.appendEvent(WS, "chat-1", makeEvent(1));
+      registry.appendEvent(WS, "chat-1", makeEvent(2));
+      registry.appendEvent(WS, "chat-1", makeEvent(3));
 
       const decoder = new TextDecoder();
       expect(decoder.decode(received[0])).toMatch(/^id: 0\ndata: /);
@@ -672,15 +695,15 @@ describe("StreamRegistry", () => {
     });
 
     it("omits id: line when buffer is replay-disabled (post-overflow)", () => {
-      registry.createStream("chat-1");
+      registry.createStream(WS, "chat-1");
       const received: Uint8Array[] = [];
-      registry.subscribe("chat-1", createController({ onEnqueue: (d) => received.push(d) }));
+      registry.subscribe(WS, "chat-1", createController({ onEnqueue: (d) => received.push(d) }));
 
       // Force the buffer past MAX_EVENTS to trip replayDisabled. The first
       // MAX_EVENTS frames carry an id; subsequent broadcasts to live
       // subscribers omit it because replay is no longer possible.
       for (let i = 0; i < MAX_EVENTS + 2; i++) {
-        registry.appendEvent("chat-1", makeEvent(i));
+        registry.appendEvent(WS, "chat-1", makeEvent(i));
       }
 
       const decoder = new TextDecoder();
@@ -693,7 +716,7 @@ describe("StreamRegistry", () => {
     });
 
     it("unsubscribing one does not affect others", () => {
-      registry.createStream("chat-1");
+      registry.createStream(WS, "chat-1");
 
       const received1: Uint8Array[] = [];
       const received2: Uint8Array[] = [];
@@ -701,11 +724,11 @@ describe("StreamRegistry", () => {
       const controller1 = createController({ onEnqueue: (d) => received1.push(d) });
       const controller2 = createController({ onEnqueue: (d) => received2.push(d) });
 
-      registry.subscribe("chat-1", controller1);
-      registry.subscribe("chat-1", controller2);
+      registry.subscribe(WS, "chat-1", controller1);
+      registry.subscribe(WS, "chat-1", controller2);
 
-      registry.unsubscribe("chat-1", controller1);
-      registry.appendEvent("chat-1", makeEvent(1));
+      registry.unsubscribe(WS, "chat-1", controller1);
+      registry.appendEvent(WS, "chat-1", makeEvent(1));
 
       expect(received1).toHaveLength(0);
       expect(received2).toHaveLength(1);
@@ -714,15 +737,15 @@ describe("StreamRegistry", () => {
 
   describe("finishStream", () => {
     it("marks stream as inactive", () => {
-      registry.createStream("chat-1");
-      registry.finishStream("chat-1");
+      registry.createStream(WS, "chat-1");
+      registry.finishStream(WS, "chat-1");
 
-      const buffer = registry.getStream("chat-1");
+      const buffer = registry.getStream(WS, "chat-1");
       expect(buffer?.active).toBe(false);
     });
 
     it("closes all subscribers", () => {
-      registry.createStream("chat-1");
+      registry.createStream(WS, "chat-1");
 
       let closeCalled = false;
       const controller = createController({
@@ -731,32 +754,32 @@ describe("StreamRegistry", () => {
         },
       });
 
-      registry.subscribe("chat-1", controller);
-      registry.finishStream("chat-1");
+      registry.subscribe(WS, "chat-1", controller);
+      registry.finishStream(WS, "chat-1");
 
       expect(closeCalled).toBe(true);
     });
 
     it("clears subscribers set", () => {
-      registry.createStream("chat-1");
+      registry.createStream(WS, "chat-1");
 
       const controller = createController();
 
-      registry.subscribe("chat-1", controller);
-      registry.finishStream("chat-1");
+      registry.subscribe(WS, "chat-1", controller);
+      registry.finishStream(WS, "chat-1");
 
-      const buffer = registry.getStream("chat-1");
+      const buffer = registry.getStream(WS, "chat-1");
       expect(buffer?.subscribers.size).toBe(0);
     });
 
     it("does nothing for nonexistent stream", () => {
       // Should not throw
-      registry.finishStream("nonexistent");
+      registry.finishStream(WS, "nonexistent");
     });
 
     it("sends [DONE] to subscribers before closing", () => {
-      registry.createStream("chat-1");
-      registry.appendEvent("chat-1", makeEvent(1));
+      registry.createStream(WS, "chat-1");
+      registry.appendEvent(WS, "chat-1", makeEvent(1));
 
       const received: Uint8Array[] = [];
       let closeCalled = false;
@@ -767,11 +790,11 @@ describe("StreamRegistry", () => {
         },
       });
 
-      registry.subscribe("chat-1", controller);
+      registry.subscribe(WS, "chat-1", controller);
       // received[0] = replay of event-1
       const replayCount = received.length;
 
-      registry.finishStream("chat-1");
+      registry.finishStream(WS, "chat-1");
 
       // Should have received [DONE] after the replay events
       expect(received.length).toBe(replayCount + 1);
@@ -785,7 +808,7 @@ describe("StreamRegistry", () => {
 
   describe("finishStreamIfCurrent", () => {
     it("closes the stream when the buffer matches", () => {
-      const buffer = registry.createStream("chat-1");
+      const buffer = registry.createStream(WS, "chat-1");
 
       let closeCalled = false;
       const controller = createController({
@@ -793,9 +816,9 @@ describe("StreamRegistry", () => {
           closeCalled = true;
         },
       });
-      registry.subscribe("chat-1", controller);
+      registry.subscribe(WS, "chat-1", controller);
 
-      registry.finishStreamIfCurrent("chat-1", buffer);
+      registry.finishStreamIfCurrent(WS, "chat-1", buffer);
 
       expect(closeCalled).toBe(true);
       expect(buffer.active).toBe(false);
@@ -803,12 +826,12 @@ describe("StreamRegistry", () => {
 
     it("no-ops when the buffer has been replaced by a new turn", () => {
       // First turn creates buffer A.
-      const bufferA = registry.createStream("chat-1");
+      const bufferA = registry.createStream(WS, "chat-1");
 
       // Second turn arrives and replaces A with B (simulating a queued
       // follow-up POST coming in while the first turn's delayed
       // finishStream is still pending).
-      const bufferB = registry.createStream("chat-1");
+      const bufferB = registry.createStream(WS, "chat-1");
       expect(bufferA).not.toBe(bufferB);
       expect(bufferA.active).toBe(false);
       expect(bufferB.active).toBe(true);
@@ -820,11 +843,11 @@ describe("StreamRegistry", () => {
           closeCalled = true;
         },
       });
-      registry.subscribe("chat-1", controller);
+      registry.subscribe(WS, "chat-1", controller);
 
       // The delayed timer from turn A fires, but the chatId now points at
       // buffer B. Guard must skip so B's subscriber stays alive.
-      registry.finishStreamIfCurrent("chat-1", bufferA);
+      registry.finishStreamIfCurrent(WS, "chat-1", bufferA);
 
       expect(closeCalled).toBe(false);
       expect(bufferB.active).toBe(true);
@@ -834,8 +857,8 @@ describe("StreamRegistry", () => {
 
   describe("shutdown", () => {
     it("sends [DONE] to all subscribers before closing", () => {
-      registry.createStream("chat-1");
-      registry.createStream("chat-2");
+      registry.createStream(WS, "chat-1");
+      registry.createStream(WS, "chat-2");
 
       const received1: Uint8Array[] = [];
       let close1 = false;
@@ -843,6 +866,7 @@ describe("StreamRegistry", () => {
       let close2 = false;
 
       registry.subscribe(
+        WS,
         "chat-1",
         createController({
           onEnqueue: (d) => received1.push(d),
@@ -852,6 +876,7 @@ describe("StreamRegistry", () => {
         }),
       );
       registry.subscribe(
+        WS,
         "chat-2",
         createController({
           onEnqueue: (d) => received2.push(d),
@@ -884,40 +909,41 @@ describe("StreamRegistry", () => {
 
     it("removes finished streams after FINISHED_TTL_MS", () => {
       registry.start();
-      registry.createStream("chat-1");
-      registry.finishStream("chat-1");
+      registry.createStream(WS, "chat-1");
+      registry.finishStream(WS, "chat-1");
 
-      const buffer = registry.getStream("chat-1");
+      const buffer = registry.getStream(WS, "chat-1");
       if (buffer) {
         buffer.lastEventAt = Date.now() - FINISHED_TTL_MS - 1000;
       }
 
       vi.advanceTimersByTime(CLEANUP_INTERVAL_MS);
 
-      expect(registry.getStream("chat-1")).toBeUndefined();
+      expect(registry.getStream(WS, "chat-1")).toBeUndefined();
     });
 
     it("removes stale active streams after STALE_TTL_MS", () => {
       registry.start();
-      registry.createStream("chat-1");
+      registry.createStream(WS, "chat-1");
 
-      const buffer = registry.getStream("chat-1");
+      const buffer = registry.getStream(WS, "chat-1");
       if (buffer) {
         buffer.lastEventAt = Date.now() - STALE_TTL_MS - 1000;
       }
 
       vi.advanceTimersByTime(CLEANUP_INTERVAL_MS);
 
-      expect(registry.getStream("chat-1")).toBeUndefined();
+      expect(registry.getStream(WS, "chat-1")).toBeUndefined();
     });
 
     it("sends [DONE] to subscribers when cleaning stale active streams", () => {
       registry.start();
-      registry.createStream("chat-1");
+      registry.createStream(WS, "chat-1");
 
       const received: Uint8Array[] = [];
       let closeCalled = false;
       registry.subscribe(
+        WS,
         "chat-1",
         createController({
           onEnqueue: (d) => received.push(d),
@@ -927,7 +953,7 @@ describe("StreamRegistry", () => {
         }),
       );
 
-      const buffer = registry.getStream("chat-1");
+      const buffer = registry.getStream(WS, "chat-1");
       if (buffer) {
         buffer.lastEventAt = Date.now() - STALE_TTL_MS - 1000;
       }
@@ -943,21 +969,54 @@ describe("StreamRegistry", () => {
 
     it("keeps recent finished streams", () => {
       registry.start();
-      registry.createStream("chat-1");
-      registry.finishStream("chat-1");
+      registry.createStream(WS, "chat-1");
+      registry.finishStream(WS, "chat-1");
 
       vi.advanceTimersByTime(CLEANUP_INTERVAL_MS);
 
-      expect(registry.getStream("chat-1")?.chatId).toBe("chat-1");
+      expect(registry.getStream(WS, "chat-1")?.chatId).toBe("chat-1");
     });
 
     it("keeps recent active streams", () => {
       registry.start();
-      registry.createStream("chat-1");
+      registry.createStream(WS, "chat-1");
 
       vi.advanceTimersByTime(CLEANUP_INTERVAL_MS);
 
-      expect(registry.getStream("chat-1")?.chatId).toBe("chat-1");
+      expect(registry.getStream(WS, "chat-1")?.chatId).toBe("chat-1");
+    });
+  });
+
+  describe("cross-workspace isolation", () => {
+    // Buffers are now keyed by `(workspaceId, chatId)`, so a client-
+    // supplied chat id that happens to collide with another workspace's
+    // active buffer must NOT clobber it. Without the workspace key, a
+    // POST to `/api/workspaces/A/chat` with a chat id that exists in
+    // workspace B would replace B's in-flight buffer wholesale.
+    it("createStream in workspace A leaves workspace B's buffer untouched", () => {
+      const bBuffer = registry.createStream("ws-B", "chat-collide");
+      registry.appendEvent("ws-B", "chat-collide", makeEvent(1));
+
+      registry.createStream("ws-A", "chat-collide");
+
+      expect(registry.getStream("ws-B", "chat-collide")).toBe(bBuffer);
+      expect(bBuffer.active).toBe(true);
+      expect(bBuffer.events).toHaveLength(1);
+    });
+
+    it("finishStream in workspace A does not finalise B's same-id buffer", () => {
+      const bBuffer = registry.createStream("ws-B", "chat-collide");
+      registry.createStream("ws-A", "chat-collide");
+
+      registry.finishStream("ws-A", "chat-collide");
+
+      expect(bBuffer.active).toBe(true);
+    });
+
+    it("getStream is workspace-scoped — null result on cross-workspace lookups", () => {
+      registry.createStream("ws-A", "chat-only-in-A");
+      expect(registry.getStream("ws-B", "chat-only-in-A")).toBeUndefined();
+      expect(registry.getStream("ws-A", "chat-only-in-A")?.chatId).toBe("chat-only-in-A");
     });
   });
 });

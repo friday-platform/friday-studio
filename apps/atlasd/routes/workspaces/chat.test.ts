@@ -18,7 +18,13 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 const { mockChatStorage, mockValidateMessages } = vi.hoisted(() => ({
   mockChatStorage: {
     listChatsByWorkspace: vi.fn<() => Promise<{ ok: boolean; data?: unknown; error?: string }>>(),
-    getChat: vi.fn<() => Promise<{ ok: boolean; data?: unknown; error?: string }>>(),
+    getChat:
+      vi.fn<
+        (
+          chatId: string,
+          workspaceId?: string,
+        ) => Promise<{ ok: boolean; data?: unknown; error?: string }>
+      >(),
     appendMessage: vi.fn<() => Promise<{ ok: boolean; error?: string }>>(),
     updateChatTitle: vi.fn<() => Promise<{ ok: boolean; data?: unknown; error?: string }>>(),
   },
@@ -27,15 +33,49 @@ const { mockChatStorage, mockValidateMessages } = vi.hoisted(() => ({
     .mockImplementation((msgs: unknown[]) => Promise.resolve(msgs)),
 }));
 
-vi.mock("@atlas/core/credentials", () => ({
-  extractTempestUserId: vi.fn().mockReturnValue("user-123"),
-}));
-
 vi.mock("@atlas/core/chat/storage", () => ({ ChatStorage: mockChatStorage }));
+
+vi.mock("@atlas/core/users/storage", () => ({
+  UserStorage: { getCachedLocalUserId: () => "test-local-user" },
+}));
 
 vi.mock("@atlas/agent-sdk", () => ({
   validateAtlasUIMessages: mockValidateMessages,
   normalizeToUIMessages: (message: unknown) => [message],
+}));
+
+vi.mock("@atlas/core/workspace-members/storage", () => ({
+  WorkspaceMemberStorage: {
+    get: vi
+      .fn()
+      .mockImplementation((userId: string, wsId: string) =>
+        Promise.resolve({
+          ok: true,
+          data: { userId, wsId, role: "owner", addedAt: "2026-05-11T00:00:00.000Z" },
+        }),
+      ),
+    listByUser: vi.fn().mockResolvedValue({ ok: true, data: [] }),
+    listByWorkspace: vi.fn().mockResolvedValue({ ok: true, data: [] }),
+    put: vi.fn().mockResolvedValue({ ok: true, data: null }),
+    putIfAbsent: vi.fn().mockResolvedValue({ ok: true, data: null }),
+    delete: vi.fn().mockResolvedValue({ ok: true, data: undefined }),
+  },
+  ensureWorkspaceMembersKVBucket: vi.fn(),
+  initWorkspaceMemberStorage: vi.fn(),
+  resetWorkspaceMemberStorageForTests: vi.fn(),
+}));
+
+// Shrink the byte cap so the cap branch is testable without allocating
+// tens of megabytes per assertion. Hoisted so the `vi.mock` factory below
+// can reference it. 1 MiB sits well above the ~300 KiB serialised size of
+// the 5000-message boundary fixtures (so those tests still 200) but small
+// enough that one explicit oversize message can blow past it cheaply.
+const { TEST_MAX_FULL_EXPORT_BYTES } = vi.hoisted(() => ({
+  TEST_MAX_FULL_EXPORT_BYTES: 1024 * 1024,
+}));
+vi.mock("./chat-limits.ts", () => ({
+  MAX_FULL_EXPORT_MESSAGES: 5000,
+  MAX_FULL_EXPORT_BYTES: TEST_MAX_FULL_EXPORT_BYTES,
 }));
 
 // Import the routes after mocks are set up
@@ -103,9 +143,10 @@ function createTestApp(
     sessionHistoryAdapter: {},
   };
 
-  const app = new Hono<{ Variables: { app: typeof mockContext } }>();
+  const app = new Hono<{ Variables: { app: typeof mockContext; userId?: string } }>();
   app.use("*", async (c, next) => {
     c.set("app", mockContext);
+    c.set("userId", "test-local-user");
     await next();
   });
   app.route("/:workspaceId/chat", workspaceChatRoutes);
@@ -139,13 +180,34 @@ function del(app: ReturnType<typeof createTestApp>["app"], path: string) {
 
 // Hoisted mocks share state across tests — reset call history and any
 // queued mockResolvedValueOnce values between cases.
-beforeEach(() => {
+beforeEach(async () => {
   mockChatStorage.listChatsByWorkspace.mockReset();
   mockChatStorage.getChat.mockReset();
   mockChatStorage.appendMessage.mockReset();
   mockChatStorage.updateChatTitle.mockReset();
   mockValidateMessages.mockReset();
   mockValidateMessages.mockImplementation((msgs: unknown[]) => Promise.resolve(msgs));
+  // Default chat lookup — covers the routes that now consult
+  // ChatStorage to prove a chatId belongs to the path workspace
+  // (POST `/` with existing chatId, GET/DELETE `:chatId/stream`).
+  // Tests that need a 404 / cross-workspace miss override this with
+  // `mockResolvedValue` / `mockResolvedValueOnce`.
+  mockChatStorage.getChat.mockResolvedValue({
+    ok: true,
+    data: { id: "chat-1", workspaceId: "ws-1", messages: [] },
+  });
+  // Reset the WorkspaceMemberStorage mock back to the permissive
+  // default. Individual tests override per-case (see the
+  // foreground-cross-tenant case below), and without this reset the
+  // override would leak into subsequent tests and 403 routes that
+  // were never meant to exercise the gate.
+  const { WorkspaceMemberStorage } = await import("@atlas/core/workspace-members/storage");
+  vi.mocked(WorkspaceMemberStorage.get).mockImplementation((userId, wsId) =>
+    Promise.resolve({
+      ok: true,
+      data: { userId, wsId, role: "owner" as const, addedAt: "2026-05-11T00:00:00.000Z" },
+    }),
+  );
 });
 
 describe("GET /:workspaceId/chat — list chats", () => {
@@ -198,7 +260,7 @@ describe("POST /:workspaceId/chat — create chat (Chat SDK path)", () => {
 
     // Verify the forwarded Request carries the body and userId header
     const forwarded = mockWebhooksAtlas.mock.calls[0]?.[0] as Request;
-    expect(forwarded.headers.get("X-Atlas-User-Id")).toBe("default-user");
+    expect(forwarded.headers.get("X-Atlas-User-Id")).toBe("test-local-user");
     const body = JSON.parse(await forwarded.text()) as Record<string, unknown>;
     expect(body.id).toBe("chat-1");
   });
@@ -260,6 +322,177 @@ describe("GET /:workspaceId/chat/:chatId — get chat", () => {
 
     expect(res.status).toBe(200);
     expect(mockChatStorage.getChat).toHaveBeenCalledWith(chatId, "ws-1");
+  });
+
+  // ?full controls the route-layer trim. Default behavior keeps the
+  // legacy last-100 slice for live UI rehydrate; ?full=true is the
+  // export preview path that needs every message.
+  describe("?full query parameter", () => {
+    function makeMessages(count: number): Array<{ id: string; role: string; content: string }> {
+      return Array.from({ length: count }, (_, i) => ({
+        id: `msg-${i}`,
+        role: i % 2 === 0 ? "user" : "assistant",
+        content: `message ${i}`,
+      }));
+    }
+
+    function makeChatData(messageCount: number): Record<string, unknown> {
+      return {
+        id: "chat-1",
+        workspaceId: "ws-1",
+        userId: "user-123",
+        title: "Test Chat",
+        messages: makeMessages(messageCount),
+        systemPromptContext: null,
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+      };
+    }
+
+    test("absent param trims to last 100 messages", async () => {
+      mockChatStorage.getChat.mockResolvedValue({ ok: true, data: makeChatData(150) });
+      const { app } = createTestApp();
+
+      const res = await app.request("/ws-1/chat/chat-1");
+
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { messages: Array<{ id: string }> };
+      expect(body.messages).toHaveLength(100);
+      // Slice keeps the tail — first returned message is index 50.
+      expect(body.messages[0]?.id).toBe("msg-50");
+      expect(body.messages.at(-1)?.id).toBe("msg-149");
+    });
+
+    test("?full=true returns every message without slicing", async () => {
+      mockChatStorage.getChat.mockResolvedValue({ ok: true, data: makeChatData(150) });
+      const { app } = createTestApp();
+
+      const res = await app.request("/ws-1/chat/chat-1?full=true");
+
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { messages: Array<{ id: string }> };
+      expect(body.messages).toHaveLength(150);
+      expect(body.messages[0]?.id).toBe("msg-0");
+      expect(body.messages.at(-1)?.id).toBe("msg-149");
+    });
+
+    test("?full=false trims to last 100 (only literal 'true' opts in)", async () => {
+      mockChatStorage.getChat.mockResolvedValue({ ok: true, data: makeChatData(150) });
+      const { app } = createTestApp();
+
+      const res = await app.request("/ws-1/chat/chat-1?full=false");
+
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { messages: Array<{ id: string }> };
+      expect(body.messages).toHaveLength(100);
+    });
+
+    test.each([
+      "1",
+      "yes",
+      "TRUE",
+      "",
+    ])("?full=%s passes through cleanly and falls back to last-100 trim", async (value) => {
+      mockChatStorage.getChat.mockResolvedValue({ ok: true, data: makeChatData(150) });
+      const { app } = createTestApp();
+
+      const res = await app.request(`/ws-1/chat/chat-1?full=${value}`);
+
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { messages: Array<{ id: string }> };
+      expect(body.messages).toHaveLength(100);
+    });
+
+    // `validateAtlasUIMessages` walks every message and sanitises HTML, so
+    // an unbounded array on `?full=true` lets a single pathological chat
+    // pin the daemon. The cap rejects with 413 *before* we hand the array
+    // to the validator. The trimmed view is bounded at 100 so it isn't
+    // affected.
+    test("?full=true with messages.length > 5000 returns 413 without invoking validator", async () => {
+      mockChatStorage.getChat.mockResolvedValue({ ok: true, data: makeChatData(5001) });
+      const { app } = createTestApp();
+
+      const res = await app.request("/ws-1/chat/chat-1?full=true");
+
+      expect(res.status).toBe(413);
+      const body = (await res.json()) as JsonBody;
+      expect(body.error).toBe("Chat too large to export");
+      expect(body.messageCount).toBe(5001);
+      expect(body.limit).toBe(5000);
+      expect(mockValidateMessages).not.toHaveBeenCalled();
+    });
+
+    test("?full=true with messages.length === 5000 succeeds at the boundary", async () => {
+      mockChatStorage.getChat.mockResolvedValue({ ok: true, data: makeChatData(5000) });
+      const { app } = createTestApp();
+
+      const res = await app.request("/ws-1/chat/chat-1?full=true");
+
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { messages: Array<{ id: string }> };
+      expect(body.messages).toHaveLength(5000);
+      expect(mockValidateMessages).toHaveBeenCalledOnce();
+    });
+
+    // The message-count cap bounds validator walk time but not per-message
+    // size. Without a byte cap, a 4-message chat with a 200 MB tool output
+    // would be sanitised, JSON-stringified, and shipped — pinning RAM on
+    // both the daemon and the orchestrator. The byte cap rejects the
+    // serialised payload before it leaves the daemon.
+    test("?full=true returns 413 when serialised payload exceeds MAX_FULL_EXPORT_BYTES", async () => {
+      // Within the 5000-message ceiling, but one message carries a string
+      // large enough that JSON-stringifying the whole response exceeds
+      // the test-only 1 MiB cap.
+      const fat = "x".repeat(TEST_MAX_FULL_EXPORT_BYTES + 1024);
+      mockChatStorage.getChat.mockResolvedValue({
+        ok: true,
+        data: {
+          id: "chat-1",
+          workspaceId: "ws-1",
+          userId: "user-123",
+          title: "Test Chat",
+          messages: [{ id: "msg-0", role: "user", content: fat }],
+          systemPromptContext: null,
+          createdAt: "2026-01-01T00:00:00Z",
+          updatedAt: "2026-01-01T00:00:00Z",
+        },
+      });
+      const { app } = createTestApp();
+
+      const res = await app.request("/ws-1/chat/chat-1?full=true");
+
+      expect(res.status).toBe(413);
+      const body = (await res.json()) as JsonBody;
+      expect(body.error).toBe("Chat too large to export");
+      expect(typeof body.payloadBytes).toBe("number");
+      expect(body.payloadBytes).toBeGreaterThan(TEST_MAX_FULL_EXPORT_BYTES);
+      expect(body.limit).toBe(TEST_MAX_FULL_EXPORT_BYTES);
+    });
+
+    test("default (live UI) path is unaffected by the byte cap", async () => {
+      // The trimmed view is bounded at 100 messages and uses `c.json` (not
+      // the byte-capped path), so a chat that would be 413 under
+      // `?full=true` still serves a normal 200 here.
+      const fat = "y".repeat(TEST_MAX_FULL_EXPORT_BYTES + 1024);
+      mockChatStorage.getChat.mockResolvedValue({
+        ok: true,
+        data: {
+          id: "chat-1",
+          workspaceId: "ws-1",
+          userId: "user-123",
+          title: "Test Chat",
+          messages: [{ id: "msg-0", role: "user", content: fat }],
+          systemPromptContext: null,
+          createdAt: "2026-01-01T00:00:00Z",
+          updatedAt: "2026-01-01T00:00:00Z",
+        },
+      });
+      const { app } = createTestApp();
+
+      const res = await app.request("/ws-1/chat/chat-1");
+
+      expect(res.status).toBe(200);
+    });
   });
 });
 
@@ -335,10 +568,11 @@ describe("GET /:workspaceId/chat/:chatId/stream — SSE stream reconnect", () =>
     });
 
     expect(res.status).toBe(200);
-    // 3rd argument is the parsed integer cursor — anything else lets
+    // 4th argument is the parsed integer cursor — anything else lets
     // resume fall back to full replay, which re-sends already-rendered
-    // text-deltas and produces duplicate content in the UI.
-    expect(subscribe).toHaveBeenCalledWith("chat-1", expect.anything(), 42);
+    // text-deltas and produces duplicate content in the UI. Registry
+    // is now keyed by `(workspaceId, chatId)` so they're args 1 and 2.
+    expect(subscribe).toHaveBeenCalledWith("ws-1", "chat-1", expect.anything(), 42);
   });
 
   test.each([
@@ -360,7 +594,9 @@ describe("GET /:workspaceId/chat/:chatId/stream — SSE stream reconnect", () =>
 
     await app.request("/ws-1/chat/chat-1/stream", { headers: { "Last-Event-ID": header } });
 
-    const callArg = subscribe.mock.calls[0]?.[2];
+    // Registry is keyed by `(workspaceId, chatId)`, so the cursor is
+    // now the 4th positional argument (was 3rd before re-keying).
+    const callArg = subscribe.mock.calls[0]?.[3];
     if (header === "1.5") {
       // parseInt("1.5", 10) === 1 — accepted as a valid non-negative int.
       // This is intentional: any prefix-numeric header is fine; the cursor
@@ -381,7 +617,7 @@ describe("DELETE /:workspaceId/chat/:chatId/stream — cancel stream", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as JsonBody;
     expect(body.success).toBe(true);
-    expect(mockStreamRegistry.finishStream).toHaveBeenCalledWith("chat-1");
+    expect(mockStreamRegistry.finishStream).toHaveBeenCalledWith("ws-1", "chat-1");
   });
 });
 
@@ -506,6 +742,107 @@ describe("POST /:workspaceId/chat — foreground workspace validation", () => {
 
     expect(res.status).toBe(200);
     expect(mockWebhooksAtlas).toHaveBeenCalledTimes(1);
+  });
+
+  // Regression for the foreground-context cross-tenant leak: the path
+  // workspace's member check is no longer enough — every
+  // `foreground_workspace_ids` entry has to pass requireWorkspaceMember
+  // for the caller, otherwise a member of `ws-1` could read `ws-2`'s
+  // config / chats by stuffing `ws-2` into the foreground list.
+  test("returns 403 when caller is not a member of a foreground workspace", async () => {
+    const { WorkspaceMemberStorage } = await import("@atlas/core/workspace-members/storage");
+    const memberGet = vi.mocked(WorkspaceMemberStorage.get);
+    memberGet.mockImplementation((userId, wsId) =>
+      Promise.resolve({
+        ok: true,
+        data:
+          wsId === "ws-1"
+            ? { userId, wsId, role: "owner" as const, addedAt: "2026-05-11T00:00:00.000Z" }
+            : null,
+      }),
+    );
+    const { app, mockContext } = createTestApp();
+    const manager = mockContext.getWorkspaceManager();
+    manager.find.mockImplementation(({ id }: { id: string }) =>
+      Promise.resolve({ id, name: `ws-${id}` }),
+    );
+
+    const res = await post(app, "/ws-1/chat", {
+      id: "chat-fg-leak",
+      message: { role: "user", parts: [{ type: "text", text: "hello" }] },
+      foreground_workspace_ids: ["ws-2"],
+    });
+
+    expect(res.status).toBe(403);
+  });
+});
+
+describe("stream routes — chatId must belong to path workspace", () => {
+  // Two layers of defence: the route checks the chat is in the path
+  // workspace (404 leak prevention), and the streamRegistry /
+  // chatTurnRegistry themselves are keyed by `(workspaceId, chatId)`
+  // so a misaddressed call still couldn't reach a foreign workspace's
+  // buffer. These tests exercise the route-level gate; the registry
+  // unit tests cover the keying.
+  test("GET /:chatId/stream returns 404 when chat doesn't exist in this workspace", async () => {
+    // Simulate the real storage: `getChat(chatId, "ws-1")` returns
+    // null because the chat lives in `ws-OTHER`. The blanket default
+    // in `beforeEach` would mask this — override per-test.
+    mockChatStorage.getChat.mockImplementation((_chatId: string, workspaceId?: string) =>
+      Promise.resolve(
+        workspaceId === "ws-OTHER"
+          ? { ok: true, data: { id: "chat-x", workspaceId: "ws-OTHER", messages: [] } }
+          : { ok: true, data: null },
+      ),
+    );
+    const { app } = createTestApp({
+      streamRegistry: {
+        getStream: vi.fn().mockReturnValue({ active: true, createdAt: Date.now() }),
+      },
+    });
+
+    const res = await app.request("/ws-1/chat/chat-x/stream");
+
+    expect(res.status).toBe(404);
+  });
+
+  test("DELETE /:chatId/stream returns 404 when chat doesn't exist in this workspace", async () => {
+    mockChatStorage.getChat.mockImplementation((_chatId: string, workspaceId?: string) =>
+      Promise.resolve(
+        workspaceId === "ws-OTHER"
+          ? { ok: true, data: { id: "chat-x", workspaceId: "ws-OTHER", messages: [] } }
+          : { ok: true, data: null },
+      ),
+    );
+    const { app, mockStreamRegistry } = createTestApp();
+
+    const res = await del(app, "/ws-1/chat/chat-x/stream");
+
+    expect(res.status).toBe(404);
+    expect(mockStreamRegistry.finishStream).not.toHaveBeenCalled();
+  });
+
+  test("POST / routes the chatTurnRegistry call through the path workspace, not the chat's foreign workspace", async () => {
+    // The registry is now keyed by `(workspaceId, chatId)`. Even if a
+    // caller smuggles a chatId that exists in another workspace, the
+    // call lands at `(ws-1, chatId)` — workspace B's controller at
+    // `(ws-B, chatId)` is untouched. The test verifies the route
+    // passes the *path* workspaceId to the registry, not anything
+    // derived from the body.
+    const { app, mockContext } = createTestApp();
+    const chatTurnReplace = vi.mocked(mockContext.chatTurnRegistry.replace);
+
+    const res = await post(app, "/ws-1/chat", {
+      id: "chat-foreign",
+      message: { role: "user", parts: [{ type: "text", text: "hi" }] },
+    });
+
+    expect(res.status).toBe(200);
+    expect(chatTurnReplace).toHaveBeenCalledWith("ws-1", "chat-foreign");
+    // Negative: a foreign workspaceId must never appear in the call.
+    for (const call of chatTurnReplace.mock.calls) {
+      expect(call[0]).toBe("ws-1");
+    }
   });
 });
 

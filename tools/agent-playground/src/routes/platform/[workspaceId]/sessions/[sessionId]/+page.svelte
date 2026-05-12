@@ -12,7 +12,7 @@
   import { AgentBlockCard, parseError, StepBlock } from "$lib/components/session";
   import WorkspaceBreadcrumb from "$lib/components/workspace/workspace-breadcrumb.svelte";
   import { formatDuration, formatSessionDate } from "$lib/utils/date";
-  import { sessionEventStream } from "$lib/utils/session-event-stream";
+  import { subscribeToSessionEvents } from "$lib/shared-worker/client.ts";
   import { tick } from "svelte";
 
   const sessionId = $derived(page.params.sessionId);
@@ -26,7 +26,7 @@
   const query = createQuery<SessionView>(() => ({
     queryKey: ["session-detail", sessionId],
     queryFn: experimental_streamedQuery<SessionStreamEvent | EphemeralChunk, SessionView>({
-      streamFn: () => sessionEventStream(sessionId),
+      streamFn: () => subscribeToSessionEvents(sessionId),
       reducer: reduceSessionEvent,
       initialValue: initialSessionView(),
     }),

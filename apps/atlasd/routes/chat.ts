@@ -1,12 +1,12 @@
-import process from "node:process";
 import { validateAtlasUIMessages } from "@atlas/agent-sdk";
 import { ChatStorage } from "@atlas/core/chat/storage";
-import { extractTempestUserId } from "@atlas/core/credentials";
 import { WorkspaceNotFoundError } from "@atlas/core/errors/workspace-not-found";
+import { UserStorage } from "@atlas/core/users/storage";
 import { logger } from "@atlas/logger";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { daemonFactory, USER_WORKSPACE_ID } from "../src/factory.ts";
+import { requireWorkspaceMember } from "../src/workspace-authz.ts";
 
 const appendMessageSchema = z.object({ message: z.unknown() });
 const updateTitleSchema = z.object({ title: z.string() });
@@ -14,15 +14,6 @@ const listChatsQuerySchema = z.object({
   limit: z.coerce.number().min(1).max(100).optional(),
   cursor: z.coerce.number().optional(),
 });
-
-/**
- * Extract userId from FRIDAY_KEY JWT.
- * Falls back to "default-user" in dev mode (no FRIDAY_KEY).
- */
-function getUserId(): string {
-  const atlasKey = process.env.FRIDAY_KEY;
-  return (atlasKey && extractTempestUserId(atlasKey)) || "default-user";
-}
 
 /**
  * Resolve a chat by trying the user workspace first, then the global (legacy) path.
@@ -40,8 +31,41 @@ async function resolveChat(chatId: string) {
   return null;
 }
 
+/**
+ * Legacy chats land in a "global" bucket whose `workspaceId` is one of
+ * the sentinel strings below (or absent). No membership rows exist
+ * for those — gating on `chat.workspaceId` directly would 403 every
+ * legacy chat for every user. Treat them as USER_WORKSPACE_ID-scoped,
+ * which the top-level `use("*")` middleware already verified.
+ * Mirrors `GLOBAL_WORKSPACE_IDS` in `@atlas/core/chat/storage`.
+ */
+const LEGACY_CHAT_WORKSPACE_IDS = new Set(["friday-conversation", "system"]);
+
+async function authorizeChatAccess(
+  c: Parameters<typeof requireWorkspaceMember>[0],
+  chatWorkspaceId: string,
+): Promise<void> {
+  if (LEGACY_CHAT_WORKSPACE_IDS.has(chatWorkspaceId)) {
+    // Already verified USER_WORKSPACE_ID membership in the use("*") chain.
+    return;
+  }
+  await requireWorkspaceMember(c, chatWorkspaceId);
+}
+
 const chatRoutes = daemonFactory
   .createApp()
+  // Gate every `/api/chat/*` route on membership of the shared
+  // user-workspace (`USER_WORKSPACE_ID = "user"`). Local mode: the
+  // first-run bootstrap stamps the local user as owner, so the check
+  // is a no-op pass. Cloud mode: today the user-workspace is a single
+  // shared "user" key — the gate gives every authenticated caller
+  // access (still via membership rows), and the multi-user
+  // personal-workspace refactor (per-user wsId) is tracked separately.
+  // Either way, an unauthenticated request 401s here.
+  .use("*", async (c, next) => {
+    await requireWorkspaceMember(c, USER_WORKSPACE_ID);
+    await next();
+  })
   /**
    * GET /api/chat
    * List recent chats with cursor-based pagination.
@@ -107,7 +131,7 @@ const chatRoutes = daemonFactory
     }
 
     const headers = new Headers(c.req.raw.headers);
-    headers.set("X-Atlas-User-Id", getUserId());
+    headers.set("X-Atlas-User-Id", c.get("userId") ?? UserStorage.getCachedLocalUserId());
     const request = new Request(c.req.raw, { headers });
     return handler(request);
   })
@@ -120,11 +144,23 @@ const chatRoutes = daemonFactory
    * receiving events and the UI shows the conversation as complete.
    * Idempotent - safe to call multiple times.
    */
-  .delete("/:chatId/stream", (c) => {
+  .delete("/:chatId/stream", async (c) => {
     const ctx = c.get("app");
     const chatId = c.req.param("chatId");
 
-    ctx.streamRegistry.finishStream(chatId);
+    // Resolve the chat first to gate on its actual workspaceId — the
+    // top-level USER_WORKSPACE_ID check alone would let any authed
+    // caller stop another tenant's in-flight stream.
+    const chat = await resolveChat(chatId);
+    if (!chat) {
+      return c.json({ error: "Chat not found" }, 404);
+    }
+    await authorizeChatAccess(c, chat.workspaceId);
+
+    // streamRegistry is keyed by `(workspaceId, chatId)`. Pass the
+    // resolved chat's workspaceId, not the path's USER_WORKSPACE_ID,
+    // so legacy chats stored under their own workspaceId still match.
+    ctx.streamRegistry.finishStream(chat.workspaceId, chatId);
 
     return c.json({ success: true }, 200);
   })
@@ -136,11 +172,22 @@ const chatRoutes = daemonFactory
    * Returns 200 with SSE stream if active, replaying buffered events.
    * Returns 204 if stream doesn't exist or is finished.
    */
-  .get("/:chatId/stream", (c) => {
+  .get("/:chatId/stream", async (c) => {
     const ctx = c.get("app");
     const chatId = c.req.param("chatId");
 
-    const buffer = ctx.streamRegistry.getStream(chatId);
+    // Resolve to gate on the chat's actual workspaceId. The
+    // streamRegistry is keyed by `(workspaceId, chatId)`, so even if
+    // the gate were bypassed a member of one workspace couldn't reach
+    // another's buffer — but the explicit authorize call keeps the
+    // 404-vs-200 leak shut.
+    const chat = await resolveChat(chatId);
+    if (!chat) {
+      return c.body(null, 204);
+    }
+    await authorizeChatAccess(c, chat.workspaceId);
+
+    const buffer = ctx.streamRegistry.getStream(chat.workspaceId, chatId);
 
     // No active stream — return 204 so AI SDK's resumeStream() sets status to "ready".
     // We intentionally don't replay finished buffers here: the AI SDK creates a new
@@ -155,16 +202,17 @@ const chatRoutes = daemonFactory
     c.header("X-Turn-Started-At", String(buffer.createdAt));
 
     // Return SSE stream with replay + live events
+    const chatWorkspaceId = chat.workspaceId;
     const stream = new ReadableStream<Uint8Array>({
       start(controller) {
-        const subscribed = ctx.streamRegistry.subscribe(chatId, controller);
+        const subscribed = ctx.streamRegistry.subscribe(chatWorkspaceId, chatId, controller);
         if (!subscribed) {
           controller.close();
           return;
         }
 
         c.req.raw.signal.addEventListener("abort", () => {
-          ctx.streamRegistry.unsubscribe(chatId, controller);
+          ctx.streamRegistry.unsubscribe(chatWorkspaceId, chatId, controller);
         });
       },
     });
@@ -188,6 +236,11 @@ const chatRoutes = daemonFactory
     if (!chat) {
       return c.json({ error: "Chat not found" }, 404);
     }
+    // The middleware verified membership of USER_WORKSPACE_ID; gate
+    // the actual chat workspace too, otherwise a legacy chat in a
+    // different workspace is readable to anyone with USER_WORKSPACE_ID
+    // membership.
+    await authorizeChatAccess(c, chat.workspaceId);
 
     const { messages, systemPromptContext, ...metadata } = chat;
     // Return last 100 messages in chronological order (oldest first)
@@ -220,6 +273,7 @@ const chatRoutes = daemonFactory
     if (!chat) {
       return c.json({ error: "Chat not found" }, 404);
     }
+    await authorizeChatAccess(c, chat.workspaceId);
 
     // Validate the message format
     const [validatedMessage] = await validateAtlasUIMessages([message]);
@@ -252,23 +306,21 @@ const chatRoutes = daemonFactory
     const chatId = c.req.param("chatId");
     const { title } = c.req.valid("json");
 
-    const result = await ChatStorage.updateChatTitle(chatId, title, USER_WORKSPACE_ID);
+    // Resolve first so we can authz-check against the chat's actual
+    // workspaceId; legacy global chats may belong to a workspace the
+    // caller isn't a member of even when they're a member of
+    // USER_WORKSPACE_ID.
+    const chat = await resolveChat(chatId);
+    if (!chat) {
+      return c.json({ error: "Chat not found" }, 404);
+    }
+    await authorizeChatAccess(c, chat.workspaceId);
+
+    const result = await ChatStorage.updateChatTitle(chatId, title, chat.workspaceId);
     if (result.ok) {
       return c.json({ chat: result.data }, 200);
     }
-
-    if (result.error === "Chat not found") {
-      const globalResult = await ChatStorage.updateChatTitle(chatId, title);
-      if (globalResult.ok) {
-        return c.json({ chat: globalResult.data }, 200);
-      }
-      return c.json(
-        { error: globalResult.error },
-        globalResult.error === "Chat not found" ? 404 : 500,
-      );
-    }
-
-    return c.json({ error: result.error }, 500);
+    return c.json({ error: result.error }, result.error === "Chat not found" ? 404 : 500);
   })
 
   /**
@@ -278,23 +330,17 @@ const chatRoutes = daemonFactory
   .delete("/:chatId", async (c) => {
     const chatId = c.req.param("chatId");
 
-    const result = await ChatStorage.deleteChat(chatId, USER_WORKSPACE_ID);
+    const chat = await resolveChat(chatId);
+    if (!chat) {
+      return c.json({ error: "Chat not found" }, 404);
+    }
+    await authorizeChatAccess(c, chat.workspaceId);
+
+    const result = await ChatStorage.deleteChat(chatId, chat.workspaceId);
     if (result.ok) {
       return c.json({ success: true }, 200);
     }
-
-    if (result.error === "Chat not found") {
-      const globalResult = await ChatStorage.deleteChat(chatId);
-      if (globalResult.ok) {
-        return c.json({ success: true }, 200);
-      }
-      return c.json(
-        { error: globalResult.error },
-        globalResult.error === "Chat not found" ? 404 : 500,
-      );
-    }
-
-    return c.json({ error: result.error }, 500);
+    return c.json({ error: result.error }, result.error === "Chat not found" ? 404 : 500);
   });
 
 export default chatRoutes;

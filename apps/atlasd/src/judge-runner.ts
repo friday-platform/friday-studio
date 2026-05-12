@@ -21,7 +21,7 @@ import { getAtlasPlatformServerConfig } from "@atlas/oapi-client";
 import { judgeAgent } from "@atlas/system/agents";
 import { stringifyError } from "@atlas/utils";
 
-const JUDGE_TOOL_NAMES = ["artifacts_get", "parse_artifact"] as const;
+const JUDGE_TOOL_NAMES = ["get_artifact", "parse_artifact"] as const;
 
 async function createJudgeToolMap(
   abortSignal?: AbortSignal,

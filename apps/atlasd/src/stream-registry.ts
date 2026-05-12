@@ -3,11 +3,23 @@
  *
  * Maintains in-memory buffers of streaming events so clients that
  * disconnect can resume without missing messages.
+ *
+ * Buffers are keyed by `(workspaceId, chatId)` rather than `chatId`
+ * alone. Chat ids are client-supplied opaque strings — without
+ * workspace scoping, a member of workspace A could create / read /
+ * finish a stream buffer that workspace B owns by guessing or leaking
+ * the chat id. Every public method takes both args; internally the
+ * map key is `${workspaceId}:${chatId}`.
  */
 
 import process from "node:process";
 import type { AtlasUIMessageChunk } from "@atlas/agent-sdk";
 import { logger } from "@atlas/logger";
+
+/** Composite key — `${workspaceId}:${chatId}`. */
+function key(workspaceId: string, chatId: string): string {
+  return `${workspaceId}:${chatId}`;
+}
 
 /** Minimal interface for stream controllers - what we actually use */
 export interface StreamController {
@@ -42,6 +54,7 @@ const STALE_TTL_MS = 30 * 60 * 1000;
 const CLEANUP_INTERVAL_MS = 60 * 1000;
 
 export interface StreamBuffer {
+  workspaceId: string;
   chatId: string;
   events: AtlasUIMessageChunk[];
   active: boolean;
@@ -72,6 +85,7 @@ export function isStreamBuffer(value: unknown): value is StreamBuffer {
   if (typeof value !== "object" || value === null) return false;
   const v = value as Partial<Record<keyof StreamBuffer, unknown>>;
   return (
+    typeof v.workspaceId === "string" &&
     typeof v.chatId === "string" &&
     typeof v.active === "boolean" &&
     Array.isArray(v.events) &&
@@ -162,9 +176,10 @@ export class StreamRegistry {
     logger.info("StreamRegistry shutdown");
   }
 
-  /** Replaces any existing stream for the same chatId. */
-  createStream(chatId: string): StreamBuffer {
-    const existing = this.streams.get(chatId);
+  /** Replaces any existing stream for the same (workspace, chat). */
+  createStream(workspaceId: string, chatId: string): StreamBuffer {
+    const k = key(workspaceId, chatId);
+    const existing = this.streams.get(k);
     if (existing) {
       existing.active = false;
       StreamRegistry.closeSubscribers(existing.subscribers);
@@ -174,6 +189,7 @@ export class StreamRegistry {
 
     const now = Date.now();
     const buffer: StreamBuffer = {
+      workspaceId,
       chatId,
       events: [],
       active: true,
@@ -184,13 +200,13 @@ export class StreamRegistry {
       openParts: new Map(),
     };
 
-    this.streams.set(chatId, buffer);
-    logger.debug("Created stream buffer", { chatId });
+    this.streams.set(k, buffer);
+    logger.debug("Created stream buffer", { workspaceId, chatId });
     return buffer;
   }
 
-  getStream(chatId: string): StreamBuffer | undefined {
-    return this.streams.get(chatId);
+  getStream(workspaceId: string, chatId: string): StreamBuffer | undefined {
+    return this.streams.get(key(workspaceId, chatId));
   }
 
   /**
@@ -204,8 +220,13 @@ export class StreamRegistry {
    * dropping the oldest of a `text-start → text-delta* → text-end` triple
    * corrupts the UI message protocol for any future replay.
    */
-  appendEvent(chatId: string, event: AtlasUIMessageChunk, expectedBuffer?: StreamBuffer): boolean {
-    const buffer = this.streams.get(chatId);
+  appendEvent(
+    workspaceId: string,
+    chatId: string,
+    event: AtlasUIMessageChunk,
+    expectedBuffer?: StreamBuffer,
+  ): boolean {
+    const buffer = this.streams.get(key(workspaceId, chatId));
     if (!buffer?.active) {
       return false;
     }
@@ -217,6 +238,7 @@ export class StreamRegistry {
       if (buffer.events.length >= MAX_EVENTS) {
         buffer.replayDisabled = true;
         logger.warn("stream_buffer_overflow_replay_disabled", {
+          workspaceId,
           chatId,
           bufferedEvents: buffer.events.length,
           limit: MAX_EVENTS,
@@ -226,6 +248,7 @@ export class StreamRegistry {
         if (!this.ceilingWarned) {
           this.ceilingWarned = true;
           logger.warn("stream_registry_total_ceiling_hit_replay_disabled", {
+            workspaceId,
             chatId,
             totalEvents: this.totalEvents,
             ceiling: TOTAL_EVENT_CEILING,
@@ -282,8 +305,13 @@ export class StreamRegistry {
    * buffers — full replay of a finished stream would re-merge text-deltas
    * into the SDK's existing message and produce duplicates.
    */
-  subscribe(chatId: string, controller: StreamController, lastEventId?: number): boolean {
-    const buffer = this.streams.get(chatId);
+  subscribe(
+    workspaceId: string,
+    chatId: string,
+    controller: StreamController,
+    lastEventId?: number,
+  ): boolean {
+    const buffer = this.streams.get(key(workspaceId, chatId));
     if (!buffer?.active || buffer.replayDisabled) {
       return false;
     }
@@ -331,6 +359,7 @@ export class StreamRegistry {
 
     buffer.subscribers.add(controller);
     logger.debug("Subscriber added", {
+      workspaceId,
       chatId,
       subscriberCount: buffer.subscribers.size,
       replayedFrom: startIdx,
@@ -340,11 +369,15 @@ export class StreamRegistry {
     return true;
   }
 
-  unsubscribe(chatId: string, controller: StreamController): void {
-    const buffer = this.streams.get(chatId);
+  unsubscribe(workspaceId: string, chatId: string, controller: StreamController): void {
+    const buffer = this.streams.get(key(workspaceId, chatId));
     if (buffer) {
       buffer.subscribers.delete(controller);
-      logger.debug("Subscriber removed", { chatId, subscriberCount: buffer.subscribers.size });
+      logger.debug("Subscriber removed", {
+        workspaceId,
+        chatId,
+        subscriberCount: buffer.subscribers.size,
+      });
     }
   }
 
@@ -353,8 +386,8 @@ export class StreamRegistry {
    * not replayable — full replay would re-merge text-deltas into the SDK's
    * existing message. Late reconnects get 204 + page reload.
    */
-  finishStream(chatId: string): void {
-    const buffer = this.streams.get(chatId);
+  finishStream(workspaceId: string, chatId: string): void {
+    const buffer = this.streams.get(key(workspaceId, chatId));
     if (!buffer) {
       return;
     }
@@ -362,19 +395,19 @@ export class StreamRegistry {
     StreamRegistry.closeSubscribers(buffer.subscribers);
     buffer.active = false;
 
-    logger.debug("Stream finished", { chatId, eventCount: buffer.events.length });
+    logger.debug("Stream finished", { workspaceId, chatId, eventCount: buffer.events.length });
   }
 
   /**
    * No-op if a new turn has replaced the buffer since the caller scheduled
    * this — avoids ripping subscribers out from under an in-flight turn.
    */
-  finishStreamIfCurrent(chatId: string, expected: StreamBuffer): void {
-    const current = this.streams.get(chatId);
+  finishStreamIfCurrent(workspaceId: string, chatId: string, expected: StreamBuffer): void {
+    const current = this.streams.get(key(workspaceId, chatId));
     if (current !== expected) {
       return;
     }
-    this.finishStream(chatId);
+    this.finishStream(workspaceId, chatId);
   }
 
   private cleanup(): void {
@@ -382,12 +415,12 @@ export class StreamRegistry {
     let removed = 0;
     let eventsFreed = 0;
 
-    for (const [chatId, buffer] of this.streams) {
+    for (const [k, buffer] of this.streams) {
       const age = now - buffer.lastEventAt;
 
       if (!buffer.active && age > FINISHED_TTL_MS) {
         eventsFreed += buffer.events.length;
-        this.streams.delete(chatId);
+        this.streams.delete(k);
         removed++;
         continue;
       }
@@ -395,7 +428,7 @@ export class StreamRegistry {
       if (buffer.active && age > STALE_TTL_MS) {
         StreamRegistry.closeSubscribers(buffer.subscribers);
         eventsFreed += buffer.events.length;
-        this.streams.delete(chatId);
+        this.streams.delete(k);
         removed++;
       }
     }

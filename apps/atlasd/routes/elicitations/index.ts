@@ -6,14 +6,12 @@
  * Surface:
  *   - GET /              list with workspaceId/sessionId/status/kind filters
  *   - GET /:id           get one (404 if unknown)
- *   - GET /stream        Workspace-scoped SSE feed; subscribes to NATS
- *                        `elicitations.<wsid>.>` and forwards each envelope
- *                        as a `data:` frame
- *   - GET /stream/global Sanitized global SSE feed; subscribes to NATS
- *                        `elicitations.>` but strips sensitive fields
  *   - POST /:id/answer   { value, note?, answeredBy? } — server fills
  *                        `answeredAt`; flips status to `answered`
  *   - POST /:id/decline  { note? } — flips status to `declined`
+ *
+ * Live updates are delivered through the per-user firehose at
+ * `/api/me/stream`; no per-feed SSE handler lives here.
  */
 
 import {
@@ -21,26 +19,19 @@ import {
   ElicitationSchema,
   ElicitationStatusSchema,
   ElicitationStorage,
-  ElicitationSummarySchema,
   ToolAccessGrants,
 } from "@atlas/core";
 import { createLogger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
+import { HTTPException } from "hono/http-exception";
 import { describeRoute, resolver, validator } from "hono-openapi";
 import { z } from "zod";
 import { daemonFactory } from "../../src/factory.ts";
 import { errorResponseSchema } from "../../src/utils.ts";
+import { getAccessibleWorkspaceIds, requireWorkspaceMember } from "../../src/workspace-authz.ts";
 
 const elicitationApp = daemonFactory.createApp();
 const logger = createLogger({ component: "elicitation-routes" });
-
-const enc = new TextEncoder();
-
-/** Subjects use `[A-Za-z0-9_-]` only (jetstream-adapter sanitizes ids). */
-const SAFE_TOKEN_RE = /[^A-Za-z0-9_-]/g;
-function sanitizeToken(s: string): string {
-  return s.replace(SAFE_TOKEN_RE, "_");
-}
 
 // ---------------------------------------------------------------------------
 // GET / — list
@@ -81,7 +72,16 @@ elicitationApp.get(
   validator("query", ListQuerySchema),
   async (c) => {
     try {
+      const userId = c.get("userId");
+      if (!userId) return c.json({ error: "Unauthorized" }, 401);
+
       const { workspaceId, sessionId, status, kind } = c.req.valid("query");
+
+      // Workspace-scoped explicit filter: gate on membership.
+      if (workspaceId !== undefined) {
+        await requireWorkspaceMember(c, workspaceId);
+      }
+
       const result = await ElicitationStorage.list({
         ...(workspaceId !== undefined ? { workspaceId } : {}),
         ...(sessionId !== undefined ? { sessionId } : {}),
@@ -90,204 +90,25 @@ elicitationApp.get(
       if (!result.ok) {
         return c.json({ error: result.error }, 500);
       }
+
+      // Global view (no explicit workspaceId): filter to elicitations
+      // the caller can see based on their workspace memberships. Keeps
+      // the listing semantically the same — "everything I'm allowed to
+      // see" — without exposing other tenants' rows.
+      const accessible = workspaceId === undefined ? await getAccessibleWorkspaceIds(userId) : null;
+      const visible =
+        accessible === null
+          ? result.data
+          : result.data.filter((e) => accessible.has(e.workspaceId));
+
       // The storage layer doesn't filter by `kind` (no direct support),
       // so apply the filter here for parity with the documented surface.
-      const elicitations =
-        kind === undefined ? result.data : result.data.filter((e) => e.kind === kind);
+      const elicitations = kind === undefined ? visible : visible.filter((e) => e.kind === kind);
       return c.json({ elicitations, count: elicitations.length });
     } catch (error) {
+      if (error instanceof HTTPException) throw error;
       return c.json({ error: stringifyError(error) }, 500);
     }
-  },
-);
-
-// ---------------------------------------------------------------------------
-// GET /stream — SSE feed
-// ---------------------------------------------------------------------------
-
-const StreamQuerySchema = z.object({ workspaceId: z.string().min(1) });
-
-elicitationApp.get(
-  "/stream",
-  describeRoute({
-    tags: ["Elicitations"],
-    summary: "Subscribe to live elicitation events (SSE)",
-    description:
-      "Server-sent events feed of elicitation envelopes published to " +
-      "`elicitations.<workspaceId>.<sessionId>.<id>`. `workspaceId` is " +
-      "required so clients cannot passively subscribe to all workspaces. " +
-      "Each event arrives as a `data:` frame containing the full envelope JSON.",
-    responses: {
-      200: {
-        description:
-          "SSE stream (text/event-stream). Each frame is a JSON-encoded Elicitation envelope.",
-      },
-      400: {
-        description: "workspaceId query parameter is required",
-        content: { "application/json": { schema: resolver(errorResponseSchema) } },
-      },
-      503: {
-        description: "NATS connection not ready",
-        content: { "application/json": { schema: resolver(errorResponseSchema) } },
-      },
-    },
-  }),
-  validator("query", StreamQuerySchema),
-  async (c) => {
-    const { workspaceId } = c.req.valid("query");
-    const ctx = c.get("app");
-    const nc = ctx.daemon.getNatsConnection();
-    if (!nc) return c.json({ error: "NATS connection not ready" }, 503);
-
-    const subject = `elicitations.${sanitizeToken(workspaceId)}.>`;
-    const sub = nc.subscribe(subject);
-    // `subscribe()` returns before the broker registers the subscription;
-    // flush forces a PING/PONG round-trip so the SSE handshake honestly
-    // means "from now on, every event published to this subject."
-    await nc.flush();
-
-    const body = new ReadableStream<Uint8Array>({
-      start(controller) {
-        c.req.raw.signal.addEventListener("abort", () => {
-          try {
-            sub.unsubscribe();
-          } catch {
-            // already gone
-          }
-          try {
-            controller.close();
-          } catch {
-            // already closed
-          }
-        });
-
-        void (async () => {
-          try {
-            for await (const msg of sub) {
-              const payload = msg.string();
-              controller.enqueue(enc.encode(`data: ${payload}\n\n`));
-            }
-          } catch {
-            // for-await exited early — controller cancel can land before
-            // the abort listener fires. Fall through to the finally
-            // teardown so we never leak the NATS subscription.
-          } finally {
-            try {
-              sub.unsubscribe();
-            } catch {
-              // already gone
-            }
-            try {
-              controller.close();
-            } catch {
-              // already closed
-            }
-          }
-        })();
-      },
-    });
-
-    return c.body(body, 200, {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      Connection: "keep-alive",
-    });
-  },
-);
-
-// ---------------------------------------------------------------------------
-// GET /stream/global — sanitized global SSE feed
-// ---------------------------------------------------------------------------
-
-elicitationApp.get(
-  "/stream/global",
-  describeRoute({
-    tags: ["Elicitations"],
-    summary: "Subscribe to sanitized global elicitation updates (SSE)",
-    description:
-      "Server-sent events feed for global Activity/sidebar invalidation. " +
-      "Subscribes to all elicitation subjects but emits only metadata fields " +
-      "and never includes question text, pendingTool.args, options, or answers.",
-    responses: {
-      200: {
-        description:
-          "SSE stream (text/event-stream). Each frame is a JSON-encoded ElicitationSummary.",
-      },
-      503: {
-        description: "NATS connection not ready",
-        content: { "application/json": { schema: resolver(errorResponseSchema) } },
-      },
-    },
-  }),
-  async (c) => {
-    const ctx = c.get("app");
-    const nc = ctx.daemon.getNatsConnection();
-    if (!nc) return c.json({ error: "NATS connection not ready" }, 503);
-
-    const sub = nc.subscribe("elicitations.>");
-    await nc.flush();
-
-    const body = new ReadableStream<Uint8Array>({
-      start(controller) {
-        c.req.raw.signal.addEventListener("abort", () => {
-          try {
-            sub.unsubscribe();
-          } catch {
-            // already gone
-          }
-          try {
-            controller.close();
-          } catch {
-            // already closed
-          }
-        });
-
-        void (async () => {
-          try {
-            for await (const msg of sub) {
-              let raw: unknown;
-              try {
-                raw = JSON.parse(msg.string());
-              } catch (error) {
-                logger.warn("Dropping non-JSON elicitation event from global stream", {
-                  error: stringifyError(error),
-                });
-                continue;
-              }
-              const parsed = ElicitationSchema.safeParse(raw);
-              if (!parsed.success) {
-                logger.warn("Dropping invalid elicitation event from global stream", {
-                  error: parsed.error.message,
-                });
-                continue;
-              }
-              const safe = ElicitationSummarySchema.parse(parsed.data);
-              controller.enqueue(enc.encode(`data: ${JSON.stringify(safe)}\n\n`));
-            }
-          } catch {
-            // for-await exited early — controller cancel can land before
-            // the abort listener fires. Fall through to teardown.
-          } finally {
-            try {
-              sub.unsubscribe();
-            } catch {
-              // already gone
-            }
-            try {
-              controller.close();
-            } catch {
-              // already closed
-            }
-          }
-        })();
-      },
-    });
-
-    return c.body(body, 200, {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      Connection: "keep-alive",
-    });
   },
 );
 
@@ -324,8 +145,10 @@ elicitationApp.get(
       if (!result.data) {
         return c.json({ error: `Elicitation ${id} not found` }, 404);
       }
+      await requireWorkspaceMember(c, result.data.workspaceId);
       return c.json(result.data);
     } catch (error) {
+      if (error instanceof HTTPException) throw error;
       return c.json({ error: stringifyError(error) }, 500);
     }
   },
@@ -384,6 +207,9 @@ elicitationApp.post(
       if (!got.data) {
         return c.json({ error: `Elicitation ${id} not found` }, 404);
       }
+      // Workspace-scope authz: the elicitation carries its workspaceId;
+      // require the caller to be a member of that workspace.
+      await requireWorkspaceMember(c, got.data.workspaceId);
 
       const result = await ElicitationStorage.answer({
         id,
@@ -415,6 +241,7 @@ elicitationApp.post(
       }
       return c.json(result.data);
     } catch (error) {
+      if (error instanceof HTTPException) throw error;
       return c.json({ error: stringifyError(error) }, 500);
     }
   },
@@ -465,6 +292,7 @@ elicitationApp.post(
       if (!got.data) {
         return c.json({ error: `Elicitation ${id} not found` }, 404);
       }
+      await requireWorkspaceMember(c, got.data.workspaceId);
 
       const result = await ElicitationStorage.decline({
         id,
@@ -473,6 +301,7 @@ elicitationApp.post(
       if (!result.ok) return c.json({ error: result.error }, 500);
       return c.json(result.data);
     } catch (error) {
+      if (error instanceof HTTPException) throw error;
       return c.json({ error: stringifyError(error) }, 500);
     }
   },

@@ -29,6 +29,7 @@ export async function llmJudge(output: unknown, criteria: string): Promise<Score
     schema: evaluationSchema,
     experimental_repairText: repairJson,
     maxOutputTokens: 2000,
+    allowSystemInMessages: true,
     messages: [
       {
         role: "system",

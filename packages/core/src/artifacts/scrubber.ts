@@ -18,7 +18,7 @@
  * The replacement marker is short text describing what was lifted, the
  * resulting `artifactId`, byte size, and mime type. Downstream consumers
  * (chat-supervisor, cross-action `inputFrom`) call `display_artifact` or
- * `artifacts_get` to recover the bytes when needed.
+ * `get_artifact` to recover the bytes when needed.
  *
  * Failures (network, storage) are swallowed and logged so a lift failure
  * never breaks tool execution.
@@ -188,7 +188,7 @@ function refMarker(r: UploadResult, toolCtx: { serverId: string; toolName: strin
   return (
     `[attachment lifted to artifact ${r.artifactId} ` +
     `(${kb} KB, ${r.mimeType}, from ${toolCtx.serverId}/${toolCtx.toolName}) — ` +
-    `use display_artifact or artifacts_get to read]`
+    `use display_artifact or get_artifact to read]`
   );
 }
 
@@ -226,7 +226,12 @@ function sniffMimeFromBase64(base64: string): string | undefined {
  * extraction (subtype after `/`) yields `markdown` and `plain` which look
  * weird as filenames; this table corrects the common cases.
  */
-const MIME_EXT_OVERRIDES: Record<string, string> = { "text/plain": "txt", "text/markdown": "md" };
+const MIME_EXT_OVERRIDES: Record<string, string> = {
+  "text/plain": "txt",
+  "text/markdown": "md",
+  "text/csv": "csv",
+  "text/tab-separated-values": "tsv",
+};
 
 /** Synthetic filename when the source didn't carry one. */
 function defaultFilename(mime: string | undefined, toolCtx: { toolName: string }): string {
@@ -238,9 +243,10 @@ function defaultFilename(mime: string | undefined, toolCtx: { toolName: string }
 
 /**
  * Cheap, prefix-based sniff for large *text* tool results. Distinguishes
- * the four common shapes Friday's MCPs return so the artifact carries an
+ * the common shapes Friday's MCPs return so the artifact carries an
  * accurate mime — the playground UI already renders text/html (iframe),
- * application/json (json-viewer), and text/markdown via existing paths.
+ * application/json (json-viewer), text/markdown, and now text/csv /
+ * text/tab-separated-values via the dedicated table-view route.
  *
  * JSON detection parses only the first ~512 chars to avoid a full parse
  * on multi-MB payloads — a syntactically valid JSON document either
@@ -249,6 +255,10 @@ function defaultFilename(mime: string | undefined, toolCtx: { toolName: string }
  * distinguish JSON from arbitrary text) or it doesn't. We accept both:
  * if the prefix parses standalone we know it's JSON; if it doesn't,
  * the leading `{`/`[` is still a strong signal.
+ *
+ * Tabular detection (CSV / TSV) runs LAST — after the html/json/markdown
+ * branches reject — so a JSON array of comma-counted strings doesn't get
+ * mis-tagged as CSV.
  */
 function sniffTextMime(s: string): string {
   const trimmed = s.trimStart();
@@ -273,7 +283,50 @@ function sniffTextMime(s: string): string {
   if (trimmed.startsWith("# ") || trimmed.startsWith("---\n")) {
     return "text/markdown";
   }
+  if (looksLikeDelimited(trimmed, "\t")) return "text/tab-separated-values";
+  if (looksLikeDelimited(trimmed, ",")) return "text/csv";
   return "text/plain";
+}
+
+/**
+ * Heuristic: does this text look like a delimited dataset (CSV when sep
+ * is comma, TSV when sep is tab)? Conservative on purpose — false
+ * positives mistag arbitrary prose as a dataset, downstream renderers
+ * then try to render the prose as a table and the result is awful.
+ *
+ * Required signals (all):
+ *   - At least 3 non-empty lines in the first 12 sampled
+ *   - Every sampled line carries ≥ 2 unquoted separators (i.e. ≥ 3 cells)
+ *   - All sampled lines have the same separator count (no ragged rows
+ *     beyond the first/last trim-trailing-empty edge case)
+ *
+ * Quote stripping handles the common case of fields containing the
+ * separator (`"Seattle, WA"`) — replaces every `"..."` (no internal
+ * unescaped quotes) with a placeholder before counting. Doesn't pretend
+ * to be an RFC-4180 parser; that level of fidelity belongs at the table-
+ * view consumer, not in a "is this tabular at all" sniff.
+ */
+function looksLikeDelimited(text: string, sep: "," | "\t"): boolean {
+  // `split("\n", limit)` caps the return-array length but `split`
+  // still scans the entire input for every `\n`. Lift candidates can
+  // be multi-MB (Gmail batches, scraped HTML, big JSON exports) so
+  // bound the scan to a 64KB head — more than enough for 12 lines of
+  // any realistic dataset, and trivially fast for the prose case
+  // where we'd be scanning prose for delimiters that aren't there.
+  const head = text.length > 64 * 1024 ? text.slice(0, 64 * 1024) : text;
+  const sampleLines = head.split("\n", 12).filter((l) => l.trim().length > 0);
+  if (sampleLines.length < 3) return false;
+  let expected = -1;
+  for (const raw of sampleLines) {
+    // Strip RFC-4180-style "quoted" fields so internal seps don't count.
+    const stripped = raw.replace(/"[^"\n]*"/g, "\0");
+    let count = 0;
+    for (const ch of stripped) if (ch === sep) count++;
+    if (count < 2) return false;
+    if (expected === -1) expected = count;
+    else if (count !== expected) return false;
+  }
+  return true;
 }
 
 async function scrubString(
@@ -390,6 +443,42 @@ export interface ToolCallForLift {
   toolName: string;
   args: unknown;
   result?: unknown;
+}
+
+/**
+ * Lift a single text answer above the text threshold to an artifact and
+ * return both the replacement marker and the artifact id as separate
+ * fields. The artifact id is what downstream consumers (stop predicates,
+ * display_artifact callers, judges) should rely on — a structured signal
+ * that a lift actually happened, rather than parsing the marker text.
+ *
+ * Returns `{ value: original, artifactId: undefined }` when the input is
+ * under the threshold or the upload failed. Never throws — upload errors
+ * are logged and treated as a no-op lift.
+ */
+export async function liftAnswerForModel(
+  answer: string,
+  opts: ScrubberOptions & { serverId: string; toolName: string },
+): Promise<{ value: string; artifactId?: string }> {
+  if (answer.startsWith(REF_MARKER_PREFIX)) {
+    return { value: answer };
+  }
+  if (answer.length < TEXT_THRESHOLD_CHARS) {
+    return { value: answer };
+  }
+  const ctx: ScrubContext = {
+    workspaceId: opts.workspaceId,
+    chatId: opts.chatId,
+    logger: opts.logger,
+    uploads: new Map(),
+  };
+  const toolCtx = { serverId: opts.serverId, toolName: opts.toolName };
+  const sniffedMime = sniffTextMime(answer);
+  const base64 = btoa(unescape(encodeURIComponent(answer)));
+  const filename = defaultFilename(sniffedMime, toolCtx);
+  const upload = await uploadBlob(base64, sniffedMime, filename, ctx, toolCtx);
+  if (!upload) return { value: answer };
+  return { value: refMarker(upload, toolCtx), artifactId: upload.artifactId };
 }
 
 export async function liftToolResultsForPersist(

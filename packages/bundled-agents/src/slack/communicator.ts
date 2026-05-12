@@ -17,7 +17,7 @@ import {
   streamTextWithEvents,
 } from "@atlas/agent-sdk/vercel-helpers";
 
-import { getDefaultProviderOpts, registry, traceModel } from "@atlas/llm";
+import { getCachingRequestOpts, getDefaultProviderOpts, registry, traceModel } from "@atlas/llm";
 import { stringifyError } from "@atlas/utils";
 import { generateObject, stepCountIs, wrapLanguageModel } from "ai";
 import { z } from "zod";
@@ -123,6 +123,7 @@ export const slackCommunicatorAgent = createAgent<string, SlackOutput>({
 
     const planResult = await generateObject({
       model: traceModel(registry.languageModel("anthropic:claude-haiku-4-5")),
+      allowSystemInMessages: true,
       messages: [
         {
           role: "system",
@@ -136,6 +137,7 @@ export const slackCommunicatorAgent = createAgent<string, SlackOutput>({
       temperature: 0,
       maxOutputTokens: 2000,
       maxRetries: 3,
+      providerOptions: getCachingRequestOpts({ cacheKey: "slack-plan" }),
       experimental_repairText: repairJson,
     });
 
@@ -161,6 +163,7 @@ export const slackCommunicatorAgent = createAgent<string, SlackOutput>({
           model: traceModel(registry.languageModel("anthropic:claude-haiku-4-5")),
           abortSignal,
           maxRetries: 3,
+          allowSystemInMessages: true,
           messages: [
             {
               role: "system",
@@ -171,7 +174,10 @@ export const slackCommunicatorAgent = createAgent<string, SlackOutput>({
           ],
           tools,
           maxOutputTokens: 2000,
-          providerOptions: { anthropic: { thinking: { type: "enabled", budgetTokens: 12000 } } },
+          providerOptions: {
+            anthropic: { thinking: { type: "enabled", budgetTokens: 12000 } },
+            ...getCachingRequestOpts({ cacheKey: "slack-translate" }),
+          },
           stopWhen: stepCountIs(10),
           experimental_repairToolCall: repairToolCall,
         },
@@ -257,6 +263,7 @@ export const slackCommunicatorAgent = createAgent<string, SlackOutput>({
           }),
           abortSignal,
           maxRetries: 3,
+          allowSystemInMessages: true,
           messages: [
             {
               role: "system",
@@ -269,7 +276,10 @@ export const slackCommunicatorAgent = createAgent<string, SlackOutput>({
           toolChoice: "auto",
           stopWhen: stepCountIs(10),
           maxOutputTokens: 800,
-          providerOptions: { anthropic: { thinking: { type: "enabled", budgetTokens: 12000 } } },
+          providerOptions: {
+            anthropic: { thinking: { type: "enabled", budgetTokens: 12000 } },
+            ...getCachingRequestOpts({ cacheKey: "slack-execute" }),
+          },
           experimental_repairToolCall: repairToolCall,
         },
         stream,

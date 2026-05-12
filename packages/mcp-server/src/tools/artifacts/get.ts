@@ -9,7 +9,7 @@ import { createErrorResponse, createSuccessResponse, stripArtifactFilePaths } fr
 /** Register MCP tool for retrieving artifacts */
 export function registerArtifactsGetTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
-    "artifacts_get",
+    "get_artifact",
     {
       description: "Get artifact by ID",
       inputSchema: {
@@ -23,7 +23,7 @@ export function registerArtifactsGetTool(server: McpServer, ctx: ToolContext) {
       },
     },
     async ({ artifactId, revision }): Promise<CallToolResult> => {
-      ctx.logger.info("MCP artifacts_get called", { artifactId, revision });
+      ctx.logger.info("MCP get_artifact called", { artifactId, revision });
 
       const response = await parseResult(
         // toString() workaround: Daemon coerces to number but narrows type to string|string[]

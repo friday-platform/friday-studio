@@ -1020,9 +1020,10 @@ export function createMessageHandler(
         // entirely for those adapters.
         if (!ownBuffer) return;
         if (isClientSafeEvent(chunk)) {
-          const appended = streamRegistry.appendEvent(chatId, chunk, ownBuffer);
+          const appended = streamRegistry.appendEvent(workspaceId, chatId, chunk, ownBuffer);
           if (!appended) {
             logger.warn("stream_event_dropped", {
+              workspaceId,
               chatId,
               chunkType:
                 typeof chunk === "object" && chunk !== null && "type" in chunk
@@ -1101,7 +1102,7 @@ export function createMessageHandler(
       // out from under it. When `ownBuffer` is undefined (non-web adapter
       // with no buffer at all), this is a no-op, matching prior behavior.
       if (ownBuffer) {
-        streamRegistry.finishStreamIfCurrent(chatId, ownBuffer);
+        streamRegistry.finishStreamIfCurrent(workspaceId, chatId, ownBuffer);
       }
     }
   };

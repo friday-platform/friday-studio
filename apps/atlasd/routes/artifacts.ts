@@ -40,7 +40,9 @@ import { zValidator } from "@hono/zod-validator";
 import { fileTypeFromFile } from "file-type";
 import JSZip from "jszip";
 import { z } from "zod";
+import { requireDevEnv } from "../src/dev-only.ts";
 import { daemonFactory } from "../src/factory.ts";
+import { getAccessibleWorkspaceIds, requireWorkspaceMember } from "../src/workspace-authz.ts";
 
 const logger = createLogger({ name: "artifacts-upload" });
 
@@ -542,6 +544,9 @@ const artifactsApp = daemonFactory
   /** Create new artifact */
   .post("/", zValidator("json", CreateArtifactSchema), async (c) => {
     const data = c.req.valid("json");
+    if (data.workspaceId) {
+      await requireWorkspaceMember(c, data.workspaceId);
+    }
     const result = await ArtifactStorage.create(data);
 
     if (!result.ok) {
@@ -558,6 +563,16 @@ const artifactsApp = daemonFactory
     async (c) => {
       const { id } = c.req.valid("param");
       const data = c.req.valid("json");
+      // Gate on the artifact's workspaceId before mutating. Artifacts
+      // without a workspaceId are legacy/global; leave them ungated to
+      // preserve existing behavior — tenant-scoped artifacts must be
+      // member-only.
+      const existing = await ArtifactStorage.get({ id });
+      if (!existing.ok) return c.json({ error: existing.error }, 500);
+      if (!existing.data) return c.json({ error: "Artifact not found" }, 404);
+      if (existing.data.workspaceId) {
+        await requireWorkspaceMember(c, existing.data.workspaceId);
+      }
       const result = await ArtifactStorage.update({
         id,
         data: data.data,
@@ -575,6 +590,9 @@ const artifactsApp = daemonFactory
   )
   /** Batch get artifacts by IDs (latest revisions only) */
   .post("/batch-get", zValidator("json", BatchGetBody), async (c) => {
+    const userId = c.get("userId");
+    if (!userId) return c.json({ error: "Unauthorized" }, 401);
+
     const { ids, includeContents } = c.req.valid("json");
     const result = await ArtifactStorage.getManyLatest({ ids });
 
@@ -582,13 +600,20 @@ const artifactsApp = daemonFactory
       return c.json({ error: result.error }, 500);
     }
 
+    // Filter the returned set to artifacts the caller can access:
+    // artifacts without a workspaceId are legacy/global and stay
+    // visible; artifacts with a workspaceId require membership in
+    // that workspace.
+    const accessible = await getAccessibleWorkspaceIds(userId);
+    const visible = result.data.filter((a) => !a.workspaceId || accessible.has(a.workspaceId));
+
     if (!includeContents) {
-      return c.json({ artifacts: result.data }, 200);
+      return c.json({ artifacts: visible }, 200);
     }
 
     // Fetch contents for file artifacts in parallel
     const artifactsWithContents: ArtifactWithContents[] = await Promise.all(
-      result.data.map(async (artifact) => {
+      visible.map(async (artifact) => {
         if (artifact.data.type !== "file") {
           return artifact;
         }
@@ -624,6 +649,9 @@ const artifactsApp = daemonFactory
       }
 
       const artifact = result.data;
+      if (artifact.workspaceId) {
+        await requireWorkspaceMember(c, artifact.workspaceId);
+      }
       let contents: string | undefined;
       let hint: string | undefined;
 
@@ -668,6 +696,9 @@ const artifactsApp = daemonFactory
     const meta = await ArtifactStorage.get({ id });
     if (!meta.ok) return c.json({ error: meta.error }, 500);
     if (!meta.data) return c.json({ error: "Artifact not found" }, 404);
+    if (meta.data.workspaceId) {
+      await requireWorkspaceMember(c, meta.data.workspaceId);
+    }
     if (meta.data.data.type !== "file") {
       return c.json({ error: "Artifact is not a file" }, 400);
     }
@@ -675,7 +706,7 @@ const artifactsApp = daemonFactory
     if (!isParseableMimeType(mime)) {
       return c.json(
         {
-          error: `parse_artifact does not support mime type ${mime}. Supported: PDF, DOCX, PPTX. For text artifacts use artifacts_get; for images use display_artifact.`,
+          error: `parse_artifact does not support mime type ${mime}. Supported: PDF, DOCX, PPTX. For text artifacts use get_artifact; for images use display_artifact.`,
         },
         400,
       );
@@ -706,12 +737,15 @@ const artifactsApp = daemonFactory
   /** List artifacts - optionally filter by workspace or chat */
   .get("/", zValidator("query", ListArtifactsQuery), async (c) => {
     const query = c.req.valid("query");
+    const userId = c.get("userId");
+    if (!userId) return c.json({ error: "Unauthorized" }, 401);
 
     if (query.workspaceId && query.chatId) {
       return c.json({ error: "Cannot specify both workspaceId and chatId" }, 400);
     }
 
     if (query.workspaceId) {
+      await requireWorkspaceMember(c, query.workspaceId);
       const result = await ArtifactStorage.listByWorkspace({
         workspaceId: query.workspaceId,
         limit: query.limit,
@@ -726,6 +760,13 @@ const artifactsApp = daemonFactory
     }
 
     if (query.chatId) {
+      // The chatId alone doesn't carry workspace information, and
+      // `ChatStorage.getChat(chatId)` (no workspace arg) resolves to a
+      // legacy `_global` namespace — not what we want here. Instead
+      // list artifacts by chatId straight from storage and post-filter
+      // each result by the caller's accessible workspaces. Same
+      // workspaceless-passes-through convention as `batch-get` and the
+      // no-filter branch below.
       const result = await ArtifactStorage.listByChat({
         chatId: query.chatId,
         limit: query.limit,
@@ -736,10 +777,21 @@ const artifactsApp = daemonFactory
         return c.json({ error: result.error }, 500);
       }
 
-      return c.json({ artifacts: result.data }, 200);
+      const accessible = await getAccessibleWorkspaceIds(userId);
+      const visible = result.data.filter((a) => !a.workspaceId || accessible.has(a.workspaceId));
+      return c.json({ artifacts: visible }, 200);
     }
 
-    // No filter - return all artifacts
+    // No filter — debug-only listing. `listAll(limit)` followed by a
+    // post-filter would hand back short / empty pages whenever
+    // accessible artifacts sit past the limit cutoff in the global
+    // result, and there's no per-workspace pagination cursor today
+    // that could honor `limit` across the union. Until a real
+    // accessible-listing primitive exists, gate this branch to dev
+    // mode and require callers to scope by workspaceId or chatId in
+    // any non-dev deployment.
+    requireDevEnv(c);
+    const accessible = await getAccessibleWorkspaceIds(userId);
     const result = await ArtifactStorage.listAll({
       limit: query.limit,
       includeData: query.includeData,
@@ -749,11 +801,18 @@ const artifactsApp = daemonFactory
       return c.json({ error: result.error }, 500);
     }
 
-    return c.json({ artifacts: result.data }, 200);
+    const visible = result.data.filter((a) => !a.workspaceId || accessible.has(a.workspaceId));
+    return c.json({ artifacts: visible }, 200);
   })
   /** Soft delete artifact */
   .delete("/:id", zValidator("param", z.object({ id: z.string() })), async (c) => {
     const { id } = c.req.valid("param");
+    const existing = await ArtifactStorage.get({ id });
+    if (!existing.ok) return c.json({ error: existing.error }, 500);
+    if (!existing.data) return c.json({ error: "Artifact not found" }, 404);
+    if (existing.data.workspaceId) {
+      await requireWorkspaceMember(c, existing.data.workspaceId);
+    }
     const result = await ArtifactStorage.deleteArtifact({ id });
 
     if (!result.ok) {
@@ -774,6 +833,9 @@ const artifactsApp = daemonFactory
       const result = await ArtifactStorage.get({ id, revision: query?.revision });
       if (!result.ok) {
         return c.json({ error: result.error }, 500);
+      }
+      if (result.data?.workspaceId) {
+        await requireWorkspaceMember(c, result.data.workspaceId);
       }
       if (!result.data) {
         const migErr = migrationStateError(c.get("app").daemon.getStatus().migrations);
@@ -899,6 +961,9 @@ const artifactsApp = daemonFactory
     if (workspaceId && isInvalidChatId(workspaceId)) {
       return c.json({ error: "Invalid workspaceId" }, 400);
     }
+    if (workspaceId) {
+      await requireWorkspaceMember(c, workspaceId);
+    }
 
     // Legacy format check — reject .doc/.ppt with helpful message
     const uploadExt = extname(file.name).toLowerCase();
@@ -958,6 +1023,23 @@ const artifactsApp = daemonFactory
     const platformModels = c.get("app").daemon.getPlatformModels();
 
     if (artifactId) {
+      // Replace-by-id is "overwrite an existing artifact" — authorize
+      // against the *existing* artifact's workspace, not whatever
+      // `workspaceId` the caller posted in the form. The membership
+      // check on the supplied `workspaceId` above is what gates the
+      // create path; for replace we have to fetch and inspect.
+      const existing = await ArtifactStorage.get({ id: artifactId });
+      if (!existing.ok) {
+        await unlink(filePath).catch(() => {});
+        return c.json({ error: existing.error }, 500);
+      }
+      if (!existing.data) {
+        await unlink(filePath).catch(() => {});
+        return c.json({ error: "Artifact not found" }, 404);
+      }
+      if (existing.data.workspaceId) {
+        await requireWorkspaceMember(c, existing.data.workspaceId);
+      }
       const result = await replaceArtifactFromFile({
         artifactId,
         filePath,

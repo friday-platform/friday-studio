@@ -351,7 +351,7 @@ describe("untyped outputTo contract at FSM case 'llm'", () => {
     const { captured } = await runStructuredAction({
       validate: "skip",
       withOutputType: false,
-      tools: ["memory_read"],
+      tools: ["list_memory_entries"],
       llmToolCalls: [completeCall({ response: "done" })],
     });
 

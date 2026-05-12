@@ -93,12 +93,12 @@ describe("extractArtifactRefsFromToolResults", () => {
     return {
       type: "tool-result",
       toolCallId: "call-1",
-      toolName: "artifacts_create",
+      toolName: "create_artifact",
       output: { isError: false, content: [{ type: "text", text: JSON.stringify(artifact) }] },
     } as ToolResult;
   }
 
-  test("extracts refs from successful artifacts_create results", () => {
+  test("extracts refs from successful create_artifact results", () => {
     const results = [
       makeArtifactResult({ id: "art-1", type: "document", summary: "A doc" }),
       makeArtifactResult({ id: "art-2", type: "code", summary: "Some code" }),
@@ -112,12 +112,37 @@ describe("extractArtifactRefsFromToolResults", () => {
     ]);
   });
 
+  test("extracts refs from successful save_artifact results", () => {
+    // save_artifact returns the same `{id, type, summary}` envelope as
+    // create_artifact, so it goes through the same harvester branch.
+    const results: ToolResult[] = [
+      {
+        type: "tool-result",
+        toolCallId: "call-1",
+        toolName: "save_artifact",
+        output: {
+          isError: false,
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({ id: "art-3", type: "file", summary: "Inline markdown" }),
+            },
+          ],
+        },
+      } as ToolResult,
+    ];
+
+    const refs = extractArtifactRefsFromToolResults(results);
+
+    expect(refs).toEqual([{ id: "art-3", type: "file", summary: "Inline markdown" }]);
+  });
+
   test("skips error tool results", () => {
     const results: ToolResult[] = [
       {
         type: "tool-result",
         toolCallId: "call-1",
-        toolName: "artifacts_create",
+        toolName: "create_artifact",
         output: { isError: true, content: [{ type: "text", text: "boom" }] },
       } as ToolResult,
     ];
@@ -127,7 +152,7 @@ describe("extractArtifactRefsFromToolResults", () => {
     expect(refs).toEqual([]);
   });
 
-  test("skips non-artifacts_create tool results", () => {
+  test("skips non-create_artifact tool results", () => {
     const results: ToolResult[] = [
       {
         type: "tool-result",
@@ -147,7 +172,7 @@ describe("extractArtifactRefsFromToolResults", () => {
       {
         type: "tool-result",
         toolCallId: "call-1",
-        toolName: "artifacts_create",
+        toolName: "create_artifact",
         output: { isError: false, content: [{ type: "text", text: "not json" }] },
       } as ToolResult,
     ];
@@ -162,7 +187,7 @@ describe("extractArtifactRefsFromToolResults", () => {
       {
         type: "tool-result",
         toolCallId: "call-1",
-        toolName: "artifacts_create",
+        toolName: "create_artifact",
         output: {
           isError: false,
           content: [{ type: "text", text: JSON.stringify({ id: "art-1" }) }],
@@ -180,13 +205,13 @@ describe("extractArtifactRefsFromToolResults", () => {
       {
         type: "tool-result",
         toolCallId: "call-1",
-        toolName: "artifacts_create",
+        toolName: "create_artifact",
         output: { isError: true, content: [{ type: "text", text: "err" }] },
       } as ToolResult,
       {
         type: "tool-result",
         toolCallId: "call-2",
-        toolName: "artifacts_create",
+        toolName: "create_artifact",
         output: { isError: false, content: [{ type: "text", text: "bad json" }] },
       } as ToolResult,
     ];
@@ -210,7 +235,7 @@ describe("extractArtifactRefsFromToolResults", () => {
       {
         type: "tool-result",
         toolCallId: "call-1",
-        toolName: "artifacts_create",
+        toolName: "create_artifact",
         output: { isError: true, content: [{ type: "text", text: "err" }] },
       } as ToolResult,
     ];

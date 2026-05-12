@@ -273,7 +273,7 @@ function checkInternalCrossRefs(config: WorkspaceConfig): ValidationIssue[] {
         `Chat reaches the workspace through jobs; agents declared without a wrapping ` +
         `job are unreachable and silently ignored at runtime. Either wrap it in a ` +
         `job (add a state whose 'entry' includes { type: agent, agentId: '${agentId}' }), ` +
-        `or delete the agent and use platform tools (memory_save, etc.) ` +
+        `or delete the agent and use platform tools (save_memory_entry, etc.) ` +
         `directly from chat.`,
     });
   }
@@ -297,7 +297,7 @@ function checkInternalCrossRefs(config: WorkspaceConfig): ValidationIssue[] {
         message:
           `Agent '${agentName}' lists tool '${tool}', which is not a declared ` +
           `MCP server in tools.mcp.servers.* and looks like a near-match to one ` +
-          `that is. If this is a platform tool (memory_save, bash, etc.) you ` +
+          `that is. If this is a platform tool (save_memory_entry, bash, etc.) you ` +
           `can ignore this warning.`,
         suggest,
       });

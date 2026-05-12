@@ -34,6 +34,11 @@
       "svelte": "./src/lib/index.ts"
     },
     "./colors.css": "./src/lib/colors.css",
+    "./markdown": {
+      "types": "./src/lib/markdown/markdown.ts",
+      "svelte": "./src/lib/markdown/markdown.ts",
+      "default": "./src/lib/markdown/markdown.ts"
+    },
     "./tokens.css": "./src/lib/tokens.css",
     "./eslint": "./eslint.config.base.js",
     "./prettier": "./prettier.config.js"
@@ -46,6 +51,7 @@
     "@lezer/common": "^1.5.2",
     "@lezer/markdown": "^1.6.3",
     "@melt-ui/svelte": "^0.86.6",
+    "isomorphic-dompurify": "^2.16.0",
     "marked": "^18.0.3",
     "shiki": "^4.0.2"
   },

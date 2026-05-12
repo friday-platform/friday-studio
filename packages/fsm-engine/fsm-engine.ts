@@ -41,7 +41,7 @@ import { liftToolResultsForPersist } from "@atlas/core/artifacts/scrubber";
 import { createDelegateTool, DEFAULT_MAX_DEPTH } from "@atlas/core/delegate";
 import type { LinkSummary } from "@atlas/core/mcp-registry/discovery";
 import { ValidationFailedError, type ValidationVerdict } from "@atlas/hallucination/verdict";
-import { buildTemporalFacts, type PlatformModels } from "@atlas/llm";
+import { buildTemporalFacts, type PlatformModels, wrapRetrieved } from "@atlas/llm";
 import { logger } from "@atlas/logger";
 import { createMCPTools, type MCPToolsResult } from "@atlas/mcp";
 import { getAtlasPlatformServerConfig } from "@atlas/oapi-client";
@@ -1906,23 +1906,27 @@ export class FSMEngine {
                 });
               }
 
-              // Build prompt with curated input from prepare function, skills, and image resolution
-              let { prompt: contextPrompt, images } = await this.buildContextPrompt(
-                action.prompt,
-                effectivePrepareResult,
-                skills,
-              );
+              // Build the prompt as two parts: a static `system` (cacheable
+              // prefix) and a volatile `preface` (turn-local content that
+              // sits AFTER the cache breakpoint). buildContextPrompt
+              // produces the action's instruction surface for `system` and
+              // temporal facts + retrieved input for `preface`; memory and
+              // artifact retrievals get prepended into `preface` below.
+              let {
+                system: systemPrompt,
+                preface: prefaceText,
+                images,
+              } = await this.buildContextPrompt(action.prompt, effectivePrepareResult, skills);
 
-              // Auto-inject recent narrative-memory entries — same XML envelope
-              // workspace-chat uses (`<memory workspace="..." store="...">`).
-              // Mirrors the chat path's `composeMemoryBlocks` call so an FSM
-              // `type: llm` action sees the same memory surface a chat turn
-              // would see at action-start. Per-FSM-session narrowing is a
-              // future refinement; today this is "last 20 entries per declared
-              // narrative store", matching chat behavior. Skipped without a
-              // workspaceId (pre-1.0 callers / unit tests) — without one we
-              // can't authoritatively scope memory. Failures are swallowed
-              // and logged; never blocks the action.
+              // Recent narrative-memory entries land in the volatile preface
+              // (NOT the cacheable system) — the entries change as the user
+              // writes, and mixing them into the system prompt would shift
+              // its bytes turn-to-turn and defeat caching. The XML envelope
+              // (`<memory workspace="..." store="...">`) is identical to
+              // workspace-chat so the model applies one rule everywhere.
+              // Skipped without a workspaceId (pre-1.0 callers / unit
+              // tests) — without one we can't authoritatively scope memory.
+              // Failures are swallowed and logged; never blocks the action.
               if (workspaceId) {
                 try {
                   // Honor foregroundWorkspaceIds the same way chat does
@@ -1940,8 +1944,8 @@ export class FSMEngine {
                     logger,
                   );
                   if (memoryBlocks.length > 0) {
-                    contextPrompt = `${memoryBlocks.join("\n\n")}\n\n${contextPrompt}`;
-                    logger.debug("Injected memory blocks into LLM action prompt", {
+                    prefaceText = `${memoryBlocks.join("\n\n")}\n\n${prefaceText}`;
+                    logger.debug("Injected memory blocks into LLM action preface", {
                       workspaceId,
                       blockCount: memoryBlocks.length,
                     });
@@ -1955,15 +1959,14 @@ export class FSMEngine {
               }
 
               // Retrieval-gated artifact injection. Pull recent session-bound
-              // ephemeral artifacts and prepend them as
-              // `<retrieved_content>` envelopes alongside the memory blocks.
-              // Per-FSM-session scope (user decision 2026-05-05): the
-              // workspace runtime tags FSM-produced ephemeral artifacts with
-              // `lifecycle.boundTo.sessionId`, and `composeArtifactBlocks`
-              // filters on that. Capped at ARTIFACT_INJECTION_LIMIT (10).
-              // Each block carries the artifact's summary + id so the LLM
-              // can `parse_artifact` for full content. v1 is a pull at
-              // action-start — no NATS subscriber. Failures swallowed.
+              // ephemeral artifacts and prepend them as `<retrieved_content>`
+              // envelopes alongside the memory blocks in the volatile
+              // preface. The workspace runtime tags FSM-produced ephemeral
+              // artifacts with `lifecycle.boundTo.sessionId`, and
+              // `composeArtifactBlocks` filters on that. Capped at
+              // ARTIFACT_INJECTION_LIMIT (10). Each block carries the
+              // artifact's summary + id so the LLM can `parse_artifact` for
+              // full content. Failures swallowed.
               const sessionIdForArtifacts = sig._context?.sessionId;
               if (workspaceId && sessionIdForArtifacts) {
                 try {
@@ -1972,8 +1975,8 @@ export class FSMEngine {
                     logger,
                   );
                   if (artifactBlocks.length > 0) {
-                    contextPrompt = `${artifactBlocks.join("\n\n")}\n\n${contextPrompt}`;
-                    logger.debug("Injected artifact blocks into LLM action prompt", {
+                    prefaceText = `${artifactBlocks.join("\n\n")}\n\n${prefaceText}`;
+                    logger.debug("Injected artifact blocks into LLM action preface", {
                       workspaceId,
                       sessionId: sessionIdForArtifacts,
                       blockCount: artifactBlocks.length,
@@ -2047,8 +2050,12 @@ export class FSMEngine {
                   });
               const validationSkillLoaded = validationBlock.length > 0;
               if (validationBlock) {
-                contextPrompt = `${contextPrompt}\n\n${validationBlock}`;
-                logger.debug("Injected validation skill block into LLM action prompt", {
+                // Validation guidance lives in the cacheable system surface —
+                // the skill body is byte-stable for a given (decision, skill)
+                // pair, so co-locating it with the action prompt extends the
+                // cached prefix.
+                systemPrompt = `${systemPrompt}\n\n${validationBlock}`;
+                logger.debug("Injected validation skill block into LLM action system", {
                   decision: preCallDecision,
                   blockChars: validationBlock.length,
                 });
@@ -2095,23 +2102,35 @@ export class FSMEngine {
               }
 
               if (completeToolInjected) {
-                contextPrompt +=
+                systemPrompt +=
                   "\n\nIMPORTANT: When you have gathered all necessary information, you MUST call the `complete` tool to store your results. " +
                   "If you cannot complete this task, call the failStep tool with a reason.";
               } else {
-                contextPrompt +=
+                systemPrompt +=
                   "\n\nIMPORTANT: If you cannot complete this task, call the failStep tool with a reason.";
               }
 
               // Build agentId for the LLM action
               const llmAgentId = `fsm:${this._definition.id}:${action.outputTo ?? "llm"}`;
 
-              // When images are present, assemble a messages array with mixed content.
-              // Otherwise, use the prompt-only path for backward compatibility.
-              const messages: ModelMessage[] | undefined =
-                images.length > 0
-                  ? [{ role: "user", content: [{ type: "text", text: contextPrompt }, ...images] }]
-                  : undefined;
+              // The volatile preface (temporal facts + memory + artifacts +
+              // retrieved input + image text fallbacks) rides as the user
+              // message body. Images attach as additional content parts on
+              // that same message. The static `systemPrompt` flows as a
+              // separate `system` parameter so the adapter can mark it
+              // cacheable for Anthropic. When the preface is empty AND no
+              // images are present, the LLM still needs a user-role turn to
+              // respond to — fall back to a single-space user message so
+              // the request is well-formed without inflating the cached
+              // prefix.
+              const userText = prefaceText.length > 0 ? prefaceText : " ";
+              const messages: ModelMessage[] = [
+                {
+                  role: "user",
+                  content:
+                    images.length > 0 ? [{ type: "text", text: userText }, ...images] : userText,
+                },
+              ];
 
               // When both `complete` (structured-output capture) and
               // `record_validation` (self-check capture) are injected, we
@@ -2139,7 +2158,8 @@ export class FSMEngine {
                 agentId: llmAgentId,
                 provider: action.provider,
                 model: action.model,
-                prompt: contextPrompt,
+                system: systemPrompt,
+                prompt: userText,
                 messages,
                 tools,
                 toolChoice: llmToolChoice,
@@ -2157,6 +2177,40 @@ export class FSMEngine {
               if (!sig._context?.onStreamEvent) {
                 this.emitToolEvents(result, action, sig, currentState);
               }
+
+              // Pre-populate the side-channel toolCalls before the
+              // validation-failure throws below (`failStep`, missing
+              // `complete`, empty output, empty response). Without this
+              // the catch handler at the bottom of executeInSpan sees
+              // `llmResultData === undefined` and
+              // `mapActionToStepComplete` writes `toolCalls: []` into
+              // the persisted `step:complete` event — even though
+              // `emitToolEvents` already streamed the calls to the UI
+              // in real time. Brings case-`llm` to parity with the
+              // case-`agent` path further down, which already captures
+              // tool calls before throwing on `!result.ok`.
+              const earlyResultsByCallId = new Map(
+                result.toolResults?.map((tr) => [tr.toolCallId, tr.output]) ?? [],
+              );
+              const rawObservedToolCalls = (result.toolCalls ?? []).map((tc) => ({
+                toolName: tc.toolName,
+                args: tc.input,
+                ...(earlyResultsByCallId.has(tc.toolCallId) && {
+                  result: earlyResultsByCallId.get(tc.toolCallId),
+                }),
+              }));
+              const earlyLiftWorkspaceId = sig._context?.workspaceId;
+              const earlyLiftSessionId = sig._context?.sessionId;
+              llmResultData = {
+                toolCalls:
+                  earlyLiftWorkspaceId && earlyLiftSessionId
+                    ? await liftToolResultsForPersist(rawObservedToolCalls, {
+                        workspaceId: earlyLiftWorkspaceId,
+                        chatId: earlyLiftSessionId,
+                        logger,
+                      })
+                    : rawObservedToolCalls,
+              };
 
               // Check if LLM called failStep (search toolCalls for multi-tool scenarios)
               const failArgs = findFailStepToolArgs(result);
@@ -2191,7 +2245,12 @@ export class FSMEngine {
               // inline self-check skill body; `skip` bypasses validation
               // entirely. The classifier (used when the author hasn't set
               // `validate:`) never returns `external`.
-              const observedTrace = buildLLMActionTrace(result, action.model, contextPrompt);
+              // Trace records the full prompt the model saw — system
+              // (cacheable) + user (volatile preface). Concatenated for
+              // the trace surface; the wire-format split into separate
+              // messages is captured upstream by the adapter.
+              const tracePrompt = `${systemPrompt}\n\n${userText}`;
+              const observedTrace = buildLLMActionTrace(result, action.model, tracePrompt);
               const declaredTools = action.tools ?? [];
               const classifierInput: ClassifierInput = {
                 declaredTools,
@@ -2246,7 +2305,7 @@ export class FSMEngine {
               // a structured verdict. Judge failures synthesize an advisory
               // verdict so the action still emits.
               if (validateDecision === "external" && this.options.runJudge) {
-                const trace = buildLLMActionTrace(result, action.model, contextPrompt);
+                const trace = buildLLMActionTrace(result, action.model, tracePrompt);
                 const validationActionId = this.getActionId(action);
                 const judgeAgentId =
                   typeof action.validate === "object" &&
@@ -2454,57 +2513,42 @@ export class FSMEngine {
                 );
               }
 
-              // Capture LLM result for session history side-channel
-              if (result.ok) {
-                const resultsByCallId = new Map(
-                  result.toolResults?.map((tr) => [tr.toolCallId, tr.output]) ?? [],
+              // Layer reasoning/output/usage/validation onto the
+              // tool-call manifest captured earlier (post-LLM, pre-throw).
+              // The early-capture block above runs unconditionally once
+              // `result.ok` is confirmed at the adapter-error guard, so
+              // `llmResultData` is guaranteed to be set here. Asserting
+              // rather than defaulting means a future refactor that
+              // moves the early-capture path fails loudly instead of
+              // silently dropping tool calls into an empty array.
+              if (!llmResultData) {
+                throw new Error(
+                  "FSM invariant: llmResultData must be set by the early-capture block " +
+                    "before the success-path envelope is built. This indicates a refactor " +
+                    "moved or removed the unconditional tool-call capture after the LLM call.",
                 );
-                const rawToolCalls = (result.toolCalls ?? []).map((tc) => ({
-                  toolName: tc.toolName,
-                  args: tc.input,
-                  ...(resultsByCallId.has(tc.toolCallId) && {
-                    result: resultsByCallId.get(tc.toolCallId),
-                  }),
-                }));
-                // Lift oversized tool results post-streamText so the
-                // persisted side-channel +
-                // session events stay compact while the producer LLM saw
-                // full bytes during the streamText loop. See
-                // `liftToolResultsForPersist` for the rationale. Skipped
-                // when context lacks workspaceId/sessionId (older test
-                // callers, internal invocations) — the artifact upload
-                // needs both for tagging.
-                const liftWorkspaceId = sig._context?.workspaceId;
-                const liftSessionId = sig._context?.sessionId;
-                const toolCalls =
-                  liftWorkspaceId && liftSessionId
-                    ? await liftToolResultsForPersist(rawToolCalls, {
-                        workspaceId: liftWorkspaceId,
-                        chatId: liftSessionId,
-                        logger,
-                      })
-                    : rawToolCalls;
-                // Structured output = args from the "complete" tool call (the actual
-                // result the agent declared). Falls back to result.data (LLM text)
-                // when no complete tool call exists. Mirrors workspace-runtime logic.
-                const completeCall = toolCalls.find((tc) => tc.toolName === "complete");
-                llmResultData = {
-                  toolCalls,
-                  reasoning: result.reasoning,
-                  output: completeCall?.args ?? result.data,
-                  // Pass-through optional `usage` from the LLM provider so the
-                  // session event mapper can persist it on `step:complete`.
-                  // Provider adapters that don't set usage (e.g. tests with
-                  // stub providers) leave this undefined — handled downstream.
-                  ...(result.usage && { usage: result.usage }),
-                  // Ride the structured validation block on the same
-                  // side-channel `step:complete` mapping reads. Always set
-                  // for `type: llm` actions — the three resolved strategies
-                  // each have a non-empty shape; only pure-agent actions
-                  // (case "agent" → type: user/atlas) leave this absent.
-                  ...(validationOutput && { validation: validationOutput }),
-                };
               }
+              const toolCalls = llmResultData.toolCalls;
+              // Structured output = args from the "complete" tool call (the actual
+              // result the agent declared). Falls back to result.data (LLM text)
+              // when no complete tool call exists. Mirrors workspace-runtime logic.
+              const completeCall = toolCalls.find((tc) => tc.toolName === "complete");
+              llmResultData = {
+                toolCalls,
+                reasoning: result.reasoning,
+                output: completeCall?.args ?? result.data,
+                // Pass-through optional `usage` from the LLM provider so the
+                // session event mapper can persist it on `step:complete`.
+                // Provider adapters that don't set usage (e.g. tests with
+                // stub providers) leave this undefined — handled downstream.
+                ...(result.usage && { usage: result.usage }),
+                // Ride the structured validation block on the same
+                // side-channel `step:complete` mapping reads. Always set
+                // for `type: llm` actions — the three resolved strategies
+                // each have a non-empty shape; only pure-agent actions
+                // (case "agent" → type: user/atlas) leave this absent.
+                ...(validationOutput && { validation: validationOutput }),
+              };
 
               // Add tool call names to OTEL span for trace visibility
               if (span && llmResultData?.toolCalls?.length) {
@@ -3050,10 +3094,17 @@ export class FSMEngine {
     basePrompt: string,
     prepareResult?: PrepareResult,
     skills: SkillSummary[] = [],
-  ): Promise<{ prompt: string; images: ImagePart[] }> {
-    // Ground the LLM temporally at invocation time
-    const factsSection = buildTemporalFacts();
-
+  ): Promise<{
+    /** Static instruction surface — byte-stable for an action+skill set when
+     *  the prompt has no Mustache placeholders. Lands at the cacheable prefix
+     *  position so a repeated invocation hits the prompt cache. */
+    system: string;
+    /** Volatile turn-local content — temporal grounding + the prepare result
+     *  Input + image text fallbacks. Sits AFTER the cache breakpoint so it
+     *  doesn't poison the cached prefix. */
+    preface: string;
+    images: ImagePart[];
+  }> {
     // Resolve `{{inputs.x}}` / `{{config.x}}` references against the prepare
     // result BEFORE composing the prompt. LLM-authored workspaces consistently
     // emit Mustache-style placeholders in agent prompts (it's how CrewAI,
@@ -3064,12 +3115,16 @@ export class FSMEngine {
     // convention work without teaching every author a bespoke pattern. Keys
     // that don't resolve are left intact so broken templates are visible
     // rather than silently blanked to empty strings.
+    //
+    // Mustache-resolved prompts that vary by call (different inputs each
+    // time) intentionally break cache — every byte of the system message
+    // shifts and the provider correctly serves a fresh response.
     const resolvedBase = interpolatePromptPlaceholders(basePrompt, prepareResult);
 
-    let prompt = `${factsSection}\n\n${resolvedBase}`;
+    let system = resolvedBase;
+    let preface = buildTemporalFacts();
     const images: ImagePart[] = [];
 
-    // Inject curated input from prepare function (replaces old Available Documents)
     if (prepareResult) {
       const expanded = await expandArtifactRefsInInput(prepareResult);
 
@@ -3089,15 +3144,27 @@ export class FSMEngine {
               if (part.type === "image") {
                 images.push(part);
               } else {
-                // TextPart fallback (binary read failed) — append to prompt
-                prompt += `\n${part.text}`;
+                // TextPart fallback (binary read failed) — ride alongside
+                // images in the volatile preface, not in the cacheable system.
+                preface = `${preface}\n${part.text}`;
               }
             }
           }
         }
       }
 
-      prompt = `${prompt}\n\nInput:\n${JSON.stringify(expanded, null, 2)}`;
+      // Prepare-result Input is per-call data (the signal payload made it
+      // here through `prepare`). Wrap in `<retrieved_content>` so the
+      // model's hygiene rule treats nested JSON values as data — covers
+      // cases where prepare functions copy signal-payload bytes into the
+      // Input without sanitization. Lands in the volatile preface so a
+      // repeated action with different inputs doesn't pretend to be a
+      // cache hit on bytes that genuinely differ.
+      preface = `${preface}\n\n${wrapRetrieved({
+        source: "user-authored",
+        origin: `fsm:${this._definition.id}:input`,
+        body: `Input:\n${JSON.stringify(expanded, null, 2)}`,
+      })}`;
     }
 
     if (skills.length > 0) {
@@ -3105,10 +3172,10 @@ export class FSMEngine {
         name: `@${s.namespace}/${s.name}`,
         description: s.description,
       }));
-      prompt = `${prompt}\n\n${formatAvailableSkills(namedSkills)}`;
+      system = `${system}\n\n${formatAvailableSkills(namedSkills)}`;
     }
 
-    return { prompt, images };
+    return { system, preface, images };
   }
 
   /**
