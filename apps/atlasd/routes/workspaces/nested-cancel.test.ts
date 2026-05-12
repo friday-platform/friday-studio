@@ -68,7 +68,7 @@ vi.mock("@atlas/client/v2", () => {
     json: Record<string, unknown>;
   };
 
-  const $post = async (request: PostRequest, opts: PostOpts = {}) => {
+  const $post = (request: PostRequest, opts: PostOpts = {}) => {
     if (!appHolder.app) throw new Error("test app not configured");
     return appHolder.app.request(
       `/workspaces/${request.param.workspaceId}/signals/${request.param.signalId}`,

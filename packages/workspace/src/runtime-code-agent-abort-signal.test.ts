@@ -14,8 +14,8 @@ import { createStubPlatformModels } from "@atlas/llm";
 import { makeTempDir } from "@atlas/utils/temp.server";
 import type { Tool } from "ai";
 import { tool } from "ai";
-import { z } from "zod";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 
 const mcpToolsHandles = vi.hoisted(() => ({
   tools: {} as Record<string, Tool>,
@@ -24,7 +24,7 @@ const mcpToolsHandles = vi.hoisted(() => ({
 
 vi.mock("@atlas/mcp", async (importActual) => {
   const actual = await importActual<typeof import("@atlas/mcp")>();
-  return { ...actual, createMCPTools: vi.fn(async () => mcpToolsHandles) };
+  return { ...actual, createMCPTools: vi.fn(() => Promise.resolve(mcpToolsHandles)) };
 });
 
 function emptyConfig(): MergedConfig {
@@ -93,11 +93,12 @@ describe("executeCodeAgent forwards opts.abortSignal into mcpToolCall tool.execu
         opts: { sessionId: string; workspaceId: string; abortSignal?: AbortSignal },
       ) => Promise<AgentResult>;
     };
-    r.userAdapter.loadAgent = async (id: string) => ({
-      type: "user",
-      id,
-      metadata: { sourceLocation: testDir, version: "0.0.0", useWorkspaceSkills: false },
-    });
+    r.userAdapter.loadAgent = (id: string) =>
+      Promise.resolve({
+        type: "user" as const,
+        id,
+        metadata: { sourceLocation: testDir, version: "0.0.0", useWorkspaceSkills: false },
+      });
 
     // Capture the AbortSignal handed to the stub tool's execute().
     let capturedSignal: AbortSignal | undefined;
