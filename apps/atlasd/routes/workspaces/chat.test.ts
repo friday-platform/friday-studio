@@ -264,6 +264,62 @@ describe("POST /:workspaceId/chat — create chat (Chat SDK path)", () => {
     const body = JSON.parse(await forwarded.text()) as Record<string, unknown>;
     expect(body.id).toBe("chat-1");
   });
+
+  // Tab close / client disconnect during an in-flight POST turn must abort
+  // the chat turn controller — otherwise the FSM keeps running until a
+  // follow-up POST supersedes it. This is the gateway for User Story 2.
+  test("aborts the chat turn when c.req.raw.signal fires mid-flight", async () => {
+    const { app, mockContext } = createTestApp();
+    const chatTurnAbort = vi.mocked(mockContext.chatTurnRegistry.abort);
+
+    const controller = new AbortController();
+    const resPromise = Promise.resolve(
+      app.request("/ws-1/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: "chat-abort-mid",
+          message: { role: "user", parts: [{ type: "text", text: "hi" }] },
+        }),
+        signal: controller.signal,
+      }),
+    );
+
+    // Yield so the route can register the abort listener before we fire.
+    await Promise.resolve();
+    controller.abort();
+    await resPromise.catch(() => {
+      // The webhook may reject if the request signal is observed downstream —
+      // we only care that the registry was poked.
+    });
+
+    expect(chatTurnAbort).toHaveBeenCalledWith("ws-1", "chat-abort-mid");
+  });
+
+  // Pre-aborted signal (already-disconnected client) must abort the
+  // controller immediately rather than waiting on an event that won't fire.
+  test("aborts the chat turn synchronously when c.req.raw.signal is pre-aborted", async () => {
+    const { app, mockContext } = createTestApp();
+    const chatTurnAbort = vi.mocked(mockContext.chatTurnRegistry.abort);
+
+    const controller = new AbortController();
+    controller.abort();
+    await Promise.resolve(
+      app.request("/ws-1/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: "chat-abort-pre",
+          message: { role: "user", parts: [{ type: "text", text: "hi" }] },
+        }),
+        signal: controller.signal,
+      }),
+    ).catch(() => {
+      // Pre-aborted fetch may reject; the assertion targets the registry.
+    });
+
+    expect(chatTurnAbort).toHaveBeenCalledWith("ws-1", "chat-abort-pre");
+  });
 });
 
 describe("GET /:workspaceId/chat/:chatId — get chat", () => {
