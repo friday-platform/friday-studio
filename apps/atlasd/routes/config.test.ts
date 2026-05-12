@@ -18,9 +18,22 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
 import { Hono } from "hono";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
-import { configRoutes } from "./config.ts";
+// The PUT /env handler busts two caches in @atlas/llm after writing
+// the new env vars to `process.env`. Hoisted spies let the in-memory
+// sync tests observe those calls — without them, a regression that
+// drops either reset call would still ship green.
+const mockResetRegistry = vi.hoisted(() => vi.fn<() => void>());
+const mockInvalidateCatalog = vi.hoisted(() => vi.fn<() => void>());
+
+vi.mock("@atlas/llm", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@atlas/llm")>()),
+  resetRegistry: mockResetRegistry,
+  invalidateCatalog: mockInvalidateCatalog,
+}));
+
+const { configRoutes } = await import("./config.ts");
 
 interface PutEnvResponse {
   success: boolean;
@@ -59,6 +72,8 @@ beforeEach(async () => {
   originalFridayEnv = process.env.FRIDAY_ENV;
   process.env.FRIDAY_ENV = "dev";
   for (const k of SYNC_TEST_KEYS) syncTestSnapshot[k] = process.env[k];
+  mockResetRegistry.mockClear();
+  mockInvalidateCatalog.mockClear();
 });
 
 afterEach(async () => {
@@ -254,6 +269,18 @@ describe("PUT /env in-memory sync (hot reload)", () => {
     const onDisk = await readFile(join(tempHome, ".env"), "utf-8");
     expect(onDisk).toContain("PATH=/totally/different/path");
     expect(process.env.PATH).toBe(originalPath);
+  });
+
+  test("busts both the provider registry and the model catalog cache", async () => {
+    // Deno's `--env-file` reads once at startup, and both `@atlas/llm`
+    // caches memoize `process.env` reads — without the resets, a
+    // freshly-saved API key would stay invisible to the running
+    // daemon until restart. Assert the calls so dropping either one
+    // from the handler trips a test.
+    await putEnv({ ANTHROPIC_API_KEY: "sk-ant-cache-bust" });
+
+    expect(mockResetRegistry).toHaveBeenCalledTimes(1);
+    expect(mockInvalidateCatalog).toHaveBeenCalledTimes(1);
   });
 });
 
