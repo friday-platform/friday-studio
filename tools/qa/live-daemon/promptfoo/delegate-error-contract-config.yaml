@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+
+description: Friday delegate sub-agent scope discipline + MCP error contract evals
+
+prompts:
+  - "{{scenarioId}}"
+
+providers:
+  - id: file://delegate-error-contract-provider.cjs
+    label: friday-delegate-error-contract
+
+defaultTest:
+  assert:
+    - type: is-json
+    - type: javascript
+      value: |
+        const result = JSON.parse(output);
+        if (result.pass !== true) {
+          throw new Error(`${result.id} failed: ${(result.notes || []).join('; ')}`);
+        }
+        return true;
+
+tests: file://delegate-error-contract-tests.yaml
