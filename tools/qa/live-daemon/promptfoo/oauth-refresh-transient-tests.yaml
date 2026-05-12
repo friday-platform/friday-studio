@@ -1,0 +1,77 @@
+# Group A — classifier outcomes (don't kill refresh_token on transient)
+
+- description: classifier 4xx invalid_grant → token_dead
+  vars:
+    scenarioId: classifier-outcome-invalid-grant
+
+- description: classifier HTTP 500 → transient (refresh_token survives)
+  vars:
+    scenarioId: classifier-outcome-http-500
+
+- description: classifier HTTP 429 → transient (refresh_token survives)
+  vars:
+    scenarioId: classifier-outcome-http-429
+
+- description: classifier 4xx non-invalid_grant → transient platform_bug
+  vars:
+    scenarioId: classifier-outcome-platform-bug
+
+- description: classifier network failure → transient (refresh_token survives)
+  vars:
+    scenarioId: classifier-outcome-network
+
+- description: classifier fetch timeout → transient (refresh_token survives)
+  vars:
+    scenarioId: classifier-outcome-timeout
+
+- description: classifier 2xx success preserves the original refresh_token
+  vars:
+    scenarioId: classifier-outcome-success-preserves-refresh-token
+
+# Group B — disconnect entry shape (transient state reaches chat)
+
+- description: LinkCredentialUnavailableError → kind credential_temporarily_unavailable
+  vars:
+    scenarioId: disconnect-shape-transient
+
+- description: LinkCredentialNotFoundError → kind credential_not_found (NOT transient)
+  vars:
+    scenarioId: disconnect-shape-not-found
+
+- description: LinkCredentialExpiredError(refresh_failed) → kind credential_refresh_failed (NOT transient)
+  vars:
+    scenarioId: disconnect-shape-refresh-failed
+
+- description: NoDefaultCredentialError → kind no_default_credential (NOT transient)
+  vars:
+    scenarioId: disconnect-shape-no-default
+
+# Group C — chip render contract (chat renders transient correctly)
+
+- description: chat chip branches on the credential_temporarily_unavailable kind
+  vars:
+    scenarioId: chip-render-branch-condition
+
+- description: transient chip renders 'Friday couldn't reach ... try again in a moment'
+  vars:
+    scenarioId: chip-render-transient-copy
+
+- description: dead-credential chip renders 'is disconnected — reconnect'
+  vars:
+    scenarioId: chip-render-dead-copy
+
+- description: each chip carries a kind-specific data-testid
+  vars:
+    scenarioId: chip-render-kind-testid
+
+- description: transient chip has NO Retry button (scope was 'surface' only)
+  vars:
+    scenarioId: chip-render-no-retry-affordance
+
+- description: chips are deduped per (serverId, kind) across messages in one turn
+  vars:
+    scenarioId: chip-render-dedup
+
+- description: chip uses role='status' (non-interactive, screen-reader friendly)
+  vars:
+    scenarioId: chip-render-role-status
