@@ -51,7 +51,11 @@ import {
 } from "./compose-context.ts";
 import { buildOnboardingClause, buildUserProfileClause } from "./onboarding.ts";
 import SYSTEM_PROMPT from "./prompt.txt" with { type: "text" };
-import { connectCommunicatorSucceeded, connectServiceSucceeded } from "./stop-conditions.ts";
+import {
+  connectCommunicatorSucceeded,
+  connectServiceSucceeded,
+  delegateAnsweredUser,
+} from "./stop-conditions.ts";
 import {
   createDeleteAgentFromRegistryTool,
   createRegisterAgentTool,
@@ -1298,6 +1302,7 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
                 stepCountIs(40),
                 connectServiceSucceeded(),
                 connectCommunicatorSucceeded(),
+                delegateAnsweredUser(),
               ],
               maxOutputTokens: 20000,
               experimental_transform: smoothStream({ chunking: "word" }),

@@ -25,9 +25,7 @@ import { truncateForLedger } from "@atlas/utils";
 import type { ToolCallRepairFunction, UIMessageStreamWriter } from "ai";
 import { stepCountIs, streamText, tool } from "ai";
 import { z } from "zod";
-// Oversized tool-result lifting happens at artifact persistence boundaries via
-// `liftToolResultsForPersist` in the workspace runtime and FSM engine. Delegate
-// returns remain compact and scrubbed before parent-visible persistence.
+import { liftValueForModel } from "../artifacts/scrubber.ts";
 import { discoverMCPServers, type LinkSummary } from "../mcp-registry/discovery.ts";
 import { FINISH_TOOL_NAME, type FinishInput, finishTool, parseFinishInput } from "./finish-tool.ts";
 import { createDelegateProxyWriter } from "./proxy-writer.ts";
@@ -136,6 +134,18 @@ export interface DelegateDeps {
    * parent's already-extracted tarballs.
    */
   archiveCache?: SkillArchiveCache;
+  /**
+   * When true (default), large successful-answer strings are routed through
+   * the shared lift walker before they leave `execute`. The parent LLM's
+   * tool-result view sees the artifact marker; the supervisor's next step
+   * won't re-decode prose the child already streamed to the user via
+   * `data-delegate-chunk` text-deltas.
+   *
+   * Direct-execute consumers that consume the answer themselves (the judge
+   * agent's verdict parser at `judge-agent.ts:263`) opt out by setting
+   * `false` — they need the raw answer for parsing, not an artifact ref.
+   */
+  liftAnswer?: boolean;
 }
 
 export type DelegateToolsUsedEntry = { name: string; outcome: "success" | "error" };
@@ -185,6 +195,7 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
   const maxOutputTokens = budget?.max_output_tokens ?? DEFAULT_MAX_OUTPUT_TOKENS;
   const maxInputTokens = budget?.max_input_tokens ?? Number.POSITIVE_INFINITY;
   const maxWallTimeMs = budget?.max_wall_time_ms ?? Number.POSITIVE_INFINITY;
+  const liftAnswer = deps.liftAnswer ?? true;
 
   // Per-tool-instance archive cache. Lifetime matches the parent agent's
   // session: a chat that delegates 6× with the same skill ref pays the
@@ -398,13 +409,27 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
           `Goal: ${goal}`,
           `Handoff: ${handoff}`,
           datetimeMessage,
-          `You are a terse back-end agent. Your output is consumed by another AI agent, not a human user. Do not narrate your actions, do not produce conversational filler, and do not emit markdown tables, section headers, or other human-facing formatting. Make tool calls directly without describing what you are doing. Gather the required facts with the fewest tool calls possible, then call the \`finish\` tool immediately with a concise, factual answer.`,
-          `When you have produced a final answer (or determined the task is impossible), call the \`finish\` tool with { ok: true, answer } or { ok: false, reason }. Do not return free-form text after calling \`finish\`.`,
+          `You are a terse back-end agent. Your output is consumed by another AI agent, not a human user. Do not narrate your actions, do not produce conversational filler. Make tool calls directly without describing what you are doing. Gather the required facts with the fewest tool calls possible, then emit your final answer.`,
+          `Emit your final answer as plain text content — your text reply IS the answer. Do not call the \`finish\` tool on success; do not write the answer inside a tool call argument and then again as text. Call \`finish\` ONLY when the task is impossible to complete, with \`{ ok: false, reason }\` — the supervisor needs the structured failure signal in that case.`,
         ]
           .filter((s) => s.length > 0)
           .join("\n\n");
 
         const conversationalModel = platformModels.get("conversational");
+        // The child's first step does the initial planning + first round of
+        // tool calls — keep it on the conversational model so the plan is
+        // sound. Subsequent steps are mechanical: process tool results,
+        // call the next tool, eventually emit text. Those decode much
+        // faster on the classifier-tier model (Haiku 4.5 by default)
+        // without meaningful quality loss for the synthesis the child
+        // typically produces. The supervisor's parent step that wraps any
+        // user-facing prose stays on the conversational model regardless.
+        let fastModel: ReturnType<typeof platformModels.get> | undefined;
+        try {
+          fastModel = platformModels.get("classifier");
+        } catch {
+          fastModel = undefined;
+        }
 
         // Input-token watchdog. The AI SDK's `onStepFinish` fires after
         // each child step with `usage.inputTokens` for that
@@ -424,6 +449,12 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
           maxOutputTokens,
           abortSignal: childAbortSignal,
           providerOptions: getDefaultProviderOpts("anthropic"),
+          prepareStep: ({ stepNumber }) => {
+            if (stepNumber > 0 && fastModel) {
+              return { model: fastModel };
+            }
+            return undefined;
+          },
           onStepFinish: ({ usage }) => {
             const stepInput = usage?.inputTokens;
             if (typeof stepInput === "number" && stepInput > 0) {
@@ -583,9 +614,29 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
       if (executionError) {
         return { ok: false, reason: executionError.message, ...resultBase };
       }
+      // Successful answers above the shared text threshold are routed
+      // through the artifact-lift walker before they leave `execute`.
+      // The supervisor LLM's tool-result view sees an artifact marker
+      // rather than the inline prose — prevents re-decoding content the
+      // child has already streamed to the user via `data-delegate-chunk`
+      // text-deltas. Direct-execute callers (judge agent) that parse the
+      // raw answer themselves pass `liftAnswer: false`.
+      const projectAnswer = async (raw: string): Promise<string> => {
+        if (!liftAnswer) return raw;
+        const lifted = await liftValueForModel(raw, {
+          workspaceId: session.workspaceId,
+          chatId: session.sessionId,
+          logger,
+          serverId: "pre-model",
+          toolName: DELEGATE_TOOL_NAME,
+        });
+        return typeof lifted === "string" ? lifted : raw;
+      };
+
       if (finishInput) {
         if (finishInput.ok) {
-          return { ok: true, answer: finishInput.answer, ...resultBase };
+          const answer = await projectAnswer(finishInput.answer);
+          return { ok: true, answer, ...resultBase };
         }
         return { ok: false, reason: finishInput.reason, ...resultBase };
       }
@@ -595,7 +646,8 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
       if (textError) {
         return { ok: false, reason: textError.message, ...resultBase };
       }
-      return { ok: true, answer: finalText, ...resultBase };
+      const answer = await projectAnswer(finalText);
+      return { ok: true, answer, ...resultBase };
     },
   });
 }
