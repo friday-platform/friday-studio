@@ -9,7 +9,7 @@
     "@atlas/agent-sdk": "workspace:*",
     "@atlas/logger": "workspace:*",
     "nats": "^2.29.3",
-    "zod": "^4.3.5"
+    "zod": "^4.4.3"
   },
   "devDependencies": { "vitest": "^4.1.0" }
 }
