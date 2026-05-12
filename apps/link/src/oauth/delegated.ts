@@ -148,6 +148,26 @@ export type RefreshOutcome =
 
 const REFRESH_FETCH_TIMEOUT_MS = 15_000;
 
+/**
+ * Scrub token-like values out of a raw response-body snippet before it
+ * lands in logs or in an internal-API `detail` string. The delegated
+ * endpoint is a secret boundary — if it ever returns or echoes an
+ * `access_token` / `refresh_token` / `id_token` in a body shape we
+ * don't expect, we still don't want the secret to leak into structured
+ * logs (which often ship to long-lived storage) or into JSON returned
+ * from `/internal/v1/credentials/:id`.
+ *
+ * Matches both JSON quoted values (`"access_token":"…"`) and bare
+ * `key=value` pairs (form-encoded body / URL-fragment style). Returns
+ * the snippet with the value replaced by `[REDACTED]`, length-capped
+ * to keep one bad upstream from blowing up log lines.
+ */
+function redactTokens(snippet: string): string {
+  return snippet
+    .replace(/"(access_token|refresh_token|id_token)"\s*:\s*"[^"]*"/g, '"$1":"[REDACTED]"')
+    .replace(/\b(access_token|refresh_token|id_token)=[^&\s]+/g, "$1=[REDACTED]");
+}
+
 async function classifyRefreshAttempt(
   config: Extract<OAuthConfig, { mode: "delegated" }>,
   refreshToken: string,
@@ -170,20 +190,34 @@ async function classifyRefreshAttempt(
   }
 
   if (response.ok) {
-    const rawBody = await response.text();
+    // Body-read can fail AFTER headers are received — e.g. upstream
+    // truncates the stream, the TLS connection dies mid-body, or fetch's
+    // streaming decoder errors. Without this guard the throw escapes
+    // `classifyRefreshAttempt` and callers see a generic 500 / unhandled
+    // rejection instead of the intended transient handling (silent
+    // fallback or `refresh_unavailable`). Treat as transient/network
+    // since the network failed mid-transfer.
+    let rawBody: string;
+    try {
+      rawBody = await response.text();
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      return { kind: "transient", reason: "network", detail };
+    }
     let json: unknown;
     try {
       json = JSON.parse(rawBody);
     } catch {
+      const redacted = redactTokens(rawBody.slice(0, 500));
       logger.warn("oauth_refresh_platform_bug", {
         reason: "non_json_success_body",
         status: response.status,
-        body: rawBody.slice(0, 500),
+        body: redacted,
       });
       return {
         kind: "transient",
         reason: "platform_bug",
-        detail: `2xx with non-JSON body: ${rawBody.slice(0, 200)}`,
+        detail: `2xx with non-JSON body: ${redactTokens(rawBody.slice(0, 200))}`,
       };
     }
     const parsed = DelegatedRefreshResponseSchema.safeParse(json);
@@ -216,7 +250,7 @@ async function classifyRefreshAttempt(
     return {
       kind: "transient",
       reason: "http_429",
-      detail: `HTTP 429 ${response.statusText} ${body.slice(0, 200)}`,
+      detail: `HTTP 429 ${response.statusText} ${redactTokens(body.slice(0, 200))}`,
     };
   }
 
@@ -225,7 +259,7 @@ async function classifyRefreshAttempt(
     return {
       kind: "transient",
       reason: "http_5xx",
-      detail: `HTTP ${response.status} ${response.statusText} ${body.slice(0, 200)}`,
+      detail: `HTTP ${response.status} ${response.statusText} ${redactTokens(body.slice(0, 200))}`,
     };
   }
 
@@ -238,12 +272,12 @@ async function classifyRefreshAttempt(
     logger.warn("oauth_refresh_platform_bug", {
       reason: "non_json_4xx_body",
       status: response.status,
-      body: rawBody.slice(0, 500),
+      body: redactTokens(rawBody.slice(0, 500)),
     });
     return {
       kind: "transient",
       reason: "platform_bug",
-      detail: `HTTP ${response.status} with non-JSON body: ${rawBody.slice(0, 200)}`,
+      detail: `HTTP ${response.status} with non-JSON body: ${redactTokens(rawBody.slice(0, 200))}`,
     };
   }
 
@@ -252,14 +286,13 @@ async function classifyRefreshAttempt(
     logger.warn("oauth_refresh_platform_bug", {
       reason: "4xx_missing_error_field",
       status: response.status,
-      body: rawBody.slice(0, 500),
+      body: redactTokens(rawBody.slice(0, 500)),
     });
     return {
       kind: "transient",
       reason: "platform_bug",
-      detail: `HTTP ${response.status} with JSON body missing 'error' field: ${rawBody.slice(
-        0,
-        200,
+      detail: `HTTP ${response.status} with JSON body missing 'error' field: ${redactTokens(
+        rawBody.slice(0, 200),
       )}`,
     };
   }

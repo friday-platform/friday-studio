@@ -343,4 +343,82 @@ describe("refreshDelegatedTokenClassified", () => {
       expect(outcome.reason).toBe("timeout");
     }
   });
+
+  // Body-stream errors on 2xx response (headers arrived, body never did
+  // or got truncated) must surface as transient — not escape as an
+  // unhandled rejection up to the caller and turn into a generic 500.
+  it("kind=transient network when 2xx body read throws (truncated stream)", async () => {
+    const failingBody = new ReadableStream({
+      start(controller) {
+        controller.error(new TypeError("network error: connection reset"));
+      },
+    });
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(failingBody, { status: 200, headers: { "Content-Type": "application/json" } }),
+    );
+
+    const outcome = await refreshDelegatedTokenClassified(config, "rt-1");
+
+    expect(outcome.kind).toBe("transient");
+    if (outcome.kind === "transient") {
+      expect(outcome.reason).toBe("network");
+    }
+  });
+
+  // Token-redaction guard for log + detail leaks. Refresh endpoint is a
+  // secret boundary; if the upstream ever returns / echoes an
+  // `access_token` (or refresh / id token) in a body shape we don't
+  // expect, the value must NOT survive into the logger or into the
+  // `detail` string that gets exposed via `/internal/v1/credentials/:id`.
+  it("redacts access_token from detail on 2xx non-JSON body", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response('garbled access_token="leak-12345" refresh_token="leak-rt-67890" ok=true', {
+        status: 200,
+      }),
+    );
+
+    const outcome = await refreshDelegatedTokenClassified(config, "rt-1");
+
+    expect(outcome.kind).toBe("transient");
+    if (outcome.kind === "transient") {
+      expect(outcome.reason).toBe("platform_bug");
+      expect(outcome.detail).not.toMatch(/leak-12345/);
+      expect(outcome.detail).not.toMatch(/leak-rt-67890/);
+      expect(outcome.detail).toMatch(/REDACTED/);
+    }
+  });
+
+  it("redacts access_token from detail on 4xx non-JSON body", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response('<html><body>access_token="leak-9999"</body></html>', {
+        status: 400,
+        statusText: "Bad Request",
+      }),
+    );
+
+    const outcome = await refreshDelegatedTokenClassified(config, "rt-1");
+
+    expect(outcome.kind).toBe("transient");
+    if (outcome.kind === "transient") {
+      expect(outcome.reason).toBe("platform_bug");
+      expect(outcome.detail).not.toMatch(/leak-9999/);
+    }
+  });
+
+  it("redacts JSON-quoted access_token from detail on 4xx missing-error body", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ unexpected: true, access_token: "leak-jsn-001" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const outcome = await refreshDelegatedTokenClassified(config, "rt-1");
+
+    expect(outcome.kind).toBe("transient");
+    if (outcome.kind === "transient") {
+      expect(outcome.reason).toBe("platform_bug");
+      expect(outcome.detail).not.toMatch(/leak-jsn-001/);
+    }
+  });
 });
