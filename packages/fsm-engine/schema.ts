@@ -176,25 +176,6 @@ export const FSMDefinitionSchema = z.object({
   initial: z.string(),
   states: z.record(z.string(), StateDefinitionSchema),
   documentTypes: z.record(z.string(), JSONSchemaSchema).optional(),
-  /**
-   * Declarative-only — retained for back-compat with legacy YAML
-   * (e.g. `packages/system/workspaces/workspace.fsm.yaml`) that still
-   * declares a `functions:` block. Pt1 Phase 1 simplified the action
-   * model: there is no `type: code` action anymore, so these function
-   * bodies are never compiled or executed by `FSMEngine`. The validator
-   * still checks each entry has non-empty code; `mcp-tools/create-fsm.ts`
-   * counts them for telemetry. Treat as documentation, not behavior.
-   */
-  functions: z
-    .record(z.string(), z.object({ type: z.enum(["action", "guard"]), code: z.string() }))
-    .optional(),
-  /**
-   * Declarative-only — see `functions` above. FSM-level inline tools are
-   * not registered with the LLM call site; the live tool surface is
-   * resolved from MCP servers + platform tools, narrowed by each
-   * `LLMAction.tools` allowlist. Retained for legacy YAML compatibility.
-   */
-  tools: z.record(z.string(), z.object({ code: z.string() })).optional(),
 });
 
 export const SignalSchema = z.object({
