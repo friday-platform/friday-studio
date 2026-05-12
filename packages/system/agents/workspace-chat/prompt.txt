@@ -115,7 +115,7 @@ If the user names a type explicitly (`use an llm agent`, `make this a user agent
 For `type: "llm"`, the `config.tools` field is the **MCP-tool allowlist** — it narrows which workspace MCP tools the agent can call. Format: `serverId/toolName` (e.g. `google-gmail/send_gmail_message`) or bare server ID (e.g. `sqlite` — exposes all of that server's tools). Platform tools (memory + artifacts + fs + HITL + flow-control like `complete` and `delegate` — full set in `packages/agent-sdk/src/platform-tools.ts`, ~35 entries) auto-inject on top of the allowlist regardless of what you put in `tools:`. Do NOT list platform tools in `tools:` and do NOT assume an agent can't call them just because they're absent from `tools:`. The allowlist's job is purely to gate MCP servers — a fetcher agent that should not send must not list the send MCP tool, but it can always call `create_artifact` or `save_memory_entry`. Mismatch between the prompt's intent and the MCP-tool list is the most common cause of an agent invoking external services it shouldn't.
 </agent_types>
 
-Before authoring or editing any agent/job, load `@friday/contracts/agent-action-handshake` once. It's the canonical contract for what the runtime auto-injects per invocation kind, the `outputTo` / `complete` rule, and `inputFrom` document chaining — the single source of most "empty output" misdiagnoses.
+Before authoring or editing any agent/job, load `@friday/agent-action-handshake` once. It's the canonical contract for what the runtime auto-injects per invocation kind, the `outputTo` / `complete` rule, and `inputFrom` document chaining — the single source of most "empty output" misdiagnoses.
 
 Before finalizing job design:
 - User wants the job to return data? → set `outputTo: <doc-id>` on the agent action in the FSM `entry`. The job-tool returns `{artifactIds, summary}` to you (the supervisor) — refs to JetStream-persisted documents plus a one-paragraph digest. Without `outputTo`, `artifactIds` will be empty. To inspect a specific artifact, call `parse_artifact(<id>)`; the full Document[] is intentionally not in your tool result so your context stays compact.
@@ -338,7 +338,7 @@ You may NOT claim "platform bug" / "FSM wiring is broken" / "this is a known iss
 3. Reading `agentBlocks[].toolCalls` to see what tools the agent actually called.
 4. Confirming the contracted exit (`complete` for `outputTo` actions; terminal text otherwise) was attempted.
 
-If you skipped any of those, you don't have evidence to claim a bug. The Friday runtime has been heavily evaled; the most common cause of "weird output" is a contract violation by the agent or by the FSM author — see `@friday/contracts/agent-action-handshake` for the contract every empty-output case violates.
+If you skipped any of those, you don't have evidence to claim a bug. The Friday runtime has been heavily evaled; the most common cause of "weird output" is a contract violation by the agent or by the FSM author — see `@friday/agent-action-handshake` for the contract every empty-output case violates.
 
 If after the four steps you genuinely believe the runtime is broken, surface it explicitly to the user with the session ID and your evidence — don't try to work around it.
 </runtime_bug_discipline>

@@ -227,6 +227,86 @@ async function checkDirective(c: DirectiveCheck): Promise<EvalResult> {
   return { id: c.id, pass, notes, metrics: { blockName: c.blockName, bodyLength: body.length } };
 }
 
+/**
+ * Repo-wide scan for broken audience-prefix skill refs. The skill directory
+ * layout is FLAT — there is no `packages/system/skills/contracts/`,
+ * `/author/`, `/runtime/`, or `/debug/` subdir. Any prose that writes
+ * `@friday/contracts/<name>` (or any of the other audience prefixes) is
+ * pointing at a non-existent path and will mislead the agent. Catches
+ * the regression class introduced when the prior cleanup pass left two
+ * `@friday/contracts/agent-action-handshake` references in workspace-chat
+ * prompt while fixing the same form everywhere else.
+ */
+const AUDIENCE_PREFIX_RE = /@friday\/(contracts|author|runtime|debug)\//g;
+const AUDIENCE_REF_ROOTS = ["packages/system/skills", "packages/system/agents"];
+
+interface AudienceRefHit {
+  path: string;
+  line: number;
+  text: string;
+}
+
+async function scanForBrokenAudienceRefs(): Promise<EvalResult> {
+  const hits: AudienceRefHit[] = [];
+  for (const root of AUDIENCE_REF_ROOTS) {
+    const full = join(ROOT, root);
+    for await (const path of walkAudienceRefFiles(full)) {
+      let text: string;
+      try {
+        text = await Deno.readTextFile(path);
+      } catch {
+        continue;
+      }
+      const lines = text.split("\n");
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i] ?? "";
+        if (AUDIENCE_PREFIX_RE.test(line)) {
+          hits.push({ path, line: i + 1, text: line.trim().slice(0, 200) });
+        }
+        AUDIENCE_PREFIX_RE.lastIndex = 0;
+      }
+    }
+  }
+  const notes =
+    hits.length === 0
+      ? [
+          `no broken @friday/(contracts|author|runtime|debug)/ refs in skill catalog or chat prompts`,
+        ]
+      : hits.map((h) => `HIT ${h.path}:${h.line}  text=${h.text}`);
+  return {
+    id: "skill-catalog-no-broken-audience-refs",
+    pass: hits.length === 0,
+    notes,
+    metrics: { rootsScanned: AUDIENCE_REF_ROOTS.length, hitCount: hits.length },
+  };
+}
+
+async function* walkAudienceRefFiles(root: string): AsyncGenerator<string> {
+  let stat: Deno.FileInfo;
+  try {
+    stat = await Deno.stat(root);
+  } catch {
+    return;
+  }
+  if (stat.isFile) {
+    yield root;
+    return;
+  }
+  if (!stat.isDirectory) return;
+  for await (const entry of Deno.readDir(root)) {
+    const full = join(root, entry.name);
+    if (entry.isDirectory) {
+      if (entry.name === "node_modules" || entry.name === ".git") continue;
+      yield* walkAudienceRefFiles(full);
+    } else if (entry.isFile) {
+      // Limit to text formats that prose lives in.
+      if (entry.name.endsWith(".md") || entry.name.endsWith(".txt") || entry.name.endsWith(".ts")) {
+        yield full;
+      }
+    }
+  }
+}
+
 const args = Object.fromEntries(
   Deno.args
     .map((a, i, arr) => (a.startsWith("--") ? [a.slice(2), arr[i + 1] ?? true] : null))
@@ -238,7 +318,8 @@ const sha = await currentGitSha();
 const startedAt = new Date().toISOString();
 const skillResults = await Promise.all(SKILL_CHECKS.map(checkSkill));
 const directiveResults = await Promise.all(DIRECTIVE_CHECKS.map(checkDirective));
-const results = [...skillResults, ...directiveResults];
+const audienceRefScan = await scanForBrokenAudienceRefs();
+const results = [...skillResults, ...directiveResults, audienceRefScan];
 const finishedAt = new Date().toISOString();
 
 const report = { id: "skill-catalog-and-directives", sha, startedAt, finishedAt, results };
