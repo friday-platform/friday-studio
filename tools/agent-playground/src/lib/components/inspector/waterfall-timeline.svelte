@@ -32,7 +32,12 @@
   const blocks = $derived(sessionView?.agentBlocks ?? []);
   const hasBlocks = $derived(blocks.some((b) => b.status !== "pending"));
 
-  /** Ticking clock for running bar growth. Only ticks while session is active and a block is running. */
+  /** Ticking clock for running bar growth. Only ticks while session is
+   * active and a block is running. The bars span seconds-to-minutes;
+   * 4Hz (250ms) is indistinguishable from 10Hz visually but cuts the
+   * reactive cascade through `computeTotalDurationMs` / `computeBarLayouts`
+   * by 60%. The original 100ms cadence pre-dated the inspector being
+   * easy to leave open during long sessions. */
   let now = $state(Date.now());
   $effect(() => {
     const terminalStatuses = ["completed", "failed", "skipped"];
@@ -40,7 +45,7 @@
     if (isTerminal || !blocks.some((b) => b.status === "running")) return;
     const interval = setInterval(() => {
       now = Date.now();
-    }, 100);
+    }, 250);
     return () => clearInterval(interval);
   });
 

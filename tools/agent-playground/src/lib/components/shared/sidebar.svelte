@@ -8,7 +8,7 @@
   import CreateWorkspaceForm from "$lib/components/workspace/create-workspace-form.svelte";
   import WorkspaceLoader from "$lib/components/workspace/workspace-loader.svelte";
   import { daemonHealth } from "$lib/daemon-health.svelte";
-  import { countPendingElicitations } from "$lib/elicitation-counts.ts";
+  import { countPendingElicitations, nextElicitationTickMs } from "$lib/elicitation-counts.ts";
   import { workspaceQueries } from "$lib/queries";
   import { elicitationQueries } from "$lib/queries/elicitation-queries.ts";
   import type { Component } from "svelte";
@@ -26,13 +26,26 @@
   const elicitationsQuery = createQuery(() => elicitationQueries.list(null));
   const elicitations = $derived<Elicitation[]>(elicitationsQuery.data ?? []);
 
+  // Sidebar pending-elicitation badges only care about the count flipping
+  // — no countdown text. A blanket 30s `setInterval` polling
+  // `Date.now()` ran on every layout, mutating reactive state every
+  // tick whether or not any elicitation was actually approaching its
+  // deadline. Replace with a one-shot timer aimed at the soonest
+  // pending `expiresAt`: zero ticks when nothing is pending, one wakeup
+  // per deadline. The global-elicitations SSE stream already merges
+  // status transitions into the cache reactively, so this only covers
+  // the lazy `pending → expired` flip the server's sweeper hasn't
+  // caught yet.
   let nowMs = $state<number>(Date.now());
   $effect(() => {
     if (!browser) return;
-    const timer = setInterval(() => {
+    const next = nextElicitationTickMs(elicitations, nowMs, false);
+    if (next === null) return;
+    const delay = Math.max(0, next - Date.now());
+    const timer = setTimeout(() => {
       nowMs = Date.now();
-    }, 30_000);
-    return () => clearInterval(timer);
+    }, delay);
+    return () => clearTimeout(timer);
   });
 
   const globalPendingElicitations = $derived(countPendingElicitations(elicitations, nowMs));

@@ -24,7 +24,11 @@
   import { createQuery, useQueryClient } from "@tanstack/svelte-query";
   import { browser } from "$app/environment";
   import { page } from "$app/state";
-  import { countPendingElicitations, effectiveElicitationStatus } from "$lib/elicitation-counts.ts";
+  import {
+    countPendingElicitations,
+    effectiveElicitationStatus,
+    nextElicitationTickMs,
+  } from "$lib/elicitation-counts.ts";
   import { workspaceQueries } from "$lib/queries";
   import {
     elicitationQueries,
@@ -62,13 +66,26 @@
   // ---------------------------------------------------------------------------
   // Live tick — drives the countdown + lazy-expired status
   // ---------------------------------------------------------------------------
+  // The Activity surface was previously polling `Date.now()` once a second
+  // forever, regardless of whether any elicitation was actually counting
+  // down or near expiry. Replace that with a one-shot `setTimeout` aimed
+  // at the next interesting moment: either a pending entry's `expiresAt`
+  // (for the lazy `pending → expired` flip the server's 60s sweeper
+  // hasn't gotten to yet) or the next second-boundary while any pending
+  // entry is in the last-minute "in Xs" countdown window. When the timer
+  // fires the effect re-runs and arms the next one; when nothing is
+  // pending the effect quiesces. SSE-driven cache merges already deliver
+  // status transitions to subscribers.
   let nowMs = $state<number>(Date.now());
   $effect(() => {
     if (!browser) return;
-    const t = setInterval(() => {
+    const next = nextElicitationTickMs(elicitations, nowMs, true);
+    if (next === null) return;
+    const delay = Math.max(0, next - Date.now());
+    const id = setTimeout(() => {
       nowMs = Date.now();
-    }, 1_000);
-    return () => clearInterval(t);
+    }, delay);
+    return () => clearTimeout(id);
   });
 
   // ---------------------------------------------------------------------------

@@ -3,6 +3,7 @@ import type { Elicitation } from "@atlas/core/elicitations/model";
 import {
   countPendingElicitations,
   effectiveElicitationStatus,
+  nextElicitationTickMs,
 } from "./elicitation-counts.ts";
 
 function makeElicitation(overrides: Partial<Elicitation>): Elicitation {
@@ -62,5 +63,81 @@ describe("elicitation counts", () => {
 
     expect(countPendingElicitations(elicitations, nowMs, "ws-1")).toBe(1);
     expect(countPendingElicitations(elicitations, nowMs, "ws-2")).toBe(1);
+  });
+});
+
+describe("nextElicitationTickMs", () => {
+  const nowMs = Date.parse("2026-05-07T00:00:30.000Z");
+
+  it("returns null when nothing is pending", () => {
+    const elicitations = [
+      makeElicitation({ status: "answered" }),
+      makeElicitation({ status: "declined" }),
+    ];
+    expect(nextElicitationTickMs(elicitations, nowMs, false)).toBeNull();
+    expect(nextElicitationTickMs(elicitations, nowMs, true)).toBeNull();
+  });
+
+  it("returns null when every pending entry is already past expiry", () => {
+    const elicitations = [
+      makeElicitation({
+        status: "pending",
+        expiresAt: "2026-05-07T00:00:00.000Z",
+      }),
+    ];
+    expect(nextElicitationTickMs(elicitations, nowMs, false)).toBeNull();
+  });
+
+  it("schedules at the soonest pending expiresAt", () => {
+    const elicitations = [
+      makeElicitation({
+        id: "later",
+        status: "pending",
+        expiresAt: "2026-05-07T00:05:00.000Z",
+      }),
+      makeElicitation({
+        id: "soonest",
+        status: "pending",
+        expiresAt: "2026-05-07T00:01:00.000Z",
+      }),
+      makeElicitation({
+        id: "later-2",
+        status: "pending",
+        expiresAt: "2026-05-07T00:02:00.000Z",
+      }),
+    ];
+    expect(nextElicitationTickMs(elicitations, nowMs, false)).toBe(
+      Date.parse("2026-05-07T00:01:00.000Z"),
+    );
+  });
+
+  it("adds a 1s tick when a pending entry is within the last minute (countdown mode)", () => {
+    const elicitations = [
+      makeElicitation({
+        status: "pending",
+        // 45s away
+        expiresAt: "2026-05-07T00:01:15.000Z",
+      }),
+    ];
+    expect(nextElicitationTickMs(elicitations, nowMs, true)).toBe(nowMs + 1_000);
+    // Without countdown mode, the soonest interesting moment is the
+    // expiry itself.
+    expect(nextElicitationTickMs(elicitations, nowMs, false)).toBe(
+      Date.parse("2026-05-07T00:01:15.000Z"),
+    );
+  });
+
+  it("skips entries with malformed expiresAt", () => {
+    const elicitations = [
+      makeElicitation({ status: "pending", expiresAt: "not-a-date" }),
+      makeElicitation({
+        id: "valid",
+        status: "pending",
+        expiresAt: "2026-05-07T00:02:00.000Z",
+      }),
+    ];
+    expect(nextElicitationTickMs(elicitations, nowMs, false)).toBe(
+      Date.parse("2026-05-07T00:02:00.000Z"),
+    );
   });
 });
