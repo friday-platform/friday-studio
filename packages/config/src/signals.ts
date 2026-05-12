@@ -171,14 +171,6 @@ export const DiscordProviderConfigSchema = z.strictObject({
 });
 export type DiscordProviderConfig = z.infer<typeof DiscordProviderConfigSchema>;
 
-export const GitHubProviderConfigSchema = z.strictObject({
-  default_destination: z
-    .string()
-    .optional()
-    .describe("Placeholder for v2 proactive outbound (unused in v1)."),
-});
-export type GitHubProviderConfig = z.infer<typeof GitHubProviderConfigSchema>;
-
 export const TeamsProviderConfigSchema = z.strictObject({
   app_id: z.string().optional().describe("Azure Bot App ID. Falls back to TEAMS_APP_ID env var."),
   app_password: z

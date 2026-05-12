@@ -1,7 +1,6 @@
 import { z } from "zod";
 import {
   DiscordProviderConfigSchema,
-  GitHubProviderConfigSchema,
   SlackProviderConfigSchema,
   TeamsProviderConfigSchema,
   TelegramProviderConfigSchema,
@@ -65,7 +64,7 @@ const WhatsAppCommunicatorSchema = WhatsAppProviderConfigSchema.extend({
   kind: z.literal("whatsapp"),
 });
 
-const GitHubCommunicatorSchema = GitHubProviderConfigSchema.extend({ kind: z.literal("github") });
+const GitHubCommunicatorSchema = z.strictObject({ kind: z.literal("github") });
 
 export const CommunicatorConfigSchema = z.discriminatedUnion("kind", [
   SlackCommunicatorSchema,

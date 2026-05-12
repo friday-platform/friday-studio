@@ -237,6 +237,73 @@ describe("GitHub chat-adapter integration: webhook HMAC verification", () => {
     expect(adapterArg).toBe(githubAdapter);
     expect(threadIdArg).toBe(expectedThreadId);
   });
+
+  // Regression guard for the bot self-reply filter: the adapter drops events
+  // whose `comment.user.id` matches `botUserId`. Without it, the bot's own
+  // replies trigger inbound webhooks and infinite-loop. Signature is valid so
+  // we exercise the post-HMAC filter, not the 401 path.
+  it("drops a signed webhook when comment.user.id matches botUserId (self-reply guard)", async () => {
+    const adapters = buildChatSdkAdapters({
+      workspaceId: "ws-1",
+      signals: githubSignals,
+      credentials: githubCreds,
+      streamRegistry: new StreamRegistry(),
+    });
+
+    const githubAdapter = adapters.github;
+    expect(githubAdapter).toBeDefined();
+    if (!githubAdapter) return;
+
+    const processMessage = vi.fn();
+    const chatStub = {
+      processMessage,
+      getState: () => ({
+        get: vi.fn().mockResolvedValue(undefined),
+        set: vi.fn().mockResolvedValue(undefined),
+        subscribe: vi.fn().mockResolvedValue(undefined),
+      }),
+    };
+    await githubAdapter.initialize?.(chatStub as never);
+
+    const payload: Record<string, unknown> = {
+      action: "created",
+      installation: { id: 67890 },
+      issue: { number: 42, html_url: "https://github.com/acme/widgets/issues/42" },
+      repository: {
+        id: 1,
+        name: "widgets",
+        full_name: "acme/widgets",
+        owner: { login: "acme", id: 100, type: "Organization" },
+      },
+      comment: {
+        id: 555,
+        body: "looking into this now",
+        // The bot is the sender — `comment.user.id === botUserId (99999)`.
+        user: { id: githubCreds.botUserId, login: "friday-bot[bot]", type: "Bot" },
+        created_at: "2026-05-09T12:00:00Z",
+        updated_at: "2026-05-09T12:00:00Z",
+        html_url: "https://github.com/acme/widgets/issues/42#issuecomment-555",
+      },
+      sender: { id: githubCreds.botUserId, login: "friday-bot[bot]", type: "Bot" },
+    };
+    const body = JSON.stringify(payload);
+    const request = new Request("http://localhost/signals/github", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-GitHub-Event": "issue_comment",
+        "X-GitHub-Delivery": "delivery-self-reply",
+        "X-Hub-Signature-256": signBody(body, githubCreds.webhookSecret),
+      },
+      body,
+    });
+
+    const response = await githubAdapter.handleWebhook(request);
+    // Adapter ack: signature valid, event accepted, but self-reply filter
+    // short-circuits before chat dispatch.
+    expect(response.status).toBe(200);
+    expect(processMessage).not.toHaveBeenCalled();
+  });
 });
 
 describe("resolveGithubFromLink: snake_case → camelCase secret mapping", () => {

@@ -52,19 +52,6 @@ describe("CommunicatorConfigSchema", () => {
         phone_number_id: "555",
       });
     });
-
-    it("parses a github communicator with kind only", () => {
-      const parsed = CommunicatorConfigSchema.parse({ kind: "github" });
-      expect(parsed).toEqual({ kind: "github" });
-    });
-
-    it("parses a github communicator with default_destination", () => {
-      const parsed = CommunicatorConfigSchema.parse({
-        kind: "github",
-        default_destination: "octo/repo",
-      });
-      expect(parsed).toEqual({ kind: "github", default_destination: "octo/repo" });
-    });
   });
 
   describe("rejection", () => {

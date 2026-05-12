@@ -1,3 +1,4 @@
+import { createPrivateKey } from "node:crypto";
 import * as jose from "jose";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { GithubAppSecretSchema, githubAppProvider } from "./github-app.ts";
@@ -5,14 +6,21 @@ import { GithubAppSecretSchema, githubAppProvider } from "./github-app.ts";
 type FetchInit = { method?: string; headers?: Record<string, string> };
 
 let validPrivateKeyPkcs8Pem: string;
+let validPrivateKeyPkcs1Pem: string;
 
 beforeAll(async () => {
   // Generate a real RSA keypair so signAppJwt() exercises the actual signing
   // path. PKCS8 (BEGIN PRIVATE KEY) is what jose.exportPKCS8 emits — covers
-  // the modern format. The PKCS1 fallback path in signAppJwt is exercised
-  // implicitly when an operator pastes a downloaded GitHub App PEM.
+  // the modern format. PKCS1 (BEGIN RSA PRIVATE KEY) is what GitHub's `.pem`
+  // download defaults to — the operator-default install path — so we re-export
+  // the same key in PKCS1 to cover the signAppJwt PKCS1→PKCS8 fallback for
+  // real, not just via the schema regex.
   const pair = await jose.generateKeyPair("RS256", { extractable: true });
   validPrivateKeyPkcs8Pem = await jose.exportPKCS8(pair.privateKey);
+  validPrivateKeyPkcs1Pem = createPrivateKey(validPrivateKeyPkcs8Pem).export({
+    format: "pem",
+    type: "pkcs1",
+  }) as string;
 });
 
 describe("githubAppProvider.secretSchema", () => {
@@ -143,6 +151,27 @@ describe("githubAppProvider.health", () => {
     // /users/{login} is a public endpoint that rejects App JWTs with 401, so
     // the bot-user fetch must be unauthenticated. Regression guard for B-4.
     expect(userInit?.headers?.Authorization).toBeUndefined();
+  });
+
+  it("captures bot identity when private_key is PKCS1 (GitHub's default .pem format)", async () => {
+    fetchMock.mockResolvedValueOnce(mockJsonResponse(200, { slug: "friday-bot" }));
+    fetchMock.mockResolvedValueOnce(mockJsonResponse(200, { id: 99001 }));
+    fetchMock.mockResolvedValueOnce(
+      mockJsonResponse(200, { id: 12345678, login: "friday-bot[bot]" }),
+    );
+
+    if (!githubAppProvider.health) throw new Error("health should be defined");
+    const result = await githubAppProvider.health({
+      app_id: 100,
+      private_key: validPrivateKeyPkcs1Pem,
+      webhook_secret: "secret",
+      installation_id: 99001,
+    });
+
+    expect(result).toEqual({
+      healthy: true,
+      metadata: { bot_user_slug: "friday-bot", bot_user_id: 12345678 },
+    });
   });
 
   it("returns healthy:false on bad keypair (401 from /app)", async () => {

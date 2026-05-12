@@ -17,9 +17,11 @@ import { defineApiKeyProvider, type HealthResult } from "./types.ts";
  * **Trust contract:** if `health()` resolves with `{ healthy: true }`, the
  * four user-supplied fields produce a working installation client and the
  * returned `metadata.bot_user_slug` / `metadata.bot_user_id` are valid
- * identifiers for the App's bot user. `webhook_secret` is **not** validated —
- * there is no GitHub API surface to probe it; the first real webhook is the
- * de-facto check.
+ * identifiers for the App's bot user. `webhook_secret` is **not** validated
+ * here — the provider never sees a webhook; the chat-sdk adapter HMAC-checks
+ * each delivery at signal time. A typo will silently 401 every inbound
+ * webhook with no setup-time signal — see `setupInstructions` step 10 for the
+ * operator-facing diagnosis.
  *
  * **Webhook URL:** the daemon serves a single `/platform/github` route and
  * dispatches to a workspace using `installation.id` from the event body
