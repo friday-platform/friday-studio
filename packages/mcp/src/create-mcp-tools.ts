@@ -89,13 +89,21 @@ function withTimeout<T>(
   return Promise.race([promise.finally(() => clearTimeout(timer)), timeoutPromise]);
 }
 
-/** Add the 15-minute hard ceiling to a single tool's execute. */
+/**
+ * Add the 15-minute hard ceiling to a single tool's execute, while
+ * forwarding the caller's `opts.abortSignal` into the inner
+ * `tool.execute` so a parent-side abort propagates into the AI-SDK MCP
+ * adapter (which forwards it into `client.callTool({ signal })`). The
+ * `Promise.race` against the timeout is preserved — collapsing it into
+ * `AbortSignal.timeout` would lose the typed `MCPTimeoutError` the
+ * warn-log branch in `createMCPTools` keys off.
+ */
 function wrapToolWithTimeout(tool: Tool, serverId: string): Tool {
   return {
     ...tool,
     execute: (args, opts) => {
       return withTimeout(
-        tool.execute!(args, opts),
+        tool.execute!(args, { ...opts, abortSignal: opts.abortSignal }),
         CALL_TOOL_TIMEOUT_MS,
         (actualDurationMs) =>
           new MCPTimeoutError(serverId, "call_tool", CALL_TOOL_TIMEOUT_MS, actualDurationMs),

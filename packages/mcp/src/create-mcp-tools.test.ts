@@ -871,6 +871,86 @@ describe("createMCPTools", () => {
 
       await expect(executePromise).rejects.toBeInstanceOf(MCPTimeoutError);
     });
+
+    // Two assertions in one test: (a) parent abortSignal aborts in ≤500ms,
+    // (b) the same wrapper still throws the typed MCPTimeoutError when no
+    // parent abort fires. Stops a future refactor from collapsing the
+    // race into AbortSignal.timeout and losing the typed error.
+    it("forwards opts.abortSignal into inner execute and preserves MCPTimeoutError", async () => {
+      // (a) Signal path — stub execute that resolves after 5s but rejects
+      // when its abortSignal fires. Abort at 100ms → wrapper rejects.
+      const signalExecute = vi.fn().mockImplementation(
+        (_args: unknown, opts: { abortSignal?: AbortSignal }) =>
+          new Promise((resolve, reject) => {
+            const t = setTimeout(() => resolve("ok"), 5_000);
+            opts.abortSignal?.addEventListener("abort", () => {
+              clearTimeout(t);
+              reject(opts.abortSignal?.reason ?? new Error("aborted"));
+            });
+          }),
+      );
+
+      mockCreateMCPClient.mockResolvedValueOnce({
+        tools: vi
+          .fn()
+          .mockResolvedValue({ "abort-tool": { description: "honors abort", execute: signalExecute } }),
+        close: vi.fn().mockResolvedValue(undefined),
+      });
+
+      const signalConfigs: Record<string, MCPServerConfig> = {
+        "server-signal": { transport: { type: "stdio", command: "echo", args: [] } },
+      };
+      const signalResult = await createMCPTools(signalConfigs, fakeLogger);
+      const abortTool = signalResult.tools["abort-tool"]!;
+
+      const controller = new AbortController();
+      const start = Date.now();
+      // Attach the catch synchronously so the rejection isn't briefly
+      // unhandled between `controller.abort` and the awaited assertion —
+      // vitest's process-level unhandled-rejection capture is eager.
+      const abortingPromise = abortTool
+        .execute!(
+          {},
+          { toolCallId: "tc_signal", messages: [], abortSignal: controller.signal },
+        )
+        .catch((err: unknown) => err);
+
+      const advance = vi as unknown as { advanceTimersByTimeAsync: (ms: number) => Promise<void> };
+      await advance.advanceTimersByTimeAsync(100);
+      controller.abort(new Error("parent abort"));
+      await advance.advanceTimersByTimeAsync(0);
+
+      const settled = await abortingPromise;
+      expect(settled).toBeInstanceOf(Error);
+      expect((settled as Error).message).toBe("parent abort");
+      // Fake timers — elapsed measures fake-clock progress, not wall time.
+      // A wrapper that ignored opts.abortSignal would stall until 5_000.
+      expect(Date.now() - start).toBeLessThanOrEqual(500);
+      expect(signalExecute).toHaveBeenCalledWith(
+        {},
+        expect.objectContaining({ abortSignal: controller.signal }),
+      );
+
+      // (b) Timeout path — same wrapper, no parent abort. The 15-minute
+      // hard ceiling must still throw the typed MCPTimeoutError so the
+      // mcp_timeout warn branch in createMCPTools keeps firing.
+      const hangExecute = vi.fn().mockImplementation(() => new Promise(() => {}));
+      mockCreateMCPClient.mockResolvedValueOnce({
+        tools: vi
+          .fn()
+          .mockResolvedValue({ "hang-tool": { description: "hangs", execute: hangExecute } }),
+        close: vi.fn().mockResolvedValue(undefined),
+      });
+      const hangConfigs: Record<string, MCPServerConfig> = {
+        "server-hang": { transport: { type: "stdio", command: "echo", args: [] } },
+      };
+      const hangResult = await createMCPTools(hangConfigs, fakeLogger);
+      const hangTool = hangResult.tools["hang-tool"]!;
+      const hangPromise = hangTool.execute!({}, { toolCallId: "tc_hang", messages: [] });
+
+      vi.advanceTimersByTime(15 * 60 * 1_000 + 1_000);
+      await expect(hangPromise).rejects.toBeInstanceOf(MCPTimeoutError);
+    });
   });
 
   describe("stdio arg placeholder expansion", () => {
