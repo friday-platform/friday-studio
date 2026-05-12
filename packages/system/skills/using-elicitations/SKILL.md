@@ -1,16 +1,16 @@
 ---
 name: using-elicitations
-description: Asks the user mid-run via the elicitation tools — `request_tool_access` for allowlist approvals and `request_human_input` for HITL (human-in-the-loop) decisions, approvals, confirmations, and disambiguation. Use when an FSM action or chat agent needs the user to choose, approve, or supply input before the run can continue. Covers simple multiple choice, nested per-item choice, prompt formatting, the chat vs FSM contract difference, and how to consume the answer.
+description: Asks the user mid-run from inside an FSM action or Python `type: user` agent via the elicitation tools — `request_tool_access` for allowlist approvals and `request_human_input` for HITL (human-in-the-loop) decisions, approvals, confirmations, and disambiguation. Use when a job needs the user to choose, approve, or supply input before the action can continue. Covers simple multiple choice, nested per-item choice, prompt formatting, and how to consume the answer.
 ---
 
 # Using elicitations
 
-Elicitations pause a run, surface a prompt to the user in the Activity feed and chat sidebar, and resume the same tool call with the user's answer. Two tools, one mechanism.
+Elicitations pause a running FSM action (or Python `type: user` agent), surface a prompt to the user in the Activity feed, and resume the same tool call with the user's answer. Two tools, one mechanism.
 
 - `request_tool_access(toolName, reason)` — ask for permission to call a tool not in the action's allowlist. Fixed options: Allow once, Allow always, Deny.
 - `request_human_input(question, options?)` — ask the user a question. Flat options for simple choice, free-form text when options omitted, or grouped per-item options for nested choice.
 
-The contract depends on where the call happens. **FSM actions and Python `type: user` agents block** — the tool call returns the user's terminal answer in the same run. **Chat supervisors do not block** — the tool returns `pending` immediately, the user answers via the inline card, and the answer is visible on a subsequent chat turn rather than as the tool's return value. See "Response shapes by surface" below.
+Both tools **block** until the user answers, declines, or the elicitation expires. The terminal answer comes back as the tool's return value, and the action continues from there in the same run.
 
 ## Choosing between them
 
@@ -22,7 +22,7 @@ The contract depends on where the call happens. **FSM actions and Python `type: 
 | Approval before a destructive side effect | `request_human_input` with `[Confirm, Cancel]` |
 | One choice for each of several items | `request_human_input` with grouped options |
 
-Never substitute a chat menu for `request_human_input`. An `outputTo` action that prints choices and waits for a future user message will fail — the action only resumes through the elicitation answer envelope.
+Never substitute a prose menu for `request_human_input`. An `outputTo` action that prints choices and waits for a future user message will fail — the action only resumes through the elicitation answer envelope.
 
 ## Formatting the question
 
@@ -30,7 +30,7 @@ The `question` field renders as plain text with whitespace preserved. The UI doe
 
 - No `**bold**`, no `#` headings, no `- ` bullets, no fenced code. They render literally.
 - Lead with a short top-level title and a one-line description of what the user is choosing.
-- Keep the question itself terse — the action's verbose context belongs in the surrounding chat turn, not the prompt body.
+- Keep the question itself terse — the action's verbose context belongs in the action's prose output, not the prompt body.
 - Newlines are preserved; use them to separate sections, never markdown.
 
 Bad — markdown that renders as raw characters:
@@ -165,13 +165,9 @@ Rules:
 
 Authoring rule: only declare `request_tool_access` on actions that can produce a useful denial outcome (partial result, clear explanation). Don't list it as a generic escape hatch.
 
-## Response shapes by surface
+## Handling human-input answers
 
-`request_human_input` has two surfaces with different contracts. Branch on which one your caller is.
-
-### FSM actions and Python `type: user` agents — blocking
-
-The tool blocks until terminal, then returns:
+`request_human_input` blocks until terminal, then returns:
 
 ```ts
 {
@@ -186,28 +182,13 @@ The tool blocks until terminal, then returns:
 - `status: "answered"` → branch on `answer`. For grouped prompts, `JSON.parse(answer)` first.
 - `status: "declined"` or `"expired"` → halt the side effect, summarise what was skipped, and finish the action without faking the answer.
 
-### Chat supervisor — non-blocking
-
-The tool returns immediately the moment the elicitation is created:
-
-```ts
-{
-  ok: false,
-  status: "pending",
-  elicitationId: string,
-  reason: "pending_user_input",
-}
-```
-
-There is no `answer` field. The inline card in chat renders the question and lets the user answer there; the user's answer flows back as a new chat turn, not as a return value to this tool call. Acknowledge the prompt in your response, stop, and wait. **Do not retry the call** — re-issuing the same `(question, options)` re-uses the existing pending elicitation rather than stacking new ones, but the cleaner pattern is to ask once and yield.
+Python `type: user` agents call the same primitive through `ctx.tools.call("request_human_input", {"question": ..., "options": [...]})` with the same return shape.
 
 ## Lifecycle and timeouts
 
-- **FSM/MCP path**: elicitation TTL inherits the parent job's `config.timeout` (override per-job with `jobs.<name>.elicitations.timeout`). Default is 30 minutes.
-- **Chat path**: TTL is fixed at 30 minutes. Chat doesn't have a job timeout to inherit, and there is no per-call override.
-- Both paths reuse a still-pending elicitation with the same `(question, options, sessionId, actionId)` rather than creating a duplicate. This makes accidental LLM retries idempotent.
+- Elicitation TTL inherits the parent job's `config.timeout` (override per-job with `jobs.<name>.elicitations.timeout`). Default is 30 minutes.
+- The same `(question, options, sessionId, actionId)` re-uses any still-pending elicitation rather than creating a duplicate. Accidental retries are idempotent.
 - Expired prompts move to a read-only Activity log entry; the user cannot answer them retroactively, and acting on one does not reify the timed-out job.
-- Chat-side surfaces are provided by `packages/system/agents/workspace-chat/tools/request-tool-access.ts` and `packages/system/agents/workspace-chat/tools/request-human-input.ts`. Both mirror the MCP versions for the supervisor with the non-blocking return contract documented above.
 
 ## Gotchas
 
@@ -215,6 +196,6 @@ There is no `answer` field. The inline card in chat renders the question and let
 - `options` is flat. There is no `multi_select`, no `default`, no nested option objects. Encode item grouping in label/value strings.
 - Grouped options need at least two items and at least two actions per item or the UI falls back to a flat list.
 - `request_tool_access` is for permission, not for asking the user what tool to use. If the underlying problem is "which provider", that is a `request_human_input` question with options like `[Gmail, Outlook]`, not a tool-access request.
-- An `outputTo` LLM action must complete in one execution. Without `request_human_input`, the action cannot wait for a chat reply — the run will end without the answer.
-- Do not chat-stream a menu and call `request_human_input` with no options expecting free text. Either provide options or expect free-form text; pick one.
+- An `outputTo` LLM action must complete in one execution. Without `request_human_input`, the action cannot wait for a user reply — the run will end without the answer.
+- Don't call `request_human_input` with no options when you actually expect a fixed choice. Either provide options (so the UI renders buttons) or expect free-form text — pick one.
 - Per-item comments in `answer.note` are advisory. Do not parse them for primary commands — those go in `answer.value`.

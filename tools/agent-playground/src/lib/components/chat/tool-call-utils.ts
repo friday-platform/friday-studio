@@ -20,22 +20,10 @@ export function isInProgress(state: ToolCallDisplay["state"]): boolean {
  */
 export function needsUserAction(call: ToolCallDisplay): boolean {
   if (call.toolName === "display_artifact") return true;
-  if (call.toolName === "request_human_input") return true;
-  if (call.toolName === "connect_service" && call.state === "output-available") return true;
-  if (call.toolName === "connect_communicator" && call.state === "output-available") return true;
-  return call.children?.some((child) => childRequiresParentLift(child)) ?? false;
-}
-
-// A direct `request_human_input` always renders expanded (the inline answer
-// card owns its own pending/answered/expired states). A *nested* HITL,
-// though, lifts its parent only while still soliciting input — once
-// answered, the parent collapses back into the burst.
-function childRequiresParentLift(call: ToolCallDisplay): boolean {
-  if (call.toolName === "display_artifact") return true;
   if (call.toolName === "request_human_input" && isInProgress(call.state)) return true;
   if (call.toolName === "connect_service" && call.state === "output-available") return true;
   if (call.toolName === "connect_communicator" && call.state === "output-available") return true;
-  return call.children?.some((child) => childRequiresParentLift(child)) ?? false;
+  return call.children?.some((child) => needsUserAction(child)) ?? false;
 }
 
 export function isError(state: ToolCallDisplay["state"]): boolean {

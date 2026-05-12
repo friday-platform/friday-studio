@@ -110,7 +110,6 @@ import {
 } from "./tools/memory-entry-tools.ts";
 import { createMemorySaveTool } from "./tools/memory-save.ts";
 import { createPublishSkillTool } from "./tools/publish-skill.ts";
-import { createRequestHumanInputTool } from "./tools/request-human-input.ts";
 import { createRequestToolAccessTool } from "./tools/request-tool-access.ts";
 import { createSearchMcpServersTool } from "./tools/search-mcp-servers.ts";
 import { createDescribeSessionTool, createListSessionsTool } from "./tools/session-tools.ts";
@@ -973,7 +972,6 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
             workspacePermissions: wsConfig?.permissions,
             logger,
           }),
-          ...createRequestHumanInputTool({ workspaceId, sessionId: adHocSessionId, logger }),
           ...webFetchTool,
           ...webSearchTool,
           ...runCodeTool,
