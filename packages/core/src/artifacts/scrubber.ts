@@ -472,6 +472,42 @@ export function liftValueForModel(
   return scrubValue(value, ctx, { serverId: opts.serverId, toolName: opts.toolName }, 0);
 }
 
+/**
+ * Lift a single text answer above the text threshold to an artifact and
+ * return both the replacement marker and the artifact id as separate
+ * fields. The artifact id is what downstream consumers (stop predicates,
+ * display_artifact callers, judges) should rely on — a structured signal
+ * that a lift actually happened, rather than parsing the marker text.
+ *
+ * Returns `{ value: original, artifactId: undefined }` when the input is
+ * under the threshold or the upload failed. Never throws — upload errors
+ * are logged and treated as a no-op lift.
+ */
+export async function liftAnswerForModel(
+  answer: string,
+  opts: ScrubberOptions & { serverId: string; toolName: string },
+): Promise<{ value: string; artifactId?: string }> {
+  if (answer.startsWith(REF_MARKER_PREFIX)) {
+    return { value: answer };
+  }
+  if (answer.length < TEXT_THRESHOLD_CHARS) {
+    return { value: answer };
+  }
+  const ctx: ScrubContext = {
+    workspaceId: opts.workspaceId,
+    chatId: opts.chatId,
+    logger: opts.logger,
+    uploads: new Map(),
+  };
+  const toolCtx = { serverId: opts.serverId, toolName: opts.toolName };
+  const sniffedMime = sniffTextMime(answer);
+  const base64 = btoa(unescape(encodeURIComponent(answer)));
+  const filename = defaultFilename(sniffedMime, toolCtx);
+  const upload = await uploadBlob(base64, sniffedMime, filename, ctx, toolCtx);
+  if (!upload) return { value: answer };
+  return { value: refMarker(upload, toolCtx), artifactId: upload.artifactId };
+}
+
 export async function liftToolResultsForPersist(
   toolCalls: ReadonlyArray<ToolCallForLift>,
   opts: ScrubberOptions,

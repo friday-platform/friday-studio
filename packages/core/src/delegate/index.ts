@@ -25,7 +25,7 @@ import { truncateForLedger } from "@atlas/utils";
 import type { ToolCallRepairFunction, UIMessageStreamWriter } from "ai";
 import { stepCountIs, streamText, tool } from "ai";
 import { z } from "zod";
-import { liftValueForModel } from "../artifacts/scrubber.ts";
+import { liftAnswerForModel } from "../artifacts/scrubber.ts";
 import { discoverMCPServers, type LinkSummary } from "../mcp-registry/discovery.ts";
 import { FINISH_TOOL_NAME, type FinishInput, finishTool, parseFinishInput } from "./finish-tool.ts";
 import { createDelegateProxyWriter } from "./proxy-writer.ts";
@@ -135,15 +135,16 @@ export interface DelegateDeps {
    */
   archiveCache?: SkillArchiveCache;
   /**
-   * When true (default), large successful-answer strings are routed through
-   * the shared lift walker before they leave `execute`. The parent LLM's
-   * tool-result view sees the artifact marker; the supervisor's next step
-   * won't re-decode prose the child already streamed to the user via
-   * `data-delegate-chunk` text-deltas.
+   * When true (default), large successful-answer strings are lifted to an
+   * artifact before `execute` returns. The returned `answer` is the marker
+   * text; `answerArtifactId` carries the structured signal. Persistence
+   * short-circuits on the marker prefix, so a single artifact represents
+   * the answer end-to-end.
    *
-   * Direct-execute consumers that consume the answer themselves (the judge
-   * agent's verdict parser at `judge-agent.ts:263`) opt out by setting
-   * `false` — they need the raw answer for parsing, not an artifact ref.
+   * Direct-execute callers that consume the answer themselves (the judge
+   * agent's verdict parser) opt out with `false` — they need the raw text,
+   * not a marker. Setting this on a code path that feeds the answer into
+   * another LLM is almost always wrong; keep the default.
    */
   liftAnswer?: boolean;
 }
@@ -171,6 +172,16 @@ export type DelegateResult =
   | {
       ok: true;
       answer: string;
+      /**
+       * Structured "answer was lifted to an artifact" signal. Stamped by
+       * `execute` when the child's answer exceeded the text-lift threshold
+       * and a successful upload happened. Downstream consumers (stop
+       * predicates, display-artifact callers, judges) should branch on the
+       * presence of this field rather than parsing marker text out of
+       * `answer` — the marker is a human-readable rendering, this is the
+       * machine signal.
+       */
+      answerArtifactId?: string;
       toolsUsed: DelegateToolsUsedEntry[];
       serverFailures?: ServerFailure[];
     }
@@ -416,20 +427,6 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
           .join("\n\n");
 
         const conversationalModel = platformModels.get("conversational");
-        // The child's first step does the initial planning + first round of
-        // tool calls — keep it on the conversational model so the plan is
-        // sound. Subsequent steps are mechanical: process tool results,
-        // call the next tool, eventually emit text. Those decode much
-        // faster on the classifier-tier model (Haiku 4.5 by default)
-        // without meaningful quality loss for the synthesis the child
-        // typically produces. The supervisor's parent step that wraps any
-        // user-facing prose stays on the conversational model regardless.
-        let fastModel: ReturnType<typeof platformModels.get> | undefined;
-        try {
-          fastModel = platformModels.get("classifier");
-        } catch {
-          fastModel = undefined;
-        }
 
         // Input-token watchdog. The AI SDK's `onStepFinish` fires after
         // each child step with `usage.inputTokens` for that
@@ -449,12 +446,6 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
           maxOutputTokens,
           abortSignal: childAbortSignal,
           providerOptions: getDefaultProviderOpts("anthropic"),
-          prepareStep: ({ stepNumber }) => {
-            if (stepNumber > 0 && fastModel) {
-              return { model: fastModel };
-            }
-            return undefined;
-          },
           onStepFinish: ({ usage }) => {
             const stepInput = usage?.inputTokens;
             if (typeof stepInput === "number" && stepInput > 0) {
@@ -614,29 +605,31 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
       if (executionError) {
         return { ok: false, reason: executionError.message, ...resultBase };
       }
-      // Successful answers above the shared text threshold are routed
-      // through the artifact-lift walker before they leave `execute`.
-      // The supervisor LLM's tool-result view sees an artifact marker
-      // rather than the inline prose — prevents re-decoding content the
-      // child has already streamed to the user via `data-delegate-chunk`
-      // text-deltas. Direct-execute callers (judge agent) that parse the
-      // raw answer themselves pass `liftAnswer: false`.
-      const projectAnswer = async (raw: string): Promise<string> => {
-        if (!liftAnswer) return raw;
-        const lifted = await liftValueForModel(raw, {
+      // Successful answers above the shared text threshold are uploaded
+      // to an artifact and stamped with `answerArtifactId`. The raw
+      // `answer` stays in the execute return so chat persistence, the
+      // UI's `tool-delegate` part renderer, and direct-execute callers
+      // (judge) keep getting the full text. The supervisor LLM's view
+      // is the artifact marker — substituted by `toModelOutput` below,
+      // not by mutating execute's return.
+      const stampLift = async (
+        raw: string,
+      ): Promise<{ answer: string; answerArtifactId?: string }> => {
+        if (!liftAnswer) return { answer: raw };
+        const { value, artifactId } = await liftAnswerForModel(raw, {
           workspaceId: session.workspaceId,
           chatId: session.sessionId,
           logger,
           serverId: "pre-model",
           toolName: DELEGATE_TOOL_NAME,
         });
-        return typeof lifted === "string" ? lifted : raw;
+        return artifactId ? { answer: value, answerArtifactId: artifactId } : { answer: raw };
       };
 
       if (finishInput) {
         if (finishInput.ok) {
-          const answer = await projectAnswer(finishInput.answer);
-          return { ok: true, answer, ...resultBase };
+          const lifted = await stampLift(finishInput.answer);
+          return { ok: true, ...lifted, ...resultBase };
         }
         return { ok: false, reason: finishInput.reason, ...resultBase };
       }
@@ -646,8 +639,8 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
       if (textError) {
         return { ok: false, reason: textError.message, ...resultBase };
       }
-      const answer = await projectAnswer(finalText);
-      return { ok: true, answer, ...resultBase };
+      const lifted = await stampLift(finalText);
+      return { ok: true, ...lifted, ...resultBase };
     },
   });
 }

@@ -48,6 +48,7 @@ export {
 // at the persistence boundary, `scrubAssistantMessage` at chat pre-persist.
 export type { ScrubberOptions } from "./scrubber.ts";
 export {
+  liftAnswerForModel,
   liftToolResultsForPersist,
   liftValueForModel,
   scrubAssistantMessage,

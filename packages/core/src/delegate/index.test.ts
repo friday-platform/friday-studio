@@ -22,11 +22,14 @@ const mockStepCountIs = vi.hoisted(() => vi.fn((n: number) => ({ __stepCountIs: 
 const mockDiscoverMCPServers = vi.hoisted(() => vi.fn());
 const mockCreateMCPTools = vi.hoisted(() => vi.fn());
 const mockResolveDelegateSkills = vi.hoisted(() => vi.fn());
-// `liftValueForModel` lives under `../artifacts/scrubber.ts`. The default
+// `liftAnswerForModel` lives under `../artifacts/scrubber.ts`. The default
 // passthrough keeps existing tests deterministic (no actual scrub call);
 // individual cases override the implementation to assert the wiring.
-const mockLiftValueForModel = vi.hoisted(() =>
-  vi.fn((value: unknown, _opts: unknown): Promise<unknown> => Promise.resolve(value)),
+const mockLiftAnswerForModel = vi.hoisted(() =>
+  vi.fn(
+    (value: string, _opts: unknown): Promise<{ value: string; artifactId?: string }> =>
+      Promise.resolve({ value }),
+  ),
 );
 
 vi.mock("ai", async () => {
@@ -46,7 +49,7 @@ vi.mock("../artifacts/scrubber.ts", async () => {
   const actual = await vi.importActual<typeof import("../artifacts/scrubber.ts")>(
     "../artifacts/scrubber.ts",
   );
-  return { ...actual, liftValueForModel: mockLiftValueForModel };
+  return { ...actual, liftAnswerForModel: mockLiftAnswerForModel };
 });
 
 // Skills resolver is its own module with full coverage in
@@ -382,8 +385,10 @@ describe("createDelegateTool", () => {
     });
   });
 
-  it("routes successful answers through liftValueForModel by default (pre-return projection)", async () => {
-    mockLiftValueForModel.mockReset().mockResolvedValue("[lifted: synthetic-marker]");
+  it("routes successful answers through liftAnswerForModel and stamps answerArtifactId on lift", async () => {
+    mockLiftAnswerForModel
+      .mockReset()
+      .mockResolvedValue({ value: "[lifted: synthetic-marker]", artifactId: "art-xyz" });
     const captured: CapturedStreamTextArgs = { args: undefined };
     setupMockStreamText(captured, {
       steps: [{ toolCalls: [{ toolCallId: "c1", toolName: "web_search" }] }],
@@ -393,8 +398,8 @@ describe("createDelegateTool", () => {
     const { delegateTool } = makeDelegate();
     const result = await runDelegate(delegateTool);
 
-    expect(mockLiftValueForModel).toHaveBeenCalledTimes(1);
-    const [arg, opts] = mockLiftValueForModel.mock.calls[0] ?? [];
+    expect(mockLiftAnswerForModel).toHaveBeenCalledTimes(1);
+    const [arg, opts] = mockLiftAnswerForModel.mock.calls[0] ?? [];
     expect(arg).toBe("long enough answer that the lift walker would have hit threshold");
     expect(opts).toMatchObject({
       workspaceId: "w1",
@@ -405,24 +410,47 @@ describe("createDelegateTool", () => {
     expect(result).toEqual({
       ok: true,
       answer: "[lifted: synthetic-marker]",
+      answerArtifactId: "art-xyz",
+      toolsUsed: [{ name: "web_search", outcome: "success" }],
+    });
+  });
+
+  it("leaves answer raw and omits answerArtifactId when lift returns no artifact (under threshold)", async () => {
+    mockLiftAnswerForModel.mockReset().mockResolvedValue({ value: "short answer" });
+    setupMockStreamText(
+      { args: undefined },
+      {
+        steps: [{ toolCalls: [{ toolCallId: "c1", toolName: "web_search" }] }],
+        finalText: "short answer",
+      },
+    );
+
+    const { delegateTool } = makeDelegate();
+    const result = await runDelegate(delegateTool);
+
+    expect(result).toEqual({
+      ok: true,
+      answer: "short answer",
       toolsUsed: [{ name: "web_search", outcome: "success" }],
     });
   });
 
   it("skips lift when liftAnswer=false (judge-style direct-execute callers)", async () => {
-    mockLiftValueForModel.mockReset();
-    const captured: CapturedStreamTextArgs = { args: undefined };
-    setupMockStreamText(captured, {
-      steps: [{ toolCalls: [{ toolCallId: "c1", toolName: "web_search" }] }],
-      finalText: "raw answer the consumer parses directly",
-    });
+    mockLiftAnswerForModel.mockReset();
+    setupMockStreamText(
+      { args: undefined },
+      {
+        steps: [{ toolCalls: [{ toolCallId: "c1", toolName: "web_search" }] }],
+        finalText: "raw answer the consumer parses directly",
+      },
+    );
 
     const { delegateTool } = makeDelegate(undefined, undefined, undefined, undefined, {
       liftAnswer: false,
     });
     const result = await runDelegate(delegateTool);
 
-    expect(mockLiftValueForModel).not.toHaveBeenCalled();
+    expect(mockLiftAnswerForModel).not.toHaveBeenCalled();
     expect(result).toEqual({
       ok: true,
       answer: "raw answer the consumer parses directly",
@@ -431,45 +459,20 @@ describe("createDelegateTool", () => {
   });
 
   it("does not lift the failure path's reason (lift fires only on ok=true)", async () => {
-    mockLiftValueForModel.mockReset();
-    const captured: CapturedStreamTextArgs = { args: undefined };
-    setupMockStreamText(captured, {
-      steps: [{ finish: { ok: false, reason: "task impossible" } }],
-      finalText: "",
-    });
+    mockLiftAnswerForModel.mockReset();
+    setupMockStreamText(
+      { args: undefined },
+      { steps: [{ finish: { ok: false, reason: "task impossible" } }], finalText: "" },
+    );
 
     const { delegateTool } = makeDelegate();
     const result = await runDelegate(delegateTool);
 
-    expect(mockLiftValueForModel).not.toHaveBeenCalled();
+    expect(mockLiftAnswerForModel).not.toHaveBeenCalled();
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.reason).toBe("task impossible");
     }
-  });
-
-  it("wires prepareStep so steps after the first run on the classifier model", async () => {
-    const captured: CapturedStreamTextArgs = { args: undefined };
-    setupMockStreamText(captured, {
-      steps: [{ toolCalls: [{ toolCallId: "c1", toolName: "web_search" }] }],
-      finalText: "ok",
-    });
-
-    const { delegateTool } = makeDelegate();
-    await runDelegate(delegateTool);
-
-    const prepareStep = (
-      captured.args as {
-        prepareStep?: (opts: { stepNumber: number }) => { model?: unknown } | undefined;
-      }
-    ).prepareStep;
-    expect(typeof prepareStep).toBe("function");
-    if (!prepareStep) throw new Error("prepareStep not wired");
-    expect(prepareStep({ stepNumber: 0 })).toBeUndefined();
-    const step1 = prepareStep({ stepNumber: 1 });
-    expect(step1?.model).toBeDefined();
-    const step5 = prepareStep({ stepNumber: 5 });
-    expect(step5?.model).toBeDefined();
   });
 
   it("returns ok=false when finish reports failure", async () => {
