@@ -56,10 +56,16 @@ function proxyAbortableBody(
   });
 }
 
-const handler: RequestHandler = async ({ params, request }) => {
-  const path = params.path ?? "";
-  const target = new URL(`/${path}`, DAEMON_BASE_URL);
-  target.search = new URL(request.url).search;
+const handler: RequestHandler = async ({ request }) => {
+  // Use the raw pathname from request.url instead of `params.path` because
+  // SvelteKit decodes captured params (rest segments included), which turns
+  // `%2F` into a literal `/` and corrupts identifiers that contain slashes —
+  // e.g. github chat IDs like `github:owner/repo:issue:N`. The daemon's
+  // Hono routes accept percent-encoded path params correctly, so we forward
+  // the path verbatim.
+  const incoming = new URL(request.url);
+  const daemonPath = incoming.pathname.replace(/^\/api\/daemon/, "");
+  const target = new URL(daemonPath + incoming.search, DAEMON_BASE_URL);
 
   const headers = new Headers(request.headers);
   headers.delete("host");
@@ -91,10 +97,10 @@ const handler: RequestHandler = async ({ params, request }) => {
   } catch (err) {
     request.signal.removeEventListener("abort", abortUpstream);
     const message = err instanceof Error ? err.message : String(err);
-    return new Response(
-      JSON.stringify({ error: `daemon proxy fetch failed: ${message}` }),
-      { status: 502, headers: { "content-type": "application/json" } },
-    );
+    return new Response(JSON.stringify({ error: `daemon proxy fetch failed: ${message}` }), {
+      status: 502,
+      headers: { "content-type": "application/json" },
+    });
   }
 
   // SSE: proxy with explicit cancellation. Returning `res.body` directly
