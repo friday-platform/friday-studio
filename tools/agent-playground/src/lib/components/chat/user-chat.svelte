@@ -1026,9 +1026,19 @@
       return hasRenderableContent(msg);
     });
     const timestamps = assignTimestamps(rawMessages);
-    const chatMsgs: ChatMessage[] = rawMessages.map((msg) => {
+    const lastIdx = rawMessages.length - 1;
+    const chatMsgs: ChatMessage[] = rawMessages.map((msg, idx) => {
+      // Skip the cache for the tail message: streaming chunks (text
+      // deltas, delegate sub-chunks, data-usage appends) can arrive
+      // without changing the *last* part of `msg.parts`, which is what
+      // `displaySignature` fingerprints. The conservative fix is to
+      // recompute the tail every tick — it's a single message per
+      // render, so the cost is bounded — and rely on the cache for the
+      // (much larger) immutable history. Markdown body throttling
+      // covers the per-chunk marked + DOMPurify cost separately.
+      const isTail = idx === lastIdx;
       const sig = displaySignature(msg);
-      const cached = displayCache.get(msg);
+      const cached = isTail ? undefined : displayCache.get(msg);
       const ts = timestamps.get(msg.id) ?? Date.now();
       if (cached && cached.sig === sig && cached.result.timestamp === ts) {
         return cached.result;
@@ -1072,7 +1082,9 @@
           usage: extractTurnUsage(msg, m),
         },
       };
-      displayCache.set(msg, { sig, result });
+      if (!isTail) {
+        displayCache.set(msg, { sig, result });
+      }
       return result;
     });
     return chatMsgs;
