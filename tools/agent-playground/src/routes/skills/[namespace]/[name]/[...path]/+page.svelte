@@ -14,7 +14,7 @@
     MarkdownRendered,
     highlightCode,
     languageFromPath,
-    markdownToHTML,
+    markdownToHTMLSafe,
     toast,
   } from "@atlas/ui";
   import DOMPurify from "dompurify";
@@ -169,7 +169,7 @@
       {:else if isMarkdown}
         <div class="preview-content">
           <MarkdownRendered>
-            {@html browser ? DOMPurify.sanitize(markdownToHTML(fileContent)) : markdownToHTML(fileContent)}
+            {@html markdownToHTMLSafe(fileContent)}
           </MarkdownRendered>
         </div>
       {:else if highlightedCode}
