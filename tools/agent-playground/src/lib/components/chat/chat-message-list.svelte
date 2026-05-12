@@ -257,9 +257,11 @@
 
   // Dedupe disconnect chips across messages: once a (serverId, kind) pair
   // has shown up in an earlier message, the same pair on a later message
-  // should not re-render its banner. Two agents (workspace-chat + a
-  // delegated sub-agent) hitting the same dead MCP in one turn would
-  // otherwise emit two identical "is disconnected — reconnect" banners.
+  // does NOT re-render its banner. In practice two agents in one turn
+  // (workspace-chat top-level + a delegated sub-agent) both run
+  // `createMCPTools` against the same dead MCP and each emit a
+  // disconnect entry. Without this dedup the user sees the same chip
+  // twice — confirmed via Chrome QA.
   const disconnectIntegrationsByMessageId = $derived.by(() => {
     const map = new Map<string, ChatMessage["disconnectedIntegrations"]>();
     const seen = new Set<string>();
