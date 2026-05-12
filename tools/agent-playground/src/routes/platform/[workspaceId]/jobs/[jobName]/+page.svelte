@@ -15,7 +15,7 @@
 -->
 
 <script lang="ts">
-  import { markdownToHTMLSafe, toast } from "@atlas/ui";
+  import { markdownToHTML, toast } from "@atlas/ui";
   import { createQuery, queryOptions, skipToken } from "@tanstack/svelte-query";
   import { page } from "$app/state";
   import WorkspaceBreadcrumb from "$lib/components/workspace/workspace-breadcrumb.svelte";
@@ -558,7 +558,7 @@
       </button>
     </header>
     <!-- Description is authored markdown — render it, don't dump the raw string. -->
-    <div class="drawer-desc markdown-body">{@html markdownToHTMLSafe(sel.description)}</div>
+    <div class="drawer-desc markdown-body">{@html markdownToHTML(sel.description)}</div>
     <dl class="drawer-meta">
       <dt>Version</dt><dd>v{sel.latestVersion}</dd>
       <dt>Namespace</dt><dd>{sel.namespace}</dd>

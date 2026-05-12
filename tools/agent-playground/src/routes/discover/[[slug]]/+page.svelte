@@ -18,7 +18,7 @@
     Icons,
     ListDetail,
     MarkdownRendered,
-    markdownToHTMLSafe,
+    markdownToHTML,
     toast,
   } from "@atlas/ui";
   import { createQuery, useQueryClient } from "@tanstack/svelte-query";
@@ -27,6 +27,7 @@
   import { getClient } from "$lib/client";
   import { discoverQueries, type DiscoverDetail } from "$lib/queries/discover-queries";
   import { workspaceQueries } from "$lib/queries";
+  import DOMPurify from "dompurify";
 
   const queryClient = useQueryClient();
 
@@ -109,7 +110,9 @@
 
   const renderedReadme = $derived.by(() => {
     if (!detail || !detail.readme) return "";
-    return rebaseRelativeLinks(markdownToHTMLSafe(detail.readme), detail.source);
+    const raw = markdownToHTML(detail.readme);
+    const rebased = rebaseRelativeLinks(raw, detail.source);
+    return DOMPurify.sanitize(rebased);
   });
 </script>
 
