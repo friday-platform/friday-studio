@@ -40,7 +40,7 @@ export function createBashTool() {
       },
       required: ["command"],
     }),
-    execute: (input): Promise<BashToolOutput> => {
+    execute: (input, { abortSignal }): Promise<BashToolOutput> => {
       const timeoutMs = input.timeout_ms ?? DEFAULT_TIMEOUT_MS;
 
       // Merge agent env on top of process env (agent takes precedence)
@@ -54,6 +54,7 @@ export function createBashTool() {
             cwd: input.cwd,
             env: mergedEnv,
             timeout: timeoutMs,
+            signal: abortSignal,
             maxBuffer: 10 * 1024 * 1024, // 10 MB
           },
           (error, stdout, stderr) => {
