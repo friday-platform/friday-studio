@@ -11,7 +11,9 @@ import { createJobTools } from "./job-tools.ts";
 // Hoisted mocks
 // ---------------------------------------------------------------------------
 
-const mockSignalPost = vi.hoisted(() => vi.fn<() => Promise<unknown>>());
+const mockSignalPost = vi.hoisted(() =>
+  vi.fn<(request: unknown, opts?: unknown) => Promise<unknown>>(),
+);
 const mockParseResult = vi.hoisted(() =>
   vi.fn<(promise: Promise<unknown>) => Promise<Result<unknown, unknown>>>(),
 );
@@ -364,12 +366,63 @@ describe("createJobTools execute", () => {
     const { execute } = buildTool();
     const result = await execute({ target: "production", force: true }, TOOL_CALL_OPTS);
 
-    expect(mockSignalPost).toHaveBeenCalledWith({
-      param: { workspaceId: "ws-test", signalId: "deploy-signal" },
-      json: { payload: { target: "production", force: true }, bypassConcurrency: true },
-    });
+    expect(mockSignalPost).toHaveBeenCalledWith(
+      {
+        param: { workspaceId: "ws-test", signalId: "deploy-signal" },
+        json: { payload: { target: "production", force: true }, bypassConcurrency: true },
+      },
+      { init: { signal: undefined } },
+    );
     expect(result).toEqual({ success: true, sessionId: "sess-4", status: "completed", output: [] });
   });
+
+  it("forwards abortSignal into $post init and rejects when parent signal aborts", async () => {
+    const abortController = new AbortController();
+
+    // $post returns a promise that resolves only when the parent signal aborts.
+    // This mirrors fetch's real abort behaviour: the request hangs until the
+    // signal fires, then rejects with an AbortError. parseResult wraps the
+    // reject in `{ ok: false, error }`.
+    mockSignalPost.mockReturnValueOnce(
+      new Promise((_resolve, reject) => {
+        abortController.signal.addEventListener("abort", () =>
+          reject(new DOMException("aborted", "AbortError")),
+        );
+      }),
+    );
+    mockParseResult.mockImplementationOnce(async (promise) => {
+      try {
+        return { ok: true, data: await promise };
+      } catch (error) {
+        return { ok: false, error };
+      }
+    });
+
+    const logger = makeLogger();
+    const tools = createJobTools(
+      "ws-test",
+      { "deploy-app": makeJob({ triggers: [{ signal: "deploy-signal" }] }) },
+      noSignals,
+      logger,
+      undefined,
+      undefined,
+      abortController.signal,
+    );
+    const execute = tools["deploy-app"]?.execute;
+    if (!execute) throw new Error("no execute");
+
+    const resultPromise = execute({ prompt: "deploy" }, TOOL_CALL_OPTS);
+    setTimeout(() => abortController.abort(), 20);
+    const result = await resultPromise;
+
+    // Surgical assertion: the second arg to $post is the init bag carrying the
+    // parent signal. This is the contract this task adds.
+    expect(mockSignalPost).toHaveBeenCalledWith(
+      expect.anything(),
+      { init: { signal: abortController.signal } },
+    );
+    expect(result).toMatchObject({ success: false });
+  }, 2000);
 });
 
 // ---------------------------------------------------------------------------
