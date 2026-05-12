@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-05-12
+
 Workspace isolation + per-user authz (#265) and the tool-suite / prompt-caching redesign (#261) are the headline. HTML chat exports (#198), nested-usage accounting (#262), and OAuth refresh resilience (#267) round out the cycle. Read **Breaking changes** before upgrading.
 
 ### Breaking changes
