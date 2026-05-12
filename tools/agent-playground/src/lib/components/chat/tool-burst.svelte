@@ -19,10 +19,11 @@
   /**
    * A burst is initially open if any call already needs user action — e.g.
    * a `display_artifact` or a `connect_service` that has reached
-   * `output-available`. Computed once at render; native `<details>` owns
-   * state thereafter.
+   * `output-available`. `untrack` keeps this snapshot frozen at mount;
+   * `bind:open` below makes the user's click + the force-open effect the
+   * two sources of truth for runtime state.
    */
-  const initialOpen = untrack(() => calls.some((c) => needsUserAction(c)));
+  let isOpen = $state(untrack(() => calls.some((c) => needsUserAction(c))));
 
   const anyRunning = $derived(calls.some((c) => isInProgress(c.state)));
   const anyError = $derived(calls.some((c) => isError(c.state)));
@@ -33,24 +34,21 @@
 
   const needsActionNow = $derived(calls.some((c) => needsUserAction(c)));
 
-  let detailsEl: HTMLDetailsElement | undefined = $state();
-
   /**
    * Live-only shim: when a tool requiring user action lands in this burst
-   * mid-stream, force the details element open. Effects do not run on the
-   * server, so this is a no-op during SSR (the export pre-renders with
-   * the initial-open attribute and never re-opens). Edge case: a
-   * `connect_service` arriving in a burst the user explicitly closed
-   * will re-open it — same behavior as the previous Map-based logic.
+   * mid-stream, force open. Writes to state (not DOM) so the user's manual
+   * collapse is preserved across post-answer cache updates and any other
+   * parent re-renders. Edge case: a `connect_service` arriving in a burst
+   * the user explicitly closed will re-open it — same behavior as before.
    */
   $effect(() => {
-    if (needsActionNow && detailsEl && !detailsEl.open) {
-      detailsEl.open = true;
+    if (needsActionNow && !isOpen) {
+      isOpen = true;
     }
   });
 </script>
 
-<details bind:this={detailsEl} class="tool-burst" open={initialOpen}>
+<details class="tool-burst" bind:open={isOpen}>
   <summary class="tool-burst-bar">
     <span class="burst-icon" aria-hidden="true">
       {#if anyRunning}

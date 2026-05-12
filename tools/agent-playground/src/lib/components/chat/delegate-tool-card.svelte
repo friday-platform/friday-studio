@@ -173,25 +173,24 @@
 
   /**
    * A delegate card is initially open if its children are already running
-   * — e.g. mounting mid-stream after delegation has begun. Computed once
-   * at render; native `<details>` owns state thereafter.
+   * — e.g. mounting mid-stream after delegation has begun. `untrack` keeps
+   * this snapshot frozen at mount; `bind:open` below makes the user's click
+   * + the force-open effect the two sources of truth for runtime state.
    */
-  const initialOpen = untrack(() => childrenAnyRunning(call.children ?? []));
+  let isOpen = $state(untrack(() => childrenAnyRunning(call.children ?? [])));
 
   const childrenRunningNow = $derived(childrenAnyRunning(call.children ?? []));
 
-  let detailsEl: HTMLDetailsElement | undefined = $state();
-
   /**
-   * Live-only shim: when children begin running mid-stream, force the
-   * details element open. Effects do not run on the server, so this is a
-   * no-op during SSR. Edge case: if the user explicitly closes the card
-   * while children are still running, the next reactivity tick will
+   * Live-only shim: when children begin running mid-stream, force open.
+   * Writes to state (not DOM) so the user's manual collapse is preserved
+   * across parent re-renders. Edge case: if the user explicitly closes the
+   * card while children are still running, the next reactivity tick will
    * re-open it — same behavior as the previous `childrenWereRunning` latch.
    */
   $effect(() => {
-    if (childrenRunningNow && detailsEl && !detailsEl.open) {
-      detailsEl.open = true;
+    if (childrenRunningNow && !isOpen) {
+      isOpen = true;
     }
   });
 
@@ -317,11 +316,10 @@
 
 {#if call.children && call.children.length > 0}
   <details
-    bind:this={detailsEl}
     class="delegate-card"
     class:in-progress={isInProgress(call.state)}
     class:error={isError(call.state)}
-    open={initialOpen}
+    bind:open={isOpen}
   >
     <summary class="delegate-header">
       <div class="delegate-header-inner">
