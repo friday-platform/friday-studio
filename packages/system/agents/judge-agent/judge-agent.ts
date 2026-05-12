@@ -223,6 +223,9 @@ export const judgeAgent = createAgent<JudgeInput, ValidationVerdict>({
           repairToolCall,
           ...(budget ? { budget } : {}),
           ...(depth !== undefined ? { depth } : {}),
+          // Judge parses the answer directly (parseVerdict below) — needs
+          // the raw verdict string, not an artifact marker.
+          liftAnswer: false,
         },
         () => childTools,
       );

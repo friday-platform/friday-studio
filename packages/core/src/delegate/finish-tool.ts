@@ -30,7 +30,7 @@ export const FINISH_TOOL_NAME = "finish";
 
 export const finishTool = tool({
   description:
-    "Call this when done to return a structured result. When the task succeeded, call with { ok: true, answer: '...' }. When the task failed or was impossible, call with { ok: false, reason: '...' }. Always set `ok` and exactly one of `answer` or `reason`.",
+    "Call this ONLY when the task is impossible to complete, with { ok: false, reason: '...' }. On success, do not call this tool — emit your final answer as plain text content instead. The `ok: true, answer` variant is preserved for back-compat; new emissions on the success path should use text, not a finish call.",
   inputSchema: jsonSchema<FinishInput>({
     type: "object",
     properties: {

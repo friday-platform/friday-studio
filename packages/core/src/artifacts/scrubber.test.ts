@@ -8,7 +8,12 @@ const mockFetch = vi.hoisted(() =>
 vi.stubGlobal("fetch", mockFetch);
 vi.mock("@atlas/oapi-client", () => ({ getAtlasDaemonUrl: () => "http://localhost:3000" }));
 
-import { __test, liftToolResultsForPersist, scrubAssistantMessage } from "./scrubber.ts";
+import {
+  __test,
+  liftAnswerForModel,
+  liftToolResultsForPersist,
+  scrubAssistantMessage,
+} from "./scrubber.ts";
 
 // Helper: lift a single tool result through the post-stream lift path.
 // Replaces the deleted MCP-boundary `createScrubber` (O1, post-N4 cleanup);
@@ -421,5 +426,69 @@ describe("scrubAssistantMessage (pre-persist)", () => {
     const r = await scrubAssistantMessage(parts, { workspaceId: "ws", chatId: "ch", logger });
     expect(r.rewritten).toBe(0);
     expect(mockFetch).not.toHaveBeenCalled();
+  });
+});
+
+describe("liftAnswerForModel (pre-model answer lift)", () => {
+  const ANSWER_CTX = { serverId: "pre-model", toolName: "delegate" };
+
+  it("returns the input verbatim when under the text threshold", async () => {
+    const short = "x".repeat(TEXT_THRESHOLD_CHARS - 1);
+    const result = await liftAnswerForModel(short, {
+      workspaceId: "ws",
+      chatId: "ch",
+      logger,
+      ...ANSWER_CTX,
+    });
+    expect(result).toEqual({ value: short });
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it("returns the input verbatim when it already starts with the lift marker prefix", async () => {
+    // Larger than the threshold AND marker-prefixed — the marker-prefix
+    // short-circuit must win, otherwise a delegated child whose previous
+    // answer was lifted would re-lift on a re-emit.
+    const alreadyLifted = `[attachment lifted to artifact art_prev (12 KB, text/plain, from pre-model/delegate) — use display_artifact or get_artifact to read]${"x".repeat(TEXT_THRESHOLD_CHARS)}`;
+    const result = await liftAnswerForModel(alreadyLifted, {
+      workspaceId: "ws",
+      chatId: "ch",
+      logger,
+      ...ANSWER_CTX,
+    });
+    expect(result).toEqual({ value: alreadyLifted });
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it("uploads to an artifact and returns marker + artifactId when over threshold", async () => {
+    mockArtifactCreate("art_42", 12_000, "text/plain");
+    const long = "x".repeat(TEXT_THRESHOLD_CHARS + 100);
+    const result = await liftAnswerForModel(long, {
+      workspaceId: "ws",
+      chatId: "ch",
+      logger,
+      ...ANSWER_CTX,
+    });
+    expect(result.artifactId).toBe("art_42");
+    expect(result.value).toMatch(/^\[attachment lifted to artifact art_42 /);
+    expect(result.value).toContain("from pre-model/delegate");
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns the original answer when the upload fails (no artifactId, falls back)", async () => {
+    mockFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: "boom" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    const long = "x".repeat(TEXT_THRESHOLD_CHARS + 100);
+    const result = await liftAnswerForModel(long, {
+      workspaceId: "ws",
+      chatId: "ch",
+      logger,
+      ...ANSWER_CTX,
+    });
+    expect(result).toEqual({ value: long });
+    expect(logger.warn).toHaveBeenCalled();
   });
 });

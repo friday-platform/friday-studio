@@ -25,9 +25,7 @@ import { truncateForLedger } from "@atlas/utils";
 import type { ToolCallRepairFunction, UIMessageStreamWriter } from "ai";
 import { stepCountIs, streamText, tool } from "ai";
 import { z } from "zod";
-// Oversized tool-result lifting happens at artifact persistence boundaries via
-// `liftToolResultsForPersist` in the workspace runtime and FSM engine. Delegate
-// returns remain compact and scrubbed before parent-visible persistence.
+import { liftAnswerForModel } from "../artifacts/scrubber.ts";
 import { discoverMCPServers, type LinkSummary } from "../mcp-registry/discovery.ts";
 import { FINISH_TOOL_NAME, type FinishInput, finishTool, parseFinishInput } from "./finish-tool.ts";
 import { createDelegateProxyWriter } from "./proxy-writer.ts";
@@ -145,6 +143,20 @@ export interface DelegateDeps {
    * parent's already-extracted tarballs.
    */
   archiveCache?: SkillArchiveCache;
+  /**
+   * When true (default), large successful-answer strings are lifted to an
+   * artifact before `execute` returns. The returned `answer` is then the
+   * marker text. The persist-time scrub short-circuits on the marker
+   * prefix at `scrubber.ts:REF_MARKER_PREFIX`, so a single artifact
+   * represents the answer end-to-end (no double-lift at the persistence
+   * boundary).
+   *
+   * Direct-execute callers that consume the answer themselves (the judge
+   * agent's verdict parser) opt out with `false` — they need the raw text,
+   * not a marker. Setting this on a code path that feeds the answer into
+   * another LLM is almost always wrong; keep the default.
+   */
+  liftAnswer?: boolean;
 }
 
 export type DelegateToolsUsedEntry = { name: string; outcome: "success" | "error" };
@@ -194,6 +206,7 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
   const maxOutputTokens = budget?.max_output_tokens ?? DEFAULT_MAX_OUTPUT_TOKENS;
   const maxInputTokens = budget?.max_input_tokens ?? Number.POSITIVE_INFINITY;
   const maxWallTimeMs = budget?.max_wall_time_ms ?? Number.POSITIVE_INFINITY;
+  const liftAnswer = deps.liftAnswer ?? true;
 
   // Per-tool-instance archive cache. Lifetime matches the parent agent's
   // session: a chat that delegates 6× with the same skill ref pays the
@@ -408,10 +421,10 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
           `Goal: ${goal}`,
           `Handoff: ${handoff}`,
           datetimeMessage,
-          `You are a terse back-end agent. Your output is consumed by another AI agent, not a human user. Do not narrate your actions, do not produce conversational filler, and do not emit markdown tables, section headers, or other human-facing formatting. Make tool calls directly without describing what you are doing. Gather the required facts with the fewest tool calls possible, then call the \`finish\` tool immediately with a concise, factual answer.`,
+          `You are a terse back-end agent. Your output is consumed by another AI agent, not a human user. Do not narrate your actions, do not produce conversational filler. Make tool calls directly without describing what you are doing. Gather the required facts with the fewest tool calls possible, then emit your final answer.`,
           buildDelegateScopeDirective(mcpServers),
           DELEGATE_MCP_ERROR_CONTRACT,
-          `When you have produced a final answer (or determined the task is impossible), call the \`finish\` tool with { ok: true, answer } or { ok: false, reason }. Do not return free-form text after calling \`finish\`.`,
+          `Emit your final answer as plain text content — your text reply IS the answer. Do not call the \`finish\` tool on success; do not write the answer inside a tool call argument and then again as text. Call \`finish\` ONLY when the task is impossible to complete, with \`{ ok: false, reason }\` — the supervisor needs the structured failure signal in that case.`,
         ]
           .filter((s) => s.length > 0)
           .join("\n\n");
@@ -595,9 +608,33 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
       if (executionError) {
         return { ok: false, reason: executionError.message, ...resultBase };
       }
+      // Successful answers above the shared text threshold are routed
+      // through the artifact-lift walker inside `execute` so the returned
+      // `answer` is already the marker string. Persistence's
+      // `REF_MARKER_PREFIX` short-circuit at `scrubber.ts` then skips
+      // re-lifting the same content at persist time — one artifact
+      // represents the answer end-to-end. Direct-execute callers that
+      // need the raw text (the judge agent) opt out via `liftAnswer:
+      // false` on their deps.
+      const projectAnswer = async (raw: string): Promise<string> => {
+        if (!liftAnswer) return raw;
+        const { value } = await liftAnswerForModel(raw, {
+          workspaceId: session.workspaceId,
+          chatId: session.sessionId,
+          logger,
+          serverId: "pre-model",
+          toolName: DELEGATE_TOOL_NAME,
+        });
+        return value;
+      };
+
       if (finishInput) {
         if (finishInput.ok) {
-          return { ok: true, answer: finishInput.answer, ...resultBase };
+          if (!finishInput.answer.trim()) {
+            return { ok: false, reason: "delegate produced no answer", ...resultBase };
+          }
+          const answer = await projectAnswer(finishInput.answer);
+          return { ok: true, answer, ...resultBase };
         }
         return { ok: false, reason: finishInput.reason, ...resultBase };
       }
@@ -607,7 +644,14 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
       if (textError) {
         return { ok: false, reason: textError.message, ...resultBase };
       }
-      return { ok: true, answer: finalText, ...resultBase };
+      // No finish call and no text — the child completed cleanly but
+      // produced nothing. Treat as a failure so the supervisor surfaces
+      // it rather than silently relaying an empty success.
+      if (!finalText.trim()) {
+        return { ok: false, reason: "delegate produced no answer", ...resultBase };
+      }
+      const answer = await projectAnswer(finalText);
+      return { ok: true, answer, ...resultBase };
     },
   });
 }
