@@ -7,6 +7,8 @@
     type ImageAttachment,
     buildFileAttachment,
     classifyAttachment,
+    duplicateToast,
+    isDuplicateAttachment,
     rejectionToast,
     runFileUpload,
   } from "./chat-attachment.ts";
@@ -162,7 +164,15 @@
 
   async function addFiles(files: FileList | File[]) {
     const rejected: File[] = [];
+    const duplicates: File[] = [];
     for (const file of files) {
+      // Dedup BEFORE classification — we want "already attached" to win
+      // over "wrong file type" if a user re-drags the same rejected
+      // file (the prior drop's rejection toast already told them why).
+      if (isDuplicateAttachment(file, attachments)) {
+        duplicates.push(file);
+        continue;
+      }
       const kind = classifyAttachment(file);
       if (kind === "image") {
         const dataUrl = await fileToDataUrl(file);
@@ -181,6 +191,8 @@
     // Coalesce: one toast for the whole drop, not one per rejected file.
     // Single-file rejection still surfaces the specific reason (e.g. SVG
     // script-injection); multi-file rejection enumerates the filenames.
+    const dupSummary = duplicateToast(duplicates);
+    if (dupSummary) toast({ ...dupSummary });
     const summary = rejectionToast(rejected);
     if (summary) toast({ ...summary, error: true });
   }

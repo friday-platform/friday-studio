@@ -126,6 +126,60 @@ export function rejectionToast(rejected: readonly File[]):
 }
 
 /**
+ * Cheap content-equivalence signature for a dropped file. Same name +
+ * size + `lastModified` ms → almost certainly the same file
+ * (drag-dropped twice, or the user clicked the file picker on the same
+ * file). False negatives only if the user edited the file between
+ * drops (size or mtime changes); false positives require two files
+ * with identical name+size+mtime which is essentially impossible.
+ *
+ * We deliberately avoid full content-hashing here — that would require
+ * reading the whole file into the renderer's main thread, blocking the
+ * UI for a fraction of a second on large drops. The signature is
+ * enough to catch the common case (user re-drags the file).
+ */
+function attachmentSignature(file: File): string {
+  return `${file.name}|${file.size}|${file.lastModified}`;
+}
+
+/**
+ * Check whether `file` is already represented by an entry in
+ * `existing`. Used by `addFiles` / `addDroppedFiles` to silently drop
+ * (with a toast) the second drop of the same file.
+ */
+export function isDuplicateAttachment(
+  file: File,
+  existing: readonly ChatAttachment[],
+): boolean {
+  const sig = attachmentSignature(file);
+  return existing.some((att) => attachmentSignature(att.file) === sig);
+}
+
+/**
+ * Compose a single toast summary for files refused because they're
+ * already attached. Same shape as `rejectionToast` so the call sites
+ * can drop it in alongside.
+ */
+export function duplicateToast(
+  duplicates: readonly File[],
+): { title: string; description: string } | null {
+  if (duplicates.length === 0) return null;
+  if (duplicates.length === 1) {
+    const file = duplicates[0];
+    if (!file) return null;
+    return {
+      title: "Already attached",
+      description: `"${file.name}" is already in the input — drop the existing chip first to re-attach.`,
+    };
+  }
+  const names = duplicates.map((f) => `"${f.name}"`).join(", ");
+  return {
+    title: `${duplicates.length} files already attached`,
+    description: `Skipped: ${names}.`,
+  };
+}
+
+/**
  * Construct the initial `FileAttachment` shape for a dropped file. The
  * caller appends this to its `$state` array, then calls
  * {@link runFileUpload} with an `onUpdate` callback so per-progress and

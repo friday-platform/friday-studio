@@ -19,6 +19,8 @@
     type ChatAttachment,
     buildFileAttachment,
     classifyAttachment,
+    duplicateToast,
+    isDuplicateAttachment,
     rejectionToast,
     runFileUpload,
   } from "./chat-attachment.ts";
@@ -117,7 +119,15 @@
 
   async function addDroppedFiles(files: FileList) {
     const rejected: File[] = [];
+    const duplicates: File[] = [];
     for (const file of files) {
+      // Dedup BEFORE classification — same reasoning as in
+      // `chat-input.svelte:addFiles`. Catches the user re-dragging
+      // the same file (instant signature check on name+size+mtime).
+      if (isDuplicateAttachment(file, pendingAttachments)) {
+        duplicates.push(file);
+        continue;
+      }
       const kind = classifyAttachment(file);
       if (kind === "image") {
         const dataUrl = await fileToDataUrl(file);
@@ -133,6 +143,8 @@
         rejected.push(file);
       }
     }
+    const dupSummary = duplicateToast(duplicates);
+    if (dupSummary) toast({ ...dupSummary });
     const summary = rejectionToast(rejected);
     if (summary) toast({ ...summary, error: true });
   }
