@@ -79,7 +79,7 @@ func run(cfg Config) error {
 	mux := http.NewServeMux()
 
 	// /health — kept as /health (NOT /healthz) to match the cheatsheet
-	// client at tools/agent-playground/.../cheatsheet.svelte:44.
+	// client at apps/studio-ui/.../cheatsheet.svelte:44.
 	// Other Go services in this repo use /healthz; do not "harmonize"
 	// this path without updating the client.
 	mux.HandleFunc("/health", handleHealth)

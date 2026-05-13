@@ -63,7 +63,7 @@ const EXCLUDE_SUBSTRINGS: readonly string[] = [
   "/dist/",
   "/build/",
   "/.atlas/",
-  "/tools/agent-playground/",
+  "/apps/studio-ui/",
   "/.deno/",
   "/coverage/",
   "/__fixtures__/",

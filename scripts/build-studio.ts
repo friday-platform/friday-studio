@@ -18,7 +18,7 @@
  *   x86_64-pc-windows-msvc     (Windows x64,        zip)
  *
  * For each target the script:
- *   1. `deno compile`s atlas, link, webhook-tunnel, playground.
+ *   1. `deno compile`s atlas, link, webhook-tunnel, studio-ui.
  *   2. Downloads pinned external CLIs (gh, cloudflared) for the target.
  *   3. Stages everything under dist/<target>/staging/.
  *   4. Archives the staging dir + emits sha256 + size.
@@ -309,10 +309,10 @@ const DENO_BINARIES = [
     include: [] as string[],
   },
   {
-    name: "playground",
-    entry: "tools/agent-playground/static-server.ts",
+    name: "studio-ui",
+    entry: "apps/studio-ui/static-server.ts",
     flags: ["--unstable-worker-options", "--unstable-kv", "--unstable-raw-imports"],
-    include: ["tools/agent-playground/build"],
+    include: ["apps/studio-ui/build"],
   },
 ];
 
@@ -660,11 +660,11 @@ async function main(): Promise<void> {
   await ensureDir(stagingDir);
   await ensureDir(scratchDir);
 
-  // Make sure the playground build artifact exists before deno-compile embeds it.
-  const playgroundBuild = join(repoRoot, "tools/agent-playground/build");
-  if (!existsSync(playgroundBuild)) {
-    console.log("[build-studio] playground build missing — running vite build…");
-    await run(["npm", "run", "build"], { cwd: join(repoRoot, "tools/agent-playground") });
+  // Make sure the studio-ui build artifact exists before deno-compile embeds it.
+  const studioUiBuild = join(repoRoot, "apps/studio-ui/build");
+  if (!existsSync(studioUiBuild)) {
+    console.log("[build-studio] studio-ui build missing — running vite build…");
+    await run(["npm", "run", "build"], { cwd: join(repoRoot, "apps/studio-ui") });
   }
 
   // Stack 3 split-destination layout:
@@ -675,7 +675,7 @@ async function main(): Promise<void> {
   //   <staging>/bin/friday                   ← every supervised binary
   //   <staging>/bin/link                       lives under bin/ so it
   //   <staging>/bin/webhook-tunnel             can't collide with a
-  //   <staging>/bin/playground                 user-data dir name (e.g.
+  //   <staging>/bin/studio-ui                  user-data dir name (e.g.
   //   <staging>/bin/nats-server                link-data/wiring.db) and
   //   <staging>/bin/agent-browser              the launcher's friday-home
   //   <staging>/bin/cloudflared                stays clean of binaries.
@@ -709,8 +709,8 @@ async function main(): Promise<void> {
     console.log("[build-studio] --skip-compile set, skipping deno + go compile");
   }
 
-  // Sidecar read at playground startup via dirname(Deno.execPath()) to
-  // distinguish release builds from `deno task playground` (no sidecar → dev).
+  // Sidecar read at studio-ui startup via dirname(Deno.execPath()) to
+  // distinguish release builds from `deno task studio-ui` (no sidecar → dev).
   await Deno.writeTextFile(join(binStaging, ".studio-version"), `${opts.version}\n`);
 
   if (!opts.skipExternal) {

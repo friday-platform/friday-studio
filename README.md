@@ -19,7 +19,7 @@ their machine.
 
 Two surfaces, one runtime:
 
-- **Chat in the playground.** Friday picks up your installed skills, MCP
+- **Chat in Studio UI.** Friday picks up your installed skills, MCP
   servers, memory, and OAuth credentials, and actually drives your tools
   instead of describing what it would do.
 - **Run autonomously.** Capture the pattern in a `workspace.yml`, bind it
@@ -32,7 +32,7 @@ without wiring queues, secret stores, schedulers, MCP plumbing, and
 provider clients from scratch every time.
 
 > **Prefer the packaged version?** **[hellofriday.ai](https://hellofriday.ai)**
-> ships the same daemon and playground as a one-click installer for macOS
+> ships the same daemon and Studio UI as a one-click installer for macOS
 > with the launcher, dependencies, and tray UI bundled. The
 > rest of this README is for working in-tree.
 
@@ -41,10 +41,10 @@ provider clients from scratch every time.
 | | What it is | When you use it |
 | --- | --- | --- |
 | **`atlasd` (daemon)** | Headless runtime — HTTP API on `:8080`, workspace lifecycle, signal router, session state, JetStream message bus. | Production. CI. Anything you'd `systemd`-ify. |
-| **Agent Playground** | SvelteKit web UI on `:5200` — chat with Friday, author and run agents, inspect every session step-by-step, manage skills/MCP servers/schedules/memory/credentials, browse the workspace marketplace. | Day-to-day. The playground is what you actually look at. |
+| **Studio UI** | SvelteKit web UI on `:5200` — chat with Friday, author and run agents, inspect every session step-by-step, manage skills/MCP servers/schedules/memory/credentials, browse the workspace marketplace. | Day-to-day. Studio UI is what you actually look at. |
 
 The desktop installer ships both behind a tray icon. In-tree, `deno task
-dev:playground` runs both side by side with hot reload.
+dev:studio-ui` runs both side by side with hot reload.
 
 ## Quickstart
 
@@ -59,7 +59,7 @@ handles the rest.
 
 | Tool | Min | Why |
 | --- | --- | --- |
-| [Node.js](https://nodejs.org/) | `24+` | Playground runs under Vite via `npx`; `@atlas/ui` builds with `svelte-package`. Manage via fnm/volta/nvm — auto-installing system Node clobbers project pins. |
+| [Node.js](https://nodejs.org/) | `24+` | Studio UI runs under Vite via `npx`; `@atlas/ui` builds with `svelte-package`. Manage via fnm/volta/nvm — auto-installing system Node clobbers project pins. |
 | [git](https://git-scm.com/) | any recent | — |
 
 **`setup-dev-env.sh` handles these — installs if missing or below min, otherwise keeps yours:**
@@ -111,13 +111,13 @@ The example file documents every variable the daemon reads — provider keys,
 proxies, OAuth/GitHub App credentials, integration tokens. The minimum to
 run a real agent is one LLM provider key.
 
-### 3. Run the playground (recommended)
+### 3. Run Studio UI (recommended)
 
-One command, four processes — daemon, link, playground, and webhook tunnel —
+One command, four processes — daemon, link, Studio UI, and webhook tunnel —
 all with hot reload:
 
 ```bash
-deno task dev:playground
+deno task dev:studio-ui
 ```
 
 Open <http://localhost:5200> and the sidebar gives you everything: bundled
@@ -138,7 +138,7 @@ deno task atlas daemon stop
 
 ### Just chat with it
 
-Open the playground at <http://localhost:5200>. Type:
+Open Studio UI at <http://localhost:5200>. Type:
 
 > *Find every unread email from my team that's waiting on a reply, summarize what each is asking, and draft responses.*
 
@@ -218,9 +218,9 @@ Browse [`friday-studio-examples`](https://github.com/friday-platform/friday-stud
 for `github-digest`, `competitive-monitor`, `daily-operating-memo`,
 `jira-bugfix-bitbucket`, and others.
 
-## Agent Playground
+## Studio UI
 
-`deno task dev:playground` opens the playground at <http://localhost:5200>.
+`deno task dev:studio-ui` opens Studio UI at <http://localhost:5200>.
 It's the same Svelte app the desktop installer ships — production UI, not
 a debug widget.
 
@@ -253,8 +253,8 @@ deno task sim "..." --stop-at=fsm        # blueprint + FSM compile
 deno task sim "..." --real               # execute with real MCP agents
 ```
 
-Artifacts land in `runs/workspaces/<timestamp>-<slug>/` — replay them in the
-playground's **Workspaces / History** tab.
+Artifacts land in `runs/workspaces/<timestamp>-<slug>/` — replay them in
+Studio UI's **Workspaces / History** tab.
 
 ## Common commands
 
@@ -285,7 +285,7 @@ Want it all in containers?
 docker compose up
 ```
 
-Brings up the daemon, playground, link credential service, PTY server, and
+Brings up the daemon, Studio UI, link credential service, PTY server, and
 webhook tunnel. Ports default to `1xxxx` to avoid host collisions — see
 [`docker-compose.yml`](docker-compose.yml).
 
@@ -299,11 +299,11 @@ apps/
   ledger/             # Resource & activity storage service
   studio-installer/   # Tauri desktop app — tray, daemon supervisor,
                       # autostart. The hellofriday.ai download.
+  studio-ui/          # SvelteKit web UI — Studio UI (production frontend)
 packages/             # @atlas/* libraries — core, agent-sdk, config,
                       # fsm-engine, llm, logger, mcp, memory, skills,
                       # storage, workspace, signals, jetstream, …
 tools/
-  agent-playground/   # Web client (SvelteKit) — production UI
   evals/              # Agent eval harness
   friday-launcher/    # System tray launcher + daemon supervisor (Go)
   pty-server/         # WebSocket → PTY shell bridge (Go)

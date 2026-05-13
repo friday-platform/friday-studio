@@ -109,12 +109,12 @@ func buildLauncherAndStubs(t *testing.T) (launcherPath, binDir string) {
 		"friday":         {"18080", "/health"},
 		"link":           {"13100", "/health"},
 		"webhook-tunnel": {"19090", "/health"},
-		// Decision #32: playground probes `/` (the public SvelteKit
+		// Decision #32: studio-ui probes `/` (the public SvelteKit
 		// root), not a sidecar. The stub program reads HEALTH_PATH
 		// and serves the same handler at any path, so the test
 		// observes the real probe rule: launcher hits the path
 		// project.go declares.
-		"playground": {"15200", "/"},
+		"studio-ui": {"15200", "/"},
 	}
 	for name, w := range wrappers {
 		writeWrapper(t, binDir, name, stubBin, w.port, w.healthPath, "")
@@ -140,7 +140,7 @@ func portEnv() []string {
 		"FRIDAY_PORT_FRIDAY=18080",
 		"FRIDAY_PORT_LINK=13100",
 		"FRIDAY_PORT_WEBHOOK_TUNNEL=19090",
-		"FRIDAY_PORT_PLAYGROUND=15200",
+		"FRIDAY_PORT_STUDIO_UI=15200",
 	}
 }
 
@@ -345,9 +345,9 @@ func TestShutdownTimeoutSafety(t *testing.T) {
 		t.Skip("integration test")
 	}
 	launcher, binDir := buildLauncherAndStubs(t)
-	// Replace the playground wrapper with one that ignores SIGTERM.
+	// Replace the studio-ui wrapper with one that ignores SIGTERM.
 	stubBin := filepath.Join(binDir, "_stub")
-	writeWrapper(t, binDir, "playground", stubBin,
+	writeWrapper(t, binDir, "studio-ui", stubBin,
 		"15200", "/", "IGNORE_SIGTERM=1")
 	cmd, _ := startLauncher(t, launcher, binDir)
 	waitHealthy(t)
@@ -934,7 +934,7 @@ func TestUninstall_SweepsOrphansWhenLauncherDead(t *testing.T) {
 	// binDir/_stub, so the kernel-level program path under that
 	// pid lands under binDir — exactly what SweepByBinaryPath
 	// matches against.
-	stub := exec.Command(filepath.Join(binDir, "playground"))
+	stub := exec.Command(filepath.Join(binDir, "studio-ui"))
 	stub.Env = append(os.Environ(), portEnv()...)
 	stub.Stderr = os.Stderr
 	if err := stub.Start(); err != nil {

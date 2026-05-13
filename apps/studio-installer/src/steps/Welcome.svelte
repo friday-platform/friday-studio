@@ -110,11 +110,11 @@ function cancelDevPanel(): void {
 async function openStudio(): Promise<void> {
   // Tauri 2 plugin-opener exports openUrl, not a default `open()`.
   const { openUrl } = await import("@tauri-apps/plugin-opener");
-  // playground_url() resolves FRIDAY_PORT_PLAYGROUND from ~/.friday/local/.env
+  // studio_ui_url() resolves FRIDAY_PORT_STUDIO_UI from ~/.friday/local/.env
   // — installs with a port override land on the right URL.
   let url = "http://localhost:15200";
   try {
-    url = await invoke<string>("playground_url");
+    url = await invoke<string>("studio_ui_url");
   } catch {
     // Fall back to the installer's default port.
   }

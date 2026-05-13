@@ -131,16 +131,16 @@ async function materializeFixture(): Promise<string> {
 async function startPlayground(
   daemon: DaemonHandle,
 ): Promise<{ port: number; process: Deno.ChildProcess; baseUrl: string }> {
-  await runChecked("deno", ["task", "-f", "@atlas/agent-playground", "sync"], {
+  await runChecked("deno", ["task", "-f", "@atlas/studio-ui", "sync"], {
     cwd: WORKTREE_ROOT,
     timeoutMs: 120_000,
   });
 
   const port = pickPort();
-  const logDir = join(daemon.fridayHome, "playground");
+  const logDir = join(daemon.fridayHome, "studio-ui");
   const proc = new Deno.Command("npx", {
     args: ["vite", "dev", "--host", "127.0.0.1", "--port", String(port), "--strictPort"],
-    cwd: join(WORKTREE_ROOT, "tools/agent-playground"),
+    cwd: join(WORKTREE_ROOT, "apps/studio-ui"),
     env: {
       ...Deno.env.toObject(),
       EXTERNAL_DAEMON_URL: daemon.baseUrl,

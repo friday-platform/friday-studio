@@ -18,7 +18,7 @@ function* walk(dir: string): Generator<string> {
 
 describe("architecture", () => {
   // `@atlas/core` exports session-event types and reducers consumed by the
-  // browser bundle (agent-playground). The bare `@atlas/hallucination` entry
+  // browser bundle (studio-ui). The bare `@atlas/hallucination` entry
   // re-exports `validate` and `createFSMOutputValidator` — which transitively
   // import `@atlas/logger` → `node:process`. Always use the
   // @atlas/hallucination/verdict` subpath here.

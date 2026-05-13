@@ -7,29 +7,29 @@ import (
 	"testing"
 )
 
-// TestPlaygroundProbePath_IsRoot pins the playground readiness probe
+// TestStudioUIProbePath_IsRoot pins the studio-ui readiness probe
 // to "/" — the public SvelteKit landing page — per Decision #32. A
 // sidecar like "/api/health" returns 200 even before SvelteKit has
 // bound the root route, which silently green-lights "all healthy"
 // while a user-side request to / would still 404. Pinning this
 // catches a future refactor that quietly reverts to the sidecar.
-func TestPlaygroundProbePath_IsRoot(t *testing.T) {
+func TestStudioUIProbePath_IsRoot(t *testing.T) {
 	specs := supervisedProcesses("/tmp/dummy-bin")
 	for _, s := range specs {
-		if s.name != "playground" {
+		if s.name != "studio-ui" {
 			continue
 		}
 		if s.healthPath != "/" {
-			t.Errorf("playground healthPath = %q, want %q (Decision #32)",
+			t.Errorf("studio-ui healthPath = %q, want %q (Decision #32)",
 				s.healthPath, "/")
 		}
 		if s.healthPort != "5200" {
-			t.Errorf("playground healthPort = %q, want %q",
+			t.Errorf("studio-ui healthPort = %q, want %q",
 				s.healthPort, "5200")
 		}
 		return
 	}
-	t.Fatal("playground not found in supervisedProcesses")
+	t.Fatal("studio-ui not found in supervisedProcesses")
 }
 
 // TestSupervisedProcessesProbeShape covers the universal contract —
@@ -67,7 +67,7 @@ func TestSupervisedProcessesPinSet(t *testing.T) {
 		"friday",
 		"link",
 		"webhook-tunnel",
-		"playground",
+		"studio-ui",
 	}
 	specs := supervisedProcesses("/tmp/dummy-bin")
 	got := make([]string, len(specs))
@@ -141,7 +141,7 @@ func TestCommonServiceEnv_RespectsExplicitOverride(t *testing.T) {
 // Supervisor.RestartAll iterates over when calling RestartProcess
 // on each supervised service. nats-server must come first so the
 // friday daemon's NatsManager tcpProbe finds an external NATS on
-// :4222 and reuses it instead of spawning its own; playground
+// :4222 and reuses it instead of spawning its own; studio-ui
 // comes last so it doesn't surface a spurious "backend down" UI
 // flash while its upstreams are still warming up. A reorder here
 // without a corresponding probe/dependency review can cause the
@@ -149,7 +149,7 @@ func TestCommonServiceEnv_RespectsExplicitOverride(t *testing.T) {
 // (Decision #?: 12s → 62s) was supposed to eliminate.
 func TestStartOrderConfig(t *testing.T) {
 	want := []string{
-		"nats-server", "friday", "link", "webhook-tunnel", "playground",
+		"nats-server", "friday", "link", "webhook-tunnel", "studio-ui",
 	}
 	if !slices.Equal(startOrder, want) {
 		t.Errorf("startOrder mismatch:\n want %q\n  got %q", want, startOrder)

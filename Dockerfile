@@ -1,4 +1,4 @@
-# Friday Platform image: atlasd + link + agent-playground + webhook-tunnel
+# Friday Platform image: atlasd + link + studio-ui + webhook-tunnel
 #
 # Build:
 #   docker build -t friday-platform .
@@ -9,17 +9,17 @@
 # Ports:
 #   18080  atlasd (daemon API) - mapped to container port 8080
 #   13100  link (credential/auth service) - mapped to container port 3100
-#   15200  agent-playground (web UI) - mapped to container port 5200
+#   15200  studio-ui (web UI) - mapped to container port 5200
 #   19090  webhook-tunnel - mapped to container port 9090
 
 # ============================================================================
-# Stage 1: Deno builder — compile atlas/link binaries & prepare playground
+# Stage 1: Deno builder — compile atlas/link binaries & prepare studio-ui
 # ============================================================================
 FROM denoland/deno:debian-2.7.4 AS deno-builder
 
 WORKDIR /app
 
-# Need Node.js/npm for building @atlas/ui (svelte-package) and the playground.
+# Need Node.js/npm for building @atlas/ui (svelte-package) and studio-ui.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     nodejs npm && \
     rm -rf /var/lib/apt/lists/*
@@ -30,7 +30,7 @@ COPY deno.json deno.lock package.json ./
 COPY apps/atlasd/deno.json apps/atlasd/package.json* ./apps/atlasd/
 COPY apps/atlas-cli/deno.json apps/atlas-cli/package.json* ./apps/atlas-cli/
 COPY apps/link/deno.json apps/link/package.json* ./apps/link/
-COPY tools/agent-playground/deno.json tools/agent-playground/package.json ./tools/agent-playground/
+COPY apps/studio-ui/deno.json apps/studio-ui/package.json ./apps/studio-ui/
 COPY tools/evals/deno.json tools/evals/package.json ./tools/evals/
 COPY packages/ ./packages/
 
@@ -40,12 +40,12 @@ RUN deno install
 # Copy full source (changes frequently but doesn't bust the install cache)
 COPY . .
 
-# Build @atlas/ui — the playground imports from dist/ which needs svelte-package
+# Build @atlas/ui — studio-ui imports from dist/ which needs svelte-package
 WORKDIR /app/packages/ui
 RUN npx svelte-kit sync && npx svelte-package -o dist
 
-# Generate .svelte-kit/tsconfig.json for the playground so vite doesn't warn
-WORKDIR /app/tools/agent-playground
+# Generate .svelte-kit/tsconfig.json for studio-ui so vite doesn't warn
+WORKDIR /app/apps/studio-ui
 RUN npx svelte-kit sync
 
 WORKDIR /app
@@ -178,9 +178,9 @@ COPY --from=go-builder   /out/webhook-tunnel    /usr/local/bin/webhook-tunnel
 WORKDIR /app
 
 # ── Copy runtime source for services that can't be compiled ──────────────────
-# agent-playground: Vite dev server needs source + node_modules
+# studio-ui: Vite dev server needs source + node_modules
 
-# Workspace config (Deno needs these to resolve imports for the playground)
+# Workspace config (Deno needs these to resolve imports for studio-ui)
 COPY --chown=atlas:atlas --from=deno-builder /app/deno.json /app/deno.lock /app/package.json /app/tsconfig.json /app/reset.d.ts /app/
 COPY --chown=atlas:atlas --from=deno-builder /app/types /app/types
 
@@ -190,7 +190,7 @@ COPY --chown=atlas:atlas --from=deno-builder /app/types /app/types
 RUN node -e " \
   const ws = [ \
     './packages/*', \
-    './tools/agent-playground' \
+    './apps/studio-ui' \
   ]; \
   for (const f of ['/app/deno.json', '/app/package.json']) { \
     const c = JSON.parse(require('fs').readFileSync(f, 'utf8')); \
@@ -199,19 +199,19 @@ RUN node -e " \
     require('fs').writeFileSync(f, JSON.stringify(c, null, 2) + '\n'); \
   }" && chown atlas:atlas /app/deno.json /app/package.json /app/deno.lock
 
-# Runtime tools (playground needs source + svelte-kit)
-COPY --chown=atlas:atlas --from=deno-builder /app/tools/agent-playground /app/tools/agent-playground
+# Runtime app source (studio-ui needs source + svelte-kit)
+COPY --chown=atlas:atlas --from=deno-builder /app/apps/studio-ui /app/apps/studio-ui
 
-# Shared packages (playground imports @atlas/ui etc.)
+# Shared packages (studio-ui imports @atlas/ui etc.)
 COPY --chown=atlas:atlas --from=deno-builder /app/packages /app/packages
 
 # Agent definitions
 COPY --chown=atlas:atlas --from=deno-builder /app/.agents /app/.agents
 
-# node_modules — only needed for the playground (vite, svelte)
+# node_modules — only needed for studio-ui (vite, svelte)
 COPY --chown=atlas:atlas --from=deno-builder /app/node_modules /app/node_modules
 
-# Deno cache — only what the playground needs at runtime.
+# Deno cache — only what studio-ui needs at runtime.
 # The compiled binaries (atlas, link, webhook-tunnel) are self-contained.
 COPY --chown=atlas:atlas --from=deno-builder /deno-dir /deno-dir
 # Fix /deno-dir top-level dir ownership (base image creates it as deno:deno,

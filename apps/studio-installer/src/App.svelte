@@ -80,7 +80,7 @@ onMount(async () => {
 
     /*
       Color tokens — mirror @atlas/ui/tokens.css so the installer
-      shares the same palette as the agent-playground (and any other
+      shares the same palette as studio-ui (and any other
       surface in the monorepo that consumes those tokens). Same
       light-dark() pattern, same semantic naming. Inlined here
       rather than imported because the installer is a leaf Tauri

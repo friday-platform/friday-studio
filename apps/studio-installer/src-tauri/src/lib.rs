@@ -13,7 +13,7 @@ use commands::{
     ensure_claude_code::ensure_claude_code,
     download_checkpoint::{check_download_complete, mark_download_complete},
     env_file::{
-        ensure_platform_env_vars, env_file_has_provider_key, env_file_location, playground_url,
+        ensure_platform_env_vars, env_file_has_provider_key, env_file_location, studio_ui_url,
         write_env_file,
     },
     exit_installer::exit_installer,
@@ -58,7 +58,7 @@ pub fn run() {
             ensure_platform_env_vars,
             env_file_has_provider_key,
             env_file_location,
-            playground_url,
+            studio_ui_url,
             exit_installer,
             stop_running_launcher,
             launch_studio,

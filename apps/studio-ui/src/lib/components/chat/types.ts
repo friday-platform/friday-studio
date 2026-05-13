@@ -19,7 +19,7 @@ import { z } from "zod";
 /**
  * Render-shape types live in `@atlas/core/chat/export/render` so the chat
  * export route in `apps/atlasd` can reuse them. Re-exported here so existing
- * agent-playground imports continue to resolve.
+ * studio-ui imports continue to resolve.
  */
 import type {
   ImageDisplay,

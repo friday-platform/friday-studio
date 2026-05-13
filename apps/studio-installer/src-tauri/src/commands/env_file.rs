@@ -195,12 +195,12 @@ fn apply_platform_vars(
     //   FRIDAY_PORT_FRIDAY            18080  ← daemon (was 8080)
     //   FRIDAY_PORT_LINK              13100  ← link (was 3100)
     //   FRIDAY_PORT_WEBHOOK_TUNNEL    19090  ← tunnel (was 9090)
-    //   FRIDAY_PORT_PLAYGROUND        15200  ← studio UI (was 5200)
+    //   FRIDAY_PORT_STUDIO_UI        15200  ← studio UI (was 5200)
     //
     // The launcher imports ~/.friday/local/.env into its own process
     // env (tools/friday-launcher/main.go's importDotEnvIntoProcessEnv).
     // The matching EXTERNAL_*_URL / FRIDAYD_URL values ensure the
-    // playground UI's window.__FRIDAY_CONFIG__ points at the moved
+    // studio-ui's window.__FRIDAY_CONFIG__ points at the moved
     // daemon + tunnel — auto-derive isn't possible because the URLs
     // may also include user-controlled hostnames or schemes.
     let platform_vars: Vec<(&str, String)> = vec![
@@ -209,7 +209,7 @@ fn apply_platform_vars(
         ("FRIDAY_PORT_FRIDAY", "18080".to_string()),
         ("FRIDAY_PORT_LINK", "13100".to_string()),
         ("FRIDAY_PORT_WEBHOOK_TUNNEL", "19090".to_string()),
-        ("FRIDAY_PORT_PLAYGROUND", "15200".to_string()),
+        ("FRIDAY_PORT_STUDIO_UI", "15200".to_string()),
         ("FRIDAYD_URL", "http://localhost:18080".to_string()),
         ("EXTERNAL_DAEMON_URL", "http://localhost:18080".to_string()),
         ("EXTERNAL_TUNNEL_URL", "http://localhost:19090".to_string()),
@@ -263,20 +263,20 @@ pub fn ensure_platform_env_vars() -> Result<String, String> {
 }
 
 /// Returns the URL the wizard should open in the user's browser to
-/// land on the local playground. Reads FRIDAY_PORT_PLAYGROUND from
+/// land on the local studio-ui. Reads FRIDAY_PORT_STUDIO_UI from
 /// ~/.friday/local/.env (which the wizard itself writes during the
 /// API Keys step) and falls back to 15200 if the file is missing or
 /// the key is unset. Centralised so every "open studio" entry point
-/// (Welcome, launchByOpening, openPlaygroundAndExit) lands on the
+/// (Welcome, launchByOpening, openStudioUIAndExit) lands on the
 /// same URL — pre-fix, all three hardcoded :5200 and broke any
 /// install with a port override.
 #[tauri::command]
-pub fn playground_url() -> Result<String, String> {
+pub fn studio_ui_url() -> Result<String, String> {
     let port = match fs::read_to_string(env_file_path()?) {
         Ok(content) => parse_env_lines(&content)
             .into_iter()
             .find_map(|(k, v)| match k {
-                Some(key) if key == "FRIDAY_PORT_PLAYGROUND" => Some(v.trim().to_string()),
+                Some(key) if key == "FRIDAY_PORT_STUDIO_UI" => Some(v.trim().to_string()),
                 _ => None,
             })
             .filter(|s| !s.is_empty())

@@ -69,7 +69,7 @@ emit_header() {
 # Third-Party Licenses
 
 This file lists every third-party dependency bundled into a shipped Friday
-Studio artifact (the daemon, CLI, web playground, Friday Launcher,
+Studio artifact (the daemon, CLI, Studio UI, Friday Launcher,
 webhook tunnel, and Studio Installer). It is generated automatically by
 [`scripts/generate-third-party-licenses.sh`](scripts/generate-third-party-licenses.sh).
 
@@ -126,7 +126,7 @@ emit_rust() {
 emit_node() {
   echo "## npm / JSR packages" >> "$OUT"
   echo >> "$OUT"
-  echo "Bundled into: the Atlas daemon, CLI, web playground, and any compiled" >> "$OUT"
+  echo "Bundled into: the Atlas daemon, CLI, Studio UI, and any compiled" >> "$OUT"
   echo "Deno binaries. Inventory is taken from \`deno.lock\`." >> "$OUT"
   echo >> "$OUT"
   echo "| Package | Version | Source |" >> "$OUT"

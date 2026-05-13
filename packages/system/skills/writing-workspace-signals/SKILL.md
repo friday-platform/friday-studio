@@ -136,7 +136,7 @@ signals:
 
 `missedWindow` (Duration: `s`/`m`/`h`, default `24h`) caps the catch-up window for every policy. A daemon down for a week with `catchup` on an hourly cron only fires the slots inside the window — never all 168.
 
-Missed-schedule events surface on the playground `/schedules` page under "Missed schedules" and persist in the JetStream `WORKSPACE_EVENTS` stream for 30 days. `manual` events that haven't been fired/dismissed show a pending badge + action buttons.
+Missed-schedule events surface on the Studio UI `/schedules` page under "Missed schedules" and persist in the JetStream `WORKSPACE_EVENTS` stream for 30 days. `manual` events that haven't been fired/dismissed show a pending badge + action buttons.
 
 ### Concurrency policy
 

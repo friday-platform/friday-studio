@@ -3,7 +3,7 @@ import { parseSSEStream } from "@atlas/utils/sse";
 import { define } from "gunshi";
 import { errorOutput } from "../../../utils/output.ts";
 
-const DEFAULT_PLAYGROUND_URL = "http://localhost:5200";
+const DEFAULT_STUDIO_UI_URL = "http://localhost:5200";
 
 /**
  * Renders a single SSE event to stdout in human-readable format.
@@ -94,7 +94,7 @@ function parseEnvArgs(envArgs: string | undefined): Record<string, string> | und
 
 export const execCommand = define({
   name: "exec",
-  description: "Execute an agent via the playground and stream results",
+  description: "Execute an agent via Studio UI and stream results",
   args: {
     agent: { type: "positional", description: "Agent ID to execute", required: true },
     input: {
@@ -104,7 +104,7 @@ export const execCommand = define({
       required: true,
     },
     json: { type: "boolean", description: "Output raw SSE events as NDJSON", default: false },
-    url: { type: "string", description: `Playground URL (default: ${DEFAULT_PLAYGROUND_URL})` },
+    url: { type: "string", description: `Studio UI URL (default: ${DEFAULT_STUDIO_UI_URL})` },
     env: {
       type: "string",
       short: "e",
@@ -125,7 +125,7 @@ export const execCommand = define({
       process.exit(1);
     }
 
-    const playgroundUrl = ctx.values.url ?? DEFAULT_PLAYGROUND_URL;
+    const studioUIUrl = ctx.values.url ?? DEFAULT_STUDIO_UI_URL;
     const env = parseEnvArgs(ctx.values.env);
     const jsonMode = ctx.values.json;
 
@@ -133,26 +133,26 @@ export const execCommand = define({
 
     let response: Response;
     try {
-      response = await fetch(`${playgroundUrl}/api/execute`, {
+      response = await fetch(`${studioUIUrl}/api/execute`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body,
       });
     } catch {
       errorOutput(
-        `Could not connect to playground at ${playgroundUrl}. Is it running? (deno task playground)`,
+        `Could not connect to Studio UI at ${studioUIUrl}. Is it running? (deno task studio-ui)`,
       );
       process.exit(1);
     }
 
     if (!response.ok) {
       const text = await response.text();
-      errorOutput(`Playground returned ${response.status}: ${text}`);
+      errorOutput(`Studio UI returned ${response.status}: ${text}`);
       process.exit(1);
     }
 
     if (!response.body) {
-      errorOutput("No response body from playground");
+      errorOutput("No response body from Studio UI");
       process.exit(1);
     }
 

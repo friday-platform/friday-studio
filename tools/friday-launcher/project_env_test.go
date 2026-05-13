@@ -11,7 +11,7 @@ import (
 
 // Verify the .env values the installer writes flow through to all
 // supervised services. Regression guard: previously only `friday`
-// got .env, so EXTERNAL_DAEMON_URL never reached `playground` and the
+// got .env, so EXTERNAL_DAEMON_URL never reached `studio-ui` and the
 // browser-side window.__FRIDAY_CONFIG__ stayed empty.
 func TestCommonServiceEnvFlowsToAllServices(t *testing.T) {
 	tmpHome := t.TempDir()
@@ -32,7 +32,7 @@ LINK_DEV_MODE=true
 	t.Setenv("HOME", tmpHome)
 
 	specs := supervisedProcesses("/tmp/bin")
-	required := []string{"friday", "link", "webhook-tunnel", "playground"}
+	required := []string{"friday", "link", "webhook-tunnel", "studio-ui"}
 	for _, name := range required {
 		var found *processSpec
 		for i := range specs {
@@ -128,7 +128,7 @@ func TestFridayEnv_PinsUvCachesUnderFridayHome(t *testing.T) {
 }
 
 // TestImportDotEnvIntoProcessEnv_PopulatesPortOverrides closes the
-// gap that made FRIDAY_PORT_PLAYGROUND=15200 in ~/.friday/local/.env
+// gap that made FRIDAY_PORT_STUDIO_UI=15200 in ~/.friday/local/.env
 // silently ignored: portOverride() reads via os.Getenv, but pre-fix
 // the .env values flowed only into spawned-service envs (via
 // commonServiceEnv) — never into the launcher's own process env.
@@ -141,25 +141,25 @@ func TestImportDotEnvIntoProcessEnv_PopulatesPortOverrides(t *testing.T) {
 		t.Fatal(err)
 	}
 	envFile := filepath.Join(envDir, ".env")
-	envContent := "FRIDAY_PORT_PLAYGROUND=15200\nLINK_DEV_MODE=true\n"
+	envContent := "FRIDAY_PORT_STUDIO_UI=15200\nLINK_DEV_MODE=true\n"
 	if err := os.WriteFile(envFile, []byte(envContent), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("HOME", tmpHome)
 	// Make sure the test starts from a clean slate for the keys we
 	// expect importDotEnvIntoProcessEnv to populate.
-	t.Setenv("FRIDAY_PORT_PLAYGROUND", "")
-	_ = os.Unsetenv("FRIDAY_PORT_PLAYGROUND")
+	t.Setenv("FRIDAY_PORT_STUDIO_UI", "")
+	_ = os.Unsetenv("FRIDAY_PORT_STUDIO_UI")
 
 	importDotEnvIntoProcessEnv()
 
-	if got := os.Getenv("FRIDAY_PORT_PLAYGROUND"); got != "15200" {
-		t.Errorf("FRIDAY_PORT_PLAYGROUND after import = %q, want 15200", got)
+	if got := os.Getenv("FRIDAY_PORT_STUDIO_UI"); got != "15200" {
+		t.Errorf("FRIDAY_PORT_STUDIO_UI after import = %q, want 15200", got)
 	}
 	// portOverride consults os.Getenv with the same translation rule the
 	// public contract documents (uppercase, hyphens → underscores).
-	if got := portOverride("playground"); got != "15200" {
-		t.Errorf("portOverride(playground) after import = %q, want 15200", got)
+	if got := portOverride("studio-ui"); got != "15200" {
+		t.Errorf("portOverride(studio-ui) after import = %q, want 15200", got)
 	}
 }
 
@@ -245,14 +245,14 @@ func TestImportDotEnvIntoProcessEnv_PreservesExistingEnv(t *testing.T) {
 // readiness probe (which the original portOverride code already did)
 // but also propagate the port into the supervised binary itself —
 // either as a CLI flag (friday's --port) or an env var (LINK_PORT,
-// TUNNEL_PORT, PLAYGROUND_PORT). Without this propagation the launcher
+// TUNNEL_PORT, STUDIO_UI_PORT). Without this propagation the launcher
 // would probe the override port while the binary stays on its hardcoded
 // default, and the supervisor stays "starting" forever.
 func TestSupervisedProcesses_PortOverridesPropagate(t *testing.T) {
 	t.Setenv("FRIDAY_PORT_FRIDAY", "18080")
 	t.Setenv("FRIDAY_PORT_LINK", "13100")
 	t.Setenv("FRIDAY_PORT_WEBHOOK_TUNNEL", "19090")
-	t.Setenv("FRIDAY_PORT_PLAYGROUND", "15200")
+	t.Setenv("FRIDAY_PORT_STUDIO_UI", "15200")
 
 	specs := supervisedProcesses("/tmp/bin")
 
@@ -267,7 +267,7 @@ func TestSupervisedProcesses_PortOverridesPropagate(t *testing.T) {
 		{name: "friday", check: "args", wantArg: "--port", wantPort: "18080"},
 		{name: "link", check: "env", wantEnv: "LINK_PORT=13100", wantPort: "13100"},
 		{name: "webhook-tunnel", check: "env", wantEnv: "TUNNEL_PORT=19090", wantPort: "19090"},
-		{name: "playground", check: "env", wantEnv: "PLAYGROUND_PORT=15200", wantPort: "15200"},
+		{name: "studio-ui", check: "env", wantEnv: "STUDIO_UI_PORT=15200", wantPort: "15200"},
 	}
 
 	for _, tc := range cases {
@@ -306,24 +306,24 @@ func TestSupervisedProcesses_PortOverridesPropagate(t *testing.T) {
 	}
 }
 
-// TestPlaygroundURL_HonorsPortOverride asserts the tray opens the
-// correct URL when the playground port is overridden. Without this
+// TestStudioUIURL_HonorsPortOverride asserts the tray opens the
+// correct URL when the studio-ui port is overridden. Without this
 // the tray click after a port override silently lands on
 // http://localhost:5200 (default) and the user sees connection
 // refused.
-func TestPlaygroundURL_HonorsPortOverride(t *testing.T) {
-	if got := playgroundURL(); got != "http://localhost:5200" {
-		t.Errorf("default playgroundURL = %q, want http://localhost:5200", got)
+func TestStudioUIURL_HonorsPortOverride(t *testing.T) {
+	if got := studioUIURL(); got != "http://localhost:5200" {
+		t.Errorf("default studioUIURL = %q, want http://localhost:5200", got)
 	}
-	t.Setenv("FRIDAY_PORT_PLAYGROUND", "15200")
-	if got := playgroundURL(); got != "http://localhost:15200" {
-		t.Errorf("overridden playgroundURL = %q, want http://localhost:15200", got)
+	t.Setenv("FRIDAY_PORT_STUDIO_UI", "15200")
+	if got := studioUIURL(); got != "http://localhost:15200" {
+		t.Errorf("overridden studioUIURL = %q, want http://localhost:15200", got)
 	}
 }
 
 // TestCommonServiceEnv_EmitsFridayHome guards the contract that
 // drives the entire ~/.friday/local redirect: every supervised
-// service (friday daemon, link, webhook-tunnel, playground) must
+// service (friday daemon, link, webhook-tunnel, studio-ui) must
 // receive FRIDAY_HOME so getFridayHome() in @atlas/utils resolves
 // to the launcher-owned home. Without this, services fall back to
 // the legacy ~/.atlas location and homes silently drift apart —
@@ -339,7 +339,7 @@ func TestCommonServiceEnv_EmitsFridayHome(t *testing.T) {
 	want := "FRIDAY_HOME=" + filepath.Join(tmpHome, ".friday", "local")
 
 	specs := supervisedProcesses("/tmp/bin")
-	required := []string{"friday", "link", "webhook-tunnel", "playground"}
+	required := []string{"friday", "link", "webhook-tunnel", "studio-ui"}
 	for _, name := range required {
 		var found *processSpec
 		for i := range specs {
@@ -375,7 +375,7 @@ func TestCommonServiceEnv_EmitsFridayConfigPath(t *testing.T) {
 	want := "FRIDAY_CONFIG_PATH=" + filepath.Join(tmpHome, ".friday", "local")
 
 	specs := supervisedProcesses("/tmp/bin")
-	required := []string{"friday", "link", "webhook-tunnel", "playground"}
+	required := []string{"friday", "link", "webhook-tunnel", "studio-ui"}
 	for _, name := range required {
 		var found *processSpec
 		for i := range specs {

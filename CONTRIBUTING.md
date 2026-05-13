@@ -21,7 +21,7 @@ version:
 
 ```bash
 # Deno + TypeScript (core platform)
-deno task dev:playground  # Daemon (auto-restart) + web playground + link + tunnel
+deno task dev:studio-ui   # Daemon (auto-restart) + Studio UI + link + tunnel
 deno task start           # Daemon only, no auto-restart
 deno task typecheck       # Type check (deno check + svelte-check)
 deno task lint            # Lint

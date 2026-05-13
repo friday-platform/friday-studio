@@ -1,5 +1,5 @@
 /**
- * Production entry point for the bundled `playground` binary.
+ * Production entry point for the bundled `studio-ui` binary.
  *
  * Serves the SvelteKit static build (`build/`) on a fixed port, proxies
  * `/api/daemon/*` to the local atlasd daemon, and forwards `/api/*` to
@@ -15,8 +15,8 @@ import { serveStatic } from "hono/deno";
 import { parse as parseHtml } from "node-html-parser";
 import { api } from "./src/lib/server/router.ts";
 
-const PORT = Number(process.env.PLAYGROUND_PORT ?? "5200");
-const HOST = process.env.PLAYGROUND_HOST ?? "127.0.0.1";
+const PORT = Number(process.env.STUDIO_UI_PORT ?? "5200");
+const HOST = process.env.STUDIO_UI_HOST ?? "127.0.0.1";
 const DAEMON_URL = process.env.FRIDAYD_URL ?? "http://localhost:8080";
 
 // Browser-facing URLs. The launcher owns the port layout, so we can't
@@ -206,8 +206,8 @@ function origin(u: string): string {
     return "<invalid url>";
   }
 }
-console.log(`[playground] listening on http://${HOST}:${PORT}`);
-console.log(`[playground] daemon proxy → ${origin(DAEMON_URL)}`);
-console.log(`[playground] external daemon → ${origin(EXTERNAL_DAEMON_URL)}`);
-if (EXTERNAL_TUNNEL_URL) console.log(`[playground] external tunnel → ${origin(EXTERNAL_TUNNEL_URL)}`);
+console.log(`[studio-ui] listening on http://${HOST}:${PORT}`);
+console.log(`[studio-ui] daemon proxy → ${origin(DAEMON_URL)}`);
+console.log(`[studio-ui] external daemon → ${origin(EXTERNAL_DAEMON_URL)}`);
+if (EXTERNAL_TUNNEL_URL) console.log(`[studio-ui] external tunnel → ${origin(EXTERNAL_TUNNEL_URL)}`);
 Deno.serve({ port: PORT, hostname: HOST }, app.fetch);

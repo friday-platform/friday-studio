@@ -152,7 +152,7 @@ fn override_home(test_home: &PathBuf) {
     env::set_var("FRIDAY_PORT_friday", "28080");
     env::set_var("FRIDAY_PORT_link", "23100");
     env::set_var("FRIDAY_PORT_webhook_tunnel", "29090");
-    env::set_var("FRIDAY_PORT_playground", "25200");
+    env::set_var("FRIDAY_PORT_studio_ui", "25200");
 }
 
 fn pidfile_path() -> PathBuf {
@@ -214,7 +214,7 @@ fn installer_launcher_handoff_and_clean_shutdown() {
     write_wrapper(&install_dir, &stub, "friday", "28080", "/health");
     write_wrapper(&install_dir, &stub, "link", "23100", "/health");
     write_wrapper(&install_dir, &stub, "webhook-tunnel", "29090", "/health");
-    write_wrapper(&install_dir, &stub, "playground", "25200", "/");
+    write_wrapper(&install_dir, &stub, "studio-ui", "25200", "/");
 
     // 2. Override HOME + FRIDAY_LAUNCHER_HOME + FRIDAY_PORT_* so our
     //    test doesn't touch real ~/.friday.

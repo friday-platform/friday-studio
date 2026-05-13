@@ -1,6 +1,6 @@
 # pty-server
 
-WebSocket↔PTY bridge for the cheatsheet terminal in `agent-playground`.
+WebSocket↔PTY bridge for the cheatsheet terminal in `studio-ui`.
 Replaces the prior Node/`node-pty`/`tsx` server (`server.ts`) with a
 single static Go binary that runs on Linux, macOS (Intel + ARM), and
 Windows (amd64).
@@ -64,7 +64,7 @@ Default shells:
 `GET /health` → `200 {"ok":true}` with CORS headers. `OPTIONS /health` → `204`.
 
 **The path is `/health`, not `/healthz`.** Other Go services in this repo use
-`/healthz` but the cheatsheet client (`tools/agent-playground/src/lib/components/shared/cheatsheet.svelte:44`)
+`/healthz` but the cheatsheet client (`apps/studio-ui/src/lib/components/shared/cheatsheet.svelte:44`)
 hardcodes `/pty-proxy/health`. Do not "harmonize" the path without updating
 the client.
 
@@ -114,7 +114,7 @@ that's been removed. From a fresh clone you need a built `atlas` available:
 ```
 deno task compile          # produces ./bin/atlas
 export PATH="$PWD/bin:$PATH"
-deno task playground       # cheatsheet terminal will pick it up
+deno task studio-ui        # cheatsheet terminal will pick it up
 ```
 
 Or simply rely on the shell's normal `which atlas` — if your dev box

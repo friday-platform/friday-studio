@@ -4,7 +4,7 @@ import { z } from "zod";
  * (`/api/daemon/*` route). The compiled binary uses static-server.ts
  * which reads `FRIDAYD_URL` from env for the same purpose; this dev
  * path always targets the default 8080 since it only runs under
- * `deno task playground`. */
+ * `deno task studio-ui`. */
 export const DAEMON_BASE_URL = "http://localhost:8080";
 
 interface RuntimeConfig {
@@ -40,8 +40,8 @@ function resolve(configKey: keyof RuntimeConfig, envVarName: string, humanName: 
 	const value = globalThis.__FRIDAY_CONFIG__?.[configKey];
 	if (!value) {
 		throw new Error(
-			`${humanName} is not configured. Set ${envVarName} on the playground process ` +
-				`(launcher .env in production; deno.json playground task in dev).`,
+			`${humanName} is not configured. Set ${envVarName} on the studio-ui process ` +
+				`(launcher .env in production; deno.json studio-ui task in dev).`,
 		);
 	}
 	return normalize(value);

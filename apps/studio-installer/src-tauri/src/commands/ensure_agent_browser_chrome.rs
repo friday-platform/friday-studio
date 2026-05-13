@@ -39,7 +39,7 @@ pub async fn ensure_agent_browser_chrome() -> Result<(), String> {
     };
     // Stack 3 split-destination layout: supervised binaries live under
     // <install_dir>/bin/, alongside the rest of the launcher-spawned
-    // tools (friday, link, webhook-tunnel, playground, …). install_dir
+    // tools (friday, link, webhook-tunnel, studio-ui, …). install_dir
     // itself holds user-data + the .app's friday-launcher entry point
     // only. Pre-Stack-3 builds put everything flat under install_dir,
     // which collided with user-data dir names — the link binary at

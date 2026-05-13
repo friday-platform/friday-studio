@@ -55,6 +55,7 @@ import { migration as m_20260505_120000_elicitations_bootstrap } from "./m_20260
 import { migration as m_20260507_120000_drop_scratchpad_kv } from "./m_20260507_120000_drop_scratchpad_kv.ts";
 import { migration as m_20260511_110800_provision_workspace_members } from "./m_20260511_110800_provision_workspace_members.ts";
 import { migration as m_20260511_120000_cleanup_userid_as_name } from "./m_20260511_120000_cleanup_userid_as_name.ts";
+import { migration as m_20260513_013700_rename_playground_env_vars } from "./m_20260513_013700_rename_playground_env_vars.ts";
 
 /**
  * Static manifest. Ordered by id ascending — keep new entries in
@@ -88,6 +89,7 @@ const MIGRATIONS: readonly Migration[] = [
   m_20260507_120000_drop_scratchpad_kv,
   m_20260511_110800_provision_workspace_members,
   m_20260511_120000_cleanup_userid_as_name,
+  m_20260513_013700_rename_playground_env_vars,
 ];
 
 /**
