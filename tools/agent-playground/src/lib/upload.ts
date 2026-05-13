@@ -75,12 +75,17 @@ export function validateFile(file: File): { valid: true } | { valid: false; erro
  * Upload a file to the daemon's artifact endpoint.
  * Simple XHR upload with progress tracking — no chunked upload needed
  * for the playground's typical file sizes.
+ *
+ * `workspaceId` defaults to "playground" for the HITL elicitation flow that
+ * always targets the playground workspace; chat-input attachments pass the
+ * active workspace so the upload's `requireWorkspaceMember` check passes.
  */
 export function uploadFile(
   file: File,
   onProgress?: (loaded: number) => void,
   abortSignal?: AbortSignal,
   onStatusChange?: (status: UploadStatus) => void,
+  workspaceId: string = "playground",
 ): Promise<{ artifactId: string } | { error: string }> {
   const validation = validateFile(file);
   if (!validation.valid) {
@@ -89,7 +94,7 @@ export function uploadFile(
 
   const formData = new FormData();
   formData.set("file", file);
-  formData.set("workspaceId", "playground");
+  formData.set("workspaceId", workspaceId);
 
   return new Promise((resolve) => {
     const xhr = new XMLHttpRequest();

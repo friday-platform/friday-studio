@@ -51,6 +51,34 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
+ * Detect text parts that exist solely to carry user-attached artifact
+ * content into the agent prompt (`<attachment filename="…" mediaType="…"
+ * artifactId="…">…</attachment>` or self-closing). The chat-sdk adapter
+ * injects these on persist so the workspace-chat agent's per-turn history
+ * read sees the bytes; the user bubble already renders the artifact via
+ * `data-artifact-attached` → `ArtifactCard`, so we skip these on the UI.
+ *
+ * Match shape: every non-whitespace span in the text is an `<attachment …>`
+ * block. Tolerates multiple expansions concatenated with whitespace; rejects
+ * any prose mixed in (so a user typing the literal `<attachment …>` tag in
+ * their message still renders).
+ */
+const ATTACHMENT_TAG_RE =
+  /^\s*(?:<attachment\b[^>]*artifactId="[^"]+"[^>]*(?:\/>|>[\s\S]*?<\/attachment>))\s*/;
+
+function isAttachmentExpansionText(text: string): boolean {
+  let remaining = text;
+  let matched = false;
+  while (remaining.length > 0) {
+    const m = remaining.match(ATTACHMENT_TAG_RE);
+    if (!m) return false;
+    matched = true;
+    remaining = remaining.slice(m[0].length);
+  }
+  return matched;
+}
+
+/**
  * Extract a top-level {@link ToolCallDisplay} from a single tool part, or
  * `null` if the part isn't a recognizable tool shape.
  */
@@ -498,6 +526,12 @@ export function buildSegments(msg: AtlasUIMessage): Segment[] {
     const type = part.type;
 
     if (type === "text" && typeof part.text === "string") {
+      // Synthetic attachment-expansion text parts (injected by
+      // `atlas-web-adapter.inlineAttachedArtifacts` so the agent sees
+      // user-attached file content in its prompt) carry an `artifactId="…"`
+      // marker. The user bubble's ArtifactCard already represents the file
+      // visually, so render-side we skip these blocks — they're agent-only.
+      if (isAttachmentExpansionText(part.text)) continue;
       flushBurst();
       textBuffer += part.text;
       continue;
@@ -524,6 +558,30 @@ export function buildSegments(msg: AtlasUIMessage): Segment[] {
       if (isRecord(part.data) && typeof part.data.displayName === "string") {
         flushBurst();
         textBuffer += `Connected ${part.data.displayName}.`;
+      }
+      continue;
+    }
+
+    if (type === "data-artifact-attached") {
+      // The chat-message-list renders one <ArtifactCard> per id (same card
+      // agent-produced artifacts get). Flush any pending text/tool buffers
+      // first so the cards land in the correct chronological slot.
+      if (isRecord(part.data)) {
+        const rawIds = part.data.artifactIds;
+        const rawNames = part.data.filenames;
+        const rawMimes = part.data.mimeTypes;
+        if (Array.isArray(rawIds) && Array.isArray(rawNames) && rawIds.length > 0) {
+          flushText();
+          flushBurst();
+          const ids = rawIds.filter((v): v is string => typeof v === "string");
+          const filenames = rawNames.filter((v): v is string => typeof v === "string");
+          const mimeTypes = Array.isArray(rawMimes)
+            ? rawMimes.filter((v): v is string => typeof v === "string")
+            : undefined;
+          if (ids.length > 0) {
+            segments.push({ type: "artifact-list", ids, filenames, mimeTypes });
+          }
+        }
       }
       continue;
     }

@@ -7,6 +7,7 @@
   import { getExportContext } from "./export-context";
   import ToolBurst from "./tool-burst.svelte";
   import ToolCallCard from "./tool-call-card.svelte";
+  import ArtifactCard from "./artifact-card.svelte";
   import { needsUserAction } from "./tool-call-utils";
   import ValidationPillRow from "./validation-pill-row.svelte";
   import type { ValidationAttemptDisplay } from "./validation-accumulator.ts";
@@ -761,6 +762,12 @@
                   {/each}
                 </div>
               {/if}
+            {:else if segment.type === "artifact-list"}
+              <div class="user-attachment-list">
+                {#each segment.ids as artifactId (artifactId)}
+                  <ArtifactCard {artifactId} />
+                {/each}
+              </div>
             {/if}
           {/each}
 
@@ -1479,6 +1486,14 @@
     display: flex;
     flex-direction: column;
     gap: var(--size-1);
+  }
+
+  /* ─── User-attached artifacts ───────────────────────────────────────── */
+
+  .user-attachment-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-2);
   }
 
   /* ─── Inline images ─────────────────────────────────────────────────── */

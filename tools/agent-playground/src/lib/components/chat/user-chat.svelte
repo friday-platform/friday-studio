@@ -13,7 +13,16 @@
     subscribeToWorkspaceElicitations,
   } from "$lib/shared-worker/client.ts";
   import { DefaultChatTransport } from "ai";
-  import ChatInput, { type ImageAttachment } from "./chat-input.svelte";
+  import ChatInput, {
+    type ArtifactAttachment,
+    type ChatAttachment,
+  } from "./chat-input.svelte";
+  import {
+    ALLOWED_EXTENSION_LIST,
+    inferMimeFromFilename,
+    isTextMimeType,
+  } from "@atlas/core/artifacts/file-upload";
+  import { uploadFile } from "$lib/upload.ts";
   import ChatInspector from "./chat-inspector.svelte";
   import ChatMessageList from "./chat-message-list.svelte";
   import ChatSessionUsage from "./chat-session-usage.svelte";
@@ -57,7 +66,7 @@
   let systemPromptContext: { timestamp: string; systemMessages: string[] } | null = $state(null);
 
   let chatDragOver = $state(false);
-  let pendingImages: ImageAttachment[] = $state([]);
+  let pendingAttachments: ChatAttachment[] = $state([]);
 
   async function fileToDataUrl(file: File): Promise<string> {
     return new Promise((resolve, reject) => {
@@ -65,6 +74,46 @@
       reader.onload = () => resolve(reader.result as string);
       reader.onerror = reject;
       reader.readAsDataURL(file);
+    });
+  }
+
+  function classifyDroppedFile(file: File): "image" | "artifact" | null {
+    if (file.type.startsWith("image/")) return "image";
+    const inferred = inferMimeFromFilename(file.name);
+    if (inferred?.startsWith("image/")) return "image";
+    const dot = file.name.lastIndexOf(".");
+    if (dot >= 0) {
+      const ext = file.name.slice(dot).toLowerCase();
+      if (ALLOWED_EXTENSION_LIST.includes(ext)) return "artifact";
+    }
+    if (file.type && isTextMimeType(file.type)) return "artifact";
+    return null;
+  }
+
+  function patchPendingArtifact(id: string, patch: Partial<ArtifactAttachment>) {
+    pendingAttachments = pendingAttachments.map((a) =>
+      a.kind === "artifact" && a.id === id ? { ...a, ...patch } : a,
+    );
+  }
+
+  function startPendingUpload(att: ArtifactAttachment) {
+    void uploadFile(
+      att.file,
+      (loaded) => patchPendingArtifact(att.id, { progress: loaded }),
+      att.abortController.signal,
+      undefined,
+      wsId,
+    ).then((result) => {
+      if (att.abortController.signal.aborted) return;
+      if ("artifactId" in result) {
+        patchPendingArtifact(att.id, {
+          status: "ready",
+          progress: att.file.size,
+          artifactId: result.artifactId,
+        });
+      } else if (result.error !== "Upload cancelled") {
+        patchPendingArtifact(att.id, { status: "error", errorMessage: result.error });
+      }
     });
   }
 
@@ -103,9 +152,28 @@
 
   async function addDroppedFiles(files: FileList) {
     for (const file of files) {
-      if (!file.type.startsWith("image/")) continue;
-      const dataUrl = await fileToDataUrl(file);
-      pendingImages = [...pendingImages, { id: crypto.randomUUID(), file, dataUrl }];
+      const kind = classifyDroppedFile(file);
+      if (kind === "image") {
+        const dataUrl = await fileToDataUrl(file);
+        pendingAttachments = [
+          ...pendingAttachments,
+          { kind: "image", id: crypto.randomUUID(), file, dataUrl },
+        ];
+      } else if (kind === "artifact") {
+        const mediaType =
+          file.type || inferMimeFromFilename(file.name) || "application/octet-stream";
+        const att: ArtifactAttachment = {
+          kind: "artifact",
+          id: crypto.randomUUID(),
+          file,
+          mediaType,
+          status: "uploading",
+          progress: 0,
+          abortController: new AbortController(),
+        };
+        pendingAttachments = [...pendingAttachments, att];
+        startPendingUpload(att);
+      }
     }
   }
 
@@ -773,6 +841,10 @@
     | { type: "text"; text: string }
     | { type: "file"; mediaType: string; url: string; filename?: string }
     | { type: "data-credential-linked"; data: { provider: string; displayName: string } }
+    | {
+        type: "data-artifact-attached";
+        data: { artifactIds: string[]; filenames: string[]; mimeTypes?: string[] };
+      }
   >;
   let queuedMessages: QueuedMessageParts[] = $state([]);
 
@@ -1186,14 +1258,14 @@
     }
   }
 
-  async function handleSubmit(text: string, inputImages: ImageAttachment[] = []) {
+  async function handleSubmit(text: string, inputAttachments: ChatAttachment[] = []) {
     if (!chat) return;
     error = null;
     wasInterrupted = false;
 
-    // Merge images from the input component + any dropped on the chat area
-    const allImages = [...inputImages, ...pendingImages];
-    pendingImages = [];
+    // Merge attachments from the input component + any dropped on the chat area
+    const allAttachments = [...inputAttachments, ...pendingAttachments];
+    pendingAttachments = [];
 
     const parts: QueuedMessageParts = [];
 
@@ -1201,12 +1273,35 @@
       parts.push({ type: "text", text });
     }
 
-    for (const img of allImages) {
+    // Images keep their existing data-URL `file` part path — that's
+    // recognized by the provider as a vision input without a tool roundtrip.
+    for (const att of allAttachments) {
+      if (att.kind === "image") {
+        parts.push({
+          type: "file",
+          mediaType: att.file.type || "image/png",
+          url: att.dataUrl,
+          filename: att.file.name,
+        });
+      }
+    }
+
+    // Non-image attachments uploaded as artifacts. The chat-input's
+    // `hasContent` gate blocks send while any upload is still in flight, so
+    // by the time we get here `status === "ready"` and `artifactId` is set
+    // — but `filter` keeps the runtime defensive against future drift.
+    const readyArtifacts = allAttachments.filter(
+      (a): a is ArtifactAttachment & { artifactId: string } =>
+        a.kind === "artifact" && a.status === "ready" && typeof a.artifactId === "string",
+    );
+    if (readyArtifacts.length > 0) {
       parts.push({
-        type: "file",
-        mediaType: img.file.type || "image/png",
-        url: img.dataUrl,
-        filename: img.file.name,
+        type: "data-artifact-attached",
+        data: {
+          artifactIds: readyArtifacts.map((a) => a.artifactId),
+          filenames: readyArtifacts.map((a) => a.file.name),
+          mimeTypes: readyArtifacts.map((a) => a.mediaType),
+        },
       });
     }
 
@@ -1327,24 +1422,50 @@
 >
   {#if chatDragOver}
     <div class="drop-overlay">
-      <span>Drop image here</span>
+      <span>Drop file here</span>
     </div>
   {/if}
 
-  {#if pendingImages.length > 0}
+  {#if pendingAttachments.length > 0}
     <div class="pending-images-bar">
-      {#each pendingImages as img (img.id)}
-        <div class="pending-image">
-          <img src={img.dataUrl} alt={img.file.name} />
-          <button
-            onclick={() => {
-              pendingImages = pendingImages.filter((i) => i.id !== img.id);
-            }}
-            aria-label="Remove"
+      {#each pendingAttachments as att (att.id)}
+        {#if att.kind === "image"}
+          <div class="pending-image">
+            <img src={att.dataUrl} alt={att.file.name} />
+            <button
+              onclick={() => {
+                pendingAttachments = pendingAttachments.filter((i) => i.id !== att.id);
+              }}
+              aria-label="Remove"
+            >
+              ✕
+            </button>
+          </div>
+        {:else}
+          {@const pct = att.file.size > 0 ? Math.round((att.progress / att.file.size) * 100) : 0}
+          <div
+            class="pending-text"
+            class:uploading={att.status === "uploading"}
+            class:error={att.status === "error"}
+            title={att.errorMessage ?? `${att.file.name} · ${att.mediaType}`}
           >
-            ✕
-          </button>
-        </div>
+            <span class="pending-text-name">{att.file.name}</span>
+            {#if att.status === "uploading"}
+              <span class="pending-text-status">{pct}%</span>
+            {:else if att.status === "error"}
+              <span class="pending-text-status pending-text-error">!</span>
+            {/if}
+            <button
+              onclick={() => {
+                if (att.status === "uploading") att.abortController.abort();
+                pendingAttachments = pendingAttachments.filter((i) => i.id !== att.id);
+              }}
+              aria-label={att.status === "uploading" ? "Cancel upload" : "Remove"}
+            >
+              ✕
+            </button>
+          </div>
+        {/if}
       {/each}
     </div>
   {/if}
@@ -1417,6 +1538,7 @@
         {/if}
         {#key chatId}
           <ChatInput
+            workspaceId={wsId}
             onsubmit={handleSubmit}
             {streaming}
             {stopping}
@@ -1618,6 +1740,65 @@
   }
 
   .pending-image button:hover {
+    background-color: var(--color-error);
+    color: white;
+  }
+
+  .pending-text {
+    align-items: center;
+    background-color: var(--color-surface-2);
+    border: 1px solid var(--color-border-1);
+    border-radius: var(--radius-2);
+    color: var(--color-text);
+    display: inline-flex;
+    flex-shrink: 0;
+    font-size: var(--font-size-1);
+    gap: var(--size-1);
+    max-inline-size: 200px;
+    padding: var(--size-1) var(--size-2);
+  }
+
+  .pending-text-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .pending-text.uploading {
+    opacity: 0.75;
+  }
+
+  .pending-text.error {
+    border-color: var(--color-error);
+    color: var(--color-error);
+  }
+
+  .pending-text-status {
+    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .pending-text-error {
+    color: var(--color-error);
+    font-weight: var(--font-weight-7);
+  }
+
+  .pending-text button {
+    align-items: center;
+    background-color: color-mix(in srgb, var(--color-surface-1), transparent 20%);
+    block-size: 16px;
+    border: none;
+    border-radius: 50%;
+    color: var(--color-text);
+    cursor: pointer;
+    display: flex;
+    font-size: 9px;
+    inline-size: 16px;
+    justify-content: center;
+  }
+
+  .pending-text button:hover {
     background-color: var(--color-error);
     color: white;
   }

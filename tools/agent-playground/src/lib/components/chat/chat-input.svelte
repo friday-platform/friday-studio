@@ -1,12 +1,85 @@
 <script lang="ts">
+  import {
+    ALLOWED_EXTENSION_LIST,
+    inferMimeFromFilename,
+    isTextMimeType,
+  } from "@atlas/core/artifacts/file-upload";
+  import { uploadFile } from "$lib/upload.ts";
+
+  /**
+   * Image attachment: rendered inline in the user bubble and shipped to the
+   * model as a `type: "file"` UI message part (data URL). Images stay on the
+   * inline path so the model gets them as a vision input without a tool
+   * roundtrip.
+   */
   export interface ImageAttachment {
+    kind: "image";
     id: string;
     file: File;
     dataUrl: string;
   }
 
+  /**
+   * Artifact attachment: any non-image file the user dropped. Uploaded to
+   * `/api/artifacts/upload` on drop; the chip shows progress while in flight.
+   * On submit, the resolved `artifactId` lands in a `data-artifact-attached`
+   * message part so the user bubble renders an `ArtifactCard` (same component
+   * agent-produced CSV/JSON/PDF previews use). The chat handler expands the
+   * artifact's bytes back into the model prompt server-side.
+   */
+  export interface ArtifactAttachment {
+    kind: "artifact";
+    id: string;
+    file: File;
+    /** Inferred or browser-reported mime — surfaced on the pending chip. */
+    mediaType: string;
+    status: "uploading" | "ready" | "error";
+    /** Bytes uploaded so far. Together with file.size yields percentage. */
+    progress: number;
+    /** Set once the upload resolves. The submit handler attaches this id. */
+    artifactId?: string;
+    errorMessage?: string;
+    /** Abort handle — wired to the chip's ✕ so cancel actually cancels. */
+    abortController: AbortController;
+  }
+
+  export type ChatAttachment = ImageAttachment | ArtifactAttachment;
+
+  const IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".webp"];
+  // The artifact endpoint accepts every extension in ALLOWED_EXTENSION_LIST —
+  // text, JSON, CSV, MD, PDF, DOCX, PPTX, audio. Drop any of them in the
+  // chat and they upload as artifacts; the user bubble renders the same
+  // `ArtifactCard` the agent uses for its own outputs.
+  const ACCEPT_ATTR = ALLOWED_EXTENSION_LIST.join(",");
+
+  function classifyFile(file: File): "image" | "artifact" | null {
+    if (file.type.startsWith("image/")) return "image";
+    const inferred = inferMimeFromFilename(file.name);
+    if (inferred?.startsWith("image/")) return "image";
+    // Anything else uploadable goes through the artifact path. Use the same
+    // allowlist `uploadFile()` validates against so we don't show a pending
+    // chip that the server is going to reject anyway.
+    const dot = file.name.lastIndexOf(".");
+    if (dot >= 0) {
+      const ext = file.name.slice(dot).toLowerCase();
+      if (ALLOWED_EXTENSION_LIST.includes(ext)) return "artifact";
+    }
+    // Some text-mime files won't match an extension we recognize (eg `.todo`,
+    // `.notes`). If the browser reported a text mime, treat as artifact too —
+    // the server's magic-byte sniff has the final say.
+    if (file.type && isTextMimeType(file.type)) return "artifact";
+    return null;
+  }
+
   interface Props {
-    onsubmit: (message: string, images: ImageAttachment[]) => void;
+    /**
+     * Workspace owning the chat. Threaded into `uploadFile()` so the
+     * artifact upload route's `requireWorkspaceMember(c, workspaceId)` check
+     * passes — the default "playground" only works for the HITL upload
+     * flow's bespoke workspace.
+     */
+    workspaceId: string;
+    onsubmit: (message: string, attachments: ChatAttachment[]) => void;
     /** True while the assistant is producing a response. Swaps the send slot
      * for a stop button; users press Enter to send when idle. */
     streaming?: boolean;
@@ -22,6 +95,7 @@
   }
 
   const {
+    workspaceId,
     onsubmit,
     streaming = false,
     stopping = false,
@@ -31,7 +105,7 @@
   }: Props = $props();
 
   let value = $state("");
-  let images: ImageAttachment[] = $state([]);
+  let attachments: ChatAttachment[] = $state([]);
   let dragOver = $state(false);
   let fileInput: HTMLInputElement | undefined = $state();
   let textareaEl: HTMLTextAreaElement | undefined = $state();
@@ -47,7 +121,15 @@
     textareaEl.style.height = `${textareaEl.scrollHeight}px`;
   });
 
-  const hasContent = $derived(value.trim().length > 0 || images.length > 0);
+  // Block submit while any artifact upload is still in flight — sending now
+  // would race the upload and ship the message without the artifactId. The
+  // textbox stays editable; only Enter is no-op until uploads settle.
+  const uploadingCount = $derived(
+    attachments.filter((a) => a.kind === "artifact" && a.status === "uploading").length,
+  );
+  const hasContent = $derived(
+    (value.trim().length > 0 || attachments.length > 0) && uploadingCount === 0,
+  );
   const sttSupported = typeof window !== "undefined"
     && ("webkitSpeechRecognition" in window || "SpeechRecognition" in window);
 
@@ -110,16 +192,71 @@
     });
   }
 
+  /**
+   * Reassign an attachment-by-id with new fields. The list is a `$state`
+   * array of plain objects — replacing the array reference is what makes
+   * Svelte re-render. Per-attachment state updates from the upload
+   * `onProgress` callback land here.
+   */
+  function patchAttachment(id: string, patch: Partial<ArtifactAttachment>) {
+    attachments = attachments.map((a) =>
+      a.kind === "artifact" && a.id === id ? { ...a, ...patch } : a,
+    );
+  }
+
+  function startArtifactUpload(att: ArtifactAttachment) {
+    void uploadFile(
+      att.file,
+      (loaded) => patchAttachment(att.id, { progress: loaded }),
+      att.abortController.signal,
+      undefined,
+      workspaceId,
+    ).then((result) => {
+      if (att.abortController.signal.aborted) return;
+      if ("artifactId" in result) {
+        patchAttachment(att.id, {
+          status: "ready",
+          progress: att.file.size,
+          artifactId: result.artifactId,
+        });
+      } else if (result.error !== "Upload cancelled") {
+        patchAttachment(att.id, { status: "error", errorMessage: result.error });
+      }
+    });
+  }
+
   async function addFiles(files: FileList | File[]) {
     for (const file of files) {
-      if (!file.type.startsWith("image/")) continue;
-      const dataUrl = await fileToDataUrl(file);
-      images = [...images, { id: crypto.randomUUID(), file, dataUrl }];
+      const kind = classifyFile(file);
+      if (kind === "image") {
+        const dataUrl = await fileToDataUrl(file);
+        attachments = [
+          ...attachments,
+          { kind: "image", id: crypto.randomUUID(), file, dataUrl },
+        ];
+      } else if (kind === "artifact") {
+        const mediaType = file.type || inferMimeFromFilename(file.name) || "application/octet-stream";
+        const att: ArtifactAttachment = {
+          kind: "artifact",
+          id: crypto.randomUUID(),
+          file,
+          mediaType,
+          status: "uploading",
+          progress: 0,
+          abortController: new AbortController(),
+        };
+        attachments = [...attachments, att];
+        startArtifactUpload(att);
+      }
     }
   }
 
-  function removeImage(id: string) {
-    images = images.filter((img) => img.id !== id);
+  function removeAttachment(id: string) {
+    const target = attachments.find((a) => a.id === id);
+    if (target && target.kind === "artifact" && target.status === "uploading") {
+      target.abortController.abort();
+    }
+    attachments = attachments.filter((att) => att.id !== id);
   }
 
   function handleKeydown(e: KeyboardEvent) {
@@ -131,13 +268,20 @@
 
   function submit() {
     if (!hasContent) return;
-    onsubmit(value.trim(), images);
+    onsubmit(value.trim(), attachments);
     value = "";
-    images = [];
+    attachments = [];
   }
 
   function handleDrop(e: DragEvent) {
     e.preventDefault();
+    // `user-chat.svelte` wraps this component with its own drop target. Without
+    // stopPropagation the same file is added twice — once here, once on the
+    // outer chat container — and the persisted message ends up with duplicate
+    // parts. Pre-existing bug for images; surfaced now that we ship text
+    // attachments inline (so the duplicate is the *content*, not a hidden
+    // preview chip).
+    e.stopPropagation();
     dragOver = false;
     if (e.dataTransfer?.files) {
       void addFiles(e.dataTransfer.files);
@@ -146,15 +290,19 @@
 
   // Safari requires preventDefault on BOTH dragenter and dragover to register
   // the element as a valid drop target; without dragenter prevention it falls
-  // back to its default file-open behavior on drop.
+  // back to its default file-open behavior on drop. stopPropagation keeps the
+  // outer user-chat drop overlay from flashing while the user is targeting
+  // the input row.
   function handleDragEnter(e: DragEvent) {
     e.preventDefault();
+    e.stopPropagation();
     if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
     dragOver = true;
   }
 
   function handleDragOver(e: DragEvent) {
     e.preventDefault();
+    e.stopPropagation();
     if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
     dragOver = true;
   }
@@ -166,16 +314,20 @@
   function handlePaste(e: ClipboardEvent) {
     const items = e.clipboardData?.items;
     if (!items) return;
-    const imageFiles: File[] = [];
+    const pastedFiles: File[] = [];
     for (const item of items) {
-      if (item.type.startsWith("image/")) {
+      // Only images (and any future binary file types) come through as
+      // `kind: "file"` in the clipboard. Pasted plain text lives in the
+      // `kind: "string"` items and is handled by the default textarea
+      // paste — don't intercept it.
+      if (item.kind === "file" && item.type.startsWith("image/")) {
         const file = item.getAsFile();
-        if (file) imageFiles.push(file);
+        if (file) pastedFiles.push(file);
       }
     }
-    if (imageFiles.length > 0) {
+    if (pastedFiles.length > 0) {
       e.preventDefault();
-      void addFiles(imageFiles);
+      void addFiles(pastedFiles);
     }
   }
 
@@ -197,19 +349,52 @@
   ondragleave={handleDragLeave}
   role="presentation"
 >
-  {#if images.length > 0}
+  {#if attachments.length > 0}
     <div class="image-preview-strip">
-      {#each images as img (img.id)}
-        <div class="image-preview">
-          <img src={img.dataUrl} alt={img.file.name} />
-          <button
-            class="remove-image"
-            onclick={() => removeImage(img.id)}
-            aria-label="Remove image"
+      {#each attachments as att (att.id)}
+        {#if att.kind === "image"}
+          <div class="image-preview">
+            <img src={att.dataUrl} alt={att.file.name} />
+            <button
+              class="remove-image"
+              onclick={() => removeAttachment(att.id)}
+              aria-label="Remove image"
+            >
+              ✕
+            </button>
+          </div>
+        {:else}
+          {@const pct = att.file.size > 0 ? Math.round((att.progress / att.file.size) * 100) : 0}
+          <div
+            class="text-attachment"
+            class:uploading={att.status === "uploading"}
+            class:error={att.status === "error"}
+            title={att.errorMessage ?? `${att.file.name} · ${att.mediaType}`}
           >
-            ✕
-          </button>
-        </div>
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <path
+                d="M9 1.5H3.5A1.5 1.5 0 0 0 2 3v10a1.5 1.5 0 0 0 1.5 1.5h9A1.5 1.5 0 0 0 14 13V6.5L9 1.5Z"
+                stroke="currentColor"
+                stroke-width="1.2"
+                stroke-linejoin="round"
+              />
+              <path d="M9 1.5V6.5H14" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" />
+            </svg>
+            <span class="text-attachment-name">{att.file.name}</span>
+            {#if att.status === "uploading"}
+              <span class="text-attachment-status">{pct}%</span>
+            {:else if att.status === "error"}
+              <span class="text-attachment-status text-attachment-error">!</span>
+            {/if}
+            <button
+              class="remove-image"
+              onclick={() => removeAttachment(att.id)}
+              aria-label={att.status === "uploading" ? "Cancel upload" : "Remove file"}
+            >
+              ✕
+            </button>
+          </div>
+        {/if}
       {/each}
     </div>
   {/if}
@@ -218,7 +403,7 @@
     <button
       class="attach-button"
       onclick={() => fileInput?.click()}
-      aria-label="Attach image"
+      aria-label="Attach file"
     >
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
         <path
@@ -233,7 +418,7 @@
     <input
       bind:this={fileInput}
       type="file"
-      accept="image/*"
+      accept={ACCEPT_ATTR}
       multiple
       onchange={handleFileInput}
       class="file-input-hidden"
@@ -244,7 +429,7 @@
       bind:value
       onkeydown={handleKeydown}
       onpaste={handlePaste}
-      placeholder={dragOver ? "Drop image here..." : recording ? "Listening..." : "Send a message..."}
+      placeholder={dragOver ? "Drop file here..." : recording ? "Listening..." : "Send a message..."}
       rows={1}
     ></textarea>
     {#if sttSupported}
@@ -482,6 +667,62 @@
     inline-size: auto;
     max-inline-size: 120px;
     object-fit: cover;
+  }
+
+  .text-attachment {
+    align-items: center;
+    background-color: var(--color-surface-2);
+    border: 1px solid var(--color-border-1);
+    border-radius: var(--radius-2);
+    color: var(--color-text);
+    display: inline-flex;
+    flex-shrink: 0;
+    font-size: var(--font-size-1);
+    gap: var(--size-1);
+    max-inline-size: 200px;
+    padding: var(--size-1) var(--size-2);
+    position: relative;
+  }
+
+  .text-attachment-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .text-attachment.uploading {
+    opacity: 0.75;
+  }
+
+  .text-attachment.error {
+    border-color: var(--color-error);
+    color: var(--color-error);
+  }
+
+  .text-attachment-status {
+    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .text-attachment-error {
+    color: var(--color-error);
+    font-weight: var(--font-weight-7);
+  }
+
+  .text-attachment .remove-image {
+    background-color: transparent;
+    block-size: 16px;
+    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    inline-size: 16px;
+    inset: auto;
+    margin-inline-start: var(--size-1);
+    position: static;
+  }
+
+  .text-attachment .remove-image:hover {
+    background-color: var(--color-error);
+    color: white;
   }
 
   .remove-image {

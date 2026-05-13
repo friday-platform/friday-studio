@@ -98,4 +98,22 @@ export type Segment =
       calls: ToolCallDisplay[];
       /** Coalesced reasoning text from `reasoning-delta` chunks observed inside this burst. */
       reasoning?: string;
+    }
+  | {
+      /**
+       * User-attached artifacts surfaced from `data-artifact-attached` parts.
+       * The chat-message-list renders one `<ArtifactCard artifactId={id} />`
+       * per id — same component agent-produced CSVs/JSON/PDFs use, so a
+       * dropped `.csv` shows the first-N-rows table preview without any
+       * preview code of its own.
+       *
+       * Filenames/mime types are carried alongside in case the consumer wants
+       * a chip-only fallback (eg the static export render before the
+       * ArtifactCard fetch resolves); they're authoritative on the source
+       * `data-artifact-attached` part, not the ArtifactCard.
+       */
+      type: "artifact-list";
+      ids: string[];
+      filenames: string[];
+      mimeTypes?: string[];
     };
