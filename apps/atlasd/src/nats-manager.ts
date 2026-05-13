@@ -122,6 +122,14 @@ export class NatsManager {
     this.ownsUrlFile = true;
     logger.info("Wrote broker URL file", { url, urlFile: brokerUrlFilePath(home) });
 
+    // Propagate the resolved URL to in-process env so child spawns
+    // (process-agent-executor, tool-worker-launcher, etc.) inherit it
+    // instead of falling back to the hardcoded `nats://localhost:4222`.
+    // pickPort() chooses dynamically in the 14222 range, so the
+    // hardcoded fallback is wrong on every dev run where `.env` doesn't
+    // carry FRIDAY_NATS_URL.
+    process.env.FRIDAY_NATS_URL = url;
+
     if (process.env.FRIDAY_NATS_MONITOR === "1") {
       logger.info(`NATS monitoring enabled at http://127.0.0.1:${DEFAULT_NATS_MONITOR_PORT}`);
     }

@@ -146,6 +146,23 @@ describe("NatsManager — URL file is the rendezvous for out-of-env consumers", 
     expect(written).toBe(server.url);
   }, 15_000);
 
+  it("publishes resolved URL to process.env.FRIDAY_NATS_URL so child spawns inherit it", async () => {
+    // Regression: process-agent-executor reads process.env.FRIDAY_NATS_URL
+    // when spawning Python agents. pickPort() in spawn.ts chooses
+    // dynamically in the 14222 range, so the hardcoded
+    // `?? "nats://localhost:4222"` fallback fires on every dev run where
+    // the user's .env doesn't pin the URL — every Python agent then hangs
+    // 30s on the wrong port. The manager must propagate its resolved URL
+    // into in-process env so subsequent child spawns see the right host.
+    delete process.env.FRIDAY_NATS_URL;
+    server = await startNatsTestServer();
+    process.env.FRIDAY_NATS_URL = server.url;
+    mgr = new NatsManager();
+    await mgr.start();
+
+    expect(process.env.FRIDAY_NATS_URL).toBe(server.url);
+  }, 15_000);
+
   it("deletes <home>/nats/url on stop()", async () => {
     server = await startNatsTestServer();
     process.env.FRIDAY_NATS_URL = server.url;
