@@ -559,24 +559,28 @@ export function buildSegments(msg: AtlasUIMessage): Segment[] {
       continue;
     }
 
-    if (type === "data-artifact-attached") {
-      // The chat-message-list renders one <ArtifactCard> per id (same card
-      // agent-produced artifacts get). Flush any pending text/tool buffers
-      // first so the cards land in the correct chronological slot.
+    if (type === "data-file-attached") {
+      // The chat-message-list renders one file chip per path. Flush any
+      // pending text/tool buffers first so the chips land in the correct
+      // chronological slot (matches the previous artifact-attached
+      // ordering invariant).
       if (isRecord(part.data)) {
-        const rawIds = part.data.artifactIds;
+        const rawPaths = part.data.paths;
         const rawNames = part.data.filenames;
         const rawMimes = part.data.mimeTypes;
-        if (Array.isArray(rawIds) && Array.isArray(rawNames) && rawIds.length > 0) {
+        if (
+          Array.isArray(rawPaths) &&
+          Array.isArray(rawNames) &&
+          Array.isArray(rawMimes) &&
+          rawPaths.length > 0
+        ) {
           flushText();
           flushBurst();
-          const ids = rawIds.filter((v): v is string => typeof v === "string");
+          const paths = rawPaths.filter((v): v is string => typeof v === "string");
           const filenames = rawNames.filter((v): v is string => typeof v === "string");
-          const mimeTypes = Array.isArray(rawMimes)
-            ? rawMimes.filter((v): v is string => typeof v === "string")
-            : undefined;
-          if (ids.length > 0) {
-            segments.push({ type: "artifact-list", ids, filenames, mimeTypes });
+          const mimeTypes = rawMimes.filter((v): v is string => typeof v === "string");
+          if (paths.length > 0) {
+            segments.push({ type: "file-list", paths, filenames, mimeTypes });
           }
         }
       }

@@ -7,16 +7,16 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { join, resolve, sep } from "node:path";
 import {
   type AtlasUIMessage,
   type AtlasUIMessagePart,
   normalizeToUIMessages,
   validateAtlasUIMessages,
 } from "@atlas/agent-sdk";
-import { isTextMimeType, stripMimeParams } from "@atlas/core/artifacts/file-upload";
-import { ArtifactStorage } from "@atlas/core/artifacts/server";
 import { UserStorage } from "@atlas/core/users/storage";
 import { logger } from "@atlas/logger";
+import { getFridayHome } from "@atlas/utils/paths.server";
 import type {
   Adapter,
   AdapterPostableMessage,
@@ -69,158 +69,86 @@ function joinTextParts(message: AtlasUIMessage): string {
 }
 
 /**
- * Pull every artifact id from `data-artifact-attached` parts on a message,
- * preserving message order. Returns a parallel list of `{ id, filename }` so
- * the expander can fall back to a stable filename when the artifact's stored
- * `originalName` is empty.
+ * Per-chat scratch uploads root — must match
+ * `apps/atlasd/routes/scratch-upload.ts:uploadsRoot()`. Inlined here (not
+ * imported) to avoid a cross-package cycle (the route imports this file's
+ * adapter; this file would then import the route).
  */
-function collectAttachedArtifactRefs(
-  message: AtlasUIMessage,
-): Array<{ id: string; filename: string }> {
-  const out: Array<{ id: string; filename: string }> = [];
-  for (const part of message.parts) {
-    if (
-      typeof part !== "object" ||
-      part === null ||
-      !("type" in part) ||
-      (part as { type: unknown }).type !== "data-artifact-attached"
-    ) {
-      continue;
-    }
-    const data = (part as { data?: unknown }).data;
-    if (typeof data !== "object" || data === null) continue;
-    const ids = (data as { artifactIds?: unknown }).artifactIds;
-    const names = (data as { filenames?: unknown }).filenames;
-    if (!Array.isArray(ids)) continue;
-    for (let i = 0; i < ids.length; i++) {
-      const id = ids[i];
-      if (typeof id !== "string") continue;
-      const filename =
-        Array.isArray(names) && typeof names[i] === "string" ? (names[i] as string) : id;
-      out.push({ id, filename });
-    }
-  }
-  return out;
+function uploadsRoot(chatId: string): string {
+  return join(getFridayHome(), "scratch", "uploads", chatId);
 }
 
 /**
- * Inline text-readable user-attached artifacts into the persisted uiMessage
- * as `<attachment …>…</attachment>` text parts the agent's prompt template
- * already understands. Mutates `message.parts` in place — for each
- * `data-artifact-attached` part, the text expansion is inserted immediately
- * BEFORE it so the user bubble's text-then-artifact-list segment order in
- * `buildSegments` matches what the user typed.
+ * Surface user-attached file paths to the agent by inserting a synthetic
+ * text part with one `<attachment path="…" filename="…" mediaType="…" />`
+ * line per file, just before each `data-file-attached` part. The text
+ * carries the `providerMetadata.atlas.kind = "attachment-expansion"`
+ * marker so `buildSegments` hides it in the user bubble — the bubble
+ * already renders a file chip from the structured `data-file-attached`
+ * part. The agent reads the bytes via the `read_attachment` tool on
+ * demand (no content inlining — bytes can be large and we want the
+ * agent to use the right reader by extension).
  *
- * The expansion lives on the persisted history (rather than just in the
- * adapter's transient `Message.text`) because the workspace-chat agent
- * re-reads history per turn and never sees `Message.text`. UI rendering
- * skips these synthetic text parts via `buildSegments`' attachment-content
- * detector — they're agent-facing, not user-facing.
+ * Mutates `message.parts` in place. Walks in reverse so insert indices
+ * stay valid across splices.
  *
- * Non-text artifacts (PDF, DOCX, audio, images) emit a bare reference tag
- * instead of inlining bytes; the agent fetches those via `read_artifact` /
- * `parse_artifact` tools rather than feeding the model garbage UTF-8.
- *
- * `chatWorkspaceId` scopes the artifact lookup: the chat-submit path trusts
- * a client-supplied `artifactIds` array, so without this gate any
- * authenticated user could read another tenant's artifact bytes by guessing
- * an id. Mismatches are skipped (not thrown) so the rest of the message
- * still flows — and we log the attempt so the operator can spot probing.
- * Artifacts with no `workspaceId` (legacy / global) bypass the gate, matching
- * how the existing artifact REST routes treat them.
+ * Security gate: every path is verified to live under
+ * `{FRIDAY_HOME}/scratch/uploads/{chatId}/` before being passed on.
+ * Without this an attacker could craft a `data-file-attached` part with
+ * any absolute path on the daemon's filesystem and the agent's
+ * `read_attachment` tool would read it. The scratch-upload route writes
+ * here on submit; legitimate clients can't produce other paths.
  */
-async function inlineAttachedArtifacts(
-  message: AtlasUIMessage,
-  chatWorkspaceId: string,
-): Promise<void> {
-  const refs = collectAttachedArtifactRefs(message);
-  if (refs.length === 0) return;
+function inlineAttachedFiles(message: AtlasUIMessage, chatId: string): void {
+  const root = uploadsRoot(chatId);
+  const allowedPrefix = root + sep;
 
-  // Build expansions keyed by artifactId so the in-place splice below can
-  // look them up without re-fetching.
-  const byId = new Map<string, string>();
-  for (const ref of refs) {
-    if (byId.has(ref.id)) continue;
-    const meta = await ArtifactStorage.get({ id: ref.id });
-    if (!meta.ok || meta.data === null) {
-      logger.warn("atlas_web_adapter_attached_artifact_missing", {
-        artifactId: ref.id,
-        error: meta.ok ? "not_found" : meta.error,
-      });
-      continue;
-    }
-    // IDOR gate: skip cross-workspace ids. The upload route enforces
-    // `requireWorkspaceMember(c, workspaceId)`, but a hostile client can
-    // still attach a freshly-observed id from another tenant — match
-    // semantics here against the artifact-read routes (`artifacts.ts`),
-    // which treat undefined workspaceId as legacy/global.
-    const artifactWorkspaceId = meta.data.workspaceId;
-    if (artifactWorkspaceId && artifactWorkspaceId !== chatWorkspaceId) {
-      logger.warn("atlas_web_adapter_attached_artifact_cross_workspace", {
-        artifactId: ref.id,
-        artifactWorkspaceId,
-        chatWorkspaceId,
-      });
-      continue;
-    }
-    if (meta.data.data.type !== "file") continue;
-    const mime = stripMimeParams(meta.data.data.mimeType);
-    const safeName = ref.filename.replace(/"/g, "&quot;");
-    const safeMime = mime.replace(/"/g, "&quot;");
-    if (!isTextMimeType(mime)) {
-      byId.set(
-        ref.id,
-        `<attachment filename="${safeName}" mediaType="${safeMime}" artifactId="${ref.id}" />`,
-      );
-      continue;
-    }
-    const contents = await ArtifactStorage.readFileContents({ id: ref.id });
-    if (!contents.ok) {
-      logger.warn("atlas_web_adapter_attached_artifact_read_failed", {
-        artifactId: ref.id,
-        error: contents.error,
-      });
-      continue;
-    }
-    byId.set(
-      ref.id,
-      `<attachment filename="${safeName}" mediaType="${safeMime}" artifactId="${ref.id}">\n${contents.data}\n</attachment>`,
-    );
-  }
-
-  if (byId.size === 0) return;
-
-  // Splice expansions into parts. Walk in reverse so insert indices stay
-  // valid across mutations. For each `data-artifact-attached`, build one
-  // text part containing all of that part's expansions joined with \n and
-  // insert it directly before.
   const parts: AtlasUIMessagePart[] = message.parts;
   for (let i = parts.length - 1; i >= 0; i--) {
     const part = parts[i];
-    if (!part || part.type !== "data-artifact-attached") continue;
-    // Narrow `data` structurally — the AI SDK's discriminated union types
-    // `part.data` per-type and the `data-artifact-attached` branch carries
-    // `artifactIds: string[]`, but the union narrowing doesn't compose with
-    // the index lookup so we re-probe shape here.
+    if (!part || part.type !== "data-file-attached") continue;
     const data: unknown = part.data;
     if (typeof data !== "object" || data === null) continue;
-    const ids = (data as { artifactIds?: unknown }).artifactIds;
-    if (!Array.isArray(ids)) continue;
-    const text = ids
-      .filter((id): id is string => typeof id === "string")
-      .map((id) => byId.get(id))
-      .filter((s): s is string => typeof s === "string")
-      .join("\n");
-    if (text.length === 0) continue;
+    const rawPaths = (data as { paths?: unknown }).paths;
+    const rawNames = (data as { filenames?: unknown }).filenames;
+    const rawMimes = (data as { mimeTypes?: unknown }).mimeTypes;
+    if (!Array.isArray(rawPaths) || rawPaths.length === 0) continue;
+
+    const lines: string[] = [];
+    for (let j = 0; j < rawPaths.length; j++) {
+      const path = rawPaths[j];
+      if (typeof path !== "string") continue;
+      const resolved = resolve(path);
+      // Path-traversal / scope gate. Without this an attacker could
+      // smuggle `/etc/passwd` through a forged `data-file-attached`
+      // part and the agent's read_attachment tool would happily read it.
+      if (resolved !== path || (!resolved.startsWith(allowedPrefix) && resolved !== root)) {
+        logger.warn("atlas_web_adapter_attached_file_path_rejected", { chatId, path });
+        continue;
+      }
+      const filename =
+        Array.isArray(rawNames) && typeof rawNames[j] === "string" ? (rawNames[j] as string) : path;
+      const mime =
+        Array.isArray(rawMimes) && typeof rawMimes[j] === "string"
+          ? (rawMimes[j] as string)
+          : "application/octet-stream";
+      const safePath = path.replace(/"/g, "&quot;");
+      const safeName = filename.replace(/"/g, "&quot;");
+      const safeMime = mime.replace(/"/g, "&quot;");
+      lines.push(
+        `<attachment path="${safePath}" filename="${safeName}" mediaType="${safeMime}" />`,
+      );
+    }
+    if (lines.length === 0) continue;
+
     // Structural marker so the UI renderer can skip this part without
-    // re-parsing the text. AI SDK's TextUIPart.providerMetadata is namespaced
-    // (`Record<provider, Record<string, JSONValue>>`); we own the `atlas`
-    // namespace. See `buildSegments` in `@atlas/core/chat/export/render.ts`
-    // for the consumer side — it filters on this kind, not on tag shape, so
-    // a user typing a literal `<attachment …>` tag still renders verbatim.
+    // re-parsing the text — see `buildSegments` in
+    // `@atlas/core/chat/export/render.ts`. Filtering on the marker (not
+    // shape) means a user typing `<attachment …>` literally still
+    // renders as text.
     const textPart: AtlasUIMessagePart = {
       type: "text",
-      text,
+      text: lines.join("\n"),
       providerMetadata: { atlas: { kind: "attachment-expansion" } },
     };
     parts.splice(i, 0, textPart);
@@ -399,15 +327,15 @@ export class AtlasWebAdapter implements Adapter<string, WebChatPayload> {
     }
 
     const chatId = parsed.data.id;
-    // User-attached artifacts uploaded via the chat input land here as
-    // `data-artifact-attached` parts. Mutate the uiMessage to insert
-    // `<attachment …>…</attachment>` text parts inline so the workspace-chat
-    // agent (which re-reads history per turn from ChatStorage, ignoring
-    // `Message.text`) actually sees the content. The UI's `buildSegments`
-    // recognizes these synthetic text parts and hides them in the bubble.
-    // `this.workspaceId` scopes artifact lookups — see `inlineAttached-
-    // Artifacts` for the IDOR gate it enforces against client-supplied ids.
-    await inlineAttachedArtifacts(uiMessage, this.workspaceId);
+    // User-attached files (chat-input drop → POST /api/scratch/upload)
+    // arrive as `data-file-attached` parts carrying absolute paths on the
+    // daemon's filesystem. Mutate the uiMessage to insert one self-closing
+    // `<attachment path="…" filename="…" mediaType="…" />` text line per
+    // file so the workspace-chat agent (which re-reads history per turn
+    // and never sees `Message.text`) can spot them and call
+    // `read_attachment` based on extension. `chatId` scopes the
+    // path-validation gate to the per-chat uploads dir.
+    inlineAttachedFiles(uiMessage, chatId);
     const messageText = joinTextParts(uiMessage);
     const userId = request.headers.get("X-Atlas-User-Id") ?? UserStorage.getCachedLocalUserId();
     const { datetime, foreground_workspace_ids: foregroundWorkspaceIds } = parsed.data;

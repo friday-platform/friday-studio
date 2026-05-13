@@ -15,12 +15,12 @@
   import { DefaultChatTransport } from "ai";
   import ChatInput from "./chat-input.svelte";
   import {
-    type ArtifactAttachment,
+    type FileAttachment,
     type ChatAttachment,
-    buildArtifactAttachment,
+    buildFileAttachment,
     classifyAttachment,
     rejectionToast,
-    runArtifactUpload,
+    runFileUpload,
   } from "./chat-attachment.ts";
   import ChatInspector from "./chat-inspector.svelte";
   import ChatMessageList from "./chat-message-list.svelte";
@@ -76,9 +76,9 @@
     });
   }
 
-  function patchPendingArtifact(id: string, patch: Partial<ArtifactAttachment>) {
+  function patchPendingFile(id: string, patch: Partial<FileAttachment>) {
     pendingAttachments = pendingAttachments.map((a) =>
-      a.kind === "artifact" && a.id === id ? { ...a, ...patch } : a,
+      a.kind === "file" && a.id === id ? { ...a, ...patch } : a,
     );
   }
 
@@ -125,10 +125,10 @@
           ...pendingAttachments,
           { kind: "image", id: crypto.randomUUID(), file, dataUrl },
         ];
-      } else if (kind === "artifact") {
-        const att = buildArtifactAttachment(file);
+      } else if (kind === "file") {
+        const att = buildFileAttachment(file);
         pendingAttachments = [...pendingAttachments, att];
-        runArtifactUpload({ att, workspaceId: wsId, onUpdate: patchPendingArtifact });
+        runFileUpload({ att, chatId, workspaceId: wsId, onUpdate: patchPendingFile });
       } else {
         rejected.push(file);
       }
@@ -802,8 +802,8 @@
     | { type: "file"; mediaType: string; url: string; filename?: string }
     | { type: "data-credential-linked"; data: { provider: string; displayName: string } }
     | {
-        type: "data-artifact-attached";
-        data: { artifactIds: string[]; filenames: string[]; mimeTypes?: string[] };
+        type: "data-file-attached";
+        data: { paths: string[]; filenames: string[]; mimeTypes: string[] };
       }
   >;
   let queuedMessages: QueuedMessageParts[] = $state([]);
@@ -1246,21 +1246,21 @@
       }
     }
 
-    // Non-image attachments uploaded as artifacts. The chat-input's
-    // `hasContent` gate blocks send while any upload is still in flight, so
-    // by the time we get here `status === "ready"` and `artifactId` is set
+    // Non-image attachments uploaded to scratch. The chat-input's
+    // `hasContent` gate blocks send while any upload is still in flight,
+    // so by the time we get here `status === "ready"` and `path` is set
     // — but `filter` keeps the runtime defensive against future drift.
-    const readyArtifacts = allAttachments.filter(
-      (a): a is ArtifactAttachment & { artifactId: string } =>
-        a.kind === "artifact" && a.status === "ready" && typeof a.artifactId === "string",
+    const readyFiles = allAttachments.filter(
+      (a): a is FileAttachment & { path: string } =>
+        a.kind === "file" && a.status === "ready" && typeof a.path === "string",
     );
-    if (readyArtifacts.length > 0) {
+    if (readyFiles.length > 0) {
       parts.push({
-        type: "data-artifact-attached",
+        type: "data-file-attached",
         data: {
-          artifactIds: readyArtifacts.map((a) => a.artifactId),
-          filenames: readyArtifacts.map((a) => a.file.name),
-          mimeTypes: readyArtifacts.map((a) => a.mediaType),
+          paths: readyFiles.map((a) => a.path),
+          filenames: readyFiles.map((a) => a.file.name),
+          mimeTypes: readyFiles.map((a) => a.mediaType),
         },
       });
     }
@@ -1499,6 +1499,7 @@
         {#key chatId}
           <ChatInput
             workspaceId={wsId}
+            {chatId}
             onsubmit={handleSubmit}
             {streaming}
             {stopping}

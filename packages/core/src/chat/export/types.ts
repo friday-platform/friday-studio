@@ -101,19 +101,15 @@ export type Segment =
     }
   | {
       /**
-       * User-attached artifacts surfaced from `data-artifact-attached` parts.
-       * The chat-message-list renders one `<ArtifactCard artifactId={id} />`
-       * per id — same component agent-produced CSVs/JSON/PDFs use, so a
-       * dropped `.csv` shows the first-N-rows table preview without any
-       * preview code of its own.
-       *
-       * Filenames/mime types are carried alongside in case the consumer wants
-       * a chip-only fallback (eg the static export render before the
-       * ArtifactCard fetch resolves); they're authoritative on the source
-       * `data-artifact-attached` part, not the ArtifactCard.
+       * User-attached files surfaced from `data-file-attached` parts. Each
+       * file lives on the daemon's filesystem at `{FRIDAY_HOME}/scratch/
+       * uploads/{chatId}/{filename}`; the chat-message-list renders a
+       * simple chip per file (filename + mime badge — no inline preview).
+       * The agent reads the file via the `read_attachment` tool on demand
+       * based on extension.
        */
-      type: "artifact-list";
-      ids: string[];
+      type: "file-list";
+      paths: string[];
       filenames: string[];
-      mimeTypes?: string[];
+      mimeTypes: string[];
     };

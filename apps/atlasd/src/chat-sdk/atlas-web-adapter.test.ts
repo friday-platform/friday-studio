@@ -1,5 +1,5 @@
+import process from "node:process";
 import type { AtlasUIMessageChunk } from "@atlas/agent-sdk";
-import { ArtifactStorage } from "@atlas/core/artifacts/server";
 import { type ChatInstance, Message } from "chat";
 import { describe, expect, it, vi } from "vitest";
 import { StreamRegistry } from "../stream-registry.ts";
@@ -174,68 +174,50 @@ describe("AtlasWebAdapter.handleWebhook", () => {
     expect(message.raw.turnBuffer).toBe(registry.getStream(workspaceId, "chat-webhook"));
   });
 
-  describe("inlineAttachedArtifacts", () => {
-    // Tiny helper — `ArtifactStorage` is initialized once per worker via
-    // vitest.setup.ts, so these tests create real artifacts against the
-    // shared JetStream test broker rather than mocking the adapter.
-    async function createTextArtifact(opts: {
-      workspaceId?: string;
-      content: string;
-      mimeType: string;
-      originalName?: string;
-    }): Promise<string> {
-      const result = await ArtifactStorage.create({
-        title: opts.originalName ?? "test-artifact",
-        summary: "test fixture",
-        workspaceId: opts.workspaceId,
-        data: {
-          type: "file",
-          content: opts.content,
-          mimeType: opts.mimeType,
-          originalName: opts.originalName,
-        },
-      });
-      if (!result.ok) throw new Error(`fixture create failed: ${result.error}`);
-      return result.data.id;
+  describe("inlineAttachedFiles", () => {
+    // The adapter doesn't read files off disk — it just splices a synthetic
+    // `<attachment path="…" />` text part before each `data-file-attached`
+    // part so the workspace-chat agent (which never sees `Message.text`)
+    // spots the path on its next history read. The `read_attachment` tool
+    // is what later opens the file. So these tests verify path-validation
+    // + splice ordering, NOT filesystem I/O.
+
+    function uploadPath(chatId: string, filename: string): string {
+      return `${process.env.FRIDAY_HOME ?? `${process.env.HOME}/.atlas`}/scratch/uploads/${chatId}/${filename}`;
     }
 
-    function buildAttachedMessage(artifactId: string, filename = "scores.csv") {
+    function buildAttachedMessage(path: string, filename = "scores.csv", mediaType = "text/csv") {
       return {
         id: "msg-attached",
         role: "user",
         parts: [
           { type: "text", text: "summarize" },
           {
-            type: "data-artifact-attached",
-            data: { artifactIds: [artifactId], filenames: [filename], mimeTypes: ["text/csv"] },
+            type: "data-file-attached",
+            data: { paths: [path], filenames: [filename], mimeTypes: [mediaType] },
           },
         ],
         metadata: {},
       };
     }
 
-    it("inlines a same-workspace text artifact as a synthetic text part", async () => {
-      const { adapter, workspaceId } = createAdapter();
+    it("inlines a self-closing <attachment path=… /> tag before each data-file-attached part", async () => {
+      const { adapter } = createAdapter();
       const chat = await initAdapterWithMock(adapter);
 
-      const csv = "name,score\nAlice,90\nBob,75\n";
-      const artifactId = await createTextArtifact({
-        workspaceId,
-        content: csv,
-        mimeType: "text/csv",
-        originalName: "scores.csv",
-      });
+      const chatId = "chat-attached-test";
+      const path = uploadPath(chatId, "scores.csv");
 
       const request = new Request("http://localhost", {
         method: "POST",
-        body: JSON.stringify({ id: "chat-attached", message: buildAttachedMessage(artifactId) }),
+        body: JSON.stringify({ id: chatId, message: buildAttachedMessage(path, "scores.csv") }),
         headers: { "Content-Type": "application/json" },
       });
       await adapter.handleWebhook(request);
 
       const message = chat.processMessage.mock.calls[0]?.[2] as Message<WebChatPayload>;
       const parts = message.raw.uiMessage.parts;
-      // [text "summarize", text "<attachment …>csv</attachment>", data-artifact-attached]
+      // [text "summarize", text "<attachment path=…/>", data-file-attached]
       expect(parts).toHaveLength(3);
       expect(parts[1]).toMatchObject({
         type: "text",
@@ -245,28 +227,27 @@ describe("AtlasWebAdapter.handleWebhook", () => {
         providerMetadata: { atlas: { kind: "attachment-expansion" } },
       });
       const inlined = (parts[1] as { text: string }).text;
-      expect(inlined).toContain(`<attachment filename="scores.csv"`);
-      expect(inlined).toContain(`artifactId="${artifactId}"`);
-      expect(inlined).toContain(csv);
-      expect(parts[2]).toMatchObject({ type: "data-artifact-attached" });
+      expect(inlined).toContain(`<attachment path="${path}"`);
+      expect(inlined).toContain(`filename="scores.csv"`);
+      expect(inlined).toContain(`mediaType="text/csv"`);
+      // Self-closing — no content body inlined. The agent fetches via
+      // `read_attachment(path)` based on extension.
+      expect(inlined).toContain("/>");
+      expect(inlined).not.toContain("</attachment>");
+      expect(parts[2]).toMatchObject({ type: "data-file-attached" });
     });
 
-    it("refuses cross-workspace artifact ids (IDOR gate)", async () => {
-      const { adapter, workspaceId: chatWorkspaceId } = createAdapter();
+    it("refuses cross-chat paths (path-traversal gate)", async () => {
+      // A hostile client could craft a data-file-attached part with a path
+      // pointing at another chat's uploads dir (`scratch/uploads/OTHER/`).
+      // The adapter must reject these so the agent's read_attachment tool
+      // never sees the path.
+      const { adapter } = createAdapter();
       const chat = await initAdapterWithMock(adapter);
 
-      // Plant the artifact in a DIFFERENT workspace from the chat.
-      const otherWorkspaceId = freshWorkspaceId("other-tenant");
-      const artifactId = await createTextArtifact({
-        workspaceId: otherWorkspaceId,
-        content: "secret payroll data\n",
-        mimeType: "text/csv",
-        originalName: "payroll.csv",
-      });
+      const chatId = "chat-self";
+      const sneakyPath = uploadPath("chat-other-tenant", "secret.csv");
 
-      // `vi.spyOn` is async-safe and auto-restored — the runtime-reassign
-      // pattern would leak the override to a sibling test if a late warn
-      // fired after the `await` settled and before the `finally` ran.
       const { logger } = await import("@atlas/logger");
       const warnSpy = vi.spyOn(logger, "warn");
 
@@ -274,8 +255,8 @@ describe("AtlasWebAdapter.handleWebhook", () => {
         const request = new Request("http://localhost", {
           method: "POST",
           body: JSON.stringify({
-            id: "chat-idor",
-            message: buildAttachedMessage(artifactId, "payroll.csv"),
+            id: chatId,
+            message: buildAttachedMessage(sneakyPath, "secret.csv"),
           }),
           headers: { "Content-Type": "application/json" },
         });
@@ -283,87 +264,75 @@ describe("AtlasWebAdapter.handleWebhook", () => {
 
         const message = chat.processMessage.mock.calls[0]?.[2] as Message<WebChatPayload>;
         const parts = message.raw.uiMessage.parts;
-        // The synthetic text part must NOT be inserted; the original two
-        // parts (typed text + data-artifact-attached) survive unchanged so
+        // No synthetic text part inserted; original two parts survive so
         // the rest of the message keeps flowing.
         expect(parts).toHaveLength(2);
         expect(parts[0]).toMatchObject({ type: "text", text: "summarize" });
-        expect(parts[1]).toMatchObject({ type: "data-artifact-attached" });
-        // No `<attachment …>` block leaked into Message.text or any part.
-        expect(message.text).not.toContain("payroll");
+        expect(parts[1]).toMatchObject({ type: "data-file-attached" });
         expect(message.text).not.toContain("<attachment");
-        // The IDOR attempt was logged.
         expect(warnSpy).toHaveBeenCalledWith(
-          "atlas_web_adapter_attached_artifact_cross_workspace",
-          expect.objectContaining({
-            artifactId,
-            artifactWorkspaceId: otherWorkspaceId,
-            chatWorkspaceId,
-          }),
+          "atlas_web_adapter_attached_file_path_rejected",
+          expect.objectContaining({ chatId, path: sneakyPath }),
         );
       } finally {
         warnSpy.mockRestore();
       }
     });
 
-    it("allows legacy artifacts with no workspaceId (matches REST-route precedent)", async () => {
+    it("refuses absolute paths outside the scratch uploads root (e.g. /etc/passwd)", async () => {
       const { adapter } = createAdapter();
       const chat = await initAdapterWithMock(adapter);
 
-      // Legacy/global artifact — no workspaceId on creation.
-      const artifactId = await createTextArtifact({
-        content: "shared\n",
-        mimeType: "text/plain",
-        originalName: "shared.txt",
-      });
+      const chatId = "chat-traversal";
+      const evilPath = "/etc/passwd";
 
-      const request = new Request("http://localhost", {
-        method: "POST",
-        body: JSON.stringify({
-          id: "chat-legacy",
-          message: buildAttachedMessage(artifactId, "shared.txt"),
-        }),
-        headers: { "Content-Type": "application/json" },
-      });
-      await adapter.handleWebhook(request);
+      const { logger } = await import("@atlas/logger");
+      const warnSpy = vi.spyOn(logger, "warn");
 
-      const message = chat.processMessage.mock.calls[0]?.[2] as Message<WebChatPayload>;
-      const parts = message.raw.uiMessage.parts;
-      expect(parts).toHaveLength(3);
-      expect((parts[1] as { text: string }).text).toContain("shared");
+      try {
+        const request = new Request("http://localhost", {
+          method: "POST",
+          body: JSON.stringify({ id: chatId, message: buildAttachedMessage(evilPath, "passwd") }),
+          headers: { "Content-Type": "application/json" },
+        });
+        await adapter.handleWebhook(request);
+
+        const message = chat.processMessage.mock.calls[0]?.[2] as Message<WebChatPayload>;
+        const parts = message.raw.uiMessage.parts;
+        expect(parts).toHaveLength(2);
+        expect(message.text).not.toContain("<attachment");
+        expect(warnSpy).toHaveBeenCalledWith(
+          "atlas_web_adapter_attached_file_path_rejected",
+          expect.objectContaining({ chatId, path: evilPath }),
+        );
+      } finally {
+        warnSpy.mockRestore();
+      }
     });
 
-    it("emits a self-closing tag (no inline bytes) for non-text artifacts", async () => {
-      const { adapter, workspaceId } = createAdapter();
+    it("inlines one <attachment> line per file when multiple are attached at once", async () => {
+      const { adapter } = createAdapter();
       const chat = await initAdapterWithMock(adapter);
 
-      // application/pdf is in the artifact mime allowlist but not text/* —
-      // the agent reads the bytes via `parse_artifact` / `read_artifact`
-      // tools, so the prompt only carries a reference tag.
-      const artifactId = await createTextArtifact({
-        workspaceId,
-        // Real PDF magic bytes so the storage layer doesn't sniff it as
-        // application/octet-stream.
-        content: "%PDF-1.4\n%fake but plausibly-pdf\n",
-        mimeType: "application/pdf",
-        originalName: "report.pdf",
-      });
+      const chatId = "chat-multi-file";
+      const pathA = uploadPath(chatId, "a.txt");
+      const pathB = uploadPath(chatId, "b.txt");
 
       const request = new Request("http://localhost", {
         method: "POST",
         body: JSON.stringify({
-          id: "chat-binary",
+          id: chatId,
           message: {
-            id: "msg-binary",
+            id: "msg-multi",
             role: "user",
             parts: [
-              { type: "text", text: "summarize" },
+              { type: "text", text: "summarize both" },
               {
-                type: "data-artifact-attached",
+                type: "data-file-attached",
                 data: {
-                  artifactIds: [artifactId],
-                  filenames: ["report.pdf"],
-                  mimeTypes: ["application/pdf"],
+                  paths: [pathA, pathB],
+                  filenames: ["a.txt", "b.txt"],
+                  mimeTypes: ["text/plain", "text/plain"],
                 },
               },
             ],
@@ -375,86 +344,40 @@ describe("AtlasWebAdapter.handleWebhook", () => {
       await adapter.handleWebhook(request);
 
       const message = chat.processMessage.mock.calls[0]?.[2] as Message<WebChatPayload>;
-      const inlined = (message.raw.uiMessage.parts[1] as { text: string }).text;
-      // Self-closing tag, no body, references the artifact id so the agent
-      // can fetch via tool calls.
-      expect(inlined).toContain(`artifactId="${artifactId}"`);
-      expect(inlined).toContain("/>");
-      expect(inlined).not.toContain("</attachment>");
-      expect(inlined).not.toContain("%PDF-1.4");
+      const parts = message.raw.uiMessage.parts;
+      // [text "summarize both", text "<a/>\n<b/>", data-file-attached]
+      expect(parts).toHaveLength(3);
+      const inlined = (parts[1] as { text: string }).text;
+      expect(inlined).toContain(`path="${pathA}"`);
+      expect(inlined).toContain(`path="${pathB}"`);
+      expect(inlined.split("\n")).toHaveLength(2);
     });
 
-    it("skips and warns when an attached artifact id does not exist", async () => {
+    it("reverse-walk splice keeps indices valid for multiple data-file-attached parts", async () => {
       const { adapter } = createAdapter();
       const chat = await initAdapterWithMock(adapter);
 
-      const { logger } = await import("@atlas/logger");
-      const warnSpy = vi.spyOn(logger, "warn");
-      const ghostId = "00000000-0000-0000-0000-deadbeef0000";
-
-      try {
-        const request = new Request("http://localhost", {
-          method: "POST",
-          body: JSON.stringify({
-            id: "chat-missing",
-            message: buildAttachedMessage(ghostId, "ghost.csv"),
-          }),
-          headers: { "Content-Type": "application/json" },
-        });
-        await adapter.handleWebhook(request);
-
-        const message = chat.processMessage.mock.calls[0]?.[2] as Message<WebChatPayload>;
-        const parts = message.raw.uiMessage.parts;
-        // No synthetic text part inserted; original two parts survive.
-        expect(parts).toHaveLength(2);
-        expect(parts[0]).toMatchObject({ type: "text", text: "summarize" });
-        expect(parts[1]).toMatchObject({ type: "data-artifact-attached" });
-        expect(warnSpy).toHaveBeenCalledWith(
-          "atlas_web_adapter_attached_artifact_missing",
-          expect.objectContaining({ artifactId: ghostId }),
-        );
-      } finally {
-        warnSpy.mockRestore();
-      }
-    });
-
-    it("inserts the right expansion before each of multiple data-artifact-attached parts", async () => {
-      // Reverse-walk splice correctness: two `data-artifact-attached` parts
-      // in one message must each receive their own preceding text part,
-      // with the right bytes for the right id.
-      const { adapter, workspaceId } = createAdapter();
-      const chat = await initAdapterWithMock(adapter);
-
-      const idA = await createTextArtifact({
-        workspaceId,
-        content: "alpha\n",
-        mimeType: "text/plain",
-        originalName: "a.txt",
-      });
-      const idB = await createTextArtifact({
-        workspaceId,
-        content: "bravo\n",
-        mimeType: "text/plain",
-        originalName: "b.txt",
-      });
+      const chatId = "chat-multi-attach";
+      const pathA = uploadPath(chatId, "a.txt");
+      const pathB = uploadPath(chatId, "b.txt");
 
       const request = new Request("http://localhost", {
         method: "POST",
         body: JSON.stringify({
-          id: "chat-multi",
+          id: chatId,
           message: {
-            id: "msg-multi",
+            id: "msg-multi-attach",
             role: "user",
             parts: [
               { type: "text", text: "before-a" },
               {
-                type: "data-artifact-attached",
-                data: { artifactIds: [idA], filenames: ["a.txt"], mimeTypes: ["text/plain"] },
+                type: "data-file-attached",
+                data: { paths: [pathA], filenames: ["a.txt"], mimeTypes: ["text/plain"] },
               },
               { type: "text", text: "between" },
               {
-                type: "data-artifact-attached",
-                data: { artifactIds: [idB], filenames: ["b.txt"], mimeTypes: ["text/plain"] },
+                type: "data-file-attached",
+                data: { paths: [pathB], filenames: ["b.txt"], mimeTypes: ["text/plain"] },
               },
             ],
             metadata: {},
@@ -466,51 +389,46 @@ describe("AtlasWebAdapter.handleWebhook", () => {
 
       const message = chat.processMessage.mock.calls[0]?.[2] as Message<WebChatPayload>;
       const parts = message.raw.uiMessage.parts;
-      // [before-a, expansion-a, attached-a, between, expansion-b, attached-b]
+      // [before-a, attachment-a, file-a, between, attachment-b, file-b]
       expect(parts).toHaveLength(6);
       expect(parts[0]).toMatchObject({ type: "text", text: "before-a" });
-      expect((parts[1] as { text: string }).text).toContain("alpha");
-      expect((parts[1] as { text: string }).text).toContain(idA);
-      expect(parts[2]).toMatchObject({ type: "data-artifact-attached" });
+      expect((parts[1] as { text: string }).text).toContain(pathA);
+      expect((parts[1] as { text: string }).text).not.toContain(pathB);
+      expect(parts[2]).toMatchObject({ type: "data-file-attached" });
       expect(parts[3]).toMatchObject({ type: "text", text: "between" });
-      expect((parts[4] as { text: string }).text).toContain("bravo");
-      expect((parts[4] as { text: string }).text).toContain(idB);
-      expect(parts[5]).toMatchObject({ type: "data-artifact-attached" });
-      // Cross-contamination guard: the alpha expansion must not mention idB
-      // and vice versa.
-      expect((parts[1] as { text: string }).text).not.toContain("bravo");
-      expect((parts[4] as { text: string }).text).not.toContain("alpha");
+      expect((parts[4] as { text: string }).text).toContain(pathB);
+      expect((parts[4] as { text: string }).text).not.toContain(pathA);
+      expect(parts[5]).toMatchObject({ type: "data-file-attached" });
     });
 
-    it("no-ops with zero artifact I/O when the message has no data-artifact-attached parts", async () => {
-      // Hot-path invariant: a plain text message must not call
-      // ArtifactStorage.get at all. Spying on the adapter (rather than just
-      // checking that the persisted parts are unchanged) catches a future
-      // regression where a refactor accidentally fetches for every message.
+    it("no-ops when the message has no data-file-attached parts", async () => {
+      // Hot-path invariant: a plain text message goes through the adapter
+      // without any extra splice work.
       const { adapter } = createAdapter();
       const chat = await initAdapterWithMock(adapter);
-      const getSpy = vi.spyOn(ArtifactStorage, "get");
 
-      try {
-        const request = new Request("http://localhost", {
-          method: "POST",
-          body: JSON.stringify({ id: "chat-plain", message: textMessage("just text") }),
-          headers: { "Content-Type": "application/json" },
-        });
-        await adapter.handleWebhook(request);
+      const request = new Request("http://localhost", {
+        method: "POST",
+        body: JSON.stringify({ id: "chat-plain", message: textMessage("just text") }),
+        headers: { "Content-Type": "application/json" },
+      });
+      await adapter.handleWebhook(request);
 
-        const message = chat.processMessage.mock.calls[0]?.[2] as Message<WebChatPayload>;
-        expect(message.raw.uiMessage.parts).toEqual([{ type: "text", text: "just text" }]);
-        expect(getSpy).not.toHaveBeenCalled();
-      } finally {
-        getSpy.mockRestore();
-      }
+      const message = chat.processMessage.mock.calls[0]?.[2] as Message<WebChatPayload>;
+      expect(message.raw.uiMessage.parts).toEqual([{ type: "text", text: "just text" }]);
     });
   });
 
-  it("preserves data-artifact-attached parts on WebChatPayload.uiMessage", async () => {
+  it("preserves data-file-attached parts on WebChatPayload.uiMessage", async () => {
     const { adapter } = createAdapter();
     const chat = await initAdapterWithMock(adapter);
+
+    const chatId = "chat-with-files";
+    const home = process.env.FRIDAY_HOME ?? `${process.env.HOME}/.atlas`;
+    const paths = [
+      `${home}/scratch/uploads/${chatId}/sales.csv`,
+      `${home}/scratch/uploads/${chatId}/notes.txt`,
+    ];
 
     const multiPartMessage = {
       id: "msg-with-files",
@@ -518,9 +436,9 @@ describe("AtlasWebAdapter.handleWebhook", () => {
       parts: [
         { type: "text", text: "please analyze these files" },
         {
-          type: "data-artifact-attached",
+          type: "data-file-attached",
           data: {
-            artifactIds: ["artifact-1", "artifact-2"],
+            paths,
             filenames: ["sales.csv", "notes.txt"],
             mimeTypes: ["text/csv", "text/plain"],
           },
@@ -531,25 +449,20 @@ describe("AtlasWebAdapter.handleWebhook", () => {
 
     const request = new Request("http://localhost", {
       method: "POST",
-      body: JSON.stringify({ id: "chat-with-files", message: multiPartMessage }),
+      body: JSON.stringify({ id: chatId, message: multiPartMessage }),
       headers: { "Content-Type": "application/json", "X-Atlas-User-Id": "user-99" },
     });
     await adapter.handleWebhook(request);
 
     const message = chat.processMessage.mock.calls[0]?.[2] as Message<WebChatPayload>;
-    // Flat text is the joined text parts (for Chat SDK's internal Message.text).
-    expect(message.text).toBe("please analyze these files");
-    // The full multi-part uiMessage survives on raw for ChatStorage persistence.
+    // After inlineAttachedFiles splices the synthetic text part, the
+    // stashed uiMessage has [text typed, text synthetic, data-file-attached].
     const stashedParts = message.raw.uiMessage.parts;
-    expect(stashedParts).toHaveLength(2);
+    expect(stashedParts).toHaveLength(3);
     expect(stashedParts[0]).toEqual({ type: "text", text: "please analyze these files" });
-    expect(stashedParts[1]).toMatchObject({
-      type: "data-artifact-attached",
-      data: {
-        artifactIds: ["artifact-1", "artifact-2"],
-        filenames: ["sales.csv", "notes.txt"],
-        mimeTypes: ["text/csv", "text/plain"],
-      },
+    expect(stashedParts[2]).toMatchObject({
+      type: "data-file-attached",
+      data: { paths, filenames: ["sales.csv", "notes.txt"], mimeTypes: ["text/csv", "text/plain"] },
     });
   });
 

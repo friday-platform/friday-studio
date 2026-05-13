@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  buildArtifactAttachment,
+  buildFileAttachment,
   classifyAttachment,
   rejectionReason,
   rejectionToast,
@@ -36,8 +36,8 @@ describe("classifyAttachment", () => {
     { name: "script.py", type: "" },
     { name: "page.html", type: "" },
     { name: "lib.ts", type: "" },
-  ])(`returns "artifact" for $name (type="$type")`, ({ name, type }) => {
-    expect(classifyAttachment(makeFile({ name, type }))).toBe("artifact");
+  ])(`returns "file" for $name (type="$type")`, ({ name, type }) => {
+    expect(classifyAttachment(makeFile({ name, type }))).toBe("file");
   });
 
   it.each([
@@ -68,7 +68,7 @@ describe("classifyAttachment", () => {
     // tagged them as text/plain we still route through the artifact path
     // — the server's magic-byte sniff has the final say.
     expect(classifyAttachment(makeFile({ name: "scratch.todo", type: "text/plain" }))).toBe(
-      "artifact",
+      "file",
     );
   });
 });
@@ -124,16 +124,16 @@ describe("rejectionToast", () => {
   });
 });
 
-describe("buildArtifactAttachment", () => {
+describe("buildFileAttachment", () => {
   it("returns the initial state shape with status 'uploading' and progress 0", () => {
     const file = makeFile({ name: "data.csv", type: "text/csv" });
-    const att = buildArtifactAttachment(file);
-    expect(att.kind).toBe("artifact");
+    const att = buildFileAttachment(file);
+    expect(att.kind).toBe("file");
     expect(att.file).toBe(file);
     expect(att.mediaType).toBe("text/csv");
     expect(att.status).toBe("uploading");
     expect(att.progress).toBe(0);
-    expect(att.artifactId).toBeUndefined();
+    expect(att.path).toBeUndefined();
     expect(att.errorMessage).toBeUndefined();
     expect(att.abortController).toBeInstanceOf(AbortController);
     expect(att.id).toMatch(
@@ -145,12 +145,12 @@ describe("buildArtifactAttachment", () => {
     // .md → text/markdown via inferMimeFromFilename. Without this fallback
     // the chip would show "application/octet-stream" instead of the
     // real text/markdown mime.
-    const att = buildArtifactAttachment(makeFile({ name: "notes.md", type: "" }));
+    const att = buildFileAttachment(makeFile({ name: "notes.md", type: "" }));
     expect(att.mediaType).toBe("text/markdown");
   });
 
   it("falls back to application/octet-stream when no mime can be inferred", () => {
-    const att = buildArtifactAttachment(makeFile({ name: "scratch.todo", type: "" }));
+    const att = buildFileAttachment(makeFile({ name: "scratch.todo", type: "" }));
     expect(att.mediaType).toBe("application/octet-stream");
   });
 });

@@ -2,18 +2,18 @@
   import { ALLOWED_EXTENSION_LIST } from "@atlas/core/artifacts/file-upload";
   import { toast } from "@atlas/ui";
   import {
-    type ArtifactAttachment,
+    type FileAttachment,
     type ChatAttachment,
     type ImageAttachment,
-    buildArtifactAttachment,
+    buildFileAttachment,
     classifyAttachment,
     rejectionToast,
-    runArtifactUpload,
+    runFileUpload,
   } from "./chat-attachment.ts";
 
   // Re-export the attachment types so existing imports
   // (`import { ChatAttachment } from "./chat-input.svelte"`) keep working.
-  export type { ArtifactAttachment, ChatAttachment, ImageAttachment };
+  export type { FileAttachment, ChatAttachment, ImageAttachment };
 
   // The artifact endpoint accepts every extension in ALLOWED_EXTENSION_LIST —
   // text, JSON, CSV, MD, PDF, DOCX, PPTX, audio. Drop any of them in the
@@ -23,12 +23,17 @@
 
   interface Props {
     /**
-     * Workspace owning the chat. Threaded into `uploadFile()` so the
-     * artifact upload route's `requireWorkspaceMember(c, workspaceId)` check
-     * passes — the default "playground" only works for the HITL upload
-     * flow's bespoke workspace.
+     * Workspace owning the chat. Threaded into `uploadFileToScratch()` so
+     * the upload route's `requireWorkspaceMember(c, workspaceId)` gate
+     * passes.
      */
     workspaceId: string;
+    /**
+     * Chat id — the scratch-upload route writes each file to
+     * `{FRIDAY_HOME}/scratch/uploads/{chatId}/{filename}`. The chat owns
+     * this; user-chat passes it through unchanged.
+     */
+    chatId: string;
     onsubmit: (message: string, attachments: ChatAttachment[]) => void;
     /** True while the assistant is producing a response. Swaps the send slot
      * for a stop button; users press Enter to send when idle. */
@@ -46,6 +51,7 @@
 
   const {
     workspaceId,
+    chatId,
     onsubmit,
     streaming = false,
     stopping = false,
@@ -75,7 +81,7 @@
   // would race the upload and ship the message without the artifactId. The
   // textbox stays editable; only Enter is no-op until uploads settle.
   const uploadingCount = $derived(
-    attachments.filter((a) => a.kind === "artifact" && a.status === "uploading").length,
+    attachments.filter((a) => a.kind === "file" && a.status === "uploading").length,
   );
   const hasContent = $derived(
     (value.trim().length > 0 || attachments.length > 0) && uploadingCount === 0,
@@ -148,9 +154,9 @@
    * Svelte re-render. Per-attachment state updates from the upload
    * `onProgress` callback land here.
    */
-  function patchAttachment(id: string, patch: Partial<ArtifactAttachment>) {
+  function patchAttachment(id: string, patch: Partial<FileAttachment>) {
     attachments = attachments.map((a) =>
-      a.kind === "artifact" && a.id === id ? { ...a, ...patch } : a,
+      a.kind === "file" && a.id === id ? { ...a, ...patch } : a,
     );
   }
 
@@ -164,10 +170,10 @@
           ...attachments,
           { kind: "image", id: crypto.randomUUID(), file, dataUrl },
         ];
-      } else if (kind === "artifact") {
-        const att = buildArtifactAttachment(file);
+      } else if (kind === "file") {
+        const att = buildFileAttachment(file);
         attachments = [...attachments, att];
-        runArtifactUpload({ att, workspaceId, onUpdate: patchAttachment });
+        runFileUpload({ att, chatId, workspaceId, onUpdate: patchAttachment });
       } else {
         rejected.push(file);
       }
@@ -181,7 +187,7 @@
 
   function removeAttachment(id: string) {
     const target = attachments.find((a) => a.id === id);
-    if (target && target.kind === "artifact" && target.status === "uploading") {
+    if (target && target.kind === "file" && target.status === "uploading") {
       target.abortController.abort();
     }
     attachments = attachments.filter((att) => att.id !== id);

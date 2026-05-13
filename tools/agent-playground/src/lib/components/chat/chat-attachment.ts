@@ -14,7 +14,7 @@ import {
 } from "@atlas/core/artifacts/file-upload";
 // `$lib/` is a SvelteKit alias Vite resolves but `deno check` (CI's
 // type-check job) does not — use a relative path so both toolchains agree.
-import { uploadFile } from "../../upload.ts";
+import { uploadFileToScratch } from "../../upload.ts";
 
 /**
  * Image attachment: rendered inline in the user bubble and shipped to the
@@ -29,15 +29,19 @@ export interface ImageAttachment {
 }
 
 /**
- * Artifact attachment: any non-image file the user dropped. Uploaded to
- * `/api/artifacts/upload` on drop; the chip shows progress while in flight.
- * On submit, the resolved `artifactId` lands in a `data-artifact-attached`
- * message part so the user bubble renders an `ArtifactCard` (same component
- * agent-produced CSV/JSON/PDF previews use). The chat handler expands the
- * artifact's bytes back into the model prompt server-side.
+ * File attachment: any non-image file the user dropped. Uploaded to
+ * `/api/scratch/upload` on drop, which writes the bytes to
+ * `{FRIDAY_HOME}/scratch/uploads/{chatId}/{filename}` and returns the
+ * absolute path. The chip shows progress while in flight. On submit, the
+ * resolved `path` lands in a `data-file-attached` message part — the
+ * agent reads from that path via the `read_attachment` tool. No artifact
+ * storage, no library entry.
+ *
+ * (Renamed from `ArtifactAttachment` in v4 — same shape, `path` replaces
+ * `artifactId`.)
  */
-export interface ArtifactAttachment {
-  kind: "artifact";
+export interface FileAttachment {
+  kind: "file";
   id: string;
   file: File;
   /** Inferred or browser-reported mime — surfaced on the pending chip. */
@@ -45,14 +49,17 @@ export interface ArtifactAttachment {
   status: "uploading" | "ready" | "error";
   /** Bytes uploaded so far. Together with file.size yields percentage. */
   progress: number;
-  /** Set once the upload resolves. The submit handler attaches this id. */
-  artifactId?: string;
+  /** Absolute path on the daemon's filesystem, set once upload resolves. */
+  path?: string;
   errorMessage?: string;
   /** Abort handle — wired to the chip's ✕ so cancel actually cancels. */
   abortController: AbortController;
 }
 
-export type ChatAttachment = ImageAttachment | ArtifactAttachment;
+/** @deprecated rename to {@link FileAttachment} — kept for incremental rollout. */
+export type ArtifactAttachment = FileAttachment;
+
+export type ChatAttachment = ImageAttachment | FileAttachment;
 
 /**
  * Decide whether a dropped/picked file goes through the inline-image path
@@ -73,7 +80,7 @@ function isSvg(file: File): boolean {
   return file.type === "image/svg+xml" || /\.svg$/i.test(file.name);
 }
 
-export function classifyAttachment(file: File): "image" | "artifact" | null {
+export function classifyAttachment(file: File): "image" | "file" | null {
   if (isSvg(file)) return null;
   if (file.type.startsWith("image/")) return "image";
   const inferred = inferMimeFromFilename(file.name);
@@ -81,11 +88,11 @@ export function classifyAttachment(file: File): "image" | "artifact" | null {
   // Any other inferable mime → artifact upload path. The server's
   // upload route validates mime + magic bytes; this only gates which
   // client path we route the file down.
-  if (inferred !== undefined) return "artifact";
+  if (inferred !== undefined) return "file";
   // Some text-mime files won't match an extension we recognize (e.g.
   // `.todo`, `.notes`). If the browser reported a text mime, treat as
   // artifact too — the server's magic-byte sniff has the final say.
-  if (file.type && isTextMimeType(file.type)) return "artifact";
+  if (file.type && isTextMimeType(file.type)) return "file";
   return null;
 }
 
@@ -125,16 +132,16 @@ export function rejectionToast(rejected: readonly File[]):
 }
 
 /**
- * Construct the initial `ArtifactAttachment` shape for a dropped file. The
+ * Construct the initial `FileAttachment` shape for a dropped file. The
  * caller appends this to its `$state` array, then calls
- * {@link runArtifactUpload} with an `onUpdate` callback so per-progress and
+ * {@link runFileUpload} with an `onUpdate` callback so per-progress and
  * terminal-state mutations land back on the same entry.
  */
-export function buildArtifactAttachment(file: File): ArtifactAttachment {
+export function buildFileAttachment(file: File): FileAttachment {
   const mediaType =
     file.type || inferMimeFromFilename(file.name) || "application/octet-stream";
   return {
-    kind: "artifact",
+    kind: "file",
     id: crypto.randomUUID(),
     file,
     mediaType,
@@ -144,8 +151,11 @@ export function buildArtifactAttachment(file: File): ArtifactAttachment {
   };
 }
 
+/** @deprecated renamed to {@link buildFileAttachment}. */
+export const buildArtifactAttachment = buildFileAttachment;
+
 /**
- * Kick off the actual artifact upload for an `ArtifactAttachment` and call
+ * Kick off the scratch upload for a `FileAttachment` and call
  * `onUpdate(id, patch)` with progress and terminal-state patches. The caller
  * owns the `$state` array — this helper is pure (no Svelte runes), so it
  * can be unit-tested without a component harness.
@@ -154,28 +164,31 @@ export function buildArtifactAttachment(file: File): ArtifactAttachment {
  * patch is emitted, which lets the caller drop the entry from its list
  * without a race with a late `status: "error"` update.
  */
-export function runArtifactUpload(opts: {
-  att: ArtifactAttachment;
+export function runFileUpload(opts: {
+  att: FileAttachment;
+  chatId: string;
   workspaceId: string;
-  onUpdate: (id: string, patch: Partial<ArtifactAttachment>) => void;
+  onUpdate: (id: string, patch: Partial<FileAttachment>) => void;
 }): void {
-  const { att, workspaceId, onUpdate } = opts;
-  void uploadFile(
-    att.file,
-    (loaded) => onUpdate(att.id, { progress: loaded }),
-    att.abortController.signal,
-    undefined,
+  const { att, chatId, workspaceId, onUpdate } = opts;
+  void uploadFileToScratch(att.file, {
+    chatId,
     workspaceId,
-  ).then((result) => {
+    onProgress: (loaded) => onUpdate(att.id, { progress: loaded }),
+    abortSignal: att.abortController.signal,
+  }).then((result) => {
     if (att.abortController.signal.aborted) return;
-    if ("artifactId" in result) {
+    if ("path" in result) {
       onUpdate(att.id, {
         status: "ready",
         progress: att.file.size,
-        artifactId: result.artifactId,
+        path: result.path,
       });
     } else if (result.error !== "Upload cancelled") {
       onUpdate(att.id, { status: "error", errorMessage: result.error });
     }
   });
 }
+
+/** @deprecated renamed to {@link runFileUpload}. */
+export const runArtifactUpload = runFileUpload;

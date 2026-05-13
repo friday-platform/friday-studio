@@ -235,3 +235,101 @@ export function createFileIOTools(sessionId: string, logger: Logger): AtlasTools
     }),
   };
 }
+
+// ─── User-attachment reader ──────────────────────────────────────────────────
+//
+// Distinct from `read_file` (session-scratch) — `read_attachment` is what the
+// agent calls when the user drops a file in the chat input. The chat-sdk
+// adapter writes the bytes to `{FRIDAY_HOME}/scratch/uploads/{chatId}/{filename}`
+// and splices a `<attachment path="…" filename="…" mediaType="…" />` text
+// part into the message so the agent sees the path. This tool reads the
+// file at that path, validating that it lives under the chat's uploads
+// dir — the path comes from the user message and must NOT be trusted to
+// be arbitrary.
+
+/**
+ * Compute the per-chat uploads root — must match
+ * `apps/atlasd/routes/scratch-upload.ts:uploadsRoot()`. Inlined here (not
+ * imported) to avoid the workspace-chat agent pulling daemon imports.
+ */
+export function attachmentsRoot(chatId: string): string {
+  const safe = chatId.replace(/[^a-zA-Z0-9-_]/g, "");
+  return join(getFridayHome(), "scratch", "uploads", safe || "default");
+}
+
+/**
+ * Resolve `requestedPath` against the chat's uploads dir, rejecting any
+ * path that doesn't live underneath. Symlinks aren't followed (`readFile`
+ * uses the literal path).
+ */
+function resolveAttachment(
+  chatId: string,
+  requestedPath: string,
+): { ok: true; absolute: string } | { ok: false; error: string } {
+  const root = attachmentsRoot(chatId);
+  if (!isAbsolute(requestedPath)) {
+    return { ok: false, error: `path must be absolute: ${requestedPath}` };
+  }
+  const absolute = resolve(requestedPath);
+  if (absolute !== requestedPath) {
+    return { ok: false, error: `path failed normalization: ${requestedPath}` };
+  }
+  const rel = relative(root, absolute);
+  if (rel.startsWith("..") || isAbsolute(rel)) {
+    return { ok: false, error: `path escapes uploads root: ${requestedPath}` };
+  }
+  return { ok: true, absolute };
+}
+
+const ReadAttachmentInput = z.object({
+  path: z
+    .string()
+    .min(1)
+    .describe(
+      "Absolute path from the `<attachment path='…'>` tag in the user message. Must resolve under the chat's uploads dir — arbitrary paths are rejected.",
+    ),
+  max_bytes: z
+    .number()
+    .int()
+    .min(1)
+    .max(MAX_READ_BYTES)
+    .optional()
+    .describe(`Maximum bytes to read. Default and max ${MAX_READ_BYTES}.`),
+});
+
+/**
+ * Per-chat attachment reader. Use whenever the user attached a file with
+ * `<attachment path="…" mediaType="…" />`. Returns text content for any
+ * mime — the agent decides whether the bytes are useful (text/markup/CSV/
+ * JSON/source-code work; PDF/DOCX/audio return undecoded UTF-8 garbage
+ * and should be parsed via the dedicated tools instead).
+ */
+export function createReadAttachmentTool(chatId: string, logger: Logger): AtlasTools {
+  return {
+    read_attachment: tool({
+      description:
+        "Read a file the user attached to this chat. The path comes from a `<attachment path='…' filename='…' mediaType='…' />` tag in the user's most recent message — pass that path verbatim. Resolves under the per-chat uploads dir; absolute paths outside that dir are rejected. Returns the file's UTF-8 text contents. For text/markup/CSV/JSON/source-code files just call this directly. For PDF / DOCX / image / audio attachments use the dedicated tools instead (the bytes won't decode as text).",
+      inputSchema: ReadAttachmentInput,
+      execute: async ({ path, max_bytes }): Promise<ReadFileSuccess | FileErr> => {
+        const resolved = resolveAttachment(chatId, path);
+        if (!resolved.ok) return { error: resolved.error };
+        try {
+          const stats = await stat(resolved.absolute);
+          if (!stats.isFile()) {
+            return { error: `not a regular file: ${path}` };
+          }
+          const cap = max_bytes ?? MAX_READ_BYTES;
+          const buffer = await readFile(resolved.absolute);
+          const truncated = buffer.byteLength > cap;
+          const slice = truncated ? buffer.subarray(0, cap) : buffer;
+          const content = new TextDecoder().decode(slice);
+          logger.info("read_attachment success", { chatId, path, bytes: buffer.byteLength });
+          return { path, content, size_bytes: buffer.byteLength, truncated };
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          return { error: `read_attachment failed: ${message}` };
+        }
+      },
+    }),
+  };
+}

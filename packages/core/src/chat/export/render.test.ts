@@ -786,29 +786,38 @@ describe("buildSegments", () => {
   });
 
   it("hides synthetic attachment-expansion text parts (atlas namespace marker)", () => {
-    // AtlasWebAdapter inlines user-attached artifacts as text parts so the
-    // workspace-chat agent's per-turn history read sees the bytes. The
-    // bubble's ArtifactCard already represents the file, so render-side we
-    // skip these parts — keyed off `providerMetadata.atlas.kind` rather than
-    // a regex on tag shape (which would also hide user content that
-    // happened to match).
+    // AtlasWebAdapter inlines `<attachment path=…/>` text parts so the
+    // workspace-chat agent's per-turn history read spots the path. The
+    // bubble already renders a file chip from the structured
+    // `data-file-attached` part, so render-side we skip these — keyed off
+    // `providerMetadata.atlas.kind` rather than a regex on tag shape
+    // (which would also hide user content that happened to match).
     const segs = buildSegments(
       makeMessage([
         { type: "text", text: "summarize" },
         {
           type: "text",
-          text: '<attachment filename="a.csv" artifactId="abc">data</attachment>',
+          text: '<attachment path="/tmp/uploads/chat/a.csv" filename="a.csv" mediaType="text/csv" />',
           providerMetadata: { atlas: { kind: "attachment-expansion" } },
         },
         {
-          type: "data-artifact-attached",
-          data: { artifactIds: ["abc"], filenames: ["a.csv"], mimeTypes: ["text/csv"] },
+          type: "data-file-attached",
+          data: {
+            paths: ["/tmp/uploads/chat/a.csv"],
+            filenames: ["a.csv"],
+            mimeTypes: ["text/csv"],
+          },
         },
       ]),
     );
     expect(segs).toEqual([
       { type: "text", content: "summarize" },
-      { type: "artifact-list", ids: ["abc"], filenames: ["a.csv"], mimeTypes: ["text/csv"] },
+      {
+        type: "file-list",
+        paths: ["/tmp/uploads/chat/a.csv"],
+        filenames: ["a.csv"],
+        mimeTypes: ["text/csv"],
+      },
     ]);
   });
 
@@ -817,21 +826,21 @@ describe("buildSegments", () => {
     // who literally types `<attachment …>` in their message body must still
     // see the text in their own bubble — the structural marker check above
     // is what makes this safe.
-    const text = 'See <attachment filename="x" artifactId="y">stuff</attachment> in the docs';
+    const text = 'See <attachment filename="x" path="/etc/passwd" />stuff</attachment> in the docs';
     const segs = buildSegments(makeMessage([{ type: "text", text }]));
     expect(segs).toEqual([{ type: "text", content: text }]);
   });
 
-  it("emits an artifact-list segment for data-artifact-attached parts", () => {
-    // Minimum contract: a `data-artifact-attached` part becomes one
-    // `artifact-list` segment carrying its ids/filenames/mimeTypes. The
-    // chat-message-list renders one ArtifactCard per id.
+  it("emits a file-list segment for data-file-attached parts", () => {
+    // Minimum contract: a `data-file-attached` part becomes one
+    // `file-list` segment carrying its paths/filenames/mimeTypes. The
+    // chat-message-list renders one file chip per path.
     const segs = buildSegments(
       makeMessage([
         {
-          type: "data-artifact-attached",
+          type: "data-file-attached",
           data: {
-            artifactIds: ["a-1", "a-2"],
+            paths: ["/tmp/uploads/chat/x.csv", "/tmp/uploads/chat/y.json"],
             filenames: ["x.csv", "y.json"],
             mimeTypes: ["text/csv", "application/json"],
           },
@@ -840,43 +849,58 @@ describe("buildSegments", () => {
     );
     expect(segs).toEqual([
       {
-        type: "artifact-list",
-        ids: ["a-1", "a-2"],
+        type: "file-list",
+        paths: ["/tmp/uploads/chat/x.csv", "/tmp/uploads/chat/y.json"],
         filenames: ["x.csv", "y.json"],
         mimeTypes: ["text/csv", "application/json"],
       },
     ]);
   });
 
-  it("flushes prior text/tool-burst before an artifact-list segment", () => {
-    // Chronological ordering invariant — the artifact card must land in
-    // the slot where the message attached it, after any preceding text or
+  it("flushes prior text/tool-burst before a file-list segment", () => {
+    // Chronological ordering invariant — the file chip must land in the
+    // slot where the message attached it, after any preceding text or
     // tool activity has been committed to its own segment.
     const segs = buildSegments(
       makeMessage([
         { type: "text", text: "context" },
         staticToolPart("web_fetch", "c1", "output-available"),
-        { type: "data-artifact-attached", data: { artifactIds: ["a-1"], filenames: ["x.csv"] } },
+        {
+          type: "data-file-attached",
+          data: {
+            paths: ["/tmp/uploads/chat/x.csv"],
+            filenames: ["x.csv"],
+            mimeTypes: ["text/csv"],
+          },
+        },
         { type: "text", text: "after" },
       ]),
     );
     expect(segs).toHaveLength(4);
     expect(segs[0]).toEqual({ type: "text", content: "context" });
     expect(segs[1]?.type).toBe("tool-burst");
-    expect(segs[2]).toEqual({ type: "artifact-list", ids: ["a-1"], filenames: ["x.csv"] });
+    expect(segs[2]).toEqual({
+      type: "file-list",
+      paths: ["/tmp/uploads/chat/x.csv"],
+      filenames: ["x.csv"],
+      mimeTypes: ["text/csv"],
+    });
     expect(segs[3]).toEqual({ type: "text", content: "after" });
   });
 
-  it("ignores data-artifact-attached parts with no string ids", () => {
+  it("ignores data-file-attached parts with no string paths", () => {
     // Defensive against malformed wire data — without this guard a
-    // non-array `artifactIds` or all-empty payload would push a degenerate
-    // segment that the chat-message-list would happily render zero cards
-    // for. Drop the segment entirely instead.
+    // non-array `paths` or all-empty payload would push a degenerate
+    // segment that the chat-message-list would render zero chips for.
+    // Drop the segment entirely instead.
     const segs = buildSegments(
       makeMessage([
         { type: "text", text: "still here" },
-        { type: "data-artifact-attached", data: { artifactIds: [], filenames: [] } },
-        { type: "data-artifact-attached", data: { artifactIds: "not an array" } },
+        { type: "data-file-attached", data: { paths: [], filenames: [], mimeTypes: [] } },
+        {
+          type: "data-file-attached",
+          data: { paths: "not an array", filenames: [], mimeTypes: [] },
+        },
       ]),
     );
     expect(segs).toEqual([{ type: "text", content: "still here" }]);
