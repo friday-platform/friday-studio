@@ -132,6 +132,16 @@ function createRegistry() {
  */
 let _registry: ReturnType<typeof createRegistry> | null = null;
 
+/**
+ * Reset the lazy registry singleton. The next call re-runs
+ * `createRegistry()`, re-reading `process.env` and rebuilding every
+ * provider client — required after a runtime env mutation since each
+ * provider captures its `apiKey` at construction.
+ */
+export function resetRegistry(): void {
+  _registry = null;
+}
+
 export const registry = {
   languageModel: (...args: Parameters<ReturnType<typeof createRegistry>["languageModel"]>) => {
     if (!_registry) _registry = createRegistry();

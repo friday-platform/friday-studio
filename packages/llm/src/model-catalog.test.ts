@@ -5,7 +5,7 @@ import {
   type CatalogEntry,
   type CatalogProvider,
   getCatalog,
-  resetCatalogCacheForTests,
+  invalidateCatalog,
 } from "./model-catalog.ts";
 
 /**
@@ -74,7 +74,7 @@ function restoreEnv() {
 }
 
 beforeEach(() => {
-  resetCatalogCacheForTests();
+  invalidateCatalog();
   stubEnv({
     ANTHROPIC_API_KEY: undefined,
     OPENAI_API_KEY: undefined,
@@ -255,5 +255,50 @@ describe("model-catalog — cache", () => {
     await Promise.all([a, b, c]);
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("discards an in-flight fetch's result when invalidateCatalog runs before it resolves", async () => {
+    // Reproduces the PUT /env race: a getCatalog() fetch starts under one
+    // env, the user adds GROQ_API_KEY, invalidateCatalog() runs, then the
+    // stale in-flight result resolves. Without a generation guard that
+    // stale result would pin `cache` for the full TTL.
+    let resolveGateway!: (v: Response) => void;
+    const gatewayPromise = new Promise<Response>((res) => {
+      resolveGateway = res;
+    });
+    const staleModels = [gatewayModel("anthropic", "anthropic/claude-sonnet-4.6", "Sonnet 4.6")];
+    const freshModels = [gatewayModel("anthropic", "anthropic/claude-haiku-4.5", "Haiku 4.5")];
+    let call = 0;
+    const fetchMock = vi.fn((url: string) => {
+      if (url === GATEWAY_URL) {
+        call++;
+        if (call === 1) return gatewayPromise;
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ models: freshModels }),
+        } as unknown as Response);
+      }
+      return Promise.resolve({
+        ok: false,
+        status: 404,
+        json: () => Promise.resolve({}),
+      } as unknown as Response);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const inflight = getCatalog();
+    invalidateCatalog();
+    resolveGateway({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ models: staleModels }),
+    } as unknown as Response);
+    await inflight;
+
+    // Next call must start a fresh fetch, not return the stale cached one.
+    const after = await getCatalog();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(find(after, "anthropic").models.map((m) => m.id)).toEqual(["claude-haiku-4-5"]);
   });
 });

@@ -453,14 +453,6 @@
       throw new Error(`Save failed (HTTP ${putRes.status}): ${text}`);
     }
 
-    const savedTo = envPath ?? "the daemon's .env file";
-    successFlash = `Saved ${envVar} to ${savedTo}. Restart the daemon to apply.`;
-    setTimeout(() => {
-      if (successFlash && successFlash.includes(envVar)) successFlash = null;
-    }, 4000);
-
-    // Reload the catalog so the provider we just unlocked flips to
-    // credentialConfigured: true. Also pull env rows in sync.
     await Promise.all([loadCatalog(), loadEnv()]);
     return catalog;
   }
@@ -541,10 +533,8 @@
         envError = `Save failed (HTTP ${res.status}): ${text}`;
         return;
       }
-      successFlash = "Environment saved. Restart the daemon to apply.";
-      setTimeout(() => {
-        if (successFlash && successFlash.includes("Environment saved")) successFlash = null;
-      }, 4000);
+
+      await loadCatalog();
     } catch (err) {
       envError = err instanceof Error ? err.message : String(err);
     } finally {
