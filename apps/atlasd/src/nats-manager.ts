@@ -49,6 +49,15 @@ export class NatsManager {
    * which path put us on the broker (env URL, cached URL, own spawn).
    */
   private ownsUrlFile = false;
+  /**
+   * Whether start() overwrote `process.env.FRIDAY_NATS_URL` so child
+   * spawns inherit the resolved URL. stop() restores the prior value
+   * (or clears it) — without that, a spawn between stop() and the next
+   * start() would inherit a URL pointing at the dead broker and hit
+   * the same 30s connect timeout the env-write was added to prevent.
+   */
+  private priorNatsUrl: string | undefined = undefined;
+  private envSet = false;
 
   async start(): Promise<NatsConnection> {
     // Log resolved JetStream config + provenance unconditionally — applies
@@ -123,12 +132,15 @@ export class NatsManager {
     logger.info("Wrote broker URL file", { url, urlFile: brokerUrlFilePath(home) });
 
     // Propagate the resolved URL to in-process env so child spawns
-    // (process-agent-executor, tool-worker-launcher, etc.) inherit it
-    // instead of falling back to the hardcoded `nats://localhost:4222`.
-    // pickPort() chooses dynamically in the 14222 range, so the
-    // hardcoded fallback is wrong on every dev run where `.env` doesn't
-    // carry FRIDAY_NATS_URL.
+    // inherit it instead of falling back to the hardcoded
+    // `nats://localhost:4222`. pickPort() chooses dynamically in the
+    // 14222 range, so the hardcoded fallback is wrong on every dev
+    // run where `.env` doesn't carry FRIDAY_NATS_URL. Capture the
+    // prior value first so stop() can restore the env to its
+    // pre-start state.
+    this.priorNatsUrl = process.env.FRIDAY_NATS_URL;
     process.env.FRIDAY_NATS_URL = url;
+    this.envSet = true;
 
     if (process.env.FRIDAY_NATS_MONITOR === "1") {
       logger.info(`NATS monitoring enabled at http://127.0.0.1:${DEFAULT_NATS_MONITOR_PORT}`);
@@ -187,6 +199,16 @@ export class NatsManager {
     if (this.ownsUrlFile) {
       await deleteBrokerUrlFile(getFridayHome());
       this.ownsUrlFile = false;
+    }
+
+    if (this.envSet) {
+      if (this.priorNatsUrl === undefined) {
+        delete process.env.FRIDAY_NATS_URL;
+      } else {
+        process.env.FRIDAY_NATS_URL = this.priorNatsUrl;
+      }
+      this.priorNatsUrl = undefined;
+      this.envSet = false;
     }
   }
 
