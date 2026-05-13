@@ -90,9 +90,11 @@ else
     # on macOS, sudo on Linux); subsequent runs detect the CA is already
     # trusted and exit fast.
     echo "→ Ensuring mkcert root CA is trusted (may prompt for admin password)"
-    # Unset JAVA_HOME so mkcert skips Java's cacerts; a broken JDK there
-    # would fail keytool and abort the script under `set -e`.
-    env -u JAVA_HOME mkcert -install
+    # Scope mkcert to the trust stores Friday actually uses: system (Safari,
+    # Chrome, curl, Deno via --use-system-ca) and nss (Firefox). Skipping
+    # `java` means a JDK on $PATH — broken or otherwise — can't fail keytool
+    # and abort the script under `set -e`.
+    TRUST_STORES=system,nss mkcert -install
 fi
 
 # ── 2. Resolve dev Friday home ──────────────────────────────────────────────
