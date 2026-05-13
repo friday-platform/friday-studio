@@ -159,10 +159,6 @@
   let modelsError = $state<string | null>(null);
   let catalogError = $state<string | null>(null);
   let successFlash = $state<string | null>(null);
-  // Saved env vars that the catalog hasn't yet confirmed live. Renders
-  // the persistent restart banner; the daemon's hot-reload almost
-  // always clears this on the next `loadCatalog()`.
-  let pendingRestartKeys = $state<string[]>([]);
 
   const queryClient = useQueryClient();
 
@@ -433,20 +429,6 @@
   // ─── Save-key (inline unlock) ──────────────────────────────────────
 
   /**
-   * Drop keys from `pendingRestartKeys` that the catalog now reports as
-   * configured, plus keys not tied to any catalog provider (random env
-   * vars don't gate UI here).
-   */
-  function confirmPendingAgainstCatalog(): void {
-    if (pendingRestartKeys.length === 0) return;
-    pendingRestartKeys = pendingRestartKeys.filter((k) => {
-      const entry = catalog.find((e) => e.credentialEnvVar === k);
-      if (!entry) return false;
-      return !entry.credentialConfigured;
-    });
-  }
-
-  /**
    * Inline API-key save from the picker's locked-provider banner. Reads
    * current .env, splices in the new key, PUTs the full map. Returns
    * the updated catalog (with the newly-unlocked provider flipped) so
@@ -471,17 +453,7 @@
       throw new Error(`Save failed (HTTP ${putRes.status}): ${text}`);
     }
 
-    pendingRestartKeys = [...new Set([...pendingRestartKeys, envVar])];
     await Promise.all([loadCatalog(), loadEnv()]);
-    confirmPendingAgainstCatalog();
-
-    if (!pendingRestartKeys.includes(envVar)) {
-      successFlash = `Saved ${envVar} — live.`;
-      setTimeout(() => {
-        if (successFlash && successFlash.includes(envVar)) successFlash = null;
-      }, 4000);
-    }
-
     return catalog;
   }
 
@@ -562,22 +534,7 @@
         return;
       }
 
-      const providerKeysInPayload = catalog
-        .map((e) => e.credentialEnvVar)
-        .filter((k): k is string => k !== null && k in payload && payload[k].length > 0);
-      if (providerKeysInPayload.length > 0) {
-        pendingRestartKeys = [...new Set([...pendingRestartKeys, ...providerKeysInPayload])];
-      }
-
       await loadCatalog();
-      confirmPendingAgainstCatalog();
-
-      if (pendingRestartKeys.length === 0) {
-        successFlash = "Environment saved — live.";
-        setTimeout(() => {
-          if (successFlash && successFlash.includes("Environment saved")) successFlash = null;
-        }, 4000);
-      }
     } catch (err) {
       envError = err instanceof Error ? err.message : String(err);
     } finally {
@@ -826,14 +783,6 @@
   <PageLayout.Body>
     <PageLayout.Content>
       <div class="settings-root">
-        {#if pendingRestartKeys.length > 0}
-          <div class="warn-banner" role="alert">
-            Saved <strong>{pendingRestartKeys.join(", ")}</strong>
-            to <code>{envPath ?? ".env"}</code>
-            , but the daemon hasn't picked
-            {pendingRestartKeys.length === 1 ? "it" : "them"} up. Restart the daemon to apply.
-          </div>
-        {/if}
         <!-- ─── Models section ────────────────────────────────────────── -->
         <section class="section">
           <div class="section-header-row">
