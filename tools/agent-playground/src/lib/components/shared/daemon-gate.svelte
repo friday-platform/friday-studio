@@ -19,16 +19,16 @@
   only flips on a client-side fetch, leaving SSR stuck on "Connecting…".
 -->
 {#if browser && daemonHealth.loading && !daemonHealth.hasConnected}
-  <div class="gate-state" out:fade={{ duration: 500 }}>
+  <div class="gate-state" out:fade={{ duration: 400 }}>
     <DaemonLoading />
   </div>
 {:else if browser && !daemonHealth.connected && !daemonHealth.hasConnected}
-  <div class="gate-state" out:fade={{ duration: 500 }}>
+  <div class="gate-state" out:fade={{ duration: 400 }}>
     <DaemonLoading />
     <Button size="small" variant="secondary" onclick={retry}>Retry Now</Button>
   </div>
 {:else}
-  <div class="gate-content" in:fade={{ duration: 500 }}>
+  <div class="gate-content" in:fade={{ duration: 400 }}>
     {#if !daemonHealth.connected}
       <div class="gate-banner" role="status">
         <span>Reconnecting to Friday Studio…</span>
