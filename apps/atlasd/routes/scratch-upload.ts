@@ -34,6 +34,7 @@ import {
   MAX_PDF_SIZE,
 } from "@atlas/core/artifacts/file-upload";
 import { ChatStorage } from "@atlas/core/chat/storage";
+import { UserStorage } from "@atlas/core/users/storage";
 import { createLogger } from "@atlas/logger";
 import { chatUploadsRoot } from "@atlas/utils/paths.server";
 import { daemonFactory } from "../src/factory.ts";
@@ -92,19 +93,35 @@ const scratchUploadApp = daemonFactory.createApp().post("/upload", async (c) => 
   // the artifact-upload route precedent at `routes/artifacts.ts:964`.
   await requireWorkspaceMember(c, workspaceId);
 
-  // chatId↔workspaceId binding. Without this, any authenticated member
-  // of *some* workspace could POST `?workspaceId=<theirs>&chatId=<any>`
-  // and write bytes into an arbitrary chat's uploads dir on the daemon.
-  // Even with md5 content-addressed storage (so the attacker can't
-  // overwrite a victim's specific file with chosen bytes), this leaves
-  // a cross-tenant disk-fill DoS primitive open. `getChat(chatId,
-  // workspaceId)` reads from the workspace-scoped namespace — a chat in
-  // a different workspace returns null here, so 404 fires correctly.
-  // Same pattern as the chat cancel/resume routes at
-  // `apps/atlasd/routes/workspaces/chat.ts:162,186`.
+  // chatId↔workspaceId binding. Closes the cross-tenant write primitive:
+  // without this, any authenticated member of *some* workspace could
+  // POST `?workspaceId=<theirs>&chatId=<foreign>` and write bytes into
+  // a chat that belongs to a different workspace. `getChat` lives in
+  // the workspace-scoped namespace — a chat in another workspace
+  // returns null here.
+  //
+  // Lifecycle wrinkle: chats are created lazily on the first message
+  // (via `chat-sdk-state-adapter.subscribe()`), but the user can drop a
+  // file BEFORE typing — so the chat record doesn't exist yet on the
+  // first upload. We create it idempotently here. Safety: createChat is
+  // workspace-scoped, and the caller already passed
+  // `requireWorkspaceMember(workspaceId)` — so the chat ends up owned
+  // by THIS user in THIS workspace. An attacker who races a victim for
+  // a chatId would create their own (empty) chat record under their
+  // own workspace; the victim's eventual subscribe() against a
+  // different workspaceId still works because the namespace key is
+  // (workspaceId, chatId). chatIds are 12-char UUIDs so collisions are
+  // negligible.
+  const userId = c.get("userId") ?? UserStorage.getCachedLocalUserId();
   const chatLookup = await ChatStorage.getChat(chatId, workspaceId);
-  if (!chatLookup.ok || !chatLookup.data) {
-    return c.json({ error: "Chat not found" }, 404);
+  if (!chatLookup.ok) {
+    return c.json({ error: chatLookup.error }, 500);
+  }
+  if (!chatLookup.data) {
+    const created = await ChatStorage.createChat({ chatId, userId, workspaceId, source: "atlas" });
+    if (!created.ok) {
+      return c.json({ error: `chat-create failed: ${created.error}` }, 500);
+    }
   }
 
   // Same legacy-format rejection as the artifact route — surfaces the
