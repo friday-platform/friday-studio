@@ -1136,6 +1136,23 @@ Three response shapes:
 Deny / expiry returns `granted: false`. Treat as a hard "stop", explain what
 was blocked, and finish safely.
 
+### Reading the response
+
+The response includes a top-level `persistent: boolean`. Branch on it
+rather than parsing `answer`:
+
+- `persistent: true` — user chose Allow always or you hit a previously-stored
+  grant. Future actions in this workspace will see the tool in their
+  toolset without re-asking. You can tell the user "this will keep
+  working" and proceed (route around in *this* action; the next run
+  gets the real capability).
+- `persistent: false` with `granted: true` — Allow once or bypass. The
+  grant has no effect on future runs. Use it as a signal only.
+
+Operator log lines now include a `grantType` field
+(`allow_once` / `allow_always` / `bypass` / `persistent_allow` / `deny`)
+so audits don't need to join against the elicitation store.
+
 Unknown tools are rejected without creating an elicitation. If
 `request_tool_access` returns `reason: "unknown_tool"`, stop guessing: call
 `list_capabilities` / `list_mcp_tools`, install/enable the correct server if

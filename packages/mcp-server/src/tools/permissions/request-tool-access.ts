@@ -58,10 +58,14 @@ export function registerRequestToolAccessTool(server: McpServer, ctx: ToolContex
       description:
         "Request permission to call a tool that isn't in your allowlist. " +
         "Use this when you need a capability you don't currently have. " +
-        'Returns immediately with `{ granted: true, reason: "bypass" }` if the ' +
-        "current job/workspace has `permissions.dangerouslySkipAllowlist`. " +
+        'Returns immediately with `{ granted: true, persistent: false, reason: "bypass" }` ' +
+        "if the current job/workspace has `permissions.dangerouslySkipAllowlist`. " +
         "Otherwise emits a user-facing elicitation, blocks until it is answered, " +
-        "declined, or expired, and returns the terminal decision to the current run.",
+        "declined, or expired, and returns the terminal decision. " +
+        "Read `persistent` on the response: `true` means the tool will be " +
+        "available to future actions in this workspace without re-asking; " +
+        "`false` means this turn is the only effect — you still cannot call " +
+        "the requested tool in the current action and must route around.",
       inputSchema: {
         toolName: z.string().min(1).describe("Name of the tool you want to call"),
         reason: z
@@ -148,8 +152,14 @@ export function registerRequestToolAccessTool(server: McpServer, ctx: ToolContex
           workspaceId,
           sessionId,
           actionId,
+          grantType: "persistent_allow",
         });
-        return createSuccessResponse({ ok: true, granted: true, reason: "persistent_allow" });
+        return createSuccessResponse({
+          ok: true,
+          granted: true,
+          persistent: true,
+          reason: "persistent_allow",
+        });
       }
       if (!persistentGrant.ok) {
         ctx.logger.warn("request_tool_access persistent grant check failed", {
@@ -168,8 +178,14 @@ export function registerRequestToolAccessTool(server: McpServer, ctx: ToolContex
           workspaceId,
           sessionId,
           actionId,
+          grantType: "bypass",
         });
-        return createSuccessResponse({ ok: true, granted: true, reason: "bypass" });
+        return createSuccessResponse({
+          ok: true,
+          granted: true,
+          persistent: false,
+          reason: "bypass",
+        });
       }
 
       // Elicitation branch. Emit a tool-allowlist elicitation and block on
@@ -254,13 +270,26 @@ export function registerRequestToolAccessTool(server: McpServer, ctx: ToolContex
               });
             }
           }
+          // grantType in the log makes the user's choice auditable without
+          // joining against the elicitation store. The runtime difference
+          // matters: `allow_always` widens future actions via the grant
+          // union; `allow_once` is an approval signal only.
+          ctx.logger.info("request_tool_access answered", {
+            toolName,
+            workspaceId,
+            sessionId,
+            actionId,
+            elicitationId: created.data.id,
+            grantType: granted ? terminal.value : "deny",
+            persistent,
+          });
           return createSuccessResponse({
             ok: granted,
             granted,
+            persistent,
             elicitationId: created.data.id,
             answer: terminal.value,
             reason: granted ? "answered" : "declined",
-            ...(persistent ? { persistent: true } : {}),
             ...(terminal.note ? { note: terminal.note } : {}),
           });
         }
