@@ -532,6 +532,13 @@ describe("WorkspaceManager cross-home filter — mutation paths refuse to touch"
     // Minimal config shape — the guard fires before config is used.
     await restart("foreign", "/foreign/Z", {} as unknown);
 
+    // Registry entry must be unchanged — guard fired before the
+    // unregister/register cycle could touch it. Mirrors the
+    // "no side effects" assertion from the other three mutation tests.
+    const survived = await registry.getWorkspace("foreign");
+    expect(survived).not.toBeNull();
+    expect(survived?.path).toBe("/foreign/Z");
+
     const warns = mockLogger.warn.mock.calls.filter(
       ([msg]) => msg === "Refusing to restart signals for cross-home workspace",
     );

@@ -14,6 +14,7 @@
  */
 
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
@@ -21,6 +22,31 @@ import type { Logger } from "@atlas/logger";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { connectOrSpawn } from "./connect.ts";
 import { brokerUrlFilePath, pickPort, spawnNatsServer } from "./spawn.ts";
+
+/**
+ * Pick a port the OS just told us is free, then immediately release it.
+ * Tiny TOCTOU window where some other process could grab it, but for
+ * "nothing should be listening here" assertions this is dramatically
+ * more reliable than hardcoding 65530-ish (inside macOS's ephemeral
+ * range, where a parallel test or background process can legitimately
+ * be assigned the same port).
+ */
+function pickDeadPort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const srv = createServer();
+    srv.unref();
+    srv.once("error", reject);
+    srv.listen(0, "127.0.0.1", () => {
+      const addr = srv.address();
+      if (addr && typeof addr === "object") {
+        const port = addr.port;
+        srv.close(() => resolve(port));
+      } else {
+        srv.close(() => reject(new Error("could not resolve dead port")));
+      }
+    });
+  });
+}
 
 const noopLogger: Logger = {
   trace: () => {},
@@ -122,11 +148,13 @@ describe("connectOrSpawn — spawnFallback=false honors the no-spawn contract", 
   });
 
   it("throws when explicit URL fails to connect and spawnFallback=false", async () => {
-    // Picks a port nothing is listening on (high in the ephemeral
-    // range). Direct connect fails; spawnFallback=false means no fallback.
+    // Direct connect fails; spawnFallback=false means no fallback. The
+    // port comes from pickDeadPort() so we know nothing else can have
+    // been assigned to it by the kernel in parallel.
+    const deadPort = await pickDeadPort();
     await expect(
       connectOrSpawn({
-        url: "nats://127.0.0.1:65530",
+        url: `nats://127.0.0.1:${deadPort}`,
         storeDir,
         spawnFallback: false,
         timeoutMs: 200,
@@ -139,7 +167,8 @@ describe("connectOrSpawn — spawnFallback=false honors the no-spawn contract", 
     // FRIDAY_NATS_URL is the operator's explicit declaration of an
     // external broker. If it fails, spawning silently would shadow the
     // operator's intent — throw even with spawnFallback=true.
-    process.env.FRIDAY_NATS_URL = "nats://127.0.0.1:65531";
+    const deadPort = await pickDeadPort();
+    process.env.FRIDAY_NATS_URL = `nats://127.0.0.1:${deadPort}`;
     try {
       await expect(
         connectOrSpawn({ storeDir, timeoutMs: 200, logger: noopLogger }),
