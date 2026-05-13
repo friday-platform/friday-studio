@@ -17,12 +17,39 @@
  */
 
 import { type ChildProcess, spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import process from "node:process";
 
 const REPO_ROOT = process.cwd();
+
+// Pre-load <FRIDAY_HOME>/.env into this process's env BEFORE Deno's
+// RootCertStore initializes on first TLS use. The daemon spawned below
+// reads FRIDAY_TLS_CERT/_KEY from --env-file flags, so it serves HTTPS
+// when those are set in ~/.atlas/.env (setup-tls.sh seeds them). The
+// dev-watcher itself does its own fetch() against /api/sessions to
+// drive the restart loop, so it also needs:
+//   - the right URL scheme (http vs https) → reads FRIDAY_TLS_CERT
+//   - to trust the private CA → reads DENO_CERT before Deno binds the
+//     RootCertStore. Setting DENO_CERT post-bind has no effect.
+// Mirrors scripts/run-atlasd.sh; same .env, same precedence (shell
+// exports win).
+(() => {
+  const envFile = path.join(process.env.FRIDAY_HOME || path.join(homedir(), ".atlas"), ".env");
+  if (!existsSync(envFile)) return;
+  const text = readFileSync(envFile, "utf8");
+  for (const raw of text.split("\n")) {
+    const line = raw.trim();
+    if (!line || line.startsWith("#")) continue;
+    const eq = line.indexOf("=");
+    if (eq <= 0) continue;
+    const key = line.slice(0, eq).trim();
+    const value = line.slice(eq + 1);
+    if (process.env[key] !== undefined) continue;
+    process.env[key] = value;
+  }
+})();
 
 /**
  * Env files loaded by every daemon spawn. Deno's `--env-file` is LAST-wins
@@ -102,7 +129,18 @@ const INCLUDE_EXTENSIONS: readonly string[] = [
 ];
 
 const DEBOUNCE_MS = 500;
-const SESSIONS_URL = "http://localhost:8080/api/sessions?limit=100";
+// Resolve at call time, not module load: the daemon listener scheme
+// (http vs https) depends on FRIDAY_TLS_CERT/_KEY being set in this
+// process's env, which we top up from ~/.atlas/.env at startup. A
+// module-level const would freeze the URL before the env load runs.
+// FRIDAYD_URL wins as an explicit override; otherwise derive from
+// FRIDAY_TLS_CERT presence. Without TLS env, falls back to http.
+function sessionsURL(): string {
+  const override = process.env.FRIDAYD_URL;
+  if (override) return `${override.replace(/\/+$/, "")}/api/sessions?limit=100`;
+  const scheme = process.env.FRIDAY_TLS_CERT && process.env.FRIDAY_TLS_KEY ? "https" : "http";
+  return `${scheme}://localhost:8080/api/sessions?limit=100`;
+}
 const IDLE_POLL_MS = 2000;
 const MAX_WAIT_MS = 30 * 60 * 1000; // 30 min — FAST sessions can legitimately run 20+ min
 const SHUTDOWN_GRACE_MS = 10_000;
@@ -263,7 +301,7 @@ function spawnDaemon(): ChildProcess {
 async function activeSessionCount(): Promise<number | null> {
   let resp: Response;
   try {
-    resp = await fetch(SESSIONS_URL, { signal: AbortSignal.timeout(2000) });
+    resp = await fetch(sessionsURL(), { signal: AbortSignal.timeout(2000) });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     warn(`sessions fetch failed (${message}) — treating as "unknown"`);
