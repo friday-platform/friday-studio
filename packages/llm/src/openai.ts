@@ -10,6 +10,8 @@ interface OpenAIOptions {
   apiKey?: string;
   /** HTTP proxy URL. Defaults to OPENAI_PROXY_URL env var */
   httpProxy?: string;
+  /** Override the API base URL. Defaults to OPENAI_BASE_URL env var. Useful for OpenAI-compatible endpoints (Ollama, OpenRouter, LM Studio). */
+  baseURL?: string;
 }
 
 /**
@@ -22,9 +24,13 @@ interface OpenAIOptions {
 export function createOpenAIWithOptions(opts: OpenAIOptions = {}): OpenAIProvider {
   const httpProxy = opts.httpProxy || process.env.OPENAI_PROXY_URL;
 
+  const baseURL = opts.baseURL || process.env.OPENAI_BASE_URL;
   const openaiOptions: OpenAIProviderSettings = {
     apiKey: opts.apiKey || process.env[PROVIDER_ENV_VARS.openai],
   };
+  if (baseURL) {
+    openaiOptions.baseURL = baseURL;
+  }
   if (httpProxy) {
     openaiOptions.fetch = createProxyFetch(httpProxy);
   }
