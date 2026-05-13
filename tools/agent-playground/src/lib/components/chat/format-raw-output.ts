@@ -1,4 +1,4 @@
-import { jsonHighlighter } from "./json-highlighter";
+import { jsonHighlighter } from "./json-highlighter.ts";
 
 /**
  * Render a tool call's `input` / `output` payload as syntax-highlighted JSON.

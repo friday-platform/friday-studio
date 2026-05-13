@@ -84,13 +84,24 @@ describe("tool-call-card copy buttons — export mode", () => {
 });
 
 describe("tool-call-card copy buttons — live mode", () => {
-  it("renders the copy-button wrapper and button when no context is set", () => {
+  // The live UI renders the input/output drawers as closed `<details>`
+  // elements. The contents (JSON payload + copy-button wrapper) are gated
+  // behind `inputOpen` / `outputOpen` state so we skip the Shiki tokenise
+  // pass while the user has not clicked open. SSR therefore emits the
+  // chrome (summary/labels) without the wrapper or payload — that hydrates
+  // and renders on first `<details>` toggle. See `tool-call-card.svelte`
+  // (the "Drawer open state" block) for the rationale.
+  it("emits the drawer chrome but defers the copy-button wrapper and payload when no context is set", () => {
     const { body } = render(ToolCallCardExportParent, {
       props: { call: callWithOutput },
     });
 
-    expect(body).toContain("json-copy-wrapper");
-    expect(body).toContain("json-copy-btn");
-    expect(body).toContain("Forecast");
+    // Drawer chrome (summary labels) renders eagerly...
+    expect(body).toContain("input");
+    expect(body).toContain("output");
+    // ...but the payload and copy affordance wait for the user to open it.
+    expect(body).not.toContain("json-copy-wrapper");
+    expect(body).not.toContain("json-copy-btn");
+    expect(body).not.toContain("Forecast");
   });
 });
