@@ -145,6 +145,36 @@ export class AtlasLLMProviderAdapter implements LLMProvider {
             },
           ];
 
+      // Provider-level strict-JSON-schema enforcement. Without this, the
+      // OpenAI-compatible providers (Groq, OpenAI, OpenRouter) treat tool
+      // schemas as advisory: they accept tool calls that violate `required`
+      // and `additionalProperties: false`. Small/open models exploit that
+      // and return `{}` for tools whose schema actually requires fields,
+      // breaking the FSM's `complete()` contract. Strict mode flips the
+      // server-side flag (`strict: true` on function defs) so generation
+      // is constrained to the schema.
+      //
+      // Model gating: strict mode triggers `response_format: json_schema`
+      // server-side, which not all models support. On Groq: only Llama 4
+      // family supports it (gpt-oss, llama-3.x don't). On OpenAI: only
+      // gpt-4o family. Enabling unconditionally breaks the unsupported
+      // models with HTTP 400. So we feature-detect by model name family.
+      // Anthropic enforces tool schemas natively and ignores this option.
+      const modelStr = String(params.model || "");
+      const supportsStrict =
+        // Groq Llama 4 variants
+        /^groq:.*llama-4-(scout|maverick)/i.test(modelStr) ||
+        // OpenAI gpt-4o + gpt-4.1 + gpt-5 family
+        /^openai:gpt-(4o|4\.1|5)/i.test(modelStr);
+      const strictModeProviderOptions: Record<string, Record<string, unknown>> = {};
+      if (supportsStrict) {
+        if (providerName.startsWith("groq")) {
+          strictModeProviderOptions.groq = { strictJsonSchema: true };
+        } else if (providerName.startsWith("openai")) {
+          strictModeProviderOptions.openai = { strictJsonSchema: true, structuredOutputs: true };
+        }
+      }
+
       const emitChunk = params.onStreamEvent;
       const result = streamText({
         model: modelForCall,
@@ -156,6 +186,7 @@ export class AtlasLLMProviderAdapter implements LLMProvider {
         experimental_repairToolCall: repairToolCall,
         stopWhen: stopConditions,
         abortSignal: params.abortSignal,
+        providerOptions: strictModeProviderOptions,
         ...(this.providerOptions || {}),
         ...(params.providerOptions || {}),
         onError: ({ error }) => {
