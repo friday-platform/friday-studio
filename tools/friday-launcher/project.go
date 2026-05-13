@@ -1,16 +1,87 @@
 package main
 
 import (
+	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"github.com/f1bonacc1/process-compose/src/command"
 	"github.com/f1bonacc1/process-compose/src/health"
 	"github.com/f1bonacc1/process-compose/src/types"
 )
+
+// fridayNATSPortBase is the start of Friday's reserved NATS port range.
+// Mirrors FRIDAY_NATS_PORT_BASE in packages/jetstream/src/spawn.ts —
+// keep in sync. Range is `[Base, Base+Range)` (10 slots).
+const (
+	fridayNATSPortBase  = 14222
+	fridayNATSPortRange = 10
+)
+
+// natsServerPort is picked once at launcher startup by pickNATSPort() and
+// reused for both the nats-server argv and the FRIDAY_NATS_URL env we
+// hand to every supervised child. Defaults to 0 to surface "forgot to
+// initialize" wiring bugs in tests rather than silently spawning on a
+// privileged port.
+var natsServerPort int
+
+// pickNATSPort tries to bind each port in the Friday-reserved range
+// (`fridayNATSPortBase..+Range`) and returns the first one that's free.
+// Falls back to an OS-assigned ephemeral port if all slots are taken
+// (extreme edge case). The chosen port lands in `natsServerPort` and
+// is used by both `natsServerArgs` and the `FRIDAY_NATS_URL` env that
+// the launcher injects into supervised children.
+//
+// TOCTOU: the port may be claimed between the listener close and
+// nats-server's bind. Acceptable — nats-server fails fast with a clear
+// stderr error in that case and process-compose surfaces it.
+func pickNATSPort() int {
+	for offset := 0; offset < fridayNATSPortRange; offset++ {
+		port := fridayNATSPortBase + offset
+		if tryBindTCP(port) {
+			return port
+		}
+	}
+	// All reserved slots taken. Ask the kernel for any free port.
+	return pickEphemeralPort()
+}
+
+func tryBindTCP(port int) bool {
+	addr := "127.0.0.1:" + strconv.Itoa(port)
+	l, err := net.Listen("tcp", addr)
+	if err != nil {
+		return false
+	}
+	_ = l.Close()
+	return true
+}
+
+func pickEphemeralPort() int {
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		// Truly nothing free — shouldn't happen, but keep the launcher
+		// going with the legacy default and let nats-server fail loudly.
+		return 4222
+	}
+	port := l.Addr().(*net.TCPAddr).Port
+	_ = l.Close() // errcheck: best-effort; the port is returned regardless
+	return port
+}
+
+// natsServerURL returns the nats:// URL the broker should be reachable
+// at, based on the port picked by pickNATSPort(). Empty if not yet
+// initialized — caller should check.
+func natsServerURL() string {
+	if natsServerPort == 0 {
+		return ""
+	}
+	return fmt.Sprintf("nats://127.0.0.1:%d", natsServerPort)
+}
 
 // osGetenv is var-bound so tests can stub it.
 var osGetenv = os.Getenv
@@ -68,6 +139,21 @@ func commonServiceEnv() []string {
 	// installs; without this pin the daemon would never find that file
 	// and would crash at boot trying to resolve Anthropic credentials.
 	env = append(env, "FRIDAY_CONFIG_PATH="+friendlyHome())
+	// Pin the NATS URL so every supervised child connects to the broker
+	// the launcher just spawned, regardless of which Friday-reserved
+	// port pickNATSPort() landed on (could be 14222 normally, 14223+
+	// if a sibling install was already running, or an OS-assigned
+	// ephemeral if the whole range was exhausted). Without this pin
+	// the daemon would fall through to its own URL-file lookup, which
+	// is correct in dev but redundant here.
+	if url := natsServerURL(); url != "" {
+		// Respect an operator override only if the user set it in
+		// `.env` — that's an explicit "I have my own broker" signal.
+		// Otherwise the launcher's picked URL wins.
+		if _, ok := seen["FRIDAY_NATS_URL"]; !ok {
+			env = append(env, "FRIDAY_NATS_URL="+url)
+		}
+	}
 	return env
 }
 
@@ -321,10 +407,19 @@ func resolveJetStreamStoreDir() (storeDir, source string) {
 // process. Extracted as a pure function to keep the args layout (flag
 // order, store-dir position) trivially assertable in tests without
 // touching the surrounding spec wiring.
+//
+// `port` is the value picked by `pickNATSPort()` at launcher startup —
+// falls back to the legacy 4222 only if `pickNATSPort()` was never
+// called (typically a test that builds args without the full launcher
+// init path).
 func natsServerArgs(storeDir string) []string {
+	port := natsServerPort
+	if port == 0 {
+		port = 4222
+	}
 	return []string{
 		"--addr", "127.0.0.1",
-		"--port", "4222",
+		"--port", strconv.Itoa(port),
 		"--jetstream",
 		"-sd", storeDir,
 		"--http_port", "8222",
