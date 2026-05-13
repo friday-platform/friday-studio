@@ -59,6 +59,13 @@ export type ChatAttachment = ImageAttachment | ArtifactAttachment;
  * `file.type` for many text formats on Linux/Windows.
  */
 export function classifyAttachment(file: File): "image" | "artifact" | null {
+  // Refuse SVG explicitly: it matches `image/*` but inline-SVG can carry
+  // `<script>` tags. Browsers don't execute them when rendered via `<img>`
+  // (the only place the chat shows attached images today), but defense-
+  // in-depth is cheap here — agents can still emit SVG artifacts on their
+  // own via the create_artifact path, which renders inside the
+  // artifact-card's sandboxed iframe.
+  if (file.type === "image/svg+xml" || /\.svg$/i.test(file.name)) return null;
   if (file.type.startsWith("image/")) return "image";
   const inferred = inferMimeFromFilename(file.name);
   if (inferred?.startsWith("image/")) return "image";

@@ -67,7 +67,7 @@ export function validateFile(file: File): { valid: true } | { valid: false; erro
   return {
     valid: false,
     error:
-      "Unsupported file type. Only CSV, JSON, TXT, MD, YML, PDF, DOCX, PPTX, PNG, JPG, WebP, GIF, and audio files (MP3, MP4, M4A, WAV, WebM, OGG, FLAC) are allowed.",
+      "Unsupported file type. Supported: text/markup (txt, md, csv, tsv, json, yml, html, xml, css, log, conf, ini, toml), source code (ts, tsx, js, jsx, mjs, cjs, py, go, rs, sh, bash, sql), documents (pdf, docx, pptx), images (png, jpg, jpeg, gif, webp), audio (mp3, mp4, m4a, wav, webm, ogg, flac).",
   };
 }
 
