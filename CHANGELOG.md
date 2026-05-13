@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Chat input clears when switching chats in agent-playground.** `ChatInput` owned its own `value` / `images` `$state` that only cleared on submit, and `UserChat` is reused across chat switches (same route, different `chatId` prop) — so unsent drafts and attached images leaked between chats. Wrapped `<ChatInput>` in `{#key chatId}` so Svelte remounts it on every switch, resetting all of its local state. (#287, fixes #222)
+- **Dropped image previews land above the chat input instead of at the top of the chat.** Dragging an image onto the chat surface wrote files into a separate `pendingImages` bucket in `user-chat.svelte` that rendered as a `.pending-images-bar` at the top of the component, while clicking the attach button used `chat-input.svelte`'s local `images` `$state` and rendered inside the input wrapper — same data, two state buckets, two render locations. Promoted `images` to a `$bindable()` prop on `ChatInput`, bound it from `UserChat` as `inputImages`, and routed the chat-surface drop handler at the same bucket so the file picker and the drop target share one preview strip. Also clears `inputImages` in the `chatId`-change `$effect` alongside the other per-chat resets, fixing a latent leak where dragged-but-unsent images followed the user into the next chat. (#294)
 
 ## [0.1.7] - 2026-05-12
 
