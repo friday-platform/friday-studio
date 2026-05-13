@@ -1,5 +1,4 @@
 import { join } from "node:path";
-import process from "node:process";
 import type { AtlasUIMessageChunk } from "@atlas/agent-sdk";
 import { getFridayHome } from "@atlas/utils/paths.server";
 import { type ChatInstance, Message } from "chat";
@@ -434,11 +433,8 @@ describe("AtlasWebAdapter.handleWebhook", () => {
     const chat = await initAdapterWithMock(adapter);
 
     const chatId = "chat-with-files";
-    const home = process.env.FRIDAY_HOME ?? `${process.env.HOME}/.atlas`;
-    const paths = [
-      `${home}/scratch/uploads/${chatId}/sales.csv`,
-      `${home}/scratch/uploads/${chatId}/notes.txt`,
-    ];
+    const uploadsDir = join(getFridayHome(), "scratch", "uploads", chatId);
+    const paths = [`${uploadsDir}/sales.csv`, `${uploadsDir}/notes.txt`];
 
     const multiPartMessage = {
       id: "msg-with-files",
