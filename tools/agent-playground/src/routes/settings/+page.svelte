@@ -23,7 +23,7 @@
   import { Button, PageLayout, toast } from "@atlas/ui";
   import ModelChain from "$lib/components/settings/model-chain.svelte";
   import ModelPicker from "$lib/components/settings/model-picker.svelte";
-  import { externalTunnelUrl } from "$lib/daemon-url";
+  import { tunnelUrl as tunnelProxyUrl } from "$lib/daemon-url";
   import { useQueryClient } from "@tanstack/svelte-query";
   import { workspaceQueries } from "$lib/queries";
   import {
@@ -172,7 +172,7 @@
     tunnelLoading = true;
     tunnelError = null;
     try {
-      const res = await fetch(`${externalTunnelUrl()}/status`);
+      const res = await fetch(`${tunnelProxyUrl()}/status`);
       if (!res.ok) {
         tunnelError = `Tunnel unreachable (HTTP ${res.status})`;
         return;

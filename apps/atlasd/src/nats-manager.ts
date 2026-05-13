@@ -43,6 +43,7 @@ import type { NatsConnection } from "nats";
 export class NatsManager {
   private spawned: SpawnedNats | null = null;
   private nc: NatsConnection | null = null;
+  private resolvedUrl: string | null = null;
   /**
    * Set after a successful start. The daemon is the canonical writer
    * of `<home>/nats/url` — `stop()` deletes the file regardless of
@@ -122,6 +123,15 @@ export class NatsManager {
     this.ownsUrlFile = true;
     logger.info("Wrote broker URL file", { url, urlFile: brokerUrlFilePath(home) });
 
+    // Make the resolved URL available to in-process consumers
+    // (process-agent-executor, the agent-register route) so they pass
+    // it explicitly to child spawns instead of reading from
+    // `process.env.FRIDAY_NATS_URL`. pickPort() chooses dynamically in
+    // the 14222 range, so the historical hardcoded `localhost:4222`
+    // fallback at those call sites was wrong on every dev run where
+    // `.env` didn't carry FRIDAY_NATS_URL.
+    this.resolvedUrl = url;
+
     if (process.env.FRIDAY_NATS_MONITOR === "1") {
       logger.info(`NATS monitoring enabled at http://127.0.0.1:${DEFAULT_NATS_MONITOR_PORT}`);
     }
@@ -133,6 +143,12 @@ export class NatsManager {
   get connection(): NatsConnection {
     if (!this.nc) throw new Error("NatsManager not started — call start() first");
     return this.nc;
+  }
+
+  /** Resolved broker URL, valid after start() completes. */
+  get url(): string {
+    if (!this.resolvedUrl) throw new Error("NatsManager not started — call start() first");
+    return this.resolvedUrl;
   }
 
   /**
@@ -180,6 +196,8 @@ export class NatsManager {
       await deleteBrokerUrlFile(getFridayHome());
       this.ownsUrlFile = false;
     }
+
+    this.resolvedUrl = null;
   }
 
   /**

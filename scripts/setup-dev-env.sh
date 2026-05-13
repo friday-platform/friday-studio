@@ -27,6 +27,20 @@
 #   7. Writes daemon envfile (FRIDAY_UV_PATH, UV_*, FRIDAY_AGENT_SDK_VERSION,
 #      FRIDAY_JETSTREAM_STORE_DIR).
 #   8. Pre-warms the uv cache (Python 3.12 + pinned SDK).
+#   9. Sets up local TLS in two layers:
+#       - Browser cert: mkcert-signed for the playground origin only, so
+#         vite can negotiate HTTP/2 and the per-origin 6-socket cap that
+#         deadlocks the playground (3 SSE feeds × multiple tabs) is lifted.
+#         This is the only chain that requires `mkcert -install` and
+#         therefore the only one that touches the system trust store.
+#       - S2S cert: openssl-signed by a private CA for atlasd and the
+#         webhook-tunnel listener. Trust flows only via DENO_CERT /
+#         NODE_EXTRA_CA_CERTS — no system trust store install. Browser
+#         traffic to those services goes through the playground's
+#         /api/{daemon,tunnel}/* proxies so the browser never sees these
+#         certs directly.
+#      Toggles: SKIP_TLS=1 skips everything; SKIP_MKCERT=1 generates the
+#      s2s chain only (use in headless / CI envs that don't open a browser).
 #
 # Each tool's existing install is **preferred** if it satisfies the
 # minimum version — we never replace a working toolchain. Auto-install
@@ -468,6 +482,26 @@ UV_CACHE_DIR="$PRIMARY_HOME/uv/cache" \
 "$UV_PATH" run --python 3.12 \
     --with "friday-agent-sdk==$PINNED_SDK_VERSION" \
     python -c "import friday_agent_sdk; print(f'  ✓ friday_agent_sdk imported from {friday_agent_sdk.__file__}')"
+
+# ── 9. Local TLS ────────────────────────────────────────────────────────────
+# Browser cert (mkcert-signed) + s2s cert (private CA, no system trust).
+# Without the browser cert the playground falls back to HTTP/1.1 and 3 SSE
+# feeds × multiple tabs deadlock Chrome's 6-socket-per-origin cap. Without
+# the s2s cert atlasd + tunnel fall back to plain HTTP (no harm beyond the
+# transport being cleartext on localhost). Honors SKIP_TLS=1 (skip both)
+# and SKIP_MKCERT=1 (skip browser only — for headless / CI envs).
+if [[ "${SKIP_TLS:-0}" == "1" ]]; then
+    echo "→ Skipping TLS setup (SKIP_TLS=1)"
+    SKIPPED_TOOLS+=("TLS — playground HTTP/1.1 will deadlock under multiple tabs. Re-run \`bash scripts/setup-tls.sh\`.")
+else
+    if bash "$SCRIPT_DIR/setup-tls.sh"; then
+        :
+    else
+        echo "  ⚠ TLS setup failed — playground will run on HTTP/1.1 and may deadlock with multiple tabs." >&2
+        echo "    Re-run after fixing: bash scripts/setup-tls.sh" >&2
+        SKIPPED_TOOLS+=("TLS — re-run \`bash scripts/setup-tls.sh\` after resolving the install error.")
+    fi
+fi
 
 echo ""
 echo "✓ Dev environment ready."

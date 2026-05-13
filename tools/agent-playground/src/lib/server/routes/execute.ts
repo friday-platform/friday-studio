@@ -1,5 +1,4 @@
 import { join } from "node:path";
-import process from "node:process";
 import { bundledAgents } from "@atlas/bundled-agents";
 import { UserAdapter } from "@atlas/core/agent-loader";
 import { enterTraceScope, type TraceEntry } from "@atlas/llm";
@@ -11,12 +10,12 @@ import { parseSSEEvents } from "@atlas/utils/sse";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { z } from "zod";
-// Match the resolution used by static-server.ts and routes/discover.ts —
-// the launcher exports FRIDAYD_URL in .env at the configured FRIDAY_PORT_FRIDAY
-// (which is 18080 in FAST/LINK_DEV mode, not 8080). Without this read, the
-// playground binary running on a non-default port silently posts user-agent
-// runs to :8080 and reports "Connection refused".
-const DAEMON_BASE_URL = process.env.FRIDAYD_URL ?? "http://localhost:8080";
+// Daemon URL is injected at vite-config time (FRIDAYD_URL or fallback,
+// scheme upgraded to https:// when TLS is detected). We can't read
+// `process.env` here directly: SSR routes go through vite's transform
+// which has `define: { "process.env": "{}" }`, collapsing the read to
+// undefined. See ../../daemon-url.ts and tools/agent-playground/vite.config.ts.
+import { DAEMON_BASE_URL } from "../../daemon-url.ts";
 import { PlaygroundContextAdapter } from "../lib/context.ts";
 import { createSSEStream } from "../lib/sse.ts";
 

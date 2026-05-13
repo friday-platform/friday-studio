@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
 import { startNatsTestServer, type TestNatsServer } from "@atlas/core/test-utils/nats-test-server";
+import { writeBrokerUrlFile } from "jetstream";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { NatsManager } from "./nats-manager.ts";
 
@@ -144,6 +145,29 @@ describe("NatsManager — URL file is the rendezvous for out-of-env consumers", 
     const urlFilePath = join(home as string, "nats", "url");
     const written = (await readFile(urlFilePath, "utf-8")).trim();
     expect(written).toBe(server.url);
+  }, 15_000);
+
+  it("exposes resolved URL via .url getter so callers can plumb it to child spawns", async () => {
+    // process-agent-executor + the agent-register route used to read
+    // process.env.FRIDAY_NATS_URL and fall back to a hardcoded
+    // localhost:4222 — wrong on every dev run because pickPort()
+    // allocates dynamically in the 14222 range. They now read the URL
+    // directly off the manager (via AtlasDaemon.getNatsUrl()) and pass
+    // it into the child's env explicitly. This test exercises the
+    // URL-file-reuse path on purpose: external-broker would be a
+    // tautology, and the spawn path would require running nats-server.
+    delete process.env.FRIDAY_NATS_URL;
+    server = await startNatsTestServer();
+    await writeBrokerUrlFile(home as string, server.url);
+
+    mgr = new NatsManager();
+    expect(() => mgr?.url).toThrow(/not started/);
+
+    await mgr.start();
+    expect(mgr.url).toBe(server.url);
+
+    await mgr.stop();
+    expect(() => mgr?.url).toThrow(/not started/);
   }, 15_000);
 
   it("deletes <home>/nats/url on stop()", async () => {

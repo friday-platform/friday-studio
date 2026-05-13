@@ -383,6 +383,42 @@ func onReady() {
 		"url", natsServerURL(),
 	)
 
+	// First-run s2s cert generation. Synchronous, idempotent. On a
+	// fresh install (or after manual removal of <friendly_home>/tls/)
+	// the launcher mints a private CA + leaf for service-to-service
+	// TLS, valid for 5 years. Subsequent boots find the files valid
+	// and return immediately. Must run BEFORE supervisedProcesses() so
+	// the cert-path .env writeback below points at real files when the
+	// supervised processes wake up to load .env. Generation failure is
+	// logged but non-fatal — services fall back to plain HTTP on
+	// loopback if the s2s pair isn't present.
+	if err := ensureS2sCerts(); err != nil {
+		log.Warn("s2s: ensureS2sCerts failed (services will fall back to plain HTTP)", "error", err)
+	}
+
+	// Persist resolved cert paths to ~/.friday/local/.env (add-if-missing).
+	// commonServiceEnv() loads .env and passes the result to every spawned
+	// service — going through .env (instead of injecting at spawn time)
+	// keeps the launcher convenient-but-optional. Anyone running `friday
+	// daemon start` manually reads the same .env and gets the same cert
+	// wiring, no launcher dependency at runtime. Operator overrides
+	// already in .env are preserved verbatim.
+	if added, err := ensureCertEnvFile(); err != nil {
+		log.Warn("cert env: writeback to .env failed", "error", err)
+	} else if added > 0 {
+		log.Info("cert env: wrote launcher-managed paths to .env", "keys_added", added)
+	}
+
+	// Boot-time browser-cert refresh. Bounded at bootRefreshTimeout
+	// (5s) so a stuck CDN can't delay launcher startup. Run BEFORE
+	// supervisedProcesses() so the playground spec's first read of
+	// browser.{crt,key} (via tls-paths.ts at process startup) sees
+	// the freshly-rotated pair. If it fails or runs out of budget,
+	// the playground starts on whatever's on disk — expired or
+	// missing certs cause tls-paths.ts to return null and the
+	// playground falls back to plain http on its loopback port.
+	maybeBootRefreshTLS()
+
 	// Build project + supervisor.
 	specs := supervisedProcesses(binDir)
 	project := newProjectFromSpecs(specs)
@@ -406,6 +442,15 @@ func onReady() {
 	pollCtx, pollCancel := context.WithCancel(context.Background())
 	healthPollCancel = pollCancel
 	go runHealthPoll(pollCtx, sup, healthCache)
+
+	// Daily browser-cert renewer. Wakes once per tlsRenewInterval
+	// (default 24h, override via FRIDAY_TLS_RENEW_INTERVAL); when the
+	// on-disk cert is past 2/3 of its issued lifetime, expired, or
+	// missing, fetches the manifest, sha256-verifies the new pair,
+	// atomic-installs them, and triggers a single-process restart of
+	// the playground so it picks up the new files. Shares pollCtx so
+	// performShutdown cancels both goroutines in one step.
+	startTLSRenewer(pollCtx, sup)
 
 	// Tray controller (goroutine B + click handlers). healthCache
 	// drives the bucket logic per Decision #4 — the existing

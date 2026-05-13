@@ -152,6 +152,13 @@ export interface AtlasDaemonOptions {
   idleTimeoutMs?: number;
   sseHeartbeatIntervalMs?: number;
   sseConnectionTimeoutMs?: number;
+  // PEM-encoded cert + key. When both are set, `Deno.serve` listens with
+  // TLS and ALPN-negotiates HTTP/2, lifting the browser's per-origin
+  // 6-socket HTTP/1.1 cap that strands the playground when SSE feeds
+  // saturate the pool. Both must be set or neither — the CLI loads them
+  // from FRIDAY_TLS_CERT / FRIDAY_TLS_KEY paths.
+  tlsCert?: string;
+  tlsKey?: string;
 }
 
 const INTERNAL_SIGNAL_BYPASS_TOKEN_ENV = "FRIDAY_INTERNAL_SIGNAL_BYPASS_TOKEN";
@@ -607,7 +614,11 @@ export class AtlasDaemon {
     // Start capability handlers (wildcard subscribers for agent back-channel)
     this.capabilityRegistry = new CapabilityHandlerRegistry();
     this.capabilityRegistry.start(nc);
-    this.processAgentExecutor = new ProcessAgentExecutor(nc, this.capabilityRegistry);
+    this.processAgentExecutor = new ProcessAgentExecutor(
+      nc,
+      this.natsManager.url,
+      this.capabilityRegistry,
+    );
 
     // Create WorkspaceManager (initialize later once registrars and watcher are ready).
     // Registry storage is JetStream-KV-backed; the per-workspace records
@@ -1319,6 +1330,14 @@ export class AtlasDaemon {
     return this.natsManager.connection;
   }
 
+  /** Get the resolved NATS broker URL (available after initialize()). */
+  public getNatsUrl(): string {
+    if (!this.natsManager) {
+      throw new Error("NATS not initialized — call initialize() first");
+    }
+    return this.natsManager.url;
+  }
+
   /** Get the ProcessAgentExecutor (available after NATS initializes). */
   public getProcessAgentExecutor(): ProcessAgentExecutor | null {
     return this.processAgentExecutor;
@@ -1851,7 +1870,11 @@ export class AtlasDaemon {
           workspacePath, // Pass workspace path for daemon mode
           platformModels: this.getPlatformModels(),
           agentExecutor: this.processAgentExecutor ?? undefined,
-          daemonUrl: `http://localhost:${this.options.port}`, // Pass daemon URL for MCP tool fetching
+          // Daemon self-loopback URL for MCP tool fetching. Scheme matches
+          // whatever the daemon is bound on — without this, the workspace
+          // runtime sends a cleartext HTTP request to a TLS listener and
+          // gets "invalid HTTP version parsed" back from reqwest/hyper.
+          daemonUrl: `${this.options.tlsCert && this.options.tlsKey ? "https" : "http"}://localhost:${this.options.port}`,
           broadcastNotifier: createFSMBroadcastNotifier({
             workspaceId: workspace.id,
             getInstance: (id) => this.getOrCreateChatSdkInstance(id),
@@ -2612,10 +2635,16 @@ export class AtlasDaemon {
 
     const port = this.options.port ?? 8080;
     const hostname = this.options.hostname || "localhost";
+    const tls =
+      this.options.tlsCert && this.options.tlsKey
+        ? { cert: this.options.tlsCert, key: this.options.tlsKey }
+        : null;
+    const scheme = tls ? "https" : "http";
 
     logger.info("Starting Atlas daemon", {
       hostname,
       port,
+      scheme,
       maxConcurrentWorkspaces: this.options.maxConcurrentWorkspaces,
       idleTimeoutMs: this.options.idleTimeoutMs,
     });
@@ -2625,9 +2654,10 @@ export class AtlasDaemon {
         port,
         hostname,
         signal: this.serverAbortController.signal,
+        ...(tls ?? {}),
         onListen: ({ hostname, port }) => {
           this.#port = port;
-          logger.info("👹 Atlas daemon running", { hostname, port });
+          logger.info("👹 Atlas daemon running", { hostname, port, scheme });
         },
       },
       this.app.fetch,
@@ -2648,10 +2678,16 @@ export class AtlasDaemon {
 
     const port = this.options.port ?? 8080;
     const hostname = this.options.hostname || "localhost";
+    const tls =
+      this.options.tlsCert && this.options.tlsKey
+        ? { cert: this.options.tlsCert, key: this.options.tlsKey }
+        : null;
+    const scheme = tls ? "https" : "http";
 
     logger.info("Starting Atlas daemon", {
       hostname,
       port,
+      scheme,
       maxConcurrentWorkspaces: this.options.maxConcurrentWorkspaces,
       idleTimeoutMs: this.options.idleTimeoutMs,
     });
@@ -2666,9 +2702,10 @@ export class AtlasDaemon {
         port,
         hostname,
         signal: this.serverAbortController.signal,
+        ...(tls ?? {}),
         onListen: ({ hostname, port }) => {
           this.#port = port; // Store the actual port
-          logger.info("Atlas daemon running", { hostname, port });
+          logger.info("Atlas daemon running", { hostname, port, scheme });
           serverReady();
         },
       },

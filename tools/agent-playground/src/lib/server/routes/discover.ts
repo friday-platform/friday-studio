@@ -4,11 +4,20 @@ import { Hono } from "hono";
 import JSZip from "jszip";
 import { parse as parseYaml } from "yaml";
 import { z } from "zod";
+// Daemon URL is injected at vite-config time (FRIDAYD_URL or fallback,
+// scheme upgraded to https:// when TLS is detected). We can't read
+// `process.env.FRIDAYD_URL` here directly: SSR routes go through vite's
+// transform which has `define: { "process.env": "{}" }`, collapsing the
+// read to undefined. See ../../daemon-url.ts and vite.config.ts.
+import { DAEMON_BASE_URL as DAEMON_URL } from "../../daemon-url.ts";
 
+// REPO/PATH/REF/GITHUB_TOKEN are read for completeness but are subject to
+// the same `process.env` wipe at SSR transform time — the env-override
+// path was already non-functional pre-TLS. Fixing those is out of scope
+// here; the fallbacks are what runs.
 const REPO = process.env.DISCOVER_REPO ?? "friday-platform/friday-studio-examples";
 const PATH = process.env.DISCOVER_PATH ?? "";
 const REF = process.env.DISCOVER_REF ?? "main";
-const DAEMON_URL = process.env.FRIDAYD_URL ?? "http://localhost:8080";
 
 const GH_TOKEN = process.env.GITHUB_TOKEN ?? "";
 

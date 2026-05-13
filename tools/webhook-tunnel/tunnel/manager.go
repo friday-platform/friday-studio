@@ -30,6 +30,7 @@ type Options struct {
 	Port           int
 	TunnelToken    string // empty = quick tunnel
 	CloudflaredBin string // resolved binary path (caller does discovery)
+	TLS            bool   // origin speaks https — cloudflared connects via https://localhost:<port>
 	Logger         *logger.Logger
 }
 
@@ -201,7 +202,11 @@ func (m *Manager) connect(parentCtx context.Context) error {
 }
 
 func (m *Manager) buildArgs() []string {
-	url := fmt.Sprintf("http://localhost:%d", m.opts.Port)
+	scheme := "http"
+	if m.opts.TLS {
+		scheme = "https"
+	}
+	url := fmt.Sprintf("%s://localhost:%d", scheme, m.opts.Port)
 	if m.opts.TunnelToken != "" {
 		// Named tunnel via token. cloudflared accepts the token via
 		// `tunnel run --token <t>` (the npm wrapper uses the same

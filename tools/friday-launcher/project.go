@@ -154,6 +154,13 @@ func commonServiceEnv() []string {
 			env = append(env, "FRIDAY_NATS_URL="+url)
 		}
 	}
+	// Cert paths (FRIDAY_TLS_*, FRIDAY_BROWSER_TLS_*, DENO_CERT,
+	// NODE_EXTRA_CA_CERTS) are NOT injected here. The launcher writes
+	// them to ~/.friday/local/.env once (via ensureCertEnvFile) and the
+	// loadDotEnv() above already carried them into this baseline. Going
+	// through .env keeps the launcher convenient-but-optional: anyone
+	// running `friday daemon start` directly, without the launcher,
+	// reads the same .env and gets the same cert wiring.
 	return env
 }
 
@@ -614,6 +621,10 @@ func supervisedProcesses(binDir string) []processSpec {
 			// reach static-server.ts, which injects them into the
 			// served HTML for the browser's window.__FRIDAY_CONFIG__.
 			name: "playground", binary: filepath.Join(binDir, "playground"),
+			// commonServiceEnv() now carries FRIDAY_BROWSER_TLS_CERT/_KEY
+			// (and the s2s + DENO_CERT / NODE_EXTRA_CA_CERTS pins) for
+			// every service — no playground-specific env wiring needed
+			// here.
 			env:        commonServiceEnv(),
 			healthPort: "5200", healthPath: "/",
 		},
@@ -670,16 +681,29 @@ func portOverride(name string) string {
 	return osGetenv(envName)
 }
 
-// playgroundURL returns the loopback URL the tray opens in the user's
-// browser when the platform reaches "all healthy". Honors the
+// playgroundURL returns the URL the tray opens in the user's browser
+// when the platform reaches "all healthy". Honors the
 // FRIDAY_PORT_playground override so installs that move playground off
 // 5200 (e.g. to avoid collision with another local Friday instance) get
 // the right URL — without this the tray click silently lands on the
 // wrong port and the user sees a "can't connect" page.
+//
+// Scheme/host: when the browser-trusted cert pair downloaded by the
+// installer (apps/studio-installer/src-tauri/src/commands/download_tls.rs)
+// is present at <friendlyHome()>/tls/browser.crt, the playground binary
+// is listening on TLS for `local.hellofriday.ai` — a public DNS name
+// that resolves to 127.0.0.1, with a Let's Encrypt cert in the SAN. We
+// open the https URL so the browser lands on a green-lock origin that
+// matches the cert. Without the cert, fall back to http://localhost so
+// dev/source installs and any install that failed the cert download
+// still work.
 func playgroundURL() string {
 	port := portOverride("playground")
 	if port == "" {
 		port = "5200"
+	}
+	if hasValidBrowserCert() {
+		return "https://local.hellofriday.ai:" + port
 	}
 	return "http://localhost:" + port
 }
