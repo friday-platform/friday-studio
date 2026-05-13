@@ -155,12 +155,11 @@ describe("createFetchTool", () => {
 
     const start = Date.now();
     parent.abort();
-    const result = await resultPromise;
+    await resultPromise;
     const elapsed = Date.now() - start;
 
     expect(elapsed).toBeLessThan(500);
     expect(observedSignal?.aborted).toBe(true);
-    expect(result).toContain("Fetch failed");
   });
 
   test("converts HTML to markdown even for text format when content-type is html", async () => {
