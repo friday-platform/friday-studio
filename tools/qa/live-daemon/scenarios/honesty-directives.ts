@@ -92,33 +92,44 @@ const FILE_CHECKS: FileCheck[] = [
   },
   {
     // FSM `case "agent"` → llm runner: both directives appended.
+    // Required substrings pin the SPLICE site (`${IDENT}`
+    // template-literal form) rather than the bare identifier — a
+    // bare-identifier check would pass on an orphan import alone,
+    // missing the case where a refactor drops the assembly line
+    // but leaves the import behind. The `honesty-directives` path
+    // string anchors the import file path.
     id: "from-llm-injects-both-directives",
     file: join(ROOT, "packages/core/src/agent-conversion/from-llm.ts"),
-    required: ["AGENT_HONESTY_DIRECTIVE", "DESTRUCTIVE_TOOL_GUARD", "honesty-directives"],
+    required: ["${AGENT_HONESTY_DIRECTIVE}", "${DESTRUCTIVE_TOOL_GUARD}", "honesty-directives"],
   },
   {
     // FSM `case "llm"` inline action: both directives appended
     // alongside the existing complete/failStep instructions.
+    // Same splice-site pin as from-llm above.
     id: "fsm-engine-injects-both-directives",
     file: join(ROOT, "packages/fsm-engine/fsm-engine.ts"),
-    required: ["AGENT_HONESTY_DIRECTIVE", "DESTRUCTIVE_TOOL_GUARD", "honesty-directives"],
+    required: ["${AGENT_HONESTY_DIRECTIVE}", "${DESTRUCTIVE_TOOL_GUARD}", "honesty-directives"],
   },
   {
-    // Delegate sub-agent system prompt: both directives inlined into
-    // the existing system-prompt builder alongside scope + MCP-error.
+    // Delegate sub-agent system prompt: both directives inlined
+    // via the `DELEGATE_HONESTY_BLOCK` constant which composes them
+    // as `${AGENT_HONESTY_DIRECTIVE}\n\n${DESTRUCTIVE_TOOL_GUARD}`.
+    // Pin the splice site shape AND the export name so a removal
+    // of either the constant or its splice into the child prompt
+    // (`delegate/index.ts`) shows up.
     id: "delegate-system-prompt-injects-both-directives",
     file: join(ROOT, "packages/core/src/delegate/system-prompt.ts"),
-    required: ["AGENT_HONESTY_DIRECTIVE", "DESTRUCTIVE_TOOL_GUARD"],
+    required: ["${AGENT_HONESTY_DIRECTIVE}", "${DESTRUCTIVE_TOOL_GUARD}", "DELEGATE_HONESTY_BLOCK"],
   },
   {
     // Session supervisor: Layer A only (no tools, no destructive
     // ops). The directive flows in via `${AGENT_HONESTY_DIRECTIVE}`
-    // template-literal expansion, so the source text checks for the
-    // import + the constant reference rather than the sentinel
-    // string itself (which only lives in honesty-directives.ts).
+    // template-literal expansion in the SUPERVISOR_SYSTEM_PROMPT
+    // constant. Pin the splice form so an orphan import doesn't
+    // satisfy the eval.
     id: "session-supervisor-injects-honesty-only",
     file: join(ROOT, "packages/system/agents/session-supervisor/prompts.ts"),
-    required: ["AGENT_HONESTY_DIRECTIVE", "honesty-directives"],
+    required: ["${AGENT_HONESTY_DIRECTIVE}", "honesty-directives"],
     // Supervisor has no tools — guarding it would be ceremony.
     forbidden: ["DESTRUCTIVE_TOOL_GUARD", GUARD_SENTINEL],
   },
