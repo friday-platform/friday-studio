@@ -345,6 +345,22 @@ const STATIC_NEGATIVE_FIXTURES: { id: string; body: string; expectMin: number }[
     body: "```bash\ncurl -s http://localhost:18080/health\n```\n",
     expectMin: 1,
   },
+  // Installed Friday Studio: TLS-bound daemon on :18080 with private-CA
+  // s2s cert. A bare `https://localhost:18080` curl without --cacert
+  // fails on installed Studio with "self signed certificate in
+  // certificate chain". Detector must flag the hardcoded HTTPS URL.
+  {
+    id: "installed-studio-https-bare-url",
+    body: "```bash\ncurl -s https://localhost:18080/api/workspaces | jq\n```\n",
+    expectMin: 1,
+  },
+  // Installer-port + 127.0.0.1 combo — same misroute risk on installed
+  // Studio if the LLM happens to encode the loopback IP.
+  {
+    id: "installed-studio-loopback-url",
+    body: "```bash\ncurl -s http://127.0.0.1:18080/api/sessions\n```\n",
+    expectMin: 1,
+  },
 ];
 
 /**
@@ -391,6 +407,12 @@ const STATIC_ACCEPT_FIXTURES: { id: string; body: string }[] = [
   {
     id: "frontmatter-description",
     body: '---\ndescription: "API on localhost:8080 (or https://localhost:8080 when TLS)"\n---\n',
+  },
+  // Installed Friday Studio context — prose explaining the :18080 binding
+  // is legitimate documentation, not a hardcoded curl. Must not trip.
+  {
+    id: "prose-installed-studio-port",
+    body: "Installed Friday Studio binds the daemon on `https://localhost:18080`. Dev runs `:8080`.\n",
   },
 ];
 
@@ -479,6 +501,24 @@ async function runBehavioralChecks(): Promise<EvalResult[]> {
       id: "writing-friday-python-agents/SKILL.md",
       path: "packages/system/skills/writing-friday-python-agents/SKILL.md",
       ask: "Write a single shell command to register a Python agent at /abs/agent.py.",
+    },
+    // Installed-Studio priming: the user mentions :18080 explicitly. The
+    // LLM must NOT hardcode the port in its output — the rule is "always
+    // use $FRIDAYD_URL". This catches a subtle failure mode where the LLM
+    // sees the user-supplied port and bypasses the skill's teaching.
+    {
+      id: "friday-cli/SKILL.md#installed-studio-priming",
+      path: "packages/system/skills/friday-cli/SKILL.md",
+      ask:
+        "I'm running installed Friday Studio (the daemon is on port 18080). " +
+        "Give me a shell command to hit the /health endpoint.",
+    },
+    {
+      id: "workspace-api/SKILL.md#installed-studio-priming",
+      path: "packages/system/skills/workspace-api/SKILL.md",
+      ask:
+        "I'm running installed Friday Studio with TLS on (the daemon is on " +
+        "https://localhost:18080). Write a shell command to list workspaces.",
     },
   ];
   for (const { id, path, ask } of subjects) {

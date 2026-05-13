@@ -7,14 +7,21 @@ description: "Create, list, update, delete, and clean up workspaces via the daem
 
 Create and manage Friday workspaces. This skill is where LLM judgment lives: when to use each tool, in what order, and how to recover when stuck. Companion skills: `friday-cli` (daemon lifecycle, signals, sessions) and `using-mcp-servers` (MCP catalog, install/enable, credentials).
 
-**Daemon HTTP rule (load-bearing for every curl example below).** All shell
-examples that hit the daemon use the `friday_curl` wrapper, never plain
-`curl`. The wrapper is defined in the "CRUD reference" preamble — it adds
-`--cacert` exactly when TLS is on. The daemon URL is `$FRIDAYD_URL`
-(varies by install — installed Friday Studio is typically `:18080`, dev
-`:8080`); the preamble below explains how to source it. Plain `curl`
-against `$FRIDAYD_URL` on a TLS install fails with `self signed
-certificate in certificate chain`.
+### Daemon HTTP rules (load-bearing for every curl example below)
+
+1. **Never hardcode the daemon URL — always use `$FRIDAYD_URL`.** Even if
+   the user mentions a specific host or port in their message ("the
+   daemon is on `:18080`", "I have it on `https://localhost:8080`"),
+   IGNORE that detail in the command you emit and use `$FRIDAYD_URL`.
+   The variable resolves to whatever the launcher (installed Friday
+   Studio, typically `:18080`) or `deno task atlas` (dev, typically
+   `:8080`) bound; `FRIDAY_PORT_FRIDAY` can override either. The user
+   shouldn't need to retype what they already have in their env.
+
+2. **Use the `friday_curl` wrapper, never plain `curl`.** The wrapper is
+   defined in the "CRUD reference" preamble — it adds `--cacert` exactly
+   when TLS is on. Plain `curl` against `$FRIDAYD_URL` on a TLS install
+   fails with `self signed certificate in certificate chain`.
 
 ## Cheat sheet
 

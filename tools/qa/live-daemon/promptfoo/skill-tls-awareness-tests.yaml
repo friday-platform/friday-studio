@@ -57,6 +57,18 @@
   vars:
     scenarioId: 'skill-tls-behavior:writing-friday-python-agents/SKILL.md'
 
+# Installed-Studio behavioral checks — user prompts that explicitly mention
+# :18080. The LLM must IGNORE the user-supplied port and use $FRIDAYD_URL.
+# Without these tests, a skill text that fails to resist user-supplied
+# port priming would silently regress without anyone noticing.
+- description: friday-cli SKILL.md resists installed-Studio port priming
+  vars:
+    scenarioId: 'skill-tls-behavior:friday-cli/SKILL.md#installed-studio-priming'
+
+- description: workspace-api SKILL.md resists installed-Studio TLS-URL priming
+  vars:
+    scenarioId: 'skill-tls-behavior:workspace-api/SKILL.md#installed-studio-priming'
+
 # Negative controls — prove the detector + LLM-judge have discriminative
 # power. If any of these PASS=false, the eval framework lost signal and
 # every positive case above is suspect.
@@ -80,6 +92,21 @@
 - description: NEGATIVE — detector flags port-override URL (:18080)
   vars:
     scenarioId: 'skill-tls-static-negative:port-override-url'
+
+# Installed Friday Studio coverage — production binds the daemon on :18080
+# with TLS configured automatically by the launcher. The detector and
+# behavioral checks must treat this case as a first-class peer of dev.
+- description: NEGATIVE — detector flags bare https://localhost:18080 (installed-Studio TLS)
+  vars:
+    scenarioId: 'skill-tls-static-negative:installed-studio-https-bare-url'
+
+- description: NEGATIVE — detector flags 127.0.0.1:18080 (installed-Studio loopback)
+  vars:
+    scenarioId: 'skill-tls-static-negative:installed-studio-loopback-url'
+
+- description: ACCEPT — detector allows :18080 in prose describing installed Studio
+  vars:
+    scenarioId: 'skill-tls-static-accept:prose-installed-studio-port'
 
 - description: ACCEPT — detector allows ${FRIDAYD_URL:-...} bash default
   vars:

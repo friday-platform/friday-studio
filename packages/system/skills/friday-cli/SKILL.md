@@ -40,11 +40,19 @@ set +a
 friday_curl() { curl ${FRIDAY_TLS_CA:+--cacert "$FRIDAY_TLS_CA"} "$@"; }
 ```
 
-**Rule: every daemon HTTP call below uses `friday_curl`, not `curl`.** The
-wrapper is what makes the example work on both plain-HTTP installs (where
-`$FRIDAY_TLS_CA` is empty and `--cacert` is omitted) and TLS installs
-(where `--cacert` is required — plain `curl` against `$FRIDAYD_URL` fails
-with `self signed certificate in certificate chain`).
+### Two load-bearing rules
+
+1. **Never hardcode the daemon URL — always use `$FRIDAYD_URL`.** Even
+   if the user mentions a specific host or port ("the daemon is on
+   `:18080`", "I have it on `https://localhost:8080`"), IGNORE that
+   detail and use `$FRIDAYD_URL` in the command. The variable already
+   resolves to the right value for the user's install.
+
+2. **Use the `friday_curl` wrapper, never plain `curl`.** The wrapper
+   makes examples work on both plain-HTTP installs (where
+   `$FRIDAY_TLS_CA` is empty and `--cacert` is omitted) and TLS installs
+   (where `--cacert` is required — plain `curl` against `$FRIDAYD_URL`
+   fails with `self signed certificate in certificate chain`).
 
 **Troubleshooting:** if `friday_curl` still fails with `SSL certificate
 problem: self signed certificate in certificate chain`, your
