@@ -670,18 +670,48 @@ func portOverride(name string) string {
 	return osGetenv(envName)
 }
 
-// playgroundURL returns the loopback URL the tray opens in the user's
-// browser when the platform reaches "all healthy". Honors the
+// playgroundURL returns the URL the tray opens in the user's browser
+// when the platform reaches "all healthy". Honors the
 // FRIDAY_PORT_playground override so installs that move playground off
 // 5200 (e.g. to avoid collision with another local Friday instance) get
 // the right URL — without this the tray click silently lands on the
 // wrong port and the user sees a "can't connect" page.
+//
+// Scheme/host: when the browser-trusted cert pair downloaded by the
+// installer (apps/studio-installer/src-tauri/src/commands/download_tls.rs)
+// is present at <friendlyHome()>/tls/browser.crt, the playground binary
+// is listening on TLS for `local.hellofriday.ai` — a public DNS name
+// that resolves to 127.0.0.1, with a Let's Encrypt cert in the SAN. We
+// open the https URL so the browser lands on a green-lock origin that
+// matches the cert. Without the cert, fall back to http://localhost so
+// dev/source installs and any install that failed the cert download
+// still work.
 func playgroundURL() string {
 	port := portOverride("playground")
 	if port == "" {
 		port = "5200"
 	}
+	if hasBrowserTLS() {
+		return "https://local.hellofriday.ai:" + port
+	}
 	return "http://localhost:" + port
+}
+
+// hasBrowserTLS reports whether the installer-fetched browser-trusted
+// cert pair is on disk. Mirrors the resolution order tls-paths.ts uses
+// on the playground side so the launcher's URL and the playground's
+// listener stay in lock-step: if the playground can serve TLS, the URL
+// the launcher opens must be https.
+func hasBrowserTLS() bool {
+	cert := filepath.Join(friendlyHome(), "tls", "browser.crt")
+	key := filepath.Join(friendlyHome(), "tls", "browser.key")
+	if _, err := os.Stat(cert); err != nil {
+		return false
+	}
+	if _, err := os.Stat(key); err != nil {
+		return false
+	}
+	return true
 }
 
 // newProjectFromSpecs builds the typed types.Project from a list of

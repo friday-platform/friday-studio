@@ -311,13 +311,51 @@ func TestSupervisedProcesses_PortOverridesPropagate(t *testing.T) {
 // the tray click after a port override silently lands on
 // http://localhost:5200 (default) and the user sees connection
 // refused.
+//
+// Uses a tempdir as FRIDAY_LAUNCHER_HOME so the test doesn't depend
+// on whether the real ~/.friday/local/tls/browser.crt happens to be
+// on the developer's machine — keeps the assertion deterministic.
 func TestPlaygroundURL_HonorsPortOverride(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("FRIDAY_LAUNCHER_HOME", tmp)
+
 	if got := playgroundURL(); got != "http://localhost:5200" {
 		t.Errorf("default playgroundURL = %q, want http://localhost:5200", got)
 	}
 	t.Setenv("FRIDAY_PORT_PLAYGROUND", "15200")
 	if got := playgroundURL(); got != "http://localhost:15200" {
 		t.Errorf("overridden playgroundURL = %q, want http://localhost:15200", got)
+	}
+}
+
+// TestPlaygroundURL_UsesHttpsWhenCertPresent asserts that once the
+// installer has dropped the browser-trusted cert pair into
+// <friendlyHome()>/tls/, the launcher opens the https origin matching
+// the cert SAN — not http://localhost, which would land on the same
+// port but show a cert-name-mismatch warning (browser → 127.0.0.1 vs
+// cert CN local.hellofriday.ai).
+func TestPlaygroundURL_UsesHttpsWhenCertPresent(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("FRIDAY_LAUNCHER_HOME", tmp)
+
+	tlsDir := filepath.Join(tmp, "tls")
+	if err := os.MkdirAll(tlsDir, 0o755); err != nil {
+		t.Fatalf("mkdir tls: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tlsDir, "browser.crt"), []byte("cert"), 0o644); err != nil {
+		t.Fatalf("write cert: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tlsDir, "browser.key"), []byte("key"), 0o600); err != nil {
+		t.Fatalf("write key: %v", err)
+	}
+
+	if got := playgroundURL(); got != "https://local.hellofriday.ai:5200" {
+		t.Errorf("playgroundURL with cert = %q, want https://local.hellofriday.ai:5200", got)
+	}
+
+	t.Setenv("FRIDAY_PORT_PLAYGROUND", "15200")
+	if got := playgroundURL(); got != "https://local.hellofriday.ai:15200" {
+		t.Errorf("playgroundURL with cert+port override = %q, want https://local.hellofriday.ai:15200", got)
 	}
 }
 
