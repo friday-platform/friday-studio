@@ -45,7 +45,24 @@ const REPO_ROOT = process.cwd();
     const eq = line.indexOf("=");
     if (eq <= 0) continue;
     const key = line.slice(0, eq).trim();
-    const value = line.slice(eq + 1);
+    let value = line.slice(eq + 1);
+    // Strip surrounding quotes the same way Deno's `--env-file`
+    // parser (and @std/dotenv) does. Required because the .env we're
+    // reading was usually written by tools that quote values
+    // containing punctuation (mkcert paths with spaces,
+    // ANTHROPIC_API_KEY with dashes). Without this, e.g.
+    // `ANTHROPIC_API_KEY='sk-ant-...'` ends up in process.env as a
+    // value with literal quotes, which the Anthropic client then
+    // sends in the `x-api-key` header → "invalid x-api-key" 401.
+    // The daemon child inherits the bad value and Deno's own
+    // --env-file is a no-op because the key is "already set".
+    if (
+      value.length >= 2 &&
+      ((value.startsWith('"') && value.endsWith('"')) ||
+        (value.startsWith("'") && value.endsWith("'")))
+    ) {
+      value = value.slice(1, -1);
+    }
     if (process.env[key] !== undefined) continue;
     process.env[key] = value;
   }
