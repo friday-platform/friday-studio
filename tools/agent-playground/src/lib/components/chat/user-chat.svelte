@@ -57,7 +57,12 @@
   let systemPromptContext: { timestamp: string; systemMessages: string[] } | null = $state(null);
 
   let chatDragOver = $state(false);
-  let pendingImages: ImageAttachment[] = $state([]);
+  /**
+   * Images attached to the *next* outgoing message. Bound into `ChatInput`
+   * via `bind:images` so the file picker and the chat-surface drop target
+   * share one bucket and one render location (the strip above the input).
+   */
+  let inputImages: ImageAttachment[] = $state([]);
 
   async function fileToDataUrl(file: File): Promise<string> {
     return new Promise((resolve, reject) => {
@@ -105,7 +110,7 @@
     for (const file of files) {
       if (!file.type.startsWith("image/")) continue;
       const dataUrl = await fileToDataUrl(file);
-      pendingImages = [...pendingImages, { id: crypto.randomUUID(), file, dataUrl }];
+      inputImages = [...inputImages, { id: crypto.randomUUID(), file, dataUrl }];
     }
   }
 
@@ -358,6 +363,9 @@
     // Validation pills are per-session; on chat switch any old pills
     // belong to a different conversation's sessions and must clear.
     validationEventsBySession = new Map();
+    // Attachments are per-chat drafts; switching mid-draft must not leak
+    // images into the new chat.
+    inputImages = [];
 
     shouldResumeStream = true;
     const token = ++rehydrateToken;
@@ -1186,14 +1194,10 @@
     }
   }
 
-  async function handleSubmit(text: string, inputImages: ImageAttachment[] = []) {
+  async function handleSubmit(text: string, images: ImageAttachment[] = []) {
     if (!chat) return;
     error = null;
     wasInterrupted = false;
-
-    // Merge images from the input component + any dropped on the chat area
-    const allImages = [...inputImages, ...pendingImages];
-    pendingImages = [];
 
     const parts: QueuedMessageParts = [];
 
@@ -1201,7 +1205,7 @@
       parts.push({ type: "text", text });
     }
 
-    for (const img of allImages) {
+    for (const img of images) {
       parts.push({
         type: "file",
         mediaType: img.file.type || "image/png",
@@ -1331,24 +1335,6 @@
     </div>
   {/if}
 
-  {#if pendingImages.length > 0}
-    <div class="pending-images-bar">
-      {#each pendingImages as img (img.id)}
-        <div class="pending-image">
-          <img src={img.dataUrl} alt={img.file.name} />
-          <button
-            onclick={() => {
-              pendingImages = pendingImages.filter((i) => i.id !== img.id);
-            }}
-            aria-label="Remove"
-          >
-            ✕
-          </button>
-        </div>
-      {/each}
-    </div>
-  {/if}
-
   {#if chat && chat.messages.length > 0}
     <header class="chat-header">
       <!-- Session stats sit at the leading edge of the header; the
@@ -1418,6 +1404,7 @@
         {#key chatId}
           <ChatInput
             onsubmit={handleSubmit}
+            bind:images={inputImages}
             {streaming}
             {stopping}
             onstop={handleStop}
@@ -1574,51 +1561,5 @@
     font-size: var(--font-size-3);
     font-weight: var(--font-weight-6);
     padding: var(--size-2) var(--size-4);
-  }
-
-  .pending-images-bar {
-    border-block-end: 1px solid var(--color-border-1);
-    display: flex;
-    gap: var(--size-2);
-    overflow-x: auto;
-    padding: var(--size-2) var(--size-4);
-  }
-
-  .pending-image {
-    border: 1px solid var(--color-border-1);
-    border-radius: var(--radius-2);
-    flex-shrink: 0;
-    overflow: hidden;
-    position: relative;
-  }
-
-  .pending-image img {
-    block-size: 48px;
-    display: block;
-    inline-size: auto;
-    max-inline-size: 80px;
-    object-fit: cover;
-  }
-
-  .pending-image button {
-    align-items: center;
-    background-color: color-mix(in srgb, var(--color-surface-1), transparent 20%);
-    block-size: 16px;
-    border: none;
-    border-radius: 50%;
-    color: var(--color-text);
-    cursor: pointer;
-    display: flex;
-    font-size: 9px;
-    inline-size: 16px;
-    inset-block-start: 2px;
-    inset-inline-end: 2px;
-    justify-content: center;
-    position: absolute;
-  }
-
-  .pending-image button:hover {
-    background-color: var(--color-error);
-    color: white;
   }
 </style>
