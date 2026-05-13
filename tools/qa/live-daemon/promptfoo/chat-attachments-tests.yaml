@@ -1,0 +1,15 @@
+- description: |
+    Positive — agent calls `read_attachment` against the scratch path emitted
+    by the adapter's `<attachment path="…" />` line and answers from the CSV
+    body. Asserts the prompt + tool wiring survives end-to-end (drop-in
+    UIMessage → adapter splice → agent toolcall → answer mentions the count).
+  vars:
+    scenarioId: chat-csv-read
+
+- description: |
+    Negative — a `data-file-attached` part carrying a path under a *different*
+    chat's uploads dir is rejected by the adapter's path-traversal gate
+    before reaching the agent. The agent never sees the foreign path and
+    never reads bytes it shouldn't have access to.
+  vars:
+    scenarioId: rejects-foreign-path
