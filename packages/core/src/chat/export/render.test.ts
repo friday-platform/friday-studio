@@ -908,4 +908,3 @@ describe("formatMessageTimestamp", () => {
     expect(out).toMatch(/\d{1,2}:\d{2}/);
   });
 });
-
