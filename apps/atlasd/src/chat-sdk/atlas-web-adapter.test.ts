@@ -1,5 +1,7 @@
+import { join } from "node:path";
 import process from "node:process";
 import type { AtlasUIMessageChunk } from "@atlas/agent-sdk";
+import { getFridayHome } from "@atlas/utils/paths.server";
 import { type ChatInstance, Message } from "chat";
 import { describe, expect, it, vi } from "vitest";
 import { StreamRegistry } from "../stream-registry.ts";
@@ -182,8 +184,16 @@ describe("AtlasWebAdapter.handleWebhook", () => {
     // is what later opens the file. So these tests verify path-validation
     // + splice ordering, NOT filesystem I/O.
 
+    // Resolve via the same `getFridayHome()` the adapter calls, so the
+    // test's expected path and the adapter's `allowedPrefix` agree
+    // regardless of env (FRIDAY_HOME, HOME, isSystemService, cwd-based
+    // `.atlas/` detection). Computing it independently from
+    // `process.env.HOME` led to a CI-only mismatch when another test
+    // file in the same worker (`migrate-handler.test.ts`) mutated
+    // FRIDAY_HOME between the test building its `uploadPath` and the
+    // adapter resolving its own `uploadsRoot`.
     function uploadPath(chatId: string, filename: string): string {
-      return `${process.env.FRIDAY_HOME ?? `${process.env.HOME}/.atlas`}/scratch/uploads/${chatId}/${filename}`;
+      return join(getFridayHome(), "scratch", "uploads", chatId, filename);
     }
 
     function buildAttachedMessage(path: string, filename = "scores.csv", mediaType = "text/csv") {

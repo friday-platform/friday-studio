@@ -202,4 +202,3 @@ const scratchUploadApp = daemonFactory.createApp().post("/upload", async (c) => 
 });
 
 export { scratchUploadApp };
-export type ScratchUploadRoutes = typeof scratchUploadApp;

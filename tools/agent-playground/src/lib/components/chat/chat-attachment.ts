@@ -36,9 +36,6 @@ export interface ImageAttachment {
  * resolved `path` lands in a `data-file-attached` message part — the
  * agent reads from that path via the `read_attachment` tool. No artifact
  * storage, no library entry.
- *
- * (Renamed from `ArtifactAttachment` in v4 — same shape, `path` replaces
- * `artifactId`.)
  */
 export interface FileAttachment {
   kind: "file";
@@ -55,9 +52,6 @@ export interface FileAttachment {
   /** Abort handle — wired to the chip's ✕ so cancel actually cancels. */
   abortController: AbortController;
 }
-
-/** @deprecated rename to {@link FileAttachment} — kept for incremental rollout. */
-export type ArtifactAttachment = FileAttachment;
 
 export type ChatAttachment = ImageAttachment | FileAttachment;
 
@@ -151,9 +145,6 @@ export function buildFileAttachment(file: File): FileAttachment {
   };
 }
 
-/** @deprecated renamed to {@link buildFileAttachment}. */
-export const buildArtifactAttachment = buildFileAttachment;
-
 /**
  * Kick off the scratch upload for a `FileAttachment` and call
  * `onUpdate(id, patch)` with progress and terminal-state patches. The caller
@@ -189,6 +180,3 @@ export function runFileUpload(opts: {
     }
   });
 }
-
-/** @deprecated renamed to {@link runFileUpload}. */
-export const runArtifactUpload = runFileUpload;
