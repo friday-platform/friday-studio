@@ -86,15 +86,19 @@ else
         fi
     fi
     echo "→ mkcert: $(command -v mkcert)"
+    # Scope mkcert to the trust stores Friday actually uses (system: Safari/
+    # Chrome/curl/Deno; nss: Firefox) and hide JAVA_HOME so it never probes
+    # Java's keystore — mkcert runs `keytool -list` on every invocation when
+    # JAVA_HOME is set, and a broken/half-installed JDK there will fail it
+    # and abort the script under `set -e`. Applied script-wide because mkcert
+    # is called again during browser cert generation, not just at -install.
+    export TRUST_STORES=system,nss
+    unset JAVA_HOME
     # Idempotent. First run on a machine prompts for admin (system keychain
     # on macOS, sudo on Linux); subsequent runs detect the CA is already
     # trusted and exit fast.
     echo "→ Ensuring mkcert root CA is trusted (may prompt for admin password)"
-    # Scope mkcert to the trust stores Friday actually uses: system (Safari,
-    # Chrome, curl, Deno via --use-system-ca) and nss (Firefox). Skipping
-    # `java` means a JDK on $PATH — broken or otherwise — can't fail keytool
-    # and abort the script under `set -e`.
-    TRUST_STORES=system,nss mkcert -install
+    mkcert -install
 fi
 
 # ── 2. Resolve dev Friday home ──────────────────────────────────────────────
