@@ -199,6 +199,29 @@ function resolveValidateDecision(
  */
 const PLATFORM_TOOL_ALLOWLIST = LLM_AGENT_ALLOWED_PLATFORM_TOOLS;
 
+// Walk a JSON Schema and add `additionalProperties: false` to every object node
+// that doesn't already set it. OpenAI/Groq strict mode silently downgrades
+// when this is missing — the wire ends up as a permissive schema even though
+// `strict: true` was sent, and `complete({})` slips through.
+function withStrictObjects(schema: Record<string, unknown>): Record<string, unknown> {
+  if (!schema || typeof schema !== "object" || Array.isArray(schema)) return schema;
+  const out: Record<string, unknown> = { ...schema };
+  if (out.type === "object") {
+    if (!("additionalProperties" in out)) out.additionalProperties = false;
+    if (out.properties && typeof out.properties === "object") {
+      const newProps: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(out.properties as Record<string, unknown>)) {
+        newProps[k] = withStrictObjects(v as Record<string, unknown>);
+      }
+      out.properties = newProps;
+    }
+  }
+  if (out.type === "array" && out.items && typeof out.items === "object") {
+    out.items = withStrictObjects(out.items as Record<string, unknown>);
+  }
+  return out;
+}
+
 const FSMStateSchema = z.object({ state: z.string() });
 
 const PrepareResultSchema = z
@@ -1880,30 +1903,29 @@ export class FSMEngine {
                 const jsonSchema = docTypeName
                   ? this._definition.documentTypes?.[docTypeName]
                   : undefined;
-                const compiledSchema =
-                  docTypeName && hasDefinedSchema(jsonSchema)
-                    ? this._compiledSchemas.get(docTypeName)
-                    : undefined;
+                const hasTyped = Boolean(docTypeName && hasDefinedSchema(jsonSchema));
 
                 completeToolInjected = true;
                 tools.complete = tool({
                   description:
                     "Call this to complete the task and store results. You MUST call this when finished. The `result` field is REQUIRED and must contain the full formatted output as a non-empty string.",
-                  inputSchema:
-                    compiledSchema ??
-                    aiJsonSchema({
-                      type: "object",
-                      properties: {
-                        result: {
-                          type: "string",
-                          minLength: 1,
-                          description:
-                            "The full final output of the task — put the complete formatted text here. This is what the FSM stores and what downstream steps/users see.",
-                        },
-                      },
-                      required: ["result"],
-                      additionalProperties: false,
-                    } as unknown as Parameters<typeof aiJsonSchema>[0]),
+                  inputSchema: aiJsonSchema(
+                    (hasTyped
+                      ? withStrictObjects(jsonSchema as Record<string, unknown>)
+                      : {
+                          type: "object",
+                          properties: {
+                            result: {
+                              type: "string",
+                              minLength: 1,
+                              description:
+                                "The full final output of the task — put the complete formatted text here. This is what the FSM stores and what downstream steps/users see.",
+                            },
+                          },
+                          required: ["result"],
+                          additionalProperties: false,
+                        }) as unknown as Parameters<typeof aiJsonSchema>[0],
+                  ),
                   execute: () => ({ success: true }),
                 });
 

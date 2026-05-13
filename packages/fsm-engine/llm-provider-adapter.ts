@@ -70,7 +70,7 @@ export class AtlasLLMProviderAdapter implements LLMProvider {
     abortSignal?: AbortSignal;
   }): Promise<AgentResult<string, FSMLLMOutput>> {
     const startMs = Date.now();
-    const providerName = this.defaultModel.provider;
+    const providerName = params.provider ?? this.defaultModel.provider;
     const modelForCall =
       params.provider && params.model
         ? this.resolveOverride(params.provider, params.model)
