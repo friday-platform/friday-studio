@@ -117,6 +117,67 @@ describe("exportBundle + importBundle round-trip", () => {
     expect(result.ok).toBe(false);
     expect(result.mismatches).toEqual(["skill:hello"]);
   });
+
+  it("embeds externalAgents into the bundle and pins them in the lockfile", async () => {
+    const externalDir = await mkdtemp(join(tmpdir(), "bundle-ext-agent-"));
+    try {
+      await writeFile(
+        join(externalDir, "metadata.json"),
+        JSON.stringify({
+          id: "user-agent-a",
+          version: "1.2.3",
+          description: "external user agent",
+        }),
+      );
+      await writeFile(join(externalDir, "agent.py"), "print('hi')\n");
+
+      const zipBytes = await exportBundle({
+        workspaceDir: workDir,
+        workspaceYml: await readFile(join(workDir, "workspace.yml"), "utf-8"),
+        mode: "definition",
+        workspace: { name: "demo", version: "1.0.0" },
+        externalAgents: [{ name: "user-agent-a", sourceDir: externalDir }],
+      });
+
+      const result = await importBundle({ zipBytes, targetDir: importDir });
+
+      expect(result.primitives).toContainEqual({
+        kind: "agent",
+        name: "user-agent-a",
+        path: "agents/user-agent-a",
+      });
+
+      const py = await readFile(join(importDir, "agents", "user-agent-a", "agent.py"), "utf-8");
+      expect(py).toContain("print");
+      const metaBytes = await readFile(
+        join(importDir, "agents", "user-agent-a", "metadata.json"),
+        "utf-8",
+      );
+      expect(JSON.parse(metaBytes)).toMatchObject({ id: "user-agent-a", version: "1.2.3" });
+    } finally {
+      await rm(externalDir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects an externalAgents entry that collides with a workspace-local agent", async () => {
+    await mkdir(join(workDir, "agents", "dupe"), { recursive: true });
+    await writeFile(join(workDir, "agents", "dupe", "agent.py"), "local\n");
+    const externalDir = await mkdtemp(join(tmpdir(), "bundle-ext-collide-"));
+    try {
+      await writeFile(join(externalDir, "agent.py"), "external\n");
+      await expect(
+        exportBundle({
+          workspaceDir: workDir,
+          workspaceYml: await readFile(join(workDir, "workspace.yml"), "utf-8"),
+          mode: "definition",
+          workspace: { name: "demo", version: "1.0.0" },
+          externalAgents: [{ name: "dupe", sourceDir: externalDir }],
+        }),
+      ).rejects.toThrow(/collides with workspace-local agent/);
+    } finally {
+      await rm(externalDir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("exportBundle/importBundle memory (migration mode)", () => {

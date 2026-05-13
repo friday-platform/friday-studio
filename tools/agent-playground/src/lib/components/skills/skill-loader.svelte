@@ -36,8 +36,18 @@
    *  only have the raw blob and the suggested name — re-POST with ?namespace=. */
   let pendingArchive = $state<{ blob: Blob; filename: string; defaultName: string } | null>(null);
 
+  // Safari requires preventDefault on BOTH dragenter and dragover to register
+  // the element as a valid drop target; without dragenter prevention it falls
+  // back to its default file-open behavior on drop.
+  function handleDragEnter(e: DragEvent) {
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+    dragOver = true;
+  }
+
   function handleDragOver(e: DragEvent) {
     e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
     dragOver = true;
   }
 
@@ -377,6 +387,7 @@
     class="drop-zone"
     class:drag-over={dragOver}
     class:inline
+    ondragenter={handleDragEnter}
     ondragover={handleDragOver}
     ondragleave={handleDragLeave}
     ondrop={handleDrop}

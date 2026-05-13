@@ -51,8 +51,6 @@ Returns detailed validation result with errors and warnings.`,
               id: validated.id,
               initial: validated.initial,
               stateCount: Object.keys(validated.states).length,
-              functionCount: validated.functions ? Object.keys(validated.functions).length : 0,
-              toolCount: validated.tools ? Object.keys(validated.tools).length : 0,
               documentTypeCount: validated.documentTypes
                 ? Object.keys(validated.documentTypes).length
                 : 0,

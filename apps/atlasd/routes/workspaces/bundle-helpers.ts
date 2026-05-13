@@ -12,12 +12,14 @@ import {
   stripCredentialRefs,
   toProviderRefs,
 } from "@atlas/config/mutations";
+import { UserAdapter } from "@atlas/core/agent-loader/user-adapter";
 import {
   fetchLinkCredential,
   LinkCredentialExpiredError,
   LinkCredentialNotFoundError,
 } from "@atlas/core/mcp-registry/credential-resolver";
 import type { Logger } from "@atlas/logger";
+import { getFridayHome } from "@atlas/utils/paths.server";
 import { stringify } from "@std/yaml";
 import { injectBundledAgentRefs } from "./inject-bundled-agents.ts";
 
@@ -33,6 +35,12 @@ export interface BuildWorkspaceBundleInput {
    * (`~/.friday/local/memory/<workspaceId>/`). Only honored in `mode: migration`.
    */
   memoryDir?: string;
+  /**
+   * Root directory holding installed user agents (layout
+   * `<dir>/<id>@<version>/`). Defaults to `<atlasHome>/agents`. Override is
+   * primarily for tests.
+   */
+  userAgentsDir?: string;
 }
 
 export interface BuildWorkspaceBundleResult {
@@ -87,15 +95,71 @@ export async function buildWorkspaceBundleBytes(
   const name = portableConfig.workspace.name ?? input.workspaceName;
   const version = (portableConfig.version as string | undefined) ?? "1.0.0";
 
+  const externalAgents = await resolveExternalUserAgents({
+    config: configWithAgentRefs,
+    workspacePath: input.workspacePath,
+    userAgentsDir: input.userAgentsDir ?? join(getFridayHome(), "agents"),
+    logger: input.logger,
+  });
+
   const bundleBytes = await exportBundle({
     workspaceDir: input.workspacePath,
     workspaceYml,
     mode: input.mode,
     workspace: { name, version },
+    ...(externalAgents.length > 0 ? { externalAgents } : {}),
     ...(input.mode === "migration" && input.memoryDir ? { memoryDir: input.memoryDir } : {}),
   });
 
   return { bundleBytes, name, version };
+}
+
+/**
+ * For every `type: user` agent referenced by `workspace.yml`, locate its
+ * installed source dir under `<userAgentsDir>/<id>@<version>/` so it can be
+ * embedded in the bundle. Skipped when the workspace already ships a
+ * same-named agent under `<workspacePath>/agents/<id>/` (workspace-local
+ * wins). Throws if any referenced user agent can't be resolved — silently
+ * partial bundles fail much later on the import side, so surface it here.
+ */
+async function resolveExternalUserAgents(opts: {
+  config: WorkspaceConfig;
+  workspacePath: string;
+  userAgentsDir: string;
+  logger: Logger;
+}): Promise<{ name: string; sourceDir: string }[]> {
+  const agents = opts.config.agents;
+  if (!agents) return [];
+
+  const userAgentIds = new Set<string>();
+  for (const entry of Object.values(agents)) {
+    if (entry.type === "user") userAgentIds.add(entry.agent);
+  }
+  if (userAgentIds.size === 0) return [];
+
+  const adapter = new UserAdapter(opts.userAgentsDir);
+  const resolved: { name: string; sourceDir: string }[] = [];
+  const missing: string[] = [];
+  for (const id of userAgentIds) {
+    try {
+      await stat(join(opts.workspacePath, "agents", id));
+      continue;
+    } catch {
+      // Not present workspace-locally — fall through to resolve externally.
+    }
+    try {
+      const source = await adapter.loadAgent(id);
+      resolved.push({ name: id, sourceDir: source.metadata.sourceLocation });
+    } catch {
+      missing.push(id);
+    }
+  }
+  if (missing.length > 0) {
+    throw new Error(
+      `Workspace references user agent(s) that could not be resolved under ${opts.userAgentsDir}: ${missing.join(", ")}`,
+    );
+  }
+  return resolved;
 }
 
 /**

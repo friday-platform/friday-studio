@@ -21,6 +21,15 @@ export interface ExportOptions {
    * narrative in `snapshots.memory`.
    */
   memoryDir?: string;
+  /**
+   * Agents that live outside `<workspaceDir>/agents/` and need to be embedded
+   * so the bundle is self-contained. Typical case: `type: user` agents
+   * referenced by `workspace.yml` but installed globally at
+   * `<atlasHome>/agents/<id>@<version>/`. Each entry is included in the zip
+   * under `agents/<name>/...` and pinned in the lockfile like a workspace-local
+   * agent. Throws on a name collision with a workspace-local agent.
+   */
+  externalAgents?: { name: string; sourceDir: string }[];
 }
 
 export interface ImportOptions {
@@ -88,6 +97,22 @@ export async function exportBundle(opts: ExportOptions): Promise<Uint8Array> {
     for (const rel of files) {
       const content = await readFile(join(primitiveDir, ...rel.split("/")));
       zip.file(`agents/${name}/${rel}`, content);
+    }
+  }
+
+  for (const ext of opts.externalAgents ?? []) {
+    if (agents[ext.name]) {
+      throw new Error(
+        `exportBundle: externalAgents entry "${ext.name}" collides with workspace-local agent of the same name`,
+      );
+    }
+    const { hash } = await hashPrimitive(ext.sourceDir);
+    agents[ext.name] = { hash, path: `agents/${ext.name}` };
+    const files: string[] = [];
+    await walkFilesRecursive(ext.sourceDir, ext.sourceDir, files);
+    for (const rel of files) {
+      const content = await readFile(join(ext.sourceDir, ...rel.split("/")));
+      zip.file(`agents/${ext.name}/${rel}`, content);
     }
   }
 

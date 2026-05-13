@@ -173,11 +173,12 @@ describe("resolveWorkspaceVariables", () => {
       agents: {
         coder: {
           prompt: "Monorepo at {{repo_root}}, workspace: {{workspace_id}}",
-          config: { workDir: "{{repo_root}}", apiUrl: "{{platform_url}}/api" },
+          config: {
+            workDir: "{{repo_root}}",
+            apiUrl: "{{platform_url}}/api",
+            bootstrap: 'var root = "{{repo_root}}"; fetch("{{platform_url}}/signal");',
+          },
         },
-      },
-      functions: {
-        prepare: { code: 'var root = "{{repo_root}}"; fetch("{{platform_url}}/signal");' },
       },
     };
 
@@ -186,7 +187,7 @@ describe("resolveWorkspaceVariables", () => {
     expect(result.agents.coder.prompt).toBe(`Monorepo at ${tempDir}, workspace: test_ws`);
     expect(result.agents.coder.config.workDir).toBe(tempDir);
     expect(result.agents.coder.config.apiUrl).toBe("http://localhost:8080/api");
-    expect(result.functions.prepare.code).toContain(`var root = "${tempDir}"`);
-    expect(result.functions.prepare.code).toContain('fetch("http://localhost:8080/signal")');
+    expect(result.agents.coder.config.bootstrap).toContain(`var root = "${tempDir}"`);
+    expect(result.agents.coder.config.bootstrap).toContain('fetch("http://localhost:8080/signal")');
   });
 });

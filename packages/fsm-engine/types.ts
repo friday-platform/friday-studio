@@ -34,8 +34,6 @@ export interface FSMDefinition {
   initial: string;
   states: Record<string, StateDefinition>;
   documentTypes?: Record<string, JSONSchema>;
-  functions?: Record<string, { type: "action" | "guard"; code: string }>;
-  tools?: Record<string, { code: string }>;
 }
 
 export interface StateDefinition {

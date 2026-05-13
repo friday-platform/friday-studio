@@ -9,6 +9,6 @@
     "@atlas/link": "workspace:*",
     "@atlas/utils": "workspace:*",
     "hono": "4.12.18",
-    "zod": "^4.3.5"
+    "zod": "^4.4.3"
   }
 }

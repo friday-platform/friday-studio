@@ -23,15 +23,17 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createLogger } from "@atlas/logger";
 import { computeSkillHash, packSkillArchive, parseSkillMd, SkillStorage } from "@atlas/skills";
+import { SYSTEM_USER_ID } from "@atlas/skills/constants";
 
 const logger = createLogger({ name: "system-skill-bootstrap" });
 
 /**
  * Sentinel user id stamped on the `createdBy` column for every bundled
  * skill. The HTTP write routes use this to enforce that the `atlas`
- * namespace stays immutable for interactive callers.
+ * namespace stays immutable for interactive callers. Re-exported from
+ * `@atlas/skills/constants` so existing local imports keep working.
  */
-export const SYSTEM_USER_ID = "system" as const;
+export { SYSTEM_USER_ID };
 
 /**
  * Namespace every bundled skill lives under. User-facing surfaces

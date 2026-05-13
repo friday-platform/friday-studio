@@ -99,8 +99,6 @@ Example:
             id: definition.id,
             initial: definition.initial,
             stateCount: Object.keys(definition.states).length,
-            functionCount: definition.functions ? Object.keys(definition.functions).length : 0,
-            toolCount: definition.tools ? Object.keys(definition.tools).length : 0,
             documentTypeCount: definition.documentTypes
               ? Object.keys(definition.documentTypes).length
               : 0,

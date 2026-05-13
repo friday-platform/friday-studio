@@ -139,7 +139,7 @@ Alias: `p`
 
 Sends a prompt. Default output is NDJSON — `cli-summary` at the end has the
 `chatId` for continuation. `--workspace` routes to a workspace-scoped chat
-instead of the default `atlas-conversation` workspace.
+instead of the default `user` workspace.
 
 ### `chat`
 `chat [<chatId>] [--limit 25] [--show-prompts] [--human]`

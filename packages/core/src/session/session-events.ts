@@ -38,7 +38,7 @@ export type SessionActionType = z.infer<typeof SessionActionTypeSchema>;
 
 export const ToolCallSummarySchema = z.object({
   toolName: z.string(),
-  args: z.unknown(),
+  args: z.unknown().optional(),
   result: z.unknown().optional(),
   durationMs: z.number().optional(),
 });

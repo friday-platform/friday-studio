@@ -107,24 +107,6 @@ export function validateFSMStructure(fsm: FSMDefinition): ValidationResult {
     );
   }
 
-  // Check function code is not empty
-  if (fsm.functions) {
-    for (const [name, func] of Object.entries(fsm.functions)) {
-      if (!func.code || func.code.trim().length === 0) {
-        errors.push(`Function "${name}" has empty code. Fix: Add function implementation code.`);
-      }
-    }
-  }
-
-  // Check tool code is not empty
-  if (fsm.tools) {
-    for (const [name, tool] of Object.entries(fsm.tools)) {
-      if (!tool.code || tool.code.trim().length === 0) {
-        errors.push(`Tool "${name}" has empty code. Fix: Add tool implementation code.`);
-      }
-    }
-  }
-
   return { valid: errors.length === 0, errors, warnings };
 }
 
