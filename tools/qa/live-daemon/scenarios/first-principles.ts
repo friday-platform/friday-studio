@@ -9,7 +9,6 @@
  * MCP models a Gmail-shaped workload without OAuth/network.
  */
 
-import { ensureDir } from "jsr:@std/fs@1.0.13/ensure-dir";
 import { dirname, join } from "jsr:@std/path@1";
 import {
   currentGitSha,
@@ -65,7 +64,7 @@ async function materializeFridayHomeWithUserAgents(): Promise<{
 }> {
   const fridayHome = await Deno.makeTempDir({ prefix: "friday-qa-" });
   const agentDir = join(fridayHome, "agents", "fake-inbox-python-agent@0.1.0");
-  await ensureDir(agentDir);
+  await Deno.mkdir(agentDir, { recursive: true });
   await Deno.copyFile(join(PYTHON_USER_AGENT_FIXTURE, "agent.py"), join(agentDir, "agent.py"));
   await Deno.copyFile(
     join(PYTHON_USER_AGENT_FIXTURE, "metadata.json"),
@@ -2380,7 +2379,7 @@ async function main() {
   const report = { gitSha: sha, startedAt, passed, failed, results };
   if (writeResult || jsonOutputPath) {
     const path = jsonOutputPath ?? join(HARNESS_PATHS.resultsDir, `${sha}-first-principles.json`);
-    await ensureDir(dirname(path));
+    await Deno.mkdir(dirname(path), { recursive: true });
     await Deno.writeTextFile(path, JSON.stringify(report, null, 2));
     console.log(`\n→ ${path}`);
   }

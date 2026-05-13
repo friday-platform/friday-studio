@@ -30,10 +30,26 @@
  *     --json-output /tmp/out.json
  */
 
-import { walk } from "jsr:@std/fs@1.0.13";
-import { ensureDir } from "jsr:@std/fs@1.0.13/ensure-dir";
 import { dirname, join, relative } from "jsr:@std/path@1";
 import { currentGitSha, ensureCredentialsLoaded, HARNESS_PATHS } from "../harness.ts";
+
+/**
+ * Recursively yield every `.md` file under `root`. Replacement for
+ * `@std/fs walk()` — avoids dragging in @std/fs just for one helper, and
+ * keeps the lock leaner (the @std/fs version sibling scenarios pin
+ * transitively constrained @std/path@^1.0.8 even though everything
+ * resolves to 1.1.4).
+ */
+async function* walkMd(root: string): AsyncIterableIterator<string> {
+  for await (const entry of Deno.readDir(root)) {
+    const full = join(root, entry.name);
+    if (entry.isDirectory) {
+      yield* walkMd(full);
+    } else if (entry.isFile && entry.name.endsWith(".md")) {
+      yield full;
+    }
+  }
+}
 
 interface EvalResult {
   id: string;
@@ -180,12 +196,11 @@ async function callChild(systemPrompt: string, userPrompt: string): Promise<stri
     .join("");
 }
 
-async function llmJudgeSkill(body: string): Promise<LlmJudgement> {
+async function llmJudgeSkillWithPrompt(body: string, ask: string): Promise<LlmJudgement> {
   const output = await callChild(
     body,
-    "Write a single shell command (no preamble, no explanation) that uses curl " +
-      "to hit the Friday daemon's /health endpoint. Assume the user has already " +
-      "sourced any environment they need. Output only the command.",
+    `${ask} Assume the user has already sourced any environment they need. ` +
+      "Output only the command — no preamble, no explanation, no markdown.",
   );
   // DAEMON_URL_RE has the `g` flag; reset lastIndex before each test.
   DAEMON_URL_RE.lastIndex = 0;
@@ -208,8 +223,8 @@ async function discoverSkillFiles(): Promise<string[]> {
   const root = repoRoot();
   const skillsRoot = join(root, "packages", "system", "skills");
   const out: string[] = [];
-  for await (const entry of walk(skillsRoot, { exts: [".md"], includeDirs: false })) {
-    out.push(relative(root, entry.path));
+  for await (const path of walkMd(skillsRoot)) {
+    out.push(relative(root, path));
   }
   out.sort();
   return out;
@@ -414,22 +429,62 @@ function runStaticNegativeControls(): EvalResult[] {
 
 async function runBehavioralChecks(): Promise<EvalResult[]> {
   const results: EvalResult[] = [];
-  // Only the top-level SKILL.md files have a body short enough + advisory
-  // enough to use as a system prompt without confusing the model. The
-  // references are read on-demand via load_skill in production; teaching
-  // them as a primary system prompt would tank LLM coherence.
+  // Every changed skill markdown file gets a behavioral LLM check. References
+  // aren't loaded as system prompts in production (they come in via
+  // `load_skill`), but feeding each body as a system prompt and asking for
+  // a relevant curl is the most direct way to verify the bytes we wrote
+  // actually steer the LLM toward $FRIDAYD_URL + --cacert. If a reference
+  // body fails, that's a signal the curl examples inside it don't put the
+  // teaching pattern close enough to where the LLM is reading.
   const subjects = [
-    { id: "friday-cli/SKILL.md", path: "packages/system/skills/friday-cli/SKILL.md" },
-    { id: "workspace-api/SKILL.md", path: "packages/system/skills/workspace-api/SKILL.md" },
+    {
+      id: "friday-cli/SKILL.md",
+      path: "packages/system/skills/friday-cli/SKILL.md",
+      ask: "Write a single shell command to hit the daemon's /health endpoint.",
+    },
+    {
+      id: "friday-cli/references/cli.md",
+      path: "packages/system/skills/friday-cli/references/cli.md",
+      // Note: do NOT say "using curl" — that primes Haiku toward plain
+      // curl over the friday_curl wrapper the skill actually teaches.
+      // Let the skill body steer.
+      ask: "Write a single shell command to register a Python agent at /abs/agent.py.",
+    },
+    {
+      id: "friday-cli/references/http.md",
+      path: "packages/system/skills/friday-cli/references/http.md",
+      ask: "Write a single shell command to GET the /health endpoint.",
+    },
+    {
+      id: "friday-cli/references/recipes.md",
+      path: "packages/system/skills/friday-cli/references/recipes.md",
+      ask: "Write a single shell command to list workspaces from the daemon.",
+    },
+    {
+      id: "friday-cli/references/session-and-logs.md",
+      path: "packages/system/skills/friday-cli/references/session-and-logs.md",
+      ask: "Write a single shell command to fetch session $SID details from the daemon.",
+    },
+    {
+      id: "workspace-api/SKILL.md",
+      path: "packages/system/skills/workspace-api/SKILL.md",
+      ask: "Write a single shell command to list workspaces from the daemon.",
+    },
+    {
+      id: "workspace-api/references/updating-workspaces.md",
+      path: "packages/system/skills/workspace-api/references/updating-workspaces.md",
+      ask: "Write a single shell command to GET /api/workspaces/$WS/config from the daemon.",
+    },
     {
       id: "writing-friday-python-agents/SKILL.md",
       path: "packages/system/skills/writing-friday-python-agents/SKILL.md",
+      ask: "Write a single shell command to register a Python agent at /abs/agent.py.",
     },
   ];
-  for (const { id, path } of subjects) {
+  for (const { id, path, ask } of subjects) {
     const full = join(repoRoot(), path);
     const body = await Deno.readTextFile(full);
-    const judgement = await llmJudgeSkill(body);
+    const judgement = await llmJudgeSkillWithPrompt(body, ask);
     // Three things must all be true for the eval to pass:
     //   1. uses $FRIDAYD_URL — the variable, not a literal URL.
     //   2. no bare daemon URL outside the canonical fallback expansion.
@@ -472,7 +527,23 @@ async function runBehavioralChecks(): Promise<EvalResult[]> {
  * (or causes the LLM to refuse all curl-emit requests) would silently
  * flip every positive case to vacuous pass.
  */
-const BAD_SKILL_BODY = `# Bad Skill (eval negative control — do not ship)
+/**
+ * Negative-control prompt evals. Each body is a synthetic "bad" skill that
+ * ONLY shows bare-URL examples in a different framing. The eval here passes
+ * when the LLM faithfully regurgitates a bare URL — proving the LLM judge
+ * actually has discriminative power.
+ *
+ * Multiple bodies cover different stylistic framings (bash-heavy, Python-
+ * agent-style, prose-heavy) so a model-drift event that breaks one framing
+ * is unlikely to break all three simultaneously. If ALL THREE pass=false
+ * at the same time, the LLM-judge has genuinely lost signal — investigate
+ * before retrying.
+ */
+const BAD_SKILL_BODIES: { id: string; ask: string; body: string }[] = [
+  {
+    id: "bash-heavy-bare-url",
+    ask: "Write a single shell command to hit the daemon's /health endpoint.",
+    body: `# Bad Skill (eval negative control — do not ship)
 
 Friday's daemon listens on \`localhost:8080\`. Every example below uses
 that URL directly. Do not parameterize. Do not source env files.
@@ -494,18 +565,66 @@ Trigger a signal:
 \`\`\`bash
 curl -X POST http://localhost:8080/api/workspaces/foo/signals/bar -d '{}'
 \`\`\`
-`;
+`,
+  },
+  {
+    id: "python-agent-bare-url",
+    ask: "Write a single shell command to register a Python agent at /abs/agent.py.",
+    body: `# Bad Python-Agent Skill (eval negative control — do not ship)
+
+To register a Python agent, POST its absolute path to the daemon at the
+hardcoded URL. The daemon always listens on the default port.
+
+\`\`\`bash
+curl -X POST http://localhost:8080/api/agents/register \\
+  -H 'Content-Type: application/json' \\
+  -d '{"entrypoint": "/abs/path/agent.py"}'
+\`\`\`
+
+Or to test directly:
+
+\`\`\`bash
+curl -s -X POST http://localhost:8080/api/agents/my-agent/run \\
+  -H 'Content-Type: application/json' \\
+  -d '{"input": "test"}'
+\`\`\`
+`,
+  },
+  {
+    id: "prose-then-bare-curl",
+    ask: "Write a single shell command to list workspaces from the daemon.",
+    body: `# Bad Workspace Skill (eval negative control — do not ship)
+
+The Friday daemon exposes its HTTP API at \`http://localhost:8080\`. This
+is the canonical local endpoint; in dev there is nothing else.
+
+To list workspaces:
+
+\`\`\`bash
+curl -s http://localhost:8080/api/workspaces | jq
+\`\`\`
+
+To get one:
+
+\`\`\`bash
+curl -s http://localhost:8080/api/workspaces/$WS_ID | jq
+\`\`\`
+`,
+  },
+];
 
 async function runBehavioralNegativeControls(): Promise<EvalResult[]> {
-  const judgement = await llmJudgeSkill(BAD_SKILL_BODY);
-  // The control "passes" when the LLM produces a bare URL — meaning the
-  // detector (`containsBareUrl`) flips to true. If pass=false here, either
-  // the LLM ignored the skill text (unlikely for haiku at temp=0) or the
-  // detector lost discrimination. Both are eval-bugs worth catching.
-  const pass = judgement.containsBareUrl && !judgement.usesVariable;
-  return [
-    {
-      id: "skill-tls-behavior-negative:bad-skill-emits-bare-url",
+  const results: EvalResult[] = [];
+  for (const { id, ask, body } of BAD_SKILL_BODIES) {
+    const judgement = await llmJudgeSkillWithPrompt(body, ask);
+    // The control "passes" when the LLM produces a bare URL — meaning the
+    // detector (`containsBareUrl`) flips to true. If pass=false here for
+    // ALL THREE bodies simultaneously, either the LLM-judge has lost
+    // discrimination or model behavior has shifted. Both are eval-bugs
+    // worth catching.
+    const pass = judgement.containsBareUrl && !judgement.usesVariable;
+    results.push({
+      id: `skill-tls-behavior-negative:${id}`,
       pass,
       notes: [
         `LLM output: ${judgement.output.replace(/\s+/g, " ").slice(0, 200)}`,
@@ -513,8 +632,9 @@ async function runBehavioralNegativeControls(): Promise<EvalResult[]> {
         `uses $FRIDAYD_URL (expected false): ${judgement.usesVariable}`,
       ],
       metrics: { containsBareUrl: judgement.containsBareUrl, usesVariable: judgement.usesVariable },
-    },
-  ];
+    });
+  }
+  return results;
 }
 
 async function main() {
@@ -557,7 +677,9 @@ async function main() {
   if (writeResult || jsonOutputPath) {
     const path =
       jsonOutputPath ?? join(HARNESS_PATHS.resultsDir, `${sha}-skill-tls-awareness.json`);
-    await ensureDir(dirname(path));
+    // Deno.mkdir({ recursive: true }) is a no-op if the dir exists, same
+    // behavior as @std/fs ensureDir without the import.
+    await Deno.mkdir(dirname(path), { recursive: true });
     await Deno.writeTextFile(path, JSON.stringify(report, null, 2));
     console.log(`\n→ ${path}`);
   }

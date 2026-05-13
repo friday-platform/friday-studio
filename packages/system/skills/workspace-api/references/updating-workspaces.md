@@ -18,6 +18,8 @@ another quietly loses it.
 > friday_curl() { curl ${FRIDAY_TLS_CA:+--cacert "$FRIDAY_TLS_CA"} "$@"; }
 > ```
 
+
+**Rule: every daemon HTTP call below uses `friday_curl`, not `curl`.** Plain `curl` against `$FRIDAYD_URL` on a TLS install fails with `self signed certificate in certificate chain`.
 ## Contents
 
 - The three paths (preference order)

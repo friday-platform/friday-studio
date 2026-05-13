@@ -32,7 +32,6 @@
  * promptfoo provider can pick scenarios by id.
  */
 
-import { ensureDir } from "jsr:@std/fs@1.0.13/ensure-dir";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
@@ -859,7 +858,7 @@ async function main() {
     results,
   };
   if (jsonOutput) {
-    await ensureDir(dirname(jsonOutput));
+    await Deno.mkdir(dirname(jsonOutput), { recursive: true });
     await Deno.writeTextFile(jsonOutput, JSON.stringify(report, null, 2));
     console.log(`→ ${jsonOutput}`);
   }

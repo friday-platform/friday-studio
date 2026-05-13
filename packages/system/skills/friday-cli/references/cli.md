@@ -4,6 +4,22 @@ Complete reference for `deno task atlas <subcommand>`. The CLI is a thin HTTP
 client over `localhost:8080` — every subcommand maps to one or more daemon
 routes. When the CLI lacks a flag you need, drop to HTTP (`references/http.md`).
 
+## Daemon URL preamble (required for raw HTTP)
+
+A few subcommands document HTTP fallback paths (notably `agent register`
+below — there is no CLI subcommand). For those, **use `friday_curl`, never
+plain `curl`** — plain `curl` against `$FRIDAYD_URL` on a TLS-enabled
+install fails with `self signed certificate in certificate chain`. Source
+the daemon `.env` and define the wrapper once per shell:
+
+```bash
+set -a
+. "${FRIDAY_HOME:-$HOME/.friday/local}/.env" 2>/dev/null \
+  || . "$HOME/.atlas/.env" 2>/dev/null || true
+set +a
+friday_curl() { curl ${FRIDAY_TLS_CA:+--cacert "$FRIDAY_TLS_CA"} "$@"; }
+```
+
 Conventions:
 - `--json` on most commands → NDJSON (one object per line) + a final
   `cli-summary` line with continuation hints.
@@ -184,7 +200,11 @@ Full agent config as JSON (type, prompt, model, tools, integrations).
 
 There is no `atlas agent register` CLI subcommand — register via the daemon's
 HTTP API directly. Source the daemon `.env` once per shell so the example
-works on TLS-enabled installs (see the SKILL.md "Daemon URL" preamble):
+works on TLS-enabled installs (see the SKILL.md "Daemon URL" preamble).
+
+**Rule: use `friday_curl`, not plain `curl`.** Plain `curl` against
+`$FRIDAYD_URL` on a TLS install fails with `self signed certificate in
+certificate chain` — `friday_curl` adds `--cacert` automatically.
 
 ```bash
 set -a

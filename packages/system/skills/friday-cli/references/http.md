@@ -15,11 +15,15 @@ set -a
 . "${FRIDAY_HOME:-$HOME/.friday/local}/.env" 2>/dev/null \
   || . "$HOME/.atlas/.env" 2>/dev/null || true
 set +a
+# Wrapper that adds --cacert exactly when TLS is on. Use this in place of
+# plain `curl` for every daemon call below.
+friday_curl() { curl ${FRIDAY_TLS_CA:+--cacert "$FRIDAY_TLS_CA"} "$@"; }
 ```
 
-All curl invocations should add `${FRIDAY_TLS_CA:+--cacert "$FRIDAY_TLS_CA"}`
-— that expansion is empty under plain HTTP and adds `--cacert` exactly when
-the daemon is serving the private-CA s2s cert.
+**Rule: every daemon HTTP call in this reference uses `friday_curl`, not
+plain `curl`.** The wrapper auto-adds `--cacert "$FRIDAY_TLS_CA"` when TLS
+is on; plain `curl` against `$FRIDAYD_URL` on a TLS install fails with
+`self signed certificate in certificate chain`.
 
 SSE: pass `Accept: text/event-stream`. Streams end with `data: [DONE]`.
 

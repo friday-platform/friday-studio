@@ -16,6 +16,8 @@ End-to-end patterns for driving Friday via CLI + HTTP. Copy + adapt.
 > friday_curl() { curl ${FRIDAY_TLS_CA:+--cacert "$FRIDAY_TLS_CA"} "$@"; }
 > ```
 >
+
+**Rule: every daemon HTTP call below uses `friday_curl`, not `curl`.** Plain `curl` against `$FRIDAYD_URL` on a TLS install fails with `self signed certificate in certificate chain`.
 > See the `friday-cli` SKILL.md "Daemon URL" section for the full
 > explanation.
 

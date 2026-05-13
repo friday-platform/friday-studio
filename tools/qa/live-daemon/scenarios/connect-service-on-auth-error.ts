@@ -18,7 +18,6 @@
  * prompt or the error message surfaces here.
  */
 
-import { ensureDir } from "jsr:@std/fs@1.0.13/ensure-dir";
 import { dirname, fromFileUrl, join } from "jsr:@std/path@1";
 import { currentGitSha, ensureCredentialsLoaded, HARNESS_PATHS } from "../harness.ts";
 
@@ -520,7 +519,7 @@ async function main() {
   if (writeResult || jsonOutputPath) {
     const path =
       jsonOutputPath ?? join(HARNESS_PATHS.resultsDir, `${sha}-connect-service-on-auth-error.json`);
-    await ensureDir(dirname(path));
+    await Deno.mkdir(dirname(path), { recursive: true });
     await Deno.writeTextFile(path, JSON.stringify(report, null, 2));
     console.log(`\n→ ${path}`);
   }

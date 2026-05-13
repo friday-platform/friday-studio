@@ -27,16 +27,24 @@ set -a
 set +a
 # $FRIDAYD_URL → https://localhost:18080 (TLS) or http://localhost:8080 (plain)
 # $FRIDAY_TLS_CA → path to the private-CA cert (empty when TLS off)
+
+# Wrapper that adds --cacert exactly when TLS is on. Use this in place of
+# `curl` for every daemon call — never `curl` directly against $FRIDAYD_URL.
+friday_curl() { curl ${FRIDAY_TLS_CA:+--cacert "$FRIDAY_TLS_CA"} "$@"; }
 ```
 
-Every curl below uses `${FRIDAY_TLS_CA:+--cacert "$FRIDAY_TLS_CA"}` — that
-expansion is empty under plain HTTP, and adds `--cacert` exactly when needed.
+**Rule: every daemon HTTP call below uses `friday_curl`, not `curl`.** The
+wrapper is what makes the example work on both plain-HTTP installs (where
+`$FRIDAY_TLS_CA` is empty and `--cacert` is omitted) and TLS installs
+(where `--cacert` is required — plain `curl` against `$FRIDAYD_URL` fails
+with `self signed certificate in certificate chain`).
 
-**Troubleshooting:** if a curl call fails with `SSL certificate problem:
-self signed certificate in certificate chain`, your `FRIDAY_TLS_CA` is
-empty or stale (`set -a` exported an empty value, or the .env hasn't been
-re-sourced after a `setup-tls.sh` rerun). Check with `echo "$FRIDAY_TLS_CA"`
-and re-source the daemon `.env` from the same preamble above.
+**Troubleshooting:** if `friday_curl` still fails with `SSL certificate
+problem: self signed certificate in certificate chain`, your
+`FRIDAY_TLS_CA` is empty or stale (`set -a` exported an empty value, or
+the .env hasn't been re-sourced after a `setup-tls.sh` rerun). Check with
+`echo "$FRIDAY_TLS_CA"` and re-source the daemon `.env` from the same
+preamble above.
 
 ## When to use CLI vs HTTP
 
@@ -60,7 +68,7 @@ Before touching anything, confirm the daemon is up:
 ```bash
 deno task atlas daemon status
 # or (after sourcing the daemon .env — see preamble above):
-curl -sf ${FRIDAY_TLS_CA:+--cacert "$FRIDAY_TLS_CA"} \
+friday_curl -sf \
   "${FRIDAYD_URL:-http://localhost:8080}/health" && echo OK
 ```
 
@@ -97,7 +105,7 @@ deno task atlas signal list -w <workspace-id-or-name> --json
 Or HTTP for full schema:
 
 ```bash
-curl -sf ${FRIDAY_TLS_CA:+--cacert "$FRIDAY_TLS_CA"} \
+friday_curl -sf \
   "$FRIDAYD_URL/api/workspaces/<id>/signals" | jq
 ```
 
@@ -114,7 +122,7 @@ deno task atlas signal trigger -n <signal-name> -w <workspace> \
 Or via HTTP with SSE:
 
 ```bash
-curl -N -X POST ${FRIDAY_TLS_CA:+--cacert "$FRIDAY_TLS_CA"} \
+friday_curl -N -X POST \
   "$FRIDAYD_URL/api/workspaces/<id>/signals/<signal-id>" \
   -H 'Content-Type: application/json' \
   -H 'Accept: text/event-stream' \
@@ -136,7 +144,7 @@ deno task atlas session get <session-id> --json  # full SessionView
 SSE replay/live stream (survives reconnect within the replay window):
 
 ```bash
-curl -N ${FRIDAY_TLS_CA:+--cacert "$FRIDAY_TLS_CA"} \
+friday_curl -N \
   "$FRIDAYD_URL/api/sessions/<id>/stream" \
   -H 'Accept: text/event-stream'
 ```
@@ -146,7 +154,7 @@ human-readable summary + keyDetails (with URLs). Prefer it over walking
 `agentBlocks[]` when you just want "what happened":
 
 ```bash
-curl -sf ${FRIDAY_TLS_CA:+--cacert "$FRIDAY_TLS_CA"} \
+friday_curl -sf \
   "$FRIDAYD_URL/api/sessions/<id>" | jq '.aiSummary'
 ```
 
@@ -161,7 +169,7 @@ JSON — convert from YAML inline:
 
 ```bash
 CONFIG=$(python3 -c "import yaml,json,sys; print(json.dumps(yaml.safe_load(open('$1'))))" workspaces/my-thing/workspace.yml)
-curl -sf -X POST ${FRIDAY_TLS_CA:+--cacert "$FRIDAY_TLS_CA"} \
+friday_curl -sf -X POST \
   "$FRIDAYD_URL/api/workspaces/create" \
   -H 'Content-Type: application/json' \
   -d "{\"config\":$CONFIG,\"workspaceName\":\"My Thing\"}"

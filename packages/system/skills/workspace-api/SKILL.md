@@ -218,6 +218,8 @@ set +a
 friday_curl() { curl ${FRIDAY_TLS_CA:+--cacert "$FRIDAY_TLS_CA"} "$@"; }
 ```
 
+
+**Rule: every daemon HTTP call below uses `friday_curl`, not `curl`.** Plain `curl` against `$FRIDAYD_URL` on a TLS install fails with `self signed certificate in certificate chain`.
 Confirm the daemon is up:
 
 ```bash
