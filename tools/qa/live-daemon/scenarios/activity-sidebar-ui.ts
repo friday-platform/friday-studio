@@ -19,6 +19,8 @@ import { connect } from "nats";
 import {
   type DaemonHandle,
   HARNESS_PATHS,
+  qaProviderReplacements,
+  qaWorkspaceTmpRoot,
   registerWorkspace,
   startDaemon,
   stopDaemon,
@@ -121,9 +123,15 @@ async function runChecked(
 }
 
 async function materializeFixture(): Promise<string> {
-  const tmpDir = await Deno.makeTempDir({ prefix: "friday-activity-ui-" });
+  const tmpDir = await Deno.makeTempDir({
+    dir: qaWorkspaceTmpRoot(),
+    prefix: "friday-activity-ui-",
+  });
   const src = await Deno.readTextFile(join(REFS_FIXTURE, "workspace.yml"));
-  const rendered = src.replaceAll("__FAKE_INBOX_MCP_PATH__", FAKE_INBOX_MCP);
+  let rendered = src.replaceAll("__FAKE_INBOX_MCP_PATH__", FAKE_INBOX_MCP);
+  for (const [from, to] of Object.entries(qaProviderReplacements())) {
+    rendered = rendered.replaceAll(from, to);
+  }
   await Deno.writeTextFile(join(tmpDir, "workspace.yml"), rendered);
   return tmpDir;
 }

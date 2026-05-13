@@ -18,6 +18,8 @@ import {
   fetchSessionEvents,
   HARNESS_PATHS,
   listArtifactsForSession,
+  qaProviderReplacements,
+  qaWorkspaceTmpRoot,
   registerWorkspace,
   type SSEEvent,
   startDaemon,
@@ -40,10 +42,14 @@ const PYTHON_USER_AGENT_FIXTURE = join(
 );
 
 async function materializeFixture(srcDir: string, replacements: Record<string, string>) {
-  const tmpDir = await Deno.makeTempDir({ prefix: "friday-first-principles-" });
+  const tmpDir = await Deno.makeTempDir({
+    dir: qaWorkspaceTmpRoot(),
+    prefix: "friday-first-principles-",
+  });
   const src = await Deno.readTextFile(join(srcDir, "workspace.yml"));
   let rendered = src;
-  for (const [from, to] of Object.entries(replacements)) {
+  const merged = { ...qaProviderReplacements(), ...replacements };
+  for (const [from, to] of Object.entries(merged)) {
     rendered = rendered.replaceAll(from, to);
   }
   await Deno.writeTextFile(join(tmpDir, "workspace.yml"), rendered);

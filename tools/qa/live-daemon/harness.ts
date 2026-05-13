@@ -171,7 +171,11 @@ export async function startDaemon(opts: StartDaemonOptions = {}): Promise<Daemon
   await ensureCredentialsLoaded();
   const port = opts.port ?? pickPort();
   const natsPort = pickPort();
-  const fridayHome = opts.fridayHome ?? (await Deno.makeTempDir({ prefix: "friday-qa-" }));
+  // realpath so isUnderHome's prefix check sees the same canonical path
+  // (/var → /private/var on macOS).
+  const fridayHome = await Deno.realPath(
+    opts.fridayHome ?? (await Deno.makeTempDir({ prefix: "friday-qa-" })),
+  );
   const natsUrl = `nats://127.0.0.1:${natsPort}`;
 
   const natsStoreDir = join(fridayHome, "jetstream");
@@ -219,14 +223,32 @@ export async function startDaemon(opts: StartDaemonOptions = {}): Promise<Daemon
     // to ship spans during the test run.
     OTEL_EXPORTER_OTLP_ENDPOINT: "",
     OTEL_EXPORTER_OTLP_HEADERS: "",
+    // Daemon binds HTTPS when these are set + readable; force HTTP.
+    FRIDAY_TLS_CERT: "",
+    FRIDAY_TLS_KEY: "",
+    FRIDAY_TLS_CA: "",
     ...(opts.env ?? {}),
   };
 
-  // Spawn `deno task atlas daemon start --port <p> --hostname 127.0.0.1`
-  // from the worktree root so module resolution lines up with the
-  // workspace deno.json.
+  // Bypass `deno task atlas` — it hard-codes FRIDAY_HOME=$HOME/.atlas,
+  // overriding the isolated path in env.
   const cmd = new Deno.Command("deno", {
-    args: ["task", "atlas", "daemon", "start", "--port", String(port), "--hostname", "127.0.0.1"],
+    args: [
+      "run",
+      "-q",
+      "--allow-all",
+      "--unstable-worker-options",
+      "--unstable-kv",
+      "--unstable-raw-imports",
+      "--env-file",
+      "apps/atlas-cli/src/otel-bootstrap.ts",
+      "daemon",
+      "start",
+      "--port",
+      String(port),
+      "--hostname",
+      "127.0.0.1",
+    ],
     env,
     cwd: WORKTREE_ROOT,
     stdout: opts.inherit ? "inherit" : "piped",
@@ -283,7 +305,15 @@ export async function startDaemon(opts: StartDaemonOptions = {}): Promise<Daemon
             }
           }
         };
-        return { port, baseUrl, fridayHome, natsUrl, process: proc, stop };
+        currentDaemonFridayHome = fridayHome;
+        const stopAndClear = async () => {
+          try {
+            await stop();
+          } finally {
+            if (currentDaemonFridayHome === fridayHome) currentDaemonFridayHome = undefined;
+          }
+        };
+        return { port, baseUrl, fridayHome, natsUrl, process: proc, stop: stopAndClear };
       }
       await resp.body?.cancel();
     } catch {
@@ -762,3 +792,17 @@ export const HARNESS_PATHS = {
   fixturesDir: join(WORKTREE_ROOT, "tools/qa/fixtures"),
   resultsDir: join(WORKTREE_ROOT, "tools/qa/results"),
 };
+
+export function qaProviderReplacements(): Record<string, string> {
+  return {
+    "__FRIDAY_QA_PROVIDER__": Deno.env.get("FRIDAY_QA_PROVIDER") ?? "anthropic",
+    "__FRIDAY_QA_MODEL__": Deno.env.get("FRIDAY_QA_MODEL") ?? "claude-sonnet-4-6",
+  };
+}
+
+// Tracks the active daemon's FRIDAY_HOME so fixture YAMLs land under it —
+// isUnderHome silently masks any registered workspace outside FRIDAY_HOME.
+let currentDaemonFridayHome: string | undefined;
+export function qaWorkspaceTmpRoot(): string | undefined {
+  return currentDaemonFridayHome;
+}
