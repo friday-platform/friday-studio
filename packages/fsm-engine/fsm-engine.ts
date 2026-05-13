@@ -39,6 +39,7 @@ import type { ArtifactStorageAdapter } from "@atlas/core/artifacts";
 import { resolveImageParts } from "@atlas/core/artifacts/images";
 import { liftToolResultsForPersist } from "@atlas/core/artifacts/scrubber";
 import { createDelegateTool, DEFAULT_MAX_DEPTH } from "@atlas/core/delegate";
+import { ToolAccessGrants } from "@atlas/core/elicitations";
 import type { LinkSummary } from "@atlas/core/mcp-registry/discovery";
 import { ValidationFailedError, type ValidationVerdict } from "@atlas/hallucination/verdict";
 import { buildTemporalFacts, type PlatformModels, wrapRetrieved } from "@atlas/llm";
@@ -3352,6 +3353,39 @@ export class FSMEngine {
             scoped[name] = filtered[name];
           }
         }
+      }
+    }
+
+    // Union `allow_always` grants into the action's toolset. Without this,
+    // `request_tool_access` is a permission gate the runtime never reads —
+    // see #280. Grants only widen up to what `filtered` already contains,
+    // so PLATFORM_TOOL_ALLOWLIST + workspace MCP load decisions still cap
+    // the surface. Bypass already widens past per-agent narrowing, so the
+    // grant query would be redundant.
+    if (!bypassActive) {
+      const grants = await ToolAccessGrants.listForWorkspace({
+        workspaceId: this.options.scope.workspaceId,
+      });
+      if (grants.ok) {
+        const widened: string[] = [];
+        for (const name of grants.data) {
+          if (filtered[name] && !scoped[name]) {
+            scoped[name] = filtered[name];
+            widened.push(name);
+          }
+        }
+        if (widened.length > 0) {
+          logger.info("Allow-always grants widened action toolset", {
+            jobName: this._definition.id,
+            actionId,
+            widened,
+          });
+        }
+      } else {
+        logger.warn("Failed to read tool-access grants; skipping grant union", {
+          workspaceId: this.options.scope.workspaceId,
+          error: grants.error,
+        });
       }
     }
 

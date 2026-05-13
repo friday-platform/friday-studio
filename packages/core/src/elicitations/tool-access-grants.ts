@@ -91,6 +91,32 @@ export class JetStreamToolAccessGrantAdapter {
       return fail(stringifyError(err));
     }
   }
+
+  async listForWorkspace(input: { workspaceId: string }): Promise<Result<string[], string>> {
+    try {
+      const kv = await this.kv();
+      const prefix = `${keySegment(input.workspaceId)}.`;
+      // Drain keys before fetching values — `kv.get` inside `for await`
+      // can terminate the keys iterator early in nats.js v2.29 (see the
+      // matching note in jetstream-adapter.ts). Two-pass is safe.
+      const keysIter = await kv.keys(`${keySegment(input.workspaceId)}.*`);
+      const keys: string[] = [];
+      for await (const key of keysIter) keys.push(key);
+      const out: string[] = [];
+      for (const key of keys) {
+        if (!key.startsWith(prefix)) continue;
+        const entry = await kv.get(key);
+        if (!entry || entry.operation !== "PUT") continue;
+        const parsed = ToolAccessGrantSchema.safeParse(JSON.parse(dec.decode(entry.value)));
+        if (!parsed.success) continue;
+        if (parsed.data.workspaceId !== input.workspaceId) continue;
+        out.push(parsed.data.toolName);
+      }
+      return success(out);
+    } catch (err) {
+      return fail(stringifyError(err));
+    }
+  }
 }
 
 let adapter: JetStreamToolAccessGrantAdapter | null = null;
@@ -121,6 +147,8 @@ export const ToolAccessGrants = {
   }): Promise<Result<ToolAccessGrant, string>> => requireAdapter().grantAlways(input),
   hasGrant: (input: { workspaceId: string; toolName: string }): Promise<Result<boolean, string>> =>
     requireAdapter().hasGrant(input),
+  listForWorkspace: (input: { workspaceId: string }): Promise<Result<string[], string>> =>
+    requireAdapter().listForWorkspace(input),
 };
 
 export async function bootstrapToolAccessGrantStorage(nc: NatsConnection): Promise<void> {
