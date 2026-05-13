@@ -237,6 +237,133 @@ async function materializeWorkspace(): Promise<string> {
 }
 
 // ────────────────────────────────────────────────────────────────────────
+// Routing helper — collapses the "drop a file, observe which tool the
+// agent picked" pattern that 80% of these scenarios share. Each scenario
+// declares: the file content + mediaType (the routing signal), the
+// question to ask, and the assertions about which tools must / must not
+// be called with this attachment's path. Plus optional regex checks on
+// the assistant answer.
+// ────────────────────────────────────────────────────────────────────────
+
+interface RoutingExpectation {
+  id: string;
+  workspaceName: string;
+  filename: string;
+  content: Uint8Array | string;
+  mediaType: string;
+  question: string;
+  /** Tool names — at least ONE must appear somewhere in the agent's tool calls. */
+  mustCallSome?: string[];
+  /** Tool names that must NOT be called with this attachment's path as input. */
+  mustNotCallWithPath?: string[];
+  /** Assistant answer must match this regex (used for content-extraction checks). */
+  answerMustMatch?: RegExp;
+  /** Assistant answer must NOT match this regex (used for guardrails — e.g. "please re-upload"). */
+  answerMustNotMatch?: RegExp;
+  timeoutMs?: number;
+}
+
+async function runRoutingExpectation(
+  d: DaemonHandle,
+  exp: RoutingExpectation,
+): Promise<EvalResult> {
+  const notes: string[] = [];
+  const metrics: Record<string, unknown> = {};
+
+  const wsPath = await materializeWorkspace();
+  const ws = await registerWorkspace(d, wsPath, { name: exp.workspaceName });
+  const workspaceId = ws.id;
+
+  const chatId = `chat_eval_${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;
+  const uploadsRoot = join(d.fridayHome, "scratch", "uploads", chatId);
+  await Deno.mkdir(uploadsRoot, { recursive: true });
+  const path = join(uploadsRoot, exp.filename);
+  if (typeof exp.content === "string") {
+    await Deno.writeTextFile(path, exp.content);
+  } else {
+    await Deno.writeFile(path, exp.content);
+  }
+  metrics.attachmentPath = path;
+  metrics.mediaType = exp.mediaType;
+
+  const result = await postChatMessageWithAttachment(
+    d,
+    workspaceId,
+    chatId,
+    exp.question,
+    { path, filename: exp.filename, mediaType: exp.mediaType },
+    { timeoutMs: exp.timeoutMs ?? 180_000 },
+  );
+  metrics.durationMs = result.durationMs;
+  metrics.toolCalls = result.toolCalls.map((c) => c.toolName);
+  metrics.assistantText = result.assistantText.slice(0, 250);
+
+  // Negative: agent must NOT have called any of these tools WITH THIS PATH.
+  // (The agent might still use them on something else — e.g. read_attachment
+  // on a DIFFERENT path during run_code-style multi-step work. We only
+  // forbid the specific routing for THIS attachment.)
+  if (exp.mustNotCallWithPath?.length) {
+    for (const toolName of exp.mustNotCallWithPath) {
+      const sneakyCall = result.toolCalls.some(
+        (c) =>
+          c.toolName === toolName &&
+          typeof c.input === "object" &&
+          c.input !== null &&
+          (c.input as { path?: unknown }).path === path,
+      );
+      if (sneakyCall) {
+        notes.push(
+          `Negative: agent called ${toolName} with the attachment path — that's the forbidden routing for mediaType=${exp.mediaType}.`,
+        );
+        return { id: exp.id, pass: false, notes, metrics };
+      }
+    }
+    notes.push(
+      `Positive: agent did NOT call ${exp.mustNotCallWithPath.join(" / ")} with the attachment path.`,
+    );
+  }
+
+  // Positive: at least one of the listed tools was called somewhere.
+  if (exp.mustCallSome?.length) {
+    const matched = result.toolCalls.filter((c) => exp.mustCallSome?.includes(c.toolName));
+    if (matched.length === 0) {
+      notes.push(
+        `Negative: agent didn't call any of [${exp.mustCallSome.join(", ")}]. Tools used: ${result.toolCalls.map((c) => c.toolName).join(", ") || "(none)"}.`,
+      );
+      return { id: exp.id, pass: false, notes, metrics };
+    }
+    notes.push(
+      `Positive: agent called ${[...new Set(matched.map((c) => c.toolName))].join(", ")}.`,
+    );
+  }
+
+  // Positive content extraction — answer must reference something in the file.
+  if (exp.answerMustMatch) {
+    if (!exp.answerMustMatch.test(result.assistantText)) {
+      notes.push(
+        `Negative: answer doesn't match ${exp.answerMustMatch}. Reply: "${result.assistantText.slice(0, 250)}"`,
+      );
+      return { id: exp.id, pass: false, notes, metrics };
+    }
+    notes.push(`Positive: answer matches ${exp.answerMustMatch}.`);
+  }
+
+  // Negative guardrail — answer must NOT match a forbidden pattern
+  // (e.g. "please paste the contents" / "I can't open this file").
+  if (exp.answerMustNotMatch) {
+    if (exp.answerMustNotMatch.test(result.assistantText)) {
+      notes.push(
+        `Negative: answer matched the forbidden pattern ${exp.answerMustNotMatch}. Reply: "${result.assistantText.slice(0, 250)}"`,
+      );
+      return { id: exp.id, pass: false, notes, metrics };
+    }
+    notes.push(`Positive: answer does NOT match the forbidden pattern ${exp.answerMustNotMatch}.`);
+  }
+
+  return { id: exp.id, pass: true, notes, metrics };
+}
+
+// ────────────────────────────────────────────────────────────────────────
 // Scenarios
 // ────────────────────────────────────────────────────────────────────────
 
@@ -568,6 +695,200 @@ async function runMultiFileRead(d: DaemonHandle): Promise<EvalResult> {
 }
 
 // ────────────────────────────────────────────────────────────────────────
+// Routing scenarios — one per format / branch the prompt distinguishes.
+// Each declares a tiny RoutingExpectation that the helper drives.
+// ────────────────────────────────────────────────────────────────────────
+
+const MD_NOTES = `# Project Status
+
+## Owners
+- Alice (backend)
+- Bob (frontend)
+- Carol (infra)
+
+## Blockers
+None currently.
+`;
+
+const JSON_CONFIG = JSON.stringify(
+  { version: "1.2.3", debug: false, database: { host: "primary.db.local", port: 5432, ssl: true } },
+  null,
+  2,
+);
+
+const YAML_CONFIG = `version: "1.2.3"
+servers:
+  - name: api
+    port: 8421
+  - name: worker
+    port: 7777
+secret_keyword: gabbro
+`;
+
+const HTML_PAGE = `<!doctype html><html><head><title>Onboarding</title></head><body>
+<h1>Welcome new hire</h1><p>Your buddy: <strong>Lukasz</strong>.</p>
+<ul><li>Slack: #team-friday</li><li>Repo: friday-studio</li></ul>
+</body></html>`;
+
+const LOG_FILE = [
+  "2026-05-13T10:00:00Z INFO startup ok",
+  "2026-05-13T10:00:05Z INFO connected to db",
+  "2026-05-13T10:00:12Z ERROR auth refresh failed: token expired (correlationId=abc-42)",
+  "2026-05-13T10:00:13Z INFO retry scheduled in 5s",
+  "2026-05-13T10:00:18Z INFO auth refreshed ok",
+].join("\n");
+
+const PY_SCRIPT = `def fib(n):
+    if n < 2:
+        return n
+    return fib(n - 1) + fib(n - 2)
+
+# prints the 10th fibonacci number
+print(fib(10))
+`;
+
+// 4-byte ZIP magic — enough to be a "DOCX/PPTX" file as far as the agent
+// is concerned (the routing decision is on the mediaType, not the bytes).
+const ZIP_MAGIC = new Uint8Array([0x50, 0x4b, 0x03, 0x04]);
+// 8-byte PNG signature.
+const PNG_MAGIC = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+// MP3 with an ID3v2 header tag (no actual audio frames — just enough that
+// the file isn't empty and looks like audio to anyone inspecting bytes).
+const MP3_MAGIC = new Uint8Array([0x49, 0x44, 0x33, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+
+const ROUTING_SCENARIOS: RoutingExpectation[] = [
+  // ── text/markup positives ─────────────────────────────────────────────
+  {
+    id: "chat-md-read",
+    workspaceName: "chat-attachments-qa-md",
+    filename: "notes.md",
+    content: MD_NOTES,
+    mediaType: "text/markdown",
+    question: "who owns infra?",
+    mustCallSome: ["read_attachment"],
+    answerMustMatch: /carol/i,
+  },
+  {
+    id: "chat-json-extract",
+    workspaceName: "chat-attachments-qa-json",
+    filename: "config.json",
+    content: JSON_CONFIG,
+    mediaType: "application/json",
+    question: "what database port is in this config?",
+    mustCallSome: ["read_attachment"],
+    answerMustMatch: /\b5432\b/,
+  },
+  {
+    id: "chat-yaml-extract",
+    workspaceName: "chat-attachments-qa-yaml",
+    filename: "deploy.yml",
+    content: YAML_CONFIG,
+    mediaType: "application/x-yaml",
+    question: "what's the value of secret_keyword?",
+    mustCallSome: ["read_attachment"],
+    answerMustMatch: /gabbro/i,
+  },
+  {
+    id: "chat-html-read",
+    workspaceName: "chat-attachments-qa-html",
+    filename: "onboarding.html",
+    content: HTML_PAGE,
+    mediaType: "text/html",
+    question: "who is the buddy in this onboarding doc?",
+    mustCallSome: ["read_attachment"],
+    answerMustMatch: /lukasz/i,
+  },
+  {
+    id: "chat-log-grep",
+    workspaceName: "chat-attachments-qa-log",
+    filename: "app.log",
+    content: LOG_FILE,
+    mediaType: "text/plain",
+    question: "what correlationId is on the ERROR line?",
+    mustCallSome: ["read_attachment"],
+    answerMustMatch: /abc-42/i,
+  },
+  // ── source code positive ──────────────────────────────────────────────
+  {
+    id: "chat-python-source",
+    workspaceName: "chat-attachments-qa-py",
+    filename: "fib.py",
+    content: PY_SCRIPT,
+    mediaType: "text/x-python",
+    question: "what number does this script print to stdout?",
+    mustCallSome: ["read_attachment"],
+    // fib(10) = 55. The script comment also says "10th fibonacci".
+    answerMustMatch: /\b55\b/,
+  },
+  // ── binary negatives (DOCX/PPTX mirror PDF) ───────────────────────────
+  {
+    id: "docx-routes-to-parse-not-read-attachment",
+    workspaceName: "chat-attachments-qa-docx",
+    filename: "spec.docx",
+    content: ZIP_MAGIC,
+    mediaType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    question: "summarize this doc",
+    mustNotCallWithPath: ["read_attachment"],
+    mustCallSome: [
+      "create_artifact",
+      "parse_artifact",
+      "display_artifact",
+      "run_code",
+      "save_artifact",
+    ],
+  },
+  {
+    id: "pptx-routes-to-parse-not-read-attachment",
+    workspaceName: "chat-attachments-qa-pptx",
+    filename: "deck.pptx",
+    content: ZIP_MAGIC,
+    mediaType: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    question: "what is this deck about?",
+    mustNotCallWithPath: ["read_attachment"],
+    mustCallSome: [
+      "create_artifact",
+      "parse_artifact",
+      "display_artifact",
+      "run_code",
+      "save_artifact",
+    ],
+  },
+  // ── image negative (prompt: images → create_artifact / display_artifact) ─
+  {
+    id: "image-not-read-via-attachment",
+    workspaceName: "chat-attachments-qa-png",
+    filename: "screenshot.png",
+    content: PNG_MAGIC,
+    mediaType: "image/png",
+    question: "what's in this screenshot?",
+    mustNotCallWithPath: ["read_attachment"],
+  },
+  // ── audio negative ────────────────────────────────────────────────────
+  {
+    id: "audio-not-read-via-attachment",
+    workspaceName: "chat-attachments-qa-mp3",
+    filename: "voicenote.mp3",
+    content: MP3_MAGIC,
+    mediaType: "audio/mpeg",
+    question: "what's said in this audio?",
+    mustNotCallWithPath: ["read_attachment"],
+  },
+  // ── prompt guardrail: never ask the user to re-upload / re-paste ──────
+  {
+    id: "agent-does-not-ask-user-to-reupload",
+    workspaceName: "chat-attachments-qa-noreupload",
+    filename: "answer.md",
+    content: "# The answer\n\nThe answer to life, the universe, and everything is **42**.\n",
+    mediaType: "text/markdown",
+    question: "what's the answer in this file?",
+    mustCallSome: ["read_attachment"],
+    answerMustMatch: /\b42\b/,
+    answerMustNotMatch:
+      /\b(re-?upload|re-?paste|paste (the )?(contents?|file)|share (the )?(contents?|file)|can'?t (open|read|access))\b/i,
+  },
+];
+
+// ────────────────────────────────────────────────────────────────────────
 // Entrypoint
 // ────────────────────────────────────────────────────────────────────────
 
@@ -598,6 +919,16 @@ async function main() {
       { id: "chat-csv-read", fn: runChatCsvRead },
       { id: "pdf-routes-to-parse-not-read-attachment", fn: runPdfRoutesToParseNotReadAttachment },
       { id: "multi-file-read", fn: runMultiFileRead },
+      // Routing matrix — one entry per file-format branch the prompt
+      // distinguishes. Each runs through `runRoutingExpectation`.
+      ...ROUTING_SCENARIOS.map(({ id }) => ({
+        id,
+        fn: (d: DaemonHandle) => {
+          const exp = ROUTING_SCENARIOS.find((e) => e.id === id);
+          if (!exp) throw new Error(`routing scenario gone: ${id}`);
+          return runRoutingExpectation(d, exp);
+        },
+      })),
       { id: "rejects-foreign-path", fn: runRejectsForeignPath },
     ];
 
