@@ -3,6 +3,7 @@
   import { browser } from "$app/environment";
   import { checkDaemonHealth, daemonHealth } from "$lib/daemon-health.svelte";
   import type { Snippet } from "svelte";
+  import DaemonLoading from "./daemon-loading.svelte";
 
   const { children }: { children: Snippet } = $props();
 
@@ -17,9 +18,7 @@
   only flips on a client-side fetch, leaving SSR stuck on "Connecting…".
 -->
 {#if browser && daemonHealth.loading && !daemonHealth.hasConnected}
-  <div class="gate-state">
-    <p class="gate-message">Connecting to daemon...</p>
-  </div>
+  <DaemonLoading />
 {:else if browser && !daemonHealth.connected && !daemonHealth.hasConnected}
   <div class="gate-state">
     <p class="gate-icon">!</p>
