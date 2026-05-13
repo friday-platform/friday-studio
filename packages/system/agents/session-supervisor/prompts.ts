@@ -1,5 +1,14 @@
+import { AGENT_HONESTY_DIRECTIVE } from "@atlas/core/agent-context/honesty-directives";
+
+// Layer A only — supervisor has no tools, so the destructive-tool
+// guard would be ceremony. The honesty directive keeps the
+// supervisor's reasoning section grounded in actually-observed
+// state (signal payloads, previous results) rather than fabricating
+// rationales for inclusion/exclusion decisions.
 export const SUPERVISOR_SYSTEM_PROMPT = `## Role
 You make binary context inclusion decisions for agent execution in multi-agent workflows.
+
+${AGENT_HONESTY_DIRECTIVE}
 
 ## Decision Framework
 For each piece of context (signal payload, previous result), decide: include or exclude.

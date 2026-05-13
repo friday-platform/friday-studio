@@ -19,6 +19,10 @@ import {
 import type { Logger } from "@atlas/logger";
 import { hasToolCall, jsonSchema, stepCountIs, streamText } from "ai";
 import { z } from "zod";
+import {
+  AGENT_HONESTY_DIRECTIVE,
+  DESTRUCTIVE_TOOL_GUARD,
+} from "../agent-context/honesty-directives.ts";
 import { throwWithCause } from "../utils/error-helpers.ts";
 import { filterWorkspaceAgentTools } from "./agent-tool-filters.ts";
 
@@ -57,8 +61,14 @@ export function convertLLMToAgent(
     useWorkspaceSkills: true,
     handler: async (prompt, { tools, session, stream, abortSignal, outputSchema }) => {
       try {
-        // Use agent's system prompt directly - no attribution protocol injection
-        const systemPrompt = config.config.prompt || "";
+        // Author's prompt + the universal honesty + destructive-tool
+        // directives. Appended after the author's content so the model
+        // reads the task definition first and the meta-rules as the
+        // closing constraint. Same shape as fsm-engine.ts case "llm"'s
+        // existing complete/failStep instructions.
+        const authorPrompt = config.config.prompt || "";
+        const systemPrompt =
+          `${authorPrompt}\n\n${AGENT_HONESTY_DIRECTIVE}\n\n${DESTRUCTIVE_TOOL_GUARD}`.trim();
 
         stream?.emit({
           type: "data-tool-progress",

@@ -29,6 +29,10 @@ import {
   composeArtifactBlocks,
   composeMemoryBlocks,
 } from "@atlas/core/agent-context/compose-blocks";
+import {
+  AGENT_HONESTY_DIRECTIVE,
+  DESTRUCTIVE_TOOL_GUARD,
+} from "@atlas/core/agent-context/honesty-directives";
 import type { ArtifactStorageAdapter } from "@atlas/core/artifacts";
 import { resolveImageParts } from "@atlas/core/artifacts/images";
 import { liftToolResultsForPersist } from "@atlas/core/artifacts/scrubber";
@@ -1539,6 +1543,12 @@ export class FSMEngine {
                 systemPrompt +=
                   "\n\nIMPORTANT: If you cannot complete this task, call the failStep tool with a reason.";
               }
+
+              // Universal honesty + destructive-tool directives. Appended
+              // after the complete/failStep mechanics so the model reads
+              // the structural rules (which tool ends the action) before
+              // the meta-rules (what to do when it can't source data).
+              systemPrompt += `\n\n${AGENT_HONESTY_DIRECTIVE}\n\n${DESTRUCTIVE_TOOL_GUARD}`;
 
               // Build agentId for the LLM action
               const llmAgentId = `fsm:${this._definition.id}:${action.outputTo ?? "llm"}`;
