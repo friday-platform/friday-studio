@@ -8,7 +8,9 @@
  */
 
 import { inferMimeFromFilename, isTextMimeType } from "@atlas/core/artifacts/file-upload";
-import { uploadFile } from "$lib/upload.ts";
+// `$lib/` is a SvelteKit alias Vite resolves but `deno check` (CI's
+// type-check job) does not — use a relative path so both toolchains agree.
+import { uploadFile } from "../../upload.ts";
 
 /**
  * Image attachment: rendered inline in the user bubble and shipped to the
