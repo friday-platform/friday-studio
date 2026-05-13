@@ -18,7 +18,13 @@
  *   - .env missing → no-op (whole migration).
  *   - Only legacy present → rewrite the key, keep the value.
  *   - Only new present → no-op for that pair (already migrated).
- *   - Both present → drop the legacy line; the new key wins.
+ *   - Both present → **legacy value wins**: drop the new-key line and
+ *     rewrite the legacy line. This is critical for FRIDAY_PORT_STUDIO_UI
+ *     because the installer's `ensure_platform_env_vars` runs BEFORE
+ *     `friday migrate` and seeds the new key at the installer default —
+ *     so on every upgrade, both keys are temporarily present, and a
+ *     user who customised the legacy key would otherwise silently lose
+ *     their value to the default.
  *
  * Idempotent: re-running after success is a no-op. Line-by-line rewrite
  * preserves formatting, comments, and unrelated variables.
@@ -83,30 +89,34 @@ export function rewriteEnv(raw: string): string {
 }
 
 /**
- * Apply one (legacy → new) rename to env text. If both keys are present
- * the legacy line is dropped (the new key already wins at the consumer);
- * otherwise the legacy key prefix is rewritten in place, preserving the
- * value verbatim.
+ * Apply one (legacy → new) rename to env text.
+ *
+ * - If only the legacy key is present, rewrite its key prefix in place.
+ * - If only the new key is present, leave the file unchanged.
+ * - If both are present, the legacy line wins: drop the new-key line
+ *   and rewrite the legacy line. This preserves user customisations
+ *   against the installer's add-if-missing default which runs before
+ *   this migration on upgrade.
+ *
+ * The value is always preserved verbatim — quoting, whitespace after
+ * the `=`, comments on the line are all left intact.
  */
 function rewriteKey(raw: string, legacy: string, replacement: string): string {
   const lines = raw.split("\n");
-  const hasNewKey = lines.some((line) => keyOf(line) === replacement);
+  const legacyPresent = lines.some((line) => keyOf(line) === legacy);
+  if (!legacyPresent) return raw;
 
+  // Legacy is present, so we're definitely rewriting. If the new key
+  // is also present, drop its line (legacy value wins per docstring).
   const out: string[] = [];
   for (const line of lines) {
     const key = keyOf(line);
+    if (key === replacement) continue;
     if (key !== legacy) {
       out.push(line);
       continue;
     }
-    if (hasNewKey) {
-      // Both present — drop the legacy line; the new key already wins
-      // at the consumer. Comment-only lines around the dropped key are
-      // left in place (they might reference the old name, but that's
-      // fine — users can clean up by hand).
-      continue;
-    }
-    // Rewrite the key prefix, preserve everything after the `=`.
+    // Rewrite the legacy key prefix, preserve everything after the `=`.
     const eq = line.indexOf("=");
     out.push(replacement + line.slice(eq));
   }

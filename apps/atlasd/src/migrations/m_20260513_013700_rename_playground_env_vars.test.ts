@@ -18,9 +18,30 @@ describe("rewriteEnv (playground → studio-ui env var migration)", () => {
       expect(rewriteEnv(input)).toBe(input);
     });
 
-    test("drops the legacy key when both are present (new key wins)", () => {
+    test("legacy value wins when both keys are present", () => {
+      // This is the post-installer state: ensure_platform_env_vars
+      // seeded FRIDAY_PORT_STUDIO_UI=15200 (default) before migration,
+      // but the user's customised legacy value should survive.
       const input = "FRIDAY_PORT_STUDIO_UI=15200\nFRIDAY_PORT_PLAYGROUND=25200\n";
-      expect(rewriteEnv(input)).toBe("FRIDAY_PORT_STUDIO_UI=15200\n");
+      expect(rewriteEnv(input)).toBe("FRIDAY_PORT_STUDIO_UI=25200\n");
+    });
+
+    test("legacy line position is preserved when new-key line is dropped", () => {
+      // Legacy appears AFTER the new key in the file — the rewritten
+      // line stays at the legacy's original position; the new-key line
+      // is removed from where it was.
+      const input = [
+        "FRIDAY_ENV=dev",
+        "FRIDAY_PORT_STUDIO_UI=15200",
+        "FRIDAY_PORT_FRIDAY=18080",
+        "FRIDAY_PORT_PLAYGROUND=25200",
+        "",
+      ].join("\n");
+      expect(rewriteEnv(input)).toBe(
+        ["FRIDAY_ENV=dev", "FRIDAY_PORT_FRIDAY=18080", "FRIDAY_PORT_STUDIO_UI=25200", ""].join(
+          "\n",
+        ),
+      );
     });
   });
 
@@ -30,9 +51,9 @@ describe("rewriteEnv (playground → studio-ui env var migration)", () => {
       expect(rewriteEnv(input)).toBe("STUDIO_UI_PORT=5200\n");
     });
 
-    test("drops the legacy key when both are present", () => {
+    test("legacy value wins when both are present", () => {
       const input = "STUDIO_UI_PORT=5200\nPLAYGROUND_PORT=6300\n";
-      expect(rewriteEnv(input)).toBe("STUDIO_UI_PORT=5200\n");
+      expect(rewriteEnv(input)).toBe("STUDIO_UI_PORT=6300\n");
     });
   });
 
@@ -42,9 +63,9 @@ describe("rewriteEnv (playground → studio-ui env var migration)", () => {
       expect(rewriteEnv(input)).toBe("STUDIO_UI_HOST=0.0.0.0\n");
     });
 
-    test("drops the legacy key when both are present", () => {
+    test("legacy value wins when both are present", () => {
       const input = "STUDIO_UI_HOST=127.0.0.1\nPLAYGROUND_HOST=0.0.0.0\n";
-      expect(rewriteEnv(input)).toBe("STUDIO_UI_HOST=127.0.0.1\n");
+      expect(rewriteEnv(input)).toBe("STUDIO_UI_HOST=0.0.0.0\n");
     });
   });
 
