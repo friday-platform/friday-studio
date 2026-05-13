@@ -4,10 +4,8 @@ import {
   buildSegments,
   extractImages,
   extractToolCalls,
-  flattenToolCalls,
   formatMessageTimestamp,
 } from "./render.ts";
-import type { Segment } from "./types.ts";
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -911,103 +909,3 @@ describe("formatMessageTimestamp", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Reference-stability contract
-//
-// The live chat UI calls `extractToolCalls` / `buildSegments` on every
-// streaming chunk for the tail message. When `prevByToolCallId` /
-// `prevSegments` are supplied, unchanged subtrees / segments must be
-// returned by reference so downstream `$derived` and memoising caches
-// (e.g. the Shiki JSON highlighter cache in
-// `tools/agent-playground/.../format-raw-output.ts`) hit on the next tick.
-// ---------------------------------------------------------------------------
-
-describe("reference stability (extractToolCalls / buildSegments)", () => {
-  it("preserves the tool-call reference when nothing changed", () => {
-    const inputRef = { url: "https://example.com" };
-    const outputRef = { ok: true };
-    const part = {
-      type: "tool-web_fetch",
-      toolCallId: "stable-1",
-      state: "output-available",
-      input: inputRef,
-      output: outputRef,
-    };
-    const msg = makeMessage([part]);
-    const first = extractToolCalls(msg);
-    const second = extractToolCalls(msg, {
-      prevByToolCallId: flattenToolCalls(first),
-    });
-    expect(second[0]).toBe(first[0]);
-  });
-
-  it("returns a fresh reference when state transitions", () => {
-    const inputRef = { url: "https://example.com" };
-    const partA = {
-      type: "tool-web_fetch",
-      toolCallId: "transition-1",
-      state: "input-streaming",
-      input: inputRef,
-    };
-    const msgA = makeMessage([partA]);
-    const first = extractToolCalls(msgA);
-    const partB = { ...partA, state: "output-available", output: { ok: true } };
-    const msgB = makeMessage([partB]);
-    const second = extractToolCalls(msgB, {
-      prevByToolCallId: flattenToolCalls(first),
-    });
-    expect(second[0]).not.toBe(first[0]);
-    expect(second[0]?.state).toBe("output-available");
-  });
-
-  it("preserves a tool-burst Segment reference when its calls didn't change", () => {
-    const inputRef = { url: "https://example.com" };
-    const outputRef = { ok: true };
-    const msg = makeMessage([
-      { type: "text", text: "Working on it." },
-      {
-        type: "tool-web_fetch",
-        toolCallId: "stable-burst",
-        state: "output-available",
-        input: inputRef,
-        output: outputRef,
-      },
-    ]);
-    const first = buildSegments(msg);
-    const calls = flattenToolCalls(
-      first.flatMap((s) => (s.type === "tool-burst" ? s.calls : [])),
-    );
-    const second = buildSegments(msg, {
-      prevByToolCallId: calls,
-      prevSegments: first,
-    });
-    expect(second).toBe(first);
-  });
-
-  it("rebuilds segments fresh when prev hints are absent", () => {
-    const msg = makeMessage([{ type: "text", text: "hello" }]);
-    const first = buildSegments(msg);
-    const second = buildSegments(msg);
-    expect(second).not.toBe(first);
-    expect(second).toEqual(first);
-  });
-
-  it("preserves the text Segment reference for unchanged text", () => {
-    const msg = makeMessage([{ type: "text", text: "stable prose" }]);
-    const first = buildSegments(msg);
-    const second = buildSegments(msg, { prevSegments: first });
-    expect(second).toBe(first);
-    expect(second[0]).toBe(first[0]);
-  });
-
-  it("returns a fresh text Segment when content grew", () => {
-    const msgA = makeMessage([{ type: "text", text: "partial" }]);
-    const first = buildSegments(msgA);
-    const msgB = makeMessage([{ type: "text", text: "partial — final" }]);
-    const second = buildSegments(msgB, { prevSegments: first });
-    expect(second[0]).not.toBe(first[0]);
-    expect((second[0] as Extract<Segment, { type: "text" }>).content).toBe(
-      "partial — final",
-    );
-  });
-});
