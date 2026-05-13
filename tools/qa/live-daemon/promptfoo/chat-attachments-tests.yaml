@@ -7,6 +7,26 @@
     scenarioId: chat-csv-read
 
 - description: |
+    Negative + positive — the prompt edit explicitly forbids
+    `read_attachment` on PDFs (binary bytes would corrupt the prompt as
+    UTF-8) and directs the agent to `create_artifact`+`parse_artifact` or
+    `run_code`. Locks that guidance: drop a PDF, agent must NOT call
+    `read_attachment` on it AND must reach for one of the right tools.
+    This is the regression gate for any future tweak to the PDF clause in
+    `packages/system/agents/workspace-chat/prompt.txt`.
+  vars:
+    scenarioId: pdf-routes-to-parse-not-read-attachment
+
+- description: |
+    Multi-file splice contract. The adapter's `inlineAttachedFiles` walks
+    `data-file-attached.paths` in order and emits one `<attachment …/>`
+    line per path. Drop two CSVs at once, ask a cross-file question, and
+    assert the agent called `read_attachment` for BOTH paths (not just one
+    + hallucinating the other) and produced the correct cross-file answer.
+  vars:
+    scenarioId: multi-file-read
+
+- description: |
     Negative — a `data-file-attached` part carrying a path under a *different*
     chat's uploads dir is rejected by the adapter's path-traversal gate
     before reaching the agent. The agent never sees the foreign path and

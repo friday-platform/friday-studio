@@ -68,18 +68,25 @@ interface PostChatResult {
  * Returns the assembled tool-call ledger + final assistant text. Inlined
  * here so this scenario file is self-contained.
  */
+interface AttachmentDescriptor {
+  path: string;
+  filename: string;
+  mediaType: string;
+}
+
 async function postChatMessageWithAttachment(
   d: DaemonHandle,
   workspaceId: string,
   chatId: string,
   text: string,
-  attachment: { path: string; filename: string; mediaType: string },
+  attachment: AttachmentDescriptor | AttachmentDescriptor[],
   opts: { timeoutMs?: number } = {},
 ): Promise<PostChatResult> {
   const startedAt = Date.now();
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), opts.timeoutMs ?? 600_000);
 
+  const list = Array.isArray(attachment) ? attachment : [attachment];
   const body = {
     id: chatId,
     message: {
@@ -90,9 +97,9 @@ async function postChatMessageWithAttachment(
         {
           type: "data-file-attached",
           data: {
-            paths: [attachment.path],
-            filenames: [attachment.filename],
-            mimeTypes: [attachment.mediaType],
+            paths: list.map((a) => a.path),
+            filenames: list.map((a) => a.filename),
+            mimeTypes: list.map((a) => a.mediaType),
           },
         },
       ],
@@ -371,6 +378,195 @@ async function runRejectsForeignPath(d: DaemonHandle): Promise<EvalResult> {
   return { id: "rejects-foreign-path", pass: true, notes, metrics };
 }
 
+/**
+ * PDF routing — locks the `prompt.txt` guidance that PDFs MUST go through
+ * `parse_artifact`/`create_artifact`/`run_code` instead of `read_attachment`
+ * (binary bytes corrupted as UTF-8 would blow up the prompt).
+ *
+ * Negative case: agent calls `read_attachment` on a PDF path → fail.
+ *   This is the regression the prompt edit specifically prevents — without
+ *   that nudge the agent will happily call `read_attachment` because the
+ *   tool's description doesn't forbid binary.
+ * Positive case: agent reaches for the right tool — any of
+ *   `create_artifact`, `parse_artifact`, `display_artifact`, or `run_code`.
+ *   The exact path doesn't matter (different models pick differently); what
+ *   matters is the model rejects the "just read_attachment it" path.
+ */
+async function runPdfRoutesToParseNotReadAttachment(d: DaemonHandle): Promise<EvalResult> {
+  const notes: string[] = [];
+  const metrics: Record<string, unknown> = {};
+
+  const wsPath = await materializeWorkspace();
+  const ws = await registerWorkspace(d, wsPath, { name: "chat-attachments-qa-pdf" });
+  const workspaceId = ws.id;
+
+  const chatId = `chat_eval_${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;
+  const filename = "report.pdf";
+  // Minimal valid PDF — enough for any reader to identify the magic
+  // header. We don't care about extracted content for this eval, only
+  // about which tool the agent picks based on mediaType.
+  const minimalPdf = new TextEncoder().encode(
+    [
+      "%PDF-1.4",
+      "1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj",
+      "2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj",
+      "3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]>>endobj",
+      "xref",
+      "0 4",
+      "0000000000 65535 f",
+      "0000000009 00000 n",
+      "0000000052 00000 n",
+      "0000000101 00000 n",
+      "trailer<</Size 4/Root 1 0 R>>",
+      "startxref",
+      "148",
+      "%%EOF",
+      "",
+    ].join("\n"),
+  );
+
+  const uploadsRoot = join(d.fridayHome, "scratch", "uploads", chatId);
+  await Deno.mkdir(uploadsRoot, { recursive: true });
+  const path = join(uploadsRoot, filename);
+  await Deno.writeFile(path, minimalPdf);
+  metrics.attachmentPath = path;
+
+  const result = await postChatMessageWithAttachment(
+    d,
+    workspaceId,
+    chatId,
+    "give me a one-line summary of what this PDF is about",
+    { path, filename, mediaType: "application/pdf" },
+    { timeoutMs: 180_000 },
+  );
+  metrics.durationMs = result.durationMs;
+  metrics.toolCalls = result.toolCalls.map((c) => c.toolName);
+
+  // Negative: read_attachment on the PDF path is the failure mode.
+  const readAttachmentOnPdf = result.toolCalls.some(
+    (c) =>
+      c.toolName === "read_attachment" &&
+      typeof c.input === "object" &&
+      c.input !== null &&
+      (c.input as { path?: unknown }).path === path,
+  );
+  if (readAttachmentOnPdf) {
+    notes.push(
+      `Negative: agent called read_attachment on a PDF path — would corrupt the prompt with binary bytes. ` +
+        `Prompt nudge ('PDF/DOCX/PPTX → DON'T read_attachment') regressed.`,
+    );
+    return { id: "pdf-routes-to-parse-not-read-attachment", pass: false, notes, metrics };
+  }
+  notes.push("Positive: agent did NOT call read_attachment on the PDF.");
+
+  // Positive: agent reached for at least one of the right alternatives.
+  // The prompt names parse_artifact + create_artifact specifically; run_code
+  // (with a Python parser) is also acceptable per the prompt's last clause.
+  const acceptableTools = new Set([
+    "create_artifact",
+    "parse_artifact",
+    "display_artifact",
+    "run_code",
+    "save_artifact",
+  ]);
+  const acceptableCalls = result.toolCalls.filter((c) => acceptableTools.has(c.toolName));
+  if (acceptableCalls.length === 0) {
+    notes.push(
+      `Negative: agent neither read_attachment'd (good) nor reached for a PDF-capable tool (bad). ` +
+        `Tools used: ${result.toolCalls.map((c) => c.toolName).join(", ") || "(none)"}. ` +
+        `Reply: "${result.assistantText.slice(0, 200)}"`,
+    );
+    return { id: "pdf-routes-to-parse-not-read-attachment", pass: false, notes, metrics };
+  }
+  notes.push(
+    `Positive: agent picked a PDF-capable tool — ${acceptableCalls.map((c) => c.toolName).join(", ")}.`,
+  );
+
+  return { id: "pdf-routes-to-parse-not-read-attachment", pass: true, notes, metrics };
+}
+
+/**
+ * Multi-file splice contract. The adapter's `inlineAttachedFiles` walks
+ * `data-file-attached.paths` in order and emits one `<attachment …/>`
+ * line per path inside a single synthetic text part. Drop two files at
+ * once, ask a question that needs BOTH, and assert the agent called
+ * `read_attachment` for each path.
+ *
+ * Negative: agent reads only one and hallucinates the other → fail.
+ * Positive: agent reads both, answer references content from both.
+ */
+async function runMultiFileRead(d: DaemonHandle): Promise<EvalResult> {
+  const notes: string[] = [];
+  const metrics: Record<string, unknown> = {};
+
+  const wsPath = await materializeWorkspace();
+  const ws = await registerWorkspace(d, wsPath, { name: "chat-attachments-qa-multi" });
+  const workspaceId = ws.id;
+
+  const chatId = `chat_eval_${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;
+  const uploadsRoot = join(d.fridayHome, "scratch", "uploads", chatId);
+  await Deno.mkdir(uploadsRoot, { recursive: true });
+
+  const pathA = join(uploadsRoot, "team-a.csv");
+  const pathB = join(uploadsRoot, "team-b.csv");
+  await Deno.writeTextFile(pathA, "name,score\nAlice,42\nBob,17\n");
+  await Deno.writeTextFile(pathB, "name,score\nCarol,99\nDan,8\n");
+  metrics.paths = [pathA, pathB];
+
+  const result = await postChatMessageWithAttachment(
+    d,
+    workspaceId,
+    chatId,
+    "what is the highest score across both teams? Show me the name and the number.",
+    [
+      { path: pathA, filename: "team-a.csv", mediaType: "text/csv" },
+      { path: pathB, filename: "team-b.csv", mediaType: "text/csv" },
+    ],
+    { timeoutMs: 180_000 },
+  );
+  metrics.durationMs = result.durationMs;
+  metrics.toolCalls = result.toolCalls.map((c) => c.toolName);
+
+  const readCalls = result.toolCalls.filter((c) => c.toolName === "read_attachment");
+  const readPaths = new Set(
+    readCalls
+      .map((c) =>
+        typeof c.input === "object" && c.input !== null
+          ? (c.input as { path?: unknown }).path
+          : null,
+      )
+      .filter((p): p is string => typeof p === "string"),
+  );
+  metrics.readPaths = [...readPaths];
+
+  if (!readPaths.has(pathA)) {
+    notes.push(`Negative: agent never read team-a.csv (${pathA}).`);
+    return { id: "multi-file-read", pass: false, notes, metrics };
+  }
+  if (!readPaths.has(pathB)) {
+    notes.push(`Negative: agent never read team-b.csv (${pathB}).`);
+    return { id: "multi-file-read", pass: false, notes, metrics };
+  }
+  notes.push("Positive: agent called read_attachment on BOTH attached paths.");
+
+  // Highest score: Carol with 99. Answer must mention "Carol" AND "99".
+  // Forgiving check — the agent might format as table, prose, or list.
+  const mentionsCarol = /carol/i.test(result.assistantText);
+  const mentions99 = /\b99\b/.test(result.assistantText);
+  if (!mentionsCarol || !mentions99) {
+    notes.push(
+      `Negative: answer doesn't identify Carol (99) as the highest. mentionsCarol=${mentionsCarol}, mentions99=${mentions99}. ` +
+        `Reply: "${result.assistantText.slice(0, 250)}"`,
+    );
+    return { id: "multi-file-read", pass: false, notes, metrics };
+  }
+  notes.push(
+    `Positive: answer correctly identifies Carol (99) — "${result.assistantText.slice(0, 120)}…"`,
+  );
+
+  return { id: "multi-file-read", pass: true, notes, metrics };
+}
+
 // ────────────────────────────────────────────────────────────────────────
 // Entrypoint
 // ────────────────────────────────────────────────────────────────────────
@@ -400,6 +596,8 @@ async function main() {
     type Runner = (d: DaemonHandle) => Promise<EvalResult>;
     const runners: Array<{ id: string; fn: Runner }> = [
       { id: "chat-csv-read", fn: runChatCsvRead },
+      { id: "pdf-routes-to-parse-not-read-attachment", fn: runPdfRoutesToParseNotReadAttachment },
+      { id: "multi-file-read", fn: runMultiFileRead },
       { id: "rejects-foreign-path", fn: runRejectsForeignPath },
     ];
 
