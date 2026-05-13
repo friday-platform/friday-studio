@@ -26,6 +26,64 @@ import { WorkspaceConfigWatcher } from "./watchers/index.ts";
 export type RuntimeInvalidateCallback = (workspaceId: string) => Promise<void>;
 
 /**
+ * Strip trailing path separators so prefix comparisons aren't tripped up by
+ * `/foo` vs `/foo/`. We deliberately do NOT `realpath` either side: the
+ * registry stores absolute paths as recorded at registration time, and a
+ * disk-level resolve on every list() call would be wasted I/O.
+ */
+function trimTrailingSep(p: string): string {
+  if (p.length > 1 && (p.endsWith("/") || p.endsWith("\\"))) {
+    return p.slice(0, -1);
+  }
+  return p;
+}
+
+/**
+ * True if `entry.path` is inside `home` (or is a system workspace, which is
+ * home-agnostic by construction — `system://<id>`). Path-prefix only, no
+ * filesystem touch. The trailing-separator on the home boundary prevents
+ * `/foo/bar` from matching home `/foo/ba`.
+ *
+ * @internal Exported for direct unit tests of the predicate.
+ */
+export function isUnderHome(entry: WorkspaceEntry, home: string): boolean {
+  if (entry.metadata?.system) return true;
+  if (entry.path.startsWith("system://")) return true;
+
+  const homeNorm = trimTrailingSep(home);
+  const pathNorm = trimTrailingSep(entry.path);
+  if (pathNorm === homeNorm) return true;
+  return pathNorm.startsWith(`${homeNorm}/`) || pathNorm.startsWith(`${homeNorm}\\`);
+}
+
+/**
+ * Drop registry entries whose `path` falls outside the active Friday home.
+ * Emits one `level=warn` log per skipped entry. Registry IDs are unique by
+ * construction, so duplicate-skip suppression isn't required.
+ */
+function filterInHomeEntries(
+  entries: WorkspaceEntry[],
+  home: string,
+  context: string,
+): WorkspaceEntry[] {
+  const kept: WorkspaceEntry[] = [];
+  for (const entry of entries) {
+    if (isUnderHome(entry, home)) {
+      kept.push(entry);
+      continue;
+    }
+    logger.warn("Skipping workspace registry entry from different home dir", {
+      workspaceId: entry.id,
+      workspaceName: entry.name,
+      workspacePath: entry.path,
+      activeHome: home,
+      context,
+    });
+  }
+  return kept;
+}
+
+/**
  * Hook for stamping a workspace membership row when a workspace is
  * registered. Injected by the daemon at startup — the manager itself
  * stays storage-agnostic (no `@atlas/core` import).
@@ -432,9 +490,22 @@ export class WorkspaceManager {
       }
     }
 
-    const allWorkspaces = await this.registry.listWorkspaces();
+    // Orphan sweep is doubly scoped: filter to in-home entries first
+    // (filterInHomeEntries treats `metadata.system` as home-agnostic, so
+    // cross-home system rows would pass), then narrow to `system://` paths
+    // so we only sweep rows this install actually owns. A cross-home row
+    // tagged `metadata.system: true` with a real-disk path (i.e. written
+    // by another install of the same daemon) isn't ours to garbage-collect.
+    // Phase 6 handles deletion of cross-home rows explicitly.
+    const allWorkspaces = filterInHomeEntries(
+      await this.registry.listWorkspaces(),
+      getFridayHome(),
+      "registerSystemWorkspaces",
+    );
     for (const ws of allWorkspaces) {
-      if (ws.metadata?.system && !systemIds.has(ws.id)) {
+      const isOurSystemRow =
+        ws.metadata?.system && ws.path.startsWith("system://") && !systemIds.has(ws.id);
+      if (isOurSystemRow) {
         logger.info(`Removing orphaned system workspace: ${ws.id} (${ws.name})`);
         // Pair registry unregister with registrar cleanup so cron timers
         // (and fs watchers) for the orphaned workspace don't survive as
@@ -454,7 +525,15 @@ export class WorkspaceManager {
    * no fast-loop workspace exists or if system is already registered.
    */
   private async migrateFastLoopToSystem(): Promise<void> {
-    const allWorkspaces = await this.registry.listWorkspaces();
+    // Migration sweep is home-scoped: a cross-home fast-loop entry isn't
+    // ours to rewrite. Filtering here also keeps the warn-log emitted by
+    // the filter aligned with the rest of boot (one warn per skipped
+    // entry per call).
+    const allWorkspaces = filterInHomeEntries(
+      await this.registry.listWorkspaces(),
+      getFridayHome(),
+      "migrateFastLoopToSystem",
+    );
     const fastLoopEntry = allWorkspaces.find(
       (ws) =>
         ws.id.includes("fast-loop") ||
@@ -483,6 +562,17 @@ export class WorkspaceManager {
   async getWorkspaceConfig(workspaceId: string): Promise<MergedConfig | null> {
     const workspace = await this.registry.getWorkspace(workspaceId);
     if (!workspace) return null;
+
+    if (!isUnderHome(workspace, getFridayHome())) {
+      logger.warn("Masking cross-home workspace config lookup", {
+        workspaceId: workspace.id,
+        workspaceName: workspace.name,
+        workspacePath: workspace.path,
+        activeHome: getFridayHome(),
+        context: "getWorkspaceConfig",
+      });
+      return null;
+    }
 
     if (workspace.metadata?.system && workspace.id in SYSTEM_WORKSPACES) {
       const config = SYSTEM_WORKSPACES[workspace.id];
@@ -528,7 +618,13 @@ export class WorkspaceManager {
     }
   }
 
-  /** Find by id/name/path; reflect running status if a runtime is registered. */
+  /**
+   * Find by id/name/path; reflect running status if a runtime is registered.
+   *
+   * Cross-home entries are masked here too — otherwise `find({id})` and
+   * friends would re-surface what `list()` filters out, defeating the
+   * isolation contract.
+   */
   async find(query: { id?: string; name?: string; path?: string }): Promise<WorkspaceEntry | null> {
     let workspace: WorkspaceEntry | null = null;
 
@@ -541,6 +637,17 @@ export class WorkspaceManager {
       workspace = await this.registry.findWorkspaceByPath(normalizedPath);
     }
 
+    if (workspace && !isUnderHome(workspace, getFridayHome())) {
+      logger.warn("Masking cross-home workspace lookup", {
+        workspaceId: workspace.id,
+        workspaceName: workspace.name,
+        workspacePath: workspace.path,
+        activeHome: getFridayHome(),
+        context: "find",
+      });
+      return null;
+    }
+
     if (workspace) {
       const runtime = this.runtimes.get(workspace.id);
       if (runtime) {
@@ -551,12 +658,21 @@ export class WorkspaceManager {
     return workspace;
   }
 
-  /** List workspaces; filter by status; exclude system by default. */
+  /**
+   * List workspaces; filter by status; exclude system by default.
+   *
+   * Cross-home entries (registry rows whose `path` is outside the active
+   * `getFridayHome()`) are filtered out here — this is the chokepoint
+   * inherited by boot-time loading, close(), and every external caller
+   * that goes through list(). System workspaces (path `system://...`)
+   * are home-agnostic and always pass.
+   */
   async list(options?: {
     status?: WorkspaceStatus;
     includeSystem?: boolean;
   }): Promise<WorkspaceEntry[]> {
-    let workspaces = await this.registry.listWorkspaces();
+    const raw = await this.registry.listWorkspaces();
+    let workspaces = filterInHomeEntries(raw, getFridayHome(), "list");
 
     if (options?.status) {
       workspaces = workspaces.filter((w) => w.status === options.status);
@@ -582,6 +698,22 @@ export class WorkspaceManager {
     const workspace = await this.registry.getWorkspace(id);
     if (!workspace) {
       logger.info("Workspace already deleted", { id });
+      return;
+    }
+
+    // Cross-home guard: refuse to delete an entry whose path lives under
+    // a different Friday home. `removeDirectory=true` would otherwise
+    // `rm -rf` directories owned by another install. The KV row stays
+    // until Phase 6 recovery — this manager's job is to keep the active
+    // home isolated, not to clean up cross-home contamination.
+    if (!isUnderHome(workspace, getFridayHome())) {
+      logger.warn("Refusing to delete cross-home workspace", {
+        workspaceId: workspace.id,
+        workspaceName: workspace.name,
+        workspacePath: workspace.path,
+        activeHome: getFridayHome(),
+        context: "deleteWorkspace",
+      });
       return;
     }
 
@@ -633,6 +765,16 @@ export class WorkspaceManager {
       throw new Error(`Workspace not found: ${id}`);
     }
 
+    if (!isUnderHome(workspace, getFridayHome())) {
+      logger.warn("Refusing to rename cross-home workspace", {
+        workspaceId: workspace.id,
+        workspacePath: workspace.path,
+        activeHome: getFridayHome(),
+        context: "renameWorkspace",
+      });
+      throw new Error(`Workspace not found: ${id}`);
+    }
+
     if (workspace.metadata?.canonical === "system") {
       throw new Error(`Cannot rename system canonical workspace '${id}'.`);
     }
@@ -679,6 +821,13 @@ export class WorkspaceManager {
     await this.registry.updateWorkspaceStatus(workspaceId, status, updates);
   }
 
+  /**
+   * Walks the FULL raw registry on purpose — including cross-home entries.
+   * The cross-home filter that masks entries from list()/find() must NOT
+   * apply here: minting an ID that collides with a cross-home row would
+   * still corrupt the shared registry. Use `registry.listWorkspaces()`
+   * directly, not the filtered view.
+   */
   private async generateUniqueId(): Promise<string> {
     const existingWorkspaces = await this.registry.listWorkspaces();
     const existingIds = new Set(existingWorkspaces.map((w) => w.id));
@@ -1168,9 +1317,18 @@ export class WorkspaceManager {
     workspacePath: string,
     config: MergedConfig,
   ): Promise<void> {
-    // Skip for ephemeral workspaces
+    // Skip for ephemeral workspaces; refuse for cross-home entries.
     const ws = await this.registry.getWorkspace(workspaceId);
     if (ws?.metadata?.ephemeral) return;
+    if (ws && !isUnderHome(ws, getFridayHome())) {
+      logger.warn("Refusing to restart signals for cross-home workspace", {
+        workspaceId,
+        workspacePath: ws.path,
+        activeHome: getFridayHome(),
+        context: "restartSignalsForWorkspace",
+      });
+      return;
+    }
     try {
       await this.unregisterWithRegistrars(workspaceId);
     } catch (error) {
@@ -1231,6 +1389,16 @@ export class WorkspaceManager {
   async updateWorkspacePersistence(id: string, makePersistent: boolean): Promise<void> {
     const workspace = await this.registry.getWorkspace(id);
     if (!workspace) throw new Error(`Workspace not found: ${id}`);
+
+    if (!isUnderHome(workspace, getFridayHome())) {
+      logger.warn("Refusing to toggle persistence for cross-home workspace", {
+        workspaceId: workspace.id,
+        workspacePath: workspace.path,
+        activeHome: getFridayHome(),
+        context: "updateWorkspacePersistence",
+      });
+      throw new Error(`Workspace not found: ${id}`);
+    }
 
     const currentIsEphemeral =
       Boolean(workspace.metadata?.ephemeral) || workspace.configPath.endsWith("eph_workspace.yml");

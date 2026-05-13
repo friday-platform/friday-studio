@@ -10,6 +10,9 @@
  * Source: apps/atlasd/src/atlas-daemon.ts initialization flow (lines ~245-260)
  */
 
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import process from "node:process";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AtlasDaemon } from "./src/atlas-daemon.ts";
@@ -37,12 +40,20 @@ function setCredential(key: string, value: string) {
 }
 
 describe("daemon startup platform models", () => {
-  beforeEach(() => {
+  let tempHome: string | null = null;
+
+  beforeEach(async () => {
     resetEnv();
     vi.clearAllMocks();
+    // Pin FRIDAY_HOME to a tempdir so daemon.initialize() doesn't touch
+    // the developer's real `~/.friday/local/` (which is occupied if
+    // Studio.app is installed — nats-server file lock collides). The
+    // tempdir gets cleaned in afterEach.
+    tempHome = await mkdtemp(join(tmpdir(), "atlasd-startup-test-"));
+    process.env.FRIDAY_HOME = tempHome;
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     // Restore original env
     Object.assign(process.env, ORIGINAL_ENV);
     // Clear out any new keys that were added
@@ -50,6 +61,10 @@ describe("daemon startup platform models", () => {
       if (!(key in ORIGINAL_ENV)) {
         delete process.env[key];
       }
+    }
+    if (tempHome) {
+      await rm(tempHome, { recursive: true, force: true });
+      tempHome = null;
     }
   });
 

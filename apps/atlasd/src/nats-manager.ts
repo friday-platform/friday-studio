@@ -5,14 +5,18 @@ import process from "node:process";
 import { logger } from "@atlas/logger";
 import { getFridayHome } from "@atlas/utils/paths.server";
 import {
+  brokerUrlFilePath,
   connectToNats,
   DEFAULT_NATS_MONITOR_PORT,
-  DEFAULT_NATS_PORT,
+  deleteBrokerUrlFile,
   formatStartupLog,
+  pickPort,
+  readBrokerUrlFile,
   readJetStreamConfig,
   type SpawnedNats,
   spawnNatsServer,
   tcpProbe,
+  writeBrokerUrlFile,
 } from "jetstream";
 import type { NatsConnection } from "nats";
 
@@ -22,13 +26,16 @@ import type { NatsConnection } from "nats";
  * Three modes, decided at start():
  *
  * - **External NATS** (`FRIDAY_NATS_URL` set): connect to that broker
- *   and never spawn. Required for any deployment with more than one
- *   daemon process or for a managed-NATS topology.
- * - **Auto-detect existing**: if `localhost:4222` is already serving
- *   (e.g. an `atlas migrate` run by the operator left a broker up,
- *   or someone started nats-server by hand), reuse it.
- * - **Spawn child**: solo-dev fallback — spawn `nats-server` and own
- *   its lifetime. Stop kills the child.
+ *   and never spawn. Cloud-with-shared-broker path; tenant isolation
+ *   happens at the subject / NATS-account level.
+ * - **URL file rendezvous**: read `<home>/nats/url` and TCP-probe it.
+ *   If a broker is alive at that URL, reuse it. This is the
+ *   in-process discovery channel for any sibling already running for
+ *   this home (e.g. the launcher spawned `nats-server` before the
+ *   daemon booted).
+ * - **Spawn child**: solo-dev / launcher-fallback case. Pick a free
+ *   port from the Friday-reserved range, spawn `nats-server`, write
+ *   the URL to `<home>/nats/url` for siblings to discover.
  *
  * The actual spawn is delegated to `jetstream.spawnNatsServer`, which
  * is the same primitive the CLI uses for its ephemeral broker.
@@ -36,10 +43,12 @@ import type { NatsConnection } from "nats";
 export class NatsManager {
   private spawned: SpawnedNats | null = null;
   private nc: NatsConnection | null = null;
+  /** Set when we own the URL file (i.e. we spawned the broker). */
+  private ownsUrlFile = false;
 
   async start(): Promise<NatsConnection> {
     // Log resolved JetStream config + provenance unconditionally — applies
-    // to spawn, reuse-existing-broker, and external-broker paths.
+    // to spawn, URL-file reuse, and external-broker paths.
     const cfg = readJetStreamConfig();
     logger.info(formatStartupLog(cfg));
 
@@ -51,52 +60,51 @@ export class NatsManager {
       return this.nc;
     }
 
-    const alreadyUp = await tcpProbe(DEFAULT_NATS_PORT);
-    if (alreadyUp) {
-      logger.info("nats-server already running, connecting without spawning");
-      // FRIDAY_NATS_MONITOR only takes effect on the spawning process.
-      // Probe the monitor endpoint and warn if the operator expected it
-      // but the running broker doesn't have it enabled.
-      if (process.env.FRIDAY_NATS_MONITOR === "1") {
-        const monitorUp = await tcpProbe(DEFAULT_NATS_MONITOR_PORT);
-        if (monitorUp) {
-          logger.info(
-            `NATS monitoring detected on existing server at http://localhost:${DEFAULT_NATS_MONITOR_PORT}`,
-          );
-        } else {
-          logger.warn(
-            "FRIDAY_NATS_MONITOR=1 set but a nats-server was already running on " +
-              `${DEFAULT_NATS_PORT} without --http_port. Monitor flag ignored. Kill the ` +
-              "existing nats-server (e.g. `pkill nats-server`) and restart the " +
-              "daemon to enable monitoring.",
-          );
-        }
+    const home = getFridayHome();
+    const cachedUrl = await readBrokerUrlFile(home);
+    if (cachedUrl) {
+      const port = portFromUrl(cachedUrl);
+      const live = port != null && (await tcpProbe(port));
+      if (live) {
+        logger.info("Discovered live broker via URL file; connecting without spawning", {
+          url: cachedUrl,
+          urlFile: brokerUrlFilePath(home),
+        });
+        this.nc = await connectToNats({ url: cachedUrl, name: "atlasd" });
+        logger.info("NATS connection established", { url: cachedUrl });
+        return this.nc;
       }
-    } else {
-      const storeDir = cfg.server.storeDir.value ?? join(getFridayHome(), "nats");
-      // Earlier daemon versions wrote JetStream data to nats-server's
-      // built-in default location (`$TMPDIR/nats/jetstream`). Operators
-      // upgrading past that change saw a fresh empty broker. Detect
-      // orphaned data and tell them how to recover before they panic.
-      await this.warnIfOrphanedJetStreamData(storeDir);
-
-      // Use the daemon's persistent config dir so re-launches reuse the
-      // same generated server.conf (vs the spawn helper's default
-      // tmpdir-based work dir, which is right for ephemeral CLI spawns
-      // but throwaway for the daemon).
-      this.spawned = await spawnNatsServer({
-        port: DEFAULT_NATS_PORT,
-        workDir: join(getFridayHome(), "nats"),
-        storeDir,
-        logger,
+      logger.warn("Stale URL file detected; spawning fresh broker", {
+        cachedUrl,
+        urlFile: brokerUrlFilePath(home),
       });
-      if (process.env.FRIDAY_NATS_MONITOR === "1") {
-        logger.info(`NATS monitoring enabled at http://localhost:${DEFAULT_NATS_MONITOR_PORT}`);
-      }
     }
 
-    this.nc = await connectToNats({ url: `nats://localhost:${DEFAULT_NATS_PORT}`, name: "atlasd" });
-    logger.info("NATS connection established", { port: DEFAULT_NATS_PORT });
+    const storeDir = cfg.server.storeDir.value ?? join(home, "nats");
+    // Earlier daemon versions wrote JetStream data to nats-server's
+    // built-in default location (`$TMPDIR/nats/jetstream`). Operators
+    // upgrading past that change saw a fresh empty broker. Detect
+    // orphaned data and tell them how to recover before they panic.
+    await this.warnIfOrphanedJetStreamData(storeDir);
+
+    const port = await pickPort();
+    // Use the daemon's persistent config dir so re-launches reuse the
+    // same generated server.conf (vs the spawn helper's default
+    // tmpdir-based work dir, which is right for ephemeral CLI spawns
+    // but throwaway for the daemon).
+    this.spawned = await spawnNatsServer({ port, workDir: join(home, "nats"), storeDir, logger });
+
+    const url = this.spawned.url;
+    await writeBrokerUrlFile(home, url);
+    this.ownsUrlFile = true;
+    logger.info("Wrote broker URL file", { url, urlFile: brokerUrlFilePath(home) });
+
+    if (process.env.FRIDAY_NATS_MONITOR === "1") {
+      logger.info(`NATS monitoring enabled at http://localhost:${DEFAULT_NATS_MONITOR_PORT}`);
+    }
+
+    this.nc = await connectToNats({ url, name: "atlasd" });
+    logger.info("NATS connection established", { url });
     return this.nc;
   }
 
@@ -144,6 +152,11 @@ export class NatsManager {
     if (this.spawned) {
       await this.spawned.stop();
       this.spawned = null;
+    }
+
+    if (this.ownsUrlFile) {
+      await deleteBrokerUrlFile(getFridayHome());
+      this.ownsUrlFile = false;
     }
   }
 
@@ -205,5 +218,16 @@ export class NatsManager {
         "",
       ].join("\n"),
     );
+  }
+}
+
+/** Extract the TCP port from a `nats://host:port` URL, or null if unparseable. */
+function portFromUrl(url: string): number | null {
+  try {
+    const parsed = new URL(url);
+    const port = Number.parseInt(parsed.port, 10);
+    return Number.isFinite(port) && port > 0 ? port : null;
+  } catch {
+    return null;
   }
 }

@@ -371,6 +371,18 @@ func onReady() {
 		"source", jetstreamStoreSource,
 	)
 
+	// Pick the NATS port once at launcher startup. Iterates Friday's
+	// reserved range (14222..14231) and falls back to OS-assigned if
+	// all 10 slots are taken. The chosen port lands in the
+	// `natsServerPort` package-level so both `natsServerArgs` and
+	// `commonServiceEnv` see the same value when they build the
+	// nats-server spec and the child env respectively.
+	natsServerPort = pickNATSPort()
+	log.Info("nats-server port",
+		"port", natsServerPort,
+		"url", natsServerURL(),
+	)
+
 	// Build project + supervisor.
 	specs := supervisedProcesses(binDir)
 	project := newProjectFromSpecs(specs)

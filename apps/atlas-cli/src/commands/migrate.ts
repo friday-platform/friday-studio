@@ -25,7 +25,6 @@ import {
   MigrationLockError,
   type MigrationRecord,
   readJetStreamConfig,
-  resolveNatsUrl,
   runMigrations,
 } from "jetstream";
 import { errorOutput, infoOutput, successOutput } from "../utils/output.ts";
@@ -123,14 +122,15 @@ export const handler = async (argv: MigrateArgs): Promise<void> => {
     }
   }
 
-  const url = resolveNatsUrl({ url: argv.natsUrl });
   const cfg = readJetStreamConfig();
-  const storeDir = cfg.server.storeDir.value ?? join(getFridayHome(), "nats");
+  const home = getFridayHome();
+  const storeDir = cfg.server.storeDir.value ?? join(home, "nats");
 
   let handle: ConnectionHandle;
   try {
     handle = await connectOrSpawn({
-      url,
+      url: argv.natsUrl,
+      home,
       name: "atlas-cli-migrate",
       storeDir,
       spawnFallback: !argv.noSpawn,
@@ -189,14 +189,15 @@ export const handler = async (argv: MigrateArgs): Promise<void> => {
 };
 
 async function handleList(argv: MigrateArgs): Promise<void> {
-  const url = resolveNatsUrl({ url: argv.natsUrl });
   const cfg = readJetStreamConfig();
-  const storeDir = cfg.server.storeDir.value ?? join(getFridayHome(), "nats");
+  const home = getFridayHome();
+  const storeDir = cfg.server.storeDir.value ?? join(home, "nats");
 
   let handle: ConnectionHandle;
   try {
     handle = await connectOrSpawn({
-      url,
+      url: argv.natsUrl,
+      home,
       name: "atlas-cli-migrate",
       storeDir,
       spawnFallback: !argv.noSpawn,

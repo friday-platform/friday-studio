@@ -48,7 +48,7 @@ function resolveEmbeddedStoreDir(): string {
 }
 
 async function clearExternalBroker(force: boolean): Promise<void> {
-  const url = resolveNatsUrl();
+  const url = await resolveNatsUrl({ home: getFridayHome() });
   if (!isLocalhostUrl(url) && !force) {
     console.error(
       `Refusing to wipe streams on non-local broker ${url}. ` +

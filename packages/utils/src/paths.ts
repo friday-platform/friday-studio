@@ -6,13 +6,9 @@ import process from "node:process";
  * This module should only be loaded in server code because it relies
  * on the Node.js process namespace to be available - this will crash in browsers!
  */
-// Cache the working directory at startup since it never changes
-// This prevents EMFILE errors from concurrent process.cwd() calls
-// and improves performance by avoiding unnecessary syscalls
-const CACHED_CWD = process.cwd();
 
 /**
- * Check if Atlas is running as a system service
+ * Check if Friday is running as a system service
  */
 export function isSystemService(): boolean {
   // Check if running as system service by:
@@ -46,14 +42,20 @@ export function isSystemService(): boolean {
 }
 
 /**
- * Get the Atlas home directory
- * - System mode: /var/lib/atlas
- * - User mode: ~/.atlas
+ * Get the Friday home directory.
+ *
+ * - `FRIDAY_HOME` env wins when set.
+ * - System mode: `/var/lib/atlas`.
+ * - User mode: `~/.friday/local` (matches the launcher's
+ *   `friendlyHome()` default and the installer's
+ *   `friday_home_dir()` default). The dev `deno task atlas` task in
+ *   `deno.json` pins `FRIDAY_HOME=$HOME/.atlas` explicitly to keep
+ *   dev state at the legacy location with the inference made legible.
  */
 export function getFridayHome(): string {
-  const atlasHome = process.env.FRIDAY_HOME;
-  if (atlasHome) {
-    return atlasHome;
+  const fridayHome = process.env.FRIDAY_HOME;
+  if (fridayHome) {
+    return fridayHome;
   }
 
   // Check if running as system service
@@ -61,26 +63,13 @@ export function getFridayHome(): string {
     return "/var/lib/atlas";
   }
 
-  // Check if we're already running from within .atlas directory
-  // This handles the case where the compiled atlas binary runs from ~/.atlas/
-  const cwd = CACHED_CWD;
-  const sep = process.platform === "win32" ? "\\" : "/";
-  if (cwd.endsWith(".atlas") || cwd.includes(`.atlas${sep}`)) {
-    // We're in .atlas directory, return the parent .atlas directory
-    const parts = cwd.split(sep);
-    const atlasIndex = parts.lastIndexOf(".atlas");
-    if (atlasIndex > 0) {
-      return parts.slice(0, atlasIndex + 1).join(sep);
-    }
-  }
-
-  // User mode: use home directory
+  // User mode: default under the user's home directory.
   const homeDir = process.env.HOME || process.env.USERPROFILE;
   if (!homeDir) {
     throw new Error("Unable to determine home directory");
   }
 
-  return join(homeDir, ".atlas");
+  return join(homeDir, ".friday", "local");
 }
 
 /**
