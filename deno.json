@@ -34,9 +34,9 @@
   "tasks": {
     "prepare": "deno run -A  npm:husky@^9",
     "lint-staged": "deno run -A npm:lint-staged@^16.4.0",
-    "atlas": "deno run -q --allow-all --unstable-worker-options --unstable-kv --unstable-raw-imports --env-file apps/atlas-cli/src/otel-bootstrap.ts",
-    "atlas:dev": "deno run -q --allow-all --unstable-worker-options --unstable-kv --unstable-raw-imports --env-file scripts/dev-watcher.ts",
-    "start": "deno run --allow-all --unstable-worker-options --unstable-kv --unstable-raw-imports apps/atlas-cli/src/otel-bootstrap.ts",
+    "atlas": "FRIDAY_HOME=$HOME/.atlas deno run -q --allow-all --unstable-worker-options --unstable-kv --unstable-raw-imports --env-file apps/atlas-cli/src/otel-bootstrap.ts",
+    "atlas:dev": "FRIDAY_HOME=$HOME/.atlas deno run -q --allow-all --unstable-worker-options --unstable-kv --unstable-raw-imports --env-file scripts/dev-watcher.ts",
+    "start": "FRIDAY_HOME=$HOME/.atlas deno run --allow-all --unstable-worker-options --unstable-kv --unstable-raw-imports apps/atlas-cli/src/otel-bootstrap.ts",
     "dev:playground": "FAST_DEVELOPMENT=true LINK_DEV_MODE=true deno run -A npm:concurrently@^9.2.1 -n daemon,link,playground,tunnel -c blue,green,magenta,cyan 'deno task atlas:dev daemon start' 'cd apps/link && deno task dev' 'deno task playground' 'deno task webhook-tunnel'",
     "dev:playground:stable": "FAST_DEVELOPMENT=true LINK_DEV_MODE=true deno run -A npm:concurrently@^9.2.1 -n daemon,link,playground,tunnel -c blue,green,magenta,cyan 'deno task atlas daemon start' 'cd apps/link && deno task dev' 'deno task playground' 'deno task webhook-tunnel'",
     "webhook-tunnel": "go run ./tools/webhook-tunnel",
@@ -53,7 +53,7 @@
     "compile": "./scripts/compile.sh",
     "evals": "deno run --allow-all tools/evals/run.ts",
     "sync:svelte": "deno task -f @atlas/ui sync && deno task -f @atlas/agent-playground sync",
-    "playground": "deno task sync:svelte && cd tools/agent-playground && EXTERNAL_DAEMON_URL=http://localhost:8080 EXTERNAL_TUNNEL_URL=http://localhost:9090 npx vite dev"
+    "playground": "deno task sync:svelte && bash scripts/run-playground-vite.sh"
   },
   "lint": { "rules": { "tags": ["recommended"] }, "exclude": ["opensrc/**"] },
   "imports": {

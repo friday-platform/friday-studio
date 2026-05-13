@@ -28,7 +28,7 @@
   import RunJobDialog from "$lib/components/workspace/run-job-dialog.svelte";
   import WorkspaceBreadcrumb from "$lib/components/workspace/workspace-breadcrumb.svelte";
   import { humanizeCronSchedule } from "$lib/cron-humanize";
-  import { externalDaemonUrl } from "$lib/daemon-url";
+  import { daemonUrl } from "$lib/daemon-url";
   import { integrationQueries, workspaceQueries, type IntegrationStatus } from "$lib/queries";
   import { JsonSchemaObjectShape, JsonSchemaPropertyShape } from "$lib/schema-utils";
 
@@ -241,7 +241,7 @@
           "curl -X POST",
           `-H 'Content-Type: application/json'`,
           `-d '${escaped}'`,
-          `${externalDaemonUrl()}/api/workspaces/${workspaceId}/signals/${trigger.signal}`,
+          `${daemonUrl()}/api/workspaces/${workspaceId}/signals/${trigger.signal}`,
         ].join(" \\\n  ");
         navigator.clipboard.writeText(curl);
       }

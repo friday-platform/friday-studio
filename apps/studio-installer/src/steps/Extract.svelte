@@ -45,6 +45,18 @@ let tools = $state<Tool[]>([
     status: "pending",
   },
   {
+    // Downloads the browser-trusted cert pair for local.hellofriday.ai
+    // from download.fridayplatform.io and sha256-verifies against the
+    // manifest, writing browser.crt/browser.key under
+    // ~/.friday/local/tls/. Once present, playground_url() and the
+    // launcher's playgroundURL() both return https://local.hellofriday.ai;
+    // without it, both fall back to http://localhost. Non-fatal: a
+    // network failure here still lets the install proceed on http://.
+    display: "Browser TLS certificate",
+    command: "download_tls_certs",
+    status: "pending",
+  },
+  {
     // Runs `friday migrate`. Idempotent. Failures are non-fatal — the
     // row flips to ✗ and the launcher boots anyway. What `migrate`
     // does is atlas-cli's concern, not the installer's.

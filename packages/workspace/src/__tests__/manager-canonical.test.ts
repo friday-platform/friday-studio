@@ -6,10 +6,15 @@
  */
 
 import { createKVStorage } from "@atlas/storage/kv";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { WorkspaceManager } from "../manager.ts";
 import { RegistryStorageAdapter } from "../registry-storage-adapter.ts";
 import type { WorkspaceEntry } from "../types.ts";
+
+// Pin `getFridayHome()` to `/tmp` so the cross-home filter accepts the
+// `/tmp/...` paths used in the non-canonical fixtures below. Without
+// this pin the filter defaults to `~/.atlas` and masks the entries.
+vi.mock("@atlas/utils/paths.server", () => ({ getFridayHome: () => "/tmp" }));
 
 async function createTestManager(): Promise<{
   manager: WorkspaceManager;

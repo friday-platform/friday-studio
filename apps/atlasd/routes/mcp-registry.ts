@@ -58,12 +58,14 @@ async function createLinkProvider(
   // Same resolution order as the link proxy in routes/link.ts —
   // explicit LINK_SERVICE_URL beats FRIDAY_PORT_LINK fallback beats
   // the legacy :3100 default. Keeps desktop port-override installs
-  // talking to the right link binary.
+  // talking to the right link binary. Scheme follows the s2s mesh
+  // (https when FRIDAY_TLS_CERT/_KEY set, http fallback otherwise).
+  const linkScheme = process.env.FRIDAY_TLS_CERT && process.env.FRIDAY_TLS_KEY ? "https" : "http";
   const linkServiceUrl =
     process.env.LINK_SERVICE_URL ??
     (process.env.FRIDAY_PORT_LINK
-      ? `http://localhost:${process.env.FRIDAY_PORT_LINK}`
-      : "http://localhost:3100");
+      ? `${linkScheme}://localhost:${process.env.FRIDAY_PORT_LINK}`
+      : `${linkScheme}://localhost:3100`);
   const url = `${linkServiceUrl}/v1/providers`;
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   const atlasKey = process.env.FRIDAY_KEY;

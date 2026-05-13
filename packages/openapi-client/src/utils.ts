@@ -47,10 +47,28 @@ export function getAtlasDaemonUrl(): string {
   // least one message is required" because the workspace context comes
   // back empty (Connection refused → silently empty messages array).
   if (process?.env) {
+    // FRIDAY_TLS_CERT signals the daemon is bound with TLS (set by
+    // `bash scripts/setup-tls.sh`). Default the scheme to match so CLI
+    // subcommands reach the right port without each call site having to
+    // remember to override FRIDAYD_URL.
+    const tlsOn = !!(process.env.FRIDAY_TLS_CERT && process.env.FRIDAY_TLS_KEY);
     const explicit = process.env.FRIDAYD_URL || process.env.FRIDAY_DAEMON_URL;
-    if (explicit) return explicit;
+    if (explicit) {
+      // If the explicit URL is http:// but TLS is on, upgrade the scheme.
+      // The daemon's TLS listener rejects cleartext requests, so an out-of-
+      // sync FRIDAYD_URL (e.g. left over from a prior non-TLS run) would
+      // surface as "Response does not match HTTP/1.1 protocol". Don't
+      // downgrade https→http: a user with explicit https config knows
+      // their setup.
+      if (tlsOn && explicit.startsWith("http://")) {
+        return "https://" + explicit.slice("http://".length);
+      }
+      return explicit;
+    }
+    const scheme = tlsOn ? "https" : "http";
     const port = process.env.FRIDAY_PORT_FRIDAY;
-    if (port) return `http://127.0.0.1:${port}`;
+    if (port) return `${scheme}://127.0.0.1:${port}`;
+    return `${scheme}://127.0.0.1:8080`;
   }
 
   return "http://127.0.0.1:8080";

@@ -317,8 +317,6 @@ export {
 export type { Credential, CredentialSummary, OAuthCredential } from "./types.ts";
 
 if (import.meta.main) {
-  logger.info("Link service starting", { port: config.port });
-
   Deno.addSignalListener("SIGINT", () => shutdown("SIGINT"));
   Deno.addSignalListener("SIGTERM", () => shutdown("SIGTERM"));
 
@@ -329,5 +327,40 @@ if (import.meta.main) {
   // credentials. LINK_BIND_HOST escape hatch for production / containers
   // that need 0.0.0.0 (Docker networking).
   const hostname = Deno.env.get("LINK_BIND_HOST") ?? "127.0.0.1";
-  server = Deno.serve({ port: config.port, hostname, onListen: () => {}, handler: app.fetch });
+
+  // Match the s2s TLS pattern atlasd + webhook-tunnel use: when the
+  // private-CA cert pair is wired (FRIDAY_TLS_CERT/_KEY via
+  // setup-tls.sh for dev or the launcher's s2s_generator + .env
+  // writeback for installed mode), bind https://. The daemon's calls
+  // into link go through fetch() with DENO_CERT/NODE_EXTRA_CA_CERTS
+  // pointed at the matching CA, so the trust path closes end-to-end.
+  // Without the env, fall back to plain http on loopback — the
+  // pre-TLS-mesh behavior.
+  const certPath = Deno.env.get("FRIDAY_TLS_CERT");
+  const keyPath = Deno.env.get("FRIDAY_TLS_KEY");
+  let tls: { cert: string; key: string } | null = null;
+  if (certPath && keyPath) {
+    try {
+      tls = { cert: Deno.readTextFileSync(certPath), key: Deno.readTextFileSync(keyPath) };
+    } catch (err) {
+      logger.warn("FRIDAY_TLS_CERT/_KEY set but unreadable — falling back to HTTP", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      tls = null;
+    }
+  }
+  const scheme = tls ? "https" : "http";
+  logger.info("Link service starting", { port: config.port, scheme });
+  server = Deno.serve(
+    tls
+      ? {
+          port: config.port,
+          hostname,
+          cert: tls.cert,
+          key: tls.key,
+          onListen: () => {},
+          handler: app.fetch,
+        }
+      : { port: config.port, hostname, onListen: () => {}, handler: app.fetch },
+  );
 }

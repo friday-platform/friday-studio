@@ -31,11 +31,17 @@ linkRoutes.use("/*", devOnlyMiddleware());
  *      workspace-chat agent can't reach Gmail / Slack / etc.
  *   3. http://localhost:3100 — legacy default for in-tree dev runs.
  */
+// Scheme matches the s2s mesh: when FRIDAY_TLS_CERT/_KEY are set in
+// the daemon's env, link is also listening on TLS via the same env
+// pair (apps/link/src/index.ts), so the daemon must reach it over
+// https. Without TLS env, fall back to http on loopback — the
+// pre-s2s-mesh behavior.
+const linkScheme = process.env.FRIDAY_TLS_CERT && process.env.FRIDAY_TLS_KEY ? "https" : "http";
 const LINK_SERVICE_URL =
   process.env.LINK_SERVICE_URL ??
   (process.env.FRIDAY_PORT_LINK
-    ? `http://localhost:${process.env.FRIDAY_PORT_LINK}`
-    : "http://localhost:3100");
+    ? `${linkScheme}://localhost:${process.env.FRIDAY_PORT_LINK}`
+    : `${linkScheme}://localhost:3100`);
 const PROXY_PREFIX = "/api/link";
 
 /**

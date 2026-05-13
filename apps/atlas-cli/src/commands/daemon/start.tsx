@@ -621,12 +621,39 @@ async function startForeground(argv: StartArgs): Promise<void> {
   // the daemon's route types via @atlas/client don't drag the daemon's
   // module graph (NATS, JetStream, migrations) into their process at load.
   const { AtlasDaemon } = await import("@atlas/atlasd/daemon");
+
+  // TLS for HTTP/2 — gated on both cert and key being present and
+  // readable. Missing files fall back to plain HTTP so the daemon still
+  // boots in environments that haven't run `bash scripts/setup-tls.sh`
+  // (CI, fresh checkouts). Reading here (vs. inside the daemon) keeps
+  // the daemon module pure-data and lets us surface fs errors cleanly.
+  const tlsCertPath = process.env.FRIDAY_TLS_CERT;
+  const tlsKeyPath = process.env.FRIDAY_TLS_KEY;
+  let tlsCert: string | undefined;
+  let tlsKey: string | undefined;
+  if (tlsCertPath && tlsKeyPath) {
+    try {
+      tlsCert = await readFile(tlsCertPath, "utf8");
+      tlsKey = await readFile(tlsKeyPath, "utf8");
+    } catch (err) {
+      errorOutput(
+        `FRIDAY_TLS_CERT/_KEY set but unreadable — falling back to HTTP. ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+      tlsCert = undefined;
+      tlsKey = undefined;
+    }
+  }
+  const corsOrigin = tlsCert ? "https://127.0.0.1:1420" : "http://127.0.0.1:1420";
   const daemon = new AtlasDaemon({
     port: argv.port,
     hostname: argv.hostname,
     maxConcurrentWorkspaces: argv.maxWorkspaces,
     idleTimeoutMs: (argv.idleTimeout || 300) * 1000,
-    cors: ["http://127.0.0.1:1420"],
+    cors: [corsOrigin],
+    tlsCert,
+    tlsKey,
   });
 
   // Catch unhandled promise rejections so a single async error
@@ -651,8 +678,9 @@ async function startForeground(argv: StartArgs): Promise<void> {
     Deno.addSignalListener("SIGTERM", shutdown);
   }
 
+  const scheme = tlsCert ? "https" : "http";
   infoOutput(
-    `Starting Atlas daemon on http://${argv.hostname || "127.0.0.1"}:${argv.port || 8080}...`,
+    `Starting Atlas daemon on ${scheme}://${argv.hostname || "127.0.0.1"}:${argv.port || 8080}...`,
   );
   successOutput("Atlas daemon is running. Press Ctrl+C to stop.");
 

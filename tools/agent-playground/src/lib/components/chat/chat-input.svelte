@@ -7,6 +7,10 @@
 
   interface Props {
     onsubmit: (message: string, images: ImageAttachment[]) => void;
+    /** Attached images. Bindable so drop targets outside this component
+     * (e.g. the whole chat surface) can push files into the same preview
+     * strip the file-picker uses, instead of rendering a parallel one. */
+    images?: ImageAttachment[];
     /** True while the assistant is producing a response. Swaps the send slot
      * for a stop button; users press Enter to send when idle. */
     streaming?: boolean;
@@ -21,8 +25,9 @@
     onttsToggle?: () => void;
   }
 
-  const {
+  let {
     onsubmit,
+    images = $bindable([]),
     streaming = false,
     stopping = false,
     onstop,
@@ -31,7 +36,6 @@
   }: Props = $props();
 
   let value = $state("");
-  let images: ImageAttachment[] = $state([]);
   let dragOver = $state(false);
   let fileInput: HTMLInputElement | undefined = $state();
   let textareaEl: HTMLTextAreaElement | undefined = $state();

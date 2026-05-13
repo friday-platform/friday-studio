@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
@@ -46,7 +46,11 @@ describe("ensureDefaultUserWorkspace", () => {
   let manager: WorkspaceManager;
 
   beforeEach(async () => {
-    tempDir = await mkdtemp(join(tmpdir(), "atlas-first-run-"));
+    // realpath: on macOS tmpdir() returns the `/var/folders/...` symlink,
+    // but Deno.realPath() (used inside manager.registerWorkspace) resolves
+    // to `/private/var/folders/...`. The cross-home filter compares stored
+    // realpath against the mocked home — canonicalise here to match.
+    tempDir = await realpath(await mkdtemp(join(tmpdir(), "atlas-first-run-")));
     process.env.DENO_TEST = "true";
     const setup = await setupManager(tempDir);
     manager = setup.manager;
