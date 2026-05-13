@@ -1800,18 +1800,14 @@ async function runChatHumanInputScenario(d: DaemonHandle): Promise<EvalResult[]>
 
   const chatId = crypto.randomUUID();
   const startedAt = Date.now();
-  const chatPromise = postChatMessage(
-    d,
-    ws.id,
-    chatId,
-    [
-      "Call the chat-user-decision-check job tool exactly once with query 'chat-hitl'.",
-      "When the job asks for human input, wait for the answer from request_human_input.",
-      "After the job completes, reply with a short acknowledgement that includes CHAT_HUMAN_INPUT_RESUMED.",
-      "Do not call fake inbox tools directly and do not delegate.",
-    ].join("\n"),
-    { timeoutMs: 12 * 60 * 1000 },
-  );
+  const userMessage = [
+    "Call the chat-user-decision-check job tool exactly once with query 'chat-hitl'.",
+    "When the job asks for human input, wait for the answer from request_human_input.",
+    "After the job completes, reply with a short acknowledgement that includes CHAT_HUMAN_INPUT_RESUMED.",
+    "Do not call fake inbox tools directly and do not delegate.",
+  ].join("\n");
+  metrics.userMessage = userMessage;
+  const chatPromise = postChatMessage(d, ws.id, chatId, userMessage, { timeoutMs: 12 * 60 * 1000 });
 
   const pending = await waitForPendingElicitation(d, ws.id);
   metrics.pendingObservedAtMs = Date.now() - startedAt;
@@ -1841,6 +1837,22 @@ async function runChatHumanInputScenario(d: DaemonHandle): Promise<EvalResult[]>
   const assistantPersisted = messages.some(
     (m) => typeof m === "object" && m !== null && (m as { role?: unknown }).role === "assistant",
   );
+  const assistantTexts = messages
+    .filter(
+      (m): m is Record<string, unknown> =>
+        typeof m === "object" && m !== null && (m as { role?: unknown }).role === "assistant",
+    )
+    .map((m) => {
+      const content = (m as { content?: unknown }).content;
+      if (typeof content === "string") return content;
+      if (Array.isArray(content)) {
+        return content
+          .filter((p): p is Record<string, unknown> => typeof p === "object" && p !== null)
+          .map((p) => (typeof p.text === "string" ? p.text : JSON.stringify(p)))
+          .join("\n");
+      }
+      return JSON.stringify(content);
+    });
   const toolNames = chat.toolCalls.map((tc) => tc.toolName);
   const jobToolOutput = chat.toolCalls.find(
     (tc) => tc.toolName === "chat-user-decision-check" && tc.output !== undefined,
@@ -1865,6 +1877,7 @@ async function runChatHumanInputScenario(d: DaemonHandle): Promise<EvalResult[]>
   metrics.debugHasHumanInput = debugHasHumanInput;
   metrics.nestedHasHumanInput = nestedHasHumanInput;
   metrics.assistantPersisted = assistantPersisted;
+  metrics.assistantTexts = assistantTexts;
   metrics.terminal = terminal ?? null;
 
   const pass =

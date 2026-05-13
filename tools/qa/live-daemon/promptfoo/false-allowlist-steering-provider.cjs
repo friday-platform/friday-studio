@@ -23,7 +23,16 @@ async function runFalseAllowlistSteering() {
   const reportPath = path.join(outDir, "false-allowlist-steering.json");
   const root = repoRoot();
   const script = path.join(root, "tools/qa/live-daemon/scenarios/false-allowlist-steering.ts");
-  const args = ["run", "--allow-read", "--allow-env", "--allow-run", script, "--json-output", reportPath];
+  const args = [
+    "run",
+    "--allow-all",
+    "--unstable-worker-options",
+    "--unstable-kv",
+    "--unstable-raw-imports",
+    script,
+    "--json-output",
+    reportPath,
+  ];
 
   const child = spawn("deno", args, {
     cwd: root,

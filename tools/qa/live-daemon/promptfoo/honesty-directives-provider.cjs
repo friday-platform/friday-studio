@@ -25,9 +25,10 @@ async function runHonestyDirectives() {
   const script = path.join(root, "tools/qa/live-daemon/scenarios/honesty-directives.ts");
   const args = [
     "run",
-    "--allow-read",
-    "--allow-env",
-    "--allow-run",
+    "--allow-all",
+    "--unstable-worker-options",
+    "--unstable-kv",
+    "--unstable-raw-imports",
     script,
     "--json-output",
     reportPath,
