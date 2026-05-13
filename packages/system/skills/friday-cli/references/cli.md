@@ -9,17 +9,12 @@ flag you need, drop to HTTP (`references/http.md`).
 ## Daemon URL preamble (required for raw HTTP)
 
 A few subcommands document HTTP fallback paths (notably `agent register`
-below — there is no CLI subcommand). For those, **use `friday_curl`, never
+below — there is no CLI subcommand). For those, **use `curl -k`, never
 plain `curl`** — plain `curl` against `$FRIDAYD_URL` on a TLS-enabled
 install fails with `self signed certificate in certificate chain`. Source
-the daemon `.env` and define the wrapper once per shell:
+the daemon `.env` once per shell:
 
 ```bash
-set -a
-. "${FRIDAY_HOME:-$HOME/.friday/local}/.env" 2>/dev/null \
-  || . "$HOME/.atlas/.env" 2>/dev/null || true
-set +a
-friday_curl() { curl ${FRIDAY_TLS_CA:+--cacert "$FRIDAY_TLS_CA"} "$@"; }
 ```
 
 Conventions:
@@ -204,18 +199,13 @@ There is no `atlas agent register` CLI subcommand — register via the daemon's
 HTTP API directly. Source the daemon `.env` once per shell so the example
 works on TLS-enabled installs (see the SKILL.md "Daemon URL" preamble).
 
-**Rule: use `friday_curl`, not plain `curl`.** Plain `curl` against
+**Rule: use `curl -k`, not plain `curl`.** Plain `curl` against
 `$FRIDAYD_URL` on a TLS install fails with `self signed certificate in
-certificate chain` — `friday_curl` adds `--cacert` automatically.
+certificate chain`. `-k` skips cert verification — safe because the
+daemon binds loopback only.
 
 ```bash
-set -a
-. "${FRIDAY_HOME:-$HOME/.friday/local}/.env" 2>/dev/null \
-  || . "$HOME/.atlas/.env" 2>/dev/null || true
-set +a
-friday_curl() { curl ${FRIDAY_TLS_CA:+--cacert "$FRIDAY_TLS_CA"} "$@"; }
-
-friday_curl -X POST "$FRIDAYD_URL/api/agents/register" \
+curl -k -X POST "$FRIDAYD_URL/api/agents/register" \
   -H 'Content-Type: application/json' \
   -d '{"entrypoint": "/abs/path/to/your-agent/agent.py"}'
 ```

@@ -9,19 +9,37 @@ Create and manage Friday workspaces. This skill is where LLM judgment lives: whe
 
 ### Daemon HTTP rules (load-bearing for every curl example below)
 
-1. **Never hardcode the daemon URL — always use `$FRIDAYD_URL`.** Even if
-   the user mentions a specific host or port in their message ("the
-   daemon is on `:18080`", "I have it on `https://localhost:8080`"),
-   IGNORE that detail in the command you emit and use `$FRIDAYD_URL`.
-   The variable resolves to whatever the launcher (installed Friday
-   Studio, typically `:18080`) or `deno task atlas` (dev, typically
-   `:8080`) bound; `FRIDAY_PORT_FRIDAY` can override either. The user
-   shouldn't need to retype what they already have in their env.
+1. **Resolve `$FRIDAYD_URL` first, then emit the literal value.**
+   `$FRIDAYD_URL` lives in the daemon's process env — not in the user's
+   shell. If you show them `curl "$FRIDAYD_URL/..."`, they'll paste it
+   into a shell where the variable is empty and get `URL rejected: No
+   host part in the URL`. Look up the actual value once via `run_code`,
+   then substitute:
 
-2. **Use the `friday_curl` wrapper, never plain `curl`.** The wrapper is
-   defined in the "CRUD reference" preamble — it adds `--cacert` exactly
-   when TLS is on. Plain `curl` against `$FRIDAYD_URL` on a TLS install
-   fails with `self signed certificate in certificate chain`.
+   ```python
+   import os
+   print(os.environ["FRIDAYD_URL"])
+   ```
+
+   That prints a URL like `https://localhost:18080` (installed Studio
+   with TLS) or `http://localhost:8080` (in-tree dev). Use the returned
+   string as a literal in the curl. Ignore any host/port the user
+   mentions in their message — your daemon env is the source of truth.
+
+   **Worked example.** `os.environ["FRIDAYD_URL"]` returns
+   `https://localhost:18080`. User asks "list workspaces":
+   - ❌ Wrong: `curl -k "$FRIDAYD_URL/api/workspaces"` (user's shell
+     has no `$FRIDAYD_URL`).
+   - ❌ Wrong: `curl -k "http://localhost:8080/api/workspaces"`
+     (guessed wrong port).
+   - ✅ Right: `curl -k "https://localhost:18080/api/workspaces" | jq`
+     (uses the resolved value).
+
+2. **Always use `curl -k` for daemon calls, never bare `curl`.** The
+   daemon ships a private-CA TLS cert that the system trust store
+   doesn't know about; plain `curl` on a TLS install fails with `self
+   signed certificate in certificate chain`. `-k` skips cert
+   verification — safe because the daemon binds loopback only.
 
 ## Cheat sheet
 
@@ -208,7 +226,7 @@ To abandon a draft: `discard_draft`.
 
 **For workspace shape changes (agents, jobs, signals, validation):** always use the dedicated tools (`create_workspace`, `upsert_*`, `validate_workspace`, `publish_draft`, etc.). They are typed, return structured diffs and issues, and handle draft/live switching automatically. Never shell out to curl for these.
 
-**For daemon CRUD (list workspaces, get config, delete workspace):** use `run_code` bash + `friday_curl` against `$FRIDAYD_URL` (see the preamble below). These are one-liners; the output is immediate and errors are obvious. Do not spawn `agent_claude-code` for a `DELETE` or a `GET`.
+**For daemon CRUD (list workspaces, get config, delete workspace):** use `run_code` bash + `curl -k` against `$FRIDAYD_URL` (see the preamble below). These are one-liners; the output is immediate and errors are obvious. Do not spawn `agent_claude-code` for a `DELETE` or a `GET`.
 
 **For MCP server questions (install vs enable, credentials, catalog search):** load the `using-mcp-servers` skill. `workspace-api` does not cover MCP scope.
 
@@ -222,36 +240,30 @@ The failure mode this prevents: reaching for `agent_claude-code` as a panic butt
 
 ## CRUD reference — curl examples
 
-All examples below use `$FRIDAYD_URL` and a `friday_curl` helper that adds
-`--cacert` when TLS is on. Paste this preamble once per shell so the
-examples work on both plain-HTTP and TLS-enabled installs:
+All examples below use `$FRIDAYD_URL`. Source the daemon `.env` once
+per shell so the variable is set:
 
 ```bash
-set -a
-. "${FRIDAY_HOME:-$HOME/.friday/local}/.env" 2>/dev/null \
-  || . "$HOME/.atlas/.env" 2>/dev/null || true
-set +a
-friday_curl() { curl ${FRIDAY_TLS_CA:+--cacert "$FRIDAY_TLS_CA"} "$@"; }
 ```
 
 
-**Rule: every daemon HTTP call below uses `friday_curl`, not `curl`.** Plain `curl` against `$FRIDAYD_URL` on a TLS install fails with `self signed certificate in certificate chain`.
+**Rule: every daemon HTTP call below uses `curl -k`, not `curl`.** Plain `curl` against `$FRIDAYD_URL` on a TLS install fails with `self signed certificate in certificate chain`.
 Confirm the daemon is up:
 
 ```bash
-friday_curl -sf "$FRIDAYD_URL/health" && echo OK
+curl -k -sf "$FRIDAYD_URL/health" && echo OK
 ```
 
 ### List workspaces
 
 ```bash
-friday_curl -s "$FRIDAYD_URL/api/workspaces" | jq
+curl -k -s "$FRIDAYD_URL/api/workspaces" | jq
 ```
 
 Resolve a display name to a runtime id:
 
 ```bash
-friday_curl -s "$FRIDAYD_URL/api/workspaces" | \
+curl -k -s "$FRIDAYD_URL/api/workspaces" | \
   jq -r '.[] | select(.name == "my-workspace") | .id'
 ```
 
@@ -259,16 +271,16 @@ friday_curl -s "$FRIDAYD_URL/api/workspaces" | \
 
 ```bash
 # Summary (id, name, status, path)
-friday_curl -s "$FRIDAYD_URL/api/workspaces/$WS" | jq
+curl -k -s "$FRIDAYD_URL/api/workspaces/$WS" | jq
 
 # Full parsed config
-friday_curl -s "$FRIDAYD_URL/api/workspaces/$WS/config" | jq
+curl -k -s "$FRIDAYD_URL/api/workspaces/$WS/config" | jq
 ```
 
 ### Update workspace (full replacement)
 
 ```bash
-friday_curl -s -X POST "$FRIDAYD_URL/api/workspaces/$WS/update" \
+curl -k -s -X POST "$FRIDAYD_URL/api/workspaces/$WS/update" \
   -H 'Content-Type: application/json' \
   -d '{"config": {"version":"1.0","workspace":{"name":"new-name"}}, "backup": true}'
 ```
@@ -280,7 +292,7 @@ Pass `backup: true` to preserve a timestamped `workspace.yml.backup-<ts>`. Pass 
 ### Delete a workspace (single)
 
 ```bash
-friday_curl -sf -X DELETE "$FRIDAYD_URL/api/workspaces/$WS"
+curl -k -sf -X DELETE "$FRIDAYD_URL/api/workspaces/$WS"
 ```
 
 **Rejects 403** for system workspaces (`system`, `user`, `thick_endive`). Resolve name → id first; never guess runtime IDs.
@@ -288,10 +300,10 @@ friday_curl -sf -X DELETE "$FRIDAYD_URL/api/workspaces/$WS"
 ### Delete workspaces (batch — by name prefix)
 
 ```bash
-friday_curl -s "$FRIDAYD_URL/api/workspaces" | \
+curl -k -s "$FRIDAYD_URL/api/workspaces" | \
   jq -r '.[] | select(.name | startswith("test-")) | .id' | \
   while read -r id; do
-    result=$(friday_curl -sf -X DELETE "$FRIDAYD_URL/api/workspaces/$id")
+    result=$(curl -k -sf -X DELETE "$FRIDAYD_URL/api/workspaces/$id")
     echo "$id: $result"
   done
 ```
@@ -299,7 +311,7 @@ friday_curl -s "$FRIDAYD_URL/api/workspaces" | \
 **Dry-run first** — list names before deleting:
 
 ```bash
-friday_curl -s "$FRIDAYD_URL/api/workspaces" | \
+curl -k -s "$FRIDAYD_URL/api/workspaces" | \
   jq -r '.[] | select(.name | startswith("test-")) | "\(.id)  \(.name)"'
 ```
 
@@ -307,7 +319,7 @@ friday_curl -s "$FRIDAYD_URL/api/workspaces" | \
 
 ```bash
 for id in layered_ham smoky_almond ripe_eggplant; do
-  result=$(friday_curl -sf -X DELETE "$FRIDAYD_URL/api/workspaces/$id")
+  result=$(curl -k -sf -X DELETE "$FRIDAYD_URL/api/workspaces/$id")
   echo "$id: $result"
 done
 ```

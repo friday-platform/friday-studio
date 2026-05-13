@@ -140,17 +140,18 @@
   vars:
     scenarioId: 'skill-tls-static-accept:frontmatter-description'
 
-# Behavioral negative controls — three different bad-skill framings prove
-# the LLM judge has discriminative signal across framings. If all three
-# flip to pass=false at once, the judge has lost discrimination.
-- description: NEGATIVE — bash-heavy bad skill makes LLM emit bare URL
+# Behavioral negative controls — three bad-skill framings, each teaching
+# a distinct failure mode (variable literal, missing -k, wrong-port
+# hardcode). If all three flip to pass=false at once, the LLM judge has
+# lost discrimination.
+- description: NEGATIVE — skill teaches $FRIDAYD_URL literal, LLM should regurgitate it
+  vars:
+    scenarioId: 'skill-tls-behavior-negative:emit-variable-literal'
+
+- description: NEGATIVE — skill says don't use -k, LLM should omit it
+  vars:
+    scenarioId: 'skill-tls-behavior-negative:omit-cert-skip'
+
+- description: NEGATIVE — skill hardcodes :8080, LLM should emit a bare URL
   vars:
     scenarioId: 'skill-tls-behavior-negative:bash-heavy-bare-url'
-
-- description: NEGATIVE — python-agent bad skill makes LLM emit bare URL
-  vars:
-    scenarioId: 'skill-tls-behavior-negative:python-agent-bare-url'
-
-- description: NEGATIVE — prose-then-bare-curl bad skill makes LLM emit bare URL
-  vars:
-    scenarioId: 'skill-tls-behavior-negative:prose-then-bare-curl'

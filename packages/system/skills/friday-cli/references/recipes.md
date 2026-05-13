@@ -3,21 +3,15 @@
 End-to-end patterns for driving Friday via CLI + HTTP. Copy + adapt.
 
 > **Preamble — source the daemon env once per shell.** Every curl-like
-> example below uses `$FRIDAYD_URL` and an injected `--cacert` flag (needed
-> when TLS is on). Paste this once and the examples below work as-is on
-> both plain-HTTP and TLS-enabled installs:
+> example below uses `$FRIDAYD_URL` and `curl -k`. Source the daemon
+> `.env` once so the variable is set. `-k` skips cert verification —
+> safe because the daemon binds loopback only.
 >
 > ```bash
-> set -a
-> . "${FRIDAY_HOME:-$HOME/.friday/local}/.env" 2>/dev/null \
->   || . "$HOME/.atlas/.env" 2>/dev/null || true
-> set +a
-> # Wrapper that adds --cacert exactly when TLS is on. Use in place of `curl`.
-> friday_curl() { curl ${FRIDAY_TLS_CA:+--cacert "$FRIDAY_TLS_CA"} "$@"; }
 > ```
 >
 
-**Rule: every daemon HTTP call below uses `friday_curl`, not `curl`.** Plain `curl` against `$FRIDAYD_URL` on a TLS install fails with `self signed certificate in certificate chain`.
+**Rule: every daemon HTTP call below uses `curl -k`, not `curl`.** Plain `curl` against `$FRIDAYD_URL` on a TLS install fails with `self signed certificate in certificate chain`.
 > See the `friday-cli` SKILL.md "Daemon URL" section for the full
 > explanation.
 
@@ -49,17 +43,17 @@ End-to-end patterns for driving Friday via CLI + HTTP. Copy + adapt.
 CONFIG=$(python3 -c "import yaml,json; print(json.dumps(yaml.safe_load(open('workspaces/my-thing/workspace.yml'))))")
 
 # 2. Create. Capture workspaceId.
-RESP=$(friday_curl -s -X POST "$FRIDAYD_URL"/api/workspaces/create \
+RESP=$(curl -k -s -X POST "$FRIDAYD_URL"/api/workspaces/create \
   -H 'Content-Type: application/json' \
   -d "{\"config\":$CONFIG,\"workspaceName\":\"My Thing\"}")
 WS_ID=$(echo "$RESP" | jq -r '.workspaceId')
 echo "Created: $WS_ID"
 
 # 3. Inspect signals.
-friday_curl -s "$FRIDAYD_URL"/api/workspaces/$WS_ID/signals | jq '.signals[].id'
+curl -k -s "$FRIDAYD_URL"/api/workspaces/$WS_ID/signals | jq '.signals[].id'
 
 # 4. Fire smoke signal, stream events.
-friday_curl -N -X POST "$FRIDAYD_URL"/api/workspaces/$WS_ID/signals/smoke-test \
+curl -k -N -X POST "$FRIDAYD_URL"/api/workspaces/$WS_ID/signals/smoke-test \
   -H 'Content-Type: application/json' \
   -H 'Accept: text/event-stream' \
   -d '{"payload":{}}'
@@ -77,7 +71,7 @@ deno task atlas workspace list --json | jq '.[] | select(.name=="My Thing")'
 ## Update signal cron schedule without rewriting workspace.yml
 
 ```bash
-friday_curl -s -X PATCH "$FRIDAYD_URL"/api/workspaces/$WS_ID/config/signals/autopilot-tick-cron \
+curl -k -s -X PATCH "$FRIDAYD_URL"/api/workspaces/$WS_ID/config/signals/autopilot-tick-cron \
   -H 'Content-Type: application/json' \
   -d '{"config":{"schedule":"*/5 * * * *","timezone":"America/Los_Angeles"}}'
 ```
@@ -88,7 +82,7 @@ signal).
 ## Update agent prompt
 
 ```bash
-friday_curl -s -X PUT "$FRIDAYD_URL"/api/workspaces/$WS_ID/config/agents/autopilot-planner \
+curl -k -s -X PUT "$FRIDAYD_URL"/api/workspaces/$WS_ID/config/agents/autopilot-planner \
   -H 'Content-Type: application/json' \
   -d '{"prompt":"New prompt text here."}'
 ```
@@ -99,10 +93,10 @@ Mutates workspace.yml directly.
 
 ```bash
 # Find cred refs:
-friday_curl -s "$FRIDAYD_URL"/api/workspaces/$WS_ID/config/credentials | jq
+curl -k -s "$FRIDAYD_URL"/api/workspaces/$WS_ID/config/credentials | jq
 
 # Swap:
-friday_curl -s -X PUT "$FRIDAYD_URL"/api/workspaces/$WS_ID/config/credentials/agent:gh-agent:GITHUB_TOKEN \
+curl -k -s -X PUT "$FRIDAYD_URL"/api/workspaces/$WS_ID/config/credentials/agent:gh-agent:GITHUB_TOKEN \
   -H 'Content-Type: application/json' \
   -d '{"credentialId":"cred_abc123"}'
 ```
@@ -121,20 +115,20 @@ deno task atlas signal trigger -n cross-session-reflect -w autopilot \
 HTTP version w/ session tracking:
 
 ```bash
-RESP=$(friday_curl -s -X POST "$FRIDAYD_URL"/api/workspaces/$WS_ID/signals/cross-session-reflect \
+RESP=$(curl -k -s -X POST "$FRIDAYD_URL"/api/workspaces/$WS_ID/signals/cross-session-reflect \
   -H 'Content-Type: application/json' \
   -d '{"payload":{}}')
 SESSION=$(echo "$RESP" | jq -r '.sessionId')
 
 # Replay + live stream:
-friday_curl -N "$FRIDAYD_URL"/api/sessions/$SESSION/stream \
+curl -k -N "$FRIDAYD_URL"/api/sessions/$SESSION/stream \
   -H 'Accept: text/event-stream'
 ```
 
 ## Read narrative memory (autopilot backlog pattern)
 
 ```bash
-friday_curl -s "$FRIDAYD_URL/api/memory/$WS_ID/narrative/autopilot-backlog?since=24h&limit=50" | jq
+curl -k -s "$FRIDAYD_URL/api/memory/$WS_ID/narrative/autopilot-backlog?since=24h&limit=50" | jq
 ```
 
 Returns `NarrativeEntry[]`. Empty array on failure (check daemon logs).
@@ -161,9 +155,9 @@ Returns new version. Skill version auto-increments.
 ## Assign skill to workspace (scoping)
 
 ```bash
-SKILL_ID=$(friday_curl -s "$FRIDAYD_URL/api/skills?namespace=tempest" | jq -r '.skills[]|select(.name=="my-skill")|.id')
+SKILL_ID=$(curl -k -s "$FRIDAYD_URL/api/skills?namespace=tempest" | jq -r '.skills[]|select(.name=="my-skill")|.id')
 
-friday_curl -s -X POST "$FRIDAYD_URL"/api/skills/scoping/$SKILL_ID/assignments \
+curl -k -s -X POST "$FRIDAYD_URL"/api/skills/scoping/$SKILL_ID/assignments \
   -H 'Content-Type: application/json' \
   -d "{\"workspaceIds\":[\"$WS_ID\"]}"
 ```
@@ -179,7 +173,7 @@ reference implementation.
 Register via HTTP (no build step — agent process is spawned per invocation):
 
 ```bash
-friday_curl -X POST "$FRIDAYD_URL"/api/agents/register \
+curl -k -X POST "$FRIDAYD_URL"/api/agents/register \
   -H 'Content-Type: application/json' \
   -d '{"entrypoint": "/abs/path/to/agents/my-new-agent/agent.py"}'
 ```
@@ -191,7 +185,7 @@ collects metadata over NATS, and installs the source under
 ## Update env vars in daemon config
 
 ```bash
-friday_curl -X PUT "$FRIDAYD_URL"/api/config/env \
+curl -k -X PUT "$FRIDAYD_URL"/api/config/env \
   -H 'Content-Type: application/json' \
   -d '{"envVars":{"ANTHROPIC_API_KEY":"sk-...","GITHUB_TOKEN":"ghp_..."}}'
 ```
@@ -219,7 +213,7 @@ scratchpad). Critical for "why did agent do X" debugging.
 deno task atlas workspace status -w $WS_ID --json
 
 # Delete directory + registration:
-friday_curl -X DELETE "$FRIDAYD_URL"/api/workspaces/$WS_ID
+curl -k -X DELETE "$FRIDAYD_URL"/api/workspaces/$WS_ID
 ```
 
 403 on system workspace. Userland vanishes silently.
@@ -227,7 +221,7 @@ friday_curl -X DELETE "$FRIDAYD_URL"/api/workspaces/$WS_ID
 ## Export workspace as tarball (backup)
 
 ```bash
-friday_curl -s "$FRIDAYD_URL"/api/workspaces/$WS_ID/export > /tmp/$WS_ID.tar
+curl -k -s "$FRIDAYD_URL"/api/workspaces/$WS_ID/export > /tmp/$WS_ID.tar
 ```
 
 workspace.yml + resource data. Restore via unpack + `workspace add`.
@@ -237,7 +231,7 @@ workspace.yml + resource data. Restore via unpack + `workspace add`.
 ```bash
 deno task atlas daemon status || deno task atlas daemon start --detached
 # or pure HTTP:
-friday_curl -sf "$FRIDAYD_URL"/health > /dev/null || echo "daemon down"
+curl -k -sf "$FRIDAYD_URL"/health > /dev/null || echo "daemon down"
 ```
 
 ## SSE event shapes (for parsers)

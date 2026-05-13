@@ -369,25 +369,16 @@ the curl examples below work whether your install is on plain HTTP or
 HTTPS:
 
 ```bash
-set -a
-. "${FRIDAY_HOME:-$HOME/.friday/local}/.env" 2>/dev/null \
-  || . "$HOME/.atlas/.env" 2>/dev/null || true
-set +a
-# Now $FRIDAYD_URL is set (https://… when TLS is on, http://… otherwise)
-# and $FRIDAY_TLS_CA points at the private-CA cert when TLS is on.
-# Wrapper that adds --cacert exactly when TLS is on — use this for every
-# daemon call below, never plain `curl` against $FRIDAYD_URL.
-friday_curl() { curl ${FRIDAY_TLS_CA:+--cacert "$FRIDAY_TLS_CA"} "$@"; }
 ```
 
-**Rule: every daemon HTTP call below uses `friday_curl`, not `curl`.**
+**Rule: every daemon HTTP call below uses `curl -k`, not `curl`.**
 Plain `curl` against `$FRIDAYD_URL` on a TLS install fails with `self
 signed certificate in certificate chain`.
 
 Register your agent by POSTing the entrypoint's absolute path to the daemon:
 
 ```bash
-friday_curl -sf -X POST \
+curl -k -sf -X POST \
   "$FRIDAYD_URL/api/agents/register" \
   -H 'Content-Type: application/json' \
   -d '{"entrypoint": "/abs/path/to/your-agent/agent.py"}'
@@ -417,7 +408,7 @@ Execute an agent without going through the full FSM pipeline. Replace
 `my-agent` with your agent id (the `id=` value from the `@agent` decorator):
 
 ```bash
-friday_curl -sf -X POST \
+curl -k -sf -X POST \
   "$FRIDAYD_URL/api/agents/my-agent/run?workspaceId=user" \
   -H 'Content-Type: application/json' \
   -d '{"input": "test prompt"}'

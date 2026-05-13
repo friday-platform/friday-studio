@@ -102,21 +102,11 @@ deno task atlas session list --json | jq '[.[]|select(.status=="active")]'
 ### Bash check after triggering a signal
 
 ```bash
-# Source the daemon .env once per shell so $FRIDAYD_URL + $FRIDAY_TLS_CA are
-# set — required for TLS-enabled installs (curl rejects the daemon's
-# private-CA cert otherwise). The chain tries the installed-Studio location
-# first, then the dev location. See friday-cli SKILL.md "Daemon URL".
-set -a
-. "${FRIDAY_HOME:-$HOME/.friday/local}/.env" 2>/dev/null \
-  || . "$HOME/.atlas/.env" 2>/dev/null || true
-set +a
-# Use friday_curl for every daemon call below — never plain curl against
-# $FRIDAYD_URL (would fail with `self signed certificate in certificate
-# chain` on TLS-enabled installs).
-friday_curl() { curl ${FRIDAY_TLS_CA:+--cacert "$FRIDAY_TLS_CA"} "$@"; }
-
+# Source the daemon .env once per shell so $FRIDAYD_URL is set. The
+# chain tries the installed-Studio location first, then the dev
+# location. See friday-cli SKILL.md "Daemon URL".
 # 1. Fire signal, capture sessionId
-RESP=$(friday_curl -s -X POST \
+RESP=$(curl -k -s -X POST \
   "$FRIDAYD_URL/api/workspaces/$WS_ID/signals/$SIG" \
   -H 'Content-Type: application/json' \
   -d '{"payload":{}}')
@@ -124,13 +114,13 @@ SID=$(echo "$RESP" | jq -r '.sessionId')
 
 # 2. Wait for completion (poll or stream — streaming covered below)
 while true; do
-  STATUS=$(friday_curl -s "$FRIDAYD_URL/api/sessions/$SID" | jq -r '.status')
+  STATUS=$(curl -k -s "$FRIDAYD_URL/api/sessions/$SID" | jq -r '.status')
   [ "$STATUS" != "active" ] && break
   sleep 2
 done
 
 # 3. Read summary
-friday_curl -s "$FRIDAYD_URL/api/sessions/$SID" | jq '{
+curl -k -s "$FRIDAYD_URL/api/sessions/$SID" | jq '{
   status,
   durationMs,
   error,
@@ -143,7 +133,7 @@ friday_curl -s "$FRIDAYD_URL/api/sessions/$SID" | jq '{
 ### Extract failure info
 
 ```bash
-friday_curl -s "$FRIDAYD_URL/api/sessions/$SID" | jq '
+curl -k -s "$FRIDAYD_URL/api/sessions/$SID" | jq '
   if .status == "failed" then
     {
       sessionError: .error,
@@ -162,7 +152,7 @@ friday_curl -s "$FRIDAYD_URL/api/sessions/$SID" | jq '
 ### Tool call inventory across session
 
 ```bash
-friday_curl -s "$FRIDAYD_URL/api/sessions/$SID" | jq '
+curl -k -s "$FRIDAYD_URL/api/sessions/$SID" | jq '
   [.agentBlocks[] | .toolCalls[] | {agent: input_filename, tool: .toolName, durMs: .durationMs}]'
 ```
 
@@ -225,11 +215,11 @@ Operator recipes:
 
 ```bash
 # Count blocking verdicts in a session run:
-friday_curl -s "$FRIDAYD_URL/api/sessions/<id>" \
+curl -k -s "$FRIDAYD_URL/api/sessions/<id>" \
   | jq '[.events[] | select(.type=="step:complete") | .validation | select(.verdict=="blocking")] | length'
 
 # See which actions skipped validation and why:
-friday_curl -s "$FRIDAYD_URL/api/sessions/<id>" \
+curl -k -s "$FRIDAYD_URL/api/sessions/<id>" \
   | jq '.events[] | select(.type=="step:complete") | .validation | select(.strategy=="skip") | .skipReason'
 ```
 

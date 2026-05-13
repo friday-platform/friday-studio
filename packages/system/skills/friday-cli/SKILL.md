@@ -18,49 +18,50 @@ auto-loads the daemon `.env` so it picks the right scheme) and the raw
 HTTP API (more endpoints, SSE streaming, the only option for many CRUD ops
 on workspace internals).
 
-## Daemon URL — copy-paste preamble for every curl block
+## Daemon URL — resolve before emitting curl commands
 
-Curl examples below assume `$FRIDAYD_URL` and (when TLS is on) `$FRIDAY_TLS_CA`
-are set. The daemon `.env` lives at `${FRIDAY_HOME:-~/.friday/local}/.env`
-on installed Friday Studio and `~/.atlas/.env` for dev (the dev `deno task
-atlas` pins `FRIDAY_HOME=$HOME/.atlas`). Source whichever exists once per
-shell:
+`$FRIDAYD_URL` is in the **Friday daemon's process env**, not the user's
+shell. If you emit a curl example with a literal `$FRIDAYD_URL`, the user
+pastes it into a shell that has no such variable and gets `curl: (3) URL
+rejected: No host part in the URL`.
 
-```bash
-set -a
-. "${FRIDAY_HOME:-$HOME/.friday/local}/.env" 2>/dev/null \
-  || . "$HOME/.atlas/.env" 2>/dev/null || true
-set +a
-# $FRIDAYD_URL → https://… when TLS is on, http://… when plain HTTP.
-#                 Exact host/port comes from the daemon's bind — don't assume :8080.
-# $FRIDAY_TLS_CA → path to the private-CA cert (empty when TLS off)
+**Always resolve `$FRIDAYD_URL` to a concrete value before showing a
+command to the user.** Use `run_code` to read your own env:
 
-# Wrapper that adds --cacert exactly when TLS is on. Use this in place of
-# `curl` for every daemon call — never `curl` directly against $FRIDAYD_URL.
-friday_curl() { curl ${FRIDAY_TLS_CA:+--cacert "$FRIDAY_TLS_CA"} "$@"; }
+```python
+import os
+print(os.environ["FRIDAYD_URL"])
 ```
+
+That prints a URL like `https://localhost:18080` (installed Studio with
+TLS) or `http://localhost:8080` (in-tree dev). Take whatever string the
+lookup returns and substitute it as a literal in the curl command.
 
 ### Two load-bearing rules
 
-1. **Never hardcode the daemon URL — always use `$FRIDAYD_URL`.** Even
-   if the user mentions a specific host or port ("the daemon is on
-   `:18080`", "I have it on `https://localhost:8080`"), IGNORE that
-   detail and use `$FRIDAYD_URL` in the command. The variable already
-   resolves to the right value for the user's install.
+1. **Resolve `$FRIDAYD_URL` first, emit the literal URL.** Never emit
+   `$FRIDAYD_URL` (the variable name) in a command the user is supposed
+   to paste — they don't have it in their env. Always run the lookup
+   above, then substitute. If the user mentions a host/port in their
+   message, IGNORE it and use the resolved value from your env — that's
+   the only one guaranteed to match the running daemon.
 
-2. **Use the `friday_curl` wrapper, never plain `curl`.** The wrapper
-   makes examples work on both plain-HTTP installs (where
-   `$FRIDAY_TLS_CA` is empty and `--cacert` is omitted) and TLS installs
-   (where `--cacert` is required — plain `curl` against `$FRIDAYD_URL`
-   fails with `self signed certificate in certificate chain`).
+   **Worked example.** Your `run_code` lookup returns
+   `FRIDAYD_URL=https://localhost:18080`. User asks "hit /health":
+   - ❌ Wrong: `curl -k "$FRIDAYD_URL/health"` (user's shell has no
+     `$FRIDAYD_URL`).
+   - ❌ Wrong: `curl -k "http://localhost:8080/health"` (guessed the
+     wrong port — user runs installed Studio, not dev).
+   - ✅ Right: `curl -k "https://localhost:18080/health"` (the literal
+     value from `os.environ["FRIDAYD_URL"]`).
 
-**Troubleshooting:** if `friday_curl` still fails with `SSL certificate
-problem: self signed certificate in certificate chain`, your
-`FRIDAY_TLS_CA` is empty or stale (`set -a` exported an empty value, or
-the .env was rewritten since you last sourced it — by the launcher's TLS
-renewer for installed Studio, or by a `scripts/setup-tls.sh` rerun for
-dev). Check with `echo "$FRIDAY_TLS_CA"` and re-source the daemon `.env`
-from the same preamble above.
+2. **Always use `curl -k` for daemon calls, never bare `curl`.** The
+   daemon ships a private-CA TLS cert that the system trust store
+   doesn't know about; plain `curl` against the daemon on a TLS install
+   fails with `self signed certificate in certificate chain`. `-k`
+   skips cert verification, which is fine here because the daemon
+   binds loopback only — anyone who can MitM `localhost` already owns
+   the machine.
 
 ## When to use CLI vs HTTP
 
@@ -84,7 +85,7 @@ Before touching anything, confirm the daemon is up:
 ```bash
 deno task atlas daemon status
 # or (after sourcing the daemon .env — see preamble above):
-friday_curl -sf "$FRIDAYD_URL/health" && echo OK
+curl -k -sf "$FRIDAYD_URL/health" && echo OK
 ```
 
 If it's not:
@@ -120,7 +121,7 @@ deno task atlas signal list -w <workspace-id-or-name> --json
 Or HTTP for full schema:
 
 ```bash
-friday_curl -sf \
+curl -k -sf \
   "$FRIDAYD_URL/api/workspaces/<id>/signals" | jq
 ```
 
@@ -137,7 +138,7 @@ deno task atlas signal trigger -n <signal-name> -w <workspace> \
 Or via HTTP with SSE:
 
 ```bash
-friday_curl -N -X POST \
+curl -k -N -X POST \
   "$FRIDAYD_URL/api/workspaces/<id>/signals/<signal-id>" \
   -H 'Content-Type: application/json' \
   -H 'Accept: text/event-stream' \
@@ -159,7 +160,7 @@ deno task atlas session get <session-id> --json  # full SessionView
 SSE replay/live stream (survives reconnect within the replay window):
 
 ```bash
-friday_curl -N \
+curl -k -N \
   "$FRIDAYD_URL/api/sessions/<id>/stream" \
   -H 'Accept: text/event-stream'
 ```
@@ -169,7 +170,7 @@ human-readable summary + keyDetails (with URLs). Prefer it over walking
 `agentBlocks[]` when you just want "what happened":
 
 ```bash
-friday_curl -sf \
+curl -k -sf \
   "$FRIDAYD_URL/api/sessions/<id>" | jq '.aiSummary'
 ```
 
@@ -184,7 +185,7 @@ JSON — convert from YAML inline:
 
 ```bash
 CONFIG=$(python3 -c "import yaml,json,sys; print(json.dumps(yaml.safe_load(open('$1'))))" workspaces/my-thing/workspace.yml)
-friday_curl -sf -X POST \
+curl -k -sf -X POST \
   "$FRIDAYD_URL/api/workspaces/create" \
   -H 'Content-Type: application/json' \
   -d "{\"config\":$CONFIG,\"workspaceName\":\"My Thing\"}"

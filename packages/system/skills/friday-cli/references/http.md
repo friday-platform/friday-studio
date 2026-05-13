@@ -9,24 +9,17 @@ hardcode the URL — always use `$FRIDAYD_URL`.** No auth on localhost.
 JSON in/out unless noted.
 
 To run the curl examples in this file, source the daemon `.env` once per
-shell so `$FRIDAYD_URL` and `$FRIDAY_TLS_CA` are exported. The block below
-tries the installed-Studio location first (`${FRIDAY_HOME:-~/.friday/local}/.env`)
+shell so `$FRIDAYD_URL` is exported. The block below tries the
+installed-Studio location first (`${FRIDAY_HOME:-~/.friday/local}/.env`)
 then falls back to the dev location (`~/.atlas/.env`):
 
 ```bash
-set -a
-. "${FRIDAY_HOME:-$HOME/.friday/local}/.env" 2>/dev/null \
-  || . "$HOME/.atlas/.env" 2>/dev/null || true
-set +a
-# Wrapper that adds --cacert exactly when TLS is on. Use this in place of
-# plain `curl` for every daemon call below.
-friday_curl() { curl ${FRIDAY_TLS_CA:+--cacert "$FRIDAY_TLS_CA"} "$@"; }
 ```
 
-**Rule: every daemon HTTP call in this reference uses `friday_curl`, not
-plain `curl`.** The wrapper auto-adds `--cacert "$FRIDAY_TLS_CA"` when TLS
-is on; plain `curl` against `$FRIDAYD_URL` on a TLS install fails with
-`self signed certificate in certificate chain`.
+**Rule: every daemon HTTP call in this reference uses `curl -k`, not
+plain `curl`.** Plain `curl` against `$FRIDAYD_URL` on a TLS install
+fails with `self signed certificate in certificate chain`. `-k` skips
+cert verification — safe because the daemon binds loopback only.
 
 SSE: pass `Accept: text/event-stream`. Streams end with `data: [DONE]`.
 

@@ -139,22 +139,34 @@ function staticViolations(text: string): { line: number; snippet: string }[] {
   return violations;
 }
 
+/** The synthetic FRIDAYD_URL we tell the LLM it "looked up" via run_code.
+ *  Picked to be distinct from any port a bad-skill body might hardcode,
+ *  so we can tell the difference between "LLM substituted the lookup
+ *  value" and "LLM regurgitated the skill's literal port". */
+const INJECTED_FRIDAYD_URL = "https://localhost:18080";
+
 interface LlmJudgement {
   output: string;
-  usesVariable: boolean;
+  /** LLM emitted `$FRIDAYD_URL` literal — BAD. The user's shell has no
+   *  such variable; the LLM should have resolved it via run_code first. */
+  emitsVariableLiteral: boolean;
   containsBareUrl: boolean;
-  honorsCa: boolean;
-  sourcesEnv: boolean;
+  /** Output contains a resolved daemon URL (http(s)://localhost:N or
+   *  127.0.0.1:N) — what the user can actually paste and run. */
+  emitsResolvedUrl: boolean;
+  /** Output contains the SPECIFIC URL we injected as the run_code result.
+   *  Stricter than emitsResolvedUrl — distinguishes "LLM substituted from
+   *  the lookup" from "LLM hardcoded a different port". */
+  emitsInjectedUrl: boolean;
+  skipsCertVerify: boolean;
 }
 
-const ENV_HINT_RE = /\.friday\/local|\.atlas\/\.env|FRIDAY_HOME|FRIDAYD_URL/i;
-const VARIABLE_RE = /\$FRIDAYD_URL|\$\{\s*FRIDAYD_URL/;
-// The skills teach two things — use $FRIDAYD_URL AND inject --cacert when
-// TLS is on (either inline or via the `friday_curl` helper). Without this
-// check the LLM can emit `curl "$FRIDAYD_URL/health"`, which on a TLS
-// install fails with `self signed certificate in certificate chain`. The
-// eval would have passed despite the user getting a non-working command.
-const CA_HONOR_RE = /--cacert|FRIDAY_TLS_CA|\bfriday_curl\b/;
+const VARIABLE_LITERAL_RE = /\$FRIDAYD_URL|\$\{\s*FRIDAYD_URL/;
+// Skills teach two rules — (1) resolve $FRIDAYD_URL first then emit the
+// literal value, and (2) skip cert verification via `-k` / `--insecure`
+// so it works on both plain-HTTP (no-op) and TLS (skip private-CA leaf)
+// installs. `-k` is safe because the daemon binds loopback only.
+const SKIP_VERIFY_RE = /\s-(?:[A-Za-z]*k|-insecure\b)/;
 
 /**
  * "Bare URL" = a daemon-URL occurrence in the LLM output that is NOT
@@ -196,20 +208,38 @@ async function callChild(systemPrompt: string, userPrompt: string): Promise<stri
     .join("");
 }
 
-async function llmJudgeSkillWithPrompt(body: string, ask: string): Promise<LlmJudgement> {
-  const output = await callChild(
-    body,
-    `${ask} Assume the user has already sourced any environment they need. ` +
-      "Output only the command — no preamble, no explanation, no markdown.",
-  );
+async function llmJudgeSkillWithPrompt(
+  body: string,
+  ask: string,
+  options: { inject?: boolean } = { inject: true },
+): Promise<LlmJudgement> {
+  // For positive tests: inject the resolved-FRIDAYD_URL context the
+  // skill teaches the LLM to produce via run_code. The test focuses on
+  // *substitution* behavior, not on whether the LLM remembers to call
+  // run_code.
+  //
+  // For negative tests: feed ONLY the bad-skill body. Injection would
+  // override the bad teaching by making the LLM substitute the injected
+  // value regardless of skill content — the bad skill never gets to
+  // demonstrate its failure mode.
+  const userPrompt = options.inject
+    ? `Context: you ran \`python -c "import os; print(os.environ['FRIDAYD_URL'])"\` ` +
+      `and got the literal string "${INJECTED_FRIDAYD_URL}". ` +
+      `${ask} ` +
+      "Output only the command — no preamble, no explanation, no markdown."
+    : `${ask} Output only the command — no preamble, no explanation, no markdown.`;
+  const output = await callChild(body, userPrompt);
   // DAEMON_URL_RE has the `g` flag; reset lastIndex before each test.
+  DAEMON_URL_RE.lastIndex = 0;
+  const emitsResolvedUrl = DAEMON_URL_RE.test(output);
   DAEMON_URL_RE.lastIndex = 0;
   return {
     output,
-    usesVariable: VARIABLE_RE.test(output),
+    emitsVariableLiteral: VARIABLE_LITERAL_RE.test(output),
     containsBareUrl: containsBareUrl(output),
-    honorsCa: CA_HONOR_RE.test(output),
-    sourcesEnv: ENV_HINT_RE.test(output),
+    emitsResolvedUrl,
+    emitsInjectedUrl: output.includes(INJECTED_FRIDAYD_URL),
+    skipsCertVerify: SKIP_VERIFY_RE.test(output),
   };
 }
 
@@ -526,30 +556,31 @@ async function runBehavioralChecks(): Promise<EvalResult[]> {
     const body = await Deno.readTextFile(full);
     const judgement = await llmJudgeSkillWithPrompt(body, ask);
     // Three things must all be true for the eval to pass:
-    //   1. uses $FRIDAYD_URL — the variable, not a literal URL.
-    //   2. no bare daemon URL outside the canonical fallback expansion.
-    //   3. honors the CA cert — either `--cacert` inline, the
-    //      `FRIDAY_TLS_CA` var, or the `friday_curl` helper. Without this
-    //      check an LLM emitting `curl "$FRIDAYD_URL/health"` would pass
-    //      the eval but fail on TLS installs with "self signed certificate
-    //      in certificate chain".
-    const pass = judgement.usesVariable && !judgement.containsBareUrl && judgement.honorsCa;
+    //   1. emits the SPECIFIC injected URL (https://localhost:18080) —
+    //      not the `$FRIDAYD_URL` variable, not a different hardcoded
+    //      port. The user's shell has no `$FRIDAYD_URL`, and only the
+    //      injected value matches their actual daemon.
+    //   2. does NOT contain the `$FRIDAYD_URL` literal in output.
+    //   3. skips cert verification via `-k` / `--insecure`. Without this
+    //      the example fails on TLS installs with "self signed
+    //      certificate in certificate chain". `-k` is safe because the
+    //      daemon binds loopback only.
+    const pass =
+      judgement.emitsInjectedUrl && !judgement.emitsVariableLiteral && judgement.skipsCertVerify;
     results.push({
       id: `skill-tls-behavior:${id}`,
       pass,
       notes: [
         `LLM output: ${judgement.output.replace(/\s+/g, " ").slice(0, 200)}`,
-        `uses $FRIDAYD_URL: ${judgement.usesVariable}`,
-        `contains bare URL: ${judgement.containsBareUrl}`,
-        `honors --cacert / FRIDAY_TLS_CA / friday_curl: ${judgement.honorsCa}`,
-        `mentions daemon .env / FRIDAYD_URL: ${judgement.sourcesEnv}`,
+        `emits injected URL (${INJECTED_FRIDAYD_URL}): ${judgement.emitsInjectedUrl}`,
+        `emits $FRIDAYD_URL literal (bad): ${judgement.emitsVariableLiteral}`,
+        `skips cert verify (-k / --insecure): ${judgement.skipsCertVerify}`,
       ],
       metrics: {
         path,
-        usesVariable: judgement.usesVariable,
-        containsBareUrl: judgement.containsBareUrl,
-        honorsCa: judgement.honorsCa,
-        sourcesEnv: judgement.sourcesEnv,
+        emitsInjectedUrl: judgement.emitsInjectedUrl,
+        emitsVariableLiteral: judgement.emitsVariableLiteral,
+        skipsCertVerify: judgement.skipsCertVerify,
       },
     });
   }
@@ -580,58 +611,45 @@ async function runBehavioralChecks(): Promise<EvalResult[]> {
  * before retrying.
  */
 const BAD_SKILL_BODIES: { id: string; ask: string; body: string }[] = [
+  // Under the new model the LLM is told via injected context what
+  // FRIDAYD_URL resolves to. So a bad-skill body has to teach a
+  // DIFFERENT failure mode — not "use this hardcoded port" (the LLM
+  // ignores it in favor of the injected lookup result), but rather
+  // "skip the lookup and emit the $FRIDAYD_URL literal" or "skip the
+  // -k flag".
   {
-    id: "bash-heavy-bare-url",
+    id: "emit-variable-literal",
     ask: "Write a single shell command to hit the daemon's /health endpoint.",
     body: `# Bad Skill (eval negative control — do not ship)
 
-Friday's daemon listens on \`localhost:8080\`. Every example below uses
-that URL directly. Do not parameterize. Do not source env files.
-
-Health probe:
+The daemon URL is in \`$FRIDAYD_URL\`. Don't resolve it. Don't look it up.
+Just put \`$FRIDAYD_URL\` directly in the curl command — the user's shell
+will sort it out.
 
 \`\`\`bash
-curl -sf http://localhost:8080/health && echo OK
+curl -k "$FRIDAYD_URL/health"
 \`\`\`
 
-List workspaces:
+This is the canonical pattern. The whole point of having a variable is to
+reference it by name.
+`,
+  },
+  {
+    id: "omit-cert-skip",
+    ask: "Write a single shell command to list workspaces.",
+    body: `# Bad Skill (eval negative control — do not ship)
+
+The daemon is on the local network so cert verification works fine. Use
+plain \`curl\` — never \`-k\` or \`--insecure\`, those are dangerous flags
+that should never appear in production code. Always verify certs.
 
 \`\`\`bash
-curl -s http://localhost:8080/api/workspaces | jq
-\`\`\`
-
-Trigger a signal:
-
-\`\`\`bash
-curl -X POST http://localhost:8080/api/workspaces/foo/signals/bar -d '{}'
+curl -s "$FRIDAYD_URL/api/workspaces" | jq
 \`\`\`
 `,
   },
   {
-    id: "python-agent-bare-url",
-    ask: "Write a single shell command to register a Python agent at /abs/agent.py.",
-    body: `# Bad Python-Agent Skill (eval negative control — do not ship)
-
-To register a Python agent, POST its absolute path to the daemon at the
-hardcoded URL. The daemon always listens on the default port.
-
-\`\`\`bash
-curl -X POST http://localhost:8080/api/agents/register \\
-  -H 'Content-Type: application/json' \\
-  -d '{"entrypoint": "/abs/path/agent.py"}'
-\`\`\`
-
-Or to test directly:
-
-\`\`\`bash
-curl -s -X POST http://localhost:8080/api/agents/my-agent/run \\
-  -H 'Content-Type: application/json' \\
-  -d '{"input": "test"}'
-\`\`\`
-`,
-  },
-  {
-    id: "prose-then-bare-curl",
+    id: "bash-heavy-bare-url",
     ask: "Write a single shell command to list workspaces from the daemon.",
     body: `# Bad Workspace Skill (eval negative control — do not ship)
 
@@ -656,22 +674,33 @@ curl -s http://localhost:8080/api/workspaces/$WS_ID | jq
 async function runBehavioralNegativeControls(): Promise<EvalResult[]> {
   const results: EvalResult[] = [];
   for (const { id, ask, body } of BAD_SKILL_BODIES) {
-    const judgement = await llmJudgeSkillWithPrompt(body, ask);
-    // The control "passes" when the LLM produces a bare URL — meaning the
-    // detector (`containsBareUrl`) flips to true. If pass=false here for
-    // ALL THREE bodies simultaneously, either the LLM-judge has lost
-    // discrimination or model behavior has shifted. Both are eval-bugs
-    // worth catching.
-    const pass = judgement.containsBareUrl && !judgement.usesVariable;
+    // Feed the bad skill body WITHOUT the resolved-URL injection — the
+    // injection would override the skill's teaching and defeat the
+    // test. Each bad body teaches one of the three failure modes the
+    // positive eval guards against; the LLM should follow the bad
+    // teaching and produce broken output.
+    const judgement = await llmJudgeSkillWithPrompt(body, ask, { inject: false });
+    // The control "passes" when the LLM's output violates AT LEAST ONE
+    // of the three positive rules: emits the variable literal, or fails
+    // to skip cert verify, or contains a bare URL (in which case the
+    // injected-URL check is moot — we're not injecting).
+    const violatesRule =
+      judgement.emitsVariableLiteral || !judgement.skipsCertVerify || judgement.containsBareUrl;
     results.push({
       id: `skill-tls-behavior-negative:${id}`,
-      pass,
+      pass: violatesRule,
       notes: [
         `LLM output: ${judgement.output.replace(/\s+/g, " ").slice(0, 200)}`,
-        `contains bare URL (expected true): ${judgement.containsBareUrl}`,
-        `uses $FRIDAYD_URL (expected false): ${judgement.usesVariable}`,
+        `emits $FRIDAYD_URL literal: ${judgement.emitsVariableLiteral}`,
+        `skips cert verify: ${judgement.skipsCertVerify}`,
+        `contains bare URL: ${judgement.containsBareUrl}`,
+        `(negative pass = ANY positive rule violated)`,
       ],
-      metrics: { containsBareUrl: judgement.containsBareUrl, usesVariable: judgement.usesVariable },
+      metrics: {
+        emitsVariableLiteral: judgement.emitsVariableLiteral,
+        skipsCertVerify: judgement.skipsCertVerify,
+        containsBareUrl: judgement.containsBareUrl,
+      },
     });
   }
   return results;
