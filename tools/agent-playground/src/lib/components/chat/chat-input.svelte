@@ -7,7 +7,6 @@
     type ImageAttachment,
     buildFileAttachment,
     classifyAttachment,
-    computeContentHash,
     duplicateToast,
     isDuplicateAttachment,
     rejectionToast,
@@ -161,33 +160,57 @@
     attachments = attachments.map((a) =>
       a.kind === "file" && a.id === id ? { ...a, ...patch } : a,
     );
+
+    // Post-upload dedup. The server returns `{chatId}/{md5}` as the
+    // path — two uploads of identical bytes produce identical paths.
+    // If the chip we just updated now has a `path` that matches
+    // another chip's, the user dropped the same file twice. Collapse
+    // by removing this one (the more recently added) and toasting.
+    // Why not pre-upload? Computing a hash client-side is redundant
+    // work — the server already does it. We pay one wasted upload of
+    // the duplicate bytes; the server's rename-overwrite is idempotent
+    // (atomic POSIX rename of identical bytes onto the same name).
+    if (patch.path) {
+      const newPath = patch.path;
+      const sharing = attachments.filter((a) => a.kind === "file" && a.path === newPath);
+      if (sharing.length > 1) {
+        const removed = attachments.find((a) => a.id === id);
+        attachments = attachments.filter((a) => a.id !== id);
+        if (removed) {
+          const summary = duplicateToast([removed.file]);
+          if (summary) toast({ ...summary });
+        }
+      }
+    }
   }
 
   async function addFiles(files: FileList | File[]) {
     const rejected: File[] = [];
     const duplicates: File[] = [];
     for (const file of files) {
-      // Content-hash dedup. SHA-256 over the whole file — for the 25MB
-      // upload cap this is a few hundred ms worst case, well under the
-      // user's "did I just drop that?" cognitive threshold. Catches
-      // same-bytes-different-filename and same-content-edited-mtime
-      // cases that a metadata signature would miss. Dedup runs BEFORE
-      // classification so "already attached" wins over "wrong type"
-      // if the user re-drops a previously-rejected file.
-      const contentHash = await computeContentHash(file);
-      if (isDuplicateAttachment(contentHash, attachments)) {
-        duplicates.push(file);
-        continue;
-      }
       const kind = classifyAttachment(file);
       if (kind === "image") {
+        // Images dedup pre-add via dataUrl equality — they don't go
+        // through the server upload path, so we can't rely on a
+        // server-returned md5. Two drops of the same image produce
+        // identical base64 dataUrls; string equality catches it
+        // cheaply.
         const dataUrl = await fileToDataUrl(file);
+        if (isDuplicateAttachment({ kind: "image", dataUrl }, attachments)) {
+          duplicates.push(file);
+          continue;
+        }
         attachments = [
           ...attachments,
-          { kind: "image", id: crypto.randomUUID(), file, dataUrl, contentHash },
+          { kind: "image", id: crypto.randomUUID(), file, dataUrl },
         ];
       } else if (kind === "file") {
-        const att = buildFileAttachment(file, contentHash);
+        // Files upload to the server which already computes md5 and
+        // returns it as part of the path (`{chatId}/{md5}`). We add
+        // the chip optimistically, run the upload, and reconcile in
+        // `patchAttachment` — see the dedup branch there for the
+        // post-upload check that collapses two-chips-with-same-path.
+        const att = buildFileAttachment(file);
         attachments = [...attachments, att];
         runFileUpload({ att, chatId, workspaceId, onUpdate: patchAttachment });
       } else {

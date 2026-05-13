@@ -19,7 +19,6 @@
     type ChatAttachment,
     buildFileAttachment,
     classifyAttachment,
-    computeContentHash,
     duplicateToast,
     isDuplicateAttachment,
     rejectionToast,
@@ -83,6 +82,25 @@
     pendingAttachments = pendingAttachments.map((a) =>
       a.kind === "file" && a.id === id ? { ...a, ...patch } : a,
     );
+
+    // Post-upload dedup. See `chat-input.svelte:patchAttachment` for
+    // the rationale — server returns `{chatId}/{md5}`, two identical
+    // uploads produce identical paths, we collapse the duplicate
+    // here.
+    if (patch.path) {
+      const newPath = patch.path;
+      const sharing = pendingAttachments.filter(
+        (a) => a.kind === "file" && a.path === newPath,
+      );
+      if (sharing.length > 1) {
+        const removed = pendingAttachments.find((a) => a.id === id);
+        pendingAttachments = pendingAttachments.filter((a) => a.id !== id);
+        if (removed) {
+          const summary = duplicateToast([removed.file]);
+          if (summary) toast({ ...summary });
+        }
+      }
+    }
   }
 
   function handleChatDrop(e: DragEvent) {
@@ -122,24 +140,23 @@
     const rejected: File[] = [];
     const duplicates: File[] = [];
     for (const file of files) {
-      // Content-hash dedup — see chat-input.svelte:addFiles for the
-      // full rationale. SHA-256 over the bytes, then compare hash
-      // against existing chips. Catches same-content-renamed cases
-      // that metadata signatures miss.
-      const contentHash = await computeContentHash(file);
-      if (isDuplicateAttachment(contentHash, pendingAttachments)) {
-        duplicates.push(file);
-        continue;
-      }
       const kind = classifyAttachment(file);
       if (kind === "image") {
+        // Images dedup pre-add via dataUrl equality — see
+        // chat-input.svelte:addFiles for rationale.
         const dataUrl = await fileToDataUrl(file);
+        if (isDuplicateAttachment({ kind: "image", dataUrl }, pendingAttachments)) {
+          duplicates.push(file);
+          continue;
+        }
         pendingAttachments = [
           ...pendingAttachments,
-          { kind: "image", id: crypto.randomUUID(), file, dataUrl, contentHash },
+          { kind: "image", id: crypto.randomUUID(), file, dataUrl },
         ];
       } else if (kind === "file") {
-        const att = buildFileAttachment(file, contentHash);
+        // Files dedup post-upload via the server-returned path — see
+        // `patchPendingFile` for the reconcile branch.
+        const att = buildFileAttachment(file);
         pendingAttachments = [...pendingAttachments, att];
         runFileUpload({ att, chatId, workspaceId: wsId, onUpdate: patchPendingFile });
       } else {

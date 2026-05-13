@@ -26,13 +26,6 @@ export interface ImageAttachment {
   id: string;
   file: File;
   dataUrl: string;
-  /** SHA-256 hex of the file's bytes, computed on drop. Drives the
-   * client-side dedup check — drop the same bytes twice and the
-   * second drop is recognized regardless of filename/mtime. Browser
-   * SubtleCrypto is SHA-256 only (no MD5); the server side uses MD5
-   * for on-disk content-addressing — they're independent content
-   * hashes serving independent purposes. */
-  contentHash: string;
 }
 
 /**
@@ -58,8 +51,6 @@ export interface FileAttachment {
   errorMessage?: string;
   /** Abort handle — wired to the chip's ✕ so cancel actually cancels. */
   abortController: AbortController;
-  /** SHA-256 hex of the file's bytes — see {@link ImageAttachment.contentHash}. */
-  contentHash: string;
 }
 
 export type ChatAttachment = ImageAttachment | FileAttachment;
@@ -135,36 +126,36 @@ export function rejectionToast(rejected: readonly File[]):
 }
 
 /**
- * Compute SHA-256 of the file's bytes as a hex string. The browser's
- * `crypto.subtle.digest` supports SHA-* (not MD5 — deprecated). For the
- * 25MB upload cap, hashing takes a few hundred ms worst-case; we await
- * it inline in `addFiles` (the drop handler is already async). Server
- * side uses MD5 for on-disk content-addressing — they're independent
- * content hashes serving different concerns; the client doesn't need
- * to share a hash function with the server for the dedup check to
- * work (the comparison is among CHIPS, not against server state).
- */
-export async function computeContentHash(file: File): Promise<string> {
-  const bytes = await file.arrayBuffer();
-  const digest = await crypto.subtle.digest("SHA-256", bytes);
-  return Array.from(new Uint8Array(digest))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
-
-/**
- * Check whether `hash` matches any existing chip's `contentHash`.
- * Used by `addFiles` / `addDroppedFiles` to silently drop (with a
- * toast) the second drop of the same content — regardless of
- * filename, mtime, or size mismatch. Content-equivalence is the
- * correct semantic: a user who renamed `foo.csv` to `bar.csv` and
- * dropped both should still see one chip (same bytes).
+ * Detect a content-duplicate among existing chips.
+ *
+ * Content-equivalence is what we actually care about (drag-drop the
+ * same bytes twice → recognize it). The server already computes md5
+ * over the bytes and returns the path as `{chatId}/{md5}`, so two
+ * uploads of identical bytes produce identical paths. We lean on that
+ * — no second hash compute on the client.
+ *
+ * - **File attachments** dedup by the server-returned `path`. Until
+ *   the upload completes (`path === undefined`) the chip can't be
+ *   matched against — that's the trade-off: we add the chip first,
+ *   start the upload, and reconcile post-completion in
+ *   `patchAttachment` (see `chat-input.svelte` / `user-chat.svelte`).
+ *   A duplicate-drop briefly shows two chips before the second
+ *   collapses with a toast. Acceptable UX given how rare the case is.
+ *
+ * - **Image attachments** dedup by `dataUrl` equality. Images don't
+ *   go through the server upload path — they ride inline as data URLs
+ *   on the message. Two drops of the same image produce identical
+ *   data URLs (deterministic base64 of the same bytes); string
+ *   equality is cheap and exact.
  */
 export function isDuplicateAttachment(
-  hash: string,
+  candidate: { kind: "image"; dataUrl: string } | { kind: "file"; path: string },
   existing: readonly ChatAttachment[],
 ): boolean {
-  return existing.some((att) => att.contentHash === hash);
+  if (candidate.kind === "image") {
+    return existing.some((att) => att.kind === "image" && att.dataUrl === candidate.dataUrl);
+  }
+  return existing.some((att) => att.kind === "file" && att.path === candidate.path);
 }
 
 /**
@@ -197,7 +188,7 @@ export function duplicateToast(
  * {@link runFileUpload} with an `onUpdate` callback so per-progress and
  * terminal-state mutations land back on the same entry.
  */
-export function buildFileAttachment(file: File, contentHash: string): FileAttachment {
+export function buildFileAttachment(file: File): FileAttachment {
   const mediaType =
     file.type || inferMimeFromFilename(file.name) || "application/octet-stream";
   return {
@@ -208,7 +199,6 @@ export function buildFileAttachment(file: File, contentHash: string): FileAttach
     status: "uploading",
     progress: 0,
     abortController: new AbortController(),
-    contentHash,
   };
 }
 
