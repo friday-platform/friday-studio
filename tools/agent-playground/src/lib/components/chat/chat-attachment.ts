@@ -58,14 +58,19 @@ export type ChatAttachment = ImageAttachment | ArtifactAttachment;
  * fallback inferred from the filename extension — browsers report empty
  * `file.type` for many text formats on Linux/Windows.
  */
+/**
+ * Identify SVG files so the caller can refuse them with a specific reason
+ * (vs the generic "unsupported" path). Inline SVG can carry `<script>` tags;
+ * the chat's image-render surface (`<img>`) doesn't execute them, but defense-
+ * in-depth is cheap here. Agents can still emit SVG artifacts via
+ * `create_artifact` — those render inside the sandboxed iframe.
+ */
+function isSvg(file: File): boolean {
+  return file.type === "image/svg+xml" || /\.svg$/i.test(file.name);
+}
+
 export function classifyAttachment(file: File): "image" | "artifact" | null {
-  // Refuse SVG explicitly: it matches `image/*` but inline-SVG can carry
-  // `<script>` tags. Browsers don't execute them when rendered via `<img>`
-  // (the only place the chat shows attached images today), but defense-
-  // in-depth is cheap here — agents can still emit SVG artifacts on their
-  // own via the create_artifact path, which renders inside the
-  // artifact-card's sandboxed iframe.
-  if (file.type === "image/svg+xml" || /\.svg$/i.test(file.name)) return null;
+  if (isSvg(file)) return null;
   if (file.type.startsWith("image/")) return "image";
   const inferred = inferMimeFromFilename(file.name);
   if (inferred?.startsWith("image/")) return "image";
@@ -78,6 +83,19 @@ export function classifyAttachment(file: File): "image" | "artifact" | null {
   // artifact too — the server's magic-byte sniff has the final say.
   if (file.type && isTextMimeType(file.type)) return "artifact";
   return null;
+}
+
+/**
+ * Human-readable reason a file was refused. Call only when
+ * `classifyAttachment(file)` returned `null` — drives the chat-input's
+ * "couldn't attach" toast so the user gets feedback instead of staring
+ * at a drop zone that ate their file.
+ */
+export function rejectionReason(file: File): string {
+  if (isSvg(file)) {
+    return `SVG attachments aren't supported on the chat input (script-injection risk). Ask the agent to create one for you instead.`;
+  }
+  return `"${file.name}" isn't a supported file type. Supported: text/markup (md, txt, csv, json, yml, html, xml, css, log, conf), source code (ts, js, py, go, rs, sh, sql, …), documents (pdf, docx, pptx), images (png, jpg, gif, webp), audio (mp3, m4a, wav, …).`;
 }
 
 /**

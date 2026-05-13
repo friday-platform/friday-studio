@@ -1,11 +1,13 @@
 <script lang="ts">
   import { ALLOWED_EXTENSION_LIST } from "@atlas/core/artifacts/file-upload";
+  import { toast } from "@atlas/ui";
   import {
     type ArtifactAttachment,
     type ChatAttachment,
     type ImageAttachment,
     buildArtifactAttachment,
     classifyAttachment,
+    rejectionReason,
     runArtifactUpload,
   } from "./chat-attachment.ts";
 
@@ -165,6 +167,14 @@
         const att = buildArtifactAttachment(file);
         attachments = [...attachments, att];
         runArtifactUpload({ att, workspaceId, onUpdate: patchAttachment });
+      } else {
+        // Rejected — surface a toast so the user knows the drop landed
+        // and was deliberately refused (vs the input being broken).
+        toast({
+          title: "Couldn't attach file",
+          description: rejectionReason(file),
+          error: true,
+        });
       }
     }
   }

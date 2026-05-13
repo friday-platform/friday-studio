@@ -19,6 +19,7 @@
     type ChatAttachment,
     buildArtifactAttachment,
     classifyAttachment,
+    rejectionReason,
     runArtifactUpload,
   } from "./chat-attachment.ts";
   import ChatInspector from "./chat-inspector.svelte";
@@ -127,6 +128,12 @@
         const att = buildArtifactAttachment(file);
         pendingAttachments = [...pendingAttachments, att];
         runArtifactUpload({ att, workspaceId: wsId, onUpdate: patchPendingArtifact });
+      } else {
+        toast({
+          title: "Couldn't attach file",
+          description: rejectionReason(file),
+          error: true,
+        });
       }
     }
   }
