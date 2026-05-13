@@ -86,12 +86,10 @@ else
         fi
     fi
     echo "→ mkcert: $(command -v mkcert)"
-    # Scope mkcert to the trust stores Friday actually uses (system: Safari/
-    # Chrome/curl/Deno; nss: Firefox) and hide JAVA_HOME so it never probes
-    # Java's keystore — mkcert runs `keytool -list` on every invocation when
-    # JAVA_HOME is set, and a broken/half-installed JDK there will fail it
-    # and abort the script under `set -e`. Applied script-wide because mkcert
-    # is called again during browser cert generation, not just at -install.
+    # Scope mkcert to the trust stores Friday uses (system + Firefox/nss).
+    # JAVA_HOME must be unset too: mkcert probes Java's keystore on every
+    # invocation when it sees JAVA_HOME, and TRUST_STORES only filters the
+    # install path. Exported so subshell mkcert calls below inherit both.
     export TRUST_STORES=system,nss
     unset JAVA_HOME
     # Idempotent. First run on a machine prompts for admin (system keychain
