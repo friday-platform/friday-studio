@@ -84,12 +84,7 @@ describe("createRequestToolAccessTool", () => {
     });
     const t = tools.request_tool_access as unknown as ToolWithExecute;
     const result = await t.execute({ toolName: "bash_run", reason: "shell" }, noopCtx);
-    expect(result).toEqual({
-      ok: true,
-      granted: true,
-      persistent: false,
-      reason: "bypass",
-    });
+    expect(result).toEqual({ ok: true, granted: true, persistent: false, reason: "bypass" });
     expect(create).not.toHaveBeenCalled();
   });
 
@@ -98,12 +93,7 @@ describe("createRequestToolAccessTool", () => {
     const tools = createRequestToolAccessTool(baseOpts);
     const t = tools.request_tool_access as unknown as ToolWithExecute;
     const result = await t.execute({ toolName: "bash_run", reason: "shell" }, noopCtx);
-    expect(result).toEqual({
-      ok: true,
-      granted: true,
-      persistent: false,
-      reason: "bypass",
-    });
+    expect(result).toEqual({ ok: true, granted: true, persistent: false, reason: "bypass" });
     expect(create).not.toHaveBeenCalled();
   });
 

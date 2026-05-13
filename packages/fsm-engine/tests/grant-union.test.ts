@@ -53,13 +53,18 @@ vi.mock("@atlas/oapi-client", () => ({
   getAtlasPlatformServerConfig: () => ({ transport: { type: "stdio", command: "noop", args: [] } }),
 }));
 
-type GrantsResult = { ok: true; data: string[] } | { ok: false; error: string };
+interface ListedGrantShape {
+  toolName: string;
+  bareToolName: string;
+  serverId?: string;
+}
+type GrantsResult = { ok: true; data: ListedGrantShape[] } | { ok: false; error: string };
 
 const grantState = vi.hoisted(() => ({
   // Default: empty success. Tests override per-call by reassigning
   // `nextResult` before driving the engine. The mock itself is a vi.fn so
   // tests can also assert on call count (bypass-skip case).
-  nextResult: { ok: true as const, data: [] as string[] } as GrantsResult,
+  nextResult: { ok: true as const, data: [] } as GrantsResult,
 }));
 
 const mockListForWorkspace = vi.hoisted(() =>
@@ -114,6 +119,22 @@ interface RunOptions {
    * to assert the grant query is skipped under bypass.
    */
   bypass?: boolean;
+}
+
+/**
+ * Build a `ListedGrant`-shaped entry from a bare or qualified tool name.
+ * Mirrors the storage adapter's parse so suites can pass natural strings.
+ */
+function grant(toolName: string): ListedGrantShape {
+  const slash = toolName.indexOf("/");
+  if (slash > 0 && slash < toolName.length - 1) {
+    return {
+      toolName,
+      bareToolName: toolName.slice(slash + 1),
+      serverId: toolName.slice(0, slash),
+    };
+  }
+  return { toolName, bareToolName: toolName };
 }
 
 async function runActionAndCaptureTools({
@@ -203,7 +224,7 @@ describe("FSM LLM action — allow_always grants widen the tool surface (#280)",
   it("unions a granted workspace MCP tool into the action's tool set when it isn't declared", async () => {
     const names = await runActionAndCaptureTools({
       declaredTools: ["workspace-mcp/keep_me"],
-      grants: { ok: true, data: ["grant_me"] },
+      grants: { ok: true, data: [grant("workspace-mcp/grant_me")] },
     });
     expect(names).toContain("keep_me");
     expect(names).toContain("grant_me");
@@ -224,7 +245,7 @@ describe("FSM LLM action — allow_always grants widen the tool surface (#280)",
     // action, or tool removed) doesn't materialize anything.
     const names = await runActionAndCaptureTools({
       declaredTools: ["workspace-mcp/keep_me"],
-      grants: { ok: true, data: ["unloaded_tool"] },
+      grants: { ok: true, data: [grant("workspace-mcp/unloaded_tool")] },
     });
     expect(names).not.toContain("unloaded_tool");
   });
@@ -235,7 +256,7 @@ describe("FSM LLM action — allow_always grants widen the tool surface (#280)",
     // `mockListForWorkspace` was never called locks in that branch.
     const names = await runActionAndCaptureTools({
       declaredTools: ["workspace-mcp/keep_me"],
-      grants: { ok: true, data: ["grant_me"] },
+      grants: { ok: true, data: [grant("workspace-mcp/grant_me")] },
       bypass: true,
     });
     expect(mockListForWorkspace).not.toHaveBeenCalled();
@@ -263,9 +284,227 @@ describe("FSM LLM action — allow_always grants widen the tool surface (#280)",
     // LLM action shape; previously untested for grant-union behavior.
     const names = await runActionAndCaptureTools({
       declaredTools: undefined,
-      grants: { ok: true, data: ["grant_me"] },
+      grants: { ok: true, data: [grant("workspace-mcp/grant_me")] },
     });
     expect(names).toContain("keep_me");
     expect(names).toContain("grant_me");
+  });
+
+  it("widens a granted tool when the grant's serverId matches its source server", async () => {
+    // serverId attribution adds defense in depth: even if two MCP servers
+    // happen to export tools with the same bare name, a grant for
+    // `gmail/send_email` only lights up `send_email` when it's attributed
+    // to `gmail` in mcpResult.toolsByServer.
+    const names = await runActionAndCaptureTools({
+      declaredTools: ["workspace-mcp/keep_me"],
+      grants: { ok: true, data: [grant("workspace-mcp/grant_me")] },
+    });
+    expect(names).toContain("grant_me");
+  });
+
+  it("does NOT widen when the grant's serverId mismatches mcpResult attribution", async () => {
+    // The default mock attributes `grant_me` to `workspace-mcp` only. A
+    // grant claiming source-server `gmail` for the same bare name should
+    // be rejected by the serverId-aware check.
+    const names = await runActionAndCaptureTools({
+      declaredTools: ["workspace-mcp/keep_me"],
+      grants: {
+        ok: true,
+        data: [{ toolName: "gmail/grant_me", bareToolName: "grant_me", serverId: "gmail" }],
+      },
+    });
+    expect(names).not.toContain("grant_me");
+  });
+});
+
+describe("FSM LLM action — eagerly loads MCP servers referenced by grants", () => {
+  beforeEach(() => {
+    mockListForWorkspace.mockClear();
+    mockCreateMCPTools.mockClear();
+  });
+
+  it("includes a grant-referenced workspace MCP server in effectiveConfigs even when the action doesn't declare it", async () => {
+    // Action declares only google-calendar; grant exists for gmail/send_email.
+    // Without eager-load, gmail isn't loaded → mcpResult doesn't include
+    // send_email → union finds nothing. With eager-load, gmail joins
+    // effectiveConfigs and the tool surfaces.
+    //
+    // The MCP mock returns BOTH servers' tools when called with both
+    // configs — that's how production createMCPTools behaves. We assert on
+    // the configs argument to confirm eager-load actually happened,
+    // independent of which tools the LLM ended up with.
+    const gmailTools = ["send_email"];
+    const calendarTools = ["list_events"];
+
+    mockCreateMCPTools.mockImplementation((configs) => {
+      const tools: Record<string, Tool> = {};
+      const toolsByServer: Record<string, string[]> = {};
+      if (configs["gmail"]) {
+        tools.send_email = fakeTool("send_email");
+        toolsByServer["gmail"] = gmailTools;
+      }
+      if (configs["google-calendar"]) {
+        tools.list_events = fakeTool("list_events");
+        toolsByServer["google-calendar"] = calendarTools;
+      }
+      return Promise.resolve({
+        tools,
+        toolsByServer,
+        dispose: () => Promise.resolve(),
+        disconnectedIntegrations: [],
+      });
+    });
+    grantState.nextResult = {
+      ok: true,
+      data: [{ toolName: "gmail/send_email", bareToolName: "send_email", serverId: "gmail" }],
+    };
+
+    let observedToolNames: string[] = [];
+    const mockLLMProvider: LLMProvider = {
+      call: (params) => {
+        observedToolNames = Object.keys(params.tools as Record<string, Tool>);
+        const envelope: AgentResult<string, FSMLLMOutput> = {
+          agentId: params.agentId,
+          timestamp: new Date().toISOString(),
+          input: params.prompt ?? "",
+          ok: true,
+          data: { response: "" },
+          toolCalls: [completeCall({ response: "done" })],
+          toolResults: [],
+          durationMs: 0,
+        };
+        return Promise.resolve(envelope);
+      },
+    };
+
+    const workspaceId = "ws-eager-load";
+    const fsm: FSMDefinition = {
+      id: `eager-load-test-${crypto.randomUUID()}`,
+      initial: "pending",
+      states: {
+        pending: {
+          on: {
+            RUN: {
+              target: "done",
+              actions: [
+                {
+                  type: "llm",
+                  provider: "test",
+                  model: "test-model",
+                  prompt: "noop",
+                  tools: ["google-calendar/list_events"],
+                  outputTo: "decision",
+                },
+              ],
+            },
+          },
+        },
+        done: { type: "final" },
+      },
+    };
+
+    const engine = new FSMEngine(fsm, {
+      documentStore: getDocumentStore(),
+      scope: { workspaceId, sessionId: "sess-1" },
+      llmProvider: mockLLMProvider,
+      mcpServerConfigs: {
+        gmail: { transport: { type: "stdio", command: "noop", args: [] } },
+        "google-calendar": { transport: { type: "stdio", command: "noop", args: [] } },
+      },
+    });
+    await engine.initialize();
+    await engine.signal({ type: "RUN" }, { sessionId: "sess-1", workspaceId });
+
+    const lastCall = mockCreateMCPTools.mock.calls.at(-1);
+    const configs = lastCall?.[0] as Record<string, unknown> | undefined;
+    expect(configs).toBeDefined();
+    expect(configs).toHaveProperty("gmail");
+    expect(configs).toHaveProperty("google-calendar");
+    expect(observedToolNames).toContain("list_events");
+    expect(observedToolNames).toContain("send_email");
+  });
+
+  it("skips eager-load for grant-referenced servers the workspace doesn't declare", async () => {
+    // Grants can outlive workspace config edits. A grant for `gmail/...`
+    // when the workspace has since dropped gmail must not try to load
+    // gmail (would surface a confusing MCP error). Behavior: server is
+    // silently skipped; the action's declared toolset still loads.
+    mockCreateMCPTools.mockImplementation((configs) => {
+      const tools: Record<string, Tool> = {};
+      const toolsByServer: Record<string, string[]> = {};
+      if (configs["google-calendar"]) {
+        tools.list_events = fakeTool("list_events");
+        toolsByServer["google-calendar"] = ["list_events"];
+      }
+      return Promise.resolve({
+        tools,
+        toolsByServer,
+        dispose: () => Promise.resolve(),
+        disconnectedIntegrations: [],
+      });
+    });
+    grantState.nextResult = {
+      ok: true,
+      data: [{ toolName: "gmail/send_email", bareToolName: "send_email", serverId: "gmail" }],
+    };
+
+    const mockLLMProvider: LLMProvider = {
+      call: (params) =>
+        Promise.resolve({
+          agentId: params.agentId,
+          timestamp: new Date().toISOString(),
+          input: params.prompt ?? "",
+          ok: true,
+          data: { response: "" },
+          toolCalls: [completeCall({ response: "done" })],
+          toolResults: [],
+          durationMs: 0,
+        } as AgentResult<string, FSMLLMOutput>),
+    };
+
+    const workspaceId = "ws-eager-load-skip";
+    const fsm: FSMDefinition = {
+      id: `eager-load-skip-${crypto.randomUUID()}`,
+      initial: "pending",
+      states: {
+        pending: {
+          on: {
+            RUN: {
+              target: "done",
+              actions: [
+                {
+                  type: "llm",
+                  provider: "test",
+                  model: "test-model",
+                  prompt: "noop",
+                  tools: ["google-calendar/list_events"],
+                  outputTo: "decision",
+                },
+              ],
+            },
+          },
+        },
+        done: { type: "final" },
+      },
+    };
+
+    const engine = new FSMEngine(fsm, {
+      documentStore: getDocumentStore(),
+      scope: { workspaceId, sessionId: "sess-1" },
+      llmProvider: mockLLMProvider,
+      // Workspace declares only google-calendar — gmail is "stale" relative
+      // to the grant.
+      mcpServerConfigs: {
+        "google-calendar": { transport: { type: "stdio", command: "noop", args: [] } },
+      },
+    });
+    await engine.initialize();
+    await engine.signal({ type: "RUN" }, { sessionId: "sess-1", workspaceId });
+
+    const lastCall = mockCreateMCPTools.mock.calls.at(-1);
+    const configs = lastCall?.[0] as Record<string, unknown> | undefined;
+    expect(configs).toBeDefined();
+    expect(configs).not.toHaveProperty("gmail");
+    expect(configs).toHaveProperty("google-calendar");
   });
 });

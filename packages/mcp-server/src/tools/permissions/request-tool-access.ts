@@ -256,9 +256,17 @@ export function registerRequestToolAccessTool(server: McpServer, ctx: ToolContex
           const granted = terminal.value === "allow_once" || terminal.value === "allow_always";
           let persistent = false;
           if (terminal.value === "allow_always") {
+            // Parse serverId so `buildTools` can eagerly load the source
+            // MCP server on future actions. For bare names the parser
+            // returns `serverId: undefined` and the grant store falls
+            // through to a back-compat read path.
+            const slash = toolName.indexOf("/");
+            const serverId =
+              slash > 0 && slash < toolName.length - 1 ? toolName.slice(0, slash) : undefined;
             const persisted = await ToolAccessGrants.grantAlways({
               workspaceId,
               toolName,
+              ...(serverId && { serverId }),
               sourceElicitationId: created.data.id,
             });
             persistent = persisted.ok;

@@ -41,7 +41,7 @@ describe("JetStreamToolAccessGrantAdapter", () => {
     expect(otherWorkspace.data).toBe(false);
   });
 
-  it("listForWorkspace returns granted tool names scoped to the workspace", async () => {
+  it("listForWorkspace returns granted tool entries scoped to the workspace", async () => {
     const adapter = new JetStreamToolAccessGrantAdapter(nc);
     const wsA = `ws-list-a-${crypto.randomUUID()}`;
     const wsB = `ws-list-b-${crypto.randomUUID()}`;
@@ -56,11 +56,15 @@ describe("JetStreamToolAccessGrantAdapter", () => {
 
     const listA = await adapter.listForWorkspace({ workspaceId: wsA });
     expect.assert(listA.ok === true);
-    expect(listA.data.sort()).toEqual(["fs_write_file", "gmail/send_email"]);
+    const sortedA = [...listA.data].sort((a, b) => a.toolName.localeCompare(b.toolName));
+    expect(sortedA).toEqual([
+      { toolName: "fs_write_file", bareToolName: "fs_write_file" },
+      { toolName: "gmail/send_email", bareToolName: "send_email", serverId: "gmail" },
+    ]);
 
     const listB = await adapter.listForWorkspace({ workspaceId: wsB });
     expect.assert(listB.ok === true);
-    expect(listB.data).toEqual(["bash"]);
+    expect(listB.data).toEqual([{ toolName: "bash", bareToolName: "bash" }]);
   });
 
   it("listForWorkspace round-trips workspace ids containing reserved characters", async () => {
@@ -72,6 +76,44 @@ describe("JetStreamToolAccessGrantAdapter", () => {
 
     const list = await adapter.listForWorkspace({ workspaceId });
     expect.assert(list.ok === true);
-    expect(list.data).toEqual(["bash"]);
+    expect(list.data).toEqual([{ toolName: "bash", bareToolName: "bash" }]);
+  });
+
+  it("grantAlways derives serverId from a qualified toolName when caller doesn't pass it", async () => {
+    const adapter = new JetStreamToolAccessGrantAdapter(nc);
+    const workspaceId = `ws-derive-${crypto.randomUUID()}`;
+
+    const grant = await adapter.grantAlways({
+      workspaceId,
+      toolName: "google-calendar/list_events",
+    });
+    expect.assert(grant.ok === true);
+    expect(grant.data.serverId).toBe("google-calendar");
+
+    // hasGrant lookup by the original (qualified) name still resolves —
+    // the KV key is derived from `toolName`, not from `serverId/bareName`,
+    // so callers that look up by the LLM-facing string keep working.
+    const seen = await adapter.hasGrant({ workspaceId, toolName: "google-calendar/list_events" });
+    expect.assert(seen.ok === true);
+    expect(seen.data).toBe(true);
+  });
+
+  it("grantAlways accepts an explicit serverId that overrides toolName parsing", async () => {
+    const adapter = new JetStreamToolAccessGrantAdapter(nc);
+    const workspaceId = `ws-explicit-${crypto.randomUUID()}`;
+
+    const grant = await adapter.grantAlways({
+      workspaceId,
+      toolName: "send_email",
+      serverId: "gmail",
+    });
+    expect.assert(grant.ok === true);
+    expect(grant.data.serverId).toBe("gmail");
+
+    const list = await adapter.listForWorkspace({ workspaceId });
+    expect.assert(list.ok === true);
+    expect(list.data).toEqual([
+      { toolName: "send_email", bareToolName: "send_email", serverId: "gmail" },
+    ]);
   });
 });
