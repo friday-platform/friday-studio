@@ -473,6 +473,7 @@ describe("validateAtlasUIMessages", () => {
       type: "tool-echo-job",
       state: "output-error",
       input: { foo: "bar" },
+      rawInput: { foo: "bar" },
       errorText: "Model tried to call unavailable tool 'echo-job'.",
     });
   });
@@ -503,7 +504,59 @@ describe("validateAtlasUIMessages", () => {
       toolName: "ghost_tool",
       state: "output-error",
       input: { x: 1 },
+      rawInput: { x: 1 },
       errorText: "tool not found",
+    });
+  });
+
+  it("skips parts whose state is not output-error", async () => {
+    const messages = [
+      {
+        id: "1",
+        role: "assistant",
+        parts: [
+          {
+            type: "tool-search",
+            toolCallId: "toolu_4",
+            state: "input-streaming",
+            rawInput: { partial: "q" },
+          },
+        ],
+        metadata: {},
+      },
+    ];
+
+    const validated = await validateAtlasUIMessages(messages);
+    const part = validated[0]?.parts[0] as Record<string, unknown> | undefined;
+    expect(part?.state).toEqual("input-streaming");
+    expect(part?.input).toBeUndefined();
+  });
+
+  it("skips output-error parts that already have valid input", async () => {
+    const messages = [
+      {
+        id: "1",
+        role: "assistant",
+        parts: [
+          {
+            type: "tool-echo-job",
+            toolCallId: "toolu_5",
+            state: "output-error",
+            input: { real: "args" },
+            rawInput: { stale: "rawArgs" },
+            errorText: "downstream tool execute threw",
+          },
+        ],
+        metadata: {},
+      },
+    ];
+
+    const validated = await validateAtlasUIMessages(messages);
+    expect(validated[0]?.parts[0]).toMatchObject({
+      type: "tool-echo-job",
+      state: "output-error",
+      input: { real: "args" },
+      rawInput: { stale: "rawArgs" },
     });
   });
 
