@@ -90,6 +90,9 @@ describe("createBashTool", () => {
     const result = await resultPromise;
     const elapsed = Date.now() - start;
     expect(elapsed).toBeLessThan(1000);
-    expect(result.exit_code).not.toBe(0);
+    // Abort produces a sentinel exit_code distinguishable from generic failure (1)
+    // and timeout (124), plus a non-empty stderr describing the abort.
+    expect(result.exit_code).toBe(137);
+    expect(result.stderr).toMatch(/abort/i);
   }, 2000);
 });

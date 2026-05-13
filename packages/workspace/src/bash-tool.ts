@@ -59,6 +59,19 @@ export function createBashTool() {
           },
           (error, stdout, stderr) => {
             if (error) {
+              // AbortSignal-driven kill: error.code is "ABORT_ERR" (string) and
+              // stderr is empty — surface the abort message and a sentinel code
+              // so callers can distinguish abort (137) from timeout (124) and
+              // generic non-zero exit (1).
+              if (error.code === "ABORT_ERR") {
+                resolve({
+                  stdout: stdout ?? "",
+                  stderr: stderr || error.message,
+                  exit_code: 137,
+                });
+                return;
+              }
+
               // execFile sets error.code to the exit code on non-zero exit,
               // and error.killed / error.signal on timeout/kill
               const exitCode =
