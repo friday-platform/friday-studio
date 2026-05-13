@@ -20,7 +20,7 @@
 
 import type { AgentResult, ToolCall } from "@atlas/agent-sdk";
 import type { Tool } from "ai";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockFetch = vi.hoisted(() =>
   vi.fn<(input: string | URL | Request, init?: RequestInit) => Promise<Response>>(),
@@ -53,16 +53,24 @@ vi.mock("@atlas/oapi-client", () => ({
   getAtlasPlatformServerConfig: () => ({ transport: { type: "stdio", command: "noop", args: [] } }),
 }));
 
+type GrantsResult = { ok: true; data: string[] } | { ok: false; error: string };
+
 const grantState = vi.hoisted(() => ({
-  grants: [] as string[],
-  reset() {
-    this.grants = [];
-  },
+  // Default: empty success. Tests override per-call by reassigning
+  // `nextResult` before driving the engine. The mock itself is a vi.fn so
+  // tests can also assert on call count (bypass-skip case).
+  nextResult: { ok: true as const, data: [] as string[] } as GrantsResult,
 }));
+
+const mockListForWorkspace = vi.hoisted(() =>
+  vi.fn<(input: { workspaceId: string }) => Promise<GrantsResult>>(() =>
+    Promise.resolve(grantState.nextResult),
+  ),
+);
 
 vi.mock("@atlas/core/elicitations", () => ({
   ToolAccessGrants: {
-    listForWorkspace: () => Promise.resolve({ ok: true as const, data: [...grantState.grants] }),
+    listForWorkspace: mockListForWorkspace,
     hasGrant: () => Promise.resolve({ ok: true as const, data: false }),
     grantAlways: () => Promise.resolve({ ok: false as const, error: "not used in this suite" }),
   },
@@ -86,15 +94,33 @@ function fakeTool(name: string): Tool {
 }
 
 interface RunOptions {
-  declaredTools: string[];
-  grants: string[];
+  /**
+   * If undefined, the LLM action declares no `tools:` array — exercises
+   * the `hasNameAllowlist === false` path where buildTools skips per-server
+   * narrowing entirely. Pass an empty array to declare `tools: []`
+   * explicitly (also no narrowing) or a non-empty array to narrow.
+   */
+  declaredTools?: string[];
+  /**
+   * Grant result to be returned by `ToolAccessGrants.listForWorkspace`.
+   * Default: empty success. Pass `{ ok: false, error: "..." }` to exercise
+   * the warn-and-skip path.
+   */
+  grants?: GrantsResult;
   workspaceId?: string;
+  /**
+   * When set, threads `permissions.dangerouslySkipAllowlist: true` into
+   * the engine options so `bypassActive` is true inside buildTools. Used
+   * to assert the grant query is skipped under bypass.
+   */
+  bypass?: boolean;
 }
 
 async function runActionAndCaptureTools({
   declaredTools,
-  grants,
+  grants = { ok: true, data: [] },
   workspaceId = "ws-grant-union",
+  bypass = false,
 }: RunOptions): Promise<string[]> {
   mockFetch.mockImplementation(() => Promise.resolve(new Response("not found", { status: 404 })));
 
@@ -109,7 +135,7 @@ async function runActionAndCaptureTools({
     disconnectedIntegrations: [],
   });
 
-  grantState.grants = grants;
+  grantState.nextResult = grants;
 
   let observedToolNames: string[] = [];
   const mockLLMProvider: LLMProvider = {
@@ -146,7 +172,7 @@ async function runActionAndCaptureTools({
                 provider: "test",
                 model: "test-model",
                 prompt: "noop",
-                tools: declaredTools,
+                ...(declaredTools !== undefined && { tools: declaredTools }),
                 outputTo: "decision",
               },
             ],
@@ -161,6 +187,7 @@ async function runActionAndCaptureTools({
     documentStore: getDocumentStore(),
     scope: { workspaceId, sessionId: "sess-1" },
     llmProvider: mockLLMProvider,
+    ...(bypass && { jobPermissions: { dangerouslySkipAllowlist: true } }),
   });
   await engine.initialize();
   await engine.signal({ type: "RUN" }, { sessionId: "sess-1", workspaceId });
@@ -169,10 +196,14 @@ async function runActionAndCaptureTools({
 }
 
 describe("FSM LLM action — allow_always grants widen the tool surface (#280)", () => {
+  beforeEach(() => {
+    mockListForWorkspace.mockClear();
+  });
+
   it("unions a granted workspace MCP tool into the action's tool set when it isn't declared", async () => {
     const names = await runActionAndCaptureTools({
       declaredTools: ["workspace-mcp/keep_me"],
-      grants: ["grant_me"],
+      grants: { ok: true, data: ["grant_me"] },
     });
     expect(names).toContain("keep_me");
     expect(names).toContain("grant_me");
@@ -181,7 +212,7 @@ describe("FSM LLM action — allow_always grants widen the tool surface (#280)",
   it("does not include a workspace MCP tool when no grant exists", async () => {
     const names = await runActionAndCaptureTools({
       declaredTools: ["workspace-mcp/keep_me"],
-      grants: [],
+      grants: { ok: true, data: [] },
     });
     expect(names).toContain("keep_me");
     expect(names).not.toContain("grant_me");
@@ -193,8 +224,48 @@ describe("FSM LLM action — allow_always grants widen the tool surface (#280)",
     // action, or tool removed) doesn't materialize anything.
     const names = await runActionAndCaptureTools({
       declaredTools: ["workspace-mcp/keep_me"],
-      grants: ["unloaded_tool"],
+      grants: { ok: true, data: ["unloaded_tool"] },
     });
     expect(names).not.toContain("unloaded_tool");
+  });
+
+  it("skips the grant query entirely under permissions.dangerouslySkipAllowlist", async () => {
+    // Bypass already widens past per-agent narrowing — the grant union
+    // would be redundant work and noise in the operator log. Asserting
+    // `mockListForWorkspace` was never called locks in that branch.
+    const names = await runActionAndCaptureTools({
+      declaredTools: ["workspace-mcp/keep_me"],
+      grants: { ok: true, data: ["grant_me"] },
+      bypass: true,
+    });
+    expect(mockListForWorkspace).not.toHaveBeenCalled();
+    // Bypass surfaces every loaded tool regardless of declaration.
+    expect(names).toContain("keep_me");
+    expect(names).toContain("grant_me");
+  });
+
+  it("warns and continues with an un-widened toolset when the grant store read fails", async () => {
+    // KV down, deserialization edge case, etc. — fail safe: no widening,
+    // no crash. The declared-only toolset still reaches the LLM so the
+    // action can either complete or failStep gracefully.
+    const names = await runActionAndCaptureTools({
+      declaredTools: ["workspace-mcp/keep_me"],
+      grants: { ok: false, error: "kv unavailable" },
+    });
+    expect(names).toContain("keep_me");
+    expect(names).not.toContain("grant_me");
+  });
+
+  it("is a no-op when the action declares no tools (no per-server narrowing)", async () => {
+    // hasNameAllowlist === false → scoped stays as filtered → every loaded
+    // tool already flows through. The grant union should find every
+    // granted name already in scoped and add nothing. Most common ad-hoc
+    // LLM action shape; previously untested for grant-union behavior.
+    const names = await runActionAndCaptureTools({
+      declaredTools: undefined,
+      grants: { ok: true, data: ["grant_me"] },
+    });
+    expect(names).toContain("keep_me");
+    expect(names).toContain("grant_me");
   });
 });
