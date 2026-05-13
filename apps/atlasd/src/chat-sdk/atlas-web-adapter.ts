@@ -9,6 +9,7 @@
 import { randomUUID } from "node:crypto";
 import {
   type AtlasUIMessage,
+  type AtlasUIMessagePart,
   normalizeToUIMessages,
   validateAtlasUIMessages,
 } from "@atlas/agent-sdk";
@@ -193,11 +194,15 @@ async function inlineAttachedArtifacts(
   // valid across mutations. For each `data-artifact-attached`, build one
   // text part containing all of that part's expansions joined with \n and
   // insert it directly before.
-  const parts = message.parts as Array<{ type: string } & Record<string, unknown>>;
+  const parts: AtlasUIMessagePart[] = message.parts;
   for (let i = parts.length - 1; i >= 0; i--) {
     const part = parts[i];
     if (!part || part.type !== "data-artifact-attached") continue;
-    const data = part.data;
+    // Narrow `data` structurally — the AI SDK's discriminated union types
+    // `part.data` per-type and the `data-artifact-attached` branch carries
+    // `artifactIds: string[]`, but the union narrowing doesn't compose with
+    // the index lookup so we re-probe shape here.
+    const data: unknown = part.data;
     if (typeof data !== "object" || data === null) continue;
     const ids = (data as { artifactIds?: unknown }).artifactIds;
     if (!Array.isArray(ids)) continue;
@@ -207,7 +212,18 @@ async function inlineAttachedArtifacts(
       .filter((s): s is string => typeof s === "string")
       .join("\n");
     if (text.length === 0) continue;
-    parts.splice(i, 0, { type: "text", text } as never);
+    // Structural marker so the UI renderer can skip this part without
+    // re-parsing the text. AI SDK's TextUIPart.providerMetadata is namespaced
+    // (`Record<provider, Record<string, JSONValue>>`); we own the `atlas`
+    // namespace. See `buildSegments` in `@atlas/core/chat/export/render.ts`
+    // for the consumer side — it filters on this kind, not on tag shape, so
+    // a user typing a literal `<attachment …>` tag still renders verbatim.
+    const textPart: AtlasUIMessagePart = {
+      type: "text",
+      text,
+      providerMetadata: { atlas: { kind: "attachment-expansion" } },
+    };
+    parts.splice(i, 0, textPart);
   }
 }
 

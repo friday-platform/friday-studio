@@ -203,7 +203,13 @@ describe("AtlasWebAdapter.handleWebhook", () => {
       const parts = message.raw.uiMessage.parts;
       // [text "summarize", text "<attachment …>csv</attachment>", data-artifact-attached]
       expect(parts).toHaveLength(3);
-      expect(parts[1]).toMatchObject({ type: "text" });
+      expect(parts[1]).toMatchObject({
+        type: "text",
+        // Structural marker so the UI renderer can hide this synthetic part
+        // without re-parsing the text shape (which would also hide a user
+        // who happened to type a literal `<attachment …>` tag).
+        providerMetadata: { atlas: { kind: "attachment-expansion" } },
+      });
       const inlined = (parts[1] as { text: string }).text;
       expect(inlined).toContain(`<attachment filename="scores.csv"`);
       expect(inlined).toContain(`artifactId="${artifactId}"`);

@@ -52,30 +52,26 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 /**
  * Detect text parts that exist solely to carry user-attached artifact
- * content into the agent prompt (`<attachment filename="…" mediaType="…"
- * artifactId="…">…</attachment>` or self-closing). The chat-sdk adapter
- * injects these on persist so the workspace-chat agent's per-turn history
- * read sees the bytes; the user bubble already renders the artifact via
- * `data-artifact-attached` → `ArtifactCard`, so we skip these on the UI.
+ * content into the agent prompt. The chat-sdk adapter
+ * (`AtlasWebAdapter.inlineAttachedArtifacts`) injects these on persist so the
+ * workspace-chat agent's per-turn history read sees the bytes; the user
+ * bubble already renders the artifact via `data-artifact-attached` →
+ * `ArtifactCard`, so we skip these on the UI.
  *
- * Match shape: every non-whitespace span in the text is an `<attachment …>`
- * block. Tolerates multiple expansions concatenated with whitespace; rejects
- * any prose mixed in (so a user typing the literal `<attachment …>` tag in
- * their message still renders).
+ * Marker: `providerMetadata.atlas.kind === "attachment-expansion"`. AI SDK's
+ * `TextUIPart.providerMetadata` is a stable, namespaced extension point
+ * (`Record<provider, Record<string, JSONValue>>`); we own the `atlas`
+ * namespace. Filtering on a structural flag means a user typing a literal
+ * `<attachment …>` tag in their message still renders verbatim — what
+ * removed the prior failure mode where a regex on tag shape would silently
+ * hide user content.
  */
-const ATTACHMENT_TAG_RE =
-  /^\s*(?:<attachment\b[^>]*artifactId="[^"]+"[^>]*(?:\/>|>[\s\S]*?<\/attachment>))\s*/;
-
-function isAttachmentExpansionText(text: string): boolean {
-  let remaining = text;
-  let matched = false;
-  while (remaining.length > 0) {
-    const m = remaining.match(ATTACHMENT_TAG_RE);
-    if (!m) return false;
-    matched = true;
-    remaining = remaining.slice(m[0].length);
-  }
-  return matched;
+function isAttachmentExpansionText(part: Record<string, unknown>): boolean {
+  const pm = part.providerMetadata;
+  if (typeof pm !== "object" || pm === null) return false;
+  const atlas = (pm as Record<string, unknown>).atlas;
+  if (typeof atlas !== "object" || atlas === null) return false;
+  return (atlas as Record<string, unknown>).kind === "attachment-expansion";
 }
 
 /**
@@ -528,10 +524,11 @@ export function buildSegments(msg: AtlasUIMessage): Segment[] {
     if (type === "text" && typeof part.text === "string") {
       // Synthetic attachment-expansion text parts (injected by
       // `atlas-web-adapter.inlineAttachedArtifacts` so the agent sees
-      // user-attached file content in its prompt) carry an `artifactId="…"`
-      // marker. The user bubble's ArtifactCard already represents the file
-      // visually, so render-side we skip these blocks — they're agent-only.
-      if (isAttachmentExpansionText(part.text)) continue;
+      // user-attached file content in its prompt) are marked with
+      // `providerMetadata.atlas.kind === "attachment-expansion"`. The user
+      // bubble's ArtifactCard already represents the file visually, so
+      // render-side we skip these blocks — they're agent-only.
+      if (isAttachmentExpansionText(part)) continue;
       flushBurst();
       textBuffer += part.text;
       continue;

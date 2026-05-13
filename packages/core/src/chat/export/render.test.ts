@@ -785,6 +785,43 @@ describe("buildSegments", () => {
     expect(bursts[1]?.id).toBe("msg-1-burst-1");
   });
 
+  it("hides synthetic attachment-expansion text parts (atlas namespace marker)", () => {
+    // AtlasWebAdapter inlines user-attached artifacts as text parts so the
+    // workspace-chat agent's per-turn history read sees the bytes. The
+    // bubble's ArtifactCard already represents the file, so render-side we
+    // skip these parts — keyed off `providerMetadata.atlas.kind` rather than
+    // a regex on tag shape (which would also hide user content that
+    // happened to match).
+    const segs = buildSegments(
+      makeMessage([
+        { type: "text", text: "summarize" },
+        {
+          type: "text",
+          text: '<attachment filename="a.csv" artifactId="abc">data</attachment>',
+          providerMetadata: { atlas: { kind: "attachment-expansion" } },
+        },
+        {
+          type: "data-artifact-attached",
+          data: { artifactIds: ["abc"], filenames: ["a.csv"], mimeTypes: ["text/csv"] },
+        },
+      ]),
+    );
+    expect(segs).toEqual([
+      { type: "text", content: "summarize" },
+      { type: "artifact-list", ids: ["abc"], filenames: ["a.csv"], mimeTypes: ["text/csv"] },
+    ]);
+  });
+
+  it("does NOT hide user-typed text that happens to look like an attachment tag", () => {
+    // Regression guard against the prior regex-on-shape detector. A user
+    // who literally types `<attachment …>` in their message body must still
+    // see the text in their own bubble — the structural marker check above
+    // is what makes this safe.
+    const text = 'See <attachment filename="x" artifactId="y">stuff</attachment> in the docs';
+    const segs = buildSegments(makeMessage([{ type: "text", text }]));
+    expect(segs).toEqual([{ type: "text", content: text }]);
+  });
+
   it("ignores malformed parts (non-object, missing type, non-string type)", () => {
     const segs = buildSegments(
       makeMessage([
