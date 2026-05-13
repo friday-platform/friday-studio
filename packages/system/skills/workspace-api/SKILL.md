@@ -1,11 +1,20 @@
 ---
 name: workspace-api
-description: "Create, list, update, delete, and clean up workspaces via the daemon HTTP API on localhost:8080 (or https://localhost:8080 when TLS is enabled via scripts/setup-tls.sh). Use when the user asks to create, edit, delete, or list workspaces, spaces, projects, or environments; add or patch signals / agents / jobs / memory / skills; convert a workspace.yml into a live workspace; wire up triggers (HTTP webhooks, cron, fs-watch, Slack / Telegram / WhatsApp); or clean up test/scratch workspaces."
+description: "Create, list, update, delete, and clean up workspaces via the daemon HTTP API at $FRIDAYD_URL. Use when the user asks to create, edit, delete, or list workspaces, spaces, projects, or environments; add or patch signals / agents / jobs / memory / skills; convert a workspace.yml into a live workspace; wire up triggers (HTTP webhooks, cron, fs-watch, Slack / Telegram / WhatsApp); or clean up test/scratch workspaces."
 ---
 
 # Workspace API
 
 Create and manage Friday workspaces. This skill is where LLM judgment lives: when to use each tool, in what order, and how to recover when stuck. Companion skills: `friday-cli` (daemon lifecycle, signals, sessions) and `using-mcp-servers` (MCP catalog, install/enable, credentials).
+
+**Daemon HTTP rule (load-bearing for every curl example below).** All shell
+examples that hit the daemon use the `friday_curl` wrapper, never plain
+`curl`. The wrapper is defined in the "CRUD reference" preamble — it adds
+`--cacert` exactly when TLS is on. The daemon URL is `$FRIDAYD_URL`
+(varies by install — installed Friday Studio is typically `:18080`, dev
+`:8080`); the preamble below explains how to source it. Plain `curl`
+against `$FRIDAYD_URL` on a TLS install fails with `self signed
+certificate in certificate chain`.
 
 ## Cheat sheet
 
@@ -192,7 +201,7 @@ To abandon a draft: `discard_draft`.
 
 **For workspace shape changes (agents, jobs, signals, validation):** always use the dedicated tools (`create_workspace`, `upsert_*`, `validate_workspace`, `publish_draft`, etc.). They are typed, return structured diffs and issues, and handle draft/live switching automatically. Never shell out to curl for these.
 
-**For daemon CRUD (list workspaces, get config, delete workspace):** use `run_code` bash + curl to `localhost:8080`. These are one-liners; the output is immediate and errors are obvious. Do not spawn `agent_claude-code` for a `DELETE` or a `GET`.
+**For daemon CRUD (list workspaces, get config, delete workspace):** use `run_code` bash + `friday_curl` against `$FRIDAYD_URL` (see the preamble below). These are one-liners; the output is immediate and errors are obvious. Do not spawn `agent_claude-code` for a `DELETE` or a `GET`.
 
 **For MCP server questions (install vs enable, credentials, catalog search):** load the `using-mcp-servers` skill. `workspace-api` does not cover MCP scope.
 

@@ -158,10 +158,13 @@ import json, os, ssl, urllib.request
 WS = "grilled_xylem"
 WS_PATH = "/path/to/.friday/local/workspaces/my-workspace/workspace.yml"
 
-# 1. Read current config (API gives parsed JSON — no YAML parsing needed)
-#    FRIDAYD_URL + FRIDAY_TLS_CA are exported by the daemon's launcher,
-#    so this works whether the install is on plain HTTP or TLS.
-daemon_url = os.environ.get("FRIDAYD_URL", "http://localhost:8080")
+# 1. Read current config (API gives parsed JSON — no YAML parsing needed).
+#    FRIDAYD_URL + FRIDAY_TLS_CA are exported by the daemon's launcher
+#    (installed Friday Studio) or `bash scripts/setup-tls.sh` (in-tree
+#    dev). Don't hardcode a default — installed Studio runs on :18080,
+#    dev on :8080, and FRIDAY_PORT_FRIDAY can override either. If the env
+#    var is missing, fail loud rather than silently misroute.
+daemon_url = os.environ["FRIDAYD_URL"]
 ca = os.environ.get("FRIDAY_TLS_CA")
 ctx = ssl.create_default_context(cafile=ca) if ca else None
 with urllib.request.urlopen(f"{daemon_url}/api/workspaces/{WS}/config", context=ctx) as resp:

@@ -1,8 +1,10 @@
 # Atlas CLI Reference
 
 Complete reference for `deno task atlas <subcommand>`. The CLI is a thin HTTP
-client over `localhost:8080` — every subcommand maps to one or more daemon
-routes. When the CLI lacks a flag you need, drop to HTTP (`references/http.md`).
+client over `$FRIDAYD_URL` (host/port and scheme vary by install — installed
+Friday Studio runs `:18080`, in-tree dev runs `:8080`, both can be on TLS).
+Every subcommand maps to one or more daemon routes. When the CLI lacks a
+flag you need, drop to HTTP (`references/http.md`).
 
 ## Daemon URL preamble (required for raw HTTP)
 

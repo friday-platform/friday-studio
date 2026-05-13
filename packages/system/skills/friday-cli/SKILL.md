@@ -1,16 +1,22 @@
 ---
 name: friday-cli
-description: "Interact with a running Friday daemon via CLI and HTTP — list/create/modify workspaces, trigger signals, watch sessions, publish skills and agents. Use whenever you need to poke at a local Friday daemon, inspect its state, fire a signal, drive the autopilot / self-modification flywheel, create a workspace programmatically, or validate that a workspace.yml you just authored actually runs. Also use when the task involves `localhost:8080`, `deno task atlas`, curl-ing the daemon, or automating Friday itself."
+description: "Interact with a running Friday daemon via CLI and HTTP — list/create/modify workspaces, trigger signals, watch sessions, publish skills and agents. Use whenever you need to poke at a local Friday daemon, inspect its state, fire a signal, drive the autopilot / self-modification flywheel, create a workspace programmatically, or validate that a workspace.yml you just authored actually runs. Also use when the task involves `$FRIDAYD_URL`, `deno task atlas`, curl-ing the daemon, or automating Friday itself."
 ---
 
 # Friday CLI & HTTP
 
-Friday is orchestrated by a daemon on `localhost:8080` (plain HTTP) or
-`https://localhost:8080` when TLS is enabled (`scripts/setup-tls.sh`). There
-are two surfaces for interacting with it: the `deno task atlas` CLI (thin HTTP
-client, great for humans and shell scripts — auto-loads the daemon `.env` so
-it picks the right scheme) and the raw HTTP API (more endpoints, SSE streaming,
-the only option for many CRUD ops on workspace internals).
+Friday is orchestrated by a daemon at `$FRIDAYD_URL`. The exact scheme/port
+varies by install — installed Friday Studio runs on `:18080` (with TLS
+configured automatically by the launcher), in-tree dev runs on `:8080`
+(plain HTTP unless you opt in with `bash scripts/setup-tls.sh`), and
+`FRIDAY_PORT_FRIDAY` can override either. Don't hardcode the URL — source
+the daemon `.env` (preamble below) and use `$FRIDAYD_URL` everywhere.
+
+There are two surfaces for interacting with the daemon: the `deno task
+atlas` CLI (thin HTTP client, great for humans and shell scripts —
+auto-loads the daemon `.env` so it picks the right scheme) and the raw
+HTTP API (more endpoints, SSE streaming, the only option for many CRUD ops
+on workspace internals).
 
 ## Daemon URL — copy-paste preamble for every curl block
 
@@ -25,7 +31,8 @@ set -a
 . "${FRIDAY_HOME:-$HOME/.friday/local}/.env" 2>/dev/null \
   || . "$HOME/.atlas/.env" 2>/dev/null || true
 set +a
-# $FRIDAYD_URL → https://localhost:18080 (TLS) or http://localhost:8080 (plain)
+# $FRIDAYD_URL → https://… when TLS is on, http://… when plain HTTP.
+#                 Exact host/port comes from the daemon's bind — don't assume :8080.
 # $FRIDAY_TLS_CA → path to the private-CA cert (empty when TLS off)
 
 # Wrapper that adds --cacert exactly when TLS is on. Use this in place of
@@ -42,9 +49,10 @@ with `self signed certificate in certificate chain`).
 **Troubleshooting:** if `friday_curl` still fails with `SSL certificate
 problem: self signed certificate in certificate chain`, your
 `FRIDAY_TLS_CA` is empty or stale (`set -a` exported an empty value, or
-the .env hasn't been re-sourced after a `setup-tls.sh` rerun). Check with
-`echo "$FRIDAY_TLS_CA"` and re-source the daemon `.env` from the same
-preamble above.
+the .env was rewritten since you last sourced it — by the launcher's TLS
+renewer for installed Studio, or by a `scripts/setup-tls.sh` rerun for
+dev). Check with `echo "$FRIDAY_TLS_CA"` and re-source the daemon `.env`
+from the same preamble above.
 
 ## When to use CLI vs HTTP
 
@@ -68,8 +76,7 @@ Before touching anything, confirm the daemon is up:
 ```bash
 deno task atlas daemon status
 # or (after sourcing the daemon .env — see preamble above):
-friday_curl -sf \
-  "${FRIDAYD_URL:-http://localhost:8080}/health" && echo OK
+friday_curl -sf "$FRIDAYD_URL/health" && echo OK
 ```
 
 If it's not:

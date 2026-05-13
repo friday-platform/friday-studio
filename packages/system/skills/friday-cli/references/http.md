@@ -1,9 +1,12 @@
 # Friday Daemon HTTP API
 
-Base: `$FRIDAYD_URL` — defaults to `http://localhost:8080` on a plain-HTTP
-install, and switches to `https://localhost:8080` (or the
-`FRIDAY_PORT_FRIDAY`-overridden port) when `scripts/setup-tls.sh` has been
-run. No auth on localhost. JSON in/out unless noted.
+Base: `$FRIDAYD_URL` — set by the launcher (installed Friday Studio,
+typically `:18080`) or `deno task atlas daemon start` (in-tree dev,
+typically `:8080`); `FRIDAY_PORT_FRIDAY` can override either. Scheme is
+`https://` when TLS is on (automatic for installed Studio; in-tree dev
+opts in via `bash scripts/setup-tls.sh`), otherwise `http://`. **Don't
+hardcode the URL — always use `$FRIDAYD_URL`.** No auth on localhost.
+JSON in/out unless noted.
 
 To run the curl examples in this file, source the daemon `.env` once per
 shell so `$FRIDAYD_URL` and `$FRIDAY_TLS_CA` are exported. The block below
