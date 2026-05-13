@@ -26,6 +26,7 @@
 
 import { ensureDir } from "jsr:@std/fs@1.0.13/ensure-dir";
 import { dirname, join } from "jsr:@std/path@1";
+import { createHash } from "node:crypto";
 import {
   currentGitSha,
   type DaemonHandle,
@@ -236,6 +237,27 @@ async function materializeWorkspace(): Promise<string> {
   return dir;
 }
 
+/**
+ * Mirror `apps/atlasd/routes/scratch-upload.ts`'s content-addressed
+ * storage layout: bytes land at `{uploadsRoot}/{md5(bytes)}` regardless of
+ * the original filename. Scenarios skip the HTTP upload and write
+ * directly, but the path the agent eventually sees in the
+ * `<attachment path="…">` tag MUST match production exactly — otherwise
+ * the eval drifts from real-world behavior and a path-shape regression
+ * could ship.
+ */
+async function writeAttachmentBytes(
+  uploadsRoot: string,
+  content: Uint8Array | string,
+): Promise<string> {
+  const bytes = typeof content === "string" ? new TextEncoder().encode(content) : content;
+  const md5 = createHash("md5").update(bytes).digest("hex");
+  await Deno.mkdir(uploadsRoot, { recursive: true });
+  const path = join(uploadsRoot, md5);
+  await Deno.writeFile(path, bytes);
+  return path;
+}
+
 // ────────────────────────────────────────────────────────────────────────
 // Routing helper — collapses the "drop a file, observe which tool the
 // agent picked" pattern that 80% of these scenarios share. Each scenario
@@ -276,13 +298,7 @@ async function runRoutingExpectation(
 
   const chatId = `chat_eval_${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;
   const uploadsRoot = join(d.fridayHome, "scratch", "uploads", chatId);
-  await Deno.mkdir(uploadsRoot, { recursive: true });
-  const path = join(uploadsRoot, exp.filename);
-  if (typeof exp.content === "string") {
-    await Deno.writeTextFile(path, exp.content);
-  } else {
-    await Deno.writeFile(path, exp.content);
-  }
+  const path = await writeAttachmentBytes(uploadsRoot, exp.content);
   metrics.attachmentPath = path;
   metrics.mediaType = exp.mediaType;
 
@@ -385,11 +401,10 @@ async function runChatCsvRead(d: DaemonHandle): Promise<EvalResult> {
   const csv = "name,score\nAlice,90\nBob,75\nCarol,82\nDan,95\nEve,68\n";
 
   // Mirror what `/api/scratch/upload` would do — write the bytes directly
-  // to the spot the adapter expects to find them.
+  // to the spot the adapter expects to find them, using the same
+  // content-addressed (md5) on-disk filename.
   const uploadsRoot = join(d.fridayHome, "scratch", "uploads", chatId);
-  await Deno.mkdir(uploadsRoot, { recursive: true });
-  const path = join(uploadsRoot, filename);
-  await Deno.writeTextFile(path, csv);
+  const path = await writeAttachmentBytes(uploadsRoot, csv);
   metrics.attachmentPath = path;
 
   const result = await postChatMessageWithAttachment(
@@ -459,9 +474,7 @@ async function runRejectsForeignPath(d: DaemonHandle): Promise<EvalResult> {
   const chatId = `chat_eval_${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;
   const foreignChatId = `chat_other_${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;
   const foreignRoot = join(d.fridayHome, "scratch", "uploads", foreignChatId);
-  await Deno.mkdir(foreignRoot, { recursive: true });
-  const foreignPath = join(foreignRoot, "secret.csv");
-  await Deno.writeTextFile(foreignPath, "secret,123\n");
+  const foreignPath = await writeAttachmentBytes(foreignRoot, "secret,123\n");
   metrics.foreignPath = foreignPath;
 
   const result = await postChatMessageWithAttachment(
@@ -553,9 +566,7 @@ async function runPdfRoutesToParseNotReadAttachment(d: DaemonHandle): Promise<Ev
   );
 
   const uploadsRoot = join(d.fridayHome, "scratch", "uploads", chatId);
-  await Deno.mkdir(uploadsRoot, { recursive: true });
-  const path = join(uploadsRoot, filename);
-  await Deno.writeFile(path, minimalPdf);
+  const path = await writeAttachmentBytes(uploadsRoot, minimalPdf);
   metrics.attachmentPath = path;
 
   const result = await postChatMessageWithAttachment(
@@ -632,12 +643,8 @@ async function runMultiFileRead(d: DaemonHandle): Promise<EvalResult> {
 
   const chatId = `chat_eval_${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;
   const uploadsRoot = join(d.fridayHome, "scratch", "uploads", chatId);
-  await Deno.mkdir(uploadsRoot, { recursive: true });
-
-  const pathA = join(uploadsRoot, "team-a.csv");
-  const pathB = join(uploadsRoot, "team-b.csv");
-  await Deno.writeTextFile(pathA, "name,score\nAlice,42\nBob,17\n");
-  await Deno.writeTextFile(pathB, "name,score\nCarol,99\nDan,8\n");
+  const pathA = await writeAttachmentBytes(uploadsRoot, "name,score\nAlice,42\nBob,17\n");
+  const pathB = await writeAttachmentBytes(uploadsRoot, "name,score\nCarol,99\nDan,8\n");
   metrics.paths = [pathA, pathB];
 
   const result = await postChatMessageWithAttachment(

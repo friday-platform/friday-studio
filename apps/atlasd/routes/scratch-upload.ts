@@ -14,6 +14,7 @@
  * system.
  */
 
+import { createHash } from "node:crypto";
 import { mkdir, stat, writeFile } from "node:fs/promises";
 import { basename, extname, join, resolve, sep } from "node:path";
 import {
@@ -163,26 +164,41 @@ const scratchUploadApp = daemonFactory.createApp().post("/upload", async (c) => 
     );
   }
 
+  // The display name (sanitized original) flows back in the response so the
+  // UI bubble and the `<attachment filename="…">` tag the adapter splices
+  // both show the human-readable filename. The on-disk name is content-
+  // addressed — see below.
   const safe = safeFilename(file.name);
   if (!safe) {
     return c.json({ error: "Invalid filename" }, 400);
   }
-  const resolved = resolveInUploads(chatId, safe);
+
+  // Content-addressed storage: write to `{chatId}/{md5(bytes)}`, NOT the
+  // user-supplied filename. Two wins:
+  //   1. Identical bytes uploaded twice produce the same path → free dedup,
+  //      no `data (2).csv`-style collisions, no overwrite races.
+  //   2. The on-disk filename carries zero attacker-controlled characters,
+  //      so the path-traversal gate's job collapses to a prefix check —
+  //      adversarial filenames can't reach the filesystem.
+  // MD5 is fine here: the security boundary is the resolver, not the hash.
+  // Collisions are content collisions, which read back identical bytes —
+  // benign.
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const md5 = createHash("md5").update(bytes).digest("hex");
+  const resolved = resolveInUploads(chatId, md5);
   if (!resolved.ok) {
     return c.json({ error: resolved.error }, 400);
   }
 
   try {
     await mkdir(resolved.root, { recursive: true });
-    // Overwrite-on-conflict is the natural UX: dropping the same file
-    // twice refreshes the bytes rather than spawning `data (2).csv`.
-    const bytes = new Uint8Array(await file.arrayBuffer());
     await writeFile(resolved.absolute, bytes);
     const persisted = await stat(resolved.absolute);
     logger.info("scratch_upload success", {
       chatId,
       workspaceId,
       filename: safe,
+      md5,
       size: persisted.size,
       mimeType,
     });
@@ -195,6 +211,7 @@ const scratchUploadApp = daemonFactory.createApp().post("/upload", async (c) => 
       chatId,
       workspaceId,
       filename: safe,
+      md5,
       error: err instanceof Error ? err.message : String(err),
     });
     return c.json({ error: "Upload failed" }, 500);
