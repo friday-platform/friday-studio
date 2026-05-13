@@ -115,9 +115,9 @@ function createStore() {
   // The names of services that were NOT healthy when the hard
   // deadline fired. Drives the timeout-state messaging.
   let stuckServices = $state<string[]>([]);
-  // Whether playground was healthy at the timeout — the
+  // Whether studio-ui was healthy at the timeout — the
   // partial-success rule allows "Open anyway" iff this is true.
-  let playgroundHealthyAtTimeout = $state(false);
+  let studioUIHealthyAtTimeout = $state(false);
   // Free-form reason from a HealthEvent::Unreachable. Surfaced in
   // the unreachable-stage UI alongside View logs.
   let launchUnreachableReason = $state<string | null>(null);
@@ -350,11 +350,11 @@ function createStore() {
     set stuckServices(v: string[]) {
       stuckServices = v;
     },
-    get playgroundHealthyAtTimeout(): boolean {
-      return playgroundHealthyAtTimeout;
+    get studioUIHealthyAtTimeout(): boolean {
+      return studioUIHealthyAtTimeout;
     },
-    set playgroundHealthyAtTimeout(v: boolean) {
-      playgroundHealthyAtTimeout = v;
+    set studioUIHealthyAtTimeout(v: boolean) {
+      studioUIHealthyAtTimeout = v;
     },
     get launchUnreachableReason(): string | null {
       return launchUnreachableReason;

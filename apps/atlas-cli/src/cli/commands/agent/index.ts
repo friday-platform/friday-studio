@@ -27,6 +27,6 @@ export const agentCommand = define({
     console.log("  list, ls              List agents");
     console.log("  describe, show, get   View agent details");
     console.log("  register, r           Register an SDK agent");
-    console.log("  exec, x              Execute an agent via playground");
+    console.log("  exec, x              Execute an agent via Studio UI");
   },
 });

@@ -191,7 +191,7 @@ async function launchByOpening(): Promise<void> {
   try {
     // Tauri 2 plugin-opener exports openUrl, not a default `open()`.
     const { openUrl } = await import("@tauri-apps/plugin-opener");
-    await openUrl(await resolvePlaygroundUrl());
+    await openUrl(await resolveStudioUIUrl());
   } catch {
     // ignore — browser might already be open
   }
@@ -199,14 +199,14 @@ async function launchByOpening(): Promise<void> {
 
 /**
  * Returns the URL the wizard should open to land on the local
- * playground, honoring FRIDAY_PORT_PLAYGROUND from ~/.friday/local/.env.
+ * studio-ui, honoring FRIDAY_PORT_STUDIO_UI from ~/.friday/local/.env.
  * Centralises the lookup so every "open studio" entry point lands on
  * the same URL — pre-fix, three call sites hardcoded :5200 and broke
  * any install with a port override.
  */
-async function resolvePlaygroundUrl(): Promise<string> {
+async function resolveStudioUIUrl(): Promise<string> {
   try {
-    return await invoke<string>("playground_url");
+    return await invoke<string>("studio_ui_url");
   } catch {
     // Tauri command unavailable (test env etc.) — fall back to the
     // installer's default port.
@@ -430,15 +430,15 @@ export type HealthEvent =
       shutting_down: boolean;
     }
   | { kind: "soft-deadline" }
-  | { kind: "timeout"; stuck: string[]; playground_healthy: boolean }
+  | { kind: "timeout"; stuck: string[]; studio_ui_healthy: boolean }
   | { kind: "unreachable"; reason: string }
   | { kind: "shutting-down" };
 
-// `playground` is the user-facing surface that the browser actually
+// `studio-ui` is the user-facing surface that the browser actually
 // loads; if it's healthy at hard-deadline we still let the user
 // proceed via "Open anyway". Centralizing the name here avoids
 // stringly-typed checks scattered across the UI.
-const PLAYGROUND_SERVICE_NAME = "playground";
+const STUDIO_UI_SERVICE_NAME = "studio-ui";
 
 /**
  * Subscribe to the launcher's health stream and update the store as
@@ -459,7 +459,7 @@ export async function waitForServices(): Promise<void> {
   store.waitElapsedSecs = 0;
   store.waitDeadlineExtensions = 0;
   store.stuckServices = [];
-  store.playgroundHealthyAtTimeout = false;
+  store.studioUIHealthyAtTimeout = false;
   store.launchUnreachableReason = null;
 
   const channel = new Channel<HealthEvent>();
@@ -489,7 +489,7 @@ export async function waitForServices(): Promise<void> {
         break;
       case "timeout":
         store.stuckServices = event.stuck;
-        store.playgroundHealthyAtTimeout = event.playground_healthy;
+        store.studioUIHealthyAtTimeout = event.studio_ui_healthy;
         store.launchStage = "timeout";
         break;
       case "unreachable":
@@ -525,12 +525,12 @@ export async function extendWaitDeadline(): Promise<number | null> {
 }
 
 /**
- * Returns the playground row from the current snapshot, or undefined
+ * Returns the studio-ui row from the current snapshot, or undefined
  * if it hasn't been observed yet. Used by Launch.svelte to decide
  * whether to expose "Open anyway" alongside the timeout treatment.
  */
-export function getPlaygroundService(): ServiceStatus | undefined {
-  return store.services.find((s) => s.name === PLAYGROUND_SERVICE_NAME);
+export function getStudioUIService(): ServiceStatus | undefined {
+  return store.services.find((s) => s.name === STUDIO_UI_SERVICE_NAME);
 }
 
 /**
@@ -575,7 +575,7 @@ export async function createAppBundleIfDarwin(installDir: string, version: strin
 }
 
 /**
- * Open the playground in the user's browser and exit the wizard.
+ * Open studio-ui in the user's browser and exit the wizard.
  * The launcher is detached from the wizard at spawn time, so exiting
  * the wizard does NOT kill the platform — the launcher keeps
  * supervising its services. Same exit logic for "Open anyway".
@@ -587,10 +587,10 @@ export async function createAppBundleIfDarwin(installDir: string, version: strin
  * window up after openUrl resolves). `app.exit(0)` from Rust
  * bypasses every JS-level prevention path.
  */
-export async function openPlaygroundAndExit(): Promise<void> {
+export async function openStudioUIAndExit(): Promise<void> {
   try {
     const { openUrl } = await import("@tauri-apps/plugin-opener");
-    await openUrl(await resolvePlaygroundUrl());
+    await openUrl(await resolveStudioUIUrl());
   } catch {
     // ignore — browser might already be open or plugin unavailable
   }

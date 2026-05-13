@@ -18,7 +18,7 @@
     "src/**/*.svelte",
     ".svelte-kit/ambient.d.ts",
     "vite.config.ts",
-    "../tools/agent-playground/src/app.d.ts",
+    "../../apps/studio-ui/src/app.d.ts",
     "../types/deno-compat.d.ts"
   ],
   "exclude": ["node_modules", "build", "dist", ".svelte-kit/types"]

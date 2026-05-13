@@ -1,2 +1,2 @@
-// @atlas/agent-playground — dev tool, no public exports
+// @atlas/studio-ui — dev tool, no public exports
 export {};

@@ -198,7 +198,7 @@ via NATS request/reply. See the `writing-friday-python-agents` skill for the ful
 ### `agent exec`
 `agent exec <agent> -i <input> [--url http://localhost:5200] [--env K=V,K2=V2] [--json] [--stream]`
 
-Executes an agent via the playground. Requires `deno task playground` running
+Executes an agent via Studio UI. Requires `deno task studio-ui` running
 separately on :5200. Good for testing agents in isolation before wiring them
 into a workspace.
 

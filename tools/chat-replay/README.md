@@ -1,6 +1,6 @@
 # Friday Chat Replay
 
-Standalone SvelteKit replay app using the same JS toolchain and real chat UI components as `tools/agent-playground`.
+Standalone SvelteKit replay app using the same JS toolchain and real chat UI components as `apps/studio-ui`.
 
 ## Run
 

@@ -6,7 +6,7 @@ This product includes software developed by third parties.
 Friday Studio ships several artifacts, each of which bundles a different set of
 upstream dependencies:
 
-  - Atlas daemon, CLI, and web playground (Deno + npm + JSR packages)
+  - Atlas daemon, CLI, and Studio UI (Deno + npm + JSR packages)
   - Friday Launcher, pty-server, webhook-tunnel (Go modules)
   - Studio Installer (Rust crates via Cargo / Tauri)
 

@@ -1,6 +1,6 @@
 /**
  * Shared render-shape types used by the live chat UI and the chat export
- * route. Lifted from `tools/agent-playground/.../types.ts` so server-side
+ * route. Lifted from `apps/studio-ui/.../types.ts` so server-side
  * HTML generation in `apps/atlasd` can reuse the same render helpers
  * without dragging Svelte into the daemon.
  *

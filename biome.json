@@ -16,7 +16,7 @@
       "!**/vendor",
       "!packages/vendor",
       "!packages/ui",
-      "!tools/agent-playground",
+      "!apps/studio-ui",
       "!tools/chat-replay",
       "!opensrc",
       "!.claude"

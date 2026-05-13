@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/denoland/deno/main/cli/schemas/config-file.v1.json",
   "version": "1.0.0",
-  "workspace": ["./apps/*", "./packages/*", "./tools/evals", "./tools/agent-playground"],
+  "workspace": ["./apps/*", "./packages/*", "./tools/evals"],
   "compilerOptions": {
     "lib": ["deno.window", "deno.worker", "deno.unstable", "dom", "dom.iterable"],
     "types": ["./reset.d.ts"],
@@ -17,14 +17,14 @@
     "!integration-tests/**/*.test.ts",
     ".claude/worktrees",
     ".claude/projects",
-    "tools/agent-playground/.svelte-kit",
-    "tools/agent-playground/src/routes/**",
-    "tools/agent-playground/src/**/*.svelte.ts",
-    "tools/agent-playground/src/lib/inspector-state.test.ts",
-    "tools/agent-playground/src/lib/editor/**",
-    "tools/agent-playground/src/lib/queries/**",
-    "tools/agent-playground/src/lib/stores/**",
-    "tools/agent-playground/src/lib/utils/markdown.ts",
+    "apps/studio-ui/.svelte-kit",
+    "apps/studio-ui/src/routes/**",
+    "apps/studio-ui/src/**/*.svelte.ts",
+    "apps/studio-ui/src/lib/inspector-state.test.ts",
+    "apps/studio-ui/src/lib/editor/**",
+    "apps/studio-ui/src/lib/queries/**",
+    "apps/studio-ui/src/lib/stores/**",
+    "apps/studio-ui/src/lib/utils/markdown.ts",
     "tools/chat-replay",
     "opensrc",
     "types"
@@ -37,8 +37,8 @@
     "atlas": "deno run -q --allow-all --unstable-worker-options --unstable-kv --unstable-raw-imports --env-file apps/atlas-cli/src/otel-bootstrap.ts",
     "atlas:dev": "deno run -q --allow-all --unstable-worker-options --unstable-kv --unstable-raw-imports --env-file scripts/dev-watcher.ts",
     "start": "deno run --allow-all --unstable-worker-options --unstable-kv --unstable-raw-imports apps/atlas-cli/src/otel-bootstrap.ts",
-    "dev:playground": "FAST_DEVELOPMENT=true LINK_DEV_MODE=true deno run -A npm:concurrently@^9.2.1 -n daemon,link,playground,tunnel -c blue,green,magenta,cyan 'deno task atlas:dev daemon start' 'cd apps/link && deno task dev' 'deno task playground' 'deno task webhook-tunnel'",
-    "dev:playground:stable": "FAST_DEVELOPMENT=true LINK_DEV_MODE=true deno run -A npm:concurrently@^9.2.1 -n daemon,link,playground,tunnel -c blue,green,magenta,cyan 'deno task atlas daemon start' 'cd apps/link && deno task dev' 'deno task playground' 'deno task webhook-tunnel'",
+    "dev:studio-ui": "FAST_DEVELOPMENT=true LINK_DEV_MODE=true deno run -A npm:concurrently@^9.2.1 -n daemon,link,studio-ui,tunnel -c blue,green,magenta,cyan 'deno task atlas:dev daemon start' 'cd apps/link && deno task dev' 'deno task studio-ui' 'deno task webhook-tunnel'",
+    "dev:studio-ui:stable": "FAST_DEVELOPMENT=true LINK_DEV_MODE=true deno run -A npm:concurrently@^9.2.1 -n daemon,link,studio-ui,tunnel -c blue,green,magenta,cyan 'deno task atlas daemon start' 'cd apps/link && deno task dev' 'deno task studio-ui' 'deno task webhook-tunnel'",
     "webhook-tunnel": "go run ./tools/webhook-tunnel",
     "test": "OTEL_DENO=true DENO_TESTING=true LINK_DEV_MODE=true DEV_MODE=true vitest run",
     "fmt": "deno run -A npm:@biomejs/biome format --write",
@@ -52,8 +52,8 @@
     "clean:agents": "deno run -A scripts/clean.ts --agents",
     "compile": "./scripts/compile.sh",
     "evals": "deno run --allow-all tools/evals/run.ts",
-    "sync:svelte": "deno task -f @atlas/ui sync && deno task -f @atlas/agent-playground sync",
-    "playground": "deno task sync:svelte && cd tools/agent-playground && EXTERNAL_DAEMON_URL=http://localhost:8080 EXTERNAL_TUNNEL_URL=http://localhost:9090 npx vite dev"
+    "sync:svelte": "deno task -f @atlas/ui sync && deno task -f @atlas/studio-ui sync",
+    "studio-ui": "deno task sync:svelte && cd apps/studio-ui && EXTERNAL_DAEMON_URL=http://localhost:8080 EXTERNAL_TUNNEL_URL=http://localhost:9090 npx vite dev"
   },
   "lint": { "rules": { "tags": ["recommended"] }, "exclude": ["opensrc/**"] },
   "imports": {

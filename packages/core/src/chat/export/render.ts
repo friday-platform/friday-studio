@@ -1,6 +1,6 @@
 /**
  * Pure render helpers shared between the live chat UI and the chat export
- * route. Lifted out of `tools/agent-playground/.../user-chat.svelte` and
+ * route. Lifted out of `apps/studio-ui/.../user-chat.svelte` and
  * `chat-message-list.svelte` so the export route in `apps/atlasd` can call
  * them server-side and produce HTML that mirrors what the user saw.
  *

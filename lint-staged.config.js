@@ -65,7 +65,7 @@ export default {
     // passing only excluded files causes `deno lint` to fail with "No target files found".
     const DENO_LINT_EXCLUDED = [
       "/packages/ui/src/",
-      "/tools/agent-playground/src/",
+      "/apps/studio-ui/src/",
       "/tools/chat-replay/",
       "/deprecated/",
     ];

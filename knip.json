@@ -86,7 +86,7 @@
         "$app/*": ["../../node_modules/@sveltejs/kit/src/runtime/app/*"]
       }
     },
-    "tools/agent-playground": {
+    "apps/studio-ui": {
       "entry": ["mod.ts!", "static-server.ts!", "src/routes/**/*.svelte!", "src/**/*.test.ts"],
       "project": ["src/**/*.{ts,tsx,js,jsx,svelte}!", "*.ts!", "*.js!"],
       "paths": {

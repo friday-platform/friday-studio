@@ -55,7 +55,7 @@ func commonServiceEnv() []string {
 	}
 	// Pin every supervised service to the launcher-owned home. The friday
 	// daemon's getFridayHome() reads FRIDAY_HOME first; sibling services
-	// (link, webhook-tunnel, playground) that resolve their own paths via
+	// (link, webhook-tunnel, studio-ui) that resolve their own paths via
 	// the same helper need the same value, otherwise their data drifts to
 	// the legacy ~/.atlas fallback while the daemon writes to
 	// ~/.friday/local — homes diverge silently.
@@ -167,7 +167,7 @@ func fridayEnv(binDir string) []string {
 	// commonServiceEnv() carries FRIDAY_HOME (which redirects getFridayHome
 	// for every consumer — workspaces, chats, sessions, skills.db,
 	// storage.db, memory, logs, .env), the .env baseline, and shared
-	// LINK_DEV_MODE etc. Sibling services (link, webhook-tunnel, playground)
+	// LINK_DEV_MODE etc. Sibling services (link, webhook-tunnel, studio-ui)
 	// receive the same baseline; pinning FRIDAY_HOME there ensures their
 	// own getFridayHome() resolves to the same launcher-owned home rather
 	// than drifting to the legacy ~/.atlas fallback.
@@ -195,7 +195,7 @@ func fridayEnv(binDir string) []string {
 // any other launcher-side knob: portOverride() reads via os.Getenv,
 // which doesn't see KVs that flow only through commonServiceEnv() into
 // spawned services. Without this call, a user setting
-// `FRIDAY_PORT_PLAYGROUND=15200` in .env would have no effect because
+// `FRIDAY_PORT_STUDIO_UI=15200` in .env would have no effect because
 // the launcher itself never observes the variable.
 func importDotEnvIntoProcessEnv() {
 	for _, kv := range loadDotEnv(filepath.Join(friendlyHome(), ".env")) {
@@ -388,7 +388,7 @@ var startOrder = []string{
 	"friday",
 	"link",
 	"webhook-tunnel",
-	"playground",
+	"studio-ui",
 }
 
 // processSpec captures the minimal launcher-side knowledge of one
@@ -414,7 +414,7 @@ func supervisedProcessNames() []string {
 		"friday",
 		"link",
 		"webhook-tunnel",
-		"playground",
+		"studio-ui",
 	}
 }
 
@@ -425,7 +425,7 @@ func supervisedProcessNames() []string {
 // The actual binaries are expected to live alongside the launcher in
 // the platform tarball. For QA / stub-based local dev, individual
 // ports can be overridden via env vars FRIDAY_PORT_<NAME>
-// (e.g. FRIDAY_PORT_PLAYGROUND=15200) so that tests don't collide
+// (e.g. FRIDAY_PORT_STUDIO_UI=15200) so that tests don't collide
 // with a developer's real Friday instance running on the production
 // ports.
 func supervisedProcesses(binDir string) []processSpec {
@@ -509,7 +509,7 @@ func supervisedProcesses(binDir string) []processSpec {
 			// Decision #32: the readiness probe MUST exercise the
 			// real handler stack at a public entry point — that's
 			// what makes "all healthy" actually mean "all usable".
-			// Playground is a SvelteKit app whose root path is a
+			// studio-ui is a SvelteKit app whose root path is a
 			// public landing; probing `/` catches the SvelteKit-
 			// not-yet-bound race that a sidecar `/api/health` would
 			// silently green-light. project_test.go pins this so a
@@ -518,7 +518,7 @@ func supervisedProcesses(binDir string) []processSpec {
 			// Carries .env so EXTERNAL_DAEMON_URL / EXTERNAL_TUNNEL_URL
 			// reach static-server.ts, which injects them into the
 			// served HTML for the browser's window.__FRIDAY_CONFIG__.
-			name: "playground", binary: filepath.Join(binDir, "playground"),
+			name: "studio-ui", binary: filepath.Join(binDir, "studio-ui"),
 			env:        commonServiceEnv(),
 			healthPort: "5200", healthPath: "/",
 		},
@@ -549,10 +549,9 @@ func supervisedProcesses(binDir string) []processSpec {
 			// tools/webhook-tunnel/main.go:11 reads TUNNEL_PORT
 			// (default 9090).
 			specs[i].env = append(specs[i].env, "TUNNEL_PORT="+port)
-		case "playground":
-			// tools/agent-playground/static-server.ts:18 reads
-			// PLAYGROUND_PORT (default 5200).
-			specs[i].env = append(specs[i].env, "PLAYGROUND_PORT="+port)
+		case "studio-ui":
+			// apps/studio-ui/static-server.ts reads STUDIO_UI_PORT (default 5200).
+			specs[i].env = append(specs[i].env, "STUDIO_UI_PORT="+port)
 		case "nats-server":
 			// nats-server uses --port <n> at index 1 of its args; the
 			// monitoring --http_port stays on the default 8222 so the
@@ -575,14 +574,14 @@ func portOverride(name string) string {
 	return osGetenv(envName)
 }
 
-// playgroundURL returns the loopback URL the tray opens in the user's
+// studioUIURL returns the loopback URL the tray opens in the user's
 // browser when the platform reaches "all healthy". Honors the
-// FRIDAY_PORT_playground override so installs that move playground off
+// FRIDAY_PORT_studio-ui override so installs that move studio-ui off
 // 5200 (e.g. to avoid collision with another local Friday instance) get
 // the right URL — without this the tray click silently lands on the
 // wrong port and the user sees a "can't connect" page.
-func playgroundURL() string {
-	port := portOverride("playground")
+func studioUIURL() string {
+	port := portOverride("studio-ui")
 	if port == "" {
 		port = "5200"
 	}
@@ -625,7 +624,7 @@ func newProjectFromSpecs(specs []processSpec) *types.Project {
 				// = 62s window before process-compose declares the
 				// process unhealthy and restarts it. The friday daemon
 				// alone takes ~24s on first boot (workspace scan + skill
-				// bundle hashing + cron registration), and playground's
+				// bundle hashing + cron registration), and studio-ui's
 				// SvelteKit-first-render takes another ~6-8s. The old
 				// 12s window (5 × 2s) was enough for warm restarts but
 				// not for the very first launch after install — every

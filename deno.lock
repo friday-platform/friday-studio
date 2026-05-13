@@ -6,14 +6,17 @@
     "jsr:@std/assert@1": "1.0.19",
     "jsr:@std/assert@^1.0.16": "1.0.19",
     "jsr:@std/assert@^1.0.19": "1.0.19",
+    "jsr:@std/async@1.0.15": "1.0.15",
     "jsr:@std/async@^1.0.15": "1.3.0",
     "jsr:@std/async@^1.3.0": "1.3.0",
+    "jsr:@std/cli@^1.0.6": "1.0.29",
     "jsr:@std/data-structures@^1.0.11": "1.0.11",
     "jsr:@std/dotenv@~0.225.5": "0.225.6",
     "jsr:@std/encoding@1": "1.0.10",
     "jsr:@std/encoding@1.0.10": "1.0.10",
     "jsr:@std/fmt@1": "1.0.10",
     "jsr:@std/fs@1": "1.0.23",
+    "jsr:@std/fs@1.0.13": "1.0.13",
     "jsr:@std/fs@^1.0.23": "1.0.23",
     "jsr:@std/internal@^1.0.12": "1.0.13",
     "jsr:@std/internal@^1.0.13": "1.0.13",
@@ -147,6 +150,7 @@
     "npm:minimatch@^10.2.5": "10.2.5",
     "npm:nanoid@5.1.11": "5.1.11",
     "npm:nanoid@^5.1.6": "5.1.11",
+    "npm:nats@2": "2.29.3",
     "npm:nats@^2.29.3": "2.29.3",
     "npm:node-html-parser@^7.1.0": "7.1.0",
     "npm:oauth4webapi@3.8.6": "3.8.6",
@@ -179,8 +183,10 @@
     "npm:xstate@^5.31.0": "5.31.0",
     "npm:yaml@^2.8.4": "2.8.4",
     "npm:yargs@18": "18.0.0",
+    "npm:zod@4": "4.4.3",
     "npm:zod@4.4.3": "4.4.3",
     "npm:zod@^4.2.1": "4.4.3",
+    "npm:zod@^4.3.5": "4.4.3",
     "npm:zod@^4.4.3": "4.4.3"
   },
   "jsr": {
@@ -206,11 +212,17 @@
         "jsr:@std/internal@^1.0.12"
       ]
     },
+    "@std/async@1.0.15": {
+      "integrity": "55d1d9d04f99403fe5730ab16bdcc3c47f658a6bf054cafb38a50f046238116e"
+    },
     "@std/async@1.3.0": {
       "integrity": "80485538a4f7baaa46bfe2246168069e02ed142b9f9079cd164f43bb060ad9e9",
       "dependencies": [
         "jsr:@std/data-structures"
       ]
+    },
+    "@std/cli@1.0.29": {
+      "integrity": "fa4ef29130baa834d8a13b7d138240c3a2fcfba740bfb7afa646a360a15ec84f"
     },
     "@std/data-structures@1.0.11": {
       "integrity": "53b98ed7efa61f107dfc14244bd2ec5557f7f7ee0bbaef6d449d7937facacb89"
@@ -223,6 +235,9 @@
     },
     "@std/fmt@1.0.10": {
       "integrity": "90dfba288802ac6de82fb31d0917eb9e4450b9925b954d5e51fc29ac07419db5"
+    },
+    "@std/fs@1.0.13": {
+      "integrity": "756d3ff0ade91c9e72b228e8012b6ff00c3d4a4ac9c642c4dac083536bf6c605"
     },
     "@std/fs@1.0.23": {
       "integrity": "3ecbae4ce4fee03b180fa710caff36bb5adb66631c46a6460aaad49515565a37",
@@ -6329,6 +6344,52 @@
           ]
         }
       },
+      "apps/studio-ui": {
+        "dependencies": [
+          "npm:hono@4.12.18"
+        ],
+        "packageJson": {
+          "dependencies": [
+            "npm:@ai-sdk/svelte@^4.0.177",
+            "npm:@codemirror/lang-markdown@^6.5.0",
+            "npm:@codemirror/lang-yaml@^6.1.3",
+            "npm:@codemirror/language@^6.12.3",
+            "npm:@codemirror/state@^6.6.0",
+            "npm:@codemirror/view@^6.42.1",
+            "npm:@hono/zod-validator@~0.7.6",
+            "npm:@lezer/highlight@^1.2.3",
+            "npm:@melt-ui/pp@~0.3.2",
+            "npm:@melt-ui/svelte@~0.86.6",
+            "npm:@opentelemetry/api@^1.9.1",
+            "npm:@sveltejs/adapter-static@^3.0.10",
+            "npm:@sveltejs/kit@^2.59.0",
+            "npm:@sveltejs/vite-plugin-svelte@~6.2.4",
+            "npm:@tanstack/query-core@^5.100.8",
+            "npm:@tanstack/svelte-query@^6.1.28",
+            "npm:@tanstack/svelte-table@9.0.0-alpha.41",
+            "npm:@tanstack/svelte-virtual@~3.13.24",
+            "npm:@types/deno@2.5.0",
+            "npm:ai@^6.0.177",
+            "npm:codemirror@^6.0.2",
+            "npm:diff@9",
+            "npm:dompurify@^3.4.2",
+            "npm:eslint@^10.3.0",
+            "npm:happy-dom@^20.9.0",
+            "npm:hono@4.12.18",
+            "npm:jszip@^3.10.1",
+            "npm:node-html-parser@^7.1.0",
+            "npm:prettier@^3.8.3",
+            "npm:shiki@^4.0.2",
+            "npm:svelte-check@^4.4.7",
+            "npm:svelte@^5.55.5",
+            "npm:typescript@^5.9.3",
+            "npm:vite@^7.3.2",
+            "npm:vitest@^4.1.0",
+            "npm:yaml@^2.8.4",
+            "npm:zod@^4.4.3"
+          ]
+        }
+      },
       "packages/adapters-md": {
         "packageJson": {
           "dependencies": [
@@ -6679,52 +6740,6 @@
             "npm:ai@^6.0.177",
             "npm:nats@^2.29.3",
             "npm:vitest@^4.1.0",
-            "npm:zod@^4.4.3"
-          ]
-        }
-      },
-      "tools/agent-playground": {
-        "dependencies": [
-          "npm:hono@4.12.18"
-        ],
-        "packageJson": {
-          "dependencies": [
-            "npm:@ai-sdk/svelte@^4.0.177",
-            "npm:@codemirror/lang-markdown@^6.5.0",
-            "npm:@codemirror/lang-yaml@^6.1.3",
-            "npm:@codemirror/language@^6.12.3",
-            "npm:@codemirror/state@^6.6.0",
-            "npm:@codemirror/view@^6.42.1",
-            "npm:@hono/zod-validator@~0.7.6",
-            "npm:@lezer/highlight@^1.2.3",
-            "npm:@melt-ui/pp@~0.3.2",
-            "npm:@melt-ui/svelte@~0.86.6",
-            "npm:@opentelemetry/api@^1.9.1",
-            "npm:@sveltejs/adapter-static@^3.0.10",
-            "npm:@sveltejs/kit@^2.59.0",
-            "npm:@sveltejs/vite-plugin-svelte@~6.2.4",
-            "npm:@tanstack/query-core@^5.100.8",
-            "npm:@tanstack/svelte-query@^6.1.28",
-            "npm:@tanstack/svelte-table@9.0.0-alpha.41",
-            "npm:@tanstack/svelte-virtual@~3.13.24",
-            "npm:@types/deno@2.5.0",
-            "npm:ai@^6.0.177",
-            "npm:codemirror@^6.0.2",
-            "npm:diff@9",
-            "npm:dompurify@^3.4.2",
-            "npm:eslint@^10.3.0",
-            "npm:happy-dom@^20.9.0",
-            "npm:hono@4.12.18",
-            "npm:jszip@^3.10.1",
-            "npm:node-html-parser@^7.1.0",
-            "npm:prettier@^3.8.3",
-            "npm:shiki@^4.0.2",
-            "npm:svelte-check@^4.4.7",
-            "npm:svelte@^5.55.5",
-            "npm:typescript@^5.9.3",
-            "npm:vite@^7.3.2",
-            "npm:vitest@^4.1.0",
-            "npm:yaml@^2.8.4",
             "npm:zod@^4.4.3"
           ]
         }

@@ -1,4 +1,4 @@
-# Agent Playground
+# Studio UI
 
 Local dev tool for executing and debugging Friday agents and workspaces. Runs as
 a SvelteKit app with a Hono API backend. No daemon, no database, no external
@@ -7,7 +7,7 @@ services — agents execute in hermetic isolation.
 ## Getting Started
 
 ```bash
-deno task playground     # from monorepo root — starts on http://localhost:5200
+deno task studio-ui     # from monorepo root — starts on http://localhost:5200
 ```
 
 Open `http://localhost:5200` in a browser. The sidebar has four sections:
@@ -125,7 +125,7 @@ Workspace execute also emits:
 ## File Structure
 
 ```
-tools/agent-playground/
+apps/studio-ui/
 ├── cli.ts                                 # Headless pipeline CLI
 ├── runs/workspaces/                       # Pipeline run artifacts
 ├── src/
@@ -234,8 +234,8 @@ const { agents } = await res.json(); // fully typed
 ## Tests
 
 ```bash
-deno task test tools/agent-playground/src/lib/server/    # all server tests
-deno task test tools/agent-playground/src/lib/server/lib/workspace/  # workspace harness
+deno task test apps/studio-ui/src/lib/server/    # all server tests
+deno task test apps/studio-ui/src/lib/server/lib/workspace/  # workspace harness
 ```
 
 ## Conventions

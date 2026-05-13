@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Platform entrypoint: starts atlasd, link, and agent-playground.
+# Platform entrypoint: starts atlasd, link, and studio-ui.
 # Follows the grafana/docker-otel-lgtm shell-based supervisor pattern.
 #
 set -euo pipefail
@@ -66,27 +66,27 @@ echo "[platform] Starting link on :3100..."
 link &
 LINK_PID=$!
 
-# Wait for backends before starting the playground — the playground proxies
-# to atlasd on load, so starting it early produces 500s in the browser.
+# Wait for backends before starting studio-ui — it proxies to atlasd on load,
+# so starting it early produces 500s in the browser.
 echo "[platform] Waiting for backend services..."
 wait_for_service "atlasd" "http://localhost:8080/health"
 wait_for_service "link"   "http://localhost:3100/health"
 
-# ── Start playground after backends are healthy ──────────────────────────────
+# ── Start studio-ui after backends are healthy ───────────────────────────────
 
-echo "[platform] Starting agent-playground on :5200..."
+echo "[platform] Starting studio-ui on :5200..."
 export VITE_EXTERNAL_DAEMON_URL="http://localhost:${FRIDAY_DAEMON_PORT:-18080}"
 export VITE_EXTERNAL_TUNNEL_URL="http://localhost:${FRIDAY_TUNNEL_PORT:-19090}"
-cd /app/tools/agent-playground
+cd /app/apps/studio-ui
 deno run -A --no-lock npm:vite dev --host 0.0.0.0 --port 5200 --logLevel warn &
-PLAYGROUND_PID=$!
+STUDIO_UI_PID=$!
 cd /app
 
 echo "[platform] Starting webhook-tunnel on :9090..."
 FRIDAYD_URL=http://localhost:8080 webhook-tunnel &
 TUNNEL_PID=$!
 
-wait_for_service "agent-playground" "http://localhost:5200"
+wait_for_service "studio-ui" "http://localhost:5200"
 wait_for_service "webhook-tunnel" "http://localhost:9090/health"
 
 echo ""
@@ -102,7 +102,7 @@ echo ""
 
 # ── Keep alive ───────────────────────────────────────────────────────────────
 # Wait for any service to exit — if one dies, stop everything
-wait -n $ATLASD_PID $LINK_PID $PLAYGROUND_PID $TUNNEL_PID 2>/dev/null || true
+wait -n $ATLASD_PID $LINK_PID $STUDIO_UI_PID $TUNNEL_PID 2>/dev/null || true
 
 echo "[platform] A service exited unexpectedly. Shutting down..."
 shutdown

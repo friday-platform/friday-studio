@@ -1,4 +1,4 @@
-# @atlas/agent-playground
+# @atlas/studio-ui
 
 Unified dev tool for agents and workspaces. SvelteKit + Hono with sidebar
 navigation, route-based pages, and full RPC type safety.
@@ -6,12 +6,12 @@ navigation, route-based pages, and full RPC type safety.
 ## Running
 
 ```bash
-deno task playground    # from monorepo root (http://localhost:5200)
+deno task studio-ui    # from monorepo root (http://localhost:5200)
 ```
 
-The playground also ships as a compiled binary in Friday Studio — the static
+studio-ui also ships as a compiled binary in Friday Studio — the static
 SvelteKit build is served alongside the Hono `/api/*` router from a single
-Deno entry point that gets `deno compile`'d into a `playground` binary.
+Deno entry point that gets `deno compile`'d into a `studio-ui` binary.
 
 ## Architecture
 

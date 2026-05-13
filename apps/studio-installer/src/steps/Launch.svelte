@@ -3,9 +3,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { onMount } from "svelte";
 import {
   extendWaitDeadline,
-  getPlaygroundService,
+  getStudioUIService,
   installDir,
-  openPlaygroundAndExit,
+  openStudioUIAndExit,
   runLaunch,
   waitForServices,
 } from "../lib/installer.ts";
@@ -82,8 +82,8 @@ async function onOpenLogs(): Promise<void> {
   }
 }
 
-// "Open anyway" gate: only show when playground is healthy at the
-// timeout AND nothing's outright failed. If the user's playground
+// "Open anyway" gate: only show when studio-ui is healthy at the
+// timeout AND nothing's outright failed. If the user's studio-ui
 // is stuck or another service is in failed state the browser would
 // hit a daemon that isn't going to recover, so we'd be sending the
 // user into a broken UI. Bail-out belongs to Exit instead.
@@ -91,8 +91,8 @@ let hasFailedService = $derived.by(() => store.services.some((s) => s.status ===
 let canOpenAnyway = $derived.by(() => {
   if (store.launchStage !== "timeout") return false;
   if (hasFailedService) return false;
-  const playground = getPlaygroundService();
-  return playground?.status === "healthy";
+  const studioUI = getStudioUIService();
+  return studioUI?.status === "healthy";
 });
 
 // "Wait again" gate: hide once the cap of 2 extensions is reached.
@@ -145,7 +145,7 @@ function prettyName(name: string): string {
       return "Authentication";
     case "webhook-tunnel":
       return "Webhook tunnel";
-    case "playground":
+    case "studio-ui":
       return "Studio UI";
     default:
       return name;
@@ -196,7 +196,7 @@ function prettyName(name: string): string {
             <span class="row-name">{prettyName(svc.name)}</span>
           </div>
         {/each}
-        <button class="primary" onclick={openPlaygroundAndExit}
+        <button class="primary" onclick={openStudioUIAndExit}
           >Open in Browser</button
         >
       </div>
@@ -247,7 +247,7 @@ function prettyName(name: string): string {
             <!--
               At least one supervised process is in a failed state
               (a real "✗", not just "starting…"). Opening the
-              playground would hit a daemon that isn't going to
+              studio-ui would hit a daemon that isn't going to
               recover; offering "Open anyway" would just send the
               user into a broken UI. Show Exit instead so they can
               close the wizard, fix the underlying error (usually
@@ -255,7 +255,7 @@ function prettyName(name: string): string {
             -->
             <button class="primary" onclick={onExitInstaller}>Exit</button>
           {:else if canOpenAnyway}
-            <button class="primary" onclick={openPlaygroundAndExit}
+            <button class="primary" onclick={openStudioUIAndExit}
               >Open anyway</button
             >
           {/if}

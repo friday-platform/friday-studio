@@ -57,7 +57,7 @@ const SSE_BACKOFF_MAX_MS: u64 = 2000;
 ///
 /// Sized for the 95th percentile of cold first boots: friday
 /// daemon needs ~30-60s on a fresh machine (workspace scan + skill
-/// bundle hashing + cron registration), then playground tacks on
+/// bundle hashing + cron registration), then studio-ui tacks on
 /// 10-30s for the first SvelteKit render. 90s soft → user sees
 /// "Still starting up…" past most slow boots without crying wolf
 /// on the median ~25s case.
@@ -71,7 +71,7 @@ const SOFT_DEADLINE_SECS: u64 = 90;
 ///
 /// Bumped from 90s → 180s after observing cold first boots on
 /// fresh macOS systems push past the 90s mark with friday and
-/// playground still in pending. Total budget with 3 extensions
+/// studio-ui still in pending. Total budget with 3 extensions
 /// of 60s = 180 + 180 = 360s (6 min) which is enough for the
 /// slowest boots we've seen.
 const HARD_DEADLINE_SECS: u64 = 180;
@@ -125,11 +125,11 @@ pub enum HealthEvent {
     /// Soft deadline (60s) elapsed. UI swaps to long-wait copy.
     SoftDeadline,
     /// Hard deadline elapsed. Carries the names of services NOT
-    /// healthy + a flag indicating whether playground is among the
+    /// healthy + a flag indicating whether studio-ui is among the
     /// healthy ones (used by the partial-success "Open anyway" rule).
     Timeout {
         stuck: Vec<String>,
-        playground_healthy: bool,
+        studio_ui_healthy: bool,
     },
     /// SSE-connect retry budget exhausted, stream closed
     /// unexpectedly, or stream errored mid-flight. Frontend shows
@@ -149,7 +149,7 @@ pub enum HealthEvent {
 /// Service name we treat as the user-facing surface for the
 /// partial-success "Open anyway" rule. Centralised here so the
 /// timeout-event builder and the frontend gate agree.
-const PLAYGROUND_SERVICE_NAME: &str = "playground";
+const STUDIO_UI_SERVICE_NAME: &str = "studio-ui";
 
 /// Mutable state shared between `wait_for_services` and
 /// `extend_wait_deadline`. The deadline is stored as nanos-from-
@@ -332,16 +332,16 @@ fn parse_sse_chunks(buf: &str) -> (usize, Vec<String>) {
 
 /// Build a `Timeout` event from the most-recent observed snapshot.
 /// `stuck` is every service whose status isn't "healthy";
-/// `playground_healthy` drives the partial-success rule. If we
+/// `studio_ui_healthy` drives the partial-success rule. If we
 /// never observed a snapshot (no SSE events arrived in the wait
 /// window — extreme), the timeout event is empty + non-healthy
-/// playground, which makes the frontend hide "Open anyway" and
+/// studio-ui, which makes the frontend hide "Open anyway" and
 /// just show View logs / Wait again.
 fn timeout_event_from_snapshot(latest: Option<&HealthSnapshot>) -> HealthEvent {
     let Some(snap) = latest else {
         return HealthEvent::Timeout {
             stuck: Vec::new(),
-            playground_healthy: false,
+            studio_ui_healthy: false,
         };
     };
     let stuck: Vec<String> = snap
@@ -350,13 +350,13 @@ fn timeout_event_from_snapshot(latest: Option<&HealthSnapshot>) -> HealthEvent {
         .filter(|s| s.status != "healthy")
         .map(|s| s.name.clone())
         .collect();
-    let playground_healthy = snap
+    let studio_ui_healthy = snap
         .services
         .iter()
-        .any(|s| s.name == PLAYGROUND_SERVICE_NAME && s.status == "healthy");
+        .any(|s| s.name == STUDIO_UI_SERVICE_NAME && s.status == "healthy");
     HealthEvent::Timeout {
         stuck,
-        playground_healthy,
+        studio_ui_healthy,
     }
 }
 
@@ -405,7 +405,7 @@ pub async fn wait_for_services(
     let mut soft_fired = false;
     let mut timeout_fired = false;
     // Track the most-recent snapshot so the timeout event can
-    // populate `stuck` + `playground_healthy` honestly.
+    // populate `stuck` + `studio_ui_healthy` honestly.
     let mut latest_snapshot: Option<HealthSnapshot> = None;
 
     let mut stream = resp.bytes_stream();
@@ -429,7 +429,7 @@ pub async fn wait_for_services(
         if remaining_nanos <= 0 {
             // Hard deadline elapsed.
             //   - First time: emit Timeout (with the real stuck
-            //     list and playground status) and park on the
+            //     list and studio-ui status) and park on the
             //     extend_notify; resuming on extension or supersede.
             //   - If the cap is reached and no further extension
             //     can come: the frontend stops calling extend, the
@@ -722,47 +722,47 @@ mod tests {
         let s = snap(vec![
             svc("nats-server", "healthy"),
             svc("friday", "starting"),
-            svc("playground", "starting"),
+            svc("studio-ui", "starting"),
         ]);
         let HealthEvent::Timeout {
             stuck,
-            playground_healthy,
+            studio_ui_healthy,
         } = timeout_event_from_snapshot(Some(&s))
         else {
             panic!("expected Timeout variant");
         };
-        assert_eq!(stuck, vec!["friday".to_string(), "playground".to_string()]);
-        assert!(!playground_healthy);
+        assert_eq!(stuck, vec!["friday".to_string(), "studio-ui".to_string()]);
+        assert!(!studio_ui_healthy);
     }
 
     #[test]
-    fn timeout_event_sets_playground_healthy_when_playground_green() {
+    fn timeout_event_sets_studio_ui_healthy_when_studio_ui_green() {
         let s = snap(vec![
-            svc("playground", "healthy"),
+            svc("studio-ui", "healthy"),
             svc("webhook-tunnel", "starting"),
         ]);
         let HealthEvent::Timeout {
             stuck,
-            playground_healthy,
+            studio_ui_healthy,
         } = timeout_event_from_snapshot(Some(&s))
         else {
             panic!("expected Timeout variant");
         };
         assert_eq!(stuck, vec!["webhook-tunnel".to_string()]);
-        assert!(playground_healthy);
+        assert!(studio_ui_healthy);
     }
 
     #[test]
     fn timeout_event_no_snapshot_yields_empty_payload() {
         let HealthEvent::Timeout {
             stuck,
-            playground_healthy,
+            studio_ui_healthy,
         } = timeout_event_from_snapshot(None)
         else {
             panic!("expected Timeout variant");
         };
         assert!(stuck.is_empty());
-        assert!(!playground_healthy);
+        assert!(!studio_ui_healthy);
     }
 
     // ── WaitDeadlineState extension cap ────────────────────────

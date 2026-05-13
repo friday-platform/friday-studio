@@ -1,7 +1,7 @@
 # Third-Party Licenses
 
 This file lists every third-party dependency bundled into a shipped Friday
-Studio artifact (the daemon, CLI, web playground, Friday Launcher,
+Studio artifact (the daemon, CLI, Studio UI, Friday Launcher,
 webhook tunnel, and Studio Installer). It is generated automatically by
 [`scripts/generate-third-party-licenses.sh`](scripts/generate-third-party-licenses.sh).
 
@@ -834,7 +834,7 @@ Bundled into: `apps/studio-installer` (Tauri installer binary).
 
 ## npm / JSR packages
 
-Bundled into: the Atlas daemon, CLI, web playground, and any compiled
+Bundled into: the Atlas daemon, CLI, Studio UI, and any compiled
 Deno binaries. Inventory is taken from `deno.lock`.
 
 | Package | Version | Source |

@@ -395,7 +395,7 @@ curl -s -X POST "http://localhost:8080/api/agents/my-agent/run?workspaceId=user"
   -d '{"input": "test prompt"}'
 ```
 
-Or via the playground API on `localhost:5200`:
+Or via Studio UI on `localhost:5200`:
 
 ```bash
 curl -s -X POST http://localhost:5200/api/agents/my-agent/run \

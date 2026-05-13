@@ -110,7 +110,7 @@ jobs:
         with:
           deno-version: v2.x
 
-      - name: Setup Node.js (playground vite build)
+      - name: Setup Node.js (studio-ui vite build)
         uses: actions/setup-node@v6
         with:
           node-version: '24'
@@ -139,15 +139,15 @@ jobs:
         # `npm install` runs `prepare: svelte-kit sync` for each SvelteKit
         # package and generates `.svelte-kit/tsconfig.json`, which is what
         # `packages/ui/tsconfig.json` extends. `deno install` skips lifecycle
-        # scripts, so without an explicit sync step the playground vite build
+        # scripts, so without an explicit sync step the studio-ui vite build
         # fails with `failed to resolve "extends":"./.svelte-kit/tsconfig.json"`.
         shell: bash
         run: |
           cd packages/ui && npx svelte-kit sync
-          cd ../../tools/agent-playground && npx svelte-kit sync
+          cd ../../apps/studio-ui && npx svelte-kit sync
 
-      - name: Build playground static UI
-        working-directory: tools/agent-playground
+      - name: Build studio-ui static UI
+        working-directory: apps/studio-ui
         run: npm run build
 
       - name: Import Apple Developer ID certificate (macOS)
@@ -181,7 +181,7 @@ jobs:
           set -euo pipefail
           STAGING="dist/${{ matrix.target }}/staging"
           # Sign every Mach-O binary in staging with Hardened Runtime so
-          # notarization passes. atlas/link/playground/webhook-tunnel run JIT
+          # notarization passes. atlas/link/studio-ui/webhook-tunnel run JIT
           # (V8) so they need entitlements for unsigned-executable-memory.
           ENTITLEMENTS="$(mktemp -t entitlements.plist).plist"
           cat > "$ENTITLEMENTS" <<'PLIST'
@@ -211,7 +211,7 @@ jobs:
           for f in \
               "bin/friday" \
               "bin/link" \
-              "bin/playground" \
+              "bin/studio-ui" \
               "bin/webhook-tunnel" \
               "friday-launcher" \
               "bin/gh" \

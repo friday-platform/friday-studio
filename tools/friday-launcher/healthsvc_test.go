@@ -64,12 +64,12 @@ func TestDeriveStatus_Running(t *testing.T) {
 	}{
 		{
 			"running ready",
-			runningReady("playground"),
+			runningReady("studio-ui"),
 			statusHealthy,
 		},
 		{
 			"running not ready",
-			runningNotReady("playground"),
+			runningNotReady("studio-ui"),
 			statusStarting,
 		},
 		{
@@ -185,7 +185,7 @@ func TestHealthCache_TransitionUpdatesSinceSecs(t *testing.T) {
 	c := NewHealthCache(&sd)
 
 	// First observation — service is starting.
-	c.Update(makeStates(runningNotReady("playground")))
+	c.Update(makeStates(runningNotReady("studio-ui")))
 
 	// Sleep enough for SinceSecs to roll past 0 if the service
 	// stayed in starting. Then transition to healthy.
@@ -193,14 +193,14 @@ func TestHealthCache_TransitionUpdatesSinceSecs(t *testing.T) {
 
 	// If we re-Update with the SAME state, transitionAt must NOT
 	// move — SinceSecs reflects how long it's been starting.
-	c.Update(makeStates(runningNotReady("playground")))
+	c.Update(makeStates(runningNotReady("studio-ui")))
 	got, _, _ := c.Snapshot()
 	if got[0].SinceSecs < 1 {
 		t.Fatalf("expected SinceSecs >= 1 for unchanged status, got %d", got[0].SinceSecs)
 	}
 
 	// Now transition. SinceSecs must reset to 0.
-	c.Update(makeStates(runningReady("playground")))
+	c.Update(makeStates(runningReady("studio-ui")))
 	got, _, _ = c.Snapshot()
 	if got[0].Status != statusHealthy {
 		t.Fatalf("status = %q, want healthy", got[0].Status)
@@ -647,7 +647,7 @@ func TestStartHealthServer_EndToEnd_GET(t *testing.T) {
 func TestHealthStream_DeliversInitialAndTransition(t *testing.T) {
 	var sd atomic.Bool
 	c := NewHealthCache(&sd)
-	c.Update(makeStates(runningNotReady("playground")))
+	c.Update(makeStates(runningNotReady("studio-ui")))
 
 	r := chi.NewRouter()
 	r.Get("/api/launcher-health/stream", handleHealthStream(c))
@@ -685,12 +685,12 @@ func TestHealthStream_DeliversInitialAndTransition(t *testing.T) {
 		t.Fatalf("first event decode: %v", err)
 	}
 	if firstBody.AllHealthy {
-		t.Errorf("initial snapshot AllHealthy = true, want false (playground starting)")
+		t.Errorf("initial snapshot AllHealthy = true, want false (studio-ui starting)")
 	}
 
 	// Transition. SSE consumer should receive a follow-up event
 	// with all_healthy: true.
-	c.Update(makeStates(runningReady("playground")))
+	c.Update(makeStates(runningReady("studio-ui")))
 
 	second, err := readSSEEvent(rd)
 	if err != nil {
@@ -805,7 +805,7 @@ func TestHealthRouter_PanicRecovery(t *testing.T) {
 func TestHealthStream_NoDuplicateInitialEmit(t *testing.T) {
 	var sd atomic.Bool
 	c := NewHealthCache(&sd)
-	c.Update(makeStates(runningNotReady("playground")))
+	c.Update(makeStates(runningNotReady("studio-ui")))
 
 	r := chi.NewRouter()
 	r.Get("/api/launcher-health/stream", handleHealthStream(c))
@@ -844,7 +844,7 @@ func TestHealthStream_NoDuplicateInitialEmit(t *testing.T) {
 	// Drive the transition. Without the drain, the stream's NEXT
 	// event would be a stale duplicate (still NotReady) and the
 	// real transition would land as a third event.
-	c.Update(makeStates(runningReady("playground")))
+	c.Update(makeStates(runningReady("studio-ui")))
 
 	second, err := readSSEEvent(rd)
 	if err != nil {
