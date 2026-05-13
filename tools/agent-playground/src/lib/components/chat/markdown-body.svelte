@@ -37,7 +37,12 @@
   }
   const { content, settled = true }: Props = $props();
 
-  const THROTTLE_MS = 80;
+  // 80ms (12 fps) chewed enough CPU on `marked.parse` + `DOMPurify.sanitize`
+  // calls during a 50-row table stream that the renderer couldn't keep up
+  // with the chunk rate. 120ms (≈8 fps) is still well under the perceptual
+  // threshold for "streaming", and the trailing flush on `settled` lands the
+  // final content immediately so the user never sees a stale tail.
+  const THROTTLE_MS = 120;
 
   let html = $state(markdownToHTMLSafe(content));
   let lastRendered = content;

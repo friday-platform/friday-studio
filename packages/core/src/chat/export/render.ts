@@ -126,6 +126,99 @@ function readNestedParentId(data: unknown): string | undefined {
 }
 
 /**
+ * Optional inputs that let `extractToolCalls` preserve reference identity
+ * for tool-call entries (and their `Segment` parents) across re-runs.
+ *
+ * The live chat UI calls `extractToolCalls` on every streaming chunk for
+ * the tail assistant message. Without ref-stable output, every downstream
+ * `$derived` in `ToolBurst` / `ToolCallCard` re-runs each tick, and any
+ * cached work keyed on the call object (e.g. the Shiki JSON highlighter
+ * memo in `format-raw-output.ts`) misses immediately. See profiling notes
+ * in `/Users/ericskram/.../memory/` if reintroducing this contract.
+ *
+ * Pass the flattened map from the *previous* `extractToolCalls` result as
+ * `prevByToolCallId`. Entries whose shallow shape matches (state, input ref,
+ * output ref, error text, duration, reasoning, delegate text, progress
+ * length, child refs) are returned by reference instead of as fresh objects.
+ *
+ * Pure helper — never mutates the previous map.
+ */
+export interface ExtractToolCallsOptions {
+  prevByToolCallId?: ReadonlyMap<string, ToolCallDisplay>;
+}
+
+/**
+ * Cheap structural equality for `ToolCallDisplay`. The deep fields
+ * (`input`, `output`, `children`) are compared by reference because the
+ * upstream `msg.parts[]` reuses object references for the same payload
+ * across re-runs (AI SDK v6 contract — see `lifted-markers.ts` for the
+ * same reliance). `progress` is array-by-reference; we compare lengths
+ * as a fast falsifier in case the array was rebuilt in place.
+ */
+function toolCallShallowEqual(a: ToolCallDisplay, b: ToolCallDisplay): boolean {
+  if (a === b) return true;
+  if (
+    a.toolCallId !== b.toolCallId ||
+    a.toolName !== b.toolName ||
+    a.state !== b.state ||
+    a.input !== b.input ||
+    a.output !== b.output ||
+    a.errorText !== b.errorText ||
+    a.durationMs !== b.durationMs ||
+    a.reasoning !== b.reasoning ||
+    a.delegateText !== b.delegateText ||
+    a.workspaceId !== b.workspaceId ||
+    a.sessionId !== b.sessionId ||
+    a.actionId !== b.actionId ||
+    a.jobName !== b.jobName
+  ) {
+    return false;
+  }
+  if (a.progress !== b.progress) {
+    const al = a.progress?.length ?? 0;
+    const bl = b.progress?.length ?? 0;
+    if (al !== bl) return false;
+  }
+  // Children are stabilised bottom-up before the parent equality check, so
+  // a reference match here implies the subtree is unchanged.
+  return a.children === b.children;
+}
+
+/**
+ * Walk `entries` bottom-up. For each entry, recursively stabilise children,
+ * then compare against `prev`. If everything matches, reuse the previous
+ * reference; otherwise return a fresh node carrying the stabilised children.
+ */
+function stabilizeTree(
+  entries: ToolCallDisplay[],
+  prevByToolCallId: ReadonlyMap<string, ToolCallDisplay>,
+): ToolCallDisplay[] {
+  let mutated = false;
+  const out: ToolCallDisplay[] = new Array(entries.length);
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i]!;
+    let nextChildren = entry.children;
+    if (nextChildren && nextChildren.length > 0) {
+      const stabilisedChildren = stabilizeTree(nextChildren, prevByToolCallId);
+      if (stabilisedChildren !== nextChildren) {
+        nextChildren = stabilisedChildren;
+      }
+    }
+    const candidate: ToolCallDisplay =
+      nextChildren === entry.children ? entry : { ...entry, children: nextChildren };
+    const prev = prevByToolCallId.get(entry.toolCallId);
+    if (prev && toolCallShallowEqual(prev, candidate)) {
+      out[i] = prev;
+      if (prev !== entry) mutated = true;
+    } else {
+      out[i] = candidate;
+      if (candidate !== entry) mutated = true;
+    }
+  }
+  return mutated ? out : entries;
+}
+
+/**
  * Extract tool-call parts from an {@link AtlasUIMessage} in stream order,
  * reconstruct any nested delegate children, and reconcile their final
  * states using the `delegate-end` blanket rule.
@@ -145,8 +238,15 @@ function readNestedParentId(data: unknown): string | undefined {
  * for a future reflection layer, not the UI tree. `durationMap` is scoped
  * by `delegateToolCallId` so multiple delegates with identically-named
  * children do not collide.
+ *
+ * When `options.prevByToolCallId` is supplied, returned nodes (and their
+ * subtrees) preserve reference identity wherever the structural shape is
+ * unchanged. See {@link ExtractToolCallsOptions}.
  */
-export function extractToolCalls(msg: AtlasUIMessage): ToolCallDisplay[] {
+export function extractToolCalls(
+  msg: AtlasUIMessage,
+  options?: ExtractToolCallsOptions,
+): ToolCallDisplay[] {
   if (!Array.isArray(msg.parts)) return [];
 
   // Pass 1: flat top-level tool calls.
@@ -425,6 +525,9 @@ export function extractToolCalls(msg: AtlasUIMessage): ToolCallDisplay[] {
     }
   }
 
+  if (options?.prevByToolCallId && options.prevByToolCallId.size > 0) {
+    return stabilizeTree(trees, options.prevByToolCallId);
+  }
   return trees;
 }
 
@@ -451,16 +554,42 @@ export function flattenToolCalls(calls: ToolCallDisplay[]): Map<string, ToolCall
 }
 
 /**
+ * Inputs that let `buildSegments` preserve reference identity for the
+ * returned segments (and any nested `ToolCallDisplay` entries) across
+ * re-runs of the same message. See {@link ExtractToolCallsOptions}.
+ *
+ * `prevSegments` lets `tool-burst` segments reuse their previous reference
+ * when the contained calls are identical by reference (post tool-call
+ * stabilisation). Text segments reuse their previous reference when the
+ * coalesced content matches the prior content character-for-character.
+ */
+export interface BuildSegmentsOptions extends ExtractToolCallsOptions {
+  prevSegments?: readonly Segment[];
+}
+
+function callsArrayEqual(a: ToolCallDisplay[], b: ToolCallDisplay[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
+/**
  * Build chronological {@link Segment}s from an {@link AtlasUIMessage}'s
  * `parts[]` array. Consecutive text parts coalesce into a single `text`
  * segment; consecutive tool-call parts (and any reasoning that arrived
  * between them) group into a `tool-burst` segment. This preserves the
  * true stream order so the UI can render prose and tool activity exactly
  * where they happened.
+ *
+ * Pass `options` to opt into reference-stable output. See
+ * {@link BuildSegmentsOptions} for the contract.
  */
-export function buildSegments(msg: AtlasUIMessage): Segment[] {
+export function buildSegments(msg: AtlasUIMessage, options?: BuildSegmentsOptions): Segment[] {
   if (!Array.isArray(msg.parts)) return [];
-  const allToolCalls = extractToolCalls(msg);
+  const allToolCalls = extractToolCalls(msg, options);
   const toolMap = flattenToolCalls(allToolCalls);
   // Walk parts as opaque records — the AI SDK discriminated union narrows
   // each adjacent type check into dead code once we touch part.type.
@@ -541,7 +670,48 @@ export function buildSegments(msg: AtlasUIMessage): Segment[] {
 
   flushText();
   flushBurst();
-  return segments;
+
+  const prevSegments = options?.prevSegments;
+  if (!prevSegments || prevSegments.length === 0) return segments;
+
+  // Position-aligned reuse: when the i-th new segment is structurally
+  // identical to the i-th previous segment, swap in the previous reference.
+  // Keeps the burst-id stable (matters for `<details>` open state) and lets
+  // downstream `$derived` short-circuit on reference equality. When *every*
+  // entry matches the prior `prevSegments`, return that array itself so the
+  // caller's reactive subscribers see the array reference as unchanged.
+  let mutated = false;
+  let allFromPrev = segments.length === prevSegments.length;
+  const out: Segment[] = new Array(segments.length);
+  for (let i = 0; i < segments.length; i++) {
+    const seg = segments[i]!;
+    const prev = prevSegments[i];
+    if (!prev || prev.type !== seg.type) {
+      out[i] = seg;
+      allFromPrev = false;
+      continue;
+    }
+    if (seg.type === "text" && prev.type === "text" && seg.content === prev.content) {
+      out[i] = prev;
+      if (prev !== seg) mutated = true;
+      continue;
+    }
+    if (
+      seg.type === "tool-burst" &&
+      prev.type === "tool-burst" &&
+      seg.id === prev.id &&
+      seg.reasoning === prev.reasoning &&
+      callsArrayEqual(seg.calls, prev.calls)
+    ) {
+      out[i] = prev;
+      if (prev !== seg) mutated = true;
+      continue;
+    }
+    out[i] = seg;
+    allFromPrev = false;
+  }
+  if (allFromPrev) return prevSegments as Segment[];
+  return mutated ? out : segments;
 }
 
 /**

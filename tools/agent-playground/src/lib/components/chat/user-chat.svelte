@@ -21,7 +21,8 @@
   import { nextQueueStep } from "./chat-queue.ts";
   import { nextResumeBudgetStep } from "./resume-budget.ts";
   import { nextSpeechChunk } from "./chat-tts.ts";
-  import { buildSegments, extractImages } from "@atlas/core/chat/export/render";
+  import { buildSegments, extractImages, flattenToolCalls } from "@atlas/core/chat/export/render";
+  import type { Segment } from "@atlas/core/chat/export/render";
   import { extractErrorText, hasErrorPart, hasRenderableContent } from "./message-error.ts";
   import type { ChatMessage, ToolCallDisplay } from "./types";
   import { GetChatResponseSchema } from "./types";
@@ -952,6 +953,27 @@
   type CachedDisplayMessage = { sig: string; result: ChatMessage };
   const displayCache: WeakMap<AtlasUIMessage, CachedDisplayMessage> = new WeakMap();
 
+  /**
+   * Tail-message memo. The `displayCache` above caches by signature for
+   * settled history messages, but the tail rebuilds on every chunk by
+   * design — its content is what's changing. Without ref-stable output,
+   * every `ToolCallDisplay` rebuilds fresh each tick and every downstream
+   * `$derived` (in `ToolBurst`, `ToolCallCard`, and the Shiki-backed
+   * `formatRawOutput` memo) misses its cache. Streaming a 50-row markdown
+   * table during a delegated tool run pushed Shiki tokenisation to ~6% of
+   * total CPU before this memo (profiled 2026-05-12).
+   *
+   * Keyed on the {@link AtlasUIMessage} reference so it auto-evicts when
+   * AI SDK drops the message; the `calls` map feeds back into
+   * `extractToolCalls` and `segments` feeds back into `buildSegments` to
+   * preserve identity wherever the structural shape is unchanged.
+   */
+  type TailMemo = {
+    calls: ReadonlyMap<string, ToolCallDisplay>;
+    segments: readonly Segment[];
+  };
+  const tailMemoCache: WeakMap<AtlasUIMessage, TailMemo> = new WeakMap();
+
   function displaySignature(msg: AtlasUIMessage): string {
     const parts = Array.isArray(msg.parts) ? msg.parts : [];
     const lastIdx = parts.length - 1;
@@ -1066,6 +1088,26 @@
       const m = (typeof msg.metadata === "object" && msg.metadata !== null
         ? msg.metadata
         : {}) as Record<string, unknown>;
+      const tailMemo = isTail ? tailMemoCache.get(msg) : undefined;
+      const segments = buildSegments(
+        msg,
+        tailMemo
+          ? { prevByToolCallId: tailMemo.calls, prevSegments: tailMemo.segments }
+          : undefined,
+      );
+      if (isTail) {
+        // Flatten once for the next pass; `flattenToolCalls` is O(tree-size)
+        // and the result feeds `prevByToolCallId` so ref-stability propagates
+        // across the streaming tick.
+        const burstCalls: ToolCallDisplay[] = [];
+        for (const seg of segments) {
+          if (seg.type === "tool-burst") burstCalls.push(...seg.calls);
+        }
+        tailMemoCache.set(msg, {
+          calls: flattenToolCalls(burstCalls),
+          segments,
+        });
+      }
       const result: ChatMessage = {
         id: msg.id,
         role: (msg.role === "user"
@@ -1073,7 +1115,7 @@
           : msg.role === "system"
             ? "system"
             : "assistant") as "user" | "assistant" | "system",
-        segments: buildSegments(msg),
+        segments,
         timestamp: ts,
         images: extractImages(msg),
         errorText: extractErrorText(msg),
