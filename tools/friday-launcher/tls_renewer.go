@@ -139,6 +139,9 @@ func tlsRenewIntervalValue() time.Duration {
 // certificate block. Returns nil + error if the file is missing,
 // unreadable, malformed, or contains no CERTIFICATE block.
 func parseCert(path string) (*x509.Certificate, error) {
+	// #nosec G304 -- path is resolved by launcher cert resolvers
+	// (tlsCertPath / s2sCertPath / s2sCAPath) from FRIDAY_LAUNCHER_HOME;
+	// the launcher reads certs it generated or downloaded itself.
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -237,12 +240,15 @@ func needsRefresh(now time.Time) bool {
 // either the prior content or the full new content — never a torn key
 // that would surface as a TLS handshake failure with no obvious cause.
 func atomicWrite(path string, data []byte, mode os.FileMode) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return fmt.Errorf("mkdir %s: %w", filepath.Dir(path), err)
 	}
 	tmp := path + ".tmp"
 	_ = os.Remove(tmp) // stale tmp from a prior crash is fine to drop
 
+	// #nosec G304 -- tmp is `<launcher-resolved cert path>.tmp` inside
+	// FRIDAY_LAUNCHER_HOME; opening files the launcher owns is the
+	// intended affordance.
 	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
 	if err != nil {
 		return fmt.Errorf("create tmp %s: %w", tmp, err)
@@ -288,7 +294,7 @@ func fetchTLSManifest(ctx context.Context, url string) (*tlsManifest, error) {
 	if err != nil {
 		return nil, fmt.Errorf("fetch %s: %w", url, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("manifest %s: HTTP %d", url, resp.StatusCode)
 	}
@@ -313,7 +319,7 @@ func fetchAndVerify(ctx context.Context, entry tlsManifestFile, label string) ([
 	if err != nil {
 		return nil, fmt.Errorf("fetch %s: %w", label, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("%s: HTTP %d", label, resp.StatusCode)
 	}
@@ -361,6 +367,9 @@ func refreshFromManifest(ctx context.Context) (bool, error) {
 			return false, fmt.Errorf("manifest missing %s", f.manifestName)
 		}
 		onDisk := filepath.Join(tlsCertDir(), f.onDiskName)
+		// #nosec G304 -- onDisk is built from tlsCertDir() (under
+		// FRIDAY_LAUNCHER_HOME) and a manifest-driven filename; reading
+		// the launcher's own cert directory is the intended affordance.
 		existing, _ := os.ReadFile(onDisk)
 		if len(existing) > 0 {
 			sum := sha256.Sum256(existing)

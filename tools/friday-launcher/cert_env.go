@@ -68,10 +68,13 @@ func certEnvKeys() [][2]string {
 // 7 cert paths to .env" on first run and stay silent on warm boots.
 func ensureCertEnvFile() (int, error) {
 	path := envFilePath()
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return 0, fmt.Errorf("mkdir env dir: %w", err)
 	}
 
+	// #nosec G304 -- envFilePath() resolves to ~/.friday/local/.env via
+	// friendlyHome(); reading the operator's own launcher home is the
+	// intended affordance, not a vulnerability.
 	existing, _ := os.ReadFile(path)
 	present := map[string]struct{}{}
 	for line := range strings.SplitSeq(string(existing), "\n") {
