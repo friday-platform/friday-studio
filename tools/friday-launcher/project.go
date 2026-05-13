@@ -691,27 +691,10 @@ func playgroundURL() string {
 	if port == "" {
 		port = "5200"
 	}
-	if hasBrowserTLS() {
+	if hasValidBrowserCert() {
 		return "https://local.hellofriday.ai:" + port
 	}
 	return "http://localhost:" + port
-}
-
-// hasBrowserTLS reports whether the installer-fetched browser-trusted
-// cert pair is on disk. Mirrors the resolution order tls-paths.ts uses
-// on the playground side so the launcher's URL and the playground's
-// listener stay in lock-step: if the playground can serve TLS, the URL
-// the launcher opens must be https.
-func hasBrowserTLS() bool {
-	cert := filepath.Join(friendlyHome(), "tls", "browser.crt")
-	key := filepath.Join(friendlyHome(), "tls", "browser.key")
-	if _, err := os.Stat(cert); err != nil {
-		return false
-	}
-	if _, err := os.Stat(key); err != nil {
-		return false
-	}
-	return true
 }
 
 // newProjectFromSpecs builds the typed types.Project from a list of

@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 // Verify the .env values the installer writes flow through to all
@@ -342,7 +343,12 @@ func TestPlaygroundURL_UsesHttpsWhenCertPresent(t *testing.T) {
 	if err := os.MkdirAll(tlsDir, 0o755); err != nil {
 		t.Fatalf("mkdir tls: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(tlsDir, "browser.crt"), []byte("cert"), 0o644); err != nil {
+	// Real PEM matters now that playgroundURL/hasValidBrowserCert parses
+	// the file and checks notBefore/notAfter — a stub body would round-
+	// trip as "invalid cert" and the URL would stay on http.
+	half := 12 * time.Hour
+	certPEM, _ := makeTestCert(t, 24*time.Hour, &half)
+	if err := os.WriteFile(filepath.Join(tlsDir, "browser.crt"), certPEM, 0o644); err != nil {
 		t.Fatalf("write cert: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(tlsDir, "browser.key"), []byte("key"), 0o600); err != nil {
@@ -356,6 +362,29 @@ func TestPlaygroundURL_UsesHttpsWhenCertPresent(t *testing.T) {
 	t.Setenv("FRIDAY_PORT_PLAYGROUND", "15200")
 	if got := playgroundURL(); got != "https://local.hellofriday.ai:15200" {
 		t.Errorf("playgroundURL with cert+port override = %q, want https://local.hellofriday.ai:15200", got)
+	}
+}
+
+func TestPlaygroundURL_FallsBackToHttpWhenCertExpired(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("FRIDAY_LAUNCHER_HOME", tmp)
+
+	tlsDir := filepath.Join(tmp, "tls")
+	if err := os.MkdirAll(tlsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// notBefore = now - 25h, lifetime = 24h → notAfter = now - 1h → expired.
+	pastAge := 25 * time.Hour
+	expiredPEM, _ := makeTestCert(t, 24*time.Hour, &pastAge)
+	if err := os.WriteFile(filepath.Join(tlsDir, "browser.crt"), expiredPEM, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tlsDir, "browser.key"), []byte("k"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("FRIDAY_PORT_PLAYGROUND", "15200")
+	if got := playgroundURL(); got != "http://localhost:15200" {
+		t.Errorf("playgroundURL with expired cert = %q, want http://localhost:15200", got)
 	}
 }
 

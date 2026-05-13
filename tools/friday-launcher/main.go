@@ -383,6 +383,16 @@ func onReady() {
 		"url", natsServerURL(),
 	)
 
+	// Boot-time browser-cert refresh. Bounded at bootRefreshTimeout
+	// (5s) so a stuck CDN can't delay launcher startup. Run BEFORE
+	// supervisedProcesses() so the playground spec's first read of
+	// browser.{crt,key} (via tls-paths.ts at process startup) sees
+	// the freshly-rotated pair. If it fails or runs out of budget,
+	// the playground starts on whatever's on disk — expired or
+	// missing certs cause tls-paths.ts to return null and the
+	// playground falls back to plain http on its loopback port.
+	maybeBootRefreshTLS()
+
 	// Build project + supervisor.
 	specs := supervisedProcesses(binDir)
 	project := newProjectFromSpecs(specs)
@@ -406,6 +416,15 @@ func onReady() {
 	pollCtx, pollCancel := context.WithCancel(context.Background())
 	healthPollCancel = pollCancel
 	go runHealthPoll(pollCtx, sup, healthCache)
+
+	// Daily browser-cert renewer. Wakes once per tlsRenewInterval
+	// (default 24h, override via FRIDAY_TLS_RENEW_INTERVAL); when the
+	// on-disk cert is past 2/3 of its issued lifetime, expired, or
+	// missing, fetches the manifest, sha256-verifies the new pair,
+	// atomic-installs them, and triggers a single-process restart of
+	// the playground so it picks up the new files. Shares pollCtx so
+	// performShutdown cancels both goroutines in one step.
+	startTLSRenewer(pollCtx, sup)
 
 	// Tray controller (goroutine B + click handlers). healthCache
 	// drives the bucket logic per Decision #4 — the existing
