@@ -1,6 +1,6 @@
 ---
 name: workspace-api
-description: "Create, list, update, delete, and clean up workspaces via the daemon HTTP API (localhost:8080). Use when the user asks to create, edit, delete, or list workspaces, spaces, projects, or environments; add or patch signals / agents / jobs / memory / skills; convert a workspace.yml into a live workspace; wire up triggers (HTTP webhooks, cron, fs-watch, Slack / Telegram / WhatsApp); or clean up test/scratch workspaces."
+description: "Create, list, update, delete, and clean up workspaces via the daemon HTTP API on localhost:8080 (or https://localhost:8080 when TLS is enabled via scripts/setup-tls.sh). Use when the user asks to create, edit, delete, or list workspaces, spaces, projects, or environments; add or patch signals / agents / jobs / memory / skills; convert a workspace.yml into a live workspace; wire up triggers (HTTP webhooks, cron, fs-watch, Slack / Telegram / WhatsApp); or clean up test/scratch workspaces."
 ---
 
 # Workspace API
@@ -206,22 +206,31 @@ The failure mode this prevents: reaching for `agent_claude-code` as a panic butt
 
 ## CRUD reference — curl examples
 
-All examples assume the daemon is on `localhost:8080`. Confirm first:
+All examples below use `$FRIDAYD_URL` and a `friday_curl` helper that adds
+`--cacert` when TLS is on. Paste this preamble once per shell so the
+examples work on both plain-HTTP and TLS-enabled installs:
 
 ```bash
-curl -sf http://localhost:8080/health && echo OK
+set -a; [ -f ~/.atlas/.env ] && . ~/.atlas/.env; set +a
+friday_curl() { curl ${FRIDAY_TLS_CA:+--cacert "$FRIDAY_TLS_CA"} "$@"; }
+```
+
+Confirm the daemon is up:
+
+```bash
+friday_curl -sf "$FRIDAYD_URL/health" && echo OK
 ```
 
 ### List workspaces
 
 ```bash
-curl -s http://localhost:8080/api/workspaces | jq
+friday_curl -s "$FRIDAYD_URL/api/workspaces" | jq
 ```
 
 Resolve a display name to a runtime id:
 
 ```bash
-curl -s http://localhost:8080/api/workspaces | \
+friday_curl -s "$FRIDAYD_URL/api/workspaces" | \
   jq -r '.[] | select(.name == "my-workspace") | .id'
 ```
 
@@ -229,16 +238,16 @@ curl -s http://localhost:8080/api/workspaces | \
 
 ```bash
 # Summary (id, name, status, path)
-curl -s http://localhost:8080/api/workspaces/$WS | jq
+friday_curl -s "$FRIDAYD_URL/api/workspaces/$WS" | jq
 
 # Full parsed config
-curl -s http://localhost:8080/api/workspaces/$WS/config | jq
+friday_curl -s "$FRIDAYD_URL/api/workspaces/$WS/config" | jq
 ```
 
 ### Update workspace (full replacement)
 
 ```bash
-curl -s -X POST http://localhost:8080/api/workspaces/$WS/update \
+friday_curl -s -X POST "$FRIDAYD_URL/api/workspaces/$WS/update" \
   -H 'Content-Type: application/json' \
   -d '{"config": {"version":"1.0","workspace":{"name":"new-name"}}, "backup": true}'
 ```
@@ -250,7 +259,7 @@ Pass `backup: true` to preserve a timestamped `workspace.yml.backup-<ts>`. Pass 
 ### Delete a workspace (single)
 
 ```bash
-curl -sf -X DELETE http://localhost:8080/api/workspaces/$WS
+friday_curl -sf -X DELETE "$FRIDAYD_URL/api/workspaces/$WS"
 ```
 
 **Rejects 403** for system workspaces (`system`, `user`, `thick_endive`). Resolve name → id first; never guess runtime IDs.
@@ -258,10 +267,10 @@ curl -sf -X DELETE http://localhost:8080/api/workspaces/$WS
 ### Delete workspaces (batch — by name prefix)
 
 ```bash
-curl -s http://localhost:8080/api/workspaces | \
+friday_curl -s "$FRIDAYD_URL/api/workspaces" | \
   jq -r '.[] | select(.name | startswith("test-")) | .id' | \
   while read -r id; do
-    result=$(curl -sf -X DELETE "http://localhost:8080/api/workspaces/$id")
+    result=$(friday_curl -sf -X DELETE "$FRIDAYD_URL/api/workspaces/$id")
     echo "$id: $result"
   done
 ```
@@ -269,7 +278,7 @@ curl -s http://localhost:8080/api/workspaces | \
 **Dry-run first** — list names before deleting:
 
 ```bash
-curl -s http://localhost:8080/api/workspaces | \
+friday_curl -s "$FRIDAYD_URL/api/workspaces" | \
   jq -r '.[] | select(.name | startswith("test-")) | "\(.id)  \(.name)"'
 ```
 
@@ -277,7 +286,7 @@ curl -s http://localhost:8080/api/workspaces | \
 
 ```bash
 for id in layered_ham smoky_almond ripe_eggplant; do
-  result=$(curl -sf -X DELETE "http://localhost:8080/api/workspaces/$id")
+  result=$(friday_curl -sf -X DELETE "$FRIDAYD_URL/api/workspaces/$id")
   echo "$id: $result"
 done
 ```

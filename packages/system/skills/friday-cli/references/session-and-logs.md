@@ -102,21 +102,28 @@ deno task atlas session list --json | jq '[.[]|select(.status=="active")]'
 ### Bash check after triggering a signal
 
 ```bash
+# Source ~/.atlas/.env once per shell so $FRIDAYD_URL + $FRIDAY_TLS_CA are set
+# — required for TLS-enabled installs (curl rejects the daemon's private-CA
+# cert otherwise). See the friday-cli SKILL.md "Daemon URL" preamble.
+set -a; [ -f ~/.atlas/.env ] && . ~/.atlas/.env; set +a
+CURL_TLS=( ${FRIDAY_TLS_CA:+--cacert "$FRIDAY_TLS_CA"} )
+
 # 1. Fire signal, capture sessionId
-RESP=$(curl -s -X POST http://localhost:8080/api/workspaces/$WS_ID/signals/$SIG \
+RESP=$(curl -s "${CURL_TLS[@]}" -X POST \
+  "$FRIDAYD_URL/api/workspaces/$WS_ID/signals/$SIG" \
   -H 'Content-Type: application/json' \
   -d '{"payload":{}}')
 SID=$(echo "$RESP" | jq -r '.sessionId')
 
 # 2. Wait for completion (poll or stream — streaming covered below)
 while true; do
-  STATUS=$(curl -s http://localhost:8080/api/sessions/$SID | jq -r '.status')
+  STATUS=$(curl -s "${CURL_TLS[@]}" "$FRIDAYD_URL/api/sessions/$SID" | jq -r '.status')
   [ "$STATUS" != "active" ] && break
   sleep 2
 done
 
 # 3. Read summary
-curl -s http://localhost:8080/api/sessions/$SID | jq '{
+curl -s "${CURL_TLS[@]}" "$FRIDAYD_URL/api/sessions/$SID" | jq '{
   status,
   durationMs,
   error,
@@ -129,7 +136,7 @@ curl -s http://localhost:8080/api/sessions/$SID | jq '{
 ### Extract failure info
 
 ```bash
-curl -s http://localhost:8080/api/sessions/$SID | jq '
+curl -s "${CURL_TLS[@]}" "$FRIDAYD_URL/api/sessions/$SID" | jq '
   if .status == "failed" then
     {
       sessionError: .error,
@@ -148,7 +155,7 @@ curl -s http://localhost:8080/api/sessions/$SID | jq '
 ### Tool call inventory across session
 
 ```bash
-curl -s http://localhost:8080/api/sessions/$SID | jq '
+curl -s "${CURL_TLS[@]}" "$FRIDAYD_URL/api/sessions/$SID" | jq '
   [.agentBlocks[] | .toolCalls[] | {agent: input_filename, tool: .toolName, durMs: .durationMs}]'
 ```
 
@@ -211,11 +218,11 @@ Operator recipes:
 
 ```bash
 # Count blocking verdicts in a session run:
-curl -s http://localhost:8080/api/sessions/<id> \
+curl -s "${CURL_TLS[@]}" "$FRIDAYD_URL/api/sessions/<id>" \
   | jq '[.events[] | select(.type=="step:complete") | .validation | select(.verdict=="blocking")] | length'
 
 # See which actions skipped validation and why:
-curl -s http://localhost:8080/api/sessions/<id> \
+curl -s "${CURL_TLS[@]}" "$FRIDAYD_URL/api/sessions/<id>" \
   | jq '.events[] | select(.type=="step:complete") | .validation | select(.strategy=="skip") | .skipReason'
 ```
 

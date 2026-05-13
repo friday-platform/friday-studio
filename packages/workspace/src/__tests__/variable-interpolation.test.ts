@@ -1,6 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import process from "node:process";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   findRepoRoot,
@@ -157,37 +158,53 @@ describe("resolveWorkspaceVariables", () => {
     expect(result?.platform_url).toBe("http://localhost:9090");
   });
 
-  it("defaults platform_url to http://localhost:8080", async () => {
-    const wsPath = join(tempDir, "workspaces", "test-ws");
-    const result = await resolveWorkspaceVariables(wsPath, "test_ws");
+  it("defaults platform_url to getAtlasDaemonUrl() — honors FRIDAYD_URL", async () => {
+    const prev = process.env.FRIDAYD_URL;
+    process.env.FRIDAYD_URL = "http://localhost:8080";
+    try {
+      const wsPath = join(tempDir, "workspaces", "test-ws");
+      const result = await resolveWorkspaceVariables(wsPath, "test_ws");
 
-    expect(result?.platform_url).toBe("http://localhost:8080");
+      expect(result?.platform_url).toBe("http://localhost:8080");
+    } finally {
+      if (prev === undefined) delete process.env.FRIDAYD_URL;
+      else process.env.FRIDAYD_URL = prev;
+    }
   });
 
   it("integration: interpolates a sample workspace config", async () => {
-    const wsPath = join(tempDir, "workspaces", "test-ws");
-    const vars = await resolveWorkspaceVariables(wsPath, "test_ws");
-    expect(vars).not.toBeNull();
+    const prev = process.env.FRIDAYD_URL;
+    process.env.FRIDAYD_URL = "http://localhost:8080";
+    try {
+      const wsPath = join(tempDir, "workspaces", "test-ws");
+      const vars = await resolveWorkspaceVariables(wsPath, "test_ws");
+      expect(vars).not.toBeNull();
 
-    const sampleConfig = {
-      agents: {
-        coder: {
-          prompt: "Monorepo at {{repo_root}}, workspace: {{workspace_id}}",
-          config: {
-            workDir: "{{repo_root}}",
-            apiUrl: "{{platform_url}}/api",
-            bootstrap: 'var root = "{{repo_root}}"; fetch("{{platform_url}}/signal");',
+      const sampleConfig = {
+        agents: {
+          coder: {
+            prompt: "Monorepo at {{repo_root}}, workspace: {{workspace_id}}",
+            config: {
+              workDir: "{{repo_root}}",
+              apiUrl: "{{platform_url}}/api",
+              bootstrap: 'var root = "{{repo_root}}"; fetch("{{platform_url}}/signal");',
+            },
           },
         },
-      },
-    };
+      };
 
-    // vars is non-null per assertion above
-    const result = interpolateConfig(sampleConfig, vars!);
-    expect(result.agents.coder.prompt).toBe(`Monorepo at ${tempDir}, workspace: test_ws`);
-    expect(result.agents.coder.config.workDir).toBe(tempDir);
-    expect(result.agents.coder.config.apiUrl).toBe("http://localhost:8080/api");
-    expect(result.agents.coder.config.bootstrap).toContain(`var root = "${tempDir}"`);
-    expect(result.agents.coder.config.bootstrap).toContain('fetch("http://localhost:8080/signal")');
+      // vars is non-null per assertion above
+      const result = interpolateConfig(sampleConfig, vars!);
+      expect(result.agents.coder.prompt).toBe(`Monorepo at ${tempDir}, workspace: test_ws`);
+      expect(result.agents.coder.config.workDir).toBe(tempDir);
+      expect(result.agents.coder.config.apiUrl).toBe("http://localhost:8080/api");
+      expect(result.agents.coder.config.bootstrap).toContain(`var root = "${tempDir}"`);
+      expect(result.agents.coder.config.bootstrap).toContain(
+        'fetch("http://localhost:8080/signal")',
+      );
+    } finally {
+      if (prev === undefined) delete process.env.FRIDAYD_URL;
+      else process.env.FRIDAYD_URL = prev;
+    }
   });
 });

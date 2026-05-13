@@ -5,10 +5,26 @@ description: "Interact with a running Friday daemon via CLI and HTTP — list/cr
 
 # Friday CLI & HTTP
 
-Friday is orchestrated by a daemon on `localhost:8080`. There are two surfaces
-for interacting with it: the `deno task atlas` CLI (thin HTTP client, great for
-humans and shell scripts) and the raw HTTP API (more endpoints, SSE streaming,
+Friday is orchestrated by a daemon on `localhost:8080` (plain HTTP) or
+`https://localhost:8080` when TLS is enabled (`scripts/setup-tls.sh`). There
+are two surfaces for interacting with it: the `deno task atlas` CLI (thin HTTP
+client, great for humans and shell scripts — auto-loads `~/.atlas/.env` so it
+picks the right scheme) and the raw HTTP API (more endpoints, SSE streaming,
 the only option for many CRUD ops on workspace internals).
+
+## Daemon URL — copy-paste preamble for every curl block
+
+Curl examples below assume `$FRIDAYD_URL` and (when TLS is on) `$FRIDAY_TLS_CA`
+are set. Source `~/.atlas/.env` once per shell to pick them up:
+
+```bash
+set -a; [ -f ~/.atlas/.env ] && . ~/.atlas/.env; set +a
+# $FRIDAYD_URL → https://localhost:18080 (TLS) or http://localhost:8080 (plain)
+# $FRIDAY_TLS_CA → path to the private-CA cert (empty when TLS off)
+```
+
+Every curl below uses `${FRIDAY_TLS_CA:+--cacert "$FRIDAY_TLS_CA"}` — that
+expansion is empty under plain HTTP, and adds `--cacert` exactly when needed.
 
 ## When to use CLI vs HTTP
 
@@ -31,8 +47,9 @@ Before touching anything, confirm the daemon is up:
 
 ```bash
 deno task atlas daemon status
-# or:
-curl -sf http://localhost:8080/health && echo OK
+# or (after sourcing ~/.atlas/.env — see preamble above):
+curl -sf ${FRIDAY_TLS_CA:+--cacert "$FRIDAY_TLS_CA"} \
+  "${FRIDAYD_URL:-http://localhost:8080}/health" && echo OK
 ```
 
 If it's not:
@@ -68,7 +85,8 @@ deno task atlas signal list -w <workspace-id-or-name> --json
 Or HTTP for full schema:
 
 ```bash
-curl -s http://localhost:8080/api/workspaces/<id>/signals | jq
+curl -sf ${FRIDAY_TLS_CA:+--cacert "$FRIDAY_TLS_CA"} \
+  "$FRIDAYD_URL/api/workspaces/<id>/signals" | jq
 ```
 
 The signal's `schema` is a JSON Schema — your payload must match it or the
@@ -84,7 +102,8 @@ deno task atlas signal trigger -n <signal-name> -w <workspace> \
 Or via HTTP with SSE:
 
 ```bash
-curl -N -X POST http://localhost:8080/api/workspaces/<id>/signals/<signal-id> \
+curl -N -X POST ${FRIDAY_TLS_CA:+--cacert "$FRIDAY_TLS_CA"} \
+  "$FRIDAYD_URL/api/workspaces/<id>/signals/<signal-id>" \
   -H 'Content-Type: application/json' \
   -H 'Accept: text/event-stream' \
   -d '{"payload":{"some":"value"}}'
@@ -105,7 +124,8 @@ deno task atlas session get <session-id> --json  # full SessionView
 SSE replay/live stream (survives reconnect within the replay window):
 
 ```bash
-curl -N http://localhost:8080/api/sessions/<id>/stream \
+curl -N ${FRIDAY_TLS_CA:+--cacert "$FRIDAY_TLS_CA"} \
+  "$FRIDAYD_URL/api/sessions/<id>/stream" \
   -H 'Accept: text/event-stream'
 ```
 
@@ -114,7 +134,8 @@ human-readable summary + keyDetails (with URLs). Prefer it over walking
 `agentBlocks[]` when you just want "what happened":
 
 ```bash
-curl -s http://localhost:8080/api/sessions/<id> | jq '.aiSummary'
+curl -sf ${FRIDAY_TLS_CA:+--cacert "$FRIDAY_TLS_CA"} \
+  "$FRIDAYD_URL/api/sessions/<id>" | jq '.aiSummary'
 ```
 
 Full shape + failure extraction recipes + log access + SSE event types →
@@ -128,7 +149,8 @@ JSON — convert from YAML inline:
 
 ```bash
 CONFIG=$(python3 -c "import yaml,json,sys; print(json.dumps(yaml.safe_load(open('$1'))))" workspaces/my-thing/workspace.yml)
-curl -s -X POST http://localhost:8080/api/workspaces/create \
+curl -sf -X POST ${FRIDAY_TLS_CA:+--cacert "$FRIDAY_TLS_CA"} \
+  "$FRIDAYD_URL/api/workspaces/create" \
   -H 'Content-Type: application/json' \
   -d "{\"config\":$CONFIG,\"workspaceName\":\"My Thing\"}"
 ```

@@ -1,0 +1,79 @@
+- description: friday-cli SKILL.md has no bare http://localhost:8080
+  vars:
+    scenarioId: 'skill-tls-static:friday-cli/SKILL.md'
+
+- description: friday-cli http.md reference has no bare URL
+  vars:
+    scenarioId: 'skill-tls-static:friday-cli/references/http.md'
+
+- description: friday-cli recipes.md has no bare URL
+  vars:
+    scenarioId: 'skill-tls-static:friday-cli/references/recipes.md'
+
+- description: friday-cli session-and-logs.md has no bare URL
+  vars:
+    scenarioId: 'skill-tls-static:friday-cli/references/session-and-logs.md'
+
+- description: friday-cli cli.md has no bare URL
+  vars:
+    scenarioId: 'skill-tls-static:friday-cli/references/cli.md'
+
+- description: workspace-api SKILL.md has no bare URL
+  vars:
+    scenarioId: 'skill-tls-static:workspace-api/SKILL.md'
+
+- description: workspace-api updating-workspaces.md has no bare URL
+  vars:
+    scenarioId: 'skill-tls-static:workspace-api/references/updating-workspaces.md'
+
+- description: writing-friday-python-agents SKILL.md has no bare URL
+  vars:
+    scenarioId: 'skill-tls-static:writing-friday-python-agents/SKILL.md'
+
+- description: friday-cli SKILL.md steers LLM to $FRIDAYD_URL
+  vars:
+    scenarioId: 'skill-tls-behavior:friday-cli/SKILL.md'
+
+- description: workspace-api SKILL.md steers LLM to $FRIDAYD_URL
+  vars:
+    scenarioId: 'skill-tls-behavior:workspace-api/SKILL.md'
+
+- description: writing-friday-python-agents SKILL.md steers LLM to $FRIDAYD_URL
+  vars:
+    scenarioId: 'skill-tls-behavior:writing-friday-python-agents/SKILL.md'
+
+# Negative controls — prove the detector + LLM-judge have discriminative
+# power. If any of these PASS=false, the eval framework lost signal and
+# every positive case above is suspect.
+
+- description: NEGATIVE — detector flags bare curl in code fence
+  vars:
+    scenarioId: 'skill-tls-static-negative:bare-curl-in-code-fence'
+
+- description: NEGATIVE — detector flags POST with bare URL
+  vars:
+    scenarioId: 'skill-tls-static-negative:post-with-bare-url'
+
+- description: NEGATIVE — detector flags quoted bare URL in inline code
+  vars:
+    scenarioId: 'skill-tls-static-negative:quoted-bare-url'
+
+- description: ACCEPT — detector allows ${FRIDAYD_URL:-...} bash default
+  vars:
+    scenarioId: 'skill-tls-static-accept:bash-default-expansion'
+
+- description: ACCEPT — detector allows os.environ.get default literal
+  vars:
+    scenarioId: 'skill-tls-static-accept:python-environ-default'
+
+- description: ACCEPT — detector allows "→" doc comment describing the var
+  vars:
+    scenarioId: 'skill-tls-static-accept:arrow-doc-comment'
+
+- description: ACCEPT — detector allows "defaults to `...`" prose
+  vars:
+    scenarioId: 'skill-tls-static-accept:prose-default-in-backticks'
+
+- description: NEGATIVE — bad skill body makes the LLM emit a bare URL
+  vars:
+    scenarioId: 'skill-tls-behavior-negative:bad-skill-emits-bare-url'

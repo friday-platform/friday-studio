@@ -5,6 +5,16 @@ exists: adding a signal, adding an agent, adding a job, editing an FSM, or
 restructuring. The path you pick matters — one path preserves runtime state,
 another quietly loses it.
 
+> **Preamble — source the daemon env once per shell.** Every curl example
+> below uses `$FRIDAYD_URL` and a `friday_curl` helper that adds `--cacert`
+> when TLS is on. Paste this once and the examples below work on both
+> plain-HTTP and TLS-enabled installs:
+>
+> ```bash
+> set -a; [ -f ~/.atlas/.env ] && . ~/.atlas/.env; set +a
+> friday_curl() { curl ${FRIDAY_TLS_CA:+--cacert "$FRIDAY_TLS_CA"} "$@"; }
+> ```
+
 ## Contents
 
 - The three paths (preference order)
@@ -34,13 +44,13 @@ Mount: `/api/workspaces/:id/config`. Every mutation here writes to
 
 ```bash
 # List
-curl -s http://localhost:8080/api/workspaces/$WS/config/signals | jq
+friday_curl -s "$FRIDAYD_URL/api/workspaces/$WS/config/signals" | jq
 
 # Get one
-curl -s http://localhost:8080/api/workspaces/$WS/config/signals/daily-summary | jq
+friday_curl -s "$FRIDAYD_URL/api/workspaces/$WS/config/signals/daily-summary" | jq
 
 # Create — 201 on success, 409 on dup id
-curl -s -X POST http://localhost:8080/api/workspaces/$WS/config/signals \
+friday_curl -s -X POST "$FRIDAYD_URL/api/workspaces/$WS/config/signals" \
   -H 'Content-Type: application/json' \
   -d '{
     "signalId": "generate-report",
@@ -52,7 +62,7 @@ curl -s -X POST http://localhost:8080/api/workspaces/$WS/config/signals \
   }'
 
 # Full replace
-curl -s -X PUT http://localhost:8080/api/workspaces/$WS/config/signals/daily-summary \
+friday_curl -s -X PUT "$FRIDAYD_URL/api/workspaces/$WS/config/signals/daily-summary" \
   -H 'Content-Type: application/json' \
   -d '{
     "provider": "schedule",
@@ -61,12 +71,12 @@ curl -s -X PUT http://localhost:8080/api/workspaces/$WS/config/signals/daily-sum
   }'
 
 # Patch (loose — merged with existing)
-curl -s -X PATCH http://localhost:8080/api/workspaces/$WS/config/signals/daily-summary \
+friday_curl -s -X PATCH "$FRIDAYD_URL/api/workspaces/$WS/config/signals/daily-summary" \
   -H 'Content-Type: application/json' \
   -d '{"config":{"schedule":"*/15 * * * *","timezone":"UTC"}}'
 
 # Delete — 409 if a job triggers on it; pass ?force=true to cascade
-curl -s -X DELETE "http://localhost:8080/api/workspaces/$WS/config/signals/daily-summary?force=true"
+friday_curl -s -X DELETE "$FRIDAYD_URL/api/workspaces/$WS/config/signals/daily-summary?force=true"
 ```
 
 ### Agents — update only
@@ -76,7 +86,7 @@ prompt/model/tools but NOT add or delete via the API:
 
 ```bash
 # Update prompt + model + tools
-curl -s -X PUT http://localhost:8080/api/workspaces/$WS/config/agents/summarizer \
+friday_curl -s -X PUT "$FRIDAYD_URL/api/workspaces/$WS/config/agents/summarizer" \
   -H 'Content-Type: application/json' \
   -d '{
     "prompt": "You produce a rigorous end-of-day summary.",
@@ -94,10 +104,10 @@ To add a new agent, use Path 2 (disk edit).
 
 ```bash
 # List refs — paths are "mcp:<server>:<ENV>" or "agent:<agent>:<ENV>"
-curl -s http://localhost:8080/api/workspaces/$WS/config/credentials | jq
+friday_curl -s "$FRIDAYD_URL/api/workspaces/$WS/config/credentials" | jq
 
 # Swap — validates the new credential matches the provider; 400 on mismatch
-curl -s -X PUT "http://localhost:8080/api/workspaces/$WS/config/credentials/agent:gh-agent:GITHUB_TOKEN" \
+friday_curl -s -X PUT "$FRIDAYD_URL/api/workspaces/$WS/config/credentials/agent:gh-agent:GITHUB_TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"credentialId":"cred_abc123"}'
 ```
@@ -105,7 +115,7 @@ curl -s -X PUT "http://localhost:8080/api/workspaces/$WS/config/credentials/agen
 ### Metadata (name, color)
 
 ```bash
-curl -s -X PATCH "http://localhost:8080/api/workspaces/$WS/metadata" \
+friday_curl -s -X PATCH "$FRIDAYD_URL/api/workspaces/$WS/metadata" \
   -H 'Content-Type: application/json' \
   -d '{"name":"New Display Name","color":"#ff0066"}'
 ```
@@ -138,13 +148,18 @@ Runtime id, sessions, and memory are all preserved.
 
 ```python
 # run_code, language: python
-import json, urllib.request
+import json, os, ssl, urllib.request
 
 WS = "grilled_xylem"
 WS_PATH = "/path/to/.friday/local/workspaces/my-workspace/workspace.yml"
 
 # 1. Read current config (API gives parsed JSON — no YAML parsing needed)
-with urllib.request.urlopen(f"http://localhost:8080/api/workspaces/{WS}/config") as resp:
+#    FRIDAYD_URL + FRIDAY_TLS_CA are exported by the daemon's launcher,
+#    so this works whether the install is on plain HTTP or TLS.
+daemon_url = os.environ.get("FRIDAYD_URL", "http://localhost:8080")
+ca = os.environ.get("FRIDAY_TLS_CA")
+ctx = ssl.create_default_context(cafile=ca) if ca else None
+with urllib.request.urlopen(f"{daemon_url}/api/workspaces/{WS}/config", context=ctx) as resp:
     config = json.load(resp)["config"]
 
 # 2. Mutate the dict
@@ -215,13 +230,13 @@ The `path` field in `GET /api/workspaces/:id` returns the workspace directory.
 Append `/workspace.yml`:
 
 ```bash
-WS_PATH=$(curl -s http://localhost:8080/api/workspaces/$WS | jq -r '.path')/workspace.yml
+WS_PATH=$(friday_curl -s "$FRIDAYD_URL/api/workspaces/$WS" | jq -r '.path')/workspace.yml
 ```
 
 Or read `configPath` directly:
 
 ```bash
-curl -s http://localhost:8080/api/workspaces/$WS | jq -r '.configPath'
+friday_curl -s "$FRIDAYD_URL/api/workspaces/$WS" | jq -r '.configPath'
 ```
 
 ### Verifying the reload
@@ -229,7 +244,7 @@ curl -s http://localhost:8080/api/workspaces/$WS | jq -r '.configPath'
 ```bash
 # After writing, wait ~1s for the debouncer, then confirm the new shape
 sleep 1
-curl -s http://localhost:8080/api/workspaces/$WS/config \
+friday_curl -s "$FRIDAYD_URL/api/workspaces/$WS/config" \
   | jq '.config | {agents: (.agents // {} | keys), jobs: (.jobs // {} | keys)}'
 ```
 
@@ -258,13 +273,13 @@ corrupted beyond repair.
 
 ```bash
 # Capture the old runtime id so you know what's about to change
-OLD_WS=$(curl -s http://localhost:8080/api/workspaces | jq -r '.[]|select(.name=="my-workspace")|.id')
+OLD_WS=$(friday_curl -s "$FRIDAYD_URL/api/workspaces" | jq -r '.[]|select(.name=="my-workspace")|.id')
 
 # Hard delete (directory + registration)
-curl -s -X DELETE "http://localhost:8080/api/workspaces/$OLD_WS"
+friday_curl -s -X DELETE "$FRIDAYD_URL/api/workspaces/$OLD_WS"
 
 # Re-create
-curl -s -X POST http://localhost:8080/api/workspaces/create \
+friday_curl -s -X POST "$FRIDAYD_URL/api/workspaces/create" \
   -H 'Content-Type: application/json' \
   -d "{\"config\":$(cat new-config.json),\"workspaceName\":\"my-workspace\"}"
 ```

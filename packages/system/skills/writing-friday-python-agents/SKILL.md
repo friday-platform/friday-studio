@@ -134,7 +134,7 @@ def execute(prompt: str, ctx: AgentContext):
 `{{env.VARIABLE}}` in MCP config references agent environment variables.
 Currently only `stdio` transport is supported.
 
-**Do not bypass `ctx.tools`.** Python agents must not call local MCP HTTP endpoints such as `http://localhost:8002/mcp`, hardcode bearer tokens, or guess provider-specific tool names. Use `ctx.tools.list()` to inspect the runtime tool surface and `ctx.tools.call(name, args)` to invoke it. Host-side tool calls are credentialed, audited, and recorded in session history; direct HTTP calls are invisible to Friday and commonly fail with unknown-tool or invalid-token errors.
+**Do not bypass `ctx.tools`.** Python agents must not call local MCP HTTP endpoints such as `http(s)://localhost:8002/mcp`, hardcode bearer tokens, or guess provider-specific tool names. Use `ctx.tools.list()` to inspect the runtime tool surface and `ctx.tools.call(name, args)` to invoke it. Host-side tool calls are credentialed, audited, and recorded in session history; direct HTTP calls are invisible to Friday and commonly fail with unknown-tool or invalid-token errors.
 
 If `ctx.tools.call` raises `ToolCallError("Unknown tool ...")`, list tools and fix the workspace/agent config rather than retrying a guessed name.
 
@@ -361,10 +361,21 @@ installed packages are fine.
 
 ### Register via the daemon HTTP API
 
+Friday's daemon URL and TLS settings live in `~/.atlas/.env` (set by
+`scripts/setup-tls.sh`). Source it once per shell so the curl examples
+below work whether your install is on plain HTTP or HTTPS:
+
+```bash
+set -a; [ -f ~/.atlas/.env ] && . ~/.atlas/.env; set +a
+# Now $FRIDAYD_URL is set (https://… when TLS is on, http://… otherwise)
+# and $FRIDAY_TLS_CA points at the private-CA cert when TLS is on.
+```
+
 Register your agent by POSTing the entrypoint's absolute path to the daemon:
 
 ```bash
-curl -X POST http://localhost:8080/api/agents/register \
+curl -sf -X POST ${FRIDAY_TLS_CA:+--cacert "$FRIDAY_TLS_CA"} \
+  "${FRIDAYD_URL:-http://localhost:8080}/api/agents/register" \
   -H 'Content-Type: application/json' \
   -d '{"entrypoint": "/abs/path/to/your-agent/agent.py"}'
 ```
@@ -382,7 +393,8 @@ source path of an existing agent, query `GET /api/agents/:id` and read
 
 The Friday daemon listens on `localhost:8080` by default (configurable via
 the `FRIDAY_PORT` env var or the `--port` flag if you started the daemon
-manually).
+manually). When `scripts/setup-tls.sh` has been run, the daemon binds TLS
+and `$FRIDAYD_URL` resolves to `https://…`.
 
 ### Test directly
 
@@ -390,15 +402,17 @@ Execute an agent without going through the full FSM pipeline. Replace
 `my-agent` with your agent id (the `id=` value from the `@agent` decorator):
 
 ```bash
-curl -s -X POST "http://localhost:8080/api/agents/my-agent/run?workspaceId=user" \
+curl -sf -X POST ${FRIDAY_TLS_CA:+--cacert "$FRIDAY_TLS_CA"} \
+  "${FRIDAYD_URL:-http://localhost:8080}/api/agents/my-agent/run?workspaceId=user" \
   -H 'Content-Type: application/json' \
   -d '{"input": "test prompt"}'
 ```
 
-Or via the playground API on `localhost:5200`:
+Or via the playground API on `localhost:5200` (HTTPS when TLS is on —
+the playground always trusts mkcert's CA via the system trust store):
 
 ```bash
-curl -s -X POST http://localhost:5200/api/agents/my-agent/run \
+curl -sf "${PLAYGROUND_URL:-http://localhost:5200}/api/agents/my-agent/run" \
   -H 'Content-Type: application/json' \
   -d '{"input": "test prompt"}'
 ```

@@ -1,6 +1,20 @@
 # Friday Daemon HTTP API
 
-Base: `http://localhost:8080`. No auth on localhost. JSON in/out unless noted.
+Base: `$FRIDAYD_URL` — defaults to `http://localhost:8080` on a plain-HTTP
+install, and switches to `https://localhost:8080` (or the
+`FRIDAY_PORT_FRIDAY`-overridden port) when `scripts/setup-tls.sh` has been
+run. No auth on localhost. JSON in/out unless noted.
+
+To run the curl examples in this file, source `~/.atlas/.env` once per shell
+so `$FRIDAYD_URL` and `$FRIDAY_TLS_CA` are exported:
+
+```bash
+set -a; [ -f ~/.atlas/.env ] && . ~/.atlas/.env; set +a
+```
+
+All curl invocations should add `${FRIDAY_TLS_CA:+--cacert "$FRIDAY_TLS_CA"}`
+— that expansion is empty under plain HTTP and adds `--cacert` exactly when
+the daemon is serving the private-CA s2s cert.
 
 SSE: pass `Accept: text/event-stream`. Streams end with `data: [DONE]`.
 
