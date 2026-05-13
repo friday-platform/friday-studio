@@ -68,8 +68,9 @@ func pickEphemeralPort() int {
 		// going with the legacy default and let nats-server fail loudly.
 		return 4222
 	}
-	defer l.Close()
-	return l.Addr().(*net.TCPAddr).Port
+	port := l.Addr().(*net.TCPAddr).Port
+	_ = l.Close() // errcheck: best-effort; the port is returned regardless
+	return port
 }
 
 // natsServerURL returns the nats:// URL the broker should be reachable
