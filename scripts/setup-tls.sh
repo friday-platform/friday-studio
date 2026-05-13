@@ -93,37 +93,30 @@ else
     mkcert -install
 fi
 
-# ── 2. Resolve Friday home(s) — match setup-dev-env.sh's detection ──────────
+# ── 2. Resolve dev Friday home ──────────────────────────────────────────────
+#
+# This is a DEV-ONLY script. ~/.friday/local is the installed-Studio home
+# and the launcher owns the cert chain there (s2s_generator.go writes the
+# private CA + leaf, tls_renewer.go fetches the LE browser cert from
+# download.fridayplatform.io). Writing into ~/.friday/local from here
+# would clobber the launcher's certs and the LE browser chain — and would
+# silently switch the installed playground origin from the LE cert (for
+# local.hellofriday.ai:15200) to a mkcert cert for localhost, breaking the
+# tray's https URL.
+#
+# Resolution order:
+#   1. `FRIDAY_HOME` env var, if set — explicit caller intent wins (e.g.
+#      a dev pinning a custom home dir). The user accepts whatever they
+#      pointed it at, including ~/.friday/local if they really mean it.
+#   2. Default to ~/.atlas (the dev convention pinned in deno.json's
+#      `atlas` / `atlas:dev` tasks). Created if absent.
 declare -a FRIDAY_HOMES=()
-detect_home() {
-    local candidate="$1"
-    [[ -d "$candidate" ]] || return 1
-    for marker in agents chats sessions activity.db skills.db storage.db; do
-        if [[ -e "$candidate/$marker" ]]; then return 0; fi
-    done
-    return 1
-}
-
 if [[ -n "${FRIDAY_HOME:-}" ]]; then
     FRIDAY_HOMES=("$FRIDAY_HOME")
+    mkdir -p "$FRIDAY_HOME"
 else
-    detect_home "$HOME/.atlas" && FRIDAY_HOMES+=("$HOME/.atlas")
-    detect_home "$HOME/.friday/local" && FRIDAY_HOMES+=("$HOME/.friday/local")
-    if [[ ${#FRIDAY_HOMES[@]} -eq 0 ]]; then
-        FRIDAY_HOMES=("$HOME/.friday/local")
-        mkdir -p "${FRIDAY_HOMES[0]}"
-    fi
-fi
-
-# Always seed ~/.atlas/.env so the `atlas` / `atlas:dev` deno tasks (which
-# load `--env-file=$HOME/.atlas/.env` at process start so DENO_CERT lands
-# before Deno's RootCertStore initializes) find a usable file regardless
-# of which home is the user's primary. Deno's task shell doesn't support
-# ${VAR:-default} expansion, so the path is hardcoded; making sure the
-# file exists is the simpler half of the contract.
-if [[ ! " ${FRIDAY_HOMES[*]} " =~ " $HOME/.atlas " ]]; then
     mkdir -p "$HOME/.atlas"
-    FRIDAY_HOMES+=("$HOME/.atlas")
+    FRIDAY_HOMES=("$HOME/.atlas")
 fi
 
 # ── 3. Env helpers ──────────────────────────────────────────────────────────
