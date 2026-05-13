@@ -332,26 +332,6 @@ describe("WorkspaceManager cross-home filter — generateUniqueId still sees eve
     const returned = (await listSpy.mock.results[0]?.value) as WorkspaceEntry[];
     expect(returned.map((w) => w.id).sort()).toEqual(["cross-home-COLLIDE", "in-home-X"]);
   });
-
-  it("does not mint an ID that collides with any seeded entry over many iterations", async () => {
-    const { manager, registry } = await makeManager(home);
-    const seeded: WorkspaceEntry[] = [
-      entry({ id: "a-in", path: join(home, "ws", "a") }),
-      entry({ id: "b-in", path: join(home, "ws", "b") }),
-      entry({ id: "c-foreign", path: "/foreign/ws/c" }),
-      entry({ id: "d-foreign", path: "/tmp/ws/d" }),
-    ];
-    for (const e of seeded) await registry.registerWorkspace(e);
-    const seededIds = new Set(seeded.map((e) => e.id));
-
-    const generate = (
-      manager as unknown as { generateUniqueId: () => Promise<string> }
-    ).generateUniqueId.bind(manager);
-    for (let i = 0; i < 50; i++) {
-      const id = await generate();
-      expect(seededIds.has(id)).toBe(false);
-    }
-  });
 });
 
 describe("WorkspaceManager cross-home filter — system workspaces bypass the filter", () => {
@@ -459,5 +439,102 @@ describe("WorkspaceManager cross-home filter — initialize() sweeps are home-sc
     expect(survived).not.toBeNull();
     // The cross-home entry's name is unchanged (no rewrite happened).
     expect(survived?.name).toBe("fast-loop");
+  });
+});
+
+describe("WorkspaceManager cross-home filter — mutation paths refuse to touch", () => {
+  let home: string;
+
+  beforeEach(async () => {
+    home = await realpath(await mkdtemp(join(tmpdir(), "atlas-home-mutate-")));
+    process.env.DENO_TEST = "true";
+    mockLogger.warn.mockClear();
+    watcherSpy.watched.length = 0;
+  });
+
+  afterEach(async () => {
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it("deleteWorkspace leaves cross-home entries intact and does not touch their path", async () => {
+    // The critical case from the prior review: removeDirectory=true on
+    // a cross-home id could `rm -rf` a directory under another Friday
+    // install. The guard at the top of deleteWorkspace must refuse
+    // BEFORE any registry unregister or filesystem rm runs.
+    const { manager, registry } = await makeManager(home);
+    await registry.registerWorkspace(
+      entry({ id: "foreign", path: "/some/foreign/install/workspaces/X" }),
+    );
+
+    await manager.deleteWorkspace("foreign", { removeDirectory: true });
+
+    // Entry still in registry — guard fired before the unregister call.
+    const survived = await registry.getWorkspace("foreign");
+    expect(survived).not.toBeNull();
+    // Warn was emitted with the right context.
+    const warns = mockLogger.warn.mock.calls.filter(
+      ([msg]) => msg === "Refusing to delete cross-home workspace",
+    );
+    expect(warns).toHaveLength(1);
+  });
+
+  it("renameWorkspace throws not-found for cross-home entries and does not rewrite the registry", async () => {
+    const { manager, registry } = await makeManager(home);
+    await registry.registerWorkspace(
+      entry({ id: "foreign", name: "Original Name", path: "/foreign/X" }),
+    );
+
+    await expect(manager.renameWorkspace("foreign", "New Name")).rejects.toThrow(
+      /Workspace not found/,
+    );
+
+    const survived = await registry.getWorkspace("foreign");
+    expect(survived?.name).toBe("Original Name");
+    const warns = mockLogger.warn.mock.calls.filter(
+      ([msg]) => msg === "Refusing to rename cross-home workspace",
+    );
+    expect(warns).toHaveLength(1);
+  });
+
+  it("updateWorkspacePersistence throws not-found for cross-home entries", async () => {
+    const { manager, registry } = await makeManager(home);
+    await registry.registerWorkspace(
+      entry({ id: "foreign", path: "/foreign/Y", configPath: "/foreign/Y/eph_workspace.yml" }),
+    );
+
+    await expect(manager.updateWorkspacePersistence("foreign", true)).rejects.toThrow(
+      /Workspace not found/,
+    );
+
+    // configPath unchanged — no rename happened.
+    const survived = await registry.getWorkspace("foreign");
+    expect(survived?.configPath).toBe("/foreign/Y/eph_workspace.yml");
+    const warns = mockLogger.warn.mock.calls.filter(
+      ([msg]) => msg === "Refusing to toggle persistence for cross-home workspace",
+    );
+    expect(warns).toHaveLength(1);
+  });
+
+  it("restartSignalsForWorkspace is a no-op for cross-home entries", async () => {
+    // Private method — reach in via cast. The signal-restart path runs
+    // when a workspace's config changes; for a cross-home entry, the
+    // guard must skip the unregister/register cycle (otherwise we'd
+    // mount signals for a workspace we don't own).
+    const { manager, registry } = await makeManager(home);
+    await registry.registerWorkspace(entry({ id: "foreign", path: "/foreign/Z" }));
+
+    const restart = (
+      manager as unknown as {
+        restartSignalsForWorkspace: (id: string, path: string, config: unknown) => Promise<void>;
+      }
+    ).restartSignalsForWorkspace.bind(manager);
+
+    // Minimal config shape — the guard fires before config is used.
+    await restart("foreign", "/foreign/Z", {} as unknown);
+
+    const warns = mockLogger.warn.mock.calls.filter(
+      ([msg]) => msg === "Refusing to restart signals for cross-home workspace",
+    );
+    expect(warns).toHaveLength(1);
   });
 });

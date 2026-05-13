@@ -41,6 +41,12 @@ function setCredential(key: string, value: string) {
 
 describe("daemon startup platform models", () => {
   let tempHome: string | null = null;
+  // Defensive: tests that throw mid-run between initialize() and
+  // shutdown() would otherwise leak a child nats-server holding the
+  // reserved port. Tests assign `activeDaemon = ...` after construction;
+  // afterEach unconditionally shuts it down. The shutdown call is
+  // idempotent so explicit shutdown() inside a passing test is fine.
+  let activeDaemon: AtlasDaemon | null = null;
 
   beforeEach(async () => {
     resetEnv();
@@ -54,6 +60,18 @@ describe("daemon startup platform models", () => {
   });
 
   afterEach(async () => {
+    // Belt-and-suspenders: even if the test forgot or threw, kill any
+    // spawned nats-server tied to this test's home before nuking the
+    // tempdir. Errors are swallowed — the test framework will surface
+    // any actual assertion failure separately.
+    if (activeDaemon) {
+      try {
+        await activeDaemon.shutdown();
+      } catch {
+        // Already shut down or never fully initialized — fine.
+      }
+      activeDaemon = null;
+    }
     // Restore original env
     Object.assign(process.env, ORIGINAL_ENV);
     // Clear out any new keys that were added
@@ -75,7 +93,8 @@ describe("daemon startup platform models", () => {
         // Minimal valid config: just set ANTHROPIC_API_KEY for the default chain
         setCredential("ANTHROPIC_API_KEY", "test-key");
 
-        const daemon = new AtlasDaemon({ port: 0 }); // port 0 = random free port
+        const daemon = new AtlasDaemon({ port: 0 });
+        activeDaemon = daemon; // port 0 = random free port
 
         // Should initialize without throwing
         await daemon.initialize();
@@ -103,6 +122,7 @@ describe("daemon startup platform models", () => {
         setCredential("ANTHROPIC_API_KEY", "test-anthropic-key");
 
         const daemon = new AtlasDaemon({ port: 0 });
+        activeDaemon = daemon;
         await daemon.initialize();
 
         const platformModels = (
@@ -123,6 +143,7 @@ describe("daemon startup platform models", () => {
       async () => {
         // No credentials set - default chain will fail on missing ANTHROPIC_API_KEY
         const daemon = new AtlasDaemon({ port: 0 });
+        activeDaemon = daemon;
 
         await expect(daemon.initialize()).rejects.toThrow(
           /Platform model configuration failed validation/,
@@ -149,6 +170,7 @@ describe("daemon startup platform models", () => {
 
         try {
           const daemon = new AtlasDaemon({ port: 0 });
+          activeDaemon = daemon;
           await expect(daemon.initialize()).rejects.toThrow(
             /Platform model configuration failed validation/,
           );
@@ -174,6 +196,7 @@ describe("daemon startup platform models", () => {
 
         try {
           const daemon = new AtlasDaemon({ port: 0 });
+          activeDaemon = daemon;
           await expect(daemon.initialize()).rejects.toThrow(
             /Platform model configuration failed validation/,
           );
@@ -194,6 +217,7 @@ describe("daemon startup platform models", () => {
         setCredential("ANTHROPIC_API_KEY", "test-key");
 
         const daemon = new AtlasDaemon({ port: 0 });
+        activeDaemon = daemon;
         await daemon.initialize();
 
         const platformModels = (
@@ -214,6 +238,7 @@ describe("daemon startup platform models", () => {
         setCredential("ANTHROPIC_API_KEY", "test-anthropic-key");
 
         const daemon = new AtlasDaemon({ port: 0 });
+        activeDaemon = daemon;
         await daemon.initialize();
 
         const platformModels = (
@@ -240,6 +265,7 @@ describe("daemon startup platform models", () => {
         expect(process.env.GROQ_API_KEY).toBeUndefined();
 
         const daemon = new AtlasDaemon({ port: 0 });
+        activeDaemon = daemon;
         await daemon.initialize();
 
         // All roles should be resolvable with LITELLM proxy
@@ -272,6 +298,7 @@ describe("daemon startup platform models", () => {
 
         try {
           const daemon = new AtlasDaemon({ port: 0 });
+          activeDaemon = daemon;
           // Should NOT throw - LITELLM_API_KEY satisfies credential check for any provider
           await daemon.initialize();
 

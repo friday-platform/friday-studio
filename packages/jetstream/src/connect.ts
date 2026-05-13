@@ -149,14 +149,14 @@ export interface ConnectOrSpawnOptions extends ConnectOptions {
 export async function connectOrSpawn(opts: ConnectOrSpawnOptions = {}): Promise<ConnectionHandle> {
   const spawnFallback = opts.spawnFallback ?? true;
 
-  // Resolve the URL in precedence order, tracking provenance. Provenance
-  // matters because we only TCP-probe-and-reuse for URLs that came from
-  // <home>/nats/url — a default-URL fallback must NOT reuse whatever
-  // happens to be listening on :4222 (the silent-attach bug Phase 4
-  // exists to close).
+  // Resolve the URL in precedence order. Source is tracked because it
+  // controls one decision: we only TCP-probe-and-reuse for URLs that
+  // came from <home>/nats/url. A no-URL fallback must NOT reuse
+  // whatever happens to be listening on :4222 (the silent-attach bug
+  // Phase 4 closes).
   const envUrl = process.env.FRIDAY_NATS_URL;
-  let resolvedUrl: string;
-  let source: "explicit" | "env" | "url-file" | "default";
+  let resolvedUrl: string | null = null;
+  let source: "explicit" | "env" | "url-file" | "none";
   if (opts.url) {
     resolvedUrl = opts.url;
     source = "explicit";
@@ -169,60 +169,62 @@ export async function connectOrSpawn(opts: ConnectOrSpawnOptions = {}): Promise<
       resolvedUrl = fromFile;
       source = "url-file";
     } else {
-      resolvedUrl = DEFAULT_NATS_URL;
-      source = "default";
+      source = "none";
     }
   } else {
-    resolvedUrl = DEFAULT_NATS_URL;
-    source = "default";
+    source = "none";
   }
 
-  if (source === "url-file") {
-    // The home wrote this URL — trust it but probe to catch stale entries.
+  // Try the resolved URL. Each branch either returns a ConnectionHandle
+  // (success) or falls through to the spawn gate. The spawn gate is the
+  // single chokepoint that enforces `spawnFallback` regardless of how
+  // we got here — keeping the contract impossible to forget when
+  // adding a fourth precedence path later.
+  if (source === "url-file" && resolvedUrl) {
     const port = portFromUrl(resolvedUrl);
     const live = port != null && (await tcpProbe(port));
     if (live) {
       return openHandle(resolvedUrl, opts);
     }
-    // Stale URL file: the daemon that wrote it crashed or shut down
-    // without cleaning up. Fall through to spawn (CLI use case).
     opts.logger?.warn?.("URL file present but broker not responding; falling through to spawn", {
       cachedUrl: resolvedUrl,
       urlFile: brokerUrlFilePath(opts.home as string),
     });
-  } else if (source !== "default") {
+  } else if (resolvedUrl) {
     // Explicit URL or env URL — try a direct connect.
     try {
-      const nc = await connect({
-        servers: resolvedUrl,
-        name: opts.name ?? "friday-client",
-        timeout: opts.timeoutMs ?? 5_000,
-      });
-      return {
-        nc,
-        cleanup: async () => {
-          try {
-            await nc.drain();
-          } catch {
-            // Already closed / draining.
-          }
-        },
-      };
+      return await openHandle(resolvedUrl, opts);
     } catch (err) {
-      if (!spawnFallback) throw rethrowConnectError(resolvedUrl, err);
       if (source === "env") {
-        // External-broker mode — refuse to spawn; the operator told us
-        // explicitly where the broker lives.
+        // External-broker mode — refuse to spawn regardless of
+        // spawnFallback. The operator told us explicitly where the
+        // broker lives; spawning would silently shadow it.
+        throw rethrowConnectError(resolvedUrl, err);
+      }
+      if (!spawnFallback) {
         throw rethrowConnectError(resolvedUrl, err);
       }
       // Explicit URL with spawnFallback=true — fall through to spawn.
     }
   }
-  // source === "default" falls straight through to spawn — we never
-  // probe-and-reuse the legacy :4222 because that's the silent-attach
-  // failure mode Phase 4 closes.
+  // source === "none" falls straight through to spawn.
 
-  // 3. Spawn an ephemeral broker (CLI fallback path).
+  // Spawn gate: applies to all fall-through paths. Without this check,
+  // a caller passing `spawnFallback: false` (e.g. `friday migrate
+  // --no-spawn`) would silently spawn anyway when the URL file is
+  // stale or no URL was resolvable — defeating the documented contract.
+  if (!spawnFallback) {
+    const detail =
+      source === "url-file"
+        ? "URL file points at a dead broker"
+        : "no URL resolvable (no FRIDAY_NATS_URL, no opts.url, no `<home>/nats/url`)";
+    throw new Error(
+      `NATS broker not reachable: ${detail}; spawnFallback=false.\n` +
+        "  - Start the daemon: `atlas daemon start`\n" +
+        "  - Or set FRIDAY_NATS_URL to point at an external broker",
+    );
+  }
+
   if (!opts.storeDir) {
     throw new Error(
       "connectOrSpawn requires `storeDir` to spawn a broker. " +
