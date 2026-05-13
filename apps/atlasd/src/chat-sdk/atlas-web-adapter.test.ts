@@ -306,6 +306,182 @@ describe("AtlasWebAdapter.handleWebhook", () => {
       expect(parts).toHaveLength(3);
       expect((parts[1] as { text: string }).text).toContain("shared");
     });
+
+    it("emits a self-closing tag (no inline bytes) for non-text artifacts", async () => {
+      const { adapter } = createAdapter();
+      const chat = createMockChat();
+      await adapter.initialize(chat as never);
+
+      // application/pdf is in the artifact mime allowlist but not text/* —
+      // the agent reads the bytes via `parse_artifact` / `read_artifact`
+      // tools, so the prompt only carries a reference tag.
+      const artifactId = await createTextArtifact({
+        workspaceId: "ws-test-001",
+        // Real PDF magic bytes so the storage layer doesn't sniff it as
+        // application/octet-stream.
+        content: "%PDF-1.4\n%fake but plausibly-pdf\n",
+        mimeType: "application/pdf",
+        originalName: "report.pdf",
+      });
+
+      const request = new Request("http://localhost", {
+        method: "POST",
+        body: JSON.stringify({
+          id: "chat-binary",
+          message: {
+            id: "msg-binary",
+            role: "user",
+            parts: [
+              { type: "text", text: "summarize" },
+              {
+                type: "data-artifact-attached",
+                data: {
+                  artifactIds: [artifactId],
+                  filenames: ["report.pdf"],
+                  mimeTypes: ["application/pdf"],
+                },
+              },
+            ],
+            metadata: {},
+          },
+        }),
+        headers: { "Content-Type": "application/json" },
+      });
+      await adapter.handleWebhook(request);
+
+      const message = chat.processMessage.mock.calls[0]?.[2] as Message<WebChatPayload>;
+      const inlined = (message.raw.uiMessage.parts[1] as { text: string }).text;
+      // Self-closing tag, no body, references the artifact id so the agent
+      // can fetch via tool calls.
+      expect(inlined).toContain(`artifactId="${artifactId}"`);
+      expect(inlined).toContain("/>");
+      expect(inlined).not.toContain("</attachment>");
+      expect(inlined).not.toContain("%PDF-1.4");
+    });
+
+    it("skips and warns when an attached artifact id does not exist", async () => {
+      const { adapter } = createAdapter();
+      const chat = createMockChat();
+      await adapter.initialize(chat as never);
+
+      const { logger } = await import("@atlas/logger");
+      const warnSpy = vi.fn();
+      const originalWarn = logger.warn.bind(logger);
+      logger.warn = ((event: string, ctx?: Record<string, unknown>) => {
+        if (event === "atlas_web_adapter_attached_artifact_missing") {
+          warnSpy(event, ctx);
+        }
+        return originalWarn(event, ctx);
+      }) as typeof logger.warn;
+
+      try {
+        const request = new Request("http://localhost", {
+          method: "POST",
+          body: JSON.stringify({
+            id: "chat-missing",
+            message: buildAttachedMessage("00000000-0000-0000-0000-deadbeef0000", "ghost.csv"),
+          }),
+          headers: { "Content-Type": "application/json" },
+        });
+        await adapter.handleWebhook(request);
+      } finally {
+        logger.warn = originalWarn;
+      }
+
+      const message = chat.processMessage.mock.calls[0]?.[2] as Message<WebChatPayload>;
+      const parts = message.raw.uiMessage.parts;
+      // No synthetic text part inserted; original two parts survive.
+      expect(parts).toHaveLength(2);
+      expect(parts[0]).toMatchObject({ type: "text", text: "summarize" });
+      expect(parts[1]).toMatchObject({ type: "data-artifact-attached" });
+      expect(warnSpy).toHaveBeenCalledWith(
+        "atlas_web_adapter_attached_artifact_missing",
+        expect.objectContaining({ artifactId: "00000000-0000-0000-0000-deadbeef0000" }),
+      );
+    });
+
+    it("inserts the right expansion before each of multiple data-artifact-attached parts", async () => {
+      // Reverse-walk splice correctness: two `data-artifact-attached` parts
+      // in one message must each receive their own preceding text part,
+      // with the right bytes for the right id.
+      const { adapter } = createAdapter();
+      const chat = createMockChat();
+      await adapter.initialize(chat as never);
+
+      const idA = await createTextArtifact({
+        workspaceId: "ws-test-001",
+        content: "alpha\n",
+        mimeType: "text/plain",
+        originalName: "a.txt",
+      });
+      const idB = await createTextArtifact({
+        workspaceId: "ws-test-001",
+        content: "bravo\n",
+        mimeType: "text/plain",
+        originalName: "b.txt",
+      });
+
+      const request = new Request("http://localhost", {
+        method: "POST",
+        body: JSON.stringify({
+          id: "chat-multi",
+          message: {
+            id: "msg-multi",
+            role: "user",
+            parts: [
+              { type: "text", text: "before-a" },
+              {
+                type: "data-artifact-attached",
+                data: { artifactIds: [idA], filenames: ["a.txt"], mimeTypes: ["text/plain"] },
+              },
+              { type: "text", text: "between" },
+              {
+                type: "data-artifact-attached",
+                data: { artifactIds: [idB], filenames: ["b.txt"], mimeTypes: ["text/plain"] },
+              },
+            ],
+            metadata: {},
+          },
+        }),
+        headers: { "Content-Type": "application/json" },
+      });
+      await adapter.handleWebhook(request);
+
+      const message = chat.processMessage.mock.calls[0]?.[2] as Message<WebChatPayload>;
+      const parts = message.raw.uiMessage.parts;
+      // [before-a, expansion-a, attached-a, between, expansion-b, attached-b]
+      expect(parts).toHaveLength(6);
+      expect(parts[0]).toMatchObject({ type: "text", text: "before-a" });
+      expect((parts[1] as { text: string }).text).toContain("alpha");
+      expect((parts[1] as { text: string }).text).toContain(idA);
+      expect(parts[2]).toMatchObject({ type: "data-artifact-attached" });
+      expect(parts[3]).toMatchObject({ type: "text", text: "between" });
+      expect((parts[4] as { text: string }).text).toContain("bravo");
+      expect((parts[4] as { text: string }).text).toContain(idB);
+      expect(parts[5]).toMatchObject({ type: "data-artifact-attached" });
+      // Cross-contamination guard: the alpha expansion must not mention idB
+      // and vice versa.
+      expect((parts[1] as { text: string }).text).not.toContain("bravo");
+      expect((parts[4] as { text: string }).text).not.toContain("alpha");
+    });
+
+    it("no-ops when the message has no data-artifact-attached parts", async () => {
+      // Defensive baseline: a plain text message must not pay any artifact
+      // I/O cost on the hot path.
+      const { adapter } = createAdapter();
+      const chat = createMockChat();
+      await adapter.initialize(chat as never);
+
+      const request = new Request("http://localhost", {
+        method: "POST",
+        body: JSON.stringify({ id: "chat-plain", message: textMessage("just text") }),
+        headers: { "Content-Type": "application/json" },
+      });
+      await adapter.handleWebhook(request);
+
+      const message = chat.processMessage.mock.calls[0]?.[2] as Message<WebChatPayload>;
+      expect(message.raw.uiMessage.parts).toEqual([{ type: "text", text: "just text" }]);
+    });
   });
 
   it("preserves data-artifact-attached parts on WebChatPayload.uiMessage", async () => {

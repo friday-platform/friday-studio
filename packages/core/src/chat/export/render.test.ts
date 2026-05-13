@@ -822,6 +822,66 @@ describe("buildSegments", () => {
     expect(segs).toEqual([{ type: "text", content: text }]);
   });
 
+  it("emits an artifact-list segment for data-artifact-attached parts", () => {
+    // Minimum contract: a `data-artifact-attached` part becomes one
+    // `artifact-list` segment carrying its ids/filenames/mimeTypes. The
+    // chat-message-list renders one ArtifactCard per id.
+    const segs = buildSegments(
+      makeMessage([
+        {
+          type: "data-artifact-attached",
+          data: {
+            artifactIds: ["a-1", "a-2"],
+            filenames: ["x.csv", "y.json"],
+            mimeTypes: ["text/csv", "application/json"],
+          },
+        },
+      ]),
+    );
+    expect(segs).toEqual([
+      {
+        type: "artifact-list",
+        ids: ["a-1", "a-2"],
+        filenames: ["x.csv", "y.json"],
+        mimeTypes: ["text/csv", "application/json"],
+      },
+    ]);
+  });
+
+  it("flushes prior text/tool-burst before an artifact-list segment", () => {
+    // Chronological ordering invariant — the artifact card must land in
+    // the slot where the message attached it, after any preceding text or
+    // tool activity has been committed to its own segment.
+    const segs = buildSegments(
+      makeMessage([
+        { type: "text", text: "context" },
+        staticToolPart("web_fetch", "c1", "output-available"),
+        { type: "data-artifact-attached", data: { artifactIds: ["a-1"], filenames: ["x.csv"] } },
+        { type: "text", text: "after" },
+      ]),
+    );
+    expect(segs).toHaveLength(4);
+    expect(segs[0]).toEqual({ type: "text", content: "context" });
+    expect(segs[1]?.type).toBe("tool-burst");
+    expect(segs[2]).toEqual({ type: "artifact-list", ids: ["a-1"], filenames: ["x.csv"] });
+    expect(segs[3]).toEqual({ type: "text", content: "after" });
+  });
+
+  it("ignores data-artifact-attached parts with no string ids", () => {
+    // Defensive against malformed wire data — without this guard a
+    // non-array `artifactIds` or all-empty payload would push a degenerate
+    // segment that the chat-message-list would happily render zero cards
+    // for. Drop the segment entirely instead.
+    const segs = buildSegments(
+      makeMessage([
+        { type: "text", text: "still here" },
+        { type: "data-artifact-attached", data: { artifactIds: [], filenames: [] } },
+        { type: "data-artifact-attached", data: { artifactIds: "not an array" } },
+      ]),
+    );
+    expect(segs).toEqual([{ type: "text", content: "still here" }]);
+  });
+
   it("ignores malformed parts (non-object, missing type, non-string type)", () => {
     const segs = buildSegments(
       makeMessage([
