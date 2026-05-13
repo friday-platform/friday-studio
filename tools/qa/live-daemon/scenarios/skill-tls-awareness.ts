@@ -253,11 +253,25 @@ async function runStaticChecks(): Promise<EvalResult[]> {
     });
   }
 
+  // The sweep is the primary defense against drift: a new skill with a
+  // bare URL must fail the eval the day it lands. That defense degrades
+  // silently if `discoverSkillFiles()` returns [] — skills dir relocated,
+  // glob pattern broken, package boundary change. `paths.length > 0` is
+  // the discrimination signal that distinguishes "30 files all clean"
+  // from "no files scanned and we have no idea." See review v2 Important
+  // #2.
+  const swept = paths.length > 0;
+  const clean = aggregateViolations.length === 0;
   results.push({
     id: "skill-tls-static:sweep",
-    pass: aggregateViolations.length === 0,
-    notes:
-      aggregateViolations.length === 0
+    pass: swept && clean,
+    notes: !swept
+      ? [
+          "FAIL: discoverSkillFiles() returned 0 files — skills directory moved, " +
+            "glob pattern broken, or the skills/ tree was relocated. The auto-" +
+            "discovery sweep cannot protect against drift if it finds nothing.",
+        ]
+      : clean
         ? [`swept ${paths.length} skill markdown file(s) — all clean`]
         : aggregateViolations
             .slice(0, 8)

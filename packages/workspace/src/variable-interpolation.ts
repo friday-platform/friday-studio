@@ -128,10 +128,14 @@ export async function resolveWorkspaceVariables(
     return null;
   }
 
+  // platform_url is intentionally left undefined when daemonUrl is absent so
+  // the schema's `.default(() => getAtlasDaemonUrl())` fires. Without this,
+  // the call-site `??` made the schema default dead code and the test that
+  // claimed to exercise it was tautological (see review v2 Important #1).
   return WorkspaceVariablesSchema.parse({
     repo_root: repoRoot,
     workspace_path: workspacePath,
     workspace_id: workspaceId,
-    platform_url: daemonUrl ?? getAtlasDaemonUrl(),
+    platform_url: daemonUrl,
   });
 }

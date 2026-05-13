@@ -9,6 +9,7 @@ import {
   interpolateConfig,
   resolveWorkspaceVariables,
   type WorkspaceVariables,
+  WorkspaceVariablesSchema,
 } from "../variable-interpolation.ts";
 
 const VARS: WorkspaceVariables = {
@@ -135,13 +136,89 @@ describe("findRepoRoot", () => {
   });
 });
 
+// getAtlasDaemonUrl() reads multiple env keys (FRIDAYD_URL, legacy
+// FRIDAY_DAEMON_URL alias, FRIDAY_PORT_FRIDAY port override) and
+// auto-upgrades the scheme to https:// when FRIDAY_TLS_CERT + _KEY are
+// both set. Mirrors the list at packages/openapi-client/src/utils.test.ts:23
+// so both test files isolate the same surface. Without this, a developer
+// who has run setup-tls.sh or has any of these exported in their shell
+// sees flaky failures.
+const ENV_KEYS = [
+  "FRIDAYD_URL",
+  "FRIDAY_DAEMON_URL",
+  "FRIDAY_PORT_FRIDAY",
+  "FRIDAY_TLS_CERT",
+  "FRIDAY_TLS_KEY",
+  "FRIDAY_ATLAS_PLATFORM_URL",
+];
+
+describe("WorkspaceVariablesSchema.platform_url default", () => {
+  // Direct schema-level test: parse() with platform_url *omitted* triggers
+  // the schema's `.default(() => getAtlasDaemonUrl())`. The original
+  // function-level test was tautological because the call site always
+  // passed a resolved string, so the schema default was dead code (review
+  // v2 Important #1). With the call site now passing `platform_url:
+  // daemonUrl` (possibly undefined), the schema default fires — and this
+  // direct test locks that branch in so a future refactor can't quietly
+  // turn it into dead code again.
+  const envSnapshot: Record<string, string | undefined> = {};
+
+  beforeEach(() => {
+    for (const k of ENV_KEYS) {
+      envSnapshot[k] = process.env[k];
+      delete process.env[k];
+    }
+  });
+
+  afterEach(() => {
+    for (const k of ENV_KEYS) {
+      if (envSnapshot[k] === undefined) delete process.env[k];
+      else process.env[k] = envSnapshot[k];
+    }
+  });
+
+  it("schema default fires when platform_url key is omitted from parse input", () => {
+    const result = WorkspaceVariablesSchema.parse({
+      repo_root: "/tmp/repo",
+      workspace_path: "/tmp/repo/workspaces/x",
+      workspace_id: "x",
+      // platform_url intentionally omitted
+    });
+    // Reverting the schema's `.default(() => getAtlasDaemonUrl())` to a
+    // literal like `.default("http://example.broken")` would make this
+    // assertion fail — proves the branch is actually reached.
+    expect(result.platform_url).toBe(getAtlasDaemonUrl());
+    // And the resolved value reflects env, not a hardcoded literal.
+    expect(result.platform_url).toBe("http://127.0.0.1:8080");
+  });
+
+  it("schema default fires when platform_url is explicitly undefined", () => {
+    const result = WorkspaceVariablesSchema.parse({
+      repo_root: "/tmp/repo",
+      workspace_path: "/tmp/repo/workspaces/x",
+      workspace_id: "x",
+      platform_url: undefined,
+    });
+    expect(result.platform_url).toBe(getAtlasDaemonUrl());
+  });
+
+  it("schema default honors FRIDAYD_URL (proves the default *calls* getAtlasDaemonUrl)", () => {
+    process.env.FRIDAYD_URL = "http://example.test:9999";
+    const result = WorkspaceVariablesSchema.parse({
+      repo_root: "/tmp/repo",
+      workspace_path: "/tmp/repo/workspaces/x",
+      workspace_id: "x",
+    });
+    // Reverting the schema default to a captured-at-startup value (e.g.
+    // `.default(getAtlasDaemonUrl())` instead of `.default(() =>
+    // getAtlasDaemonUrl())`) would break this test — proves the default
+    // resolves *at parse time*, not at module-load time.
+    expect(result.platform_url).toBe("http://example.test:9999");
+  });
+});
+
 describe("resolveWorkspaceVariables", () => {
   let tempDir: string;
-  // getAtlasDaemonUrl() reads FRIDAYD_URL, the legacy FRIDAY_DAEMON_URL alias,
-  // and auto-upgrades the scheme to https:// when FRIDAY_TLS_CERT + _KEY are
-  // both set. Snapshot all four keys per test so a developer who has run
-  // setup-tls.sh in their shell doesn't see flaky failures.
-  const ENV_KEYS = ["FRIDAYD_URL", "FRIDAY_DAEMON_URL", "FRIDAY_TLS_CERT", "FRIDAY_TLS_KEY"];
   const envSnapshot: Record<string, string | undefined> = {};
 
   beforeEach(() => {
