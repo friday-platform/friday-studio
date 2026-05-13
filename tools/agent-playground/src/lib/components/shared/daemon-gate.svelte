@@ -2,6 +2,7 @@
   import { Button } from "@atlas/ui";
   import { browser } from "$app/environment";
   import { checkDaemonHealth, daemonHealth } from "$lib/daemon-health.svelte";
+  import { fade } from "svelte/transition";
   import type { Snippet } from "svelte";
   import DaemonLoading from "./daemon-loading.svelte";
 
@@ -18,19 +19,16 @@
   only flips on a client-side fetch, leaving SSR stuck on "Connecting…".
 -->
 {#if browser && daemonHealth.loading && !daemonHealth.hasConnected}
-  <DaemonLoading />
+  <div class="gate-state" out:fade={{ duration: 500 }}>
+    <DaemonLoading />
+  </div>
 {:else if browser && !daemonHealth.connected && !daemonHealth.hasConnected}
-  <div class="gate-state">
-    <p class="gate-icon">!</p>
-    <p class="gate-title">Reconnecting to Friday Studio…</p>
-    <p class="gate-message">
-      The background services are still starting up or were briefly unavailable.
-      This usually clears in a few seconds.
-    </p>
+  <div class="gate-state" out:fade={{ duration: 500 }}>
+    <DaemonLoading />
     <Button size="small" variant="secondary" onclick={retry}>Retry Now</Button>
   </div>
 {:else}
-  <div class="gate-content">
+  <div class="gate-content" in:fade={{ duration: 500 }}>
     {#if !daemonHealth.connected}
       <div class="gate-banner" role="status">
         <span>Reconnecting to Friday Studio…</span>
@@ -45,15 +43,19 @@
   .gate-state {
     align-items: center;
     display: flex;
-    flex: 1;
     flex-direction: column;
     gap: var(--size-3);
     justify-content: center;
+    min-block-size: 100%;
     padding: var(--size-10);
   }
 
+  /* Wrap the content branch in a real box so Svelte's in:fade has
+     something to animate; flex column lets children fill the page. */
   .gate-content {
-    display: contents;
+    block-size: 100%;
+    display: flex;
+    flex-direction: column;
   }
 
   .gate-banner {
@@ -66,28 +68,4 @@
     justify-content: center;
     padding: var(--size-2) var(--size-4);
   }
-
-  .gate-icon {
-    align-items: center;
-    background-color: color-mix(in srgb, var(--color-error), transparent 85%);
-    block-size: var(--size-12);
-    border-radius: var(--radius-round);
-    color: var(--color-error);
-    display: flex;
-    font-size: var(--font-size-6);
-    font-weight: var(--font-weight-7);
-    inline-size: var(--size-12);
-    justify-content: center;
-  }
-
-  .gate-title {
-    font-size: var(--font-size-5);
-    font-weight: var(--font-weight-6);
-  }
-
-  .gate-message {
-    color: color-mix(in srgb, var(--color-text), transparent 25%);
-    font-size: var(--font-size-3);
-  }
-
 </style>

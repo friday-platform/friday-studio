@@ -1,4 +1,4 @@
-<p class="message">Connecting to daemon...</p>
+<p class="message">Connecting...</p>
 
 <style>
   .message {

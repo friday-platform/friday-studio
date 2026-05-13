@@ -25,21 +25,31 @@
 </div>
 
 <style>
+  /* Fade in on mount — avoids a hard flash when the daemon connects fast.
+     Page-fill / vertical centering is handled by the parent (daemon-gate)
+     so this stays a self-contained block of content. */
   .loading {
     align-items: center;
     display: flex;
-    flex: 1;
     flex-direction: column;
-    gap: var(--size-5);
+    gap: var(--size-4);
     justify-content: center;
     padding: var(--size-10);
+    animation: fade-in 1s ease-out;
   }
 
-  /* Tall enough that the leap arc never clips above. overflow:visible so
-     it doesn't matter if it does. */
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
   .conveyor {
-    block-size: var(--size-28);
-    inline-size: 110px;
+    block-size: 84px;
+    inline-size: 83px;
     overflow: visible;
     position: relative;
   }
@@ -54,7 +64,7 @@
 
   @keyframes scroll {
     to {
-      transform: translateX(-80px);
+      transform: translateX(-60px);
     }
   }
 
@@ -66,16 +76,16 @@
   }
 
   .walker-a {
-    block-size: var(--size-6);
-    inline-size: var(--size-6);
-    inset-inline-start: 18px;
+    block-size: 18px;
+    inline-size: 18px;
+    inset-inline-start: 14px;
     animation: hop-a 1.7s cubic-bezier(0.45, 0, 0.55, 1) infinite;
   }
 
   .walker-b {
-    block-size: var(--size-7-5);
-    inline-size: var(--size-7-5);
-    inset-inline-start: 55px;
+    block-size: 23px;
+    inline-size: 23px;
+    inset-inline-start: 41px;
     animation: hop-b 1.7s cubic-bezier(0.45, 0, 0.55, 1) infinite;
   }
 
@@ -88,7 +98,7 @@
     transform-origin: 50% 100%;
   }
 
-  /* Leap distance 80px (= 2 × center-to-center spacing of 40px) so the arc
+  /* Leap distance 60px (= 2 × center-to-center spacing of 30px) so the arc
      peak lands directly above the other shape's center. Walker A leaps in
      the first half of the cycle, B in the second half. */
   @keyframes hop-a {
@@ -99,25 +109,25 @@
       transform: translate(0, 0) scaleY(0.85);
     }
     14% {
-      transform: translate(13px, -22px) scaleY(1.08);
+      transform: translate(10px, -17px) scaleY(1.08);
     }
     25% {
-      transform: translate(40px, -42px) scaleY(1.05);
+      transform: translate(30px, -32px) scaleY(1.05);
     }
     38% {
-      transform: translate(68px, -20px) scaleY(0.95);
+      transform: translate(51px, -15px) scaleY(0.95);
     }
     47% {
-      transform: translate(80px, 0) scaleY(0.6);
+      transform: translate(60px, 0) scaleY(0.6);
     }
     50% {
-      transform: translate(80px, -4px) scaleY(1.08);
+      transform: translate(60px, -3px) scaleY(1.08);
     }
     54% {
-      transform: translate(80px, 0) scaleY(1);
+      transform: translate(60px, 0) scaleY(1);
     }
     100% {
-      transform: translate(80px, 0) scaleY(1);
+      transform: translate(60px, 0) scaleY(1);
     }
   }
 
@@ -130,22 +140,22 @@
       transform: translate(0, 0) scaleY(0.85);
     }
     64% {
-      transform: translate(13px, -22px) scaleY(1.1);
+      transform: translate(10px, -17px) scaleY(1.1);
     }
     75% {
-      transform: translate(40px, -42px) scaleY(1.05);
+      transform: translate(30px, -32px) scaleY(1.05);
     }
     88% {
-      transform: translate(68px, -20px) scaleY(0.93);
+      transform: translate(51px, -15px) scaleY(0.93);
     }
     97% {
-      transform: translate(80px, 0) scaleY(0.55);
+      transform: translate(60px, 0) scaleY(0.55);
     }
     99% {
-      transform: translate(80px, -5px) scaleY(1.1);
+      transform: translate(60px, -4px) scaleY(1.1);
     }
     100% {
-      transform: translate(80px, 0) scaleY(1);
+      transform: translate(60px, 0) scaleY(1);
     }
   }
 
