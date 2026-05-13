@@ -1,75 +1,23 @@
 <script lang="ts">
+  import { ALLOWED_EXTENSION_LIST } from "@atlas/core/artifacts/file-upload";
   import {
-    ALLOWED_EXTENSION_LIST,
-    inferMimeFromFilename,
-    isTextMimeType,
-  } from "@atlas/core/artifacts/file-upload";
-  import { uploadFile } from "$lib/upload.ts";
+    type ArtifactAttachment,
+    type ChatAttachment,
+    type ImageAttachment,
+    buildArtifactAttachment,
+    classifyAttachment,
+    runArtifactUpload,
+  } from "./chat-attachment.ts";
 
-  /**
-   * Image attachment: rendered inline in the user bubble and shipped to the
-   * model as a `type: "file"` UI message part (data URL). Images stay on the
-   * inline path so the model gets them as a vision input without a tool
-   * roundtrip.
-   */
-  export interface ImageAttachment {
-    kind: "image";
-    id: string;
-    file: File;
-    dataUrl: string;
-  }
+  // Re-export the attachment types so existing imports
+  // (`import { ChatAttachment } from "./chat-input.svelte"`) keep working.
+  export type { ArtifactAttachment, ChatAttachment, ImageAttachment };
 
-  /**
-   * Artifact attachment: any non-image file the user dropped. Uploaded to
-   * `/api/artifacts/upload` on drop; the chip shows progress while in flight.
-   * On submit, the resolved `artifactId` lands in a `data-artifact-attached`
-   * message part so the user bubble renders an `ArtifactCard` (same component
-   * agent-produced CSV/JSON/PDF previews use). The chat handler expands the
-   * artifact's bytes back into the model prompt server-side.
-   */
-  export interface ArtifactAttachment {
-    kind: "artifact";
-    id: string;
-    file: File;
-    /** Inferred or browser-reported mime — surfaced on the pending chip. */
-    mediaType: string;
-    status: "uploading" | "ready" | "error";
-    /** Bytes uploaded so far. Together with file.size yields percentage. */
-    progress: number;
-    /** Set once the upload resolves. The submit handler attaches this id. */
-    artifactId?: string;
-    errorMessage?: string;
-    /** Abort handle — wired to the chip's ✕ so cancel actually cancels. */
-    abortController: AbortController;
-  }
-
-  export type ChatAttachment = ImageAttachment | ArtifactAttachment;
-
-  const IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".webp"];
   // The artifact endpoint accepts every extension in ALLOWED_EXTENSION_LIST —
   // text, JSON, CSV, MD, PDF, DOCX, PPTX, audio. Drop any of them in the
   // chat and they upload as artifacts; the user bubble renders the same
   // `ArtifactCard` the agent uses for its own outputs.
   const ACCEPT_ATTR = ALLOWED_EXTENSION_LIST.join(",");
-
-  function classifyFile(file: File): "image" | "artifact" | null {
-    if (file.type.startsWith("image/")) return "image";
-    const inferred = inferMimeFromFilename(file.name);
-    if (inferred?.startsWith("image/")) return "image";
-    // Anything else uploadable goes through the artifact path. Use the same
-    // allowlist `uploadFile()` validates against so we don't show a pending
-    // chip that the server is going to reject anyway.
-    const dot = file.name.lastIndexOf(".");
-    if (dot >= 0) {
-      const ext = file.name.slice(dot).toLowerCase();
-      if (ALLOWED_EXTENSION_LIST.includes(ext)) return "artifact";
-    }
-    // Some text-mime files won't match an extension we recognize (eg `.todo`,
-    // `.notes`). If the browser reported a text mime, treat as artifact too —
-    // the server's magic-byte sniff has the final say.
-    if (file.type && isTextMimeType(file.type)) return "artifact";
-    return null;
-  }
 
   interface Props {
     /**
@@ -204,30 +152,9 @@
     );
   }
 
-  function startArtifactUpload(att: ArtifactAttachment) {
-    void uploadFile(
-      att.file,
-      (loaded) => patchAttachment(att.id, { progress: loaded }),
-      att.abortController.signal,
-      undefined,
-      workspaceId,
-    ).then((result) => {
-      if (att.abortController.signal.aborted) return;
-      if ("artifactId" in result) {
-        patchAttachment(att.id, {
-          status: "ready",
-          progress: att.file.size,
-          artifactId: result.artifactId,
-        });
-      } else if (result.error !== "Upload cancelled") {
-        patchAttachment(att.id, { status: "error", errorMessage: result.error });
-      }
-    });
-  }
-
   async function addFiles(files: FileList | File[]) {
     for (const file of files) {
-      const kind = classifyFile(file);
+      const kind = classifyAttachment(file);
       if (kind === "image") {
         const dataUrl = await fileToDataUrl(file);
         attachments = [
@@ -235,18 +162,9 @@
           { kind: "image", id: crypto.randomUUID(), file, dataUrl },
         ];
       } else if (kind === "artifact") {
-        const mediaType = file.type || inferMimeFromFilename(file.name) || "application/octet-stream";
-        const att: ArtifactAttachment = {
-          kind: "artifact",
-          id: crypto.randomUUID(),
-          file,
-          mediaType,
-          status: "uploading",
-          progress: 0,
-          abortController: new AbortController(),
-        };
+        const att = buildArtifactAttachment(file);
         attachments = [...attachments, att];
-        startArtifactUpload(att);
+        runArtifactUpload({ att, workspaceId, onUpdate: patchAttachment });
       }
     }
   }

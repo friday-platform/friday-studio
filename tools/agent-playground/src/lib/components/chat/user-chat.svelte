@@ -13,16 +13,14 @@
     subscribeToWorkspaceElicitations,
   } from "$lib/shared-worker/client.ts";
   import { DefaultChatTransport } from "ai";
-  import ChatInput, {
+  import ChatInput from "./chat-input.svelte";
+  import {
     type ArtifactAttachment,
     type ChatAttachment,
-  } from "./chat-input.svelte";
-  import {
-    ALLOWED_EXTENSION_LIST,
-    inferMimeFromFilename,
-    isTextMimeType,
-  } from "@atlas/core/artifacts/file-upload";
-  import { uploadFile } from "$lib/upload.ts";
+    buildArtifactAttachment,
+    classifyAttachment,
+    runArtifactUpload,
+  } from "./chat-attachment.ts";
   import ChatInspector from "./chat-inspector.svelte";
   import ChatMessageList from "./chat-message-list.svelte";
   import ChatSessionUsage from "./chat-session-usage.svelte";
@@ -77,44 +75,10 @@
     });
   }
 
-  function classifyDroppedFile(file: File): "image" | "artifact" | null {
-    if (file.type.startsWith("image/")) return "image";
-    const inferred = inferMimeFromFilename(file.name);
-    if (inferred?.startsWith("image/")) return "image";
-    const dot = file.name.lastIndexOf(".");
-    if (dot >= 0) {
-      const ext = file.name.slice(dot).toLowerCase();
-      if (ALLOWED_EXTENSION_LIST.includes(ext)) return "artifact";
-    }
-    if (file.type && isTextMimeType(file.type)) return "artifact";
-    return null;
-  }
-
   function patchPendingArtifact(id: string, patch: Partial<ArtifactAttachment>) {
     pendingAttachments = pendingAttachments.map((a) =>
       a.kind === "artifact" && a.id === id ? { ...a, ...patch } : a,
     );
-  }
-
-  function startPendingUpload(att: ArtifactAttachment) {
-    void uploadFile(
-      att.file,
-      (loaded) => patchPendingArtifact(att.id, { progress: loaded }),
-      att.abortController.signal,
-      undefined,
-      wsId,
-    ).then((result) => {
-      if (att.abortController.signal.aborted) return;
-      if ("artifactId" in result) {
-        patchPendingArtifact(att.id, {
-          status: "ready",
-          progress: att.file.size,
-          artifactId: result.artifactId,
-        });
-      } else if (result.error !== "Upload cancelled") {
-        patchPendingArtifact(att.id, { status: "error", errorMessage: result.error });
-      }
-    });
   }
 
   function handleChatDrop(e: DragEvent) {
@@ -152,7 +116,7 @@
 
   async function addDroppedFiles(files: FileList) {
     for (const file of files) {
-      const kind = classifyDroppedFile(file);
+      const kind = classifyAttachment(file);
       if (kind === "image") {
         const dataUrl = await fileToDataUrl(file);
         pendingAttachments = [
@@ -160,19 +124,9 @@
           { kind: "image", id: crypto.randomUUID(), file, dataUrl },
         ];
       } else if (kind === "artifact") {
-        const mediaType =
-          file.type || inferMimeFromFilename(file.name) || "application/octet-stream";
-        const att: ArtifactAttachment = {
-          kind: "artifact",
-          id: crypto.randomUUID(),
-          file,
-          mediaType,
-          status: "uploading",
-          progress: 0,
-          abortController: new AbortController(),
-        };
+        const att = buildArtifactAttachment(file);
         pendingAttachments = [...pendingAttachments, att];
-        startPendingUpload(att);
+        runArtifactUpload({ att, workspaceId: wsId, onUpdate: patchPendingArtifact });
       }
     }
   }
