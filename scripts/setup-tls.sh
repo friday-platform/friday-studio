@@ -90,11 +90,8 @@ else
     # on macOS, sudo on Linux); subsequent runs detect the CA is already
     # trusted and exit fast.
     echo "→ Ensuring mkcert root CA is trusted (may prompt for admin password)"
-    # Hide JAVA_HOME from mkcert: when set, mkcert also tries to install the
-    # CA into the JDK's cacerts via keytool. Friday doesn't run on the JVM,
-    # and a half-installed JDK (cacerts missing) makes mkcert exit non-zero
-    # — which under `set -e` kills this script before s2s certs are written,
-    # even though the macOS/Linux system-trust install already succeeded.
+    # Unset JAVA_HOME so mkcert skips Java's cacerts; a broken JDK there
+    # would fail keytool and abort the script under `set -e`.
     env -u JAVA_HOME mkcert -install
 fi
 
