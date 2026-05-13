@@ -89,7 +89,7 @@ vi.mock("@atlas/logger", () => ({
 const { registerAgentRoute } = await import("./register.ts");
 const { daemonFactory } = await import("../../src/factory.ts");
 
-function makeApp(subPayload: unknown = null) {
+function makeApp(subPayload: unknown = null, natsUrl = "nats://127.0.0.1:14222") {
   const app = daemonFactory.createApp();
   app.use("*", async (c, next) => {
     const sub = subPayload !== null ? makeMockSub(subPayload) : null;
@@ -99,6 +99,7 @@ function makeApp(subPayload: unknown = null) {
           subscribe: mockSubscribe.mockReturnValue(sub),
           flush: vi.fn().mockResolvedValue(undefined),
         }),
+        getNatsUrl: () => natsUrl,
       },
       getAgentRegistry: () => ({ reload: vi.fn() }),
     } as never);
@@ -231,20 +232,16 @@ describe("POST /register", () => {
     expect(body.phase).toBe("validate");
   });
 
-  it("passes FRIDAY_VALIDATE_ID and the active NATS_URL to spawned process", async () => {
-    const app = makeApp({ id: "env-agent", version: "1.0.0", description: "Env test" });
-    const original = process.env.FRIDAY_NATS_URL;
-    process.env.FRIDAY_NATS_URL = "nats://127.0.0.1:4555";
-    try {
-      await app.request("/register", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ entrypoint: "/agents/agent.py" }),
-      });
-    } finally {
-      if (original === undefined) delete process.env.FRIDAY_NATS_URL;
-      else process.env.FRIDAY_NATS_URL = original;
-    }
+  it("passes FRIDAY_VALIDATE_ID and the daemon's NATS URL to spawned process", async () => {
+    const app = makeApp(
+      { id: "env-agent", version: "1.0.0", description: "Env test" },
+      "nats://127.0.0.1:4555",
+    );
+    await app.request("/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ entrypoint: "/agents/agent.py" }),
+    });
 
     const spawnCall = mockSpawn.mock.calls[0];
     const env = spawnCall?.[2]?.env as Record<string, string>;

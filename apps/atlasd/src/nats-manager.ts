@@ -43,21 +43,13 @@ import type { NatsConnection } from "nats";
 export class NatsManager {
   private spawned: SpawnedNats | null = null;
   private nc: NatsConnection | null = null;
+  private resolvedUrl: string | null = null;
   /**
    * Set after a successful start. The daemon is the canonical writer
    * of `<home>/nats/url` — `stop()` deletes the file regardless of
    * which path put us on the broker (env URL, cached URL, own spawn).
    */
   private ownsUrlFile = false;
-  /**
-   * Whether start() overwrote `process.env.FRIDAY_NATS_URL` so child
-   * spawns inherit the resolved URL. stop() restores the prior value
-   * (or clears it) — without that, a spawn between stop() and the next
-   * start() would inherit a URL pointing at the dead broker and hit
-   * the same 30s connect timeout the env-write was added to prevent.
-   */
-  private priorNatsUrl: string | undefined = undefined;
-  private envSet = false;
 
   async start(): Promise<NatsConnection> {
     // Log resolved JetStream config + provenance unconditionally — applies
@@ -131,16 +123,14 @@ export class NatsManager {
     this.ownsUrlFile = true;
     logger.info("Wrote broker URL file", { url, urlFile: brokerUrlFilePath(home) });
 
-    // Propagate the resolved URL to in-process env so child spawns
-    // inherit it instead of falling back to the hardcoded
-    // `nats://localhost:4222`. pickPort() chooses dynamically in the
-    // 14222 range, so the hardcoded fallback is wrong on every dev
-    // run where `.env` doesn't carry FRIDAY_NATS_URL. Capture the
-    // prior value first so stop() can restore the env to its
-    // pre-start state.
-    this.priorNatsUrl = process.env.FRIDAY_NATS_URL;
-    process.env.FRIDAY_NATS_URL = url;
-    this.envSet = true;
+    // Make the resolved URL available to in-process consumers
+    // (process-agent-executor, the agent-register route) so they pass
+    // it explicitly to child spawns instead of reading from
+    // `process.env.FRIDAY_NATS_URL`. pickPort() chooses dynamically in
+    // the 14222 range, so the historical hardcoded `localhost:4222`
+    // fallback at those call sites was wrong on every dev run where
+    // `.env` didn't carry FRIDAY_NATS_URL.
+    this.resolvedUrl = url;
 
     if (process.env.FRIDAY_NATS_MONITOR === "1") {
       logger.info(`NATS monitoring enabled at http://127.0.0.1:${DEFAULT_NATS_MONITOR_PORT}`);
@@ -153,6 +143,12 @@ export class NatsManager {
   get connection(): NatsConnection {
     if (!this.nc) throw new Error("NatsManager not started — call start() first");
     return this.nc;
+  }
+
+  /** Resolved broker URL, valid after start() completes. */
+  get url(): string {
+    if (!this.resolvedUrl) throw new Error("NatsManager not started — call start() first");
+    return this.resolvedUrl;
   }
 
   /**
@@ -201,15 +197,7 @@ export class NatsManager {
       this.ownsUrlFile = false;
     }
 
-    if (this.envSet) {
-      if (this.priorNatsUrl === undefined) {
-        delete process.env.FRIDAY_NATS_URL;
-      } else {
-        process.env.FRIDAY_NATS_URL = this.priorNatsUrl;
-      }
-      this.priorNatsUrl = undefined;
-      this.envSet = false;
-    }
+    this.resolvedUrl = null;
   }
 
   /**

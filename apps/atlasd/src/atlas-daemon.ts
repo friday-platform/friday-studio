@@ -614,7 +614,11 @@ export class AtlasDaemon {
     // Start capability handlers (wildcard subscribers for agent back-channel)
     this.capabilityRegistry = new CapabilityHandlerRegistry();
     this.capabilityRegistry.start(nc);
-    this.processAgentExecutor = new ProcessAgentExecutor(nc, this.capabilityRegistry);
+    this.processAgentExecutor = new ProcessAgentExecutor(
+      nc,
+      this.natsManager.url,
+      this.capabilityRegistry,
+    );
 
     // Create WorkspaceManager (initialize later once registrars and watcher are ready).
     // Registry storage is JetStream-KV-backed; the per-workspace records
@@ -1324,6 +1328,14 @@ export class AtlasDaemon {
       throw new Error("NATS not initialized — call initialize() first");
     }
     return this.natsManager.connection;
+  }
+
+  /** Get the resolved NATS broker URL (available after initialize()). */
+  public getNatsUrl(): string {
+    if (!this.natsManager) {
+      throw new Error("NATS not initialized — call initialize() first");
+    }
+    return this.natsManager.url;
   }
 
   /** Get the ProcessAgentExecutor (available after NATS initializes). */

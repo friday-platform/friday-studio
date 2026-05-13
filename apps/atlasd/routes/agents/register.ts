@@ -80,6 +80,7 @@ registerAgentRoute.post("/register", async (c) => {
   const sourceDir = dirname(entrypointPath);
 
   const nc = c.get("app").daemon.getNatsConnection();
+  const natsUrl = c.get("app").daemon.getNatsUrl();
 
   // Subscribe BEFORE spawning to avoid race (agent may publish and exit fast).
   // The flush() is load-bearing: without it, the SUB protocol message can sit
@@ -94,11 +95,7 @@ registerAgentRoute.post("/register", async (c) => {
 
   const [cmd, args] = buildAgentSpawnArgs(entrypointPath);
   const proc = spawn(cmd, args, {
-    env: {
-      ...process.env,
-      FRIDAY_VALIDATE_ID: registerId,
-      NATS_URL: process.env.FRIDAY_NATS_URL ?? "nats://localhost:4222",
-    },
+    env: { ...process.env, FRIDAY_VALIDATE_ID: registerId, NATS_URL: natsUrl },
     stdio: "pipe",
   });
 

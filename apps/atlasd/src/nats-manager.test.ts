@@ -147,31 +147,27 @@ describe("NatsManager — URL file is the rendezvous for out-of-env consumers", 
     expect(written).toBe(server.url);
   }, 15_000);
 
-  it("publishes resolved URL to FRIDAY_NATS_URL on start and restores it on stop", async () => {
-    // Regression: process-agent-executor reads process.env.FRIDAY_NATS_URL
-    // when spawning Python agents. pickPort() in spawn.ts chooses
-    // dynamically in the 14222 range, so the hardcoded
-    // `?? "nats://localhost:4222"` fallback fires on every dev run where
-    // the user's .env doesn't pin the URL — every Python agent then hangs
-    // 30s on the wrong port. The manager must propagate its resolved URL
-    // into in-process env so child spawns see the right host, and revert
-    // on stop() so a between-restarts spawn doesn't inherit a dead URL.
-    //
-    // We exercise the URL-file-reuse path (env unset, live broker
-    // advertised via <home>/nats/url) on purpose: the external-broker
-    // path is a tautology here because the test would have to pre-set
-    // env to the resolved URL, masking a missing production write.
+  it("exposes resolved URL via .url getter so callers can plumb it to child spawns", async () => {
+    // process-agent-executor + the agent-register route used to read
+    // process.env.FRIDAY_NATS_URL and fall back to a hardcoded
+    // localhost:4222 — wrong on every dev run because pickPort()
+    // allocates dynamically in the 14222 range. They now read the URL
+    // directly off the manager (via AtlasDaemon.getNatsUrl()) and pass
+    // it into the child's env explicitly. This test exercises the
+    // URL-file-reuse path on purpose: external-broker would be a
+    // tautology, and the spawn path would require running nats-server.
     delete process.env.FRIDAY_NATS_URL;
     server = await startNatsTestServer();
     await writeBrokerUrlFile(home as string, server.url);
 
     mgr = new NatsManager();
+    expect(() => mgr?.url).toThrow(/not started/);
+
     await mgr.start();
-    expect(process.env.FRIDAY_NATS_URL).toBe(server.url);
+    expect(mgr.url).toBe(server.url);
 
     await mgr.stop();
-    mgr = undefined;
-    expect(process.env.FRIDAY_NATS_URL).toBeUndefined();
+    expect(() => mgr?.url).toThrow(/not started/);
   }, 15_000);
 
   it("deletes <home>/nats/url on stop()", async () => {
