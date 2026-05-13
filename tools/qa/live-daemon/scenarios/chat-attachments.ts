@@ -488,20 +488,21 @@ async function runRejectsForeignPath(d: DaemonHandle): Promise<EvalResult> {
   metrics.durationMs = result.durationMs;
   metrics.toolCalls = result.toolCalls.map((c) => c.toolName);
 
-  // The adapter's path-validation gate should have refused the splice, so
-  // the agent never sees a `<attachment path="…" />` line for that path
-  // and therefore can't call read_attachment with it. If it did call
-  // read_attachment, the tool itself would still reject (its resolver
-  // scopes to this chat's uploads dir) — but the design intent is the
-  // adapter never lets the path leak that far.
-  const sawAttachment = result.events.some(
-    (e) => e.type === "text-delta" && typeof e.data === "object" && false, // placeholder
-  );
-  void sawAttachment;
-
-  // Strongest assertion: read_attachment was not invoked against the
-  // foreign path. (It might still be called against legitimate paths if
-  // the agent decided to do something, but not against this one.)
+  // Two assertions on the rejection gate:
+  //
+  // (1) The agent never invoked `read_attachment` with the foreign
+  //     path. This is the primary gate — if the adapter rejected the
+  //     splice, the agent never sees a `<attachment path=…>` line for
+  //     this path and so can't pass it to the tool. (Defense in depth:
+  //     the tool's `resolveAttachment` also rejects cross-chat paths,
+  //     so even if the splice somehow leaked, the tool wouldn't read.)
+  //
+  // (2) The agent's reply never quotes the foreign path verbatim. If
+  //     it did, the agent must have seen the path somewhere — which
+  //     means the adapter's scrubbing was incomplete. This is the
+  //     stricter check (#1 alone passes vacuously if the agent simply
+  //     decides not to call any tool; #2 closes that loophole because
+  //     a non-calling agent that *quotes* the path is still a leak).
   const readCalledWithForeign = result.toolCalls.some(
     (c) =>
       c.toolName === "read_attachment" &&
@@ -514,6 +515,14 @@ async function runRejectsForeignPath(d: DaemonHandle): Promise<EvalResult> {
     return { id: "rejects-foreign-path", pass: false, notes, metrics };
   }
   notes.push("Positive: agent did not read_attachment against the foreign-chat path.");
+
+  if (result.assistantText.includes(foreignPath)) {
+    notes.push(
+      `Negative: agent's reply quotes the foreign path — adapter gate leaked. Reply: "${result.assistantText.slice(0, 250)}"`,
+    );
+    return { id: "rejects-foreign-path", pass: false, notes, metrics };
+  }
+  notes.push("Positive: agent's reply does not quote the foreign path.");
 
   return { id: "rejects-foreign-path", pass: true, notes, metrics };
 }
@@ -699,6 +708,115 @@ async function runMultiFileRead(d: DaemonHandle): Promise<EvalResult> {
   );
 
   return { id: "multi-file-read", pass: true, notes, metrics };
+}
+
+/**
+ * Defense against the model fabricating a filename-as-path. The
+ * `<attachment …>` tag the adapter splices contains ONLY `path=` (an
+ * opaque md5) and `mediaType=` — NOT `filename=`. The display name
+ * shown in the user-bubble chip flows through a separate channel
+ * (`segment.filenames[i]` from the `data-file-attached` part) that the
+ * agent never sees.
+ *
+ * The risk we're locking against: under noisy context, models
+ * sometimes "recompose" paths from the filename they read in the
+ * user's text ("summarize annual_report_q4_2026.csv"). If the agent
+ * called `read_attachment(path="{uploadsRoot}/annual_report_q4_2026.csv")`
+ * the tool would 404 (the file is at `{uploadsRoot}/{md5}`), but the
+ * tool error round-trip wastes a turn and the agent might give up
+ * instead of retrying.
+ *
+ * This scenario drops a file with a deliberately distinctive filename
+ * and asserts: (a) the agent called `read_attachment` at least once,
+ * (b) EVERY `read_attachment` call's path is the exact md5 path the
+ * adapter spliced, (c) NO `read_attachment` call's path string
+ * contains the original filename.
+ */
+async function runAgentUsesPathVerbatimNotFilename(d: DaemonHandle): Promise<EvalResult> {
+  const notes: string[] = [];
+  const metrics: Record<string, unknown> = {};
+
+  const wsPath = await materializeWorkspace();
+  const ws = await registerWorkspace(d, wsPath, { name: "chat-attachments-qa-verbatim-path" });
+  const workspaceId = ws.id;
+
+  const chatId = `chat_eval_${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;
+  // Distinctive filename — a model that's "recomposing" a path from
+  // context will include this string. Real md5 paths never contain
+  // underscores or `q4_2026`.
+  const distinctiveFilename = "annual_report_q4_2026.csv";
+  const csv = "metric,value\nrevenue,12345\nchurn,4\nNPS,67\n";
+
+  const uploadsRoot = join(d.fridayHome, "scratch", "uploads", chatId);
+  const md5Path = await writeAttachmentBytes(uploadsRoot, csv);
+  metrics.md5Path = md5Path;
+  metrics.distinctiveFilename = distinctiveFilename;
+
+  // Submit with the distinctive filename in the data-file-attached part
+  // AND in the user's question — both surfaces a real chat would carry.
+  const result = await postChatMessageWithAttachment(
+    d,
+    workspaceId,
+    chatId,
+    `summarize ${distinctiveFilename} — what's the revenue and NPS?`,
+    { path: md5Path, filename: distinctiveFilename, mediaType: "text/csv" },
+    { timeoutMs: 180_000 },
+  );
+  metrics.durationMs = result.durationMs;
+  metrics.toolCalls = result.toolCalls.map((c) => c.toolName);
+
+  const readCalls = result.toolCalls.filter((c) => c.toolName === "read_attachment");
+
+  // (a) The agent must have called read_attachment at least once.
+  if (readCalls.length === 0) {
+    notes.push(
+      `Negative: agent never called read_attachment. Tools used: ${result.toolCalls.map((c) => c.toolName).join(", ") || "(none)"}.`,
+    );
+    return { id: "agent-uses-path-verbatim-not-filename", pass: false, notes, metrics };
+  }
+  notes.push(`Positive: agent called read_attachment ${readCalls.length}×.`);
+
+  // (b) + (c) Inspect each call's path. Every call must equal the md5
+  // path exactly AND must not contain the distinctive filename anywhere.
+  for (const call of readCalls) {
+    const input = call.input;
+    const callPath =
+      typeof input === "object" && input !== null ? (input as { path?: unknown }).path : undefined;
+    if (typeof callPath !== "string") {
+      notes.push(`Negative: read_attachment call has non-string path: ${typeof callPath}`);
+      return { id: "agent-uses-path-verbatim-not-filename", pass: false, notes, metrics };
+    }
+    if (callPath.includes(distinctiveFilename)) {
+      notes.push(
+        `Negative: read_attachment was called with a path containing the filename "${distinctiveFilename}". Agent fabricated the path instead of using the opaque md5 from the tag. Path: "${callPath}"`,
+      );
+      return { id: "agent-uses-path-verbatim-not-filename", pass: false, notes, metrics };
+    }
+    if (callPath !== md5Path) {
+      notes.push(
+        `Negative: read_attachment called with a path that doesn't match the spliced md5 path. Got: "${callPath}", expected: "${md5Path}"`,
+      );
+      return { id: "agent-uses-path-verbatim-not-filename", pass: false, notes, metrics };
+    }
+  }
+  notes.push(
+    `Positive: all ${readCalls.length} read_attachment call(s) used the exact md5 path; none contained the filename.`,
+  );
+
+  // Sanity: the answer should mention the actual content. Forgiving on
+  // formatting — models often render `12345` as `$12,345` or `12.345k`,
+  // so accept any of those tokenizations.
+  const mentions12345 = /12[,.]?345/.test(result.assistantText);
+  const mentions67 = /\b67\b/.test(result.assistantText);
+  if (!mentions12345 || !mentions67) {
+    notes.push(
+      `Negative: answer missing expected values (12345=${mentions12345}, 67=${mentions67}). Reply: "${result.assistantText.slice(0, 250)}"`,
+    );
+    return { id: "agent-uses-path-verbatim-not-filename", pass: false, notes, metrics };
+  }
+  notes.push(`Positive: answer references both 12345 (revenue) and 67 (NPS).`);
+
+  return { id: "agent-uses-path-verbatim-not-filename", pass: true, notes, metrics };
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -926,6 +1044,7 @@ async function main() {
       { id: "chat-csv-read", fn: runChatCsvRead },
       { id: "pdf-routes-to-parse-not-read-attachment", fn: runPdfRoutesToParseNotReadAttachment },
       { id: "multi-file-read", fn: runMultiFileRead },
+      { id: "agent-uses-path-verbatim-not-filename", fn: runAgentUsesPathVerbatimNotFilename },
       // Routing matrix — one entry per file-format branch the prompt
       // distinguishes. Each runs through `runRoutingExpectation`.
       ...ROUTING_SCENARIOS.map(({ id }) => ({

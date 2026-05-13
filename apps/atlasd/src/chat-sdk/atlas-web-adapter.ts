@@ -7,16 +7,17 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { join, resolve, sep } from "node:path";
+import { resolve, sep } from "node:path";
 import {
   type AtlasUIMessage,
   type AtlasUIMessagePart,
   normalizeToUIMessages,
   validateAtlasUIMessages,
 } from "@atlas/agent-sdk";
+import { isInvalidChatId } from "@atlas/core/artifacts/file-upload";
 import { UserStorage } from "@atlas/core/users/storage";
 import { logger } from "@atlas/logger";
-import { getFridayHome } from "@atlas/utils/paths.server";
+import { chatUploadsRoot } from "@atlas/utils/paths.server";
 import type {
   Adapter,
   AdapterPostableMessage,
@@ -69,25 +70,22 @@ function joinTextParts(message: AtlasUIMessage): string {
 }
 
 /**
- * Per-chat scratch uploads root — must match
- * `apps/atlasd/routes/scratch-upload.ts:uploadsRoot()`. Inlined here (not
- * imported) to avoid a cross-package cycle (the route imports this file's
- * adapter; this file would then import the route).
- */
-function uploadsRoot(chatId: string): string {
-  return join(getFridayHome(), "scratch", "uploads", chatId);
-}
-
-/**
  * Surface user-attached file paths to the agent by inserting a synthetic
- * text part with one `<attachment path="…" filename="…" mediaType="…" />`
- * line per file, just before each `data-file-attached` part. The text
- * carries the `providerMetadata.atlas.kind = "attachment-expansion"`
- * marker so `buildSegments` hides it in the user bubble — the bubble
- * already renders a file chip from the structured `data-file-attached`
- * part. The agent reads the bytes via the `read_attachment` tool on
- * demand (no content inlining — bytes can be large and we want the
- * agent to use the right reader by extension).
+ * text part with one `<attachment path="…" mediaType="…" />` line per
+ * file, just before each `data-file-attached` part. The text carries the
+ * `providerMetadata.atlas.kind = "attachment-expansion"` marker so
+ * `buildSegments` hides it in the user bubble — the bubble already
+ * renders a file chip from the structured `data-file-attached` part. The
+ * agent reads the bytes via the `read_attachment` tool on demand (no
+ * content inlining — bytes can be large and we want the agent to use the
+ * right reader by extension).
+ *
+ * The tag intentionally does NOT carry `filename=` — the agent routes on
+ * `mediaType=` and reads via `path=`. Exposing the human-readable
+ * filename here invites the model to hallucinate
+ * `read_attachment(path=<filename>)` under noisy context. The display
+ * name still flows to the user bubble via `segment.filenames[i]` from
+ * the structured `data-file-attached` part — that path is unaffected.
  *
  * Mutates `message.parts` in place. Walks in reverse so insert indices
  * stay valid across splices.
@@ -100,7 +98,14 @@ function uploadsRoot(chatId: string): string {
  * here on submit; legitimate clients can't produce other paths.
  */
 function inlineAttachedFiles(message: AtlasUIMessage, chatId: string): void {
-  const root = uploadsRoot(chatId);
+  // Adversarial chatId would compute the wrong root → either reject every
+  // attachment (false negative) or, worse, point at a shared dir. Reject
+  // the whole message-level splice if the chatId itself is malformed.
+  if (isInvalidChatId(chatId)) {
+    logger.warn("atlas_web_adapter_invalid_chat_id_skipping_splice", { chatId });
+    return;
+  }
+  const root = chatUploadsRoot(chatId);
   const allowedPrefix = root + sep;
 
   const parts: AtlasUIMessagePart[] = message.parts;
@@ -110,7 +115,6 @@ function inlineAttachedFiles(message: AtlasUIMessage, chatId: string): void {
     const data: unknown = part.data;
     if (typeof data !== "object" || data === null) continue;
     const rawPaths = (data as { paths?: unknown }).paths;
-    const rawNames = (data as { filenames?: unknown }).filenames;
     const rawMimes = (data as { mimeTypes?: unknown }).mimeTypes;
     if (!Array.isArray(rawPaths) || rawPaths.length === 0) continue;
 
@@ -126,18 +130,13 @@ function inlineAttachedFiles(message: AtlasUIMessage, chatId: string): void {
         logger.warn("atlas_web_adapter_attached_file_path_rejected", { chatId, path });
         continue;
       }
-      const filename =
-        Array.isArray(rawNames) && typeof rawNames[j] === "string" ? (rawNames[j] as string) : path;
       const mime =
         Array.isArray(rawMimes) && typeof rawMimes[j] === "string"
           ? (rawMimes[j] as string)
           : "application/octet-stream";
       const safePath = path.replace(/"/g, "&quot;");
-      const safeName = filename.replace(/"/g, "&quot;");
       const safeMime = mime.replace(/"/g, "&quot;");
-      lines.push(
-        `<attachment path="${safePath}" filename="${safeName}" mediaType="${safeMime}" />`,
-      );
+      lines.push(`<attachment path="${safePath}" mediaType="${safeMime}" />`);
     }
     if (lines.length === 0) continue;
 

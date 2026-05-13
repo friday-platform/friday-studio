@@ -8,8 +8,10 @@
  * `ChatStorage.*` call.
  */
 
+import { rm } from "node:fs/promises";
 import type { AtlasUIMessage } from "@atlas/agent-sdk";
 import type { Result } from "@atlas/utils";
+import { chatUploadsRoot } from "@atlas/utils/paths.server";
 import type { NatsConnection } from "nats";
 import {
   type Chat,
@@ -93,8 +95,27 @@ function updateChatTitle(
   return b().updateChatTitle(chatId, title, resolveWorkspaceId(workspaceId));
 }
 
-function deleteChat(chatId: string, workspaceId?: string): Promise<Result<void, string>> {
-  return b().deleteChat(chatId, resolveWorkspaceId(workspaceId));
+async function deleteChat(chatId: string, workspaceId?: string): Promise<Result<void, string>> {
+  // Delete the chat record first — if the backend rejects, we keep the
+  // on-disk uploads (recoverable manually). If the record delete
+  // succeeds but the GC fails, we've orphaned bytes (also recoverable;
+  // a sweep over `scratch/uploads/` for dirs whose chatId no longer
+  // exists could be added later).
+  const result = await b().deleteChat(chatId, resolveWorkspaceId(workspaceId));
+  if (!result.ok) return result;
+
+  // GC the chat's scratch-uploads dir — bytes the user attached on the
+  // chat input live at `{FRIDAY_HOME}/scratch/uploads/{chatId}/{md5}`.
+  // Without this they accumulate forever (no other reference exists
+  // once the chat record is gone). `force: true` swallows ENOENT — a
+  // chat with no attachments produces no dir, which is fine.
+  await rm(chatUploadsRoot(chatId), { recursive: true, force: true }).catch(() => {
+    // Non-fatal — log path is via the backend's logger; we don't have
+    // one here. An orphaned dir is recoverable; surface only the chat-
+    // record delete result so the caller's UX isn't a confusing
+    // "delete partially failed."
+  });
+  return result;
 }
 
 function setSystemPromptContext(

@@ -14,9 +14,12 @@
  * system.
  */
 
-import { createHash } from "node:crypto";
-import { mkdir, stat, writeFile } from "node:fs/promises";
-import { basename, extname, join, resolve, sep } from "node:path";
+import { createHash, randomUUID } from "node:crypto";
+import { createWriteStream } from "node:fs";
+import { mkdir, rename, rm, stat } from "node:fs/promises";
+import { basename, extname, join } from "node:path";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import {
   FILE_TYPE_NOT_ALLOWED_ERROR,
   getValidatedMimeType,
@@ -26,35 +29,34 @@ import {
   isInvalidChatId,
   LEGACY_FORMAT_ERRORS,
   MAX_AUDIO_SIZE,
-  MAX_FILE_SIZE,
   MAX_IMAGE_SIZE,
   MAX_OFFICE_SIZE,
   MAX_PDF_SIZE,
 } from "@atlas/core/artifacts/file-upload";
+import { ChatStorage } from "@atlas/core/chat/storage";
 import { createLogger } from "@atlas/logger";
-import { getFridayHome } from "@atlas/utils/paths.server";
+import { chatUploadsRoot } from "@atlas/utils/paths.server";
 import { daemonFactory } from "../src/factory.ts";
 import { requireWorkspaceMember } from "../src/workspace-authz.ts";
 
 const logger = createLogger({ name: "scratch-upload" });
 
 /**
- * Per-chat scratch uploads root. Adding a tier under `scratch/uploads/`
- * (alongside the existing `scratch/{sessionId}/` tools-scratch dirs)
- * keeps lifecycles separate — session-scratch belongs to the agent's
- * `run_code` / `write_file` tools and is GC'd by session-end; the
- * uploads tier belongs to the chat as a whole and survives across
- * the chat's sessions.
+ * Route-specific size cap. Distinct from `MAX_FILE_SIZE` (500MB) on the
+ * artifact route — that one streams to JetStream Object Store and can
+ * tolerate the bigger ceiling. Chat-input attachments are typically
+ * small (CSVs, MDs, configs) and 25MB is generous; the lower cap also
+ * bounds the per-upload heap profile of the multipart body that Hono
+ * buffers before exposing `file`.
  */
-export function uploadsRoot(chatId: string): string {
-  return join(getFridayHome(), "scratch", "uploads", chatId);
-}
+const MAX_SCRATCH_UPLOAD_SIZE = 25 * 1024 * 1024;
 
 /**
- * Sanitize a user-supplied filename so it can't escape the chat's uploads
- * directory. Keep just the basename, reject names with `..` segments or
- * NUL bytes (defense-in-depth — `basename` on POSIX already strips
- * separators). Returns `null` on rejection so the caller can surface 400.
+ * Sanitize a user-supplied filename so it survives JSON round-tripping
+ * and rendering. The filename never reaches the filesystem (on-disk
+ * names are md5 hashes), but it does flow back to the client as the
+ * display name and into the `<attachment>` chip — so we still reject
+ * obviously broken inputs (NUL bytes, paths, dot-prefix names).
  */
 function safeFilename(raw: string): string | null {
   if (raw.length === 0) return null;
@@ -64,27 +66,6 @@ function safeFilename(raw: string): string | null {
   if (base === "" || base === "." || base === "..") return null;
   if (base.includes("..")) return null;
   return base;
-}
-
-/**
- * Resolve `filename` inside the chat's uploads dir and verify the result
- * stays under the root. Symlinks aren't followed (mkdir/writeFile operate
- * on the literal path); any further sneaking would have to come from
- * filesystem state the daemon process planted itself.
- */
-function resolveInUploads(
-  chatId: string,
-  filename: string,
-): { ok: true; root: string; absolute: string } | { ok: false; error: string } {
-  const root = uploadsRoot(chatId);
-  const absolute = resolve(root, filename);
-  if (absolute !== join(root, filename)) {
-    return { ok: false, error: "filename failed path-resolution invariant" };
-  }
-  if (!absolute.startsWith(root + sep) && absolute !== root) {
-    return { ok: false, error: "filename escapes uploads root" };
-  }
-  return { ok: true, root, absolute };
 }
 
 const scratchUploadApp = daemonFactory.createApp().post("/upload", async (c) => {
@@ -110,6 +91,21 @@ const scratchUploadApp = daemonFactory.createApp().post("/upload", async (c) => 
   // Auth gate — only members of the chat's workspace can upload. Mirrors
   // the artifact-upload route precedent at `routes/artifacts.ts:964`.
   await requireWorkspaceMember(c, workspaceId);
+
+  // chatId↔workspaceId binding. Without this, any authenticated member
+  // of *some* workspace could POST `?workspaceId=<theirs>&chatId=<any>`
+  // and write bytes into an arbitrary chat's uploads dir on the daemon.
+  // Even with md5 content-addressed storage (so the attacker can't
+  // overwrite a victim's specific file with chosen bytes), this leaves
+  // a cross-tenant disk-fill DoS primitive open. `getChat(chatId,
+  // workspaceId)` reads from the workspace-scoped namespace — a chat in
+  // a different workspace returns null here, so 404 fires correctly.
+  // Same pattern as the chat cancel/resume routes at
+  // `apps/atlasd/routes/workspaces/chat.ts:162,186`.
+  const chatLookup = await ChatStorage.getChat(chatId, workspaceId);
+  if (!chatLookup.ok || !chatLookup.data) {
+    return c.json({ error: "Chat not found" }, 404);
+  }
 
   // Same legacy-format rejection as the artifact route — surfaces the
   // .doc → .docx hint.
@@ -157,43 +153,62 @@ const scratchUploadApp = daemonFactory.createApp().post("/upload", async (c) => 
       413,
     );
   }
-  if (file.size > MAX_FILE_SIZE) {
+  if (file.size > MAX_SCRATCH_UPLOAD_SIZE) {
     return c.json(
-      { error: `File too large (max ${Math.round(MAX_FILE_SIZE / 1024 / 1024)}MB)` },
+      { error: `File too large (max ${Math.round(MAX_SCRATCH_UPLOAD_SIZE / 1024 / 1024)}MB)` },
       413,
     );
   }
 
-  // The display name (sanitized original) flows back in the response so the
-  // UI bubble and the `<attachment filename="…">` tag the adapter splices
-  // both show the human-readable filename. The on-disk name is content-
-  // addressed — see below.
+  // Display name (sanitized original) flows back in the response so the
+  // UI bubble shows the human-readable filename in the chip. The on-disk
+  // name is the md5 of the bytes — adversarial filenames physically
+  // cannot reach the filesystem.
   const safe = safeFilename(file.name);
   if (!safe) {
     return c.json({ error: "Invalid filename" }, 400);
   }
 
-  // Content-addressed storage: write to `{chatId}/{md5(bytes)}`, NOT the
-  // user-supplied filename. Two wins:
-  //   1. Identical bytes uploaded twice produce the same path → free dedup,
-  //      no `data (2).csv`-style collisions, no overwrite races.
-  //   2. The on-disk filename carries zero attacker-controlled characters,
-  //      so the path-traversal gate's job collapses to a prefix check —
-  //      adversarial filenames can't reach the filesystem.
-  // MD5 is fine here: the security boundary is the resolver, not the hash.
-  // Collisions are content collisions, which read back identical bytes —
-  // benign.
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  const md5 = createHash("md5").update(bytes).digest("hex");
-  const resolved = resolveInUploads(chatId, md5);
-  if (!resolved.ok) {
-    return c.json({ error: resolved.error }, 400);
-  }
-
+  // Stream the upload through a hash + write pipeline so we never hold
+  // the whole file in heap. Sequence:
+  //   1. Write bytes to a per-request tempfile (.tmp-{uuid}) under the
+  //      chat's uploads dir.
+  //   2. Compute md5 incrementally as bytes flow past.
+  //   3. atomic-rename tmp → `{chatId}/{md5}`.
+  // Failures clean up the tempfile.
+  //
+  // Why content-addressed: identical bytes uploaded twice produce the
+  // same path → free dedup, no `data (2).csv` collisions, the on-disk
+  // filename carries zero attacker-controlled characters so the path-
+  // traversal gate's job collapses to a prefix check. MD5 is fine here:
+  // the security boundary is the resolver, not the hash. Adversarial
+  // collisions read back identical bytes — benign.
+  const root = chatUploadsRoot(chatId);
+  await mkdir(root, { recursive: true });
+  const tmpPath = join(root, `.tmp-${randomUUID()}`);
+  const hash = createHash("md5");
+  let bytesWritten = 0;
   try {
-    await mkdir(resolved.root, { recursive: true });
-    await writeFile(resolved.absolute, bytes);
-    const persisted = await stat(resolved.absolute);
+    await pipeline(
+      // file.stream() is a Web ReadableStream; convert to Node Readable.
+      // `Readable.fromWeb` requires the source to be a `ReadableStream`,
+      // which it is per the Fetch spec — the `as never` is a deno-check
+      // workaround because the daemon's TS lib doesn't always pull in
+      // dom.ReadableStream typings.
+      Readable.fromWeb(file.stream() as never),
+      async function* (source: AsyncIterable<Uint8Array>) {
+        for await (const chunk of source) {
+          hash.update(chunk);
+          bytesWritten += chunk.byteLength;
+          yield chunk;
+        }
+      },
+      createWriteStream(tmpPath),
+    );
+    const md5 = hash.digest("hex");
+    const finalPath = join(root, md5);
+    await rename(tmpPath, finalPath);
+    const persisted = await stat(finalPath);
     logger.info("scratch_upload success", {
       chatId,
       workspaceId,
@@ -203,15 +218,19 @@ const scratchUploadApp = daemonFactory.createApp().post("/upload", async (c) => 
       mimeType,
     });
     return c.json(
-      { path: resolved.absolute, filename: safe, mediaType: mimeType, size: persisted.size },
+      { path: finalPath, filename: safe, mediaType: mimeType, size: persisted.size },
       201,
     );
   } catch (err) {
+    // Best-effort tempfile cleanup. A failed upload that leaves a
+    // `.tmp-{uuid}` behind is benign (no other path references it) but
+    // we clean up anyway to keep the dir tidy.
+    await rm(tmpPath, { force: true }).catch(() => {});
     logger.error("scratch_upload failed", {
       chatId,
       workspaceId,
       filename: safe,
-      md5,
+      bytesWritten,
       error: err instanceof Error ? err.message : String(err),
     });
     return c.json({ error: "Upload failed" }, 500);

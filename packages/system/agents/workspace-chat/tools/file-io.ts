@@ -30,11 +30,12 @@
  * @module
  */
 
-import { readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { lstat, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import type { AtlasTools } from "@atlas/agent-sdk";
+import { isInvalidChatId } from "@atlas/core/artifacts/file-upload";
 import type { Logger } from "@atlas/logger";
-import { getFridayHome } from "@atlas/utils/paths.server";
+import { chatUploadsRoot, getFridayHome } from "@atlas/utils/paths.server";
 import { tool } from "ai";
 import { z } from "zod";
 
@@ -240,33 +241,35 @@ export function createFileIOTools(sessionId: string, logger: Logger): AtlasTools
 //
 // Distinct from `read_file` (session-scratch) — `read_attachment` is what the
 // agent calls when the user drops a file in the chat input. The chat-sdk
-// adapter writes the bytes to `{FRIDAY_HOME}/scratch/uploads/{chatId}/{filename}`
-// and splices a `<attachment path="…" filename="…" mediaType="…" />` text
-// part into the message so the agent sees the path. This tool reads the
-// file at that path, validating that it lives under the chat's uploads
-// dir — the path comes from the user message and must NOT be trusted to
-// be arbitrary.
-
-/**
- * Compute the per-chat uploads root — must match
- * `apps/atlasd/routes/scratch-upload.ts:uploadsRoot()`. Inlined here (not
- * imported) to avoid the workspace-chat agent pulling daemon imports.
- */
-export function attachmentsRoot(chatId: string): string {
-  const safe = chatId.replace(/[^a-zA-Z0-9-_]/g, "");
-  return join(getFridayHome(), "scratch", "uploads", safe || "default");
-}
+// adapter writes the bytes to `{FRIDAY_HOME}/scratch/uploads/{chatId}/{md5}`
+// and splices a `<attachment path="…" mediaType="…" />` text part into the
+// message so the agent sees the path. This tool reads the file at that path,
+// validating that it lives under the chat's uploads dir — the path comes
+// from the user message and must NOT be trusted to be arbitrary.
 
 /**
  * Resolve `requestedPath` against the chat's uploads dir, rejecting any
- * path that doesn't live underneath. Symlinks aren't followed (`readFile`
- * uses the literal path).
+ * path that doesn't live underneath. `chatId` MUST already be validated
+ * by the caller via `isInvalidChatId` — we don't sanitize-and-recover
+ * here (the previous version's `chatId.replace(/[^A-Za-z0-9-_]/g, "") ||
+ * "default"` fallback silently pooled unrelated chats into a shared dir
+ * if the chatId was bad, which was worse than failing).
+ *
+ * Symlink handling: Node's `fs.readFile` / `stat` follow symlinks, so
+ * the resolver's prefix check on the *declared* path is not enough on
+ * its own — a symlink under the uploads root pointing to `/etc/passwd`
+ * would pass this gate and `readFile` would read the target. The tool's
+ * `execute` calls `lstat` and rejects `isSymbolicLink()` before reading,
+ * which closes that hole. See `read_attachment` below.
  */
 function resolveAttachment(
   chatId: string,
   requestedPath: string,
 ): { ok: true; absolute: string } | { ok: false; error: string } {
-  const root = attachmentsRoot(chatId);
+  if (isInvalidChatId(chatId)) {
+    return { ok: false, error: `invalid chatId` };
+  }
+  const root = chatUploadsRoot(chatId);
   if (!isAbsolute(requestedPath)) {
     return { ok: false, error: `path must be absolute: ${requestedPath}` };
   }
@@ -308,13 +311,25 @@ export function createReadAttachmentTool(chatId: string, logger: Logger): AtlasT
   return {
     read_attachment: tool({
       description:
-        "Read a file the user attached to this chat. The path comes from a `<attachment path='…' filename='…' mediaType='…' />` tag in the user's most recent message — pass that path verbatim. Resolves under the per-chat uploads dir; absolute paths outside that dir are rejected. Returns the file's UTF-8 text contents. For text/markup/CSV/JSON/source-code files just call this directly. For PDF / DOCX / image / audio attachments use the dedicated tools instead (the bytes won't decode as text).",
+        "Read a file the user attached to this chat. The path comes from a `<attachment path='…' mediaType='…' />` tag in the user's most recent message — pass that path verbatim (it's an opaque content-addressed identifier, NOT a filename). Resolves under the per-chat uploads dir; absolute paths outside that dir and symlinks are rejected. Returns the file's UTF-8 text contents. For text/markup/CSV/JSON/source-code files just call this directly. For PDF / DOCX / image / audio attachments use the dedicated tools instead (the bytes won't decode as text).",
       inputSchema: ReadAttachmentInput,
       execute: async ({ path, max_bytes }): Promise<ReadFileSuccess | FileErr> => {
         const resolved = resolveAttachment(chatId, path);
         if (!resolved.ok) return { error: resolved.error };
         try {
-          const stats = await stat(resolved.absolute);
+          // Use `lstat` (not `stat`) so we detect a symlink BEFORE
+          // `readFile` dereferences it. Without this, an attacker who
+          // could plant a symlink under the uploads dir (e.g. a future
+          // feature that lets the agent or another tool write here)
+          // would defeat the path-traversal gate — the declared path
+          // passes the prefix check, but the symlink target is
+          // anywhere. Today the daemon is the sole writer, but the
+          // gate has to hold under arbitrary disk state.
+          const stats = await lstat(resolved.absolute);
+          if (stats.isSymbolicLink()) {
+            logger.warn("read_attachment_symlink_rejected", { chatId, path });
+            return { error: `path is a symlink: ${path}` };
+          }
           if (!stats.isFile()) {
             return { error: `not a regular file: ${path}` };
           }

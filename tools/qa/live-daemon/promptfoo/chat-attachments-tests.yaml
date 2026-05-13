@@ -96,6 +96,18 @@
     scenarioId: multi-file-read
 
 - description: |
+    Negative + positive — defense against filename-as-path
+    hallucination. Drop a file with a distinctive filename
+    (`annual_report_q4_2026.csv`); the `<attachment …>` tag exposes
+    ONLY `path=<md5>` and `mediaType=` (no `filename=`). Assert the
+    agent calls `read_attachment(path=…)` with the EXACT md5 path,
+    never with a fabricated `{uploadsRoot}/annual_report_q4_2026.csv`-
+    style path. Locks the design choice that the model treats path as
+    an opaque identifier.
+  vars:
+    scenarioId: agent-uses-path-verbatim-not-filename
+
+- description: |
     Negative — a `data-file-attached` part carrying a path under a
     different chat's uploads dir is rejected by the adapter's
     path-traversal gate before reaching the agent. Locks the

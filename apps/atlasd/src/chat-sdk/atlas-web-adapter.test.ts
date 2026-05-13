@@ -237,12 +237,18 @@ describe("AtlasWebAdapter.handleWebhook", () => {
       });
       const inlined = (parts[1] as { text: string }).text;
       expect(inlined).toContain(`<attachment path="${path}"`);
-      expect(inlined).toContain(`filename="scores.csv"`);
       expect(inlined).toContain(`mediaType="text/csv"`);
       // Self-closing — no content body inlined. The agent fetches via
-      // `read_attachment(path)` based on extension.
+      // `read_attachment(path)`.
       expect(inlined).toContain("/>");
       expect(inlined).not.toContain("</attachment>");
+      // `filename=` is intentionally NOT in the splice — agent routes on
+      // mediaType and reads via path. Exposing the human-readable
+      // filename invites the model to fabricate
+      // `read_attachment(path=<filename>)` under noisy context. The
+      // display name still reaches the user-bubble chip via the
+      // structured `data-file-attached` part — `segment.filenames[i]`.
+      expect(inlined).not.toContain("filename=");
       expect(parts[2]).toMatchObject({ type: "data-file-attached" });
     });
 
