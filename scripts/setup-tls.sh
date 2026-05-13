@@ -185,7 +185,11 @@ generate_s2s_chain() {
     if ! cert_is_fresh "$ca_crt"; then
         echo "  → Generating private CA at $ca_crt"
         openssl ecparam -name prime256v1 -genkey -noout -out "$ca_key"
-        openssl req -new -x509 -days 365 \
+        # `-sha256` is explicit because macOS's bundled LibreSSL defaults to
+        # SHA-1 here, which Node 18+ rejects as "CA signature digest algorithm
+        # too weak". OpenSSL 3.x defaults to SHA-256 already, so this is a
+        # no-op there.
+        openssl req -new -x509 -days 365 -sha256 \
             -key "$ca_key" \
             -out "$ca_crt" \
             -subj "/CN=Friday Local Dev CA/O=Friday Local Dev" \
@@ -213,7 +217,13 @@ keyUsage=critical,digitalSignature,keyEncipherment
 extendedKeyUsage=serverAuth,clientAuth
 subjectAltName=DNS:localhost,IP:127.0.0.1,IP:::1
 EOF
-    openssl x509 -req \
+    # `-sha256` is explicit because macOS's bundled LibreSSL defaults `x509
+    # -req` to SHA-1, which Node 18+ rejects as "CA signature digest algorithm
+    # too weak". OpenSSL 3.x defaults to SHA-256 already, so this is a no-op
+    # there. (LibreSSL's `req -new -x509` already defaults to SHA-256, which
+    # is why the CA above worked even before this fix and only the leaf was
+    # broken.)
+    openssl x509 -req -sha256 \
         -in "$leaf_csr" \
         -CA "$ca_crt" -CAkey "$ca_key" -CAcreateserial \
         -days 365 \
