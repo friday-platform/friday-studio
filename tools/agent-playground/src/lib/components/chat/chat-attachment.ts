@@ -95,7 +95,7 @@ export function rejectionReason(file: File): string {
   if (isSvg(file)) {
     return `SVG attachments aren't supported on the chat input (script-injection risk). Ask the agent to create one for you instead.`;
   }
-  return `"${file.name}" isn't a supported file type. Supported: text/markup (md, txt, csv, json, yml, html, xml, css, log, conf), source code (ts, js, py, go, rs, sh, sql, …), documents (pdf, docx, pptx), images (png, jpg, gif, webp), audio (mp3, m4a, wav, …).`;
+  return `"${file.name}" isn't a supported file type. Supported: Text/markup (TXT, MD, CSV, TSV, JSON, YML, HTML, XML, CSS, LOG, CONF, INI, TOML), Source code (TS, TSX, JS, JSX, MJS, CJS, PY, GO, RS, SH, BASH, SQL), Documents (PDF, DOCX, PPTX), Images (PNG, JPG, JPEG, GIF, WebP), Audio (MP3, MP4, M4A, WAV, WebM, OGG, FLAC).`;
 }
 
 /**
