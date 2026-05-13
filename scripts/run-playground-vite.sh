@@ -28,19 +28,34 @@ if [[ ! -f "$VITE_BIN" ]]; then
     exit 1
 fi
 
-# Resolve the private s2s CA so Node trusts the (private-CA-signed) daemon
-# + tunnel. Source: FRIDAY_TLS_CA in <friday-home>/.env, written by
-# scripts/setup-tls.sh. Only set NODE_EXTRA_CA_CERTS if we have a real
-# file — pointing at a missing path triggers a Node warning and breaks
-# every TLS handshake.
-if [[ -z "${NODE_EXTRA_CA_CERTS:-}" ]]; then
-    env_file="${FRIDAY_HOME:-$HOME/.atlas}/.env"
-    if [[ -f "$env_file" ]]; then
-        ca_path="$(grep "^FRIDAY_TLS_CA=" "$env_file" | head -1 | sed -E 's/^FRIDAY_TLS_CA=//')"
-        if [[ -n "$ca_path" && -f "$ca_path" ]]; then
-            export NODE_EXTRA_CA_CERTS="$ca_path"
-        fi
-    fi
+# Pull s2s + browser TLS env keys from <friday-home>/.env BEFORE
+# exec'ing node. Two reasons it has to happen here, not in
+# vite.config.ts:
+#
+#   1. vite.config.ts reads FRIDAY_TLS_CERT/_KEY at module load to
+#      decide the daemon + tunnel URL scheme (http vs https). If the
+#      env vars aren't set at that point, the URL is frozen at
+#      http://, and every SSR proxy fetch hits the wrong scheme.
+#
+#   2. Node's RootCertStore initializes on first TLS use, which fires
+#      before vite.config.ts can run. Setting NODE_EXTRA_CA_CERTS
+#      after that has no effect and the daemon-proxy fetch fails with
+#      "self signed certificate in certificate chain".
+#
+# Pre-existing shell exports win over .env (mirrors run-atlasd.sh).
+# Each cert/key/CA path is sanity-checked for file existence before
+# export — pointing NODE_EXTRA_CA_CERTS at a missing file makes Node
+# warn and abort every handshake, which is worse than not setting it.
+env_file="${FRIDAY_HOME:-$HOME/.atlas}/.env"
+if [[ -f "$env_file" ]]; then
+    for key in FRIDAY_TLS_CERT FRIDAY_TLS_KEY FRIDAY_TLS_CA FRIDAY_BROWSER_TLS_CERT FRIDAY_BROWSER_TLS_KEY DENO_CERT NODE_EXTRA_CA_CERTS; do
+        [[ -n "${!key:-}" ]] && continue
+        line="$(grep "^${key}=" "$env_file" | head -1 || true)"
+        [[ -z "$line" ]] && continue
+        value="${line#${key}=}"
+        [[ -f "$value" ]] || continue
+        export "$key=$value"
+    done
 fi
 
 cd "$PLAYGROUND_DIR"
