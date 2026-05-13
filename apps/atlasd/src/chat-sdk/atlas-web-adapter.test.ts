@@ -1,5 +1,6 @@
+import type { AtlasUIMessageChunk } from "@atlas/agent-sdk";
 import { ArtifactStorage } from "@atlas/core/artifacts/server";
-import { Message } from "chat";
+import { type ChatInstance, Message } from "chat";
 import { describe, expect, it, vi } from "vitest";
 import { StreamRegistry } from "../stream-registry.ts";
 import type { WebChatPayload } from "./atlas-web-adapter.ts";
@@ -9,8 +10,22 @@ vi.mock("@atlas/core/users/storage", () => ({
   UserStorage: { getCachedLocalUserId: () => "test-local-user" },
 }));
 
-/** Mock ChatInstance — processMessage is fire-and-forget. */
-function createMockChat() {
+/**
+ * Test-local mock of the chat-sdk `ChatInstance`. We keep the precise
+ * structural shape (rather than `as unknown as ChatInstance` everywhere) so
+ * call sites can still reach `chat.processMessage.mock.calls` for assertions
+ * that the production `ChatInstance` interface wouldn't expose.
+ */
+interface MockChat {
+  processMessage: ReturnType<typeof vi.fn>;
+  getState: () => {
+    subscribe: ReturnType<typeof vi.fn>;
+    get: ReturnType<typeof vi.fn>;
+    set: ReturnType<typeof vi.fn>;
+  };
+}
+
+function createMockChat(): MockChat {
   return {
     processMessage: vi.fn(),
     getState: () => ({
@@ -21,10 +36,32 @@ function createMockChat() {
   };
 }
 
-function createAdapter() {
+/**
+ * Wire a mock chat into the adapter. The lone `as unknown as ChatInstance`
+ * cast lives here so individual tests don't repeat it (the previous
+ * `as never` pattern violated the project's "no escape-hatch casts" rule).
+ */
+async function initAdapterWithMock(
+  adapter: AtlasWebAdapter,
+  chat: MockChat = createMockChat(),
+): Promise<MockChat> {
+  await adapter.initialize(chat as unknown as ChatInstance);
+  return chat;
+}
+
+/**
+ * Build a per-test workspace id so writes against the shared JetStream test
+ * broker (see `vitest.setup.ts`) don't leak between suites. The label is
+ * just a debug aid for readers of failing-test output.
+ */
+function freshWorkspaceId(label = "test"): string {
+  return `ws-${label}-${crypto.randomUUID()}`;
+}
+
+function createAdapter(workspaceId: string = freshWorkspaceId()) {
   const registry = new StreamRegistry();
-  const adapter = new AtlasWebAdapter({ streamRegistry: registry, workspaceId: "ws-test-001" });
-  return { adapter, registry };
+  const adapter = new AtlasWebAdapter({ streamRegistry: registry, workspaceId });
+  return { adapter, registry, workspaceId };
 }
 
 /** Build a minimal valid AtlasUIMessage body for the web wire format. */
@@ -44,7 +81,7 @@ describe("AtlasWebAdapter.handleWebhook", () => {
 
   it("returns 400 on invalid envelope (missing id)", async () => {
     const { adapter } = createAdapter();
-    await adapter.initialize(createMockChat() as never);
+    await initAdapterWithMock(adapter);
 
     const request = new Request("http://localhost", {
       method: "POST",
@@ -56,7 +93,7 @@ describe("AtlasWebAdapter.handleWebhook", () => {
 
   it("returns 400 when message fails AtlasUIMessage validation", async () => {
     const { adapter } = createAdapter();
-    await adapter.initialize(createMockChat() as never);
+    await initAdapterWithMock(adapter);
 
     const request = new Request("http://localhost", {
       method: "POST",
@@ -71,8 +108,7 @@ describe("AtlasWebAdapter.handleWebhook", () => {
   // context. Assistant and system messages are produced server-side only.
   it.each(["assistant", "system"])("returns 403 for %s-role messages", async (role) => {
     const { adapter } = createAdapter();
-    const chat = createMockChat();
-    await adapter.initialize(chat as never);
+    const chat = await initAdapterWithMock(adapter);
 
     const request = new Request("http://localhost", {
       method: "POST",
@@ -89,9 +125,8 @@ describe("AtlasWebAdapter.handleWebhook", () => {
   });
 
   it("dispatches parsed message with userId, datetime, fresh UUID, and SSE response", async () => {
-    const { adapter, registry } = createAdapter();
-    const chat = createMockChat();
-    await adapter.initialize(chat as never);
+    const { adapter, registry, workspaceId } = createAdapter();
+    const chat = await initAdapterWithMock(adapter);
 
     const datetime = {
       timezone: "America/New_York",
@@ -129,14 +164,14 @@ describe("AtlasWebAdapter.handleWebhook", () => {
     // Dedup safety: every dispatch gets a fresh UUID, never the chatId
     expect(message.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
 
-    expect(registry.getStream("ws-test-001", "chat-webhook")?.active).toBe(true);
+    expect(registry.getStream(workspaceId, "chat-webhook")?.active).toBe(true);
     // Wire-up contract: handleWebhook must stash the StreamBuffer it
     // creates on `Message.raw.turnBuffer` so the shared chat-sdk handler
     // can capture this turn's buffer deterministically (closes the
     // subscribe-window race in #192). Asserting identity here means a
     // refactor that drops the assignment fails this test instead of
     // only manifesting at runtime in the live SSE handler.
-    expect(message.raw.turnBuffer).toBe(registry.getStream("ws-test-001", "chat-webhook"));
+    expect(message.raw.turnBuffer).toBe(registry.getStream(workspaceId, "chat-webhook"));
   });
 
   describe("inlineAttachedArtifacts", () => {
@@ -180,13 +215,12 @@ describe("AtlasWebAdapter.handleWebhook", () => {
     }
 
     it("inlines a same-workspace text artifact as a synthetic text part", async () => {
-      const { adapter } = createAdapter(); // workspaceId: ws-test-001
-      const chat = createMockChat();
-      await adapter.initialize(chat as never);
+      const { adapter, workspaceId } = createAdapter();
+      const chat = await initAdapterWithMock(adapter);
 
       const csv = "name,score\nAlice,90\nBob,75\n";
       const artifactId = await createTextArtifact({
-        workspaceId: "ws-test-001",
+        workspaceId,
         content: csv,
         mimeType: "text/csv",
         originalName: "scores.csv",
@@ -218,30 +252,23 @@ describe("AtlasWebAdapter.handleWebhook", () => {
     });
 
     it("refuses cross-workspace artifact ids (IDOR gate)", async () => {
-      const { adapter } = createAdapter(); // workspaceId: ws-test-001
-      const chat = createMockChat();
-      await adapter.initialize(chat as never);
+      const { adapter, workspaceId: chatWorkspaceId } = createAdapter();
+      const chat = await initAdapterWithMock(adapter);
 
       // Plant the artifact in a DIFFERENT workspace from the chat.
+      const otherWorkspaceId = freshWorkspaceId("other-tenant");
       const artifactId = await createTextArtifact({
-        workspaceId: "ws-other-tenant",
+        workspaceId: otherWorkspaceId,
         content: "secret payroll data\n",
         mimeType: "text/csv",
         originalName: "payroll.csv",
       });
 
-      const warnSpy = vi.fn();
-      // Mock the logger at the module level to capture the warn call.
-      // We swap the imported logger's `warn` rather than mocking the whole
-      // module so the rest of the adapter's logging path stays real.
+      // `vi.spyOn` is async-safe and auto-restored — the runtime-reassign
+      // pattern would leak the override to a sibling test if a late warn
+      // fired after the `await` settled and before the `finally` ran.
       const { logger } = await import("@atlas/logger");
-      const originalWarn = logger.warn.bind(logger);
-      logger.warn = ((event: string, ctx?: Record<string, unknown>) => {
-        if (event === "atlas_web_adapter_attached_artifact_cross_workspace") {
-          warnSpy(event, ctx);
-        }
-        return originalWarn(event, ctx);
-      }) as typeof logger.warn;
+      const warnSpy = vi.spyOn(logger, "warn");
 
       try {
         const request = new Request("http://localhost", {
@@ -253,36 +280,35 @@ describe("AtlasWebAdapter.handleWebhook", () => {
           headers: { "Content-Type": "application/json" },
         });
         await adapter.handleWebhook(request);
-      } finally {
-        logger.warn = originalWarn;
-      }
 
-      const message = chat.processMessage.mock.calls[0]?.[2] as Message<WebChatPayload>;
-      const parts = message.raw.uiMessage.parts;
-      // The synthetic text part must NOT be inserted; the original two
-      // parts (typed text + data-artifact-attached) survive unchanged so
-      // the rest of the message keeps flowing.
-      expect(parts).toHaveLength(2);
-      expect(parts[0]).toMatchObject({ type: "text", text: "summarize" });
-      expect(parts[1]).toMatchObject({ type: "data-artifact-attached" });
-      // No `<attachment …>` block leaked into Message.text or any part.
-      expect(message.text).not.toContain("payroll");
-      expect(message.text).not.toContain("<attachment");
-      // The IDOR attempt was logged.
-      expect(warnSpy).toHaveBeenCalledWith(
-        "atlas_web_adapter_attached_artifact_cross_workspace",
-        expect.objectContaining({
-          artifactId,
-          artifactWorkspaceId: "ws-other-tenant",
-          chatWorkspaceId: "ws-test-001",
-        }),
-      );
+        const message = chat.processMessage.mock.calls[0]?.[2] as Message<WebChatPayload>;
+        const parts = message.raw.uiMessage.parts;
+        // The synthetic text part must NOT be inserted; the original two
+        // parts (typed text + data-artifact-attached) survive unchanged so
+        // the rest of the message keeps flowing.
+        expect(parts).toHaveLength(2);
+        expect(parts[0]).toMatchObject({ type: "text", text: "summarize" });
+        expect(parts[1]).toMatchObject({ type: "data-artifact-attached" });
+        // No `<attachment …>` block leaked into Message.text or any part.
+        expect(message.text).not.toContain("payroll");
+        expect(message.text).not.toContain("<attachment");
+        // The IDOR attempt was logged.
+        expect(warnSpy).toHaveBeenCalledWith(
+          "atlas_web_adapter_attached_artifact_cross_workspace",
+          expect.objectContaining({
+            artifactId,
+            artifactWorkspaceId: otherWorkspaceId,
+            chatWorkspaceId,
+          }),
+        );
+      } finally {
+        warnSpy.mockRestore();
+      }
     });
 
     it("allows legacy artifacts with no workspaceId (matches REST-route precedent)", async () => {
       const { adapter } = createAdapter();
-      const chat = createMockChat();
-      await adapter.initialize(chat as never);
+      const chat = await initAdapterWithMock(adapter);
 
       // Legacy/global artifact — no workspaceId on creation.
       const artifactId = await createTextArtifact({
@@ -308,15 +334,14 @@ describe("AtlasWebAdapter.handleWebhook", () => {
     });
 
     it("emits a self-closing tag (no inline bytes) for non-text artifacts", async () => {
-      const { adapter } = createAdapter();
-      const chat = createMockChat();
-      await adapter.initialize(chat as never);
+      const { adapter, workspaceId } = createAdapter();
+      const chat = await initAdapterWithMock(adapter);
 
       // application/pdf is in the artifact mime allowlist but not text/* —
       // the agent reads the bytes via `parse_artifact` / `read_artifact`
       // tools, so the prompt only carries a reference tag.
       const artifactId = await createTextArtifact({
-        workspaceId: "ws-test-001",
+        workspaceId,
         // Real PDF magic bytes so the storage layer doesn't sniff it as
         // application/octet-stream.
         content: "%PDF-1.4\n%fake but plausibly-pdf\n",
@@ -361,61 +386,53 @@ describe("AtlasWebAdapter.handleWebhook", () => {
 
     it("skips and warns when an attached artifact id does not exist", async () => {
       const { adapter } = createAdapter();
-      const chat = createMockChat();
-      await adapter.initialize(chat as never);
+      const chat = await initAdapterWithMock(adapter);
 
       const { logger } = await import("@atlas/logger");
-      const warnSpy = vi.fn();
-      const originalWarn = logger.warn.bind(logger);
-      logger.warn = ((event: string, ctx?: Record<string, unknown>) => {
-        if (event === "atlas_web_adapter_attached_artifact_missing") {
-          warnSpy(event, ctx);
-        }
-        return originalWarn(event, ctx);
-      }) as typeof logger.warn;
+      const warnSpy = vi.spyOn(logger, "warn");
+      const ghostId = "00000000-0000-0000-0000-deadbeef0000";
 
       try {
         const request = new Request("http://localhost", {
           method: "POST",
           body: JSON.stringify({
             id: "chat-missing",
-            message: buildAttachedMessage("00000000-0000-0000-0000-deadbeef0000", "ghost.csv"),
+            message: buildAttachedMessage(ghostId, "ghost.csv"),
           }),
           headers: { "Content-Type": "application/json" },
         });
         await adapter.handleWebhook(request);
-      } finally {
-        logger.warn = originalWarn;
-      }
 
-      const message = chat.processMessage.mock.calls[0]?.[2] as Message<WebChatPayload>;
-      const parts = message.raw.uiMessage.parts;
-      // No synthetic text part inserted; original two parts survive.
-      expect(parts).toHaveLength(2);
-      expect(parts[0]).toMatchObject({ type: "text", text: "summarize" });
-      expect(parts[1]).toMatchObject({ type: "data-artifact-attached" });
-      expect(warnSpy).toHaveBeenCalledWith(
-        "atlas_web_adapter_attached_artifact_missing",
-        expect.objectContaining({ artifactId: "00000000-0000-0000-0000-deadbeef0000" }),
-      );
+        const message = chat.processMessage.mock.calls[0]?.[2] as Message<WebChatPayload>;
+        const parts = message.raw.uiMessage.parts;
+        // No synthetic text part inserted; original two parts survive.
+        expect(parts).toHaveLength(2);
+        expect(parts[0]).toMatchObject({ type: "text", text: "summarize" });
+        expect(parts[1]).toMatchObject({ type: "data-artifact-attached" });
+        expect(warnSpy).toHaveBeenCalledWith(
+          "atlas_web_adapter_attached_artifact_missing",
+          expect.objectContaining({ artifactId: ghostId }),
+        );
+      } finally {
+        warnSpy.mockRestore();
+      }
     });
 
     it("inserts the right expansion before each of multiple data-artifact-attached parts", async () => {
       // Reverse-walk splice correctness: two `data-artifact-attached` parts
       // in one message must each receive their own preceding text part,
       // with the right bytes for the right id.
-      const { adapter } = createAdapter();
-      const chat = createMockChat();
-      await adapter.initialize(chat as never);
+      const { adapter, workspaceId } = createAdapter();
+      const chat = await initAdapterWithMock(adapter);
 
       const idA = await createTextArtifact({
-        workspaceId: "ws-test-001",
+        workspaceId,
         content: "alpha\n",
         mimeType: "text/plain",
         originalName: "a.txt",
       });
       const idB = await createTextArtifact({
-        workspaceId: "ws-test-001",
+        workspaceId,
         content: "bravo\n",
         mimeType: "text/plain",
         originalName: "b.txt",
@@ -465,29 +482,35 @@ describe("AtlasWebAdapter.handleWebhook", () => {
       expect((parts[4] as { text: string }).text).not.toContain("alpha");
     });
 
-    it("no-ops when the message has no data-artifact-attached parts", async () => {
-      // Defensive baseline: a plain text message must not pay any artifact
-      // I/O cost on the hot path.
+    it("no-ops with zero artifact I/O when the message has no data-artifact-attached parts", async () => {
+      // Hot-path invariant: a plain text message must not call
+      // ArtifactStorage.get at all. Spying on the adapter (rather than just
+      // checking that the persisted parts are unchanged) catches a future
+      // regression where a refactor accidentally fetches for every message.
       const { adapter } = createAdapter();
-      const chat = createMockChat();
-      await adapter.initialize(chat as never);
+      const chat = await initAdapterWithMock(adapter);
+      const getSpy = vi.spyOn(ArtifactStorage, "get");
 
-      const request = new Request("http://localhost", {
-        method: "POST",
-        body: JSON.stringify({ id: "chat-plain", message: textMessage("just text") }),
-        headers: { "Content-Type": "application/json" },
-      });
-      await adapter.handleWebhook(request);
+      try {
+        const request = new Request("http://localhost", {
+          method: "POST",
+          body: JSON.stringify({ id: "chat-plain", message: textMessage("just text") }),
+          headers: { "Content-Type": "application/json" },
+        });
+        await adapter.handleWebhook(request);
 
-      const message = chat.processMessage.mock.calls[0]?.[2] as Message<WebChatPayload>;
-      expect(message.raw.uiMessage.parts).toEqual([{ type: "text", text: "just text" }]);
+        const message = chat.processMessage.mock.calls[0]?.[2] as Message<WebChatPayload>;
+        expect(message.raw.uiMessage.parts).toEqual([{ type: "text", text: "just text" }]);
+        expect(getSpy).not.toHaveBeenCalled();
+      } finally {
+        getSpy.mockRestore();
+      }
     });
   });
 
   it("preserves data-artifact-attached parts on WebChatPayload.uiMessage", async () => {
     const { adapter } = createAdapter();
-    const chat = createMockChat();
-    await adapter.initialize(chat as never);
+    const chat = await initAdapterWithMock(adapter);
 
     const multiPartMessage = {
       id: "msg-with-files",
@@ -532,8 +555,7 @@ describe("AtlasWebAdapter.handleWebhook", () => {
 
   it("falls back to default-user when X-Atlas-User-Id header is missing", async () => {
     const { adapter } = createAdapter();
-    const chat = createMockChat();
-    await adapter.initialize(chat as never);
+    const chat = await initAdapterWithMock(adapter);
 
     const request = new Request("http://localhost", {
       method: "POST",
@@ -547,8 +569,8 @@ describe("AtlasWebAdapter.handleWebhook", () => {
   });
 
   it("streams events written to StreamRegistry through the SSE response", async () => {
-    const { adapter, registry } = createAdapter();
-    await adapter.initialize(createMockChat() as never);
+    const { adapter, registry, workspaceId } = createAdapter();
+    await initAdapterWithMock(adapter);
 
     const request = new Request("http://localhost", {
       method: "POST",
@@ -560,17 +582,16 @@ describe("AtlasWebAdapter.handleWebhook", () => {
     // Simulate the shared handler writing events to StreamRegistry.
     // The registry is keyed by `(workspaceId, chatId)`; the adapter
     // creates the buffer under the workspaceId it was constructed with.
-    registry.appendEvent("ws-test-001", "chat-sse", {
-      type: "text-delta",
-      delta: "hello",
-    } as never);
-    registry.appendEvent("ws-test-001", "chat-sse", {
+    const textDelta: AtlasUIMessageChunk = { type: "text-delta", id: "td1", delta: "hello" };
+    const toolInput: AtlasUIMessageChunk = {
       type: "tool-input-available",
       toolCallId: "tc1",
       toolName: "search",
       input: {},
-    } as never);
-    registry.finishStream("ws-test-001", "chat-sse");
+    };
+    registry.appendEvent(workspaceId, "chat-sse", textDelta);
+    registry.appendEvent(workspaceId, "chat-sse", toolInput);
+    registry.finishStream(workspaceId, "chat-sse");
 
     if (!response.body) throw new Error("expected response body");
     const reader = response.body.getReader();
@@ -594,7 +615,11 @@ describe("AtlasWebAdapter.handleWebhook", () => {
     expect(events).toContain("[DONE]");
     const dataEvents = events.filter((e) => e !== "[DONE]");
     expect(dataEvents).toHaveLength(2);
-    expect(JSON.parse(dataEvents[0] ?? "")).toEqual({ type: "text-delta", delta: "hello" });
+    expect(JSON.parse(dataEvents[0] ?? "")).toEqual({
+      type: "text-delta",
+      id: "td1",
+      delta: "hello",
+    });
     expect(JSON.parse(dataEvents[1] ?? "")).toMatchObject({
       type: "tool-input-available",
       toolCallId: "tc1",
