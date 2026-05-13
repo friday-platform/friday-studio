@@ -125,9 +125,14 @@ describe("rejectionToast", () => {
 });
 
 describe("buildFileAttachment", () => {
+  // SHA-256 of "" — fine as a placeholder for tests that don't care
+  // about the hash's value (the dedup behavior is exercised
+  // separately through addFiles in the integration / UI layer).
+  const SHA256_EMPTY = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+
   it("returns the initial state shape with status 'uploading' and progress 0", () => {
     const file = makeFile({ name: "data.csv", type: "text/csv" });
-    const att = buildFileAttachment(file);
+    const att = buildFileAttachment(file, SHA256_EMPTY);
     expect(att.kind).toBe("file");
     expect(att.file).toBe(file);
     expect(att.mediaType).toBe("text/csv");
@@ -136,6 +141,7 @@ describe("buildFileAttachment", () => {
     expect(att.path).toBeUndefined();
     expect(att.errorMessage).toBeUndefined();
     expect(att.abortController).toBeInstanceOf(AbortController);
+    expect(att.contentHash).toBe(SHA256_EMPTY);
     expect(att.id).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
     );
@@ -145,12 +151,12 @@ describe("buildFileAttachment", () => {
     // .md → text/markdown via inferMimeFromFilename. Without this fallback
     // the chip would show "application/octet-stream" instead of the
     // real text/markdown mime.
-    const att = buildFileAttachment(makeFile({ name: "notes.md", type: "" }));
+    const att = buildFileAttachment(makeFile({ name: "notes.md", type: "" }), SHA256_EMPTY);
     expect(att.mediaType).toBe("text/markdown");
   });
 
   it("falls back to application/octet-stream when no mime can be inferred", () => {
-    const att = buildFileAttachment(makeFile({ name: "scratch.todo", type: "" }));
+    const att = buildFileAttachment(makeFile({ name: "scratch.todo", type: "" }), SHA256_EMPTY);
     expect(att.mediaType).toBe("application/octet-stream");
   });
 });

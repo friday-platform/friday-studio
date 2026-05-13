@@ -26,6 +26,13 @@ export interface ImageAttachment {
   id: string;
   file: File;
   dataUrl: string;
+  /** SHA-256 hex of the file's bytes, computed on drop. Drives the
+   * client-side dedup check — drop the same bytes twice and the
+   * second drop is recognized regardless of filename/mtime. Browser
+   * SubtleCrypto is SHA-256 only (no MD5); the server side uses MD5
+   * for on-disk content-addressing — they're independent content
+   * hashes serving independent purposes. */
+  contentHash: string;
 }
 
 /**
@@ -51,6 +58,8 @@ export interface FileAttachment {
   errorMessage?: string;
   /** Abort handle — wired to the chip's ✕ so cancel actually cancels. */
   abortController: AbortController;
+  /** SHA-256 hex of the file's bytes — see {@link ImageAttachment.contentHash}. */
+  contentHash: string;
 }
 
 export type ChatAttachment = ImageAttachment | FileAttachment;
@@ -126,33 +135,36 @@ export function rejectionToast(rejected: readonly File[]):
 }
 
 /**
- * Cheap content-equivalence signature for a dropped file. Same name +
- * size + `lastModified` ms → almost certainly the same file
- * (drag-dropped twice, or the user clicked the file picker on the same
- * file). False negatives only if the user edited the file between
- * drops (size or mtime changes); false positives require two files
- * with identical name+size+mtime which is essentially impossible.
- *
- * We deliberately avoid full content-hashing here — that would require
- * reading the whole file into the renderer's main thread, blocking the
- * UI for a fraction of a second on large drops. The signature is
- * enough to catch the common case (user re-drags the file).
+ * Compute SHA-256 of the file's bytes as a hex string. The browser's
+ * `crypto.subtle.digest` supports SHA-* (not MD5 — deprecated). For the
+ * 25MB upload cap, hashing takes a few hundred ms worst-case; we await
+ * it inline in `addFiles` (the drop handler is already async). Server
+ * side uses MD5 for on-disk content-addressing — they're independent
+ * content hashes serving different concerns; the client doesn't need
+ * to share a hash function with the server for the dedup check to
+ * work (the comparison is among CHIPS, not against server state).
  */
-function attachmentSignature(file: File): string {
-  return `${file.name}|${file.size}|${file.lastModified}`;
+export async function computeContentHash(file: File): Promise<string> {
+  const bytes = await file.arrayBuffer();
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
 }
 
 /**
- * Check whether `file` is already represented by an entry in
- * `existing`. Used by `addFiles` / `addDroppedFiles` to silently drop
- * (with a toast) the second drop of the same file.
+ * Check whether `hash` matches any existing chip's `contentHash`.
+ * Used by `addFiles` / `addDroppedFiles` to silently drop (with a
+ * toast) the second drop of the same content — regardless of
+ * filename, mtime, or size mismatch. Content-equivalence is the
+ * correct semantic: a user who renamed `foo.csv` to `bar.csv` and
+ * dropped both should still see one chip (same bytes).
  */
 export function isDuplicateAttachment(
-  file: File,
+  hash: string,
   existing: readonly ChatAttachment[],
 ): boolean {
-  const sig = attachmentSignature(file);
-  return existing.some((att) => attachmentSignature(att.file) === sig);
+  return existing.some((att) => att.contentHash === hash);
 }
 
 /**
@@ -185,7 +197,7 @@ export function duplicateToast(
  * {@link runFileUpload} with an `onUpdate` callback so per-progress and
  * terminal-state mutations land back on the same entry.
  */
-export function buildFileAttachment(file: File): FileAttachment {
+export function buildFileAttachment(file: File, contentHash: string): FileAttachment {
   const mediaType =
     file.type || inferMimeFromFilename(file.name) || "application/octet-stream";
   return {
@@ -196,6 +208,7 @@ export function buildFileAttachment(file: File): FileAttachment {
     status: "uploading",
     progress: 0,
     abortController: new AbortController(),
+    contentHash,
   };
 }
 

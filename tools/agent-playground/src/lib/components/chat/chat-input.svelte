@@ -7,6 +7,7 @@
     type ImageAttachment,
     buildFileAttachment,
     classifyAttachment,
+    computeContentHash,
     duplicateToast,
     isDuplicateAttachment,
     rejectionToast,
@@ -166,10 +167,15 @@
     const rejected: File[] = [];
     const duplicates: File[] = [];
     for (const file of files) {
-      // Dedup BEFORE classification — we want "already attached" to win
-      // over "wrong file type" if a user re-drags the same rejected
-      // file (the prior drop's rejection toast already told them why).
-      if (isDuplicateAttachment(file, attachments)) {
+      // Content-hash dedup. SHA-256 over the whole file — for the 25MB
+      // upload cap this is a few hundred ms worst case, well under the
+      // user's "did I just drop that?" cognitive threshold. Catches
+      // same-bytes-different-filename and same-content-edited-mtime
+      // cases that a metadata signature would miss. Dedup runs BEFORE
+      // classification so "already attached" wins over "wrong type"
+      // if the user re-drops a previously-rejected file.
+      const contentHash = await computeContentHash(file);
+      if (isDuplicateAttachment(contentHash, attachments)) {
         duplicates.push(file);
         continue;
       }
@@ -178,10 +184,10 @@
         const dataUrl = await fileToDataUrl(file);
         attachments = [
           ...attachments,
-          { kind: "image", id: crypto.randomUUID(), file, dataUrl },
+          { kind: "image", id: crypto.randomUUID(), file, dataUrl, contentHash },
         ];
       } else if (kind === "file") {
-        const att = buildFileAttachment(file);
+        const att = buildFileAttachment(file, contentHash);
         attachments = [...attachments, att];
         runFileUpload({ att, chatId, workspaceId, onUpdate: patchAttachment });
       } else {

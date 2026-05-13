@@ -19,6 +19,7 @@
     type ChatAttachment,
     buildFileAttachment,
     classifyAttachment,
+    computeContentHash,
     duplicateToast,
     isDuplicateAttachment,
     rejectionToast,
@@ -121,10 +122,12 @@
     const rejected: File[] = [];
     const duplicates: File[] = [];
     for (const file of files) {
-      // Dedup BEFORE classification — same reasoning as in
-      // `chat-input.svelte:addFiles`. Catches the user re-dragging
-      // the same file (instant signature check on name+size+mtime).
-      if (isDuplicateAttachment(file, pendingAttachments)) {
+      // Content-hash dedup — see chat-input.svelte:addFiles for the
+      // full rationale. SHA-256 over the bytes, then compare hash
+      // against existing chips. Catches same-content-renamed cases
+      // that metadata signatures miss.
+      const contentHash = await computeContentHash(file);
+      if (isDuplicateAttachment(contentHash, pendingAttachments)) {
         duplicates.push(file);
         continue;
       }
@@ -133,10 +136,10 @@
         const dataUrl = await fileToDataUrl(file);
         pendingAttachments = [
           ...pendingAttachments,
-          { kind: "image", id: crypto.randomUUID(), file, dataUrl },
+          { kind: "image", id: crypto.randomUUID(), file, dataUrl, contentHash },
         ];
       } else if (kind === "file") {
-        const att = buildFileAttachment(file);
+        const att = buildFileAttachment(file, contentHash);
         pendingAttachments = [...pendingAttachments, att];
         runFileUpload({ att, chatId, workspaceId: wsId, onUpdate: patchPendingFile });
       } else {
