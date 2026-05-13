@@ -98,11 +98,24 @@ func tlsCertDir() string {
 	return filepath.Join(friendlyHome(), "tls")
 }
 
+// tlsCertPath / tlsKeyPath resolve the browser-trusted cert pair the
+// playground origin presents to Chrome. Each honors the corresponding
+// FRIDAY_BROWSER_TLS_* env var first (symmetric with s2sCertPath); the
+// default location is <friendlyHome()>/tls/browser.{crt,key} — the
+// priority-2 resolution slot in tls-paths.ts. Honoring the env vars
+// here keeps the renewer's write path and the playground's read path
+// in lock-step even when the operator pins certs elsewhere.
 func tlsCertPath() string {
+	if v := os.Getenv("FRIDAY_BROWSER_TLS_CERT"); v != "" {
+		return v
+	}
 	return filepath.Join(tlsCertDir(), "browser.crt")
 }
 
 func tlsKeyPath() string {
+	if v := os.Getenv("FRIDAY_BROWSER_TLS_KEY"); v != "" {
+		return v
+	}
 	return filepath.Join(tlsCertDir(), "browser.key")
 }
 

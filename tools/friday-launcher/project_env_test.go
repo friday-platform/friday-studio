@@ -365,18 +365,25 @@ func TestPlaygroundURL_UsesHttpsWhenCertPresent(t *testing.T) {
 	}
 }
 
-// TestPlaygroundSpec_PinsBrowserTLSEnv guards the contract that the
-// launcher's view of the cert dir (friendlyHome()/tls) flows through
-// to the playground subprocess as FRIDAY_BROWSER_TLS_CERT/_KEY.
+// TestPlaygroundSpec_PicksUpCertPathsViaDotEnv guards the contract
+// that cert paths flow from .env (where ensureCertEnvFile writes them)
+// through loadDotEnv → commonServiceEnv → every service spec. The
+// launcher must not inject cert paths at spawn time — anyone running
+// a service manually (via `friday daemon start`, etc.) needs to read
+// the same .env and get the same wiring without the launcher.
 //
-// Regression: an earlier draft relied on tls-paths.ts resolving the
-// cert dir via homedir() independently. That agreed with the launcher
-// for default installs but diverged whenever FRIDAY_LAUNCHER_HOME
-// redirected the launcher's view — playground bound on http while the
-// launcher's tray URL said https.
-func TestPlaygroundSpec_PinsBrowserTLSEnv(t *testing.T) {
+// Regression target: a previous draft injected FRIDAY_BROWSER_TLS_CERT
+// directly on the playground spec, which made the launcher a hard
+// dependency for TLS to work.
+func TestPlaygroundSpec_PicksUpCertPathsViaDotEnv(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("FRIDAY_LAUNCHER_HOME", tmp)
+
+	// Simulate the boot-time writeback: ensureCertEnvFile runs and
+	// drops cert paths into .env.
+	if _, err := ensureCertEnvFile(); err != nil {
+		t.Fatalf("ensureCertEnvFile: %v", err)
+	}
 
 	specs := supervisedProcesses("/tmp/bin")
 	var playground *processSpec
@@ -389,13 +396,18 @@ func TestPlaygroundSpec_PinsBrowserTLSEnv(t *testing.T) {
 	if playground == nil {
 		t.Fatal("playground spec missing")
 	}
-	wantCert := "FRIDAY_BROWSER_TLS_CERT=" + filepath.Join(tmp, "tls", "browser.crt")
-	wantKey := "FRIDAY_BROWSER_TLS_KEY=" + filepath.Join(tmp, "tls", "browser.key")
-	if !slices.Contains(playground.env, wantCert) {
-		t.Errorf("playground env missing %q\nfull env: %v", wantCert, playground.env)
-	}
-	if !slices.Contains(playground.env, wantKey) {
-		t.Errorf("playground env missing %q\nfull env: %v", wantKey, playground.env)
+	// The launcher resolver may pick the env-var override; rely on it
+	// for the expected path so this test stays correct even when a
+	// shell export pins FRIDAY_BROWSER_TLS_CERT elsewhere.
+	wantCert := "FRIDAY_BROWSER_TLS_CERT=" + tlsCertPath()
+	wantKey := "FRIDAY_BROWSER_TLS_KEY=" + tlsKeyPath()
+	wantS2sCert := "FRIDAY_TLS_CERT=" + s2sCertPath()
+	wantS2sKey := "FRIDAY_TLS_KEY=" + s2sKeyPath()
+	wantS2sCA := "FRIDAY_TLS_CA=" + s2sCAPath()
+	for _, want := range []string{wantCert, wantKey, wantS2sCert, wantS2sKey, wantS2sCA} {
+		if !slices.Contains(playground.env, want) {
+			t.Errorf("playground env missing %q\nfull env: %v", want, playground.env)
+		}
 	}
 }
 

@@ -154,6 +154,13 @@ func commonServiceEnv() []string {
 			env = append(env, "FRIDAY_NATS_URL="+url)
 		}
 	}
+	// Cert paths (FRIDAY_TLS_*, FRIDAY_BROWSER_TLS_*, DENO_CERT,
+	// NODE_EXTRA_CA_CERTS) are NOT injected here. The launcher writes
+	// them to ~/.friday/local/.env once (via ensureCertEnvFile) and the
+	// loadDotEnv() above already carried them into this baseline. Going
+	// through .env keeps the launcher convenient-but-optional: anyone
+	// running `friday daemon start` directly, without the launcher,
+	// reads the same .env and gets the same cert wiring.
 	return env
 }
 
@@ -614,23 +621,11 @@ func supervisedProcesses(binDir string) []processSpec {
 			// reach static-server.ts, which injects them into the
 			// served HTML for the browser's window.__FRIDAY_CONFIG__.
 			name: "playground", binary: filepath.Join(binDir, "playground"),
-			// Pin the cert-pair path explicitly so tls-paths.ts and
-			// the launcher's hasValidBrowserCert() agree on where to
-			// look. Without this, tls-paths.ts resolves via Node's
-			// homedir() while the launcher uses friendlyHome() — they
-			// agree for default installs (both → ~/.friday/local) but
-			// diverge whenever FRIDAY_LAUNCHER_HOME redirects the
-			// launcher's view (test sandboxes, multi-instance setups).
-			// FRIDAY_BROWSER_TLS_CERT/_KEY are the documented priority-1
-			// resolution slot in tls-paths.ts; always set them so the
-			// playground doesn't fall through to homedir() candidates
-			// that may not match the launcher's reality. tls-paths.ts
-			// still checks existence + validity, so a missing or expired
-			// cert at these paths falls through to http fallback.
-			env: append(commonServiceEnv(),
-				"FRIDAY_BROWSER_TLS_CERT="+tlsCertPath(),
-				"FRIDAY_BROWSER_TLS_KEY="+tlsKeyPath(),
-			),
+			// commonServiceEnv() now carries FRIDAY_BROWSER_TLS_CERT/_KEY
+			// (and the s2s + DENO_CERT / NODE_EXTRA_CA_CERTS pins) for
+			// every service — no playground-specific env wiring needed
+			// here.
+			env:        commonServiceEnv(),
 			healthPort: "5200", healthPath: "/",
 		},
 	}

@@ -383,6 +383,32 @@ func onReady() {
 		"url", natsServerURL(),
 	)
 
+	// First-run s2s cert generation. Synchronous, idempotent. On a
+	// fresh install (or after manual removal of <friendly_home>/tls/)
+	// the launcher mints a private CA + leaf for service-to-service
+	// TLS, valid for 5 years. Subsequent boots find the files valid
+	// and return immediately. Must run BEFORE supervisedProcesses() so
+	// the cert-path .env writeback below points at real files when the
+	// supervised processes wake up to load .env. Generation failure is
+	// logged but non-fatal — services fall back to plain HTTP on
+	// loopback if the s2s pair isn't present.
+	if err := ensureS2sCerts(); err != nil {
+		log.Warn("s2s: ensureS2sCerts failed (services will fall back to plain HTTP)", "error", err)
+	}
+
+	// Persist resolved cert paths to ~/.friday/local/.env (add-if-missing).
+	// commonServiceEnv() loads .env and passes the result to every spawned
+	// service — going through .env (instead of injecting at spawn time)
+	// keeps the launcher convenient-but-optional. Anyone running `friday
+	// daemon start` manually reads the same .env and gets the same cert
+	// wiring, no launcher dependency at runtime. Operator overrides
+	// already in .env are preserved verbatim.
+	if added, err := ensureCertEnvFile(); err != nil {
+		log.Warn("cert env: writeback to .env failed", "error", err)
+	} else if added > 0 {
+		log.Info("cert env: wrote launcher-managed paths to .env", "keys_added", added)
+	}
+
 	// Boot-time browser-cert refresh. Bounded at bootRefreshTimeout
 	// (5s) so a stuck CDN can't delay launcher startup. Run BEFORE
 	// supervisedProcesses() so the playground spec's first read of
