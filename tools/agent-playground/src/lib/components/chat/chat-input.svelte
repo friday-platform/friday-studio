@@ -7,7 +7,7 @@
     type ImageAttachment,
     buildArtifactAttachment,
     classifyAttachment,
-    rejectionReason,
+    rejectionToast,
     runArtifactUpload,
   } from "./chat-attachment.ts";
 
@@ -155,6 +155,7 @@
   }
 
   async function addFiles(files: FileList | File[]) {
+    const rejected: File[] = [];
     for (const file of files) {
       const kind = classifyAttachment(file);
       if (kind === "image") {
@@ -168,15 +169,14 @@
         attachments = [...attachments, att];
         runArtifactUpload({ att, workspaceId, onUpdate: patchAttachment });
       } else {
-        // Rejected — surface a toast so the user knows the drop landed
-        // and was deliberately refused (vs the input being broken).
-        toast({
-          title: "Couldn't attach file",
-          description: rejectionReason(file),
-          error: true,
-        });
+        rejected.push(file);
       }
     }
+    // Coalesce: one toast for the whole drop, not one per rejected file.
+    // Single-file rejection still surfaces the specific reason (e.g. SVG
+    // script-injection); multi-file rejection enumerates the filenames.
+    const summary = rejectionToast(rejected);
+    if (summary) toast({ ...summary, error: true });
   }
 
   function removeAttachment(id: string) {

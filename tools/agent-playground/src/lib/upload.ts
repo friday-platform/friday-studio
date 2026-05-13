@@ -4,6 +4,7 @@
  */
 
 import {
+  ACCEPTED_TYPES_DESCRIPTION,
   ALLOWED_EXTENSIONS,
   ALLOWED_MIME_TYPES,
   EXTENSION_TO_MIME,
@@ -66,8 +67,7 @@ export function validateFile(file: File): { valid: true } | { valid: false; erro
 
   return {
     valid: false,
-    error:
-      "Unsupported file type. Supported: Text/markup (TXT, MD, CSV, TSV, JSON, YML, HTML, XML, CSS, LOG, CONF, INI, TOML), Source code (TS, TSX, JS, JSX, MJS, CJS, PY, GO, RS, SH, BASH, SQL), Documents (PDF, DOCX, PPTX), Images (PNG, JPG, JPEG, GIF, WebP), Audio (MP3, MP4, M4A, WAV, WebM, OGG, FLAC).",
+    error: `Unsupported file type. Supported: ${ACCEPTED_TYPES_DESCRIPTION}.`,
   };
 }
 

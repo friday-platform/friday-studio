@@ -7,7 +7,11 @@
  * @module
  */
 
-import { inferMimeFromFilename, isTextMimeType } from "@atlas/core/artifacts/file-upload";
+import {
+  ACCEPTED_TYPES_DESCRIPTION,
+  inferMimeFromFilename,
+  isTextMimeType,
+} from "@atlas/core/artifacts/file-upload";
 // `$lib/` is a SvelteKit alias Vite resolves but `deno check` (CI's
 // type-check job) does not — use a relative path so both toolchains agree.
 import { uploadFile } from "../../upload.ts";
@@ -95,7 +99,29 @@ export function rejectionReason(file: File): string {
   if (isSvg(file)) {
     return `SVG attachments aren't supported on the chat input (script-injection risk). Ask the agent to create one for you instead.`;
   }
-  return `"${file.name}" isn't a supported file type. Supported: Text/markup (TXT, MD, CSV, TSV, JSON, YML, HTML, XML, CSS, LOG, CONF, INI, TOML), Source code (TS, TSX, JS, JSX, MJS, CJS, PY, GO, RS, SH, BASH, SQL), Documents (PDF, DOCX, PPTX), Images (PNG, JPG, JPEG, GIF, WebP), Audio (MP3, MP4, M4A, WAV, WebM, OGG, FLAC).`;
+  return `"${file.name}" isn't a supported file type. Supported: ${ACCEPTED_TYPES_DESCRIPTION}.`;
+}
+
+/**
+ * Compose a single toast summary for multiple rejected files. Avoids the
+ * "drop 50 files → 50 stacked toasts" failure mode. Falls back to the
+ * single-file `rejectionReason` when only one file was refused so the
+ * specific reason (e.g. SVG script-injection) still surfaces.
+ */
+export function rejectionToast(rejected: readonly File[]):
+  | { title: string; description: string }
+  | null {
+  if (rejected.length === 0) return null;
+  if (rejected.length === 1) {
+    const file = rejected[0];
+    if (!file) return null;
+    return { title: "Couldn't attach file", description: rejectionReason(file) };
+  }
+  const names = rejected.map((f) => `"${f.name}"`).join(", ");
+  return {
+    title: `Couldn't attach ${rejected.length} files`,
+    description: `Refused: ${names}. Supported: ${ACCEPTED_TYPES_DESCRIPTION}.`,
+  };
 }
 
 /**

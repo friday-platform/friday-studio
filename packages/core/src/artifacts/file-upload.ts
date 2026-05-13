@@ -170,8 +170,36 @@ export function isInvalidChatId(chatId: string): boolean {
   );
 }
 
-export const FILE_TYPE_NOT_ALLOWED_ERROR =
-  "File type not allowed. Supported: Text/markup (TXT, MD, CSV, TSV, JSON, YML, HTML, XML, CSS, LOG, CONF, INI, TOML), Source code (TS, TSX, JS, JSX, MJS, CJS, PY, GO, RS, SH, BASH, SQL), Documents (PDF, DOCX, PPTX), Images (PNG, JPG, JPEG, GIF, WebP), Audio (MP3, MP4, M4A, WAV, WebM, OGG, FLAC).";
+/**
+ * User-facing categorization of accepted upload extensions. Drives the
+ * three error-message sites (`FILE_TYPE_NOT_ALLOWED_ERROR` here, the
+ * playground `validateFile` error, and the chat-input rejection toast)
+ * via {@link ACCEPTED_TYPES_DESCRIPTION} so they stay in sync.
+ *
+ * When adding a new uploadable extension: add it to `EXTENSION_TO_MIME`
+ * above (with `uploadable: true`) AND to the right category here.
+ * Display casing matches conventional spellings (WebP, WebM, JPG vs JPEG).
+ */
+const ACCEPTED_CATEGORIES: ReadonlyArray<readonly [string, readonly string[]]> = [
+  [
+    "Text/markup",
+    ["TXT", "MD", "CSV", "TSV", "JSON", "YML", "HTML", "XML", "CSS", "LOG", "CONF", "INI", "TOML"],
+  ],
+  ["Source code", ["TS", "TSX", "JS", "JSX", "MJS", "CJS", "PY", "GO", "RS", "SH", "BASH", "SQL"]],
+  ["Documents", ["PDF", "DOCX", "PPTX"]],
+  ["Images", ["PNG", "JPG", "JPEG", "GIF", "WebP"]],
+  ["Audio", ["MP3", "MP4", "M4A", "WAV", "WebM", "OGG", "FLAC"]],
+];
+
+/**
+ * Human-readable enumeration of accepted upload categories. Single source
+ * of truth for the three "not supported" error messages.
+ */
+export const ACCEPTED_TYPES_DESCRIPTION = ACCEPTED_CATEGORIES.map(
+  ([category, exts]) => `${category} (${exts.join(", ")})`,
+).join(", ");
+
+export const FILE_TYPE_NOT_ALLOWED_ERROR = `File type not allowed. Supported: ${ACCEPTED_TYPES_DESCRIPTION}.`;
 
 const SUPPORTED_IMAGE_MIMES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
 

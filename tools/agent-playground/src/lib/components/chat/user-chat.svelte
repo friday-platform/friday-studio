@@ -19,7 +19,7 @@
     type ChatAttachment,
     buildArtifactAttachment,
     classifyAttachment,
-    rejectionReason,
+    rejectionToast,
     runArtifactUpload,
   } from "./chat-attachment.ts";
   import ChatInspector from "./chat-inspector.svelte";
@@ -116,6 +116,7 @@
   }
 
   async function addDroppedFiles(files: FileList) {
+    const rejected: File[] = [];
     for (const file of files) {
       const kind = classifyAttachment(file);
       if (kind === "image") {
@@ -129,13 +130,11 @@
         pendingAttachments = [...pendingAttachments, att];
         runArtifactUpload({ att, workspaceId: wsId, onUpdate: patchPendingArtifact });
       } else {
-        toast({
-          title: "Couldn't attach file",
-          description: rejectionReason(file),
-          error: true,
-        });
+        rejected.push(file);
       }
     }
+    const summary = rejectionToast(rejected);
+    if (summary) toast({ ...summary, error: true });
   }
 
   const CHAT_API = $derived(`/api/daemon/api/workspaces/${encodeURIComponent(wsId)}/chat`);
