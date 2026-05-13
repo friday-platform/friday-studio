@@ -55,8 +55,8 @@ import {
 import { stringifyError } from "@atlas/utils";
 import { type Span as OtelSpan, withOtelSpan } from "@atlas/utils/telemetry.server";
 import {
-  type ImagePart,
   jsonSchema as aiJsonSchema,
+  type ImagePart,
   type ModelMessage,
   type Tool,
   type ToolCallRepairFunction,
@@ -1884,34 +1884,26 @@ export class FSMEngine {
                   docTypeName && hasDefinedSchema(jsonSchema)
                     ? this._compiledSchemas.get(docTypeName)
                     : undefined;
-                const outputSchema =
-                  compiledSchema ??
-                  z.object({
-                    result: z
-                      .string()
-                      .min(1, "complete output must not be empty")
-                      .describe(
-                        "The full final output of the task — put the complete formatted text here. This is what the FSM stores and what downstream steps/users see.",
-                      ),
-                  });
 
                 completeToolInjected = true;
                 tools.complete = tool({
                   description:
                     "Call this to complete the task and store results. You MUST call this when finished. The `result` field is REQUIRED and must contain the full formatted output as a non-empty string.",
-                  inputSchema: aiJsonSchema({
-                    type: "object",
-                    properties: {
-                      result: {
-                        type: "string",
-                        minLength: 1,
-                        description:
-                          "The full final output of the task — put the complete formatted text here. This is what the FSM stores and what downstream steps/users see.",
+                  inputSchema:
+                    compiledSchema ??
+                    aiJsonSchema({
+                      type: "object",
+                      properties: {
+                        result: {
+                          type: "string",
+                          minLength: 1,
+                          description:
+                            "The full final output of the task — put the complete formatted text here. This is what the FSM stores and what downstream steps/users see.",
+                        },
                       },
-                    },
-                    required: ["result"],
-                    additionalProperties: false,
-                  } as unknown as Parameters<typeof aiJsonSchema>[0]),
+                      required: ["result"],
+                      additionalProperties: false,
+                    } as unknown as Parameters<typeof aiJsonSchema>[0]),
                   execute: () => ({ success: true }),
                 });
 

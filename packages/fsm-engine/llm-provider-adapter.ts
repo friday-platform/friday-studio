@@ -166,7 +166,10 @@ export class AtlasLLMProviderAdapter implements LLMProvider {
         /^groq:.*llama-4-(scout|maverick)/i.test(modelStr) ||
         // OpenAI gpt-4o + gpt-4.1 + gpt-5 family
         /^openai:gpt-(4o|4\.1|5)/i.test(modelStr);
-      const strictModeProviderOptions: Record<string, Record<string, unknown>> = {};
+      const strictModeProviderOptions: {
+        groq?: { strictJsonSchema: boolean };
+        openai?: { strictJsonSchema: boolean; structuredOutputs: boolean };
+      } = {};
       if (supportsStrict) {
         if (providerName.startsWith("groq")) {
           strictModeProviderOptions.groq = { strictJsonSchema: true };
