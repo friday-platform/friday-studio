@@ -5,11 +5,16 @@ install, and switches to `https://localhost:8080` (or the
 `FRIDAY_PORT_FRIDAY`-overridden port) when `scripts/setup-tls.sh` has been
 run. No auth on localhost. JSON in/out unless noted.
 
-To run the curl examples in this file, source `~/.atlas/.env` once per shell
-so `$FRIDAYD_URL` and `$FRIDAY_TLS_CA` are exported:
+To run the curl examples in this file, source the daemon `.env` once per
+shell so `$FRIDAYD_URL` and `$FRIDAY_TLS_CA` are exported. The block below
+tries the installed-Studio location first (`${FRIDAY_HOME:-~/.friday/local}/.env`)
+then falls back to the dev location (`~/.atlas/.env`):
 
 ```bash
-set -a; [ -f ~/.atlas/.env ] && . ~/.atlas/.env; set +a
+set -a
+. "${FRIDAY_HOME:-$HOME/.friday/local}/.env" 2>/dev/null \
+  || . "$HOME/.atlas/.env" 2>/dev/null || true
+set +a
 ```
 
 All curl invocations should add `${FRIDAY_TLS_CA:+--cacert "$FRIDAY_TLS_CA"}`

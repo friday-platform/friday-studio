@@ -183,11 +183,14 @@ Full agent config as JSON (type, prompt, model, tools, integrations).
 ### Registering a Python user agent
 
 There is no `atlas agent register` CLI subcommand — register via the daemon's
-HTTP API directly. Source `~/.atlas/.env` once per shell so the example
+HTTP API directly. Source the daemon `.env` once per shell so the example
 works on TLS-enabled installs (see the SKILL.md "Daemon URL" preamble):
 
 ```bash
-set -a; [ -f ~/.atlas/.env ] && . ~/.atlas/.env; set +a
+set -a
+. "${FRIDAY_HOME:-$HOME/.friday/local}/.env" 2>/dev/null \
+  || . "$HOME/.atlas/.env" 2>/dev/null || true
+set +a
 friday_curl() { curl ${FRIDAY_TLS_CA:+--cacert "$FRIDAY_TLS_CA"} "$@"; }
 
 friday_curl -X POST "$FRIDAYD_URL/api/agents/register" \

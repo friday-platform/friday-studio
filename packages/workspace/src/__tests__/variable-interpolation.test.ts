@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
+import { getAtlasDaemonUrl } from "@atlas/oapi-client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   findRepoRoot,
@@ -136,15 +137,29 @@ describe("findRepoRoot", () => {
 
 describe("resolveWorkspaceVariables", () => {
   let tempDir: string;
+  // getAtlasDaemonUrl() reads FRIDAYD_URL, the legacy FRIDAY_DAEMON_URL alias,
+  // and auto-upgrades the scheme to https:// when FRIDAY_TLS_CERT + _KEY are
+  // both set. Snapshot all four keys per test so a developer who has run
+  // setup-tls.sh in their shell doesn't see flaky failures.
+  const ENV_KEYS = ["FRIDAYD_URL", "FRIDAY_DAEMON_URL", "FRIDAY_TLS_CERT", "FRIDAY_TLS_KEY"];
+  const envSnapshot: Record<string, string | undefined> = {};
 
   beforeEach(() => {
     tempDir = mkdtempSync(join(tmpdir(), "resolve-vars-"));
     mkdirSync(join(tempDir, ".git"));
     mkdirSync(join(tempDir, "workspaces", "test-ws"), { recursive: true });
+    for (const k of ENV_KEYS) {
+      envSnapshot[k] = process.env[k];
+      delete process.env[k];
+    }
   });
 
   afterEach(() => {
     rmSync(tempDir, { recursive: true, force: true });
+    for (const k of ENV_KEYS) {
+      if (envSnapshot[k] === undefined) delete process.env[k];
+      else process.env[k] = envSnapshot[k];
+    }
   });
 
   it("builds WorkspaceVariables from workspace path", async () => {
@@ -158,53 +173,58 @@ describe("resolveWorkspaceVariables", () => {
     expect(result?.platform_url).toBe("http://localhost:9090");
   });
 
-  it("defaults platform_url to getAtlasDaemonUrl() — honors FRIDAYD_URL", async () => {
-    const prev = process.env.FRIDAYD_URL;
-    process.env.FRIDAYD_URL = "http://localhost:8080";
-    try {
-      const wsPath = join(tempDir, "workspaces", "test-ws");
-      const result = await resolveWorkspaceVariables(wsPath, "test_ws");
+  it("default platform_url falls through to getAtlasDaemonUrl()'s no-env result", async () => {
+    // No env set (beforeEach cleared them) — proves the schema default ran
+    // and returned getAtlasDaemonUrl()'s no-env fallback rather than a
+    // hardcoded literal. If someone re-introduces `.default("http://...")`
+    // on the schema, this catches it because the literal would differ from
+    // what getAtlasDaemonUrl() returns.
+    const wsPath = join(tempDir, "workspaces", "test-ws");
+    const result = await resolveWorkspaceVariables(wsPath, "test_ws");
 
-      expect(result?.platform_url).toBe("http://localhost:8080");
-    } finally {
-      if (prev === undefined) delete process.env.FRIDAYD_URL;
-      else process.env.FRIDAYD_URL = prev;
-    }
+    expect(result?.platform_url).toBe(getAtlasDaemonUrl());
+    // Sanity: the value is a parseable URL with an HTTP(S) scheme.
+    expect(() => new URL(result!.platform_url)).not.toThrow();
+    expect(result?.platform_url).toMatch(/^https?:\/\//);
+  });
+
+  it("platform_url default honors FRIDAYD_URL env (non-tautological)", async () => {
+    // Use a URL nothing else in the test could plausibly produce — proves
+    // the env-honoring branch ran, not just that "what we set is what we
+    // got back via interpolation".
+    process.env.FRIDAYD_URL = "http://example.test:9999";
+    const wsPath = join(tempDir, "workspaces", "test-ws");
+    const result = await resolveWorkspaceVariables(wsPath, "test_ws");
+
+    expect(result?.platform_url).toBe("http://example.test:9999");
   });
 
   it("integration: interpolates a sample workspace config", async () => {
-    const prev = process.env.FRIDAYD_URL;
-    process.env.FRIDAYD_URL = "http://localhost:8080";
-    try {
-      const wsPath = join(tempDir, "workspaces", "test-ws");
-      const vars = await resolveWorkspaceVariables(wsPath, "test_ws");
-      expect(vars).not.toBeNull();
+    process.env.FRIDAYD_URL = "http://example.test:9999";
+    const wsPath = join(tempDir, "workspaces", "test-ws");
+    const vars = await resolveWorkspaceVariables(wsPath, "test_ws");
+    expect(vars).not.toBeNull();
 
-      const sampleConfig = {
-        agents: {
-          coder: {
-            prompt: "Monorepo at {{repo_root}}, workspace: {{workspace_id}}",
-            config: {
-              workDir: "{{repo_root}}",
-              apiUrl: "{{platform_url}}/api",
-              bootstrap: 'var root = "{{repo_root}}"; fetch("{{platform_url}}/signal");',
-            },
+    const sampleConfig = {
+      agents: {
+        coder: {
+          prompt: "Monorepo at {{repo_root}}, workspace: {{workspace_id}}",
+          config: {
+            workDir: "{{repo_root}}",
+            apiUrl: "{{platform_url}}/api",
+            bootstrap: 'var root = "{{repo_root}}"; fetch("{{platform_url}}/signal");',
           },
         },
-      };
+      },
+    };
 
-      // vars is non-null per assertion above
-      const result = interpolateConfig(sampleConfig, vars!);
-      expect(result.agents.coder.prompt).toBe(`Monorepo at ${tempDir}, workspace: test_ws`);
-      expect(result.agents.coder.config.workDir).toBe(tempDir);
-      expect(result.agents.coder.config.apiUrl).toBe("http://localhost:8080/api");
-      expect(result.agents.coder.config.bootstrap).toContain(`var root = "${tempDir}"`);
-      expect(result.agents.coder.config.bootstrap).toContain(
-        'fetch("http://localhost:8080/signal")',
-      );
-    } finally {
-      if (prev === undefined) delete process.env.FRIDAYD_URL;
-      else process.env.FRIDAYD_URL = prev;
-    }
+    const result = interpolateConfig(sampleConfig, vars!);
+    expect(result.agents.coder.prompt).toBe(`Monorepo at ${tempDir}, workspace: test_ws`);
+    expect(result.agents.coder.config.workDir).toBe(tempDir);
+    expect(result.agents.coder.config.apiUrl).toBe("http://example.test:9999/api");
+    expect(result.agents.coder.config.bootstrap).toContain(`var root = "${tempDir}"`);
+    expect(result.agents.coder.config.bootstrap).toContain(
+      'fetch("http://example.test:9999/signal")',
+    );
   });
 });

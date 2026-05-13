@@ -132,11 +132,17 @@ Set `EXTERNAL_DAEMON_URL` / `EXTERNAL_TUNNEL_URL` when you've placed
 a reverse proxy or tunnel in front of Friday and the browser needs
 the public address.
 
-When TLS is enabled, source `~/.atlas/.env` once per shell so curl and
-ad-hoc scripts pick up the right scheme + CA cert:
+When TLS is enabled, source the daemon `.env` once per shell so curl and
+ad-hoc scripts pick up the right scheme + CA cert. The block tries
+`${FRIDAY_HOME:-~/.friday/local}/.env` (installed Studio, written by the
+launcher) and falls back to `~/.atlas/.env` (dev convention, written by
+`scripts/setup-tls.sh`):
 
 ```bash
-set -a; [ -f ~/.atlas/.env ] && . ~/.atlas/.env; set +a
+set -a
+. "${FRIDAY_HOME:-$HOME/.friday/local}/.env" 2>/dev/null \
+  || . "$HOME/.atlas/.env" 2>/dev/null || true
+set +a
 ```
 
 ### JetStream store directory

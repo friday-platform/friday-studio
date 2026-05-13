@@ -211,7 +211,10 @@ All examples below use `$FRIDAYD_URL` and a `friday_curl` helper that adds
 examples work on both plain-HTTP and TLS-enabled installs:
 
 ```bash
-set -a; [ -f ~/.atlas/.env ] && . ~/.atlas/.env; set +a
+set -a
+. "${FRIDAY_HOME:-$HOME/.friday/local}/.env" 2>/dev/null \
+  || . "$HOME/.atlas/.env" 2>/dev/null || true
+set +a
 friday_curl() { curl ${FRIDAY_TLS_CA:+--cacert "$FRIDAY_TLS_CA"} "$@"; }
 ```
 

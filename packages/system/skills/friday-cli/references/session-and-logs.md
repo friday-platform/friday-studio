@@ -102,10 +102,14 @@ deno task atlas session list --json | jq '[.[]|select(.status=="active")]'
 ### Bash check after triggering a signal
 
 ```bash
-# Source ~/.atlas/.env once per shell so $FRIDAYD_URL + $FRIDAY_TLS_CA are set
-# — required for TLS-enabled installs (curl rejects the daemon's private-CA
-# cert otherwise). See the friday-cli SKILL.md "Daemon URL" preamble.
-set -a; [ -f ~/.atlas/.env ] && . ~/.atlas/.env; set +a
+# Source the daemon .env once per shell so $FRIDAYD_URL + $FRIDAY_TLS_CA are
+# set — required for TLS-enabled installs (curl rejects the daemon's
+# private-CA cert otherwise). The chain tries the installed-Studio location
+# first, then the dev location. See friday-cli SKILL.md "Daemon URL".
+set -a
+. "${FRIDAY_HOME:-$HOME/.friday/local}/.env" 2>/dev/null \
+  || . "$HOME/.atlas/.env" 2>/dev/null || true
+set +a
 CURL_TLS=( ${FRIDAY_TLS_CA:+--cacert "$FRIDAY_TLS_CA"} )
 
 # 1. Fire signal, capture sessionId

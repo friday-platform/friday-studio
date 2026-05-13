@@ -1,44 +1,37 @@
-- description: friday-cli SKILL.md has no bare http://localhost:8080
+# Aggregate sweep — fails if ANY file under packages/system/skills/**/*.md
+# has a bare daemon URL outside an acceptable fallback. Auto-discovers new
+# skills so the eval catches drift without yaml maintenance.
+- description: Sweep — all skill markdown is TLS-aware
   vars:
-    scenarioId: 'skill-tls-static:friday-cli/SKILL.md'
+    scenarioId: 'skill-tls-static:sweep'
 
-- description: friday-cli http.md reference has no bare URL
+# Per-file granularity for the three skill bodies the original migration
+# fixed (PR #308). The per-file scenarios for every other skill markdown
+# file are still emitted by the runner and visible in the JSON report —
+# but listing all of them here is unnecessary drift.
+- description: friday-cli SKILL.md has no bare daemon URL
   vars:
-    scenarioId: 'skill-tls-static:friday-cli/references/http.md'
+    scenarioId: 'skill-tls-static:packages/system/skills/friday-cli/SKILL.md'
 
-- description: friday-cli recipes.md has no bare URL
+- description: workspace-api SKILL.md has no bare daemon URL
   vars:
-    scenarioId: 'skill-tls-static:friday-cli/references/recipes.md'
+    scenarioId: 'skill-tls-static:packages/system/skills/workspace-api/SKILL.md'
 
-- description: friday-cli session-and-logs.md has no bare URL
+- description: writing-friday-python-agents SKILL.md has no bare daemon URL
   vars:
-    scenarioId: 'skill-tls-static:friday-cli/references/session-and-logs.md'
+    scenarioId: 'skill-tls-static:packages/system/skills/writing-friday-python-agents/SKILL.md'
 
-- description: friday-cli cli.md has no bare URL
-  vars:
-    scenarioId: 'skill-tls-static:friday-cli/references/cli.md'
-
-- description: workspace-api SKILL.md has no bare URL
-  vars:
-    scenarioId: 'skill-tls-static:workspace-api/SKILL.md'
-
-- description: workspace-api updating-workspaces.md has no bare URL
-  vars:
-    scenarioId: 'skill-tls-static:workspace-api/references/updating-workspaces.md'
-
-- description: writing-friday-python-agents SKILL.md has no bare URL
-  vars:
-    scenarioId: 'skill-tls-static:writing-friday-python-agents/SKILL.md'
-
-- description: friday-cli SKILL.md steers LLM to $FRIDAYD_URL
+# Behavioral checks — feed each top-level SKILL.md to the LLM and verify it
+# steers toward $FRIDAYD_URL + --cacert / friday_curl wrapper.
+- description: friday-cli SKILL.md steers LLM to $FRIDAYD_URL + --cacert
   vars:
     scenarioId: 'skill-tls-behavior:friday-cli/SKILL.md'
 
-- description: workspace-api SKILL.md steers LLM to $FRIDAYD_URL
+- description: workspace-api SKILL.md steers LLM to $FRIDAYD_URL + --cacert
   vars:
     scenarioId: 'skill-tls-behavior:workspace-api/SKILL.md'
 
-- description: writing-friday-python-agents SKILL.md steers LLM to $FRIDAYD_URL
+- description: writing-friday-python-agents SKILL.md steers LLM to $FRIDAYD_URL + --cacert
   vars:
     scenarioId: 'skill-tls-behavior:writing-friday-python-agents/SKILL.md'
 
@@ -54,25 +47,49 @@
   vars:
     scenarioId: 'skill-tls-static-negative:post-with-bare-url'
 
-- description: NEGATIVE — detector flags quoted bare URL in inline code
+- description: NEGATIVE — detector flags bare URL inside code block
   vars:
-    scenarioId: 'skill-tls-static-negative:quoted-bare-url'
+    scenarioId: 'skill-tls-static-negative:quoted-bare-url-in-code'
+
+- description: NEGATIVE — detector flags 127.0.0.1 loopback URL
+  vars:
+    scenarioId: 'skill-tls-static-negative:loopback-127-url'
+
+- description: NEGATIVE — detector flags port-override URL (:18080)
+  vars:
+    scenarioId: 'skill-tls-static-negative:port-override-url'
 
 - description: ACCEPT — detector allows ${FRIDAYD_URL:-...} bash default
   vars:
     scenarioId: 'skill-tls-static-accept:bash-default-expansion'
 
+- description: ACCEPT — detector allows single-dash bash default
+  vars:
+    scenarioId: 'skill-tls-static-accept:bash-default-single-dash'
+
+- description: ACCEPT — detector allows := assignment form
+  vars:
+    scenarioId: 'skill-tls-static-accept:bash-default-assignment'
+
+- description: ACCEPT — detector allows non-FRIDAYD_URL var with default
+  vars:
+    scenarioId: 'skill-tls-static-accept:bash-default-other-var'
+
 - description: ACCEPT — detector allows os.environ.get default literal
   vars:
     scenarioId: 'skill-tls-static-accept:python-environ-default'
 
-- description: ACCEPT — detector allows "→" doc comment describing the var
+- description: ACCEPT — detector allows "→" doc comment inside a code block
   vars:
-    scenarioId: 'skill-tls-static-accept:arrow-doc-comment'
+    scenarioId: 'skill-tls-static-accept:arrow-doc-comment-in-code'
 
-- description: ACCEPT — detector allows "defaults to `...`" prose
+- description: ACCEPT — detector allows URLs in plain prose
   vars:
-    scenarioId: 'skill-tls-static-accept:prose-default-in-backticks'
+    scenarioId: 'skill-tls-static-accept:prose-mention'
+
+- description: ACCEPT — detector allows URLs in YAML frontmatter
+  vars:
+    scenarioId: 'skill-tls-static-accept:frontmatter-description'
 
 - description: NEGATIVE — bad skill body makes the LLM emit a bare URL
   vars:

@@ -8,23 +8,35 @@ description: "Interact with a running Friday daemon via CLI and HTTP — list/cr
 Friday is orchestrated by a daemon on `localhost:8080` (plain HTTP) or
 `https://localhost:8080` when TLS is enabled (`scripts/setup-tls.sh`). There
 are two surfaces for interacting with it: the `deno task atlas` CLI (thin HTTP
-client, great for humans and shell scripts — auto-loads `~/.atlas/.env` so it
-picks the right scheme) and the raw HTTP API (more endpoints, SSE streaming,
+client, great for humans and shell scripts — auto-loads the daemon `.env` so
+it picks the right scheme) and the raw HTTP API (more endpoints, SSE streaming,
 the only option for many CRUD ops on workspace internals).
 
 ## Daemon URL — copy-paste preamble for every curl block
 
 Curl examples below assume `$FRIDAYD_URL` and (when TLS is on) `$FRIDAY_TLS_CA`
-are set. Source `~/.atlas/.env` once per shell to pick them up:
+are set. The daemon `.env` lives at `${FRIDAY_HOME:-~/.friday/local}/.env`
+on installed Friday Studio and `~/.atlas/.env` for dev (the dev `deno task
+atlas` pins `FRIDAY_HOME=$HOME/.atlas`). Source whichever exists once per
+shell:
 
 ```bash
-set -a; [ -f ~/.atlas/.env ] && . ~/.atlas/.env; set +a
+set -a
+. "${FRIDAY_HOME:-$HOME/.friday/local}/.env" 2>/dev/null \
+  || . "$HOME/.atlas/.env" 2>/dev/null || true
+set +a
 # $FRIDAYD_URL → https://localhost:18080 (TLS) or http://localhost:8080 (plain)
 # $FRIDAY_TLS_CA → path to the private-CA cert (empty when TLS off)
 ```
 
 Every curl below uses `${FRIDAY_TLS_CA:+--cacert "$FRIDAY_TLS_CA"}` — that
 expansion is empty under plain HTTP, and adds `--cacert` exactly when needed.
+
+**Troubleshooting:** if a curl call fails with `SSL certificate problem:
+self signed certificate in certificate chain`, your `FRIDAY_TLS_CA` is
+empty or stale (`set -a` exported an empty value, or the .env hasn't been
+re-sourced after a `setup-tls.sh` rerun). Check with `echo "$FRIDAY_TLS_CA"`
+and re-source the daemon `.env` from the same preamble above.
 
 ## When to use CLI vs HTTP
 
@@ -47,7 +59,7 @@ Before touching anything, confirm the daemon is up:
 
 ```bash
 deno task atlas daemon status
-# or (after sourcing ~/.atlas/.env — see preamble above):
+# or (after sourcing the daemon .env — see preamble above):
 curl -sf ${FRIDAY_TLS_CA:+--cacert "$FRIDAY_TLS_CA"} \
   "${FRIDAYD_URL:-http://localhost:8080}/health" && echo OK
 ```

@@ -361,12 +361,17 @@ installed packages are fine.
 
 ### Register via the daemon HTTP API
 
-Friday's daemon URL and TLS settings live in `~/.atlas/.env` (set by
-`scripts/setup-tls.sh`). Source it once per shell so the curl examples
-below work whether your install is on plain HTTP or HTTPS:
+Friday's daemon URL and TLS settings live in the daemon `.env` —
+`${FRIDAY_HOME:-~/.friday/local}/.env` on installed Friday Studio (written
+by the launcher) or `~/.atlas/.env` for in-tree dev (written by
+`scripts/setup-tls.sh`). Source whichever exists once per shell so the
+curl examples below work whether your install is on plain HTTP or HTTPS:
 
 ```bash
-set -a; [ -f ~/.atlas/.env ] && . ~/.atlas/.env; set +a
+set -a
+. "${FRIDAY_HOME:-$HOME/.friday/local}/.env" 2>/dev/null \
+  || . "$HOME/.atlas/.env" 2>/dev/null || true
+set +a
 # Now $FRIDAYD_URL is set (https://… when TLS is on, http://… otherwise)
 # and $FRIDAY_TLS_CA points at the private-CA cert when TLS is on.
 ```

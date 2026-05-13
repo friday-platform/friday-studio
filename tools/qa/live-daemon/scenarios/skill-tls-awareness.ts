@@ -1,4 +1,4 @@
-#!/usr/bin/env -S deno run --allow-all --unstable-worker-options --unstable-kv --unstable-raw-imports --env-file
+#!/usr/bin/env -S deno run --allow-all --env-file
 
 /**
  * Skill TLS-awareness eval.
@@ -30,8 +30,9 @@
  *     --json-output /tmp/out.json
  */
 
+import { walk } from "jsr:@std/fs@1.0.13";
 import { ensureDir } from "jsr:@std/fs@1.0.13/ensure-dir";
-import { dirname, join } from "jsr:@std/path@1";
+import { dirname, join, relative } from "jsr:@std/path@1";
 import { currentGitSha, ensureCredentialsLoaded, HARNESS_PATHS } from "../harness.ts";
 
 interface EvalResult {
@@ -41,37 +42,6 @@ interface EvalResult {
   metrics: Record<string, unknown>;
 }
 
-// Skills we expect to teach the LLM the TLS-aware shape. Path is relative
-// to the monorepo root (resolved below via `repoRoot()`).
-const SKILL_FILES: { id: string; path: string }[] = [
-  { id: "friday-cli/SKILL.md", path: "packages/system/skills/friday-cli/SKILL.md" },
-  {
-    id: "friday-cli/references/http.md",
-    path: "packages/system/skills/friday-cli/references/http.md",
-  },
-  {
-    id: "friday-cli/references/recipes.md",
-    path: "packages/system/skills/friday-cli/references/recipes.md",
-  },
-  {
-    id: "friday-cli/references/session-and-logs.md",
-    path: "packages/system/skills/friday-cli/references/session-and-logs.md",
-  },
-  {
-    id: "friday-cli/references/cli.md",
-    path: "packages/system/skills/friday-cli/references/cli.md",
-  },
-  { id: "workspace-api/SKILL.md", path: "packages/system/skills/workspace-api/SKILL.md" },
-  {
-    id: "workspace-api/references/updating-workspaces.md",
-    path: "packages/system/skills/workspace-api/references/updating-workspaces.md",
-  },
-  {
-    id: "writing-friday-python-agents/SKILL.md",
-    path: "packages/system/skills/writing-friday-python-agents/SKILL.md",
-  },
-];
-
 function repoRoot(): string {
   // tools/qa/live-daemon/scenarios/skill-tls-awareness.ts → up 4 levels
   const here = new URL(".", import.meta.url).pathname;
@@ -79,43 +49,76 @@ function repoRoot(): string {
 }
 
 /**
- * Find every `http://localhost:8080` occurrence that's NOT acceptable.
+ * Match a "bare daemon URL" — http://localhost:8080, http://127.0.0.1:8080,
+ * any installer-port override like :18080, and https:// (since the
+ * accompanying `--cacert` flag is what makes TLS *work*, not the scheme
+ * alone). `getAtlasDaemonUrl()` actually returns `http://127.0.0.1:8080`
+ * as its no-env default — the original detector pinned to `localhost`
+ * missed that.
+ */
+const DAEMON_URL_RE = /https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?\b/g;
+
+/**
+ * The canonical fallback expansion the skills teach. Variable-name-agnostic
+ * — `${ANY_VAR:-http://…}` is the *teaching*, not the specific variable
+ * name. Captures the four bash default-expansion forms (`:-`, `-`, `:=`,
+ * `=`). Also tolerates whitespace inside `${ … }`.
+ */
+const BASH_FALLBACK_EXPANSION_RE =
+  /\$\{\s*[A-Z_][A-Z0-9_]*\s*[:?=-]+\s*https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?\s*\}/g;
+
+/**
+ * Find every daemon-URL occurrence in *executable* content (inside fenced
+ * code blocks) that's NOT acceptable. URLs in prose, headings, frontmatter,
+ * or markdown link text are ignored — the eval cares about copy-paste
+ * commands, not narrative.
  *
- * Acceptable forms (will be filtered out before the violation count):
- *   - `${FRIDAYD_URL:-http://localhost:8080}` — bash default expansion.
- *   - `"FRIDAYD_URL", "http://localhost:8080"` — Python `os.environ.get`
- *     default literal (positional second argument).
- *   - Inside an HTML comment / blockquote line that just describes what
- *     `$FRIDAYD_URL` resolves to: a line containing `→` and the URL.
- *   - In a "defaults to ..." prose sentence inside backticks: the http
- *     ref appears in `` `http://localhost:8080` `` style.
+ * Acceptable forms inside code blocks (filtered out before the violation
+ * count):
+ *   - `${ANY_VAR:-http://…}` and `-`/`:=`/`=` variants — bash default
+ *     expansion.
+ *   - `"FRIDAYD_URL", "http://…"` — Python `os.environ.get` default
+ *     literal.
+ *   - Comment lines (start with `#`) that describe what a variable
+ *     resolves to (contain `→`).
  *
- * Everything else — bare `curl http://localhost:8080/...` in a code block,
- * fences without the fallback shape — is a violation.
+ * Everything else inside a code block — bare `curl http://…/...` — is a
+ * violation.
  */
 function staticViolations(text: string): { line: number; snippet: string }[] {
   const violations: { line: number; snippet: string }[] = [];
   const lines = text.split("\n");
+  let inCodeBlock = false;
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    if (!line.includes("http://localhost:8080")) continue;
+    const raw = lines[i];
+    if (raw === undefined) continue;
+    // Track fenced-code-block state. Markdown fences are `` ``` `` (optionally
+    // followed by a language). Blockquoted fences (`> \`\`\`bash`) also count
+    // — the recipes.md preamble lives in a blockquote.
+    if (/^\s*(?:>\s*)?```/.test(raw)) {
+      inCodeBlock = !inCodeBlock;
+      continue;
+    }
+    if (!inCodeBlock) continue;
 
-    // Acceptable: bash default expansion `${FRIDAYD_URL:-http://localhost:8080}`.
-    if (line.includes("${FRIDAYD_URL:-http://localhost:8080}")) continue;
+    // Strip every acceptable form first, then see if any daemon URL survives.
+    let stripped = raw.replace(BASH_FALLBACK_EXPANSION_RE, "");
+    // Python `.get("FRIDAYD_URL", "http://…")` — second-arg default literal.
+    stripped = stripped.replace(
+      /get\([^,)]+,\s*"https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?"\)/g,
+      "",
+    );
+    if (!DAEMON_URL_RE.test(stripped)) {
+      DAEMON_URL_RE.lastIndex = 0;
+      continue;
+    }
+    DAEMON_URL_RE.lastIndex = 0;
 
-    // Acceptable: Python `.get("FRIDAYD_URL", "http://localhost:8080")`.
-    if (/get\("FRIDAYD_URL",\s*"http:\/\/localhost:8080"\)/.test(line)) continue;
+    // Comment line describing what a variable resolves to (contains an arrow).
+    const trimmed = raw.trim();
+    if (trimmed.startsWith("#") && trimmed.includes("→")) continue;
 
-    // Acceptable: a comment/blockquote line that's *describing* what the
-    // variable resolves to (contains an arrow glyph and the URL).
-    if (line.includes("→") && line.includes("http://localhost:8080")) continue;
-
-    // Acceptable: prose where the URL appears inside backticks and the
-    // line also mentions "default" or "fallback" (lets us say "defaults to
-    // `http://localhost:8080`" without flagging it).
-    if (/`http:\/\/localhost:8080`/.test(line) && /default|fallback/i.test(line)) continue;
-
-    violations.push({ line: i + 1, snippet: line.trim() });
+    violations.push({ line: i + 1, snippet: raw.trim() });
   }
   return violations;
 }
@@ -124,22 +127,28 @@ interface LlmJudgement {
   output: string;
   usesVariable: boolean;
   containsBareUrl: boolean;
+  honorsCa: boolean;
   sourcesEnv: boolean;
 }
 
-const ENV_HINT_RE = /\.atlas\/\.env|FRIDAYD_URL/i;
-const VARIABLE_RE = /\$FRIDAYD_URL|\$\{FRIDAYD_URL/;
+const ENV_HINT_RE = /\.friday\/local|\.atlas\/\.env|FRIDAY_HOME|FRIDAYD_URL/i;
+const VARIABLE_RE = /\$FRIDAYD_URL|\$\{\s*FRIDAYD_URL/;
+// The skills teach two things — use $FRIDAYD_URL AND inject --cacert when
+// TLS is on (either inline or via the `friday_curl` helper). Without this
+// check the LLM can emit `curl "$FRIDAYD_URL/health"`, which on a TLS
+// install fails with `self signed certificate in certificate chain`. The
+// eval would have passed despite the user getting a non-working command.
+const CA_HONOR_RE = /--cacert|FRIDAY_TLS_CA|\bfriday_curl\b/;
 
 /**
- * "Bare URL" = a `http://localhost:8080` occurrence in the LLM output that
- * is NOT enclosed in the recommended bash default expansion
- * `${FRIDAYD_URL:-http://localhost:8080}`. The expansion is fine — it's
- * the documented fallback shape. Anything else means the LLM dropped the
- * variable and emitted cleartext.
+ * "Bare URL" = a daemon-URL occurrence in the LLM output that is NOT
+ * enclosed in the canonical fallback expansion. The expansion is fine —
+ * it's the documented fallback shape. Anything else means the LLM
+ * dropped the variable and emitted cleartext.
  */
 function containsBareUrl(text: string): boolean {
-  const stripped = text.replaceAll("${FRIDAYD_URL:-http://localhost:8080}", "");
-  return /http:\/\/localhost:8080/.test(stripped);
+  const stripped = text.replace(BASH_FALLBACK_EXPANSION_RE, "");
+  return DAEMON_URL_RE.test(stripped);
 }
 
 async function callChild(systemPrompt: string, userPrompt: string): Promise<string> {
@@ -178,24 +187,53 @@ async function llmJudgeSkill(body: string): Promise<LlmJudgement> {
       "to hit the Friday daemon's /health endpoint. Assume the user has already " +
       "sourced any environment they need. Output only the command.",
   );
+  // DAEMON_URL_RE has the `g` flag; reset lastIndex before each test.
+  DAEMON_URL_RE.lastIndex = 0;
   return {
     output,
     usesVariable: VARIABLE_RE.test(output),
     containsBareUrl: containsBareUrl(output),
+    honorsCa: CA_HONOR_RE.test(output),
     sourcesEnv: ENV_HINT_RE.test(output),
   };
 }
 
+/**
+ * Walk `packages/system/skills/**\/*.md` and return every markdown file
+ * relative to the repo root. Auto-discovery so that a *new* skill with the
+ * bad pattern fails this eval the day it lands — without anyone having to
+ * remember to update a hardcoded allowlist.
+ */
+async function discoverSkillFiles(): Promise<string[]> {
+  const root = repoRoot();
+  const skillsRoot = join(root, "packages", "system", "skills");
+  const out: string[] = [];
+  for await (const entry of walk(skillsRoot, { exts: [".md"], includeDirs: false })) {
+    out.push(relative(root, entry.path));
+  }
+  out.sort();
+  return out;
+}
+
 async function runStaticChecks(): Promise<EvalResult[]> {
   const results: EvalResult[] = [];
-  for (const { id, path } of SKILL_FILES) {
-    const full = join(repoRoot(), path);
+  const root = repoRoot();
+  const paths = await discoverSkillFiles();
+
+  // Single sweep: every skill file under packages/system/skills/**/*.md is
+  // checked. The aggregate result fails if ANY file has a violation — the
+  // primary defense against drift. Per-file results follow for granular
+  // reporting in the promptfoo run.
+  const aggregateViolations: { path: string; line: number; snippet: string }[] = [];
+
+  for (const path of paths) {
+    const full = join(root, path);
     let text: string;
     try {
       text = await Deno.readTextFile(full);
     } catch (err) {
       results.push({
-        id: `skill-tls-static:${id}`,
+        id: `skill-tls-static:${path}`,
         pass: false,
         notes: [`failed to read ${path}: ${err instanceof Error ? err.message : String(err)}`],
         metrics: { path },
@@ -203,16 +241,30 @@ async function runStaticChecks(): Promise<EvalResult[]> {
       continue;
     }
     const violations = staticViolations(text);
+    for (const v of violations) aggregateViolations.push({ path, ...v });
     results.push({
-      id: `skill-tls-static:${id}`,
+      id: `skill-tls-static:${path}`,
       pass: violations.length === 0,
       notes:
         violations.length === 0
-          ? ["no bare http://localhost:8080 outside acceptable fallback forms"]
+          ? ["no bare daemon URL outside acceptable fallback forms"]
           : violations.slice(0, 5).map((v) => `L${v.line}: ${v.snippet.slice(0, 140)}`),
       metrics: { path, violationCount: violations.length },
     });
   }
+
+  results.push({
+    id: "skill-tls-static:sweep",
+    pass: aggregateViolations.length === 0,
+    notes:
+      aggregateViolations.length === 0
+        ? [`swept ${paths.length} skill markdown file(s) — all clean`]
+        : aggregateViolations
+            .slice(0, 8)
+            .map((v) => `${v.path}:${v.line}: ${v.snippet.slice(0, 100)}`),
+    metrics: { filesScanned: paths.length, totalViolations: aggregateViolations.length },
+  });
+
   return results;
 }
 
@@ -244,8 +296,24 @@ const STATIC_NEGATIVE_FIXTURES: { id: string; body: string; expectMin: number }[
     expectMin: 1,
   },
   {
-    id: "quoted-bare-url",
-    body: 'Use `curl -s "http://localhost:8080/api/sessions/$SID"` to inspect.\n',
+    id: "quoted-bare-url-in-code",
+    body:
+      "```bash\n" +
+      'curl -s "http://localhost:8080/api/sessions/$SID"  # inspect session\n' +
+      "```\n",
+    expectMin: 1,
+  },
+  // Detector must catch 127.0.0.1 too — that's getAtlasDaemonUrl()'s actual
+  // no-env default (utils.ts:71). Pinning to "localhost" missed this.
+  {
+    id: "loopback-127-url",
+    body: "```bash\ncurl -s http://127.0.0.1:8080/api/workspaces\n```\n",
+    expectMin: 1,
+  },
+  // Installer commonly writes :18080 to dodge port collisions.
+  {
+    id: "port-override-url",
+    body: "```bash\ncurl -s http://localhost:18080/health\n```\n",
     expectMin: 1,
   },
 ];
@@ -261,19 +329,39 @@ const STATIC_NEGATIVE_FIXTURES: { id: string; body: string; expectMin: number }[
 const STATIC_ACCEPT_FIXTURES: { id: string; body: string }[] = [
   {
     id: "bash-default-expansion",
-    body: 'curl -sf "${FRIDAYD_URL:-http://localhost:8080}/health"\n',
+    body: '```bash\ncurl -sf "${FRIDAYD_URL:-http://localhost:8080}/health"\n```\n',
+  },
+  // Variant bash-default forms (single-dash, := assignment, with whitespace)
+  // — all semantically equivalent. The detector should accept all of them.
+  {
+    id: "bash-default-single-dash",
+    body: '```bash\ncurl -sf "${FRIDAYD_URL-http://localhost:8080}/health"\n```\n',
+  },
+  {
+    id: "bash-default-assignment",
+    body: '```bash\ncurl -sf "${FRIDAYD_URL:=http://localhost:8080}/health"\n```\n',
+  },
+  // Variable-name-agnostic: the skill mentions a playground URL via a
+  // non-FRIDAYD variable. Should still be accepted — bash default is the
+  // teaching, not the specific variable name.
+  {
+    id: "bash-default-other-var",
+    body: '```bash\ncurl -sf "${PLAYGROUND_URL:-http://localhost:5200}/api/x"\n```\n',
   },
   {
     id: "python-environ-default",
-    body: 'daemon_url = os.environ.get("FRIDAYD_URL", "http://localhost:8080")\n',
+    body: '```python\ndaemon_url = os.environ.get("FRIDAYD_URL", "http://localhost:8080")\n```\n',
   },
   {
-    id: "arrow-doc-comment",
-    body: "# $FRIDAYD_URL → http://localhost:8080 (plain) or https://... (TLS)\n",
+    id: "arrow-doc-comment-in-code",
+    body: "```bash\n# $FRIDAYD_URL → http://localhost:8080 (plain) or https://... (TLS)\n```\n",
   },
+  // URLs in plain prose (outside code fences) must never trip the detector —
+  // they're describing behavior, not asking to be copy-pasted.
+  { id: "prose-mention", body: "The daemon listens on `http://localhost:8080` by default.\n" },
   {
-    id: "prose-default-in-backticks",
-    body: "The daemon defaults to `http://localhost:8080` on a plain-HTTP install.\n",
+    id: "frontmatter-description",
+    body: '---\ndescription: "API on localhost:8080 (or https://localhost:8080 when TLS)"\n---\n',
   },
 ];
 
@@ -281,28 +369,28 @@ function runStaticNegativeControls(): EvalResult[] {
   const results: EvalResult[] = [];
   for (const { id, body, expectMin } of STATIC_NEGATIVE_FIXTURES) {
     const violations = staticViolations(body);
+    const first = violations[0];
     results.push({
       id: `skill-tls-static-negative:${id}`,
       pass: violations.length >= expectMin,
       notes: [
         `expected ≥${expectMin} violation(s) in synthetic bad fixture`,
         `detected: ${violations.length}`,
-        violations.length > 0 ? `first: ${violations[0].snippet.slice(0, 120)}` : "(none detected)",
+        first ? `first: ${first.snippet.slice(0, 120)}` : "(none detected)",
       ],
       metrics: { violationCount: violations.length, expectMin },
     });
   }
   for (const { id, body } of STATIC_ACCEPT_FIXTURES) {
     const violations = staticViolations(body);
+    const first = violations[0];
     results.push({
       id: `skill-tls-static-accept:${id}`,
       pass: violations.length === 0,
       notes: [
         "acceptable fallback form — detector must not flag it",
         `detected: ${violations.length}`,
-        violations.length > 0
-          ? `false-positive: ${violations[0].snippet.slice(0, 120)}`
-          : "(clean)",
+        first ? `false-positive: ${first.snippet.slice(0, 120)}` : "(clean)",
       ],
       metrics: { violationCount: violations.length },
     });
@@ -328,7 +416,15 @@ async function runBehavioralChecks(): Promise<EvalResult[]> {
     const full = join(repoRoot(), path);
     const body = await Deno.readTextFile(full);
     const judgement = await llmJudgeSkill(body);
-    const pass = judgement.usesVariable && !judgement.containsBareUrl;
+    // Three things must all be true for the eval to pass:
+    //   1. uses $FRIDAYD_URL — the variable, not a literal URL.
+    //   2. no bare daemon URL outside the canonical fallback expansion.
+    //   3. honors the CA cert — either `--cacert` inline, the
+    //      `FRIDAY_TLS_CA` var, or the `friday_curl` helper. Without this
+    //      check an LLM emitting `curl "$FRIDAYD_URL/health"` would pass
+    //      the eval but fail on TLS installs with "self signed certificate
+    //      in certificate chain".
+    const pass = judgement.usesVariable && !judgement.containsBareUrl && judgement.honorsCa;
     results.push({
       id: `skill-tls-behavior:${id}`,
       pass,
@@ -336,12 +432,14 @@ async function runBehavioralChecks(): Promise<EvalResult[]> {
         `LLM output: ${judgement.output.replace(/\s+/g, " ").slice(0, 200)}`,
         `uses $FRIDAYD_URL: ${judgement.usesVariable}`,
         `contains bare URL: ${judgement.containsBareUrl}`,
-        `mentions .env / FRIDAYD_URL: ${judgement.sourcesEnv}`,
+        `honors --cacert / FRIDAY_TLS_CA / friday_curl: ${judgement.honorsCa}`,
+        `mentions daemon .env / FRIDAYD_URL: ${judgement.sourcesEnv}`,
       ],
       metrics: {
         path,
         usesVariable: judgement.usesVariable,
         containsBareUrl: judgement.containsBareUrl,
+        honorsCa: judgement.honorsCa,
         sourcesEnv: judgement.sourcesEnv,
       },
     });
