@@ -119,8 +119,19 @@ function collectAttachedArtifactRefs(
  * Non-text artifacts (PDF, DOCX, audio, images) emit a bare reference tag
  * instead of inlining bytes; the agent fetches those via `read_artifact` /
  * `parse_artifact` tools rather than feeding the model garbage UTF-8.
+ *
+ * `chatWorkspaceId` scopes the artifact lookup: the chat-submit path trusts
+ * a client-supplied `artifactIds` array, so without this gate any
+ * authenticated user could read another tenant's artifact bytes by guessing
+ * an id. Mismatches are skipped (not thrown) so the rest of the message
+ * still flows — and we log the attempt so the operator can spot probing.
+ * Artifacts with no `workspaceId` (legacy / global) bypass the gate, matching
+ * how the existing artifact REST routes treat them.
  */
-async function inlineAttachedArtifacts(message: AtlasUIMessage): Promise<void> {
+async function inlineAttachedArtifacts(
+  message: AtlasUIMessage,
+  chatWorkspaceId: string,
+): Promise<void> {
   const refs = collectAttachedArtifactRefs(message);
   if (refs.length === 0) return;
 
@@ -134,6 +145,20 @@ async function inlineAttachedArtifacts(message: AtlasUIMessage): Promise<void> {
       logger.warn("atlas_web_adapter_attached_artifact_missing", {
         artifactId: ref.id,
         error: meta.ok ? "not_found" : meta.error,
+      });
+      continue;
+    }
+    // IDOR gate: skip cross-workspace ids. The upload route enforces
+    // `requireWorkspaceMember(c, workspaceId)`, but a hostile client can
+    // still attach a freshly-observed id from another tenant — match
+    // semantics here against the artifact-read routes (`artifacts.ts`),
+    // which treat undefined workspaceId as legacy/global.
+    const artifactWorkspaceId = meta.data.workspaceId;
+    if (artifactWorkspaceId && artifactWorkspaceId !== chatWorkspaceId) {
+      logger.warn("atlas_web_adapter_attached_artifact_cross_workspace", {
+        artifactId: ref.id,
+        artifactWorkspaceId,
+        chatWorkspaceId,
       });
       continue;
     }
@@ -364,7 +389,9 @@ export class AtlasWebAdapter implements Adapter<string, WebChatPayload> {
     // agent (which re-reads history per turn from ChatStorage, ignoring
     // `Message.text`) actually sees the content. The UI's `buildSegments`
     // recognizes these synthetic text parts and hides them in the bubble.
-    await inlineAttachedArtifacts(uiMessage);
+    // `this.workspaceId` scopes artifact lookups — see `inlineAttached-
+    // Artifacts` for the IDOR gate it enforces against client-supplied ids.
+    await inlineAttachedArtifacts(uiMessage, this.workspaceId);
     const messageText = joinTextParts(uiMessage);
     const userId = request.headers.get("X-Atlas-User-Id") ?? UserStorage.getCachedLocalUserId();
     const { datetime, foreground_workspace_ids: foregroundWorkspaceIds } = parsed.data;

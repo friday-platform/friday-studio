@@ -1,3 +1,4 @@
+import { ArtifactStorage } from "@atlas/core/artifacts/server";
 import { Message } from "chat";
 import { describe, expect, it, vi } from "vitest";
 import { StreamRegistry } from "../stream-registry.ts";
@@ -136,6 +137,169 @@ describe("AtlasWebAdapter.handleWebhook", () => {
     // refactor that drops the assignment fails this test instead of
     // only manifesting at runtime in the live SSE handler.
     expect(message.raw.turnBuffer).toBe(registry.getStream("ws-test-001", "chat-webhook"));
+  });
+
+  describe("inlineAttachedArtifacts", () => {
+    // Tiny helper — `ArtifactStorage` is initialized once per worker via
+    // vitest.setup.ts, so these tests create real artifacts against the
+    // shared JetStream test broker rather than mocking the adapter.
+    async function createTextArtifact(opts: {
+      workspaceId?: string;
+      content: string;
+      mimeType: string;
+      originalName?: string;
+    }): Promise<string> {
+      const result = await ArtifactStorage.create({
+        title: opts.originalName ?? "test-artifact",
+        summary: "test fixture",
+        workspaceId: opts.workspaceId,
+        data: {
+          type: "file",
+          content: opts.content,
+          mimeType: opts.mimeType,
+          originalName: opts.originalName,
+        },
+      });
+      if (!result.ok) throw new Error(`fixture create failed: ${result.error}`);
+      return result.data.id;
+    }
+
+    function buildAttachedMessage(artifactId: string, filename = "scores.csv") {
+      return {
+        id: "msg-attached",
+        role: "user",
+        parts: [
+          { type: "text", text: "summarize" },
+          {
+            type: "data-artifact-attached",
+            data: { artifactIds: [artifactId], filenames: [filename], mimeTypes: ["text/csv"] },
+          },
+        ],
+        metadata: {},
+      };
+    }
+
+    it("inlines a same-workspace text artifact as a synthetic text part", async () => {
+      const { adapter } = createAdapter(); // workspaceId: ws-test-001
+      const chat = createMockChat();
+      await adapter.initialize(chat as never);
+
+      const csv = "name,score\nAlice,90\nBob,75\n";
+      const artifactId = await createTextArtifact({
+        workspaceId: "ws-test-001",
+        content: csv,
+        mimeType: "text/csv",
+        originalName: "scores.csv",
+      });
+
+      const request = new Request("http://localhost", {
+        method: "POST",
+        body: JSON.stringify({ id: "chat-attached", message: buildAttachedMessage(artifactId) }),
+        headers: { "Content-Type": "application/json" },
+      });
+      await adapter.handleWebhook(request);
+
+      const message = chat.processMessage.mock.calls[0]?.[2] as Message<WebChatPayload>;
+      const parts = message.raw.uiMessage.parts;
+      // [text "summarize", text "<attachment …>csv</attachment>", data-artifact-attached]
+      expect(parts).toHaveLength(3);
+      expect(parts[1]).toMatchObject({ type: "text" });
+      const inlined = (parts[1] as { text: string }).text;
+      expect(inlined).toContain(`<attachment filename="scores.csv"`);
+      expect(inlined).toContain(`artifactId="${artifactId}"`);
+      expect(inlined).toContain(csv);
+      expect(parts[2]).toMatchObject({ type: "data-artifact-attached" });
+    });
+
+    it("refuses cross-workspace artifact ids (IDOR gate)", async () => {
+      const { adapter } = createAdapter(); // workspaceId: ws-test-001
+      const chat = createMockChat();
+      await adapter.initialize(chat as never);
+
+      // Plant the artifact in a DIFFERENT workspace from the chat.
+      const artifactId = await createTextArtifact({
+        workspaceId: "ws-other-tenant",
+        content: "secret payroll data\n",
+        mimeType: "text/csv",
+        originalName: "payroll.csv",
+      });
+
+      const warnSpy = vi.fn();
+      // Mock the logger at the module level to capture the warn call.
+      // We swap the imported logger's `warn` rather than mocking the whole
+      // module so the rest of the adapter's logging path stays real.
+      const { logger } = await import("@atlas/logger");
+      const originalWarn = logger.warn.bind(logger);
+      logger.warn = ((event: string, ctx?: Record<string, unknown>) => {
+        if (event === "atlas_web_adapter_attached_artifact_cross_workspace") {
+          warnSpy(event, ctx);
+        }
+        return originalWarn(event, ctx);
+      }) as typeof logger.warn;
+
+      try {
+        const request = new Request("http://localhost", {
+          method: "POST",
+          body: JSON.stringify({
+            id: "chat-idor",
+            message: buildAttachedMessage(artifactId, "payroll.csv"),
+          }),
+          headers: { "Content-Type": "application/json" },
+        });
+        await adapter.handleWebhook(request);
+      } finally {
+        logger.warn = originalWarn;
+      }
+
+      const message = chat.processMessage.mock.calls[0]?.[2] as Message<WebChatPayload>;
+      const parts = message.raw.uiMessage.parts;
+      // The synthetic text part must NOT be inserted; the original two
+      // parts (typed text + data-artifact-attached) survive unchanged so
+      // the rest of the message keeps flowing.
+      expect(parts).toHaveLength(2);
+      expect(parts[0]).toMatchObject({ type: "text", text: "summarize" });
+      expect(parts[1]).toMatchObject({ type: "data-artifact-attached" });
+      // No `<attachment …>` block leaked into Message.text or any part.
+      expect(message.text).not.toContain("payroll");
+      expect(message.text).not.toContain("<attachment");
+      // The IDOR attempt was logged.
+      expect(warnSpy).toHaveBeenCalledWith(
+        "atlas_web_adapter_attached_artifact_cross_workspace",
+        expect.objectContaining({
+          artifactId,
+          artifactWorkspaceId: "ws-other-tenant",
+          chatWorkspaceId: "ws-test-001",
+        }),
+      );
+    });
+
+    it("allows legacy artifacts with no workspaceId (matches REST-route precedent)", async () => {
+      const { adapter } = createAdapter();
+      const chat = createMockChat();
+      await adapter.initialize(chat as never);
+
+      // Legacy/global artifact — no workspaceId on creation.
+      const artifactId = await createTextArtifact({
+        content: "shared\n",
+        mimeType: "text/plain",
+        originalName: "shared.txt",
+      });
+
+      const request = new Request("http://localhost", {
+        method: "POST",
+        body: JSON.stringify({
+          id: "chat-legacy",
+          message: buildAttachedMessage(artifactId, "shared.txt"),
+        }),
+        headers: { "Content-Type": "application/json" },
+      });
+      await adapter.handleWebhook(request);
+
+      const message = chat.processMessage.mock.calls[0]?.[2] as Message<WebChatPayload>;
+      const parts = message.raw.uiMessage.parts;
+      expect(parts).toHaveLength(3);
+      expect((parts[1] as { text: string }).text).toContain("shared");
+    });
   });
 
   it("preserves data-artifact-attached parts on WebChatPayload.uiMessage", async () => {
