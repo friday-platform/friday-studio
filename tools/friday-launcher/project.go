@@ -614,7 +614,23 @@ func supervisedProcesses(binDir string) []processSpec {
 			// reach static-server.ts, which injects them into the
 			// served HTML for the browser's window.__FRIDAY_CONFIG__.
 			name: "playground", binary: filepath.Join(binDir, "playground"),
-			env:        commonServiceEnv(),
+			// Pin the cert-pair path explicitly so tls-paths.ts and
+			// the launcher's hasValidBrowserCert() agree on where to
+			// look. Without this, tls-paths.ts resolves via Node's
+			// homedir() while the launcher uses friendlyHome() — they
+			// agree for default installs (both → ~/.friday/local) but
+			// diverge whenever FRIDAY_LAUNCHER_HOME redirects the
+			// launcher's view (test sandboxes, multi-instance setups).
+			// FRIDAY_BROWSER_TLS_CERT/_KEY are the documented priority-1
+			// resolution slot in tls-paths.ts; always set them so the
+			// playground doesn't fall through to homedir() candidates
+			// that may not match the launcher's reality. tls-paths.ts
+			// still checks existence + validity, so a missing or expired
+			// cert at these paths falls through to http fallback.
+			env: append(commonServiceEnv(),
+				"FRIDAY_BROWSER_TLS_CERT="+tlsCertPath(),
+				"FRIDAY_BROWSER_TLS_KEY="+tlsKeyPath(),
+			),
 			healthPort: "5200", healthPath: "/",
 		},
 	}

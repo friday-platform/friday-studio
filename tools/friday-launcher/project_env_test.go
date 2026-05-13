@@ -365,6 +365,40 @@ func TestPlaygroundURL_UsesHttpsWhenCertPresent(t *testing.T) {
 	}
 }
 
+// TestPlaygroundSpec_PinsBrowserTLSEnv guards the contract that the
+// launcher's view of the cert dir (friendlyHome()/tls) flows through
+// to the playground subprocess as FRIDAY_BROWSER_TLS_CERT/_KEY.
+//
+// Regression: an earlier draft relied on tls-paths.ts resolving the
+// cert dir via homedir() independently. That agreed with the launcher
+// for default installs but diverged whenever FRIDAY_LAUNCHER_HOME
+// redirected the launcher's view — playground bound on http while the
+// launcher's tray URL said https.
+func TestPlaygroundSpec_PinsBrowserTLSEnv(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("FRIDAY_LAUNCHER_HOME", tmp)
+
+	specs := supervisedProcesses("/tmp/bin")
+	var playground *processSpec
+	for i := range specs {
+		if specs[i].name == "playground" {
+			playground = &specs[i]
+			break
+		}
+	}
+	if playground == nil {
+		t.Fatal("playground spec missing")
+	}
+	wantCert := "FRIDAY_BROWSER_TLS_CERT=" + filepath.Join(tmp, "tls", "browser.crt")
+	wantKey := "FRIDAY_BROWSER_TLS_KEY=" + filepath.Join(tmp, "tls", "browser.key")
+	if !slices.Contains(playground.env, wantCert) {
+		t.Errorf("playground env missing %q\nfull env: %v", wantCert, playground.env)
+	}
+	if !slices.Contains(playground.env, wantKey) {
+		t.Errorf("playground env missing %q\nfull env: %v", wantKey, playground.env)
+	}
+}
+
 func TestPlaygroundURL_FallsBackToHttpWhenCertExpired(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("FRIDAY_LAUNCHER_HOME", tmp)

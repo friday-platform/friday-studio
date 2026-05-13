@@ -283,6 +283,59 @@ func TestRefreshFromManifest_RejectsShaMismatch(t *testing.T) {
 	}
 }
 
+// TestRefreshFromManifest_NetworkError covers the "manifest fetch
+// fails" branch — connection refused, DNS error, etc. The renewer must
+// (1) return an error so the caller can log + retry tomorrow, and (2)
+// leave the on-disk cert untouched. Pre-existing tests cover sha-
+// mismatch and happy-path; this one closes the gap for offline /
+// CDN-down conditions, which is exactly the case the user-required
+// http-fallback path relies on (cert can't be refreshed → playground
+// continues serving whatever's on disk, http if expired).
+func TestRefreshFromManifest_NetworkError(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("FRIDAY_LAUNCHER_HOME", tmp)
+	tlsDir := filepath.Join(tmp, "tls")
+	if err := os.MkdirAll(tlsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Seed a cert on disk so we can assert it survives the failure.
+	half := 12 * time.Hour
+	existingPEM, _ := makeTestCert(t, 24*time.Hour, &half)
+	certPath := filepath.Join(tlsDir, "browser.crt")
+	keyPath := filepath.Join(tlsDir, "browser.key")
+	if err := os.WriteFile(certPath, existingPEM, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(keyPath, []byte("k"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	certStatBefore, _ := os.Stat(certPath)
+
+	// 127.0.0.1:1 reliably refuses connections on every Unix box —
+	// no listener can bind to that port without CAP_NET_BIND_SERVICE,
+	// so the connection-refused round-trip is deterministic.
+	t.Setenv("FRIDAY_TLS_MANIFEST_URL", "http://127.0.0.1:1/manifest.json")
+
+	changed, err := refreshFromManifest(context.Background())
+	if err == nil {
+		t.Fatalf("refreshFromManifest with unreachable manifest = nil error, want error")
+	}
+	if changed {
+		t.Errorf("changed = true on net error, want false")
+	}
+
+	certStatAfter, _ := os.Stat(certPath)
+	if certStatBefore.ModTime() != certStatAfter.ModTime() {
+		t.Errorf("on-disk cert mtime changed (%v → %v) despite fetch failure",
+			certStatBefore.ModTime(), certStatAfter.ModTime())
+	}
+	got, _ := os.ReadFile(certPath)
+	if string(got) != string(existingPEM) {
+		t.Errorf("on-disk cert content changed despite fetch failure")
+	}
+}
+
 func TestAtomicWrite_SetsMode(t *testing.T) {
 	tmp := t.TempDir()
 	p := filepath.Join(tmp, "nested", "key.pem")
