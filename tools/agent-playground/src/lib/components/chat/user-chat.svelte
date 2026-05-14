@@ -438,8 +438,10 @@
     // belong to a different conversation's sessions and must clear.
     validationEventsBySession = new Map();
     // Attachments are per-chat drafts; switching mid-draft must not leak
-    // files or images into the new chat.
-    for (const att of inputAttachments) {
+    // files or images into the new chat. Read the current draft untracked so
+    // this chatId/wsId effect does not re-run on every draft reset.
+    const draftAttachments = untrack(() => inputAttachments);
+    for (const att of draftAttachments) {
       if (att.kind === "file" && att.status === "uploading") att.abortController.abort();
     }
     inputAttachments = [];
