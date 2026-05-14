@@ -236,6 +236,50 @@ function rejectUnauthorizedSignalBypass() {
   return { error: "bypassConcurrency is internal to workspace-chat job tools" };
 }
 
+/**
+ * Envelope keys recognized on a signal-trigger request body. Anything else at
+ * the top level is almost certainly a bare (un-enveloped) payload — see
+ * {@link detectUnwrappedSignalBody}.
+ */
+const SIGNAL_ENVELOPE_KEYS = new Set([
+  "payload",
+  "streamId",
+  "skipStates",
+  "bypassConcurrency",
+  "parentSessionId",
+]);
+
+/**
+ * Catch the most common signal-trigger mistake: POSTing the bare payload
+ * (`{"input": "hi"}`) instead of the required envelope
+ * (`{"payload": {"input": "hi"}}`).
+ *
+ * Without this guard the bare body still parses cleanly — every field of
+ * {@link signalBodySchema} is optional — leaving `payload` undefined. That
+ * `undefined` then surfaces downstream as a misleading "expected <type>,
+ * received undefined → at <field>" error that points at the signal's own
+ * schema rather than the missing envelope, sending callers hunting for a
+ * payload bug that doesn't exist.
+ *
+ * Returns a caller-facing error message when the body looks un-enveloped, or
+ * null when it's a valid envelope or a legitimately empty body (no-payload
+ * signal triggers stay valid).
+ */
+function detectUnwrappedSignalBody(rawBody: unknown): string | null {
+  if (rawBody === null || typeof rawBody !== "object" || Array.isArray(rawBody)) {
+    return null;
+  }
+  const body = rawBody as Record<string, unknown>;
+  if (body.payload !== undefined) return null;
+  const strayKeys = Object.keys(body).filter((k) => !SIGNAL_ENVELOPE_KEYS.has(k));
+  if (strayKeys.length === 0) return null;
+  return (
+    `Signal body must wrap the payload: {"payload": {...}}. ` +
+    `Received un-enveloped top-level key(s): ${strayKeys.join(", ")} — ` +
+    `wrap them as {"payload": {${strayKeys.map((k) => `"${k}": ...`).join(", ")}}}.`
+  );
+}
+
 const signalBodySchema = z.object({
   payload: z.record(z.string(), z.unknown()).optional(),
   streamId: z.string().optional(),
@@ -1666,6 +1710,10 @@ const workspacesRoutes = daemonFactory
       return c.json({ error: bodyResult.error.message }, 400);
     }
     const body = bodyResult.data;
+    if (body.payload === undefined) {
+      const envelopeError = detectUnwrappedSignalBody(rawBody);
+      if (envelopeError) return c.json({ error: envelopeError }, 400);
+    }
     const ctx = c.get("app");
 
     // Pre-stream validation: return HTTP error before committing to SSE stream
@@ -2017,6 +2065,12 @@ const workspacesRoutes = daemonFactory
         parentSessionId,
         bypassConcurrency,
       } = c.req.valid("json");
+      if (payload === undefined) {
+        // Hono caches the parsed body — re-reading here is the same object
+        // zValidator already consumed, just with unknown keys still visible.
+        const envelopeError = detectUnwrappedSignalBody(await c.req.json());
+        if (envelopeError) return c.json({ error: envelopeError }, 400);
+      }
       const ctx = c.get("app");
 
       if (bypassConcurrency) {

@@ -12,6 +12,7 @@ import { client } from "@atlas/client/v2";
 import type { Logger } from "@atlas/logger";
 import { tool } from "ai";
 import { z } from "zod";
+import { invalidateBlock2 } from "../block2-cache.ts";
 
 const ErrorBodySchema = z.object({ error: z.string().optional(), report: z.unknown().optional() });
 
@@ -152,6 +153,10 @@ export function createBoundDraftTools(logger: Logger, workspaceId: string): Atla
 
         const data = await res.json();
         logger.info("publish_draft succeeded", { workspaceId: targetId });
+        // Publishing swaps the live workspace.yml — drop the Block 2 cache so
+        // the chat's `<workspace>` section and job-as-tools rebuild from the
+        // newly-published config on the next turn.
+        invalidateBlock2(targetId);
         return { success: true, livePath: data.livePath };
       },
     }),

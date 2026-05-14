@@ -826,3 +826,148 @@ describe("createJobTools execute (SSE streaming)", () => {
     expect(result).not.toHaveProperty("summary");
   });
 });
+
+// ---------------------------------------------------------------------------
+// trigger_signal — the generic same-session signal-trigger escape hatch
+// ---------------------------------------------------------------------------
+
+describe("createJobTools trigger_signal", () => {
+  const noSignals: Record<string, WorkspaceSignalConfig> = {};
+
+  beforeEach(() => {
+    mockSignalPost.mockReset();
+    mockParseResult.mockReset();
+  });
+
+  it("is registered even when the workspace has no jobs", () => {
+    const tools = createJobTools("ws-test", {}, noSignals, makeLogger());
+    expect(tools).toHaveProperty("trigger_signal");
+    expect(tools.trigger_signal?.description).toContain("Fire a workspace signal");
+  });
+
+  it("fires the named signal with the given payload (JSON mode)", async () => {
+    mockParseResult.mockResolvedValueOnce({
+      ok: true,
+      data: { sessionId: "sess-ts-1", status: "completed" },
+    });
+
+    const tools = createJobTools("ws-test", {}, noSignals, makeLogger());
+    const execute = tools.trigger_signal?.execute;
+    if (!execute) throw new Error("trigger_signal has no execute");
+
+    const result = await execute(
+      { signalId: "echo-run", payload: { name: "Ken" } },
+      TOOL_CALL_OPTS,
+    );
+
+    expect(mockSignalPost).toHaveBeenCalledWith({
+      param: { workspaceId: "ws-test", signalId: "echo-run" },
+      json: { payload: { name: "Ken" }, bypassConcurrency: true },
+    });
+    expect(result).toEqual({
+      success: true,
+      sessionId: "sess-ts-1",
+      status: "completed",
+      output: [],
+    });
+  });
+
+  it("defaults payload to {} when omitted — no-input signals stay callable", async () => {
+    mockParseResult.mockResolvedValueOnce({
+      ok: true,
+      data: { sessionId: "sess-ts-2", status: "completed" },
+    });
+
+    const tools = createJobTools("ws-test", {}, noSignals, makeLogger());
+    const execute = tools.trigger_signal?.execute;
+    if (!execute) throw new Error("trigger_signal has no execute");
+
+    await execute({ signalId: "tick" }, TOOL_CALL_OPTS);
+
+    expect(mockSignalPost).toHaveBeenCalledWith({
+      param: { workspaceId: "ws-test", signalId: "tick" },
+      json: { payload: {}, bypassConcurrency: true },
+    });
+  });
+
+  it("passes through a structured signal failure", async () => {
+    mockParseResult.mockResolvedValueOnce({ ok: false, error: "workspace not found" });
+
+    const tools = createJobTools("ws-test", {}, noSignals, makeLogger());
+    const execute = tools.trigger_signal?.execute;
+    if (!execute) throw new Error("trigger_signal has no execute");
+
+    const result = await execute({ signalId: "echo-run" }, TOOL_CALL_OPTS);
+
+    expect(result).toEqual({ success: false, statusCode: undefined, error: "workspace not found" });
+  });
+
+  it("skips a job named trigger_signal so the generic tool keeps the name", () => {
+    const logger = makeLogger();
+    const tools = createJobTools(
+      "ws-test",
+      { trigger_signal: makeJob({ triggers: [{ signal: "ts-signal" }] }) },
+      noSignals,
+      logger,
+    );
+
+    // The generic escape hatch, not the workspace job, owns the name.
+    expect(tools.trigger_signal?.description).toContain("Fire a workspace signal");
+    expect(logger.warn).toHaveBeenCalled();
+  });
+});
+
+describe("createJobTools trigger_signal (SSE streaming)", () => {
+  let originalFetch: typeof globalThis.fetch;
+
+  beforeEach(() => {
+    originalFetch = globalThis.fetch;
+    // Reset the client mocks for parity with the sibling JSON describe
+    // block — the SSE path doesn't touch them today, but a future
+    // JSON-path test added here would otherwise inherit stale state.
+    mockSignalPost.mockReset();
+    mockParseResult.mockReset();
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it("routes through the SSE path when a writer is present", async () => {
+    globalThis.fetch = vi.fn(() =>
+      makeMockFetchResponse([
+        `data: ${JSON.stringify({
+          type: "job-complete",
+          data: { success: true, sessionId: "sess-ts-sse", status: "completed", output: [] },
+        })}
+\n\n`,
+        "data: [DONE]\n\n",
+      ]),
+    ) as unknown as typeof fetch;
+
+    const writer: UIMessageStreamWriter<AtlasUIMessage> = {
+      write: vi.fn(),
+      merge: vi.fn(),
+      onError: vi.fn(),
+    };
+    const tools = createJobTools("ws-test", {}, {}, makeLogger(), undefined, writer);
+    const execute = tools.trigger_signal?.execute;
+    if (!execute) throw new Error("trigger_signal has no execute");
+
+    const result = await execute({ signalId: "echo-run", payload: { x: 1 } }, TOOL_CALL_OPTS);
+
+    expect(result).toEqual({
+      success: true,
+      sessionId: "sess-ts-sse",
+      status: "completed",
+      output: [],
+    });
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      "http://localhost:3000/api/workspaces/ws-test/signals/echo-run",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ payload: { x: 1 }, bypassConcurrency: true }),
+      }),
+    );
+  });
+});

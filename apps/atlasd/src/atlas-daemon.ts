@@ -10,6 +10,7 @@ import {
   AgentRegistry as CoreAgentRegistry,
   convertLLMToAgent,
   JetStreamSessionHistoryAdapter,
+  MissingEnvironmentError,
   SessionFailedError,
   WorkspaceNotFoundError,
   WorkspaceSessionStatus,
@@ -1747,9 +1748,56 @@ export class AtlasDaemon {
         agents: Object.keys(mergedConfig.workspace?.agents || {}).length,
       });
 
-      // Re-validate MCP environment at runtime creation (env vars may have changed since registration)
+      // Collected here so MCP-env degradation (just below) and agent
+      // registration failures (further down) feed the same metadata surface.
+      const registrationFailures: Array<{ agentId: string; reason: string }> = [];
+
+      // Re-validate MCP environment at runtime creation (env vars may have
+      // changed since registration). A misconfigured MCP server must NOT
+      // brick the whole workspace: with no runtime the workspace can't even
+      // spawn a chat, leaving the user no way to set the missing vars. Drop
+      // just the offending servers and let the runtime come up degraded —
+      // surfaced via metadata like a registration failure.
+      let runtimeConfig = mergedConfig;
       if (!workspace.metadata?.system) {
-        validateMCPEnvironmentForWorkspace(mergedConfig, workspace.path);
+        try {
+          validateMCPEnvironmentForWorkspace(mergedConfig, workspace.path);
+        } catch (error) {
+          if (!(error instanceof MissingEnvironmentError) || error.missingVars.length === 0) {
+            throw error;
+          }
+          const brokenServerIds = [...new Set(error.missingVars.map((v) => v.serverId))];
+          logger.error(
+            "Dropping MCP servers with unresolved env vars; runtime will spawn without them",
+            { workspaceId: workspace.id, brokenServerIds },
+          );
+          const mcp = mergedConfig.workspace.tools?.mcp;
+          if (mcp?.servers) {
+            // Clone before stripping — getWorkspaceConfig hands back a cached
+            // reference; mutating it would keep the server dropped until a
+            // workspace.yml mtime bump even after the user sets the vars.
+            const servers = Object.fromEntries(
+              Object.entries(mcp.servers).filter(([id]) => !brokenServerIds.includes(id)),
+            );
+            runtimeConfig = {
+              ...mergedConfig,
+              workspace: {
+                ...mergedConfig.workspace,
+                tools: { ...mergedConfig.workspace.tools, mcp: { ...mcp, servers } },
+              },
+            };
+          }
+          for (const serverId of brokenServerIds) {
+            const vars = error.missingVars
+              .filter((v) => v.serverId === serverId)
+              .map((v) => v.varName)
+              .join(", ");
+            registrationFailures.push({
+              agentId: `MCP server '${serverId}'`,
+              reason: `disabled — unset env vars: ${vars}`,
+            });
+          }
+        }
       }
 
       // Register workspace-level LLM agents with agent registry. Collect
@@ -1757,7 +1805,6 @@ export class AtlasDaemon {
       // that, a phantom-agent workspace.yml that bypassed validation loads
       // silently with the broken agent missing from the registry.
       const workspaceAgents = mergedConfig.workspace?.agents || {};
-      const registrationFailures: Array<{ agentId: string; reason: string }> = [];
       for (const [agentId, agentConfig] of Object.entries(workspaceAgents)) {
         if (agentConfig.type === "llm") {
           try {
@@ -1820,14 +1867,14 @@ export class AtlasDaemon {
         }
       }
 
-      // Surface registration failures via workspace metadata. Status is
-      // preserved (not flipped to inactive) so partial-failure tolerance is
-      // unchanged — only the visibility of the broken state changes.
+      // Surface load failures via workspace metadata. Status is preserved
+      // (not flipped to inactive) so partial-failure tolerance is unchanged —
+      // only the visibility of the broken state changes.
       if (registrationFailures.length > 0) {
         const summary = registrationFailures.map((f) => `${f.agentId}: ${f.reason}`).join("; ");
         const lastError =
-          `Agent registration: ${registrationFailures.length} failure(s) — ${summary}. ` +
-          `Edit workspace.yml or run validate_workspace to fix.`;
+          `Workspace load: ${registrationFailures.length} failure(s) — ${summary}. ` +
+          `Edit workspace.yml, set the missing env vars, or run validate_workspace to fix.`;
         try {
           await manager.updateWorkspaceStatus(workspace.id, workspace.status, {
             metadata: {
@@ -1867,7 +1914,7 @@ export class AtlasDaemon {
           name: workspace.name,
           members: { userId: workspace.metadata?.createdBy },
         },
-        mergedConfig,
+        runtimeConfig,
         {
           lazy: true, // Always use lazy loading in daemon mode
           workspacePath, // Pass workspace path for daemon mode

@@ -152,6 +152,88 @@ describe("POST /workspaces/:workspaceId/signals/:signalId bypass guard", () => {
   });
 });
 
+describe("POST /workspaces/:workspaceId/signals/:signalId envelope guard", () => {
+  test("rejects a bare (un-enveloped) payload with a clear envelope error", async () => {
+    const { app, triggerWorkspaceSignal } = createTestApp();
+    const res = await post(app, "/workspaces/ws-1/signals/sig-1", { input: "hello" });
+
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toContain('{"payload"');
+    expect(body.error).toContain("input");
+    expect(triggerWorkspaceSignal).not.toHaveBeenCalled();
+  });
+
+  test("rejects stray keys even when a valid envelope key is also present", async () => {
+    const { app, triggerWorkspaceSignal } = createTestApp();
+    const res = await post(app, "/workspaces/ws-1/signals/sig-1", {
+      streamId: "stream-1",
+      input: "hello",
+    });
+
+    expect(res.status).toBe(400);
+    expect(triggerWorkspaceSignal).not.toHaveBeenCalled();
+  });
+
+  test("rejects a bare payload on the SSE handler too (Accept: text/event-stream)", async () => {
+    // The SSE handler is a separate `.post` registration dispatched by the
+    // accept header — it reads rawBody directly, so its guard branch needs
+    // its own coverage.
+    const { app, triggerWorkspaceSignal } = createTestApp();
+    const res = await post(
+      app,
+      "/workspaces/ws-1/signals/sig-1",
+      { input: "hello" },
+      { Accept: "text/event-stream" },
+    );
+
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toContain('{"payload"');
+    expect(triggerWorkspaceSignal).not.toHaveBeenCalled();
+  });
+
+  test("allows a properly enveloped body through the guard", async () => {
+    const previous = process.env[INTERNAL_SIGNAL_BYPASS_TOKEN_ENV];
+    process.env[INTERNAL_SIGNAL_BYPASS_TOKEN_ENV] = "test-token";
+    try {
+      const { app, triggerWorkspaceSignal } = createTestApp();
+      const res = await post(
+        app,
+        "/workspaces/ws-1/signals/sig-1",
+        { payload: { input: "hello" }, bypassConcurrency: true },
+        { [INTERNAL_SIGNAL_BYPASS_HEADER]: "test-token" },
+      );
+
+      expect(res.status).toBe(200);
+      expect(triggerWorkspaceSignal).toHaveBeenCalledOnce();
+    } finally {
+      if (previous === undefined) delete process.env[INTERNAL_SIGNAL_BYPASS_TOKEN_ENV];
+      else process.env[INTERNAL_SIGNAL_BYPASS_TOKEN_ENV] = previous;
+    }
+  });
+
+  test("allows an empty body — no-payload signal triggers stay valid", async () => {
+    const previous = process.env[INTERNAL_SIGNAL_BYPASS_TOKEN_ENV];
+    process.env[INTERNAL_SIGNAL_BYPASS_TOKEN_ENV] = "test-token";
+    try {
+      const { app, triggerWorkspaceSignal } = createTestApp();
+      const res = await post(
+        app,
+        "/workspaces/ws-1/signals/sig-1",
+        { bypassConcurrency: true },
+        { [INTERNAL_SIGNAL_BYPASS_HEADER]: "test-token" },
+      );
+
+      expect(res.status).toBe(200);
+      expect(triggerWorkspaceSignal).toHaveBeenCalledOnce();
+    } finally {
+      if (previous === undefined) delete process.env[INTERNAL_SIGNAL_BYPASS_TOKEN_ENV];
+      else process.env[INTERNAL_SIGNAL_BYPASS_TOKEN_ENV] = previous;
+    }
+  });
+});
+
 describe("POST /workspaces/add validation", () => {
   test("rejects missing path", async () => {
     const { app } = createTestApp();

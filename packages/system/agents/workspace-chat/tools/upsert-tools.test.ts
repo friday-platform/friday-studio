@@ -13,6 +13,7 @@ const mockDirectItemsPost = vi.hoisted(() => vi.fn<() => Promise<Response>>());
 const mockParseResult = vi.hoisted(() =>
   vi.fn<(promise: Promise<unknown>) => Promise<Result<unknown, unknown>>>(),
 );
+const mockInvalidateBlock2 = vi.hoisted(() => vi.fn<(workspaceId: string) => void>());
 
 vi.mock("@atlas/client/v2", () => ({
   client: {
@@ -25,6 +26,8 @@ vi.mock("@atlas/client/v2", () => ({
   },
   parseResult: mockParseResult,
 }));
+
+vi.mock("../block2-cache.ts", () => ({ invalidateBlock2: mockInvalidateBlock2 }));
 
 function makeLogger(): Logger {
   return {
@@ -66,6 +69,7 @@ describe("createBoundUpsertTools", () => {
     mockDraftItemsPost.mockReset();
     mockDirectItemsPost.mockReset();
     mockParseResult.mockReset();
+    mockInvalidateBlock2.mockReset();
   });
 
   it("includes all three upsert tools in bound set", () => {
@@ -264,6 +268,45 @@ describe("createBoundUpsertTools", () => {
       structural_issues: null,
       error: "Draft agent upsert failed",
     });
+  });
+
+  // The chat agent's Block 2 cache must be dropped on every successful
+  // config mutation, or a freshly-upserted job/signal stays invisible to
+  // the chat for up to the cache TTL.
+  it("invalidates the workspace cache after a successful draft upsert", async () => {
+    mockDraftItemsPost.mockResolvedValueOnce(
+      makeResponse({ ok: true, diff: {}, structuralIssues: null }),
+    );
+
+    const tools = createBoundUpsertTools(logger, "ws-1");
+    await tools.upsert_job!.execute!({ id: "j", config: {} }, TOOL_CALL_OPTS);
+
+    expect(mockInvalidateBlock2).toHaveBeenCalledWith("ws-1");
+  });
+
+  it("invalidates the workspace cache after a successful direct upsert", async () => {
+    mockDraftItemsPost.mockResolvedValueOnce(
+      makeResponse({ error: "No draft exists" }, 409, false),
+    );
+    mockDirectItemsPost.mockResolvedValueOnce(
+      makeResponse({ ok: true, diff: {}, structuralIssues: null }),
+    );
+
+    const tools = createBoundUpsertTools(logger, "ws-1");
+    await tools.upsert_signal!.execute!({ id: "s", config: {} }, TOOL_CALL_OPTS);
+
+    expect(mockInvalidateBlock2).toHaveBeenCalledWith("ws-1");
+  });
+
+  it("does not invalidate the cache when the upsert fails", async () => {
+    mockDraftItemsPost.mockResolvedValueOnce(
+      makeResponse({ error: "Invalid agent config" }, 400, false),
+    );
+
+    const tools = createBoundUpsertTools(logger, "ws-1");
+    await tools.upsert_agent!.execute!({ id: "bad", config: {} }, TOOL_CALL_OPTS);
+
+    expect(mockInvalidateBlock2).not.toHaveBeenCalled();
   });
 });
 

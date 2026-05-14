@@ -82,10 +82,15 @@ const FILE_CHECKS: FileCheck[] = [
   },
   {
     // Workspace-chat: Layer B inlined into the prompt (chat is
-    // authored, not generated, so we don't import).
+    // authored, not generated, so we don't import). The
+    // `<secret_handling>` SECRET-INPUT GUARD is the same shape — a
+    // chat-authored guard block — so it's pinned here too. Behavioral
+    // coverage for it lives in the `secret-input-guard` scenario; this
+    // is the cheap, API-key-free insurance that the block can't get
+    // silently dropped.
     id: "workspace-chat-prompt-has-destructive-tool-guard",
     file: join(ROOT, "packages/system/agents/workspace-chat/prompt.txt"),
-    required: [GUARD_SENTINEL, "destructive_tool_guard"],
+    required: [GUARD_SENTINEL, "destructive_tool_guard", "SECRET-INPUT GUARD:", "secret_handling"],
     // Layer A would duplicate the existing `<honesty>` block — assert
     // we did NOT inject it.
     forbidden: [HONESTY_SENTINEL],

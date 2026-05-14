@@ -440,13 +440,43 @@ interface FSMJob {
  * undefined as "no per-job timeout configured" — engine falls back to
  * its built-in default).
  */
-function parseJobTimeoutMs(jobName: string, value: string): number | undefined {
+export function parseJobTimeoutMs(jobName: string, value: string): number | undefined {
+  let parsed: number;
   try {
-    return parseDuration(value);
+    parsed = parseDuration(value);
   } catch (err) {
     logger.warn("Invalid job timeout — ignoring", { jobName, value, error: stringifyError(err) });
     return undefined;
   }
+  // Reject 0 explicitly. The downstream consumer (nats.js `nc.request({
+  // timeout })` in ProcessAgentExecutor) treats `timeout: 0` as
+  // "expire immediately" — every job in scope would die on its first
+  // tick. Authors who write `0s` or `0ms` almost certainly mean "no
+  // ceiling"; surface a warn and fall back to the executor default
+  // rather than silently bricking the job.
+  if (parsed <= 0) {
+    logger.warn(
+      "Job timeout must be > 0 — ignoring (use a positive duration; 0 maps to instant-rejection in the underlying transport)",
+      { jobName, value, parsedMs: parsed },
+    );
+    return undefined;
+  }
+  return parsed;
+}
+
+/** Build the optional `{ timeoutMs }` slice that gets spread into the
+ * executor options. Extracted so the `!== undefined` distinction is
+ * testable without standing up a full WorkspaceRuntime — `parseJobTimeoutMs`
+ * never produces 0, but a careless future refactor that swaps to a
+ * truthiness check (`jobTimeoutMs && ...`) would silently drop the
+ * field for falsy positive values like 0 (executor would fall back to
+ * its 180s default). Returning `{}` for undefined matches the spread
+ * shape `...(false && X)` resolves to. */
+export function buildExecutorTimeoutOption(
+  jobTimeoutMs: number | undefined,
+): { timeoutMs: number } | Record<string, never> {
+  if (jobTimeoutMs === undefined) return {};
+  return { timeoutMs: jobTimeoutMs };
 }
 
 interface ActiveSession {
@@ -2969,6 +2999,17 @@ export class WorkspaceRuntime {
           ...envOverlay,
           ...(opts.agentEnv ? await resolveEnvValues(opts.agentEnv, logger, envOverlay) : {}),
         },
+        // Forward the parsed jobs.<name>.config.timeout into the executor so
+        // the subprocess kill ceiling matches the value operators set in
+        // workspace.yml. Without this, ProcessAgentExecutor falls back to
+        // its silent 180s default and a `config.timeout: "2h"` setting on
+        // the job is meaningful only for elicitation TTL, not for actually
+        // letting the agent run that long.
+        //
+        // The shape is built by `buildExecutorTimeoutOption` so the
+        // undefined-vs-set distinction is unit-tested in
+        // `runtime-job-timeout.test.ts` without standing up the runtime.
+        ...buildExecutorTimeoutOption(opts.jobTimeoutMs),
         logger: logger.child({ component: "CodeAgent", agentId: userAgentId }),
         streamEmitter: opts.onStreamEvent
           ? {

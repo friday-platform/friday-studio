@@ -1,0 +1,35 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+
+description: |
+  Friday workspace-chat job-tool routing eval — locks the contract that
+  workspace-chat MUST call a registered job tool (e.g. `reindex-knowledge-base`)
+  when the user asks for it, instead of falling back to `web_fetch` against
+  invented localhost / `/webhooks/...` URLs.
+
+  Negative case (pre-fix): observed in 2026-05-14 QA — chat agent
+  `web_fetch`'d http://localhost:3000/webhooks/reindex (then 3001, 3002, 8080).
+  Positive case: agent calls `reindex-knowledge-base(input)`.
+
+  Touch `packages/system/agents/workspace-chat/prompt.txt` or the job-tool
+  registration path in `tools/job-tools.ts` without re-running this and you'll
+  silently regress the chat-driven workspace-trigger UX.
+
+prompts:
+  - '{{scenarioId}}'
+
+providers:
+  - id: file://chat-job-tool-routing-provider.cjs
+    label: friday-chat-job-tool-routing
+
+defaultTest:
+  assert:
+    - type: is-json
+    - type: javascript
+      value: |
+        const result = JSON.parse(output);
+        if (result.pass !== true) {
+          throw new Error(`${result.id} failed: ${(result.notes || []).join('; ')}`);
+        }
+        return true;
+
+tests: file://chat-job-tool-routing-tests.yaml
