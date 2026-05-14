@@ -276,7 +276,7 @@
 
   .icon {
     align-items: center;
-    background-color: var(--color-surface-1);
+    background-color: var(--surface);
     block-size: var(--size-8);
     color: color-mix(in srgb, var(--color-text), transparent 70%);
     display: flex;
