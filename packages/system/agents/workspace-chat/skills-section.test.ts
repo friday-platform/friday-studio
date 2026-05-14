@@ -1,7 +1,10 @@
 import type { SkillSummary } from "@atlas/skills";
+import type { ModelMessage } from "ai";
 import { describe, expect, it } from "vitest";
 import {
+  buildAnthropicSystemMessages,
   buildSkillsSection,
+  flattenSystemBlocks,
   getSystemBlocks,
   summarizeSkillDescription,
 } from "./workspace-chat.agent.ts";
@@ -133,5 +136,96 @@ describe("getSystemBlocks block-2 byte-stability", () => {
     const after = block2([skill("svelte", "core", "Patterns for Svelte 5.")]);
     expect(after).not.toBe(before);
     expect(after).not.toContain("@friday/qa");
+  });
+});
+
+describe("getSystemBlocks block-4 (volatile workspace inventory)", () => {
+  const workspaceSection = '<workspace id="ws-1" name="Personal"></workspace>';
+
+  it("routes the workspace section into block 4, not block 2", () => {
+    const blocks = getSystemBlocks(workspaceSection, {
+      skills: buildSkillsSection([skill("svelte", "core", "Patterns for Svelte 5.")]),
+    });
+    expect(blocks.block4).toContain(workspaceSection);
+    expect(blocks.block2).not.toContain(workspaceSection);
+    expect(blocks.block2).toContain("@svelte/core");
+  });
+
+  it("prepends the cache salt to block 2 so a force-fresh bump cascades", () => {
+    const cacheSaltTag = '<cache_salt workspace="ws-1" version="7"/>';
+    const blocks = getSystemBlocks(workspaceSection, { cacheSaltTag });
+    // The salt leads block 2 — changing block 2's prefix invalidates
+    // block 3 and block 4 behind it, so "force fresh" busts everything.
+    expect(blocks.block2).toContain(cacheSaltTag);
+    expect(blocks.block4).not.toContain(cacheSaltTag);
+  });
+
+  it("block 2 is empty when the workspace has no skills, identity, or salt", () => {
+    const blocks = getSystemBlocks(workspaceSection);
+    expect(blocks.block2).toBe("");
+    expect(blocks.block4).toContain(workspaceSection);
+  });
+});
+
+describe("flattenSystemBlocks", () => {
+  it("omits an empty block 2 and still includes block 4", () => {
+    const workspaceSection = '<workspace id="ws-1" name="Personal"></workspace>';
+    // No skills / identity / salt -> block 2 is empty.
+    const blocks = getSystemBlocks(workspaceSection);
+    expect(blocks.block2).toBe("");
+
+    const flat = flattenSystemBlocks(blocks);
+    expect(flat).toContain(blocks.block1);
+    expect(flat).toContain(workspaceSection);
+    // An empty block 2 must not introduce a stray blank section.
+    expect(flat).not.toContain("\n\n\n\n");
+  });
+});
+
+describe("buildAnthropicSystemMessages", () => {
+  const longTtl = { type: "ephemeral", ttl: "1h" };
+  const shortTtl = { type: "ephemeral" };
+
+  function ttlOf(msg: ModelMessage): unknown {
+    return (msg.providerOptions as { anthropic?: { cacheControl?: unknown } } | undefined)
+      ?.anthropic?.cacheControl;
+  }
+
+  it("emits one breakpoint per non-empty block, ordered, with the expected TTLs", () => {
+    const msgs = buildAnthropicSystemMessages({
+      block1: "B1",
+      block2: "B2",
+      block3: "B3",
+      block4: "B4",
+    });
+    expect(msgs.map((m) => m.content)).toEqual(["B1", "B2", "B3", "B4"]);
+    expect(msgs.map(ttlOf)).toEqual([longTtl, longTtl, shortTtl, shortTtl]);
+  });
+
+  it("skips empty block 2 / block 3 but always keeps block 1 and block 4", () => {
+    const msgs = buildAnthropicSystemMessages({
+      block1: "B1",
+      block2: "",
+      block3: "",
+      block4: "B4",
+    });
+    expect(msgs.map((m) => m.content)).toEqual(["B1", "B4"]);
+    expect(msgs.map(ttlOf)).toEqual([longTtl, shortTtl]);
+  });
+
+  it("keeps the TTL sequence non-increasing (Anthropic rejects 1h after 5m)", () => {
+    // 1h -> ordinal 1, 5m -> ordinal 0; the sequence must never rise.
+    const ordinal = (ttl: unknown) => ((ttl as { ttl?: string })?.ttl === "1h" ? 1 : 0);
+    for (const blocks of [
+      { block1: "B1", block2: "B2", block3: "B3", block4: "B4" },
+      { block1: "B1", block2: "", block3: "B3", block4: "B4" },
+      { block1: "B1", block2: "B2", block3: "", block4: "B4" },
+      { block1: "B1", block2: "", block3: "", block4: "B4" },
+    ]) {
+      const seq = buildAnthropicSystemMessages(blocks).map((m) => ordinal(ttlOf(m)));
+      for (let i = 1; i < seq.length; i++) {
+        expect(seq[i]).toBeLessThanOrEqual(seq[i - 1] as number);
+      }
+    }
   });
 });
