@@ -20,6 +20,11 @@ export function isInProgress(state: ToolCallDisplay["state"]): boolean {
  */
 export function needsUserAction(call: ToolCallDisplay): boolean {
   if (call.toolName === "display_artifact") return true;
+  // `env_set` raises a confirmation card the user must answer. State-
+  // independent (like `display_artifact`) so the call never migrates between
+  // the burst and the standalone surface as it settles — the card renders
+  // its own stable placeholder until the tool call is done streaming.
+  if (call.toolName === "env_set") return true;
   if (call.toolName === "request_human_input" && isInProgress(call.state)) return true;
   if (call.toolName === "connect_service" && call.state === "output-available") return true;
   if (call.toolName === "connect_communicator" && call.state === "output-available") return true;

@@ -35,10 +35,10 @@ vi.mock("$app/stores", () => ({
   updated: readable(false),
 }));
 
-// Connect-service / connect-communicator / human-input-tool-card are imported
-// by tool-call-card but only render when toolName matches; mocking them with
-// the icon stub keeps the import graph closed without touching `$lib` aliases
-// or pulling in @tanstack/svelte-query (which vitest can't parse).
+// Connect-service / connect-communicator / human-input-tool-card / env-set-tool-card
+// are imported by tool-call-card but only render when toolName matches; mocking
+// them with the icon stub keeps the import graph closed without touching `$lib`
+// aliases or pulling in @tanstack/svelte-query (which vitest can't parse).
 vi.mock("./connect-service.svelte", async () => {
   return await import("./__test-stubs__/icon-stub.svelte");
 });
@@ -46,6 +46,9 @@ vi.mock("./connect-communicator.svelte", async () => {
   return await import("./__test-stubs__/icon-stub.svelte");
 });
 vi.mock("./human-input-tool-card.svelte", async () => {
+  return await import("./__test-stubs__/icon-stub.svelte");
+});
+vi.mock("./env-set-tool-card.svelte", async () => {
   return await import("./__test-stubs__/icon-stub.svelte");
 });
 

@@ -5,6 +5,7 @@
   import ConnectCommunicator from "./connect-communicator.svelte";
   import ConnectService from "./connect-service.svelte";
   import DelegateToolCard from "./delegate-tool-card.svelte";
+  import EnvSetToolCard from "./env-set-tool-card.svelte";
   import { getExportContext } from "./export-context";
   import HumanInputToolCard from "./human-input-tool-card.svelte";
   import { jsonHighlighter } from "./json-highlighter";
@@ -407,6 +408,8 @@
   </div>
 {:else if call.toolName === "request_human_input"}
   <HumanInputToolCard {call} />
+{:else if call.toolName === "env_set"}
+  <EnvSetToolCard {call} />
 {:else if call.toolName === "display_artifact"}
   <!-- Always render ArtifactCard for display_artifact tool calls — including
        during input-streaming when artifactId isn't parseable yet. The card
