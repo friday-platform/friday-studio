@@ -1,20 +1,17 @@
 <!--
-  MCP Server Detail — the full detail view for one catalog server.
+  MCP Server Detail — the content column for a selected catalog server.
 
-  Drilled into from the catalog list. A `ListDetail` layout puts a section nav
-  in the middle column and the active section's content on the right; each
-  section is its own route (`/mcp/{server}/{section}`). A breadcrumb returns
-  to the catalog list.
+  The middle-column section nav (`mcp-section-nav.svelte`) and the catalog
+  breadcrumb live in the route's ListDetail sidebar; this component renders
+  only the active section's content. Each section is its own route
+  (`/mcp/{server}/{section}`).
 
   Install-time states (`setting_up`, `awaiting_confirm`) render a focused
-  doctor view with no section nav — there is nothing to navigate until the
-  server is configured.
+  doctor view — there is nothing to navigate until the server is configured.
 
   @component
   @prop server - Installed server metadata (if selected)
   @prop section - Active section id from the route (null → overview)
-  @prop onBack - Return to the catalog list
-  @prop onSelectSection - Navigate to a section
   @prop onCheckUpdate / onPullUpdate / onDelete - Catalog actions
   @prop checking / pulling / deleting - Action-in-progress flags
   @prop hasUpdate - Whether an update is available
@@ -32,7 +29,6 @@
     Button,
     Dialog,
     IconSmall,
-    ListDetail,
     MarkdownRendered,
     markdownToHTMLSafe,
     toast,
@@ -58,8 +54,6 @@
   interface Props {
     server?: MCPServerMetadata | null;
     section?: string | null;
-    onBack?: () => void;
-    onSelectSection?: (section: string) => void;
     onCheckUpdate?: () => void;
     onPullUpdate?: () => void;
     onDelete?: () => void;
@@ -72,8 +66,6 @@
   let {
     server = null,
     section = null,
-    onBack,
-    onSelectSection,
     onCheckUpdate,
     onPullUpdate,
     onDelete,
@@ -92,15 +84,6 @@
     deleteDialogOpen.set(false);
   });
 
-  // ── Section nav ────────────────────────────────────────────────────────
-  const SECTIONS = [
-    { id: "overview", label: "Overview" },
-    { id: "connections", label: "Live connections" },
-    { id: "configuration", label: "Configuration" },
-    { id: "tools", label: "Tools" },
-    { id: "test", label: "Test" },
-    { id: "readme", label: "Readme" },
-  ] as const;
   const activeSection = $derived(section ?? "overview");
 
   // ── Derived display values ─────────────────────────────────────────────
@@ -366,20 +349,10 @@
 {#if !server}
   <div class="loading-state">
     <p>Loading server…</p>
-    <button type="button" class="back-link" onclick={onBack}>
-      <IconSmall.ChevronLeft />
-      MCP Catalog
-    </button>
   </div>
 {:else if status === "setting_up" || status === "awaiting_confirm"}
   <!-- ── Focused install view — no section nav ──────────────────────────── -->
   <div class="install-view">
-    <nav class="crumb-bar">
-      <button type="button" class="back-link" onclick={onBack}>
-        <IconSmall.ChevronLeft />
-        MCP Catalog
-      </button>
-    </nav>
     <header class="install-header">
       <div class="title-row">
         <h1>{displayName}</h1>
@@ -499,34 +472,7 @@
       </div>
     {/if}
 
-    <ListDetail>
-      {#snippet header()}
-        <button type="button" class="back-link" onclick={onBack}>
-          <IconSmall.ChevronLeft />
-          MCP Catalog
-        </button>
-      {/snippet}
-
-      {#snippet sidebar()}
-        <div class="server-ident">
-          <span class="server-name">{displayName}</span>
-          <div class="ident-badges">{@render sourceBadges()}</div>
-        </div>
-        <nav class="section-nav">
-          {#each SECTIONS as s (s.id)}
-            <button
-              type="button"
-              class="section-nav-item"
-              class:active={activeSection === s.id}
-              onclick={() => onSelectSection?.(s.id)}
-            >
-              {s.label}
-            </button>
-          {/each}
-        </nav>
-      {/snippet}
-
-      <div class="section-content">
+    <div class="section-content">
         {#key activeSection}
           <div class="section-inner" in:fade={{ duration: 120 }}>
             {#if activeSection === "overview"}
@@ -715,7 +661,6 @@
           </div>
         {/key}
       </div>
-    </ListDetail>
   </div>
 {/if}
 
@@ -724,22 +669,15 @@
 <style>
   /* ── Roots ───────────────────────────────────────────────────────────── */
 
+  /* Content column of the route's ListDetail. `position: relative` anchors
+     the floating actions bar; the ListDetail content pane owns the scroll. */
   .detail-root {
-    block-size: 100%;
-    min-block-size: 0;
     position: relative;
   }
 
-  .install-view,
-  .loading-state {
+  .install-view {
     display: flex;
     flex-direction: column;
-    min-block-size: 0;
-    overflow-y: auto;
-    scrollbar-width: thin;
-  }
-
-  .install-view {
     gap: var(--size-6);
     margin: 0 auto;
     max-inline-size: 80ch;
@@ -750,89 +688,16 @@
   .loading-state {
     align-items: center;
     color: var(--text-faded);
+    display: flex;
     flex: 1;
-    gap: var(--size-3);
+    flex-direction: column;
     justify-content: center;
-  }
-
-  /* ── Breadcrumb ──────────────────────────────────────────────────────── */
-
-  .crumb-bar {
-    display: flex;
-  }
-
-  .back-link {
-    align-items: center;
-    background: none;
-    border: none;
-    color: var(--text);
-    cursor: pointer;
-    display: inline-flex;
-    font: inherit;
-    font-size: var(--font-size-3);
-    gap: var(--size-1);
-    padding: var(--size-1) 0;
-  }
-
-  .back-link:hover {
-    color: var(--text-bright);
-  }
-
-  /* ── Section nav (ListDetail sidebar) ────────────────────────────────── */
-
-  .server-ident {
-    display: flex;
-    flex-direction: column;
-    gap: var(--size-2);
-    padding: 0 var(--size-1);
-  }
-
-  .server-name {
-    color: var(--text-bright);
-    font-size: var(--font-size-5);
-    font-weight: var(--font-weight-6);
-    word-break: break-word;
-  }
-
-  .ident-badges {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--size-1);
-  }
-
-  .section-nav {
-    display: flex;
-    flex-direction: column;
-    gap: var(--size-0-5);
-  }
-
-  .section-nav-item {
-    background: none;
-    border: none;
-    border-radius: var(--radius-2);
-    color: var(--text);
-    cursor: pointer;
-    font: inherit;
-    font-size: var(--font-size-3);
-    font-weight: var(--font-weight-6);
-    padding: var(--size-1-5) var(--size-2);
-    text-align: start;
-    transition: background-color 0.12s ease;
-  }
-
-  .section-nav-item:hover:not(.active) {
-    background-color: color-mix(in srgb, var(--text), transparent 92%);
-  }
-
-  .section-nav-item.active {
-    background-color: color-mix(in srgb, var(--text), transparent 88%);
-    color: var(--text-bright);
   }
 
   /* ── Section content ─────────────────────────────────────────────────── */
 
   .section-content {
-    block-size: 100%;
+    inline-size: 100%;
   }
 
   .section-inner {
