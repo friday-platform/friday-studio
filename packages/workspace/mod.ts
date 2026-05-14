@@ -63,5 +63,10 @@ export {
 } from "./src/variable-interpolation.ts";
 // Re-export watchers module for convenience
 export * as watchers from "./src/watchers/index.ts";
-// Workspace `.env` overlay loader
-export { loadWorkspaceEnv } from "./src/workspace-env.ts";
+// Workspace `.env` overlay — loader + comment-preserving per-key editor
+export {
+  deleteEnvFileVar,
+  loadEnvFile,
+  loadWorkspaceEnv,
+  setEnvFileVar,
+} from "./src/workspace-env.ts";

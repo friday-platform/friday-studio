@@ -14,7 +14,9 @@
  * `/api/me/stream`; no per-feed SSE handler lives here.
  */
 
+import { join } from "node:path";
 import {
+  type Elicitation,
   ElicitationKindSchema,
   ElicitationSchema,
   ElicitationStatusSchema,
@@ -23,12 +25,75 @@ import {
 } from "@atlas/core";
 import { createLogger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
+import { setEnvFileVar } from "@atlas/workspace";
+import type { Context } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { describeRoute, resolver, validator } from "hono-openapi";
 import { z } from "zod";
+import { commitGlobalEnvWrite } from "../../src/env-commit.ts";
+import type { AppVariables } from "../../src/factory.ts";
 import { daemonFactory } from "../../src/factory.ts";
 import { errorResponseSchema } from "../../src/utils.ts";
 import { getAccessibleWorkspaceIds, requireWorkspaceMember } from "../../src/workspace-authz.ts";
+
+/** Shape of an `env-write` elicitation's `pendingTool.args`. */
+const EnvWriteArgsSchema = z.object({
+  scope: z.enum(["workspace", "global"]),
+  vars: z.record(z.string(), z.string()),
+  workspaceId: z.string().optional(),
+});
+
+/**
+ * Apply a confirmed `env-write` elicitation. A chat turn can't block on the
+ * user, so `env_set` only proposes — the actual write lands here when the
+ * user confirms. Failures are logged, not thrown: the answer is already
+ * durable, and re-throwing would hide the accepted answer from the UI.
+ */
+async function commitEnvWriteElicitation(
+  c: Context<AppVariables>,
+  elicitation: Elicitation,
+): Promise<void> {
+  const parsed = EnvWriteArgsSchema.safeParse(elicitation.pendingTool?.args);
+  if (!parsed.success) {
+    logger.error("env-write elicitation has malformed pendingTool args", {
+      id: elicitation.id,
+      error: parsed.error.message,
+    });
+    return;
+  }
+  const { scope, vars, workspaceId } = parsed.data;
+  const keys = Object.keys(vars);
+
+  try {
+    if (scope === "global") {
+      for (const [key, value] of Object.entries(vars)) commitGlobalEnvWrite(key, value);
+      logger.info("env-write elicitation applied (global)", { id: elicitation.id, keys });
+      return;
+    }
+    // workspace scope — `env_set` writes are local to the elicitation's workspace.
+    const wsId = workspaceId ?? elicitation.workspaceId;
+    const workspace = await c.get("app").getWorkspaceManager().find({ id: wsId });
+    if (!workspace) {
+      logger.error("env-write elicitation: workspace not found", {
+        id: elicitation.id,
+        workspaceId: wsId,
+      });
+      return;
+    }
+    const envPath = join(workspace.path, ".env");
+    for (const [key, value] of Object.entries(vars)) setEnvFileVar(envPath, key, value);
+    logger.info("env-write elicitation applied (workspace)", {
+      id: elicitation.id,
+      workspaceId: wsId,
+      keys,
+    });
+  } catch (error) {
+    logger.error("env-write elicitation commit failed", {
+      id: elicitation.id,
+      error: stringifyError(error),
+    });
+  }
+}
 
 const elicitationApp = daemonFactory.createApp();
 const logger = createLogger({ component: "elicitation-routes" });
@@ -238,6 +303,11 @@ elicitationApp.post(
           // the UI or the blocked run.
           logger.warn("Failed to persist allow-always tool grant", { error: grant.error });
         }
+      }
+      // `env_set` only proposes — the confirmed write is applied here, server-
+      // side, because the chat turn that called the tool can't block on it.
+      if (result.data.kind === "env-write" && result.data.answer?.value === "confirm") {
+        await commitEnvWriteElicitation(c, result.data);
       }
       return c.json(result.data);
     } catch (error) {

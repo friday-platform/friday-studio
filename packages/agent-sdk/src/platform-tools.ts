@@ -56,6 +56,12 @@ export const PLATFORM_TOOL_NAMES = new Set([
   "save_memory_entry",
   "list_memory_entries",
   "delete_memory_entry",
+  // Env — workspace / global `.env` CRUD. Reads mask secret-looking keys;
+  // `env_set` proposes a write via a chat confirmation card.
+  "env_list",
+  "env_get",
+  "env_set",
+  "env_delete",
   // Human-in-the-loop / permissions
   "request_tool_access",
   "request_human_input",
