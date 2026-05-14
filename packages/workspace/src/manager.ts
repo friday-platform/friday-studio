@@ -1088,7 +1088,15 @@ export class WorkspaceManager {
 
     await this.stopRuntimeIfActive(workspace.id);
     await this.restartSignalsForWorkspace(workspace.id, workspace.path, validation.config);
-    await this.markWorkspaceInactive(workspace.id);
+    // A clean reload means any prior failure no longer applies. Drop the
+    // stale failure metadata — `markWorkspaceInactive` with no metadata
+    // would carry `lastError`/`lastErrorAt` forward verbatim (see
+    // `updateWorkspaceStatus`), leaving a recovered workspace advertising a
+    // resolved error to humans and to the chat agent diagnosing it.
+    const clearedMetadata = { ...(workspace.metadata ?? {}) };
+    delete clearedMetadata.lastError;
+    delete clearedMetadata.lastErrorAt;
+    await this.markWorkspaceInactive(workspace.id, clearedMetadata);
   }
 
   /**
