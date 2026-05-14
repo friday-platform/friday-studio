@@ -1,0 +1,176 @@
+# Aggregate sweep — fails if ANY file under packages/system/skills/**/*.md
+# has a bare daemon URL outside an acceptable fallback. Auto-discovers new
+# skills so the eval catches drift without yaml maintenance.
+- description: Sweep — all skill markdown is TLS-aware
+  vars:
+    scenarioId: 'skill-tls-static:sweep'
+
+# Per-file granularity for the three skill bodies the original migration
+# fixed (PR #308). The per-file scenarios for every other skill markdown
+# file are still emitted by the runner and visible in the JSON report —
+# but listing all of them here is unnecessary drift.
+- description: friday-cli SKILL.md has no bare daemon URL
+  vars:
+    scenarioId: 'skill-tls-static:packages/system/skills/friday-cli/SKILL.md'
+
+- description: workspace-api SKILL.md has no bare daemon URL
+  vars:
+    scenarioId: 'skill-tls-static:packages/system/skills/workspace-api/SKILL.md'
+
+- description: writing-friday-python-agents SKILL.md has no bare daemon URL
+  vars:
+    scenarioId: 'skill-tls-static:packages/system/skills/writing-friday-python-agents/SKILL.md'
+
+# Behavioral checks — feed each CHANGED skill markdown file (SKILL.md + the
+# references touched by this PR) to the LLM and verify it steers toward
+# $FRIDAYD_URL + friday_curl. Each subject has its own custom user prompt
+# (defined in the scenario) appropriate to the skill's content.
+- description: friday-cli SKILL.md steers LLM to $FRIDAYD_URL + friday_curl
+  vars:
+    scenarioId: 'skill-tls-behavior:friday-cli/SKILL.md'
+
+- description: friday-cli references/cli.md steers LLM to $FRIDAYD_URL + friday_curl
+  vars:
+    scenarioId: 'skill-tls-behavior:friday-cli/references/cli.md'
+
+- description: friday-cli references/http.md steers LLM to $FRIDAYD_URL + friday_curl
+  vars:
+    scenarioId: 'skill-tls-behavior:friday-cli/references/http.md'
+
+- description: friday-cli references/recipes.md steers LLM to $FRIDAYD_URL + friday_curl
+  vars:
+    scenarioId: 'skill-tls-behavior:friday-cli/references/recipes.md'
+
+- description: friday-cli references/session-and-logs.md steers LLM to $FRIDAYD_URL + friday_curl
+  vars:
+    scenarioId: 'skill-tls-behavior:friday-cli/references/session-and-logs.md'
+
+- description: workspace-api SKILL.md steers LLM to $FRIDAYD_URL + friday_curl
+  vars:
+    scenarioId: 'skill-tls-behavior:workspace-api/SKILL.md'
+
+- description: workspace-api references/updating-workspaces.md steers LLM to $FRIDAYD_URL + friday_curl
+  vars:
+    scenarioId: 'skill-tls-behavior:workspace-api/references/updating-workspaces.md'
+
+- description: writing-friday-python-agents SKILL.md steers LLM to $FRIDAYD_URL + friday_curl
+  vars:
+    scenarioId: 'skill-tls-behavior:writing-friday-python-agents/SKILL.md'
+
+# Installed-Studio behavioral checks — user prompts that explicitly mention
+# :18080. The LLM must IGNORE the user-supplied port and use $FRIDAYD_URL.
+# Without these tests, a skill text that fails to resist user-supplied
+# port priming would silently regress without anyone noticing.
+- description: friday-cli SKILL.md resists installed-Studio port priming
+  vars:
+    scenarioId: 'skill-tls-behavior:friday-cli/SKILL.md#installed-studio-priming'
+
+- description: workspace-api SKILL.md resists installed-Studio TLS-URL priming
+  vars:
+    scenarioId: 'skill-tls-behavior:workspace-api/SKILL.md#installed-studio-priming'
+
+# Negative controls — prove the detector + LLM-judge have discriminative
+# power. If any of these PASS=false, the eval framework lost signal and
+# every positive case above is suspect.
+
+- description: NEGATIVE — detector flags bare curl in code fence
+  vars:
+    scenarioId: 'skill-tls-static-negative:bare-curl-in-code-fence'
+
+- description: NEGATIVE — detector flags POST with bare URL
+  vars:
+    scenarioId: 'skill-tls-static-negative:post-with-bare-url'
+
+- description: NEGATIVE — detector flags bare URL inside code block
+  vars:
+    scenarioId: 'skill-tls-static-negative:quoted-bare-url-in-code'
+
+- description: NEGATIVE — detector flags 127.0.0.1 loopback URL
+  vars:
+    scenarioId: 'skill-tls-static-negative:loopback-127-url'
+
+- description: NEGATIVE — detector flags port-override URL (:18080)
+  vars:
+    scenarioId: 'skill-tls-static-negative:port-override-url'
+
+# Installed Friday Studio coverage — production binds the daemon on :18080
+# with TLS configured automatically by the launcher. The detector and
+# behavioral checks must treat this case as a first-class peer of dev.
+- description: NEGATIVE — detector flags bare https://localhost:18080 (installed-Studio TLS)
+  vars:
+    scenarioId: 'skill-tls-static-negative:installed-studio-https-bare-url'
+
+- description: NEGATIVE — detector flags 127.0.0.1:18080 (installed-Studio loopback)
+  vars:
+    scenarioId: 'skill-tls-static-negative:installed-studio-loopback-url'
+
+# Empty-bash-fence regression — five production skills shipped this exact
+# shape (preamble promises to teach .env sourcing, fence ships empty).
+# Detector must catch both the plain and the blockquoted variants.
+- description: NEGATIVE — detector flags empty bash fence following ".env" prose
+  vars:
+    scenarioId: 'skill-tls-static-negative:empty-bash-block-after-env-prose'
+
+- description: NEGATIVE — detector flags empty blockquoted bash fence
+  vars:
+    scenarioId: 'skill-tls-static-negative:empty-blockquoted-bash-block'
+
+- description: ACCEPT — detector allows :18080 in prose describing installed Studio
+  vars:
+    scenarioId: 'skill-tls-static-accept:prose-installed-studio-port'
+
+- description: ACCEPT — detector allows filled bash fence with `.env` source
+  vars:
+    scenarioId: 'skill-tls-static-accept:filled-bash-block-with-env-source'
+
+- description: ACCEPT — detector allows empty fence with no language tag
+  vars:
+    scenarioId: 'skill-tls-static-accept:empty-untagged-fence'
+
+- description: ACCEPT — detector allows ${FRIDAYD_URL:-...} bash default
+  vars:
+    scenarioId: 'skill-tls-static-accept:bash-default-expansion'
+
+- description: ACCEPT — detector allows single-dash bash default
+  vars:
+    scenarioId: 'skill-tls-static-accept:bash-default-single-dash'
+
+- description: ACCEPT — detector allows := assignment form
+  vars:
+    scenarioId: 'skill-tls-static-accept:bash-default-assignment'
+
+- description: ACCEPT — detector allows non-FRIDAYD_URL var with default
+  vars:
+    scenarioId: 'skill-tls-static-accept:bash-default-other-var'
+
+- description: ACCEPT — detector allows os.environ.get default literal
+  vars:
+    scenarioId: 'skill-tls-static-accept:python-environ-default'
+
+- description: ACCEPT — detector allows "→" doc comment inside a code block
+  vars:
+    scenarioId: 'skill-tls-static-accept:arrow-doc-comment-in-code'
+
+- description: ACCEPT — detector allows URLs in plain prose
+  vars:
+    scenarioId: 'skill-tls-static-accept:prose-mention'
+
+- description: ACCEPT — detector allows URLs in YAML frontmatter
+  vars:
+    scenarioId: 'skill-tls-static-accept:frontmatter-description'
+
+# Behavioral negative controls — three bad-skill framings, each teaching
+# a distinct failure mode (variable literal, missing -k, wrong-port
+# hardcode). If all three flip to pass=false at once, the LLM judge has
+# lost discrimination.
+- description: NEGATIVE — skill teaches $FRIDAYD_URL literal, LLM should regurgitate it
+  vars:
+    scenarioId: 'skill-tls-behavior-negative:emit-variable-literal'
+
+- description: NEGATIVE — skill says don't use -k, LLM should omit it
+  vars:
+    scenarioId: 'skill-tls-behavior-negative:omit-cert-skip'
+
+- description: NEGATIVE — skill hardcodes :8080, LLM should emit a bare URL
+  vars:
+    scenarioId: 'skill-tls-behavior-negative:bash-heavy-bare-url'

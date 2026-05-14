@@ -1,6 +1,29 @@
 # Friday Daemon HTTP API
 
-Base: `http://localhost:8080`. No auth on localhost. JSON in/out unless noted.
+Base: `$FRIDAYD_URL` — set by the launcher (installed Friday Studio,
+typically `:18080`) or `deno task atlas daemon start` (in-tree dev,
+typically `:8080`); `FRIDAY_PORT_FRIDAY` can override either. Scheme is
+`https://` when TLS is on (automatic for installed Studio; in-tree dev
+opts in via `bash scripts/setup-tls.sh`), otherwise `http://`. **Don't
+hardcode the URL — always use `$FRIDAYD_URL`.** No auth on localhost.
+JSON in/out unless noted.
+
+To run the curl examples in this file, source the daemon `.env` once per
+shell so `$FRIDAYD_URL` is exported. The block below tries the
+installed-Studio location first (`${FRIDAY_HOME:-~/.friday/local}/.env`)
+then falls back to the dev location (`~/.atlas/.env`):
+
+```bash
+set -a
+. "${FRIDAY_HOME:-$HOME/.friday/local}/.env" 2>/dev/null \
+  || . "$HOME/.atlas/.env" 2>/dev/null || true
+set +a
+```
+
+**Rule: every daemon HTTP call in this reference uses `curl -k`, not
+plain `curl`.** Plain `curl` against `$FRIDAYD_URL` on a TLS install
+fails with `self signed certificate in certificate chain`. `-k` skips
+cert verification — safe because the daemon binds loopback only.
 
 SSE: pass `Accept: text/event-stream`. Streams end with `data: [DONE]`.
 

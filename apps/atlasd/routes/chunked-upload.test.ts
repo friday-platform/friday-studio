@@ -172,6 +172,18 @@ describe("Init endpoint (POST /init)", () => {
     expect(body).toMatchObject({ error: expect.stringContaining("File type not allowed") });
   });
 
+  it("rejects .svg upload with 415 (script-injection defense-in-depth)", async () => {
+    // SVG stays uploadable: false even after the v4 allowlist expansion —
+    // inline `<script>` in image/svg+xml can execute against the chat
+    // origin if the artifact ever renders outside the sandboxed iframe.
+    // Locks the security comment in `chat-attachment.ts:isSvg` as a
+    // test-enforced contract.
+    const res = await initUpload({ fileName: "icon.svg", fileSize: 1024 });
+    expect(res.status).toEqual(415);
+    const body = await res.json();
+    expect(body).toMatchObject({ error: expect.stringContaining("File type not allowed") });
+  });
+
   it("rejects oversized file with 400", async () => {
     const res = await initUpload({ fileName: "huge.txt", fileSize: MAX_FILE_SIZE + 1 });
     expect(res.status).toEqual(400);

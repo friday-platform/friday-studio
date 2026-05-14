@@ -1,6 +1,13 @@
 ---
 name: using-elicitations
-description: Asks the user mid-run from inside an FSM action or Python `type: user` agent via the elicitation tools — `request_tool_access` for allowlist approvals and `request_human_input` for HITL (human-in-the-loop) decisions, approvals, confirmations, and disambiguation. Use when a job needs the user to choose, approve, or supply input before the action can continue. Covers simple multiple choice, nested per-item choice, prompt formatting, and how to consume the answer.
+description: |
+  Asks the user mid-run from inside an FSM action or Python `type: user`
+  agent via the elicitation tools — `request_tool_access` for allowlist
+  approvals and `request_human_input` for HITL (human-in-the-loop)
+  decisions, approvals, confirmations, and disambiguation. Use when a job
+  needs the user to choose, approve, or supply input before the action
+  can continue. Covers simple multiple choice, nested per-item choice,
+  prompt formatting, and how to consume the answer.
 ---
 
 # Using elicitations

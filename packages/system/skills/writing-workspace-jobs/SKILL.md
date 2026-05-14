@@ -179,7 +179,7 @@ the handoff mechanism for multi-step `outputTo`/`inputFrom` pipelines.
 
 There is no separate `outputs:` block on a job that pipes the FSM result to the caller. The schema has an `outputs:` field but it's a memory-write declaration (`{ memory, entryKind }`) — unrelated.
 
-**Mechanical output contract:** every LLM-backed action with `outputTo` must finish by calling the runtime-injected `complete` tool. If the action declares `outputType`, `complete` args must match that document schema. If it does not, emit the full final text as `complete({ response: "..." })`. Do not rely on prose after the last MCP/tool call; if `complete` is not called, the session fails instead of persisting an empty/stub document.
+**Mechanical output contract:** every LLM-backed action with `outputTo` must finish by calling the runtime-injected `complete` tool. If the action declares `outputType`, `complete` args must match that document schema. If it does not, emit the full final text as `complete({ response: "..." })`. Do not rely on prose after the last MCP/tool call; if `complete` is not called, the session fails instead of persisting an empty/stub document. The full agent ↔ FSM-action contract — invocation kinds, `inputFrom` resolution, what the runtime auto-injects per kind — is in `@friday/agent-action-handshake`. Load it when authoring agents that will be invoked from FSM actions.
 
 **Single-step jobs that need to return data:** put `outputTo` on the entry action even when the state is `type: final`. Entry actions still execute on entering a final state, and the doc is captured before session completion.
 
@@ -367,7 +367,7 @@ for no behavioral gain.
 Post-flip the supervisor (workspace-chat) is the consumer. It already
 sees `{ artifactIds, summary }` from the terminal action and renders
 the artifact body verbatim to the user. The second pass is wasted
-latency + tokens + a validator-judge LLM call.
+latency + tokens.
 
 ### When to collapse
 
@@ -454,9 +454,6 @@ Re-fire the signal once. Confirm:
   consumers keep working.
 - `summary` reads sensibly without `parse_artifact` — the auto-derived
   digest from the markdown is the supervisor's first-pass view.
-- `step:complete.validation.strategy` resolves to `skip` (the
-  classifier sees only read-only tools + structured `outputType`, or
-  no `outputType` + no mutating tool) — no validator-judge LLM call.
 
 If the auto-derived `summary` is too thin, set `summary:` on the
 action explicitly rather than reintroducing a second formatter step.
@@ -631,9 +628,12 @@ filtering.
 ```
 
 Semantics:
-- `tools: []` (empty array) — no MCP/platform tools available; only the
-  auto-injected built-ins (memory + artifacts; see below). Useful for a
-  pure-reasoning action.
+- `tools: []` (empty array) — no MCP server tools available, but
+  platform tools still inject (full set in
+  `packages/agent-sdk/src/platform-tools.ts`: memory, artifacts, fs,
+  shell/data, state, HITL, `complete` when `outputTo` set,
+  `load_skill`, `delegate`). Useful for a pure-reasoning action that
+  shouldn't reach external integrations.
 - `tools: [...]` (populated) — exactly those tools, plus the built-ins.
 - `tools` absent — inherits the agent/workspace tool surface, which may
   itself be permissive.
@@ -697,7 +697,7 @@ This is true even when `outputType` is omitted:
   available either way, but the declaration tells the runtime not to force the
   first tool call to be `complete`.
 
-Do **not** end an `outputTo` action on `record_validation`, `fs_write_file`,
+Do **not** end an `outputTo` action on `fs_write_file`,
 `save_memory_entry`, or any other non-`complete` tool. Those calls may be useful
 side effects, but they are not the output document. If `complete` is missing,
 the session fails with `LLM action with outputTo '<id>' did not call complete`
@@ -709,127 +709,9 @@ report path/ref, counts, and summary. The supervisor sees the compact
 `{ artifactIds, summary }` job result first and only calls `parse_artifact` when
 it needs the full body.
 
-## Validation strategies
+## FSM action validation
 
-Every `type: llm` and `type: agent` action's output is checked for
-fabrication unless the author opts out. The `validate:` field selects
-the strategy. Absent or `"auto"` → the runtime classifier picks
-`skip` or `self` based on the action's shape; authors override only
-when they need different behavior.
-
-### String forms
-
-```yaml
-validate: skip      # bypass — read-only fetchers, deterministic transforms
-validate: self      # LLM self-checks its draft before emitting (cheap)
-validate: external  # separate-judge LLM call after emit (thorough, slower)
-validate: auto      # runtime decides based on action shape (default)
-```
-
-### Auto-detect rules
-
-The classifier (see `READ_ONLY_ALLOWLIST` and `MUTATING_VERB_RE` in
-`packages/fsm-engine/validate-classifier.ts` for the canonical lists)
-picks:
-
-- **`skip`** when every declared tool is read-only (`gmail/get_*`,
-  `gmail/search_*`, `fs_read_file`, `web_fetch`, `list_memory_entries`,
-  `get_artifact`, etc.) **and** the action has structured
-  `outputType:`. Also picks `skip` for the pure-formatter case:
-  no tools, has `inputFrom:`, has `outputType:`.
-- **`self`** when any declared or called tool is mutating (`send_*`,
-  `create_*`, `delete_*`, `batch_modify_*`, `fs_write_*`,
-  `save_memory_entry`, `delete_memory_entry`, `publish_*`, etc.) **or** the
-  action emits free-form prose with no structured contract.
-- **`external`** is never auto-picked. Authors opt in explicitly.
-
-`type: agent` actions resolving to `type: user` or `type: atlas`
-agents short-circuit to `skip` — those agents are deterministic
-from the FSM's perspective.
-
-### Object form
-
-For advanced overrides, swap the string for an object. Object form
-pins `strategy` to `self` or `external` (use the string form for
-`skip` / `auto`):
-
-```yaml
-validate:
-  strategy: external
-  skill: "@my/financial-claims-validator"   # custom validation skill
-  threshold: paranoid                       # supervision threshold
-  retryOnFail: false                        # advisory verdicts pass through
-```
-
-`threshold` accepts `minimal`, `standard`, or `paranoid` — sets the
-confidence band the judge must clear. `retryOnFail: false` lets
-`uncertain` / `fail` verdicts proceed as advisory rather than
-blocking the step.
-
-### What each strategy does at runtime
-
-- **`skip`** — no validation. `step:complete.validation` records
-  `{ strategy: "skip", skipReason }` for observability.
-- **`self`** — runtime composes `@friday/validating-llm-outputs`
-  (or your `skill:` override) into the action's prompt when the
-  action does not already have a mechanical `complete` output
-  contract. The LLM walks every claim in its draft and drops anything
-  not sourced to a tool result, input, or direct inference, then calls
-  `record_validation`. For `outputTo` actions, `complete` owns output
-  emission and validation is recorded as step metadata; do not try to
-  make `record_validation` the produced document.
-- **`external`** — post-emit judge call. Returns a
-  `ValidationVerdict` with `status` (`pass` / `uncertain` /
-  `fail`), `confidence`, `threshold`, and an `issues` array with
-  `category` (`sourcing`, `no-tools-called`, `judge-uncertain`,
-  `judge-error`), `severity`, `claim`, `reasoning`, and `citation`.
-  See `packages/hallucination/src/verdict.ts` for the full shape.
-
-### When to override the default
-
-Three cases worth the explicit field:
-
-```yaml
-# 1. Known-deterministic action — LLM is just formatting structured input.
-- type: llm
-  provider: anthropic
-  model: claude-sonnet-4-6
-  inputFrom: raw-event
-  outputType: formatted-event
-  validate: skip
-  prompt: "Reshape the event into formatted-event."
-```
-
-```yaml
-# 2. High-stakes action — independent review is worth the latency.
-- type: agent
-  agentId: contract-drafter
-  outputTo: contract-draft
-  validate: external
-```
-
-```yaml
-# 3. Domain-specific self-check — pair self with a custom validator.
-- type: llm
-  provider: anthropic
-  model: claude-sonnet-4-6
-  outputTo: medication-plan
-  validate:
-    strategy: self
-    skill: "@my/medical-claims-validator"
-  prompt: |
-    Draft a medication plan from the patient summary above.
-```
-
-### Cross-references
-
-- `@friday/validating-llm-outputs` is a **system skill** the runtime
-  composes into the action prompt when `validate` resolves to
-  `self`. Authors don't load it via `load_skill`.
-- For workspace-wide / per-job defaults, see the `validation:`
-  section in `@friday/workspace-api` — covers the workspace and
-  job-level block, full precedence chain (action > job >
-  workspace > `"auto"`), skill override, and real-world configs.
+There is no `validate:` field. Output emission is captured via `complete` when `outputTo` is set — see `@friday/agent-action-handshake` for the contract.
 
 ## Delegating to a sub-agent from an FSM action
 
@@ -959,11 +841,6 @@ jobs:
           type: final
 ```
 
-Children inherit workspace validation defaults (see "Validation
-strategies" above). Each child's mutating Gmail call gets the same
-`self`-validation pass it would have gotten in the sequential
-shape; the runtime's auto-classifier picks per-action.
-
 ### Delegation budgets cross-reference
 
 Each child runs under the resolved `delegation:` budget — workspace
@@ -980,15 +857,6 @@ default merged with per-job override (per-field, job wins). Knobs:
 
 Full schema and merge precedence: see the `delegation:` section in
 the `workspace-api` skill.
-
-### Validation defaults
-
-Children inherit the workspace and job-level `validation:` config
-the same way any FSM action does — see "Validation strategies"
-above. The parent aggregator action is typically `validate: skip`
-(deterministic merge of structured child digests into one doc); the
-children's per-item mutating actions get `self` validation
-automatically because they call `batch_modify_*` / `send_*` tools.
 
 ### Anti-patterns
 
@@ -1252,12 +1120,6 @@ knowing they exist saves debugging time.
   scraping session logs or re-fetching artifacts manually. If you see
   unexpected artifacts in `GET /api/artifacts?sessionId=...`, this is the
   source.
-- **Validator skips on tool-passthrough.** The hallucination judge
-  runs only when the action's output is LLM-generated prose. If the
-  output is empty or trivially echoes a tool result, the validator
-  skips with a "Skipping validation for tool-passthrough trace" debug
-  log. This halves validator cost on multi-step jobs and is why pure
-  fetcher actions complete fast.
 - **Provenance metadata is captured.** Every spawned session carries
   `parentSessionId` + `parentEventId`; every `step:complete` event has
   `usage: { inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens,

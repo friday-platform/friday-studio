@@ -29,13 +29,13 @@
  * chat message, and inspects the SSE tool-call trace.
  */
 
-import { ensureDir } from "jsr:@std/fs@1.0.13/ensure-dir";
 import { dirname, join } from "jsr:@std/path@1";
 import {
   currentGitSha,
   type DaemonHandle,
   ensureCredentialsLoaded,
   HARNESS_PATHS,
+  makeFixtureDir,
   registerWorkspace,
   type SSEEvent,
   startDaemon,
@@ -199,15 +199,15 @@ interface SetupResult {
   workspaceId: string;
 }
 
-async function materializeFixture(srcDir: string): Promise<string> {
-  const tmpDir = await Deno.makeTempDir({ prefix: "friday-tsm-fixture-" });
+async function materializeFixture(fridayHome: string, srcDir: string): Promise<string> {
+  const tmpDir = await makeFixtureDir(fridayHome, "friday-tsm-fixture-");
   const src = await Deno.readTextFile(join(srcDir, "workspace.yml"));
   await Deno.writeTextFile(join(tmpDir, "workspace.yml"), src);
   return tmpDir;
 }
 
 async function setupWorkspace(d: DaemonHandle, name: string): Promise<SetupResult> {
-  const wsPath = await materializeFixture(FIXTURE_DIR);
+  const wsPath = await materializeFixture(d.fridayHome, FIXTURE_DIR);
   const ws = await registerWorkspace(d, wsPath, { name });
   return { workspaceId: ws.id };
 }
@@ -656,7 +656,7 @@ async function main() {
   if (writeResult || jsonOutputPath) {
     const outPath =
       jsonOutputPath ?? join(HARNESS_PATHS.resultsDir, `${sha}-tool-suite-management.json`);
-    await ensureDir(dirname(outPath));
+    await Deno.mkdir(dirname(outPath), { recursive: true });
     await Deno.writeTextFile(outPath, JSON.stringify(report, null, 2));
     console.log(`\n→ ${outPath}`);
   }

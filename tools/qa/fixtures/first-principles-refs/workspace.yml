@@ -24,7 +24,6 @@ tools:
             - --allow-all
             - "__FAKE_INBOX_MCP_PATH__"
         skipResolverCheck: true
-        validation: "read-only"
 
 signals:
   refs-event:
@@ -307,8 +306,6 @@ jobs:
     config:
       timeout: "1m"
       max_steps: 1
-    validation:
-      default: "skip"
     fsm:
       initial: done
       states:
@@ -322,8 +319,6 @@ jobs:
     config:
       timeout: "5m"
       max_steps: 12
-    validation:
-      default: "skip"
     fsm:
       initial: idle
       documentTypes:
@@ -416,8 +411,6 @@ jobs:
     config:
       timeout: "5m"
       max_steps: 16
-    validation:
-      default: "skip"
     fsm:
       initial: idle
       documentTypes:
@@ -518,8 +511,6 @@ jobs:
     config:
       timeout: "5m"
       max_steps: 8
-    validation:
-      default: "self"
     fsm:
       initial: idle
       documentTypes:
@@ -559,8 +550,6 @@ jobs:
     config:
       timeout: "5m"
       max_steps: 8
-    validation:
-      default: "self"
     fsm:
       initial: idle
       states:
@@ -587,8 +576,6 @@ jobs:
     config:
       timeout: "5m"
       max_steps: 12
-    validation:
-      default: "skip"
     fsm:
       initial: idle
       documentTypes:
@@ -677,8 +664,6 @@ jobs:
     config:
       timeout: "5m"
       max_steps: 10
-    validation:
-      default: "skip"
     fsm:
       initial: idle
       states:
@@ -727,8 +712,6 @@ jobs:
     config:
       timeout: "5m"
       max_steps: 8
-    validation:
-      default: "skip"
     fsm:
       initial: idle
       documentTypes:
@@ -778,8 +761,6 @@ jobs:
     config:
       timeout: "5m"
       max_steps: 10
-    validation:
-      default: "skip"
     fsm:
       initial: idle
       states:
@@ -826,8 +807,6 @@ jobs:
     config:
       timeout: "5m"
       max_steps: 8
-    validation:
-      default: "skip"
     fsm:
       initial: idle
       states:
@@ -863,8 +842,6 @@ jobs:
     config:
       timeout: "5m"
       max_steps: 8
-    validation:
-      default: "skip"
     fsm:
       initial: idle
       states:
@@ -900,8 +877,6 @@ jobs:
     config:
       timeout: "5m"
       max_steps: 8
-    validation:
-      default: "skip"
     fsm:
       initial: idle
       documentTypes:
@@ -941,8 +916,6 @@ jobs:
     config:
       timeout: "5m"
       max_steps: 8
-    validation:
-      default: "skip"
     fsm:
       initial: idle
       documentTypes:
@@ -988,8 +961,6 @@ jobs:
     config:
       timeout: "1s"
       max_steps: 8
-    validation:
-      default: "skip"
     fsm:
       initial: idle
       documentTypes:
@@ -1029,8 +1000,6 @@ jobs:
     config:
       timeout: "5m"
       max_steps: 8
-    validation:
-      default: "skip"
     fsm:
       initial: idle
       documentTypes:
@@ -1078,8 +1047,6 @@ jobs:
     config:
       timeout: "5m"
       max_steps: 8
-    validation:
-      default: "skip"
     fsm:
       initial: idle
       documentTypes:
@@ -1161,8 +1128,6 @@ jobs:
     config:
       timeout: "5m"
       max_steps: 8
-    validation:
-      default: "skip"
     fsm:
       initial: idle
       states:
@@ -1190,8 +1155,6 @@ jobs:
     config:
       timeout: "5m"
       max_steps: 10
-    validation:
-      default: "skip"
     fsm:
       initial: idle
       states:

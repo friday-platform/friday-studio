@@ -2,6 +2,7 @@ import { access } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import process from "node:process";
 import { createLogger } from "@atlas/logger";
+import { getAtlasDaemonUrl } from "@atlas/oapi-client";
 import { define } from "gunshi";
 import { infoOutput, successOutput } from "../../../utils/output.ts";
 
@@ -37,13 +38,12 @@ export const registerCommand = define({
       process.exit(1);
     }
 
-    // FRIDAYD_URL is the canonical name (set by friday-launcher's .env load
-    // — see tools/friday-launcher/project.go). FRIDAY_DAEMON_URL kept as a
-    // legacy alias to match the resolution chain in
-    // packages/openapi-client/src/utils.ts:50. `||` (not `??`) so an
-    // explicitly-empty FRIDAYD_URL still falls through to the alias / default.
-    const daemonUrl =
-      process.env.FRIDAYD_URL || process.env.FRIDAY_DAEMON_URL || "http://localhost:8080";
+    // getAtlasDaemonUrl() owns the resolution chain (FRIDAYD_URL →
+    // FRIDAY_DAEMON_URL legacy alias → FRIDAY_PORT_FRIDAY → default) and
+    // auto-upgrades the scheme to https:// when FRIDAY_TLS_CERT is set.
+    // Inlining the chain here previously sent cleartext at a TLS-bound
+    // daemon — same bug the rest of PR #308 fixes.
+    const daemonUrl = getAtlasDaemonUrl();
 
     let response: Response;
     try {

@@ -1,5 +1,5 @@
 import type { AtlasAgent } from "@atlas/agent-sdk";
-import { judgeAgent, workspaceChatAgent } from "@atlas/system/agents";
+import { workspaceChatAgent } from "@atlas/system/agents";
 import { AgentNotFoundError } from "../errors.ts";
 import type { AgentAdapter, AgentSourceData, AgentSummary } from "./types.ts";
 
@@ -10,17 +10,13 @@ import type { AgentAdapter, AgentSourceData, AgentSummary } from "./types.ts";
  * instantiating the adapter or awaiting the async loader. Add new system
  * agents here AND in `registerSystemAgents`.
  */
-const SYSTEM_AGENT_IDS: ReadonlySet<string> = new Set([
-  workspaceChatAgent.metadata.id,
-  judgeAgent.metadata.id,
-]);
+const SYSTEM_AGENT_IDS: ReadonlySet<string> = new Set([workspaceChatAgent.metadata.id]);
 
 /**
- * Synchronous lookup: returns the FSM-classifier agent type for a bundled
- * system agent. System agents (workspace-chat, judge-agent) have fixed
- * prompts baked into TypeScript code — from the validate-classifier's
- * perspective they're indistinguishable from `type: atlas` workspace-config
- * agents. The classifier short-circuits both to `skip` (rule 1).
+ * Synchronous lookup: returns the agent type for a bundled system agent.
+ * System agents have fixed prompts baked into TypeScript code, so they
+ * report as `type: "atlas"` for the FSM action resolver — same shape as
+ * a workspace-config `type: atlas` entry.
  *
  * Returns `undefined` for any agentId not registered as a system agent so
  * callers can chain into other resolution paths (e.g. `workspace.agents`
@@ -46,10 +42,6 @@ export class SystemAgentAdapter implements AgentAdapter {
 
   private registerSystemAgents(): void {
     this.agents.set(workspaceChatAgent.metadata.id, workspaceChatAgent);
-    // Judge agent for `validate: external` — invoked via the FSM engine's
-    // `runJudge` callback (workspace runtime wires the executor → this
-    // adapter → judgeAgent.handler).
-    this.agents.set(judgeAgent.metadata.id, judgeAgent as AtlasAgent<unknown, unknown>);
     // NOTE: when adding agents here, also add the id to `SYSTEM_AGENT_IDS`
     // above so synchronous type lookups stay in sync.
   }

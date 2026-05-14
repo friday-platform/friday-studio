@@ -69,7 +69,7 @@ import { createCreateMcpServerTool } from "./tools/create-mcp-server.ts";
 import { createDisableMcpServerTool } from "./tools/disable-mcp-server.ts";
 import { createBoundDraftTools } from "./tools/draft-tools.ts";
 import { createEnableMcpServerTool } from "./tools/enable-mcp-server.ts";
-import { createFileIOTools } from "./tools/file-io.ts";
+import { createFileIOTools, createReadAttachmentTool } from "./tools/file-io.ts";
 import { createInstallMcpServerTool } from "./tools/install-mcp-server.ts";
 import {
   createDescribeIntegrationTool,
@@ -885,6 +885,12 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
         const webSearchTool = createWebSearchTool(logger);
         const runCodeTool = createRunCodeTool(adHocSessionId, logger, abortSignal);
         const fileIOTools = createFileIOTools(adHocSessionId, logger);
+        // User-attached files (chat-input drop → /api/scratch/upload) live at
+        // `{FRIDAY_HOME}/scratch/uploads/{workspaceId}/{chatId}/{md5}`. The
+        // chat adapter surfaces them in user messages as `<attachment path="…"
+        // mediaType="…" />` tags. read_attachment(path) is how the agent opens
+        // them — scoped to this workspace+chat uploads dir.
+        const readAttachmentTool = createReadAttachmentTool(workspaceId, session.streamId, logger);
 
         // delegate runs nested streamText sub-agents in-process. The child's
         // tool set is the parent's full composed set minus `delegate` itself
@@ -976,6 +982,7 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           ...webSearchTool,
           ...runCodeTool,
           ...fileIOTools,
+          ...readAttachmentTool,
           ...createWorkspaceOpsTools(logger),
           ...createBoundWorkspaceOpsTools(logger, workspaceId),
           ...createBoundDraftTools(logger, workspaceId),

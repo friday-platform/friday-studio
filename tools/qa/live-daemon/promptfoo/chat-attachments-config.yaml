@@ -1,0 +1,36 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+
+description: |
+  Friday chat-attachments evals — exercises the `read_attachment` tool wiring
+  + workspace-chat prompt guidance for `<attachment path="…" />` tags after
+  the artifact-system → scratch-dir filesystem pivot.
+
+  - Positive: agent receiving a `<attachment path=…>` line must call
+    `read_attachment` against the scratch path and answer from the CSV
+    content (not regurgitate the tag).
+  - Negative: a cross-chat path on `data-file-attached` is refused by the
+    adapter's path-traversal gate; the agent never sees it.
+
+  This is the eval that locks the prompt + tool contract — touch
+  `prompt.txt` or `file-io.ts:createReadAttachmentTool` without re-running
+  these and you'll silently regress the chat attachment story.
+
+prompts:
+  - '{{scenarioId}}'
+
+providers:
+  - id: file://chat-attachments-provider.cjs
+    label: friday-chat-attachments
+
+defaultTest:
+  assert:
+    - type: is-json
+    - type: javascript
+      value: |
+        const result = JSON.parse(output);
+        if (result.pass !== true) {
+          throw new Error(`${result.id} failed: ${(result.notes || []).join('; ')}`);
+        }
+        return true;
+
+tests: file://chat-attachments-tests.yaml

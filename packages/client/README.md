@@ -127,7 +127,8 @@ export type ChatStorageRoutes = typeof chatStorageRoutes;
 
 // Client (packages/client/v2/mod.ts)
 import type { ChatStorageRoutes } from "@atlas/atlasd";
-const client = hc<ChatStorageRoutes>("http://localhost:8080/api/chat-storage");
+import { getAtlasDaemonUrl } from "@atlas/oapi-client";
+const client = hc<ChatStorageRoutes>(`${getAtlasDaemonUrl()}/api/chat-storage`);
 
 // Usage - fully typed!
 const res = await client[":streamId"].$get({ param: { streamId: "123" } });

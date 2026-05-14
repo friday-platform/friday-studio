@@ -14,16 +14,23 @@
 import { statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { logger } from "@atlas/logger";
+import { getAtlasDaemonUrl } from "@atlas/oapi-client";
 import { z } from "zod";
 
 /**
  * Well-known workspace variables resolved by the daemon at config-load time.
+ *
+ * `platform_url` defaults to whatever `getAtlasDaemonUrl()` resolves to —
+ * which honors `FRIDAYD_URL` and auto-upgrades to `https://` when
+ * `FRIDAY_TLS_CERT` is set. Without this, agents interpolating
+ * `{{platform_url}}` into an HTTP fetch hit cleartext on a TLS-bound daemon
+ * and fail with "Response does not match HTTP/1.1 protocol".
  */
 export const WorkspaceVariablesSchema = z.object({
   repo_root: z.string(),
   workspace_path: z.string(),
   workspace_id: z.string(),
-  platform_url: z.string().default("http://localhost:8080"),
+  platform_url: z.string().default(() => getAtlasDaemonUrl()),
 });
 
 export type WorkspaceVariables = z.infer<typeof WorkspaceVariablesSchema>;
@@ -104,7 +111,8 @@ export async function findRepoRoot(startPath: string): Promise<string | null> {
  *
  * @param workspacePath Absolute path to the workspace directory on disk.
  * @param workspaceId   The workspace's stable identifier.
- * @param daemonUrl     The daemon's base URL (defaults to http://localhost:8080).
+ * @param daemonUrl     The daemon's base URL (defaults to `getAtlasDaemonUrl()` —
+ *                      scheme/port follow the daemon's actual binding).
  * @returns Parsed `WorkspaceVariables` or `null` if repo_root cannot be derived.
  */
 export async function resolveWorkspaceVariables(
@@ -120,10 +128,14 @@ export async function resolveWorkspaceVariables(
     return null;
   }
 
+  // platform_url is intentionally left undefined when daemonUrl is absent so
+  // the schema's `.default(() => getAtlasDaemonUrl())` fires. Without this,
+  // the call-site `??` made the schema default dead code and the test that
+  // claimed to exercise it was tautological (see review v2 Important #1).
   return WorkspaceVariablesSchema.parse({
     repo_root: repoRoot,
     workspace_path: workspacePath,
     workspace_id: workspaceId,
-    platform_url: daemonUrl ?? "http://localhost:8080",
+    platform_url: daemonUrl,
   });
 }

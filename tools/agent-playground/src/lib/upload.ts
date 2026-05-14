@@ -4,6 +4,7 @@
  */
 
 import {
+  ACCEPTED_TYPES_DESCRIPTION,
   ALLOWED_EXTENSIONS,
   ALLOWED_MIME_TYPES,
   EXTENSION_TO_MIME,
@@ -66,8 +67,7 @@ export function validateFile(file: File): { valid: true } | { valid: false; erro
 
   return {
     valid: false,
-    error:
-      "Unsupported file type. Only CSV, JSON, TXT, MD, YML, PDF, DOCX, PPTX, PNG, JPG, WebP, GIF, and audio files (MP3, MP4, M4A, WAV, WebM, OGG, FLAC) are allowed.",
+    error: `Unsupported file type. Supported: ${ACCEPTED_TYPES_DESCRIPTION}.`,
   };
 }
 
@@ -75,12 +75,17 @@ export function validateFile(file: File): { valid: true } | { valid: false; erro
  * Upload a file to the daemon's artifact endpoint.
  * Simple XHR upload with progress tracking — no chunked upload needed
  * for the playground's typical file sizes.
+ *
+ * `workspaceId` defaults to "playground" for the HITL elicitation flow that
+ * always targets the playground workspace; chat-input attachments pass the
+ * active workspace so the upload's `requireWorkspaceMember` check passes.
  */
 export function uploadFile(
   file: File,
   onProgress?: (loaded: number) => void,
   abortSignal?: AbortSignal,
   onStatusChange?: (status: UploadStatus) => void,
+  workspaceId: string = "playground",
 ): Promise<{ artifactId: string } | { error: string }> {
   const validation = validateFile(file);
   if (!validation.valid) {
@@ -89,7 +94,7 @@ export function uploadFile(
 
   const formData = new FormData();
   formData.set("file", file);
-  formData.set("workspaceId", "playground");
+  formData.set("workspaceId", workspaceId);
 
   return new Promise((resolve) => {
     const xhr = new XMLHttpRequest();
@@ -140,6 +145,93 @@ export function uploadFile(
     }
 
     xhr.open("POST", "/api/daemon/api/artifacts/upload");
+    xhr.send(formData);
+  });
+}
+
+/**
+ * Schema returned by `POST /api/scratch/upload` — the absolute path on the
+ * daemon's filesystem (typically
+ * `{FRIDAY_HOME}/scratch/uploads/{workspaceId}/{chatId}/{md5}`), plus the
+ * validated mime and stored byte count. The agent reads from `path` via the
+ * `read_attachment` tool; the chat bubble shows `filename` + `mediaType`.
+ */
+const ScratchUploadResponseSchema = z.object({
+  path: z.string(),
+  filename: z.string(),
+  mediaType: z.string(),
+  size: z.number(),
+});
+
+export type ScratchUploadResult = z.infer<typeof ScratchUploadResponseSchema>;
+
+/**
+ * Upload a file to the per-chat scratch dir on the daemon's filesystem.
+ * Returns the absolute path the daemon wrote — the agent reads from there
+ * via `read_attachment(path)`. No artifact storage, no library entry.
+ *
+ * `chatId` and `workspaceId` are required (the route rejects without them).
+ * Use {@link uploadFile} instead for the HITL elicitation flow that wants
+ * a first-class artifact in the library.
+ */
+export function uploadFileToScratch(
+  file: File,
+  opts: {
+    chatId: string;
+    workspaceId: string;
+    onProgress?: (loaded: number) => void;
+    abortSignal?: AbortSignal;
+  },
+): Promise<ScratchUploadResult | { error: string }> {
+  const validation = validateFile(file);
+  if (!validation.valid) {
+    return Promise.resolve({ error: validation.error });
+  }
+
+  const formData = new FormData();
+  formData.set("file", file);
+  const query = new URLSearchParams({ chatId: opts.chatId, workspaceId: opts.workspaceId });
+
+  return new Promise((resolve) => {
+    const xhr = new XMLHttpRequest();
+
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable && opts.onProgress) opts.onProgress(event.loaded);
+    };
+
+    xhr.onload = () => {
+      let body: unknown;
+      try {
+        body = JSON.parse(xhr.responseText) as unknown;
+      } catch {
+        resolve({
+          error:
+            xhr.status >= 200 && xhr.status < 300
+              ? "Invalid response from server"
+              : `Upload failed (${xhr.status})`,
+        });
+        return;
+      }
+      if (xhr.status >= 200 && xhr.status < 300) {
+        const parsed = ScratchUploadResponseSchema.safeParse(body);
+        if (parsed.success) {
+          resolve(parsed.data);
+        } else {
+          resolve({ error: "Invalid response from server" });
+        }
+      } else {
+        resolve({ error: extractError(body, `Upload failed (${xhr.status})`) });
+      }
+    };
+
+    xhr.onerror = () => resolve({ error: "Network error — is the daemon running?" });
+    xhr.onabort = () => resolve({ error: "Upload cancelled" });
+
+    if (opts.abortSignal) {
+      opts.abortSignal.addEventListener("abort", () => xhr.abort(), { once: true });
+    }
+
+    xhr.open("POST", `/api/daemon/api/scratch/upload?${query.toString()}`);
     xhr.send(formData);
   });
 }

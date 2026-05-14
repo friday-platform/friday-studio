@@ -25,7 +25,6 @@
  *     --json-output /tmp/oauth-refresh-report.json
  */
 
-import { ensureDir } from "jsr:@std/fs@1.0.13/ensure-dir";
 import { dirname, join } from "jsr:@std/path@1";
 import { refreshDelegatedTokenClassified } from "../../../../apps/link/src/oauth/delegated.ts";
 import type { OAuthConfig } from "../../../../apps/link/src/providers/types.ts";
@@ -271,7 +270,7 @@ async function main() {
   if (writeResult || jsonOutputPath) {
     const outPath =
       jsonOutputPath ?? join(HARNESS_PATHS.resultsDir, `${sha}-oauth-refresh-transient.json`);
-    await ensureDir(dirname(outPath));
+    await Deno.mkdir(dirname(outPath), { recursive: true });
     await Deno.writeTextFile(outPath, JSON.stringify(report, null, 2));
     console.log(`\n→ ${outPath}`);
   }

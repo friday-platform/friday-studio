@@ -29,7 +29,6 @@
  * loader depends on — without flaky LLM behavior.
  */
 
-import { ensureDir } from "jsr:@std/fs@1.0.13/ensure-dir";
 import { dirname, join } from "jsr:@std/path@1";
 import {
   currentGitSha,
@@ -326,7 +325,7 @@ async function main() {
   const report = { gitSha: sha, startedAt, passed, failed, results };
   if (writeResult || jsonOutputPath) {
     const outPath = jsonOutputPath ?? join(HARNESS_PATHS.resultsDir, `${sha}-table-outcomes.json`);
-    await ensureDir(dirname(outPath));
+    await Deno.mkdir(dirname(outPath), { recursive: true });
     await Deno.writeTextFile(outPath, JSON.stringify(report, null, 2));
     console.log(`\n→ ${outPath}`);
   }

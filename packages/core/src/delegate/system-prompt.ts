@@ -1,10 +1,14 @@
 /**
  * Pure string-building helpers for the delegate sub-agent's system
- * prompt. Kept in their own module — with zero imports — so QA evals
- * can `import { ... } from "@atlas/core/delegate/system-prompt"` without
- * pulling in the runtime delegate machinery (streamText, MCP, etc.) and
- * its transitive dependency graph.
+ * prompt. Kept dependency-light so QA evals can import without
+ * pulling the runtime delegate machinery (streamText, MCP, etc.).
+ * The honesty-directives import is the only cross-module reference;
+ * it's a pure string export with zero runtime deps of its own.
  */
+import {
+  AGENT_HONESTY_DIRECTIVE,
+  DESTRUCTIVE_TOOL_GUARD,
+} from "../agent-context/honesty-directives.ts";
 
 /**
  * Tool priority + scope discipline directive injected into every
@@ -41,3 +45,20 @@ export function buildDelegateScopeDirective(mcpServers: readonly string[] | unde
  * translate the upstream error.
  */
 export const DELEGATE_MCP_ERROR_CONTRACT = `MCP tool errors: when a tool returns \`{ ok: false, error, phase }\`, call \`finish({ ok: false, reason: error })\` immediately, copying \`error\` byte-for-byte into \`reason\`. The supervisor parses \`reason\` to choose user-facing language — do not paraphrase, translate, compress, or substitute an alternative tool path. If the primary MCP path fails, "the path failed: <error>" IS the answer.`;
+
+/**
+ * Universal honesty + destructive-tool guard for the delegate
+ * sub-agent. Re-exports the shared blocks from agent-context so
+ * `delegate/index.ts` can splice them into the child's system prompt
+ * alongside `buildDelegateScopeDirective` and
+ * `DELEGATE_MCP_ERROR_CONTRACT`. Layer A covers output-prose
+ * fabrication; Layer B covers tool-argument fabrication on
+ * write/send/create/modify/delete tools — relevant for delegate
+ * children that act on behalf of the parent (gmail send, slack
+ * post, github create_issue, etc.). When the parent is workspace-
+ * chat (no `request_human_input` in the inherited tool surface),
+ * the guard's "otherwise return ok:false with a reason" clause
+ * fires; when the parent is an FSM action (request_human_input
+ * inherited), the elicitation clause fires.
+ */
+export const DELEGATE_HONESTY_BLOCK = `${AGENT_HONESTY_DIRECTIVE}\n\n${DESTRUCTIVE_TOOL_GUARD}`;

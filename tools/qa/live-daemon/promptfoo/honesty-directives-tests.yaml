@@ -1,0 +1,23 @@
+- description: shared honesty-directives module exports both blocks with sentinels
+  vars:
+    scenarioId: honesty-directives-module-exists
+
+- description: workspace-chat prompt carries the destructive-tool guard inlined
+  vars:
+    scenarioId: workspace-chat-prompt-has-destructive-tool-guard
+
+- description: from-llm.ts case agent → llm runner imports + injects both directives
+  vars:
+    scenarioId: from-llm-injects-both-directives
+
+- description: fsm-engine.ts case llm inline action imports + injects both directives
+  vars:
+    scenarioId: fsm-engine-injects-both-directives
+
+- description: delegate sub-agent system prompt includes both directives alongside scope + MCP-error
+  vars:
+    scenarioId: delegate-system-prompt-injects-both-directives
+
+- description: session-supervisor injects Layer A only (no tools → no guard)
+  vars:
+    scenarioId: session-supervisor-injects-honesty-only

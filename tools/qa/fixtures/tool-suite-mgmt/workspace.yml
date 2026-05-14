@@ -43,8 +43,6 @@ jobs:
     config:
       timeout: "1m"
       max_steps: 1
-    validation:
-      default: "skip"
     fsm:
       initial: done
       states:

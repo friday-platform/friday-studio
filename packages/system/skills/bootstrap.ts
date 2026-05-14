@@ -67,7 +67,11 @@ async function findSkillDirs(root: string): Promise<string[]> {
 
 /**
  * Provision every bundled skill in `packages/system/skills/`. Safe to
- * call repeatedly — republishes only on content-hash mismatch.
+ * call repeatedly — republishes only on content-hash mismatch. After
+ * the publish pass, runs {@link tombstoneOrphans} to disable any
+ * `@friday/*` skill in the registry that no longer has a source dir
+ * on disk (the publish pass is additive — it can't unpublish a skill
+ * that was deleted between daemon restarts).
  */
 export async function ensureSystemSkills(): Promise<void> {
   const root = __dirname;
@@ -77,9 +81,11 @@ export async function ensureSystemSkills(): Promise<void> {
     return;
   }
 
+  const liveNames = new Set<string>();
   for (const dir of dirs) {
     try {
-      await publishOne(dir);
+      const name = await publishOne(dir);
+      if (name) liveNames.add(name);
     } catch (err) {
       logger.error("failed to bootstrap system skill", {
         dir,
@@ -87,15 +93,63 @@ export async function ensureSystemSkills(): Promise<void> {
       });
     }
   }
+
+  await tombstoneOrphans(liveNames);
 }
 
-async function publishOne(dir: string): Promise<void> {
+/**
+ * Disable any `@friday/*` skill in the registry whose source dir is
+ * no longer on disk. The publish pass writes new versions when sources
+ * change but never tombstones a skill whose dir was deleted between
+ * daemon restarts — so a skill removed in commit X stays in the registry
+ * (and stays visible to `resolveVisibleSkills`) on every daemon that
+ * bootstrapped it before the deletion. Disabling the orphan rather than
+ * hard-deleting preserves version history; downstream readers
+ * (`resolveVisibleSkills` and friends) already skip disabled rows.
+ */
+async function tombstoneOrphans(liveNames: Set<string>): Promise<void> {
+  // `includeAll: true` surfaces disabled rows so we can avoid a
+  // re-disable churn write on skills already tombstoned.
+  const listed = await SkillStorage.list(SYSTEM_SKILL_NAMESPACE, undefined, true);
+  if (!listed.ok) {
+    logger.warn("orphan-tombstone scan: list failed", { error: listed.error });
+    return;
+  }
+  for (const summary of listed.data) {
+    if (summary.name === null) continue;
+    if (liveNames.has(summary.name)) continue;
+    if (summary.disabled) continue;
+    const result = await SkillStorage.setDisabled(summary.skillId, true);
+    if (!result.ok) {
+      logger.warn("orphan-tombstone setDisabled failed", {
+        name: `@${SYSTEM_SKILL_NAMESPACE}/${summary.name}`,
+        skillId: summary.skillId,
+        error: result.error,
+      });
+      continue;
+    }
+    logger.info("tombstoned orphan system skill", {
+      name: `@${SYSTEM_SKILL_NAMESPACE}/${summary.name}`,
+      skillId: summary.skillId,
+    });
+  }
+}
+
+/**
+ * Returns the resolved skill `name` (frontmatter or dir-fallback) on
+ * success so the caller can build the live-names set for the
+ * tombstone pass. Returns `null` on parse / publish failure — the
+ * skill won't be republished AND won't be tombstoned (it stays
+ * whatever it was), preserving the previous behavior on transient
+ * errors.
+ */
+async function publishOne(dir: string): Promise<string | null> {
   const skillMdPath = join(dir, "SKILL.md");
   const content = await readFile(skillMdPath, "utf-8");
   const parsed = parseSkillMd(content);
   if (!parsed.ok) {
     logger.error("failed to parse bundled SKILL.md", { dir, error: parsed.error });
-    return;
+    return null;
   }
   const { frontmatter, instructions } = parsed.data;
 
@@ -109,12 +163,33 @@ async function publishOne(dir: string): Promise<void> {
   const sourceHash = await computeSkillHash(dir);
 
   // Shortcut: if the stored version already has this hash, don't touch.
+  // EXCEPT: if the stored row is disabled (a previous boot tombstoned
+  // it as an orphan), the source dir has clearly come back since the
+  // tombstone — re-enable it before short-circuiting. Without this,
+  // a deleted-then-restored skill stays invisible to
+  // `resolveVisibleSkills` despite being on disk.
   const existing = await SkillStorage.get(SYSTEM_SKILL_NAMESPACE, name);
   if (existing.ok && existing.data) {
     const storedHash = existing.data.frontmatter["source-hash"];
     if (typeof storedHash === "string" && storedHash === sourceHash) {
-      logger.debug("bundled skill up to date", { name, hash: sourceHash.slice(0, 12) });
-      return;
+      if (existing.data.disabled) {
+        const reEnable = await SkillStorage.setDisabled(existing.data.skillId, false);
+        if (!reEnable.ok) {
+          logger.warn("resurrection re-enable failed", {
+            name,
+            skillId: existing.data.skillId,
+            error: reEnable.error,
+          });
+        } else {
+          logger.info("re-enabled previously-tombstoned skill", {
+            name: `@${SYSTEM_SKILL_NAMESPACE}/${name}`,
+            skillId: existing.data.skillId,
+          });
+        }
+      } else {
+        logger.debug("bundled skill up to date", { name, hash: sourceHash.slice(0, 12) });
+      }
+      return name;
     }
   }
 
@@ -131,13 +206,14 @@ async function publishOne(dir: string): Promise<void> {
 
   if (!result.ok) {
     logger.error("publish failed", { name, error: result.error });
-    return;
+    return null;
   }
   logger.info("bootstrapped system skill", {
     name: `@${SYSTEM_SKILL_NAMESPACE}/${name}`,
     version: result.data.version,
     hash: sourceHash.slice(0, 12),
   });
+  return name;
 }
 
 async function hasSupportFiles(dir: string): Promise<boolean> {
