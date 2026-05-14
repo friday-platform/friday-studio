@@ -89,6 +89,9 @@ describe("createDisableMcpServerTool", () => {
     expect(mockDelete).toHaveBeenCalledWith(
       expect.objectContaining({ param: { serverId: "github" }, query: { force: "true" } }),
     );
+    // The force path cascades reference-stripping across agents/jobs —
+    // the cache must drop on this branch too, not just non-force disable.
+    expect(mockInvalidateBlock2).toHaveBeenCalledWith("ws-1");
   });
 
   it("passes force=false without query param", async () => {
