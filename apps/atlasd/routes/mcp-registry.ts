@@ -17,6 +17,7 @@ import { getMCPRegistryAdapter } from "@atlas/core/mcp-registry/storage";
 import {
   type DynamicApiKeyProviderInput,
   type DynamicOAuthProviderInput,
+  type SecretFieldDescriptor,
   translate,
 } from "@atlas/core/mcp-registry/translator";
 import {
@@ -676,10 +677,15 @@ export const mcpRegistryRouter = daemonFactory
         ...(entry.configTemplate.env ?? {}),
       };
       const requiredConfig = [...(entry.requiredConfig ?? [])];
-      const secretSchema: Record<string, "string"> = {};
+      const secretSchema: Record<string, SecretFieldDescriptor> = {};
       for (const cred of credentials) {
         env[cred.name] = { from: "link", provider: id, key: cred.name };
-        secretSchema[cred.name] = "string";
+        secretSchema[cred.name] = {
+          type: "string",
+          isRequired: cred.isRequired,
+          isSecret: false,
+          ...(cred.description ? { description: cred.description } : {}),
+        };
         if (cred.isRequired) {
           requiredConfig.push({
             key: cred.name,
@@ -785,10 +791,15 @@ export const mcpRegistryRouter = daemonFactory
 
       if (envVars.length > 0) {
         const env: Record<string, string | LinkCredentialRef> = {};
-        const secretSchema: Record<string, "string"> = {};
+        const secretSchema: Record<string, SecretFieldDescriptor> = {};
         for (const ev of envVars) {
           env[ev.key] = { from: "link", provider: id, key: ev.key };
-          secretSchema[ev.key] = "string";
+          secretSchema[ev.key] = {
+            type: "string",
+            isRequired: true,
+            isSecret: false,
+            ...(ev.description ? { description: ev.description } : {}),
+          };
           requiredConfig.push({
             key: ev.key,
             description: ev.description ?? `Credential: ${ev.key}`,

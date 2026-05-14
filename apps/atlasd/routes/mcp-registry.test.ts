@@ -1779,12 +1779,27 @@ describe("MCP Registry Routes", () => {
           provider: z.object({
             type: z.literal("apikey"),
             id: z.string(),
-            secretSchema: z.record(z.string(), z.literal("string")),
+            secretSchema: z.record(
+              z.string(),
+              z.object({
+                type: z.literal("string"),
+                isRequired: z.boolean().optional(),
+                isSecret: z.boolean().optional(),
+                description: z.string().optional(),
+              }),
+            ),
           }),
         })
         .parse(JSON.parse(init.body));
       expect(requestBody.provider.id).toBe(body.server.id);
-      expect(requestBody.provider.secretSchema).toEqual({ API_KEY: "string" });
+      expect(requestBody.provider.secretSchema).toEqual({
+        API_KEY: {
+          type: "string",
+          isRequired: true,
+          isSecret: false,
+          description: "API key",
+        },
+      });
 
       fetchSpy.mockRestore();
     });

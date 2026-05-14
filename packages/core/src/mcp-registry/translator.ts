@@ -22,7 +22,7 @@ import type { UpstreamServerEntry } from "./upstream-client.ts";
  * form can render required-vs-optional and secret-vs-plaintext correctly, plus
  * an optional `description` for label text.
  */
-type SecretFieldDescriptor = {
+export type SecretFieldDescriptor = {
   type: "string";
   isRequired?: boolean;
   isSecret?: boolean;
