@@ -150,6 +150,11 @@
     display: flex;
     flex-direction: column;
     gap: var(--size-4);
+    /* ListDetail's aside is full-bleed at the block-end (no padding) so
+       the chat consumer's overlay footer can sit flush; tree-style
+       sidebars add their own bottom gutter so the last item isn't
+       jammed against the edge when the list scrolls. */
+    padding-block-end: var(--size-4);
   }
 
   /* ─── Search field ─────────────────────────────────────────────────────── */

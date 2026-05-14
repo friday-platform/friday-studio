@@ -37,6 +37,10 @@
      */
     chatId: string;
     onsubmit: (message: string, attachments: ChatAttachment[]) => void;
+    /** Attached images/files. Bindable so drop targets outside this component
+     * (e.g. the whole chat surface) can push files into the same preview
+     * strip the file-picker uses, instead of rendering a parallel one. */
+    attachments?: ChatAttachment[];
     /** True while the assistant is producing a response. Swaps the send slot
      * for a stop button; users press Enter to send when idle. */
     streaming?: boolean;
@@ -51,10 +55,11 @@
     onttsToggle?: () => void;
   }
 
-  const {
+  let {
     workspaceId,
     chatId,
     onsubmit,
+    attachments = $bindable([]),
     streaming = false,
     stopping = false,
     onstop,
@@ -63,7 +68,6 @@
   }: Props = $props();
 
   let value = $state("");
-  let attachments: ChatAttachment[] = $state([]);
   let dragOver = $state(false);
   let fileInput: HTMLInputElement | undefined = $state();
   let textareaEl: HTMLTextAreaElement | undefined = $state();

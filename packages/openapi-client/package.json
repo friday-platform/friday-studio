@@ -4,7 +4,11 @@
   "type": "module",
   "main": "./mod.ts",
   "exports": { ".": "./mod.ts" },
-  "scripts": { "generate": "deno run -A scripts/build.ts" },
+  "scripts": { "generate": "deno run -A scripts/build.ts", "test": "vitest run" },
   "dependencies": { "openapi-fetch": "^0.17.0" },
-  "devDependencies": { "hono-openapi": "^1.3.0", "openapi-typescript": "^7.13.0" }
+  "devDependencies": {
+    "hono-openapi": "^1.3.0",
+    "openapi-typescript": "^7.13.0",
+    "vitest": "^4.1.0"
+  }
 }

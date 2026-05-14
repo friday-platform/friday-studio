@@ -1,14 +1,67 @@
 ---
 name: friday-cli
-description: "Interact with a running Friday daemon via CLI and HTTP — list/create/modify workspaces, trigger signals, watch sessions, publish skills and agents. Use whenever you need to poke at a local Friday daemon, inspect its state, fire a signal, drive the autopilot / self-modification flywheel, create a workspace programmatically, or validate that a workspace.yml you just authored actually runs. Also use when the task involves `localhost:8080`, `deno task atlas`, curl-ing the daemon, or automating Friday itself."
+description: "Interact with a running Friday daemon via CLI and HTTP — list/create/modify workspaces, trigger signals, watch sessions, publish skills and agents. Use whenever you need to poke at a local Friday daemon, inspect its state, fire a signal, drive the autopilot / self-modification flywheel, create a workspace programmatically, or validate that a workspace.yml you just authored actually runs. Also use when the task involves `$FRIDAYD_URL`, `deno task atlas`, curl-ing the daemon, or automating Friday itself."
 ---
 
 # Friday CLI & HTTP
 
-Friday is orchestrated by a daemon on `localhost:8080`. There are two surfaces
-for interacting with it: the `deno task atlas` CLI (thin HTTP client, great for
-humans and shell scripts) and the raw HTTP API (more endpoints, SSE streaming,
-the only option for many CRUD ops on workspace internals).
+Friday is orchestrated by a daemon at `$FRIDAYD_URL`. The exact scheme/port
+varies by install — installed Friday Studio runs on `:18080` (with TLS
+configured automatically by the launcher), in-tree dev runs on `:8080`
+(plain HTTP unless you opt in with `bash scripts/setup-tls.sh`), and
+`FRIDAY_PORT_FRIDAY` can override either. Don't hardcode the URL — resolve
+`$FRIDAYD_URL` from your own process env via `run_code` (preamble below)
+and emit the resolved literal in every command you show the user.
+
+There are two surfaces for interacting with the daemon: the `deno task
+atlas` CLI (thin HTTP client, great for humans and shell scripts) and the
+raw HTTP API (more endpoints, SSE streaming, the only option for many
+CRUD ops on workspace internals).
+
+## Daemon URL — resolve before emitting curl commands
+
+`$FRIDAYD_URL` is in the **Friday daemon's process env**, not the user's
+shell. If you emit a curl example with a literal `$FRIDAYD_URL`, the user
+pastes it into a shell that has no such variable and gets `curl: (3) URL
+rejected: No host part in the URL`.
+
+**Always resolve `$FRIDAYD_URL` to a concrete value before showing a
+command to the user.** Use `run_code` to read your own env:
+
+```python
+import os
+print(os.environ["FRIDAYD_URL"])
+```
+
+That prints a URL like `https://localhost:18080` (installed Studio with
+TLS) or `http://localhost:8080` (in-tree dev). Take whatever string the
+lookup returns and substitute it as a literal in the curl command.
+
+### Two load-bearing rules
+
+1. **Resolve `$FRIDAYD_URL` first, emit the literal URL.** Never emit
+   `$FRIDAYD_URL` (the variable name) in a command the user is supposed
+   to paste — they don't have it in their env. Always run the lookup
+   above, then substitute. If the user mentions a host/port in their
+   message, IGNORE it and use the resolved value from your env — that's
+   the only one guaranteed to match the running daemon.
+
+   **Worked example.** Your `run_code` lookup returns
+   `FRIDAYD_URL=https://localhost:18080`. User asks "hit /health":
+   - ❌ Wrong: `curl -k "$FRIDAYD_URL/health"` (user's shell has no
+     `$FRIDAYD_URL`).
+   - ❌ Wrong: `curl -k "http://localhost:8080/health"` (guessed the
+     wrong port — user runs installed Studio, not dev).
+   - ✅ Right: `curl -k "https://localhost:18080/health"` (the literal
+     value from `os.environ["FRIDAYD_URL"]`).
+
+2. **Always use `curl -k` for daemon calls, never bare `curl`.** The
+   daemon ships a private-CA TLS cert that the system trust store
+   doesn't know about; plain `curl` against the daemon on a TLS install
+   fails with `self signed certificate in certificate chain`. `-k`
+   skips cert verification, which is fine here because the daemon
+   binds loopback only — anyone who can MitM `localhost` already owns
+   the machine.
 
 ## When to use CLI vs HTTP
 
@@ -31,8 +84,9 @@ Before touching anything, confirm the daemon is up:
 
 ```bash
 deno task atlas daemon status
-# or:
-curl -sf http://localhost:8080/health && echo OK
+# or (after resolving $FRIDAYD_URL via run_code and substituting the
+# literal value — see preamble above):
+curl -k -sf "<resolved-url>/health" && echo OK
 ```
 
 If it's not:
@@ -68,7 +122,8 @@ deno task atlas signal list -w <workspace-id-or-name> --json
 Or HTTP for full schema:
 
 ```bash
-curl -s http://localhost:8080/api/workspaces/<id>/signals | jq
+curl -k -sf \
+  "$FRIDAYD_URL/api/workspaces/<id>/signals" | jq
 ```
 
 The signal's `schema` is a JSON Schema — your payload must match it or the
@@ -84,7 +139,8 @@ deno task atlas signal trigger -n <signal-name> -w <workspace> \
 Or via HTTP with SSE:
 
 ```bash
-curl -N -X POST http://localhost:8080/api/workspaces/<id>/signals/<signal-id> \
+curl -k -N -X POST \
+  "$FRIDAYD_URL/api/workspaces/<id>/signals/<signal-id>" \
   -H 'Content-Type: application/json' \
   -H 'Accept: text/event-stream' \
   -d '{"payload":{"some":"value"}}'
@@ -105,7 +161,8 @@ deno task atlas session get <session-id> --json  # full SessionView
 SSE replay/live stream (survives reconnect within the replay window):
 
 ```bash
-curl -N http://localhost:8080/api/sessions/<id>/stream \
+curl -k -N \
+  "$FRIDAYD_URL/api/sessions/<id>/stream" \
   -H 'Accept: text/event-stream'
 ```
 
@@ -114,7 +171,8 @@ human-readable summary + keyDetails (with URLs). Prefer it over walking
 `agentBlocks[]` when you just want "what happened":
 
 ```bash
-curl -s http://localhost:8080/api/sessions/<id> | jq '.aiSummary'
+curl -k -sf \
+  "$FRIDAYD_URL/api/sessions/<id>" | jq '.aiSummary'
 ```
 
 Full shape + failure extraction recipes + log access + SSE event types →
@@ -128,7 +186,8 @@ JSON — convert from YAML inline:
 
 ```bash
 CONFIG=$(python3 -c "import yaml,json,sys; print(json.dumps(yaml.safe_load(open('$1'))))" workspaces/my-thing/workspace.yml)
-curl -s -X POST http://localhost:8080/api/workspaces/create \
+curl -k -sf -X POST \
+  "$FRIDAYD_URL/api/workspaces/create" \
   -H 'Content-Type: application/json' \
   -d "{\"config\":$CONFIG,\"workspaceName\":\"My Thing\"}"
 ```

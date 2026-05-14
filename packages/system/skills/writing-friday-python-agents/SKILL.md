@@ -134,7 +134,7 @@ def execute(prompt: str, ctx: AgentContext):
 `{{env.VARIABLE}}` in MCP config references agent environment variables.
 Currently only `stdio` transport is supported.
 
-**Do not bypass `ctx.tools`.** Python agents must not call local MCP HTTP endpoints such as `http://localhost:8002/mcp`, hardcode bearer tokens, or guess provider-specific tool names. Use `ctx.tools.list()` to inspect the runtime tool surface and `ctx.tools.call(name, args)` to invoke it. Host-side tool calls are credentialed, audited, and recorded in session history; direct HTTP calls are invisible to Friday and commonly fail with unknown-tool or invalid-token errors.
+**Do not bypass `ctx.tools`.** Python agents must not call local MCP HTTP endpoints such as `http(s)://localhost:8002/mcp`, hardcode bearer tokens, or guess provider-specific tool names. Use `ctx.tools.list()` to inspect the runtime tool surface and `ctx.tools.call(name, args)` to invoke it. Host-side tool calls are credentialed, audited, and recorded in session history; direct HTTP calls are invisible to Friday and commonly fail with unknown-tool or invalid-token errors.
 
 If `ctx.tools.call` raises `ToolCallError("Unknown tool ...")`, list tools and fix the workspace/agent config rather than retrying a guessed name.
 
@@ -361,10 +361,29 @@ installed packages are fine.
 
 ### Register via the daemon HTTP API
 
+Friday's daemon URL and TLS settings live in the daemon `.env` —
+`${FRIDAY_HOME:-~/.friday/local}/.env` on installed Friday Studio (written
+by the launcher automatically) or `~/.atlas/.env` for in-tree dev (written
+by `bash scripts/setup-tls.sh`). Source whichever exists once per shell so
+the curl examples below work whether your install is on plain HTTP or
+HTTPS:
+
+```bash
+set -a
+. "${FRIDAY_HOME:-$HOME/.friday/local}/.env" 2>/dev/null \
+  || . "$HOME/.atlas/.env" 2>/dev/null || true
+set +a
+```
+
+**Rule: every daemon HTTP call below uses `curl -k`, not `curl`.**
+Plain `curl` against `$FRIDAYD_URL` on a TLS install fails with `self
+signed certificate in certificate chain`.
+
 Register your agent by POSTing the entrypoint's absolute path to the daemon:
 
 ```bash
-curl -X POST http://localhost:8080/api/agents/register \
+curl -k -sf -X POST \
+  "$FRIDAYD_URL/api/agents/register" \
   -H 'Content-Type: application/json' \
   -d '{"entrypoint": "/abs/path/to/your-agent/agent.py"}'
 ```
@@ -380,9 +399,12 @@ The register response returns `agent.path` (the install dir). To look up the
 source path of an existing agent, query `GET /api/agents/:id` and read
 `sourceLocation` rather than constructing the path from a constant.
 
-The Friday daemon listens on `localhost:8080` by default (configurable via
-the `FRIDAY_PORT` env var or the `--port` flag if you started the daemon
-manually).
+The Friday daemon's bind address is whatever the launcher (installed
+Friday Studio: typically `:18080`) or `deno task atlas daemon start`
+(in-tree dev: typically `:8080`) wrote to the daemon `.env`. Don't
+hardcode the URL — use `$FRIDAYD_URL`. The scheme switches to `https://`
+when TLS is on (automatically configured by the launcher for installed
+Studio; opt-in via `bash scripts/setup-tls.sh` for in-tree dev).
 
 ### Test directly
 
@@ -390,15 +412,17 @@ Execute an agent without going through the full FSM pipeline. Replace
 `my-agent` with your agent id (the `id=` value from the `@agent` decorator):
 
 ```bash
-curl -s -X POST "http://localhost:8080/api/agents/my-agent/run?workspaceId=user" \
+curl -k -sf -X POST \
+  "$FRIDAYD_URL/api/agents/my-agent/run?workspaceId=user" \
   -H 'Content-Type: application/json' \
   -d '{"input": "test prompt"}'
 ```
 
-Or via the playground API on `localhost:5200`:
+Or via the playground API on `localhost:5200` (HTTPS when TLS is on —
+the playground always trusts mkcert's CA via the system trust store):
 
 ```bash
-curl -s -X POST http://localhost:5200/api/agents/my-agent/run \
+curl -sf "${PLAYGROUND_URL:-http://localhost:5200}/api/agents/my-agent/run" \
   -H 'Content-Type: application/json' \
   -d '{"input": "test prompt"}'
 ```

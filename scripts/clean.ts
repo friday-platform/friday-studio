@@ -4,6 +4,7 @@ import { readdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
+import { getAtlasDaemonUrl } from "@atlas/oapi-client";
 import { isErrnoException, stringifyError } from "@atlas/utils";
 import { getFridayHome } from "@atlas/utils/paths.server";
 import { connectToNats, resolveNatsUrl } from "jetstream";
@@ -17,12 +18,16 @@ const PRESERVED_ENTRIES = new Set([".env", "bin"]);
 // OAuth credentials written by setup-secrets.sh (e.g. google_client_id, hubspot_client_secret)
 const PRESERVED_SUFFIXES = ["_client_id", "_client_secret"];
 
-const DAEMON_HEALTH_URL = "http://localhost:8080/health";
 const LOCALHOST_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
 
 async function isDaemonRunning(): Promise<boolean> {
+  // getAtlasDaemonUrl honors FRIDAYD_URL and FRIDAY_TLS_CERT so the probe
+  // hits the right scheme/port on TLS-enabled installs. Without this, a
+  // running TLS daemon looks "down" and `clean` proceeds with deletes
+  // while it's serving traffic.
+  const healthUrl = `${getAtlasDaemonUrl()}/health`;
   try {
-    const res = await fetch(DAEMON_HEALTH_URL, { signal: AbortSignal.timeout(500) });
+    const res = await fetch(healthUrl, { signal: AbortSignal.timeout(500) });
     return res.ok;
   } catch {
     return false;
@@ -48,7 +53,7 @@ function resolveEmbeddedStoreDir(): string {
 }
 
 async function clearExternalBroker(force: boolean): Promise<void> {
-  const url = resolveNatsUrl();
+  const url = await resolveNatsUrl({ home: getFridayHome() });
   if (!isLocalhostUrl(url) && !force) {
     console.error(
       `Refusing to wipe streams on non-local broker ${url}. ` +

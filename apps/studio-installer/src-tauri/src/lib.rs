@@ -9,6 +9,7 @@ use commands::{
     create_app_bundle::create_app_bundle,
     delete_partial::delete_partial,
     download::download_file,
+    download_tls::download_tls_certs,
     ensure_agent_browser_chrome::ensure_agent_browser_chrome,
     ensure_claude_code::ensure_claude_code,
     download_checkpoint::{check_download_complete, mark_download_complete},
@@ -41,6 +42,7 @@ pub fn run() {
         .manage(WaitDeadlineState::default())
         .invoke_handler(tauri::generate_handler![
             download_file,
+            download_tls_certs,
             delete_partial,
             mark_download_complete,
             check_download_complete,

@@ -23,7 +23,7 @@
   import { Button, PageLayout, toast } from "@atlas/ui";
   import ModelChain from "$lib/components/settings/model-chain.svelte";
   import ModelPicker from "$lib/components/settings/model-picker.svelte";
-  import { externalTunnelUrl } from "$lib/daemon-url";
+  import { tunnelUrl as tunnelProxyUrl } from "$lib/daemon-url";
   import { useQueryClient } from "@tanstack/svelte-query";
   import { workspaceQueries } from "$lib/queries";
   import {
@@ -172,7 +172,7 @@
     tunnelLoading = true;
     tunnelError = null;
     try {
-      const res = await fetch(`${externalTunnelUrl()}/status`);
+      const res = await fetch(`${tunnelProxyUrl()}/status`);
       if (!res.ok) {
         tunnelError = `Tunnel unreachable (HTTP ${res.status})`;
         return;
@@ -453,14 +453,6 @@
       throw new Error(`Save failed (HTTP ${putRes.status}): ${text}`);
     }
 
-    const savedTo = envPath ?? "the daemon's .env file";
-    successFlash = `Saved ${envVar} to ${savedTo}. Restart the daemon to apply.`;
-    setTimeout(() => {
-      if (successFlash && successFlash.includes(envVar)) successFlash = null;
-    }, 4000);
-
-    // Reload the catalog so the provider we just unlocked flips to
-    // credentialConfigured: true. Also pull env rows in sync.
     await Promise.all([loadCatalog(), loadEnv()]);
     return catalog;
   }
@@ -541,10 +533,8 @@
         envError = `Save failed (HTTP ${res.status}): ${text}`;
         return;
       }
-      successFlash = "Environment saved. Restart the daemon to apply.";
-      setTimeout(() => {
-        if (successFlash && successFlash.includes("Environment saved")) successFlash = null;
-      }, 4000);
+
+      await loadCatalog();
     } catch (err) {
       envError = err instanceof Error ? err.message : String(err);
     } finally {

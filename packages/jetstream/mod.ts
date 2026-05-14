@@ -43,12 +43,17 @@ export {
 } from "./src/migrations.ts";
 export { registerReconnectReset } from "./src/reconnect-registry.ts";
 export {
+  brokerUrlFilePath,
   DEFAULT_NATS_MONITOR_PORT,
   DEFAULT_NATS_PORT,
+  deleteBrokerUrlFile,
   findNatsServerBinary,
+  pickPort,
+  readBrokerUrlFile,
   type SpawnedNats,
   type SpawnNatsOptions,
   spawnNatsServer,
   tcpProbe,
+  writeBrokerUrlFile,
   writeServerConfig,
 } from "./src/spawn.ts";

@@ -270,6 +270,13 @@ pub fn ensure_platform_env_vars() -> Result<String, String> {
 /// (Welcome, launchByOpening, openPlaygroundAndExit) lands on the
 /// same URL — pre-fix, all three hardcoded :5200 and broke any
 /// install with a port override.
+///
+/// Scheme/host selection: if `<friday_home>/tls/browser.crt` exists
+/// (written by download_tls_certs), the playground origin is serving
+/// a publicly-trusted cert for `local.hellofriday.ai` — return the
+/// https URL so the browser lands on a green-lock origin matching the
+/// cert SAN. Without the cert, fall back to plain http://localhost so
+/// installs that skipped or failed the cert download still work.
 #[tauri::command]
 pub fn playground_url() -> Result<String, String> {
     let port = match fs::read_to_string(env_file_path()?) {
@@ -283,7 +290,12 @@ pub fn playground_url() -> Result<String, String> {
             .unwrap_or_else(|| "15200".to_string()),
         Err(_) => "15200".to_string(),
     };
-    Ok(format!("http://localhost:{port}"))
+    let cert = friday_home_dir()?.join("tls").join("browser.crt");
+    if cert.exists() {
+        Ok(format!("https://local.hellofriday.ai:{port}"))
+    } else {
+        Ok(format!("http://localhost:{port}"))
+    }
 }
 
 #[tauri::command]

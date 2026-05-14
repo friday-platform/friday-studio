@@ -4,7 +4,7 @@
  * from killing in-flight agent sessions.
  */
 
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
@@ -12,6 +12,13 @@ import { createKVStorage } from "@atlas/storage";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WorkspaceManager } from "./manager.ts";
 import { RegistryStorageAdapter } from "./registry-storage-adapter.ts";
+
+// Pin `getFridayHome()` to the same tempDir we register workspaces under,
+// so the manager's cross-home filter treats them as in-home. Without this
+// pin the filter defaults to `~/.atlas` and masks every tmpdir-rooted
+// workspace as cross-home.
+const homePin = vi.hoisted(() => ({ home: "/tmp/atlas-watcher-suppress-default" }));
+vi.mock("@atlas/utils/paths.server", () => ({ getFridayHome: () => homePin.home }));
 
 // ---------------------------------------------------------------------------
 // Capture the watcher onConfigChange callback
@@ -81,7 +88,11 @@ function createMockRuntime(opts: { activeSessions?: boolean; activeExecutions?: 
 // Helpers
 // ---------------------------------------------------------------------------
 async function setupManager(): Promise<{ manager: WorkspaceManager; tempDir: string }> {
-  const tempDir = await mkdtemp(join(tmpdir(), "atlas-watcher-test-"));
+  // realpath: Deno.realPath() inside registerWorkspace canonicalises the
+  // path to /private/var/...; pin the mocked home to the same canonical
+  // form so the cross-home filter doesn't mask the just-registered ws.
+  const tempDir = await realpath(await mkdtemp(join(tmpdir(), "atlas-watcher-test-")));
+  homePin.home = tempDir;
   await writeFile(
     join(tempDir, "workspace.yml"),
     'version: "1.0"\nworkspace:\n  name: watcher-test\n',

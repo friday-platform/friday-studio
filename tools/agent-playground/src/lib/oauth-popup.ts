@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { externalDaemonUrl } from "./daemon-url.ts";
+import { daemonUrl } from "./daemon-url.ts";
 
 /** Schema for OAuth callback message from popup window. */
 export const OAuthCallbackMessageSchema = z.object({
@@ -16,7 +16,7 @@ export type OAuthCallbackMessage = z.infer<typeof OAuthCallbackMessageSchema>;
  */
 export function getOAuthUrl(provider: string): string {
   const callbackUrl = new URL("/oauth/callback", globalThis.location.origin);
-  const url = new URL(`/api/link/v1/oauth/authorize/${provider}`, externalDaemonUrl());
+  const url = new URL(`${daemonUrl()}/api/link/v1/oauth/authorize/${provider}`);
   url.searchParams.set("redirect_uri", callbackUrl.href);
   return url.href;
 }
@@ -27,7 +27,7 @@ export function getOAuthUrl(provider: string): string {
  */
 export function getAppInstallUrl(provider: string): string {
   const callbackUrl = new URL("/oauth/callback", globalThis.location.origin);
-  const url = new URL(`/api/link/v1/app-install/${provider}/authorize`, externalDaemonUrl());
+  const url = new URL(`${daemonUrl()}/api/link/v1/app-install/${provider}/authorize`);
   url.searchParams.set("redirect_uri", callbackUrl.href);
   return url.href;
 }

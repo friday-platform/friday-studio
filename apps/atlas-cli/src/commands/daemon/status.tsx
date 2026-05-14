@@ -1,5 +1,6 @@
 import process from "node:process";
 import { client, parseResult } from "@atlas/client/v2";
+import { getAtlasDaemonUrl } from "@atlas/oapi-client";
 import { displayDaemonStatus } from "../../utils/daemon-status.ts";
 import { errorOutput } from "../../utils/output.ts";
 import type { YargsInstance } from "../../utils/yargs.ts";
@@ -27,15 +28,20 @@ export function builder(y: YargsInstance) {
 }
 
 export const handler = async (argv: StatusArgs): Promise<void> => {
+  // The hono client at @atlas/client/v2 is bound at module-load time to
+  // getAtlasDaemonUrl(), so the actual URL hit is driven by FRIDAYD_URL +
+  // FRIDAY_TLS_CERT — not the --port flag. Surface that URL in the
+  // failure message so a TLS-cert-verification error doesn't masquerade
+  // as "not running on port 8080".
+  const targetUrl = getAtlasDaemonUrl();
+  const port = argv.port || 8080;
   try {
-    const port = argv.port || 8080;
-
     const status = await parseResult(client.daemon.status.$get());
     if (!status.ok) {
       if (argv.json) {
-        console.log(JSON.stringify({ status: "not_running", port }, null, 2));
+        console.log(JSON.stringify({ status: "not_running", url: targetUrl, port }, null, 2));
       } else {
-        errorOutput(`Atlas daemon is not running on port ${port}`);
+        errorOutput(`Atlas daemon is not running at ${targetUrl}`);
       }
       process.exit(1);
     }
@@ -53,7 +59,8 @@ export const handler = async (argv: StatusArgs): Promise<void> => {
           {
             status: "error",
             error: error instanceof Error ? error.message : String(error),
-            port: argv.port || 8080,
+            url: targetUrl,
+            port,
           },
           null,
           2,
@@ -61,7 +68,9 @@ export const handler = async (argv: StatusArgs): Promise<void> => {
       );
     } else {
       errorOutput(
-        `Failed to check daemon status: ${error instanceof Error ? error.message : String(error)}`,
+        `Failed to check daemon status at ${targetUrl}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
       );
     }
     process.exit(1);

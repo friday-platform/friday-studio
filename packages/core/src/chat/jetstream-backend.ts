@@ -450,12 +450,20 @@ export function createJetStreamChatBackend(
   ): Promise<Result<void, string>> {
     try {
       await enqueue(`${workspaceId}/${chatId}`, async () => {
-        await validateAtlasUIMessages([message]);
+        // Persist the validator's repaired output, not the raw input. The
+        // AI SDK emits `tool-*` parts with `state: "output-error"` and
+        // `input: undefined / rawInput: …` for unbound-tool errors;
+        // `validateAtlasUIMessages` backfills `input` so the persisted
+        // bytes round-trip through the SDK schema. Writing the raw
+        // message would leave the broken shape in JetStream and force
+        // the read-side repair to carry the load forever.
+        const [validated] = await validateAtlasUIMessages([message]);
+        const repaired = validated ?? message;
         const jsm = await nc.jetstreamManager();
         const layout = await ensureChatStream(jsm, workspaceId, chatId, limits);
 
         const c = js();
-        const envelope = { message, ts: new Date().toISOString() };
+        const envelope = { message: repaired, ts: new Date().toISOString() };
         const h = natsHeaders();
         h.set("Friday-Schema-Version", SCHEMA_VERSION);
         h.set("Friday-Message-Id", message.id);

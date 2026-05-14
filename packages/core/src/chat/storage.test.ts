@@ -62,6 +62,37 @@ describe("ChatStorage (JetStream-backed)", () => {
     }
   });
 
+  it("persists tool-part input from rawInput on appendMessage", async () => {
+    const chatId = crypto.randomUUID();
+    await createTestChat(chatId);
+
+    const msg = {
+      id: crypto.randomUUID(),
+      role: "assistant",
+      parts: [
+        {
+          type: "tool-echo-job",
+          toolCallId: "toolu_persist_1",
+          state: "output-error",
+          rawInput: { hello: "world" },
+          errorText: "Model tried to call unavailable tool 'echo-job'.",
+        },
+      ],
+    } as unknown as AtlasUIMessage;
+
+    const append = await ChatStorage.appendMessage(chatId, msg);
+    expect(append.ok).toBe(true);
+
+    const get = await ChatStorage.getChat(chatId);
+    expect(get.ok && get.data?.messages.length).toBe(1);
+    if (get.ok && get.data) {
+      const part = get.data.messages[0]?.parts[0] as Record<string, unknown> | undefined;
+      expect(part?.type).toBe("tool-echo-job");
+      expect(part?.state).toBe("output-error");
+      expect(part?.input).toEqual({ hello: "world" });
+    }
+  });
+
   it("isolates messages between different chats", async () => {
     const a = crypto.randomUUID();
     const b = crypto.randomUUID();

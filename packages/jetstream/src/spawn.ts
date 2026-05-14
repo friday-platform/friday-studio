@@ -12,10 +12,10 @@
  */
 
 import { type ChildProcess, execFile, spawn } from "node:child_process";
-import { access, mkdir, writeFile } from "node:fs/promises";
-import { createConnection } from "node:net";
+import { access, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { createConnection, createServer } from "node:net";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import process from "node:process";
 import { promisify } from "node:util";
 import type { Logger } from "@atlas/logger";
@@ -25,6 +25,21 @@ const execFileAsync = promisify(execFile);
 
 export const DEFAULT_NATS_PORT = 4222;
 export const DEFAULT_NATS_MONITOR_PORT = 8222;
+
+/**
+ * Friday-reserved port range for per-home auto-allocation. Sits
+ * alongside FRIDAY_PORT_FRIDAY=18080 / FRIDAY_PORT_LINK=13100 /
+ * FRIDAY_PORT_PLAYGROUND=15200 in the 1XXXX band, outside both the
+ * standard NATS port (4222) and the OS-ephemeral zone (49152+),
+ * specifically to avoid colliding with unrelated tools binding
+ * ephemeral ports.
+ *
+ * The Go launcher mirrors these constants at
+ * `tools/friday-launcher/project.go` — keep in sync.
+ */
+const FRIDAY_NATS_PORT_BASE = 14222;
+const FRIDAY_NATS_PORT_RANGE = 10;
+
 const READY_TIMEOUT_MS = 10_000;
 const READY_POLL_MS = 100;
 
@@ -89,6 +104,12 @@ export async function writeServerConfig(opts: {
 }): Promise<void> {
   const cfg = readJetStreamConfig();
   const lines = [
+    // Pin to loopback so `pickPort`'s `127.0.0.1` try-bind probe matches
+    // the bind nats-server actually attempts. Without this nats-server
+    // defaults to `0.0.0.0:<port>`, which overlaps with `127.0.0.1` and
+    // can cause "already in use" failures when pickPort's loopback
+    // check returned "free" microseconds earlier.
+    'host: "127.0.0.1"',
     `port: ${opts.port}`,
     "jetstream {",
     `  store_dir: "${opts.storeDir}"`,
@@ -115,6 +136,114 @@ export function tcpProbe(port: number, host: string = "127.0.0.1"): Promise<bool
       resolve(false);
     });
   });
+}
+
+/**
+ * Try to bind a TCP listener on `host:port`. Returns true if the bind
+ * succeeded (port is free) and closes the listener immediately; false
+ * if the kernel rejected (EADDRINUSE / EACCES / etc).
+ */
+function tryBind(port: number, host: string = "127.0.0.1"): Promise<boolean> {
+  return new Promise((resolve) => {
+    const server = createServer();
+    server.unref();
+    server.once("error", () => resolve(false));
+    server.once("listening", () => {
+      server.close(() => resolve(true));
+    });
+    try {
+      server.listen(port, host);
+    } catch {
+      resolve(false);
+    }
+  });
+}
+
+/** Ask the kernel for any free port and return its number. */
+function pickEphemeralPort(host: string = "127.0.0.1"): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = createServer();
+    server.unref();
+    server.once("error", reject);
+    server.listen(0, host, () => {
+      const addr = server.address();
+      if (addr && typeof addr === "object") {
+        const port = addr.port;
+        server.close(() => resolve(port));
+      } else {
+        server.close(() => reject(new Error("could not resolve ephemeral port")));
+      }
+    });
+  });
+}
+
+/**
+ * Pick a free port for a Friday NATS broker. Iterates the Friday-
+ * reserved range first (`FRIDAY_NATS_PORT_BASE..+FRIDAY_NATS_PORT_RANGE-1`),
+ * then falls back to an OS-assigned ephemeral port if all slots are
+ * occupied. The reserved range avoids the kernel ephemeral zone so
+ * Friday's broker doesn't squat on a port the user expected to be
+ * available for unrelated services.
+ *
+ * Returns the port that was free at probe time. Tiny TOCTOU window
+ * between probe and the subsequent `nats-server` bind — if a sibling
+ * grabs the port in between, the broker spawn surfaces the failure
+ * via stderr and the caller can retry.
+ */
+export async function pickPort(host: string = "127.0.0.1"): Promise<number> {
+  for (let offset = 0; offset < FRIDAY_NATS_PORT_RANGE; offset++) {
+    const port = FRIDAY_NATS_PORT_BASE + offset;
+    if (await tryBind(port, host)) return port;
+  }
+  return pickEphemeralPort(host);
+}
+
+/**
+ * Resolve the path to a home's broker URL file. Callers write this
+ * after a successful spawn; consumers read it to discover the live
+ * broker without guessing a port.
+ */
+export function brokerUrlFilePath(home: string): string {
+  return join(home, "nats", "url");
+}
+
+/**
+ * Write the broker URL atomically to `<home>/nats/url`. Tmp + rename
+ * so partial writes never leave a malformed file. No trailing newline
+ * to keep cross-language parsing trivial.
+ */
+export async function writeBrokerUrlFile(home: string, url: string): Promise<void> {
+  const target = brokerUrlFilePath(home);
+  await mkdir(dirname(target), { recursive: true });
+  const tmp = `${target}.tmp`;
+  await writeFile(tmp, url, "utf-8");
+  await rename(tmp, target);
+}
+
+/**
+ * Read the broker URL from `<home>/nats/url`, or null if the file
+ * doesn't exist. Caller is responsible for probing liveness — a stale
+ * file from a crashed daemon will still be readable.
+ */
+export async function readBrokerUrlFile(home: string): Promise<string | null> {
+  try {
+    return (await readFile(brokerUrlFilePath(home), "utf-8")).trim();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Delete the broker URL file. Best-effort; missing file is fine. Call
+ * on clean shutdown so the next spawner doesn't need to TCP-probe a
+ * known-dead URL.
+ */
+export async function deleteBrokerUrlFile(home: string): Promise<void> {
+  try {
+    await unlink(brokerUrlFilePath(home));
+  } catch {
+    // ENOENT or other transient — fine.
+  }
 }
 
 /**

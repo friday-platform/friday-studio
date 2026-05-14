@@ -18,10 +18,13 @@ The platform server is instantiated by the Atlas daemon and exposed via the `/mc
 
 ```typescript
 import { PlatformMCPServer } from "@atlas/mcp-server";
+import { getAtlasDaemonUrl } from "@atlas/oapi-client";
 
-// Create platform server (typically done in atlasd)
+// Create platform server (typically done in atlasd).
+// getAtlasDaemonUrl() auto-resolves scheme/port from FRIDAYD_URL +
+// FRIDAY_TLS_CERT so this works on plain-HTTP and TLS-enabled installs.
 const platformServer = new PlatformMCPServer({
-  daemonUrl: "http://localhost:8080", // Daemon API endpoint
+  daemonUrl: getAtlasDaemonUrl(),
   logger: logger, // Logger instance
 });
 

@@ -941,7 +941,7 @@ describe("createMCPTools", () => {
       );
     });
 
-    it("falls back to ${HOME}/.atlas when FRIDAY_HOME is unset", async () => {
+    it("falls back to ${HOME}/.friday/local when FRIDAY_HOME is unset", async () => {
       const originalHome = process.env.HOME;
       const originalAtlasHome = process.env.FRIDAY_HOME;
       process.env.HOME = "/Users/test";
@@ -966,7 +966,7 @@ describe("createMCPTools", () => {
 
         expect(MockStdioTransport).toHaveBeenCalledWith(
           expect.objectContaining({
-            args: ["mcp-server-sqlite", "--db-path", "/Users/test/.atlas/kb.sqlite"],
+            args: ["mcp-server-sqlite", "--db-path", "/Users/test/.friday/local/kb.sqlite"],
           }),
         );
       } finally {
