@@ -583,16 +583,25 @@ export async function scrubAssistantMessage(
   // `load_skill` skill body streamed from a delegate child) can only be
   // recognized by correlating it with the earlier `tool-input-*` chunk
   // that did carry the name.
+  //
+  // Keyed by `<delegateToolCallId>:<toolCallId>` — inner toolCallIds are
+  // only guaranteed unique within a single delegate's stream, so two
+  // sibling delegates could otherwise collide on the bare id.
   const delegateToolNames = new Map<string, string>();
   for (const part of parts) {
     if (part.type !== "data-delegate-chunk") continue;
     const data = part.data;
     if (!data || typeof data !== "object") continue;
-    const chunk = (data as Record<string, unknown>).chunk;
+    const d = data as Record<string, unknown>;
+    const chunk = d.chunk;
     if (!chunk || typeof chunk !== "object") continue;
     const c = chunk as Record<string, unknown>;
-    if (typeof c.toolCallId === "string" && typeof c.toolName === "string") {
-      delegateToolNames.set(c.toolCallId, c.toolName);
+    if (
+      typeof d.delegateToolCallId === "string" &&
+      typeof c.toolCallId === "string" &&
+      typeof c.toolName === "string"
+    ) {
+      delegateToolNames.set(`${d.delegateToolCallId}:${c.toolCallId}`, c.toolName);
     }
   }
 
@@ -628,7 +637,7 @@ export async function scrubAssistantMessage(
       if ("chunk" in data) {
         // Skip exempt tools (e.g. load_skill) here too — the chunk's own
         // toolName is absent on output chunks, so resolve it through the
-        // toolCallId -> toolName map built above.
+        // <delegateToolCallId>:<toolCallId> map built above.
         const chunk = data.chunk;
         const chunkToolCallId =
           chunk &&
@@ -636,7 +645,12 @@ export async function scrubAssistantMessage(
           typeof (chunk as Record<string, unknown>).toolCallId === "string"
             ? ((chunk as Record<string, unknown>).toolCallId as string)
             : undefined;
-        const chunkToolName = chunkToolCallId ? delegateToolNames.get(chunkToolCallId) : undefined;
+        const delegateToolCallId =
+          typeof data.delegateToolCallId === "string" ? data.delegateToolCallId : undefined;
+        const chunkToolName =
+          chunkToolCallId && delegateToolCallId
+            ? delegateToolNames.get(`${delegateToolCallId}:${chunkToolCallId}`)
+            : undefined;
         if (!chunkToolName || !SCRUB_EXEMPT_TOOLS.has(chunkToolName)) {
           await scrubField(data.chunk, "pre-persist", "delegate-chunk", (next) => {
             data.chunk = next;

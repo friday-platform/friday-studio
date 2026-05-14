@@ -488,6 +488,64 @@ describe("scrubAssistantMessage (pre-persist)", () => {
       .chunk;
     expect(outChunk.output.instructions).toContain(blob);
   });
+
+  it("resolves the exemption per-delegate when sibling delegates share a toolCallId", async () => {
+    // Two sibling delegates, same inner toolCallId. The map is namespaced by
+    // delegateToolCallId, so delA's load_skill output stays inline while
+    // delB's non-exempt output is still lifted.
+    mockArtifactCreate("art_sibling", 24_000, "application/pdf");
+    const blob = bigBase64(SIZE_THRESHOLD_CHARS + 500);
+    const parts: Array<Record<string, unknown>> = [
+      {
+        type: "data-delegate-chunk",
+        data: {
+          delegateToolCallId: "delA",
+          chunk: { type: "tool-input-start", toolCallId: "tc-shared", toolName: "load_skill" },
+        },
+      },
+      {
+        type: "data-delegate-chunk",
+        data: {
+          delegateToolCallId: "delB",
+          chunk: { type: "tool-input-start", toolCallId: "tc-shared", toolName: "fetch_url" },
+        },
+      },
+      {
+        type: "data-delegate-chunk",
+        data: {
+          delegateToolCallId: "delA",
+          chunk: {
+            type: "tool-output-available",
+            toolCallId: "tc-shared",
+            output: { instructions: `# Skill\n\n${blob}` },
+          },
+        },
+      },
+      {
+        type: "data-delegate-chunk",
+        data: {
+          delegateToolCallId: "delB",
+          chunk: {
+            type: "tool-output-available",
+            toolCallId: "tc-shared",
+            output: { content: [{ type: "text", text: `prefix ${blob} suffix` }] },
+          },
+        },
+      },
+    ];
+    await scrubAssistantMessage(parts, { workspaceId: "ws", chatId: "ch", logger });
+
+    // delA (load_skill) — body untouched.
+    const skillChunk = (parts[2] as { data: { chunk: { output: { instructions: string } } } }).data
+      .chunk;
+    expect(skillChunk.output.instructions).toContain(blob);
+    // delB (fetch_url, not exempt) — blob lifted to an artifact marker.
+    const fetchChunk = (
+      parts[3] as { data: { chunk: { output: { content: Array<{ text: string }> } } } }
+    ).data.chunk;
+    expect(fetchChunk.output.content[0]?.text).toMatch(/artifact art_sibling/);
+    expect(fetchChunk.output.content[0]?.text).not.toContain(blob);
+  });
 });
 
 describe("liftAnswerForModel (pre-model answer lift)", () => {
