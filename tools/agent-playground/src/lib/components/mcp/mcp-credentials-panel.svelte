@@ -18,6 +18,7 @@
   import { browser } from "$app/environment";
   import { writable } from "svelte/store";
   import {
+    useCreateApiKeyCredential,
     useDeleteCredential,
     useUpdateCredentialSecret,
   } from "../../queries/link-credentials.ts";
@@ -95,6 +96,7 @@
   const queryClient = useQueryClient();
   const deleteMutation = useDeleteCredential();
   const updateMutation = useUpdateCredentialSecret();
+  const createMutation = useCreateApiKeyCredential();
 
   // ─── Credential connect instances per provider ─────────────────────────────
 
@@ -186,10 +188,14 @@
 
   function handleAddNewSubmit(label: string, secret: Record<string, string>) {
     if (!addingProvider) return;
-    const connect = getConnect(addingProvider);
-    connect.submitApiKey(label, secret).then(() => {
-      addingProvider = null;
-    });
+    createMutation.mutate(
+      { provider: addingProvider, label, secret },
+      {
+        onSuccess: () => {
+          addingProvider = null;
+        },
+      },
+    );
   }
 </script>
 
@@ -269,15 +275,15 @@
               {#if details?.type === "apikey" && details?.secretSchema}
                 <CredentialSecretForm
                   secretSchema={details.secretSchema}
-                  submitting={connect.submitting}
-                  error={connect.error}
+                  submitting={createMutation.isPending}
+                  error={createMutation.error?.message ?? null}
                   onSubmit={handleAddNewSubmit}
                 />
                 <Button
                   variant="secondary"
                   size="small"
                   onclick={handleAddNewCancel}
-                  disabled={connect.submitting}
+                  disabled={createMutation.isPending}
                 >
                   Cancel
                 </Button>

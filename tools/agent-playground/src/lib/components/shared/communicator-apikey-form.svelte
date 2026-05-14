@@ -3,7 +3,7 @@
   communicator (slack/telegram/discord/teams/whatsapp) via apikey.
 
   Encapsulates the kind→provider-details fetch, the chained
-  `submitApiKey` → `useConnectCommunicator()` mutation, and the
+  create-credential → `useConnectCommunicator()` wire mutation, and the
   loading/error/missing-schema states. Field rendering itself stays
   in `CredentialSecretForm`, driven by Link's secretSchema.
 
@@ -19,8 +19,8 @@
   import { createQuery } from "@tanstack/svelte-query";
   import CredentialSecretForm from "$lib/components/credential-secret-form.svelte";
   import { useConnectCommunicator } from "$lib/queries";
+  import { useCreateApiKeyCredential } from "$lib/queries/link-credentials.ts";
   import { linkProviderQueries } from "$lib/queries/link-provider-queries.ts";
-  import { useCredentialConnect } from "$lib/use-credential-connect.svelte.ts";
 
   type CommunicatorKind = "slack" | "telegram" | "discord" | "teams" | "whatsapp";
 
@@ -34,22 +34,26 @@
   let { workspaceId, kind, onConnected, onCancel }: Props = $props();
 
   const detailsQuery = createQuery(() => linkProviderQueries.providerDetails(kind));
-  const connect = useCredentialConnect(() => kind);
+  const createMutation = useCreateApiKeyCredential();
   const connectMut = useConnectCommunicator();
 
   let wireError = $state<string | null>(null);
 
-  async function handleSubmit(label: string, secret: Record<string, string>) {
+  function handleSubmit(label: string, secret: Record<string, string>) {
     wireError = null;
-    const credentialId = await connect.submitApiKey(label, secret);
-    if (!credentialId) return;
-
-    connectMut.mutate(
-      { workspaceId, kind, credentialId },
+    createMutation.mutate(
+      { provider: kind, label, secret },
       {
-        onSuccess: () => onConnected?.(),
-        onError: (err) => {
-          wireError = err.message;
+        onSuccess: (credentialId) => {
+          connectMut.mutate(
+            { workspaceId, kind, credentialId },
+            {
+              onSuccess: () => onConnected?.(),
+              onError: (err) => {
+                wireError = err.message;
+              },
+            },
+          );
         },
       },
     );
@@ -73,8 +77,8 @@
 {:else}
   <CredentialSecretForm
     secretSchema={detailsQuery.data.secretSchema}
-    submitting={connect.submitting || connectMut.isPending}
-    error={wireError ?? connect.error}
+    submitting={createMutation.isPending || connectMut.isPending}
+    error={wireError ?? createMutation.error?.message ?? null}
     onSubmit={handleSubmit}
     onCancel={onCancel}
   />

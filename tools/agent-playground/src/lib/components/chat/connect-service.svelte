@@ -12,6 +12,7 @@
   import { Button, MarkdownRendered, markdownToHTMLSafe } from "@atlas/ui";
   import { browser } from "$app/environment";
   import { useCredentialConnect } from "$lib/use-credential-connect.svelte.ts";
+  import { useCreateApiKeyCredential } from "$lib/queries/link-credentials.ts";
   import CredentialSecretForm from "$lib/components/credential-secret-form.svelte";
   import { z } from "zod";
 
@@ -59,6 +60,7 @@
   let apiKeyExpanded = $state(false);
 
   const connect = useCredentialConnect(() => provider);
+  const createMutation = useCreateApiKeyCredential();
 
   // ─── Fetch provider details ──────────────────────────────────────────────────
 
@@ -110,12 +112,16 @@
 
   // ─── Handlers ──────────────────────────────────────────────────────────────
 
-  async function handleApiKeySubmit(label: string, secret: Record<string, string>) {
-    await connect.submitApiKey(label, secret);
-    if (!connect.error) {
-      connected = true;
-      onConnected?.();
-    }
+  function handleApiKeySubmit(label: string, secret: Record<string, string>) {
+    createMutation.mutate(
+      { provider, label, secret },
+      {
+        onSuccess: () => {
+          connected = true;
+          onConnected?.();
+        },
+      },
+    );
   }
 </script>
 
@@ -189,8 +195,8 @@
       {:else}
         <CredentialSecretForm
           secretSchema={details.secretSchema ?? {}}
-          submitting={connect.submitting}
-          error={connect.error}
+          submitting={createMutation.isPending}
+          error={createMutation.error?.message ?? null}
           onSubmit={handleApiKeySubmit}
           onCancel={() => (apiKeyExpanded = false)}
         />

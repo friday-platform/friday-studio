@@ -1,7 +1,7 @@
 /**
  * Mutation hooks for Link credential operations.
  *
- * Wraps DELETE and PATCH endpoints and invalidates credential queries
+ * Wraps PUT, DELETE, and PATCH endpoints and invalidates credential queries
  * on success so panels stay fresh after any mutation.
  *
  * @module
@@ -28,9 +28,58 @@ const CredentialSummarySchema = z.object({
   status: z.enum(["ready", "expired", "unknown"]).optional(),
 });
 
+const ApiKeyCreateResponseSchema = z.object({ id: z.string().min(1) });
+
+/**
+ * Tolerant parser for Link error responses. Link emits `{ message }` for
+ * validation failures and `{ error }` for handler-level errors; older
+ * routes mix the two. `message` wins when both are present.
+ */
+const ErrorBodySchema = z.object({
+  message: z.string().optional(),
+  error: z.string().optional(),
+});
+
+/** Pull a user-facing message from a failed response, or fall back to status. */
+async function readErrorMessage(res: Response, fallback: string): Promise<string> {
+  const raw: unknown = await res.json().catch(() => ({}));
+  const parsed = ErrorBodySchema.safeParse(raw);
+  return parsed.success ? parsed.data.message ?? parsed.data.error ?? fallback : fallback;
+}
+
 // ==============================================================================
 // MUTATION HOOKS
 // ==============================================================================
+
+/**
+ * Mutation for creating a new API-key credential.
+ * Wraps `PUT /api/link/v1/credentials/apikey` via the SvelteKit proxy.
+ * Invalidates credential summary queries on success.
+ */
+export function useCreateApiKeyCredential() {
+  const queryClient = useQueryClient();
+
+  return createMutation(() => ({
+    mutationFn: async (
+      input: { provider: string; label: string; secret: Record<string, string> },
+    ) => {
+      const res = await fetch(`/api/daemon/api/link/v1/credentials/apikey`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      });
+
+      if (!res.ok) {
+        throw new Error(await readErrorMessage(res, `Create failed: ${res.status}`));
+      }
+
+      return ApiKeyCreateResponseSchema.parse(await res.json()).id;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: linkProviderQueries.all() });
+    },
+  }));
+}
 
 /**
  * Mutation for deleting a credential.
@@ -46,15 +95,7 @@ export function useDeleteCredential() {
         method: "DELETE",
       });
       if (!res.ok) {
-        const body: unknown = await res.json().catch(() => ({}));
-        const msg =
-          typeof body === "object" &&
-            body !== null &&
-            "error" in body &&
-            typeof (body as { error: unknown }).error === "string"
-            ? (body as { error: string }).error
-            : `Delete failed: ${res.status}`;
-        throw new Error(msg);
+        throw new Error(await readErrorMessage(res, `Delete failed: ${res.status}`));
       }
     },
     onSuccess: () => {
@@ -83,20 +124,7 @@ export function useUpdateCredentialSecret() {
       );
 
       if (!res.ok) {
-        const body: unknown = await res.json().catch(() => ({}));
-        const msg =
-          typeof body === "object" &&
-            body !== null &&
-            "message" in body &&
-            typeof (body as { message: unknown }).message === "string"
-            ? (body as { message: string }).message
-            : typeof body === "object" &&
-                body !== null &&
-                "error" in body &&
-                typeof (body as { error: unknown }).error === "string"
-            ? (body as { error: string }).error
-            : `Update failed: ${res.status}`;
-        throw new Error(msg);
+        throw new Error(await readErrorMessage(res, `Update failed: ${res.status}`));
       }
 
       return CredentialSummarySchema.parse(await res.json());

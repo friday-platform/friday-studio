@@ -1,8 +1,10 @@
 /**
  * Reactive credential connection primitives.
  *
- * Encapsulates OAuth popup management, app-install popup, API-key PUT submission,
- * callback listener lifecycle, and fallback redirect URL computation.
+ * Encapsulates OAuth popup management, app-install popup, callback listener
+ * lifecycle, and fallback redirect URL computation. API-key submission lives
+ * separately in `queries/link-credentials.ts` (`useCreateApiKeyCredential`)
+ * so it shares the tanstack-query invalidation pattern with delete/update.
  *
  * Both chat connect-service cards and MCP detail panels consume this rune.
  * Each call returns an isolated state instance.
@@ -10,7 +12,6 @@
  * @module
  */
 
-import { z } from "zod";
 import {
   getAppInstallUrl,
   getOAuthUrl,
@@ -20,18 +21,9 @@ import {
   startOAuthFlow,
 } from "./oauth-popup.ts";
 
-/**
- * Subset of the `PUT /v1/credentials/apikey` response we rely on. Link
- * returns more fields (`label`, `displayName`); we only parse the id since
- * that is the only thing downstream wiring needs.
- */
-const ApiKeyCreateResponseSchema = z.object({ id: z.string().min(1) });
-
 interface CredentialConnectState {
   popupBlocked: boolean;
   blockedUrl: string | null;
-  submitting: boolean;
-  error: string | null;
 }
 
 type ProviderIdInput = string | (() => string);
@@ -52,8 +44,6 @@ export function useCredentialConnect(providerId: ProviderIdInput) {
   let state: CredentialConnectState = $state({
     popupBlocked: false,
     blockedUrl: null,
-    submitting: false,
-    error: null,
   });
 
   let cleanup: (() => void) | undefined;
@@ -61,7 +51,6 @@ export function useCredentialConnect(providerId: ProviderIdInput) {
   function reset() {
     state.popupBlocked = false;
     state.blockedUrl = null;
-    state.error = null;
   }
 
   function startOAuth() {
@@ -96,57 +85,6 @@ export function useCredentialConnect(providerId: ProviderIdInput) {
     };
   }
 
-  /**
-   * PUT /v1/credentials/apikey — creates an apikey credential under the
-   * current provider. Returns the new credential id on success, `null` on
-   * failure (with `state.error` set so the caller can surface it).
-   */
-  async function submitApiKey(
-    label: string,
-    secret: Record<string, string>,
-  ): Promise<string | null> {
-    state.submitting = true;
-    state.error = null;
-
-    try {
-      const res = await fetch(
-        `/api/daemon/api/link/v1/credentials/apikey`,
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ provider: readProviderId(providerId), label, secret }),
-        },
-      );
-
-      if (!res.ok) {
-        const body: unknown = await res.json().catch(() => ({}));
-        const msg =
-          typeof body === "object" &&
-            body !== null &&
-            "message" in body &&
-            typeof (body as { message: unknown }).message === "string"
-            ? (body as { message: string }).message
-            : `HTTP ${res.status}`;
-        state.error = msg;
-        return null;
-      }
-
-      const parsed = ApiKeyCreateResponseSchema.safeParse(await res.json());
-      if (!parsed.success) {
-        state.error = "Malformed response from credentials/apikey";
-        return null;
-      }
-
-      reset();
-      return parsed.data.id;
-    } catch (e) {
-      state.error = e instanceof Error ? e.message : String(e);
-      return null;
-    } finally {
-      state.submitting = false;
-    }
-  }
-
   return {
     get popupBlocked() {
       return state.popupBlocked;
@@ -154,15 +92,8 @@ export function useCredentialConnect(providerId: ProviderIdInput) {
     get blockedUrl() {
       return state.blockedUrl;
     },
-    get submitting() {
-      return state.submitting;
-    },
-    get error() {
-      return state.error;
-    },
     startOAuth,
     startAppInstall,
     listenForCallback,
-    submitApiKey,
   };
 }
