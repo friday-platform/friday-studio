@@ -159,6 +159,7 @@ export function validateMCPEnvironmentForWorkspace(
         `  - this workspace's .env — ${workspaceEnvPath} (created on first write)\n` +
         `  - the daemon's .env — ${join(getFridayHome(), ".env")}\n` +
         `  - the daemon's process environment`,
+      missingVars,
     );
   }
 }
