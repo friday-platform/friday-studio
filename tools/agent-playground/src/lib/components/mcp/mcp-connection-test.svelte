@@ -41,15 +41,15 @@
   function phaseColor(phase: string | undefined): string {
     switch (phase) {
       case "dns":
-        return "var(--color-warning)";
+        return "var(--yellow-primary)";
       case "connect":
-        return "var(--color-error)";
+        return "var(--red-primary)";
       case "auth":
-        return "var(--color-warning)";
+        return "var(--yellow-primary)";
       case "tools":
-        return "var(--color-info)";
+        return "var(--blue-primary)";
       default:
-        return "var(--color-info)";
+        return "var(--blue-primary)";
     }
   }
 
@@ -131,7 +131,7 @@
 
   .loading-state {
     align-items: center;
-    color: color-mix(in srgb, var(--color-text), transparent 25%);
+    color: color-mix(in srgb, var(--text), transparent 25%);
     display: flex;
     font-size: var(--font-size-2);
     gap: var(--size-2);
@@ -140,8 +140,8 @@
   .spinner {
     animation: spin 1s linear infinite;
     block-size: 16px;
-    border: 2px solid color-mix(in srgb, var(--color-text), transparent 80%);
-    border-block-start-color: var(--color-accent);
+    border: 2px solid color-mix(in srgb, var(--text), transparent 80%);
+    border-block-start-color: var(--purple-primary);
     border-radius: 50%;
     display: inline-block;
     inline-size: 16px;
@@ -155,8 +155,8 @@
 
   .success-state {
     align-items: flex-start;
-    background: color-mix(in srgb, var(--color-success), transparent 92%);
-    border: 1px solid color-mix(in srgb, var(--color-success), transparent 70%);
+    background: color-mix(in srgb, var(--green-primary), transparent 92%);
+    border: 1px solid color-mix(in srgb, var(--green-primary), transparent 70%);
     border-radius: var(--radius-2);
     display: flex;
     gap: var(--size-2);
@@ -164,7 +164,7 @@
   }
 
   .success-icon {
-    color: var(--color-success);
+    color: var(--green-primary);
     flex-shrink: 0;
   }
 
@@ -175,7 +175,7 @@
   }
 
   .success-title {
-    color: var(--color-success);
+    color: var(--green-primary);
     font-size: var(--font-size-2);
     font-weight: var(--font-weight-5);
   }
@@ -196,7 +196,7 @@
   }
 
   .tool-name {
-    background: var(--color-surface-2);
+    background: var(--surface);
     border-radius: var(--radius-1);
     font-family: var(--font-family-monospace);
     font-size: var(--font-size-1);
@@ -204,14 +204,14 @@
   }
 
   .tool-desc {
-    color: color-mix(in srgb, var(--color-text), transparent 20%);
+    color: color-mix(in srgb, var(--text), transparent 20%);
     font-size: var(--font-size-2);
   }
 
   .error-state {
     align-items: flex-start;
-    background: color-mix(in srgb, var(--color-error), transparent 92%);
-    border: 1px solid color-mix(in srgb, var(--color-error), transparent 70%);
+    background: color-mix(in srgb, var(--red-primary), transparent 92%);
+    border: 1px solid color-mix(in srgb, var(--red-primary), transparent 70%);
     border-radius: var(--radius-2);
     display: flex;
     gap: var(--size-2);
@@ -219,7 +219,7 @@
   }
 
   .error-icon {
-    color: var(--color-error);
+    color: var(--red-primary);
     flex-shrink: 0;
   }
 
@@ -235,7 +235,7 @@
   }
 
   .error-detail {
-    color: color-mix(in srgb, var(--color-text), transparent 15%);
+    color: color-mix(in srgb, var(--text), transparent 15%);
     font-size: var(--font-size-2);
   }
 </style>

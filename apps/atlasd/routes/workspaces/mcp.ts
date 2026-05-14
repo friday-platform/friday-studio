@@ -170,6 +170,12 @@ const handleEnableMCPServer = async (c: import("hono").Context<AppVariables>) =>
       );
     }
 
+    // An `unknown`-verdict entry installed but the doctor couldn't enumerate
+    // its config — it must be manually configured before it can run.
+    if (candidate.metadata.doctor_report?.verdict === "unknown") {
+      return c.json({ success: false, error: "needs_manual_config", serverId }, 409);
+    }
+
     const mutationFn = (cfg: WorkspaceConfig) =>
       enableMCPServer(cfg, serverId, candidate.metadata.configTemplate as MCPServerConfig);
 

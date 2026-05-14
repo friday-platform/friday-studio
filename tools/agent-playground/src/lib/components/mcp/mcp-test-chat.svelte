@@ -195,8 +195,8 @@
   }
 
   .assistant-bubble {
-    background: var(--color-surface-2);
-    border: 1px solid var(--color-border-1);
+    background: var(--surface);
+    border: 1px solid var(--border);
     border-radius: var(--radius-3);
     display: flex;
     flex-direction: column;
@@ -205,7 +205,7 @@
   }
 
   .role-badge {
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--text), transparent 40%);
     font-size: var(--font-size-1);
     font-weight: var(--font-weight-5);
     letter-spacing: 0.04em;
@@ -213,7 +213,7 @@
   }
 
   .assistant-text {
-    color: var(--color-text);
+    color: var(--text);
     font-size: var(--font-size-2);
     line-height: 1.55;
     white-space: pre-wrap;
@@ -228,8 +228,8 @@
 
   .tool-call-row {
     align-items: center;
-    background: var(--color-surface-1);
-    border: 1px solid var(--color-border-1);
+    background: var(--surface-dark);
+    border: 1px solid var(--border);
     border-radius: var(--radius-2);
     display: flex;
     font-size: var(--font-size-1);
@@ -245,14 +245,14 @@
 
   .tool-call-status {
     align-items: center;
-    color: var(--color-success);
+    color: var(--green-primary);
     display: inline-flex;
     gap: 4px;
   }
 
   .chat-error {
     align-items: center;
-    color: var(--color-error);
+    color: var(--red-primary);
     display: flex;
     font-size: var(--font-size-2);
     gap: var(--size-1);
@@ -260,7 +260,7 @@
 
   .thinking-indicator {
     align-items: center;
-    color: color-mix(in srgb, var(--color-text), transparent 30%);
+    color: color-mix(in srgb, var(--text), transparent 30%);
     display: flex;
     font-style: italic;
     gap: var(--size-2);
@@ -269,8 +269,8 @@
   .spinner {
     animation: spin 1s linear infinite;
     block-size: 14px;
-    border: 2px solid color-mix(in srgb, var(--color-text), transparent 80%);
-    border-block-start-color: var(--color-accent);
+    border: 2px solid color-mix(in srgb, var(--text), transparent 80%);
+    border-block-start-color: var(--purple-primary);
     border-radius: 50%;
     display: inline-block;
     inline-size: 14px;

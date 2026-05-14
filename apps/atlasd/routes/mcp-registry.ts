@@ -1,28 +1,35 @@
 import process from "node:process";
 import type { LinkCredentialRef, MCPServerConfig } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
+import { getAnnotation, isOfficialCanonicalName } from "@atlas/core/mcp-registry/annotations";
 import { buildBearerAuthConfig } from "@atlas/core/mcp-registry/auth-config";
 import { discoverMCPServers, type LinkSummary } from "@atlas/core/mcp-registry/discovery";
-import {
-  getOfficialOverride,
-  isOfficialCanonicalName,
-} from "@atlas/core/mcp-registry/official-servers";
+import { runDoctor } from "@atlas/core/mcp-registry/doctor";
 import { fetchReadme } from "@atlas/core/mcp-registry/readme-fetcher";
 import { mcpServersRegistry } from "@atlas/core/mcp-registry/registry-consolidated";
-import { type MCPServerMetadata, MCPServerMetadataSchema } from "@atlas/core/mcp-registry/schemas";
+import {
+  type DoctorReport,
+  type MCPServerMetadata,
+  MCPServerMetadataSchema,
+} from "@atlas/core/mcp-registry/schemas";
 import { getMCPRegistryAdapter } from "@atlas/core/mcp-registry/storage";
 import {
   type DynamicApiKeyProviderInput,
   type DynamicOAuthProviderInput,
   translate,
 } from "@atlas/core/mcp-registry/translator";
-import { MCPUpstreamClient } from "@atlas/core/mcp-registry/upstream-client";
+import {
+  MCPUpstreamClient,
+  type UpstreamServerEntry,
+} from "@atlas/core/mcp-registry/upstream-client";
+import type { PlatformModels } from "@atlas/llm";
 import { createLogger } from "@atlas/logger";
 import { createMCPTools } from "@atlas/mcp";
 import { zValidator } from "@hono/zod-validator";
 import { stepCountIs, streamText } from "ai";
 import { z } from "zod";
 import { daemonFactory } from "../src/factory.ts";
+import { sseResponse } from "../src/lib/sse.ts";
 import { requireWorkspaceMember } from "../src/workspace-authz.ts";
 import {
   classifyProbeError,
@@ -183,6 +190,209 @@ function createUpstreamClient(): MCPUpstreamClient {
   return new MCPUpstreamClient();
 }
 
+/** README size cap — keeps the entry under Deno KV's 64 KB atomic-write limit. */
+const MAX_README_BYTES = 30_000;
+
+function truncateReadme(readme: string): string {
+  return readme.length > MAX_README_BYTES
+    ? `${readme.slice(0, MAX_README_BYTES)}\n\n[README truncated for storage]`
+    : readme;
+}
+
+/**
+ * Derive a GitHub repo URL from an `io.github.OWNER/REPO` canonical name. Many
+ * registry entries omit the `repository` field, but the canonical name encodes
+ * the repo for GitHub-hosted servers — enough to still fetch the README.
+ */
+function githubUrlFromCanonicalName(canonicalName: string): string | undefined {
+  const match = canonicalName.match(/^io\.github\.([^/]+)\/(.+)$/);
+  return match ? `https://github.com/${match[1]}/${match[2]}` : undefined;
+}
+
+/**
+ * Whether the translator can actually install this upstream entry. An allowlist
+ * of the transports the translator supports — npm/PyPI stdio packages, or a
+ * streamable-http remote — so search never surfaces a server (OCI, SSE-only,
+ * etc.) that would dead-end on a "not supported" error at install.
+ */
+function isInstallableEntry(entry: UpstreamServerEntry): boolean {
+  const { server } = entry;
+  const hasStdioPackage = (server.packages ?? []).some(
+    (p) => (p.registryType === "npm" || p.registryType === "pypi") && p.transport.type === "stdio",
+  );
+  const hasHttpRemote = (server.remotes ?? []).some((r) => r.type === "streamable-http");
+  return hasStdioPackage || hasHttpRemote;
+}
+
+/** Shared `:id` path-param schema for registry server routes. */
+const IdParamSchema = z.object({
+  id: z
+    .string()
+    .regex(/^[a-z0-9-]+$/)
+    .max(64),
+});
+
+/** Body for `POST /install/commit/:id` — the user-confirmed env var list. */
+const CommitSchema = z.object({
+  env_vars: z
+    .array(
+      z.object({
+        name: z.string().min(1),
+        description: z.string().optional(),
+        isRequired: z.boolean(),
+        isSecret: z.boolean(),
+        default: z.string().optional(),
+      }),
+    )
+    .min(1),
+});
+
+/** Body for `POST /manual-config/:id` — credentials vs. plain settings, split by the user. */
+const ManualConfigSchema = z.object({
+  credentials: z
+    .array(
+      z.object({
+        name: z.string().min(1),
+        description: z.string().optional(),
+        isRequired: z.boolean(),
+      }),
+    )
+    .default([]),
+  settings: z
+    .array(
+      z.object({
+        name: z.string().min(1),
+        description: z.string().optional(),
+        default: z.string().optional(),
+      }),
+    )
+    .default([]),
+});
+
+/** A typed event in a doctor's background run, streamed to detail-page subscribers. */
+type DoctorProgressEvent =
+  | { type: "phase"; phase: "fetching-readme" | "prompting-llm" | "validating" }
+  | { type: "result"; report: DoctorReport };
+
+/**
+ * In-process pub/sub bridging a doctor's background task to its SSE stream.
+ * Every event is buffered and replayed in full to each new subscriber, so a
+ * client that joins partway through the run still sees the whole sequence
+ * (phase events aren't re-sent live). A subscriber that joins after the
+ * channel is dropped replays from the persisted entry instead.
+ */
+const doctorProgress = (() => {
+  interface Channel {
+    listeners: Set<(e: DoctorProgressEvent) => void>;
+    buffer: DoctorProgressEvent[];
+    done: boolean;
+  }
+  const channels = new Map<string, Channel>();
+  function channelFor(serverId: string): Channel {
+    let ch = channels.get(serverId);
+    if (!ch) {
+      ch = { listeners: new Set(), buffer: [], done: false };
+      channels.set(serverId, ch);
+    }
+    return ch;
+  }
+  return {
+    emit(serverId: string, event: DoctorProgressEvent): void {
+      const ch = channelFor(serverId);
+      ch.buffer.push(event);
+      for (const listener of ch.listeners) listener(event);
+      if (event.type === "result") {
+        ch.done = true;
+        ch.listeners.clear();
+        // The persisted entry is the source of truth for any later reload —
+        // drop the channel shortly after the terminal event.
+        setTimeout(() => channels.delete(serverId), 30_000);
+      }
+    },
+    subscribe(serverId: string, listener: (e: DoctorProgressEvent) => void): () => void {
+      const ch = channelFor(serverId);
+      // Replay everything emitted so far, then follow live events if the run
+      // hasn't already finished.
+      for (const event of ch.buffer) listener(event);
+      if (!ch.done) ch.listeners.add(listener);
+      return () => {
+        ch.listeners.delete(listener);
+      };
+    },
+  };
+})();
+
+/** In-flight doctor background tasks, tracked so tests can await them. */
+const inFlightDoctorTasks = new Set<Promise<void>>();
+
+/** Test seam — await all in-flight doctor background tasks. */
+export async function _flushDoctorTasksForTest(): Promise<void> {
+  await Promise.allSettled(Array.from(inFlightDoctorTasks));
+}
+
+/**
+ * Run the doctor for an undeclared-env install, off the request path. Emits
+ * phase events to the progress hub, persists the terminal status + report,
+ * then emits the result. Never throws — a failure persists `ready` with an
+ * `unknown` report, matching the in-process `runDoctor` contract.
+ */
+function runDoctorInBackground(
+  serverId: string,
+  upstreamEntry: UpstreamServerEntry,
+  platformModels: PlatformModels,
+): void {
+  const task = (async () => {
+    try {
+      doctorProgress.emit(serverId, { type: "phase", phase: "fetching-readme" });
+      const repoUrl =
+        upstreamEntry.server.repository?.url ??
+        githubUrlFromCanonicalName(upstreamEntry.server.name);
+      const subfolder = upstreamEntry.server.repository?.subfolder;
+      let readme: string | null = null;
+      if (repoUrl) {
+        try {
+          readme = await fetchReadme(repoUrl, subfolder);
+        } catch {
+          logger.debug("doctor readme fetch failed, continuing without", { serverId, repoUrl });
+        }
+      }
+      const adapter = await getMCPRegistryAdapter();
+      if (readme) await adapter.update(serverId, { readme: truncateReadme(readme) });
+
+      doctorProgress.emit(serverId, { type: "phase", phase: "prompting-llm" });
+      const report = await runDoctor({ registryEntry: upstreamEntry, readme, platformModels });
+
+      doctorProgress.emit(serverId, { type: "phase", phase: "validating" });
+      const status = report.verdict === "attention" ? "awaiting_confirm" : "ready";
+      await adapter.update(serverId, { status, doctor_report: report });
+
+      doctorProgress.emit(serverId, { type: "result", report });
+    } catch (error) {
+      // runDoctor itself never throws, but the README fetch or adapter writes
+      // can. Collapse to the same terminal contract.
+      const detail = error instanceof Error ? error.message : String(error);
+      logger.error("doctor background task failed", { serverId, error: detail });
+      const report: DoctorReport = {
+        verdict: "unknown",
+        tldr: "The setup doctor could not complete.",
+        findings: [{ severity: "error", title: "Doctor task failed", detail }],
+      };
+      try {
+        const adapter = await getMCPRegistryAdapter();
+        await adapter.update(serverId, { status: "ready", doctor_report: report });
+      } catch (persistError) {
+        logger.error("doctor background task could not persist failure", {
+          serverId,
+          error: persistError,
+        });
+      }
+      doctorProgress.emit(serverId, { type: "result", report });
+    }
+  })();
+  inFlightDoctorTasks.add(task);
+  void task.finally(() => inFlightDoctorTasks.delete(task));
+}
+
 export const mcpRegistryRouter = daemonFactory
   .createApp()
   .post("/", zValidator("json", CreateEntrySchema), async (c) => {
@@ -237,17 +447,19 @@ export const mcpRegistryRouter = daemonFactory
       const installedCanonicalNames = new Set(
         dynamicServers
           .filter((s) => s.upstream?.canonicalName)
-          .map((s) => s.upstream!.canonicalName),
+          .map((s) => s.upstream?.canonicalName),
       );
 
-      const servers = searchResult.servers.map((entry) => {
-        const official = getOfficialOverride(entry.server.name);
+      // Only surface servers the translator can actually install.
+      const servers = searchResult.servers.filter(isInstallableEntry).map((entry) => {
+        const annotation = getAnnotation(entry.server.name);
         return {
           name: entry.server.name,
-          displayName: official?.displayName,
+          displayName: annotation?.displayName,
           description: entry.server.description,
           vendor: entry.server.name.split("/")[0] ?? entry.server.name,
           version: entry.server.version,
+          updatedAt: entry._meta["io.modelcontextprotocol.registry/official"].updatedAt,
           alreadyInstalled: installedCanonicalNames.has(entry.server.name),
           isOfficial: isOfficialCanonicalName(entry.server.name),
           repositoryUrl: entry.server.repository?.url ?? null,
@@ -260,104 +472,249 @@ export const mcpRegistryRouter = daemonFactory
       return c.json({ error: "Search failed" }, 502);
     }
   })
-  .post("/install", zValidator("json", InstallRequestSchema), async (c) => {
+  .post("/install/preflight", zValidator("json", InstallRequestSchema), async (c) => {
     const { registryName } = c.req.valid("json");
     const client = createUpstreamClient();
     const adapter = await getMCPRegistryAdapter();
 
+    let upstreamEntry: UpstreamServerEntry;
     try {
-      // Fetch latest version from upstream
-      const upstreamEntry = await client.fetchLatest(registryName);
-
-      // Translate to MCPServerMetadata
-      const translateResult = translate(upstreamEntry);
-      if (!translateResult.success) {
-        return c.json({ error: translateResult.reason }, 400);
-      }
-
-      const entry = translateResult.entry;
-
-      // Check blessed collision
-      if (mcpServersRegistry.servers[entry.id]) {
-        return c.json(
-          { error: `Server ID "${entry.id}" collides with blessed registry entry "${entry.id}".` },
-          409,
-        );
-      }
-
-      // Check if already installed (dynamic collision)
-      const existingDynamic = await adapter.get(entry.id);
-      if (existingDynamic) {
-        return c.json(
-          {
-            error: `Server "${entry.id}" (canonical: "${entry.upstream?.canonicalName}") is already installed from registry.`,
-            existingId: entry.id,
-          },
-          409,
-        );
-      }
-
-      // Check for same canonical name already installed under different ID
-      const dynamicServers = await adapter.list();
-      const existingByCanonical = dynamicServers.find(
-        (s) => s.upstream?.canonicalName === entry.upstream?.canonicalName,
-      );
-      if (existingByCanonical) {
-        return c.json(
-          {
-            error: `Server with canonical name "${entry.upstream?.canonicalName}" is already installed as "${existingByCanonical.id}".`,
-            existingId: existingByCanonical.id,
-          },
-          409,
-        );
-      }
-
-      // Fetch README from the upstream repository (best-effort, non-blocking on failure).
-      // Truncate to 30 KB to stay within Deno KV's 64 KB atomic-write limit.
-      const repoUrl = upstreamEntry.server.repository?.url;
-      const subfolder = upstreamEntry.server.repository?.subfolder;
-      if (repoUrl) {
-        try {
-          const readme = await fetchReadme(repoUrl, subfolder);
-          if (readme) {
-            const MAX_README_BYTES = 30_000;
-            if (readme.length > MAX_README_BYTES) {
-              logger.debug("readme truncated for storage", {
-                registryName,
-                originalLength: readme.length,
-                truncatedTo: MAX_README_BYTES,
-              });
-              entry.readme =
-                readme.slice(0, MAX_README_BYTES) + "\n\n[README truncated for storage]";
-            } else {
-              entry.readme = readme;
-            }
-          }
-        } catch {
-          logger.debug("readme fetch failed, continuing without", { registryName, repoUrl });
-        }
-      }
-
-      // Persist the entry
-      await adapter.add(entry);
-      prewarmTools(entry.id, entry.configTemplate, logger);
-
-      let warning: string | undefined;
-
-      if (translateResult.linkProvider) {
-        warning = await createLinkProvider(translateResult.linkProvider);
-      }
-
-      const response = warning ? { server: entry, warning } : { server: entry };
-      return c.json(response, 201);
+      upstreamEntry = await client.fetchLatest(registryName);
     } catch (error) {
-      logger.error("install failed", { error, registryName });
+      logger.error("preflight fetch failed", { error, registryName });
       if (error instanceof Error && error.message.includes("not found")) {
         return c.json({ error: `Server "${registryName}" not found in registry.` }, 404);
       }
       return c.json({ error: "Install failed" }, 502);
     }
+
+    const translateResult = translate(upstreamEntry);
+    if (!translateResult.success) {
+      return c.json({ error: translateResult.reason }, 400);
+    }
+    const entry = translateResult.entry;
+
+    // Collision checks — blessed, dynamic-by-id, dynamic-by-canonical.
+    if (mcpServersRegistry.servers[entry.id]) {
+      return c.json(
+        { error: `Server ID "${entry.id}" collides with blessed registry entry "${entry.id}".` },
+        409,
+      );
+    }
+    if (await adapter.get(entry.id)) {
+      return c.json(
+        {
+          error: `Server "${entry.id}" (canonical: "${entry.upstream?.canonicalName}") is already installed from registry.`,
+          existingId: entry.id,
+        },
+        409,
+      );
+    }
+    const dynamicServers = await adapter.list();
+    const existingByCanonical = dynamicServers.find(
+      (s) => s.upstream?.canonicalName === entry.upstream?.canonicalName,
+    );
+    if (existingByCanonical) {
+      return c.json(
+        {
+          error: `Server with canonical name "${entry.upstream?.canonicalName}" is already installed as "${existingByCanonical.id}".`,
+          existingId: existingByCanonical.id,
+        },
+        409,
+      );
+    }
+
+    // Fast path vs. doctor path. The doctor only runs for a *bare* entry — one
+    // where the registry declared no env vars and translation synthesized no
+    // Link provider either (e.g. an HTTP-remote OAuth server). When the
+    // registry told us what the server needs, or translation did, install
+    // finishes inline with no LLM call.
+    const hasDeclaredEnvs =
+      upstreamEntry.server.packages?.some((p) => (p.environmentVariables?.length ?? 0) > 0) ??
+      false;
+    const needsDoctor = !hasDeclaredEnvs && !translateResult.linkProvider;
+
+    if (!needsDoctor) {
+      // Fast path — no LLM call. Fetch the README synchronously, persist ready.
+      const repoUrl =
+        upstreamEntry.server.repository?.url ??
+        githubUrlFromCanonicalName(upstreamEntry.server.name);
+      const subfolder = upstreamEntry.server.repository?.subfolder;
+      if (repoUrl) {
+        try {
+          const readme = await fetchReadme(repoUrl, subfolder);
+          if (readme) entry.readme = truncateReadme(readme);
+        } catch {
+          logger.debug("readme fetch failed, continuing without", { registryName, repoUrl });
+        }
+      }
+      entry.status = "ready";
+      await adapter.add(entry);
+      prewarmTools(entry.id, entry.configTemplate, logger);
+
+      let warning: string | undefined;
+      if (translateResult.linkProvider) {
+        warning = await createLinkProvider(translateResult.linkProvider);
+      }
+      return c.json(
+        { server_id: entry.id, status: "ready" as const, ...(warning ? { warning } : {}) },
+        201,
+      );
+    }
+
+    // Doctor path — persist `setting_up`, run the doctor off the request path.
+    entry.status = "setting_up";
+    await adapter.add(entry);
+    const ctx = c.get("app");
+    runDoctorInBackground(entry.id, upstreamEntry, ctx.platformModels);
+    return c.json({ server_id: entry.id, status: "setting_up" as const }, 201);
   })
+  .post(
+    "/install/commit/:id",
+    zValidator("param", IdParamSchema),
+    zValidator("json", CommitSchema),
+    async (c) => {
+      const { id } = c.req.valid("param");
+      const { env_vars } = c.req.valid("json");
+      const adapter = await getMCPRegistryAdapter();
+
+      const entry = await adapter.get(id);
+      if (!entry) {
+        return c.json({ error: "Server not found" }, 404);
+      }
+      if (entry.status !== "awaiting_confirm") {
+        return c.json(
+          {
+            error: `Server "${id}" is not awaiting confirmation (status: ${entry.status ?? "ready"}).`,
+          },
+          409,
+        );
+      }
+      if (!entry.upstream?.canonicalName) {
+        return c.json({ error: "Server has no upstream provenance." }, 400);
+      }
+
+      // Re-fetch upstream and translate with the user-confirmed env vars — the
+      // commit checkpoint is the only safe window to build the write-once Link
+      // provider schema.
+      const client = createUpstreamClient();
+      let upstreamEntry: UpstreamServerEntry;
+      try {
+        upstreamEntry = await client.fetchLatest(entry.upstream.canonicalName);
+      } catch (error) {
+        logger.error("commit fetch failed", { error, id });
+        return c.json({ error: "Commit failed: could not re-fetch the registry entry." }, 502);
+      }
+
+      const translateResult = translate(upstreamEntry, { extraEnvVars: env_vars });
+      if (!translateResult.success) {
+        return c.json({ error: translateResult.reason }, 400);
+      }
+
+      let warning: string | undefined;
+      if (translateResult.linkProvider) {
+        warning = await createLinkProvider(translateResult.linkProvider);
+      }
+
+      const updated = await adapter.update(id, {
+        configTemplate: translateResult.entry.configTemplate,
+        status: "ready",
+        ...(translateResult.entry.requiredConfig
+          ? { requiredConfig: translateResult.entry.requiredConfig }
+          : {}),
+      });
+      if (!updated) {
+        return c.json({ error: "Server was modified concurrently." }, 409);
+      }
+
+      invalidateCache(id);
+      prewarmTools(id, updated.configTemplate, logger);
+      return c.json(
+        { server_id: id, status: "ready" as const, ...(warning ? { warning } : {}) },
+        200,
+      );
+    },
+  )
+  .post("/install/cancel/:id", zValidator("param", IdParamSchema), async (c) => {
+    const { id } = c.req.valid("param");
+    if (mcpServersRegistry.servers[id]) {
+      return c.json({ error: `Built-in server "${id}" cannot be cancelled.` }, 403);
+    }
+    const adapter = await getMCPRegistryAdapter();
+    if (!(await adapter.get(id))) {
+      return c.json({ error: "Server not found" }, 404);
+    }
+    await adapter.delete(id);
+    invalidateCache(id);
+    return new Response(null, { status: 204 });
+  })
+  .post(
+    "/manual-config/:id",
+    zValidator("param", IdParamSchema),
+    zValidator("json", ManualConfigSchema),
+    async (c) => {
+      const { id } = c.req.valid("param");
+      const { credentials, settings } = c.req.valid("json");
+      const adapter = await getMCPRegistryAdapter();
+
+      const entry = await adapter.get(id);
+      if (!entry) {
+        return c.json({ error: "Server not found" }, 404);
+      }
+      // The doctor must have finished, and an `attention` entry's Link provider
+      // is frozen — additive schema changes there need uninstall + re-add.
+      if (entry.status === "setting_up") {
+        return c.json({ error: "Server is still being analyzed." }, 409);
+      }
+      if (entry.doctor_report?.verdict === "attention") {
+        return c.json({ error: "link_provider_frozen" }, 409);
+      }
+
+      // Credentials → Link provider fields + Link refs; settings → plain strings.
+      const env: Record<string, string | LinkCredentialRef> = {
+        ...(entry.configTemplate.env ?? {}),
+      };
+      const requiredConfig = [...(entry.requiredConfig ?? [])];
+      const secretSchema: Record<string, "string"> = {};
+      for (const cred of credentials) {
+        env[cred.name] = { from: "link", provider: id, key: cred.name };
+        secretSchema[cred.name] = "string";
+        if (cred.isRequired) {
+          requiredConfig.push({
+            key: cred.name,
+            description: cred.description ?? cred.name,
+            type: "string",
+          });
+        }
+      }
+      for (const setting of settings) {
+        env[setting.name] = setting.default ?? "";
+      }
+
+      let warning: string | undefined;
+      if (credentials.length > 0) {
+        warning = await createLinkProvider({
+          type: "apikey",
+          id,
+          displayName: entry.name,
+          description: entry.description ?? entry.name,
+          secretSchema,
+        });
+      }
+
+      const updated = await adapter.update(id, {
+        configTemplate: { ...entry.configTemplate, env },
+        ...(requiredConfig.length > 0 ? { requiredConfig } : {}),
+      });
+      if (!updated) {
+        return c.json({ error: "Server was modified concurrently." }, 409);
+      }
+
+      invalidateCache(id);
+      prewarmTools(id, updated.configTemplate, logger);
+      return c.json({ server_id: id, ...(warning ? { warning } : {}) }, 200);
+    },
+  )
   .post("/custom", zValidator("json", AddCustomServerRequestSchema), async (c) => {
     const body = c.req.valid("json");
     const adapter = await getMCPRegistryAdapter();
@@ -868,6 +1225,69 @@ export const mcpRegistryRouter = daemonFactory
       });
     },
   )
+  .get("/:id/stream", zValidator("param", IdParamSchema), async (c) => {
+    const { id } = c.req.valid("param");
+    const adapter = await getMCPRegistryAdapter();
+    const entry = await adapter.get(id);
+    if (!entry) {
+      return c.json({ error: "Server not found" }, 404);
+    }
+
+    // Already terminal — replay the persisted result for a late subscriber,
+    // with no phase events.
+    if (entry.status !== "setting_up") {
+      return sseResponse((writer) => {
+        if (entry.doctor_report) {
+          writer.send("result", { type: "result", report: entry.doctor_report });
+        }
+        writer.close();
+      });
+    }
+
+    // Live — follow the running doctor through the progress hub.
+    return sseResponse(
+      (writer, signal) =>
+        new Promise<void>((resolve) => {
+          let settled = false;
+          let unsubscribe = (): void => {};
+          function finish(): void {
+            if (settled) return;
+            settled = true;
+            unsubscribe();
+            clearTimeout(safety);
+            resolve();
+          }
+          // Safety net — a daemon restart mid-run leaves the entry stuck in
+          // `setting_up` with no task left to emit a result; don't hang the
+          // client forever.
+          const safety = setTimeout(() => {
+            writer.send("result", {
+              type: "result",
+              report: {
+                verdict: "unknown",
+                tldr: "The setup doctor did not finish.",
+                findings: [
+                  {
+                    severity: "error",
+                    title: "Doctor timed out",
+                    detail: "No result was produced within the expected window.",
+                  },
+                ],
+              },
+            });
+            finish();
+          }, 90_000);
+          unsubscribe = doctorProgress.subscribe(id, (event) => {
+            writer.send(event.type, event);
+            if (event.type === "result") finish();
+          });
+          // If `subscribe` synchronously replayed a cached result, `finish`
+          // already ran with the no-op unsubscribe — drop the real one now.
+          if (settled) unsubscribe();
+          signal.addEventListener("abort", finish);
+        }),
+    );
+  })
   .get(
     "/:id",
     zValidator(

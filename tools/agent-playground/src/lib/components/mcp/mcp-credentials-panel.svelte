@@ -385,10 +385,10 @@
   }
 
   .id-ref-notice {
-    background: var(--color-surface-3);
-    border: 1px solid var(--color-border-1);
+    background: var(--surface-bright);
+    border: 1px solid var(--border);
     border-radius: var(--radius-2);
-    color: color-mix(in srgb, var(--color-text), transparent 20%);
+    color: color-mix(in srgb, var(--text), transparent 20%);
     font-size: var(--font-size-1);
     padding: var(--size-2) var(--size-3);
   }
@@ -424,8 +424,8 @@
 
   .replace-form,
   .add-new-form {
-    background: var(--color-surface-1);
-    border: 1px solid var(--color-border-1);
+    background: var(--surface-dark);
+    border: 1px solid var(--border);
     border-radius: var(--radius-2);
     display: flex;
     flex-direction: column;
@@ -436,8 +436,8 @@
   .popup-blocked {
     background: color-mix(
       in srgb,
-      var(--color-surface-2),
-      var(--color-text) 5%
+      var(--surface),
+      var(--text) 5%
     );
     border-radius: var(--radius-2);
     font-size: var(--font-size-1);
@@ -450,7 +450,7 @@
   }
 
   .fallback-link {
-    color: var(--color-accent);
+    color: var(--purple-primary);
     text-decoration: underline;
   }
 </style>

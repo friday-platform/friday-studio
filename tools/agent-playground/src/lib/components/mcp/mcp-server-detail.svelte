@@ -1,24 +1,35 @@
 <!--
   MCP Server Detail — right pane for the two-pane catalog layout.
 
-  Renders full details for an installed server or a registry preview.
-  Includes README markdown rendering, transport info, env vars, and actions.
+  This is the entire UI surface for the setup doctor. What it renders is driven
+  by `server.status` + `server.doctor_report.verdict`:
+
+  - `setting_up`      — a live "Setup doctor running" view consuming the
+                        doctor's SSE progress stream.
+  - `awaiting_confirm`— a review checkpoint over the doctor's detected env vars.
+  - `ready` + verdict — the normal detail view, plus a verdict-appropriate
+                        treatment (findings banner / provenance tags / a clean
+                        note) and a TL;DR strip.
+  - `ready`, no report (legacy / static servers) — the normal detail view.
 
   @component
   @prop server - Installed server metadata (if selected)
-
-  @prop onInstall - Called to install a registry result
   @prop onCheckUpdate - Called to check for updates
   @prop onPullUpdate - Called to pull an update
   @prop onDelete - Called to remove a server
-  @prop installing - Whether an install is in progress
   @prop checking - Whether check-update is in progress
   @prop pulling - Whether pull-update is in progress
   @prop deleting - Whether delete is in progress
+  @prop hasUpdate - Whether an update is available
 -->
 
 <script lang="ts">
-  import type { MCPServerMetadata } from "@atlas/core/mcp-registry/schemas";
+  import type {
+    DoctorEnvVar,
+    DoctorReport,
+    MCPServerMetadata,
+  } from "@atlas/core/mcp-registry/schemas";
+  import { getAnnotation } from "@atlas/core/mcp-registry/annotations";
   import {
     Badge,
     Button,
@@ -27,10 +38,21 @@
     MarkdownRendered,
     markdownToHTMLSafe,
     SimpleTable,
+    toast,
   } from "@atlas/ui";
+  import { useQueryClient } from "@tanstack/svelte-query";
   import { writable } from "svelte/store";
+  import {
+    type CommitEnvVar,
+    type DoctorProgressEvent,
+    doctorProgressStream,
+    mcpQueries,
+    useCancelMCPInstall,
+    useCommitMCPInstall,
+  } from "$lib/queries/mcp-queries";
   import McpConnectionTest from "./mcp-connection-test.svelte";
   import McpCredentialsPanel from "./mcp-credentials-panel.svelte";
+  import ManualConfigSetup from "./manual-config-setup.svelte";
   import { isOfficialServer, sourceLabel } from "./mcp-server-utils";
   import McpTestChat from "./mcp-test-chat.svelte";
   import McpWorkspaceUsage from "./mcp-workspace-usage.svelte";
@@ -57,6 +79,7 @@
     hasUpdate = false,
   }: Props = $props();
 
+  const queryClient = useQueryClient();
   const deleteDialogOpen = writable(false);
 
   // Reset delete dialog when navigating to a different server
@@ -76,6 +99,43 @@
   const readme = $derived(server?.readme ?? null);
 
   const isOfficial = $derived(server ? isOfficialServer(server) : false);
+
+  // Absent `status` means a legacy / static entry — treat it as `ready`.
+  const status = $derived(server?.status ?? "ready");
+
+  // Narrow the discriminated doctor_report union here, in <script>, not inline
+  // in the template — Svelte can't narrow a union across template boundaries.
+  const report = $derived<DoctorReport | undefined>(server?.doctor_report);
+  const reportClean = $derived(
+    report?.verdict === "clean" ? report : undefined,
+  );
+  const reportAttention = $derived(
+    report?.verdict === "attention" ? report : undefined,
+  );
+  const reportUnknown = $derived(
+    report?.verdict === "unknown" ? report : undefined,
+  );
+
+  // Whether the normal detail view (transport, credentials, chat, etc.) shows.
+  const showNormalView = $derived(status === "ready");
+
+  // Curator-authored markdown for this canonical name, rendered above README.
+  const curatorNotes = $derived(
+    server?.upstream?.canonicalName
+      ? (getAnnotation(server.upstream.canonicalName)?.staticNotes ?? null)
+      : null,
+  );
+
+  // Best-effort upstream repo URL for the "Contact author" link. Registry
+  // canonical names are reverse-DNS; `io.github.OWNER/REPO` maps cleanly to a
+  // GitHub URL. Anything else we can't resolve without persisting the repo URL.
+  const contactAuthorUrl = $derived.by(() => {
+    const canonical = server?.upstream?.canonicalName;
+    if (!canonical) return null;
+    const match = canonical.match(/^io\.github\.([^/]+)\/(.+)$/);
+    if (!match) return null;
+    return `https://github.com/${match[1]}/${match[2]}`;
+  });
 
   const canCheckUpdate = $derived(
     isInstalled && server?.source === "registry" && !!onCheckUpdate,
@@ -110,6 +170,158 @@
       });
     } catch {
       return iso;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // `setting_up` — live doctor progress stream
+  // ---------------------------------------------------------------------------
+
+  type DoctorPhase = Extract<DoctorProgressEvent, { type: "phase" }>["phase"];
+
+  const PHASE_SEQUENCE: { phase: DoctorPhase; label: string }[] = [
+    { phase: "fetching-readme", label: "Fetching README" },
+    { phase: "prompting-llm", label: "Analyzing with the setup doctor" },
+    { phase: "validating", label: "Validating findings" },
+  ];
+
+  let activePhase = $state<DoctorPhase | null>(null);
+  let streamError = $state<string | null>(null);
+
+  // Consume the doctor's SSE stream while `setting_up`. On the terminal
+  // `result` event, re-fetch the detail query so the page transitions to its
+  // terminal state. The effect re-runs (and cancels the prior stream) whenever
+  // the server id or status changes.
+  $effect(() => {
+    const id = server?.id;
+    if (!id || status !== "setting_up") return;
+
+    let cancelled = false;
+    activePhase = null;
+    streamError = null;
+
+    (async () => {
+      try {
+        for await (const event of doctorProgressStream(id)) {
+          if (cancelled) return;
+          if (event.type === "phase") {
+            activePhase = event.phase;
+          } else {
+            // Terminal `result` — the entry's persisted status is the source
+            // of truth, so re-fetch it to pick up the transition.
+            await queryClient.invalidateQueries({
+              queryKey: mcpQueries.detail(id).queryKey,
+            });
+            await queryClient.invalidateQueries({ queryKey: mcpQueries.all() });
+            return;
+          }
+        }
+      } catch (e) {
+        if (cancelled) return;
+        streamError = e instanceof Error ? e.message : String(e);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  });
+
+  function phaseState(phase: DoctorPhase): "done" | "active" | "pending" {
+    if (!activePhase) return "pending";
+    const activeIndex = PHASE_SEQUENCE.findIndex((p) => p.phase === activePhase);
+    const thisIndex = PHASE_SEQUENCE.findIndex((p) => p.phase === phase);
+    if (thisIndex < activeIndex) return "done";
+    if (thisIndex === activeIndex) return "active";
+    return "pending";
+  }
+
+  // ---------------------------------------------------------------------------
+  // Install flow mutations — cancel + commit
+  // ---------------------------------------------------------------------------
+
+  const cancelMut = useCancelMCPInstall();
+  const commitMut = useCommitMCPInstall();
+
+  async function handleCancelInstall(): Promise<void> {
+    const id = server?.id;
+    if (!id || cancelMut.isPending) return;
+    try {
+      await cancelMut.mutateAsync(id);
+      toast({
+        title: "Install cancelled",
+        description: `${displayName} has been discarded.`,
+      });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      toast({ title: "Cancel failed", description: message, error: true });
+    }
+  }
+
+  async function handleConfirmInstall(): Promise<void> {
+    const id = server?.id;
+    if (!id || commitMut.isPending || !reportAttention) return;
+    // Map the reviewed list to CommitEnvVar[] — provenance is review-only and
+    // dropped before commit.
+    const envVars: CommitEnvVar[] = reportAttention.env_vars.map((v) => ({
+      name: v.name,
+      description: v.description,
+      isRequired: v.isRequired,
+      isSecret: v.isSecret,
+      default: v.default,
+    }));
+    try {
+      await commitMut.mutateAsync({ id, envVars });
+      toast({
+        title: "Server configured",
+        description: `${displayName} is ready to use.`,
+      });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      toast({ title: "Confirm failed", description: message, error: true });
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Inline panel toggles — manual-config and the read-only raw-config view.
+  //
+  // Each toggle stores the server id it was opened for, so a `$derived` can ask
+  // "open for the *current* server?" — switching servers collapses the panel
+  // with no reset `$effect` needed.
+  // ---------------------------------------------------------------------------
+
+  let manualConfigOpenFor = $state<string | null>(null);
+  const manualConfigOpen = $derived(
+    !!server && manualConfigOpenFor === server.id,
+  );
+
+  function toggleManualConfig(): void {
+    manualConfigOpenFor = manualConfigOpen ? null : (server?.id ?? null);
+  }
+
+  let rawConfigOpenFor = $state<string | null>(null);
+  const rawConfigOpen = $derived(!!server && rawConfigOpenFor === server.id);
+
+  function toggleRawConfig(): void {
+    rawConfigOpenFor = rawConfigOpen ? null : (server?.id ?? null);
+  }
+
+  const rawConfigJson = $derived(
+    server ? JSON.stringify(server.configTemplate, null, 2) : "",
+  );
+
+  // ---------------------------------------------------------------------------
+  // Provenance label for a committed / detected env var
+  // ---------------------------------------------------------------------------
+
+  function provenanceLabel(envVar: DoctorEnvVar): string {
+    switch (envVar.provenance.source) {
+      case "registry":
+        return "registry";
+      case "friday":
+        return "detected by Friday";
+      case "user":
+        return "added by you";
     }
   }
 </script>
@@ -216,15 +428,219 @@
               {/if}
             </Badge>
           {/if}
+          {#if status === "setting_up"}
+            <Badge variant="info">Installing</Badge>
+          {:else if status === "awaiting_confirm"}
+            <Badge variant="warning">Awaiting setup</Badge>
+          {:else if reportUnknown}
+            <Badge variant="warning">Needs configuration</Badge>
+          {/if}
         </div>
       </header>
+
+      <!-- TL;DR strip — shown whenever the doctor produced a report. -->
+      {#if report}
+        <p class="tldr-strip">{report.tldr}</p>
+      {/if}
+
       <!-- Content -->
       <div class="detail-content">
         <p class="description" class:faded={!description}>
           {description ?? "No description provided"}
         </p>
 
-        {#if isInstalled && server}
+        <!-- ── setting_up: live doctor progress ─────────────────────────── -->
+        {#if status === "setting_up"}
+          <div class="doctor-panel">
+            <h3 class="section-title">Setup doctor running</h3>
+            <p class="doctor-panel-desc">
+              Friday is analyzing this server to work out what configuration it
+              needs. This usually takes a few seconds.
+            </p>
+            <ol class="phase-list">
+              {#each PHASE_SEQUENCE as { phase, label } (phase)}
+                {@const state = phaseState(phase)}
+                <li class="phase-item" data-state={state}>
+                  <span class="phase-icon">
+                    {#if state === "done"}
+                      <IconSmall.CheckCircle />
+                    {:else if state === "active"}
+                      <IconSmall.Progress />
+                    {:else}
+                      <IconSmall.Clock />
+                    {/if}
+                  </span>
+                  <span class="phase-label">{label}</span>
+                </li>
+              {/each}
+            </ol>
+            {#if streamError}
+              <p class="doctor-stream-error">
+                Lost the progress stream ({streamError}). Reload the page to
+                reconnect — the server keeps working in the background.
+              </p>
+            {/if}
+            <div class="doctor-actions">
+              <Button
+                variant="secondary"
+                size="small"
+                onclick={handleCancelInstall}
+                disabled={cancelMut.isPending}
+              >
+                {cancelMut.isPending ? "Cancelling…" : "Cancel install"}
+              </Button>
+            </div>
+          </div>
+        {/if}
+
+        <!-- ── awaiting_confirm: review checkpoint ──────────────────────── -->
+        {#if status === "awaiting_confirm" && reportAttention}
+          <div class="doctor-panel">
+            <h3 class="section-title">Review detected configuration</h3>
+            <p class="doctor-panel-desc">
+              The setup doctor found the environment variables below. Check each
+              one against where it came from, then confirm to finish install.
+            </p>
+
+            <ul class="env-review-list">
+              {#each reportAttention.env_vars as envVar (envVar.name)}
+                <li class="env-review-item">
+                  <div class="env-review-head">
+                    <span class="env-name">{envVar.name}</span>
+                    <div class="env-flags">
+                      {#if envVar.isRequired}
+                        <span class="env-flag env-flag-required">Required</span>
+                      {:else}
+                        <span class="env-flag">Optional</span>
+                      {/if}
+                      {#if envVar.isSecret}
+                        <span class="env-flag env-flag-secret">Secret</span>
+                      {/if}
+                      <span class="env-flag env-flag-provenance">
+                        {provenanceLabel(envVar)}
+                      </span>
+                    </div>
+                  </div>
+                  {#if envVar.description}
+                    <p class="env-description">{envVar.description}</p>
+                  {/if}
+                  {#if envVar.provenance.source === "friday"}
+                    <blockquote class="env-excerpt">
+                      {envVar.provenance.readme_excerpt}
+                    </blockquote>
+                  {/if}
+                </li>
+              {/each}
+            </ul>
+
+            <div class="doctor-actions">
+              <Button
+                variant="primary"
+                size="small"
+                onclick={handleConfirmInstall}
+                disabled={commitMut.isPending}
+              >
+                {commitMut.isPending ? "Applying…" : "Confirm & apply"}
+              </Button>
+              <Button
+                variant="secondary"
+                size="small"
+                onclick={handleCancelInstall}
+                disabled={cancelMut.isPending}
+              >
+                {cancelMut.isPending ? "Cancelling…" : "Cancel install"}
+              </Button>
+            </div>
+          </div>
+        {/if}
+
+        <!-- ── ready + unknown: findings banner + manual config ─────────── -->
+        {#if reportUnknown}
+          <div class="doctor-panel doctor-panel-warning">
+            <h3 class="section-title">This server needs configuration</h3>
+            <p class="doctor-panel-desc">
+              The setup doctor couldn't work out exactly what this server needs.
+              Here's what it saw — you can configure it manually below, or reach
+              out to the upstream author.
+            </p>
+
+            <ul class="findings-list">
+              {#each reportUnknown.findings as finding, i (i)}
+                <li class="finding-item" data-severity={finding.severity}>
+                  <span class="finding-title">{finding.title}</span>
+                  {#if finding.detail}
+                    <span class="finding-detail">{finding.detail}</span>
+                  {/if}
+                </li>
+              {/each}
+            </ul>
+
+            <div class="doctor-actions">
+              <Button variant="primary" size="small" onclick={toggleManualConfig}>
+                {manualConfigOpen ? "Hide manual setup" : "Configure manually"}
+              </Button>
+              {#if contactAuthorUrl}
+                <Button
+                  variant="secondary"
+                  size="small"
+                  href={contactAuthorUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  {#snippet prepend()}
+                    <IconSmall.ExternalLink />
+                  {/snippet}
+                  Contact author
+                </Button>
+              {/if}
+            </div>
+
+            {#if manualConfigOpen && server}
+              <ManualConfigSetup
+                serverId={server.id}
+                onDone={() => (manualConfigOpenFor = null)}
+              />
+            {/if}
+          </div>
+        {/if}
+
+        <!-- ── ready + attention: committed env vars with provenance ────── -->
+        {#if showNormalView && reportAttention}
+          <div class="content-section">
+            <h3 class="section-title">Configured environment variables</h3>
+            <ul class="env-summary-list">
+              {#each reportAttention.env_vars as envVar (envVar.name)}
+                <li class="env-summary-item">
+                  <span class="env-name">{envVar.name}</span>
+                  <div class="env-flags">
+                    {#if envVar.isRequired}
+                      <span class="env-flag env-flag-required">Required</span>
+                    {/if}
+                    {#if envVar.isSecret}
+                      <span class="env-flag env-flag-secret">Secret</span>
+                    {/if}
+                    <span class="env-flag env-flag-provenance">
+                      {provenanceLabel(envVar)}
+                    </span>
+                  </div>
+                  {#if envVar.description}
+                    <p class="env-description">{envVar.description}</p>
+                  {/if}
+                </li>
+              {/each}
+            </ul>
+          </div>
+        {/if}
+
+        <!-- ── ready + clean: subtle self-contained note ────────────────── -->
+        {#if showNormalView && reportClean}
+          <p class="clean-note">
+            <IconSmall.Check />
+            Setup doctor: self-contained — no extra configuration needed.
+          </p>
+        {/if}
+
+        {#if isInstalled && server && showNormalView}
           <div>
             <McpConnectionTest serverId={server.id} />
           </div>
@@ -306,6 +722,33 @@
               </div>
             </div>
           {/if}
+
+          <!-- Raw config — read-only. The root entry is frozen post-install. -->
+          <div class="content-section">
+            <button class="raw-config-toggle" onclick={toggleRawConfig}>
+              {#if rawConfigOpen}
+                <IconSmall.ChevronDown />
+              {:else}
+                <IconSmall.ChevronRight />
+              {/if}
+              View raw config
+            </button>
+            {#if rawConfigOpen}
+              <pre class="raw-config-block">{rawConfigJson}</pre>
+            {/if}
+          </div>
+        {/if}
+
+        <!-- From the curators — curator markdown above the README. -->
+        {#if curatorNotes}
+          <div class="content-section">
+            <h3 class="section-title">From the curators</h3>
+            <div class="readme-content">
+              <MarkdownRendered>
+                {@html markdownToHTMLSafe(curatorNotes)}
+              </MarkdownRendered>
+            </div>
+          </div>
         {/if}
 
         <!-- README -->
@@ -390,7 +833,7 @@
   }
 
   .empty-icon {
-    color: color-mix(in srgb, var(--color-text), transparent 60%);
+    color: color-mix(in srgb, var(--text), transparent 60%);
   }
 
   .empty-icon :global(svg) {
@@ -405,7 +848,7 @@
   }
 
   .empty-desc {
-    color: color-mix(in srgb, var(--color-text), transparent 25%);
+    color: color-mix(in srgb, var(--text), transparent 25%);
     font-size: var(--font-size-2);
     line-height: 1.5;
     margin: 0;
@@ -439,6 +882,19 @@
     display: flex;
     flex-wrap: wrap;
     gap: var(--size-1);
+  }
+
+  /* ─── TL;DR strip ────────────────────────────────────────────────────────── */
+
+  .tldr-strip {
+    background: var(--surface-dark);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2);
+    color: var(--text-bright);
+    font-size: var(--font-size-2);
+    line-height: 1.5;
+    margin: var(--size-3) 0 0;
+    padding: var(--size-2) var(--size-3);
   }
 
   /* ─── Content ────────────────────────────────────────────────────────────── */
@@ -478,6 +934,239 @@
     }
   }
 
+  /* ─── Doctor panels ──────────────────────────────────────────────────────── */
+
+  .doctor-panel {
+    background: var(--surface-dark);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-3);
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-3);
+    padding: var(--size-4);
+  }
+
+  .doctor-panel-warning {
+    border-color: var(--yellow-primary);
+  }
+
+  .doctor-panel-desc {
+    color: var(--text-faded);
+    font-size: var(--font-size-2);
+    line-height: 1.5;
+    margin: 0;
+    max-inline-size: 72ch;
+  }
+
+  .doctor-actions {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--size-2);
+  }
+
+  .doctor-stream-error {
+    color: var(--yellow-primary);
+    font-size: var(--font-size-1);
+    margin: 0;
+  }
+
+  /* ─── Phase list (setting_up) ────────────────────────────────────────────── */
+
+  .phase-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-2);
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .phase-item {
+    align-items: center;
+    color: var(--text-faded);
+    display: flex;
+    font-size: var(--font-size-2);
+    gap: var(--size-2);
+  }
+
+  .phase-item[data-state="active"] {
+    color: var(--text-bright);
+    font-weight: var(--font-weight-5);
+  }
+
+  .phase-item[data-state="done"] {
+    color: var(--green-primary);
+  }
+
+  .phase-icon {
+    align-items: center;
+    display: flex;
+    flex-shrink: 0;
+  }
+
+  /* ─── Env var review list (awaiting_confirm) ─────────────────────────────── */
+
+  .env-review-list,
+  .env-summary-list,
+  .findings-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-2);
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .env-review-item,
+  .env-summary-item {
+    background: var(--surface-bright);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2);
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-1-5);
+    padding: var(--size-2) var(--size-3);
+  }
+
+  .env-review-head {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--size-2);
+    justify-content: space-between;
+  }
+
+  .env-name {
+    color: var(--text-bright);
+    font-family: var(--font-family-monospace);
+    font-size: var(--font-size-2);
+    font-weight: var(--font-weight-5);
+  }
+
+  .env-flags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--size-1);
+  }
+
+  .env-flag {
+    background: var(--highlight);
+    border-radius: var(--radius-2);
+    color: var(--text-faded);
+    font-size: var(--font-size-0);
+    font-weight: var(--font-weight-5);
+    letter-spacing: 0.02em;
+    padding: 2px var(--size-1-5);
+    text-transform: uppercase;
+  }
+
+  .env-flag-required {
+    color: var(--yellow-primary);
+  }
+
+  .env-flag-secret {
+    color: var(--purple-primary);
+  }
+
+  .env-flag-provenance {
+    text-transform: none;
+    letter-spacing: 0;
+  }
+
+  .env-description {
+    color: var(--text-faded);
+    font-size: var(--font-size-1);
+    line-height: 1.5;
+    margin: 0;
+  }
+
+  .env-excerpt {
+    border-inline-start: 2px solid var(--border);
+    color: var(--text-faded);
+    font-size: var(--font-size-1);
+    font-style: italic;
+    line-height: 1.5;
+    margin: 0;
+    padding-inline-start: var(--size-2);
+  }
+
+  .env-summary-item {
+    background: transparent;
+  }
+
+  /* ─── Findings list (unknown) ────────────────────────────────────────────── */
+
+  .finding-item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding-inline-start: var(--size-2);
+    border-inline-start: 2px solid var(--text-faded);
+  }
+
+  .finding-item[data-severity="warn"] {
+    border-inline-start-color: var(--yellow-primary);
+  }
+
+  .finding-item[data-severity="error"] {
+    border-inline-start-color: var(--red-primary);
+  }
+
+  .finding-title {
+    color: var(--text-bright);
+    font-size: var(--font-size-2);
+    font-weight: var(--font-weight-5);
+  }
+
+  .finding-detail {
+    color: var(--text-faded);
+    font-size: var(--font-size-1);
+    line-height: 1.5;
+  }
+
+  /* ─── Clean note ─────────────────────────────────────────────────────────── */
+
+  .clean-note {
+    align-items: center;
+    color: var(--text-faded);
+    display: flex;
+    font-size: var(--font-size-1);
+    gap: var(--size-1);
+    margin: 0;
+  }
+
+  /* ─── Raw config ─────────────────────────────────────────────────────────── */
+
+  .raw-config-toggle {
+    align-items: center;
+    background: none;
+    border: none;
+    color: var(--text-faded);
+    cursor: pointer;
+    display: flex;
+    font-family: inherit;
+    font-size: var(--font-size-2);
+    gap: var(--size-1);
+    padding: 0;
+  }
+
+  .raw-config-toggle:hover {
+    color: var(--text-bright);
+  }
+
+  .raw-config-block {
+    background: var(--surface-dark);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2);
+    color: var(--text);
+    font-family: var(--font-family-monospace);
+    font-size: var(--font-size-1);
+    margin: 0;
+    overflow-x: auto;
+    padding: var(--size-3);
+  }
+
   /* ─── Transport ──────────────────────────────────────────────────────────── */
 
   .transport {
@@ -515,7 +1204,7 @@
   }
 
   .meta-label {
-    color: color-mix(in srgb, var(--color-text), transparent 45%);
+    color: color-mix(in srgb, var(--text), transparent 45%);
     font-size: var(--font-size-0);
     font-weight: var(--font-weight-5);
     letter-spacing: 0.04em;
@@ -523,7 +1212,7 @@
   }
 
   .meta-value {
-    color: var(--color-text);
+    color: var(--text);
     font-family: var(--font-family-monospace);
     font-size: var(--font-size-1);
   }

@@ -1,4 +1,4 @@
-import { isOfficialCanonicalName } from "@atlas/core/mcp-registry/official-servers";
+import { isOfficialCanonicalName } from "@atlas/core/mcp-registry/annotations";
 import type { MCPServerMetadata, MCPSource } from "@atlas/core/mcp-registry/schemas";
 
 export function sourceLabel(src: MCPSource): string {

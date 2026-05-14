@@ -275,6 +275,41 @@ describe("PUT /mcp/:serverId", () => {
     });
   });
 
+  test("returns 409 needs_manual_config when the entry's doctor verdict is unknown", async () => {
+    const stdioConfig: MCPServerConfig = { transport: { type: "stdio", command: "echo" } };
+    mockDiscoverMCPServers.mockResolvedValue([
+      {
+        metadata: {
+          id: "needs-config",
+          name: "Needs Config",
+          source: "registry" as const,
+          securityRating: "unverified" as const,
+          configTemplate: stdioConfig,
+          status: "ready" as const,
+          doctor_report: {
+            verdict: "unknown",
+            tldr: "Could not enumerate config.",
+            findings: [{ severity: "warn", title: "Sparse README", detail: "No env vars listed." }],
+          },
+        },
+        mergedConfig: stdioConfig,
+        configured: true,
+      },
+    ]);
+
+    const testDir = getTestDir();
+    const workspace = createMockWorkspace({ path: testDir });
+    const config = makeWorkspaceConfig({});
+    await writeFile(join(testDir, "workspace.yml"), stringify(config));
+    const { app } = createTestApp({ workspace, config: createMergedConfig(config) });
+
+    const res = await app.request("/ws-test-id/mcp/needs-config", { method: "PUT" });
+
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as JsonBody;
+    expect(body).toMatchObject({ error: "needs_manual_config", serverId: "needs-config" });
+  });
+
   test("returns 200 idempotently when server already enabled", async () => {
     mockDiscoverMCPServers.mockResolvedValue([makeCandidate("github", "GitHub", "static")]);
 

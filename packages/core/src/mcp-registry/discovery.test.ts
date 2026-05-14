@@ -134,6 +134,21 @@ describe("discoverMCPServers", () => {
       expect(result[0]?.metadata.source).toEqual("registry");
     });
 
+    it("hides registry servers still being installed (setting_up / awaiting_confirm)", async () => {
+      mockAdapterList.mockResolvedValue([
+        makeRegistryServer("ready-server", { status: "ready" }),
+        makeRegistryServer("installing-server", { status: "setting_up" }),
+        makeRegistryServer("review-server", { status: "awaiting_confirm" }),
+      ]);
+
+      const result = await discoverMCPServers("ws-1", makeWorkspaceConfig({}));
+
+      const ids = result.map((r) => r.metadata.id);
+      expect(ids).toContain("ready-server");
+      expect(ids).not.toContain("installing-server");
+      expect(ids).not.toContain("review-server");
+    });
+
     it("returns workspace-only servers with source: workspace", async () => {
       const wsConfig = makeWorkspaceConfig({
         "ws-only": { transport: { type: "stdio", command: "npx", args: ["-y", "@test/server"] } },

@@ -11,6 +11,7 @@
 -->
 
 <script lang="ts">
+  import type { MCPServerMetadata } from "@atlas/core/mcp-registry/schemas";
   import { IconSmall } from "@atlas/ui";
   import { createQuery } from "@tanstack/svelte-query";
   import { goto } from "$app/navigation";
@@ -99,6 +100,26 @@
         return "var(--text-faded)";
     }
   }
+
+  /**
+   * Status badge for an install still mid-flow, so the user can resume it.
+   * `ready` entries that are clean / attention (or have no doctor report at
+   * all) get no badge — they're finished products.
+   */
+  function statusBadge(
+    server: MCPServerMetadata,
+  ): { label: string; tone: "info" | "warn" } | null {
+    if (server.status === "setting_up") {
+      return { label: "Installing…", tone: "info" };
+    }
+    if (server.status === "awaiting_confirm") {
+      return { label: "Awaiting setup", tone: "warn" };
+    }
+    if (server.doctor_report?.verdict === "unknown") {
+      return { label: "Needs configuration", tone: "warn" };
+    }
+    return null;
+  }
 </script>
 
 <div class="catalog-tree">
@@ -127,6 +148,7 @@
     {:else}
       <div class="group">
         {#each sortedInstalled as server (server.id)}
+          {@const badge = statusBadge(server)}
           <button
             class="tree-item"
             class:active={selectedServerId === server.id}
@@ -137,7 +159,13 @@
               style:--dot-color={securityColor(server.securityRating)}
             ></span>
             <span class="item-name">{server.name}</span>
-            <span class="tag-pill">{sourceLabel(server.source)}</span>
+            {#if badge}
+              <span class="status-badge" data-tone={badge.tone}
+                >{badge.label}</span
+              >
+            {:else}
+              <span class="tag-pill">{sourceLabel(server.source)}</span>
+            {/if}
           </button>
         {/each}
       </div>
@@ -255,6 +283,25 @@
     font-size: var(--font-size-1);
   }
 
+  .status-badge {
+    background: color-mix(in srgb, var(--badge-tone), transparent 88%);
+    border-radius: var(--radius-2);
+    color: var(--badge-tone);
+    flex-shrink: 0;
+    font-size: var(--font-size-0);
+    font-weight: var(--font-weight-5);
+    padding: 1px var(--size-1-5);
+    white-space: nowrap;
+  }
+
+  .status-badge[data-tone="info"] {
+    --badge-tone: var(--blue-primary);
+  }
+
+  .status-badge[data-tone="warn"] {
+    --badge-tone: var(--yellow-primary);
+  }
+
   /* ─── Skeleton / Empty ─────────────────────────────────────────────────── */
 
   .tree-skeleton {
@@ -266,7 +313,7 @@
 
   .skeleton-row {
     animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-    background: var(--color-surface-3);
+    background: var(--surface-bright);
     border-radius: 4px;
     block-size: 28px;
   }

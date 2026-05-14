@@ -76,20 +76,18 @@
 
   async function handleInstall(registryName: string): Promise<void> {
     try {
-      await installMut.mutateAsync({ registryName });
+      const result = await installMut.mutateAsync({ registryName });
       importDialogOpen = false;
       toast({
-        title: "MCP server installed",
-        description: `${registryName} has been added to your catalog.`,
+        title: result.status === "setting_up" ? "Setting up MCP server" : "MCP server installed",
+        description:
+          result.status === "setting_up"
+            ? `${registryName} is being analyzed by the setup doctor.`
+            : `${registryName} has been added to your catalog.`,
       });
-      // After install, navigate to the newly installed server
-      const freshCatalog = await catalogQuery.refetch();
-      const installed = freshCatalog.data?.servers.find(
-        (s) => s.upstream?.canonicalName === registryName,
-      );
-      if (installed) {
-        goto(`/mcp/${installed.id}`);
-      }
+      // The detail page is a stable URL — go there straight away, even while
+      // the setup doctor is still running.
+      goto(`/mcp/${result.server_id}`);
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       toast({ title: "Install failed", description: message, error: true });

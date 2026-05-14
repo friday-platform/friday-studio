@@ -62,6 +62,12 @@ export async function discoverMCPServers(
 
   // Registry-imported servers
   for (const metadata of registryServers) {
+    // In-progress installs (doctor still running, or awaiting the user's
+    // review) are not user-visible products yet — keep them out of the catalog.
+    if (metadata.status === "setting_up" || metadata.status === "awaiting_confirm") {
+      continue;
+    }
+
     const workspaceOverride = workspaceServers[metadata.id];
     const mergedConfig = applyPlatformEnv(
       workspaceOverride
