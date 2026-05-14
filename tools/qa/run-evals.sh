@@ -34,9 +34,9 @@ while [[ $# -gt 0 ]]; do
 done
 
 case "$PROFILE" in
-  anthropic) export FRIDAY_QA_PROVIDER="anthropic"; export FRIDAY_QA_MODEL="claude-sonnet-4-6" ;;
-  groq)      export FRIDAY_QA_PROVIDER="groq"; export FRIDAY_QA_MODEL="meta-llama/llama-4-scout-17b-16e-instruct" ;;
-  openai)    export FRIDAY_QA_PROVIDER="openai"; export FRIDAY_QA_MODEL="gpt-4o-mini" ;;
+  anthropic) export FRIDAY_QA_PROVIDER="anthropic"; export FRIDAY_QA_MODEL="${FRIDAY_QA_MODEL:-claude-sonnet-4-6}" ;;
+  groq)      export FRIDAY_QA_PROVIDER="groq"; export FRIDAY_QA_MODEL="${FRIDAY_QA_MODEL:-meta-llama/llama-4-scout-17b-16e-instruct}" ;;
+  openai)    export FRIDAY_QA_PROVIDER="openai"; export FRIDAY_QA_MODEL="${FRIDAY_QA_MODEL:-gpt-4o-mini}" ;;
   *) echo "unknown profile: $PROFILE" >&2; exit 2 ;;
 esac
 

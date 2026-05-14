@@ -108,7 +108,7 @@ const PLATFORM_TOOL_ALLOWLIST = LLM_AGENT_ALLOWED_PLATFORM_TOOLS;
 // and the schema-form of `additionalProperties` are not recursed into — if a
 // future workspace schema uses them, strict mode will silently downgrade on
 // those branches. Extend the walker before debugging that.
-function withStrictObjects(schema: Record<string, unknown>): Record<string, unknown> {
+export function withStrictObjects(schema: Record<string, unknown>): Record<string, unknown> {
   if (!schema || typeof schema !== "object" || Array.isArray(schema)) return schema;
   const out: Record<string, unknown> = { ...schema };
   const isObjectNode =
