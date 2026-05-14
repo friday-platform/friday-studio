@@ -73,7 +73,7 @@
         </option>
       {/each}
     </select>
-    <a class="add-link" href="/mcp/{serverId}">Manage →</a>
+    <a class="add-link" href="/mcp/{serverId}/connections">Manage →</a>
   {/if}
 </div>
 
