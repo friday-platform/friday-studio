@@ -241,13 +241,18 @@ The failure mode this prevents: reaching for `agent_claude-code` as a panic butt
 ## CRUD reference — curl examples
 
 All examples below use `$FRIDAYD_URL`. Source the daemon `.env` once
-per shell so the variable is set:
+per shell so the variable is set — try the installed-Studio location
+first, then fall back to the dev location written by `setup-tls.sh`:
 
 ```bash
+set -a
+. "${FRIDAY_HOME:-$HOME/.friday/local}/.env" 2>/dev/null \
+  || . "$HOME/.atlas/.env" 2>/dev/null || true
+set +a
 ```
 
-
 **Rule: every daemon HTTP call below uses `curl -k`, not `curl`.** Plain `curl` against `$FRIDAYD_URL` on a TLS install fails with `self signed certificate in certificate chain`.
+
 Confirm the daemon is up:
 
 ```bash

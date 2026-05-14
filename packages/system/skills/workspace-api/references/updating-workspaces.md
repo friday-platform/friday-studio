@@ -11,10 +11,14 @@ another quietly loses it.
 > loopback-only daemon).
 >
 > ```bash
+> set -a
+> . "${FRIDAY_HOME:-$HOME/.friday/local}/.env" 2>/dev/null \
+>   || . "$HOME/.atlas/.env" 2>/dev/null || true
+> set +a
 > ```
 
-
 **Rule: every daemon HTTP call below uses `curl -k`, not `curl`.** Plain `curl` against `$FRIDAYD_URL` on a TLS install fails with `self signed certificate in certificate chain`.
+
 ## Contents
 
 - The three paths (preference order)

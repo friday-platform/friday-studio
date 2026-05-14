@@ -12,9 +12,14 @@ A few subcommands document HTTP fallback paths (notably `agent register`
 below — there is no CLI subcommand). For those, **use `curl -k`, never
 plain `curl`** — plain `curl` against `$FRIDAYD_URL` on a TLS-enabled
 install fails with `self signed certificate in certificate chain`. Source
-the daemon `.env` once per shell:
+the daemon `.env` once per shell — installed-Studio location first, dev
+location (written by `setup-tls.sh`) as fallback:
 
 ```bash
+set -a
+. "${FRIDAY_HOME:-$HOME/.friday/local}/.env" 2>/dev/null \
+  || . "$HOME/.atlas/.env" 2>/dev/null || true
+set +a
 ```
 
 Conventions:

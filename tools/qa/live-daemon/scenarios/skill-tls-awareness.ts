@@ -105,17 +105,58 @@ function staticViolations(text: string): { line: number; snippet: string }[] {
   const violations: { line: number; snippet: string }[] = [];
   const lines = text.split("\n");
   let inCodeBlock = false;
+  // State for the empty-bash-fence check. Five production skills shipped
+  // ```bash\n``` blocks where the surrounding prose promised to show how
+  // to source the daemon `.env` — a user pasting an empty block ends up
+  // with `$FRIDAYD_URL` unset and every following `curl -k "$FRIDAYD_URL/..."`
+  // fails. The URL-occurrence check below is blind to it (no URL inside
+  // the fence), so we track open-fence + content-line-count separately.
+  let openFenceLine = -1;
+  let openFenceLang = "";
+  let nonEmptyContentLines = 0;
+  // Capture the language tag (everything after the leading ``` until the
+  // first space/end-of-line) so the empty-fence check can scope itself
+  // to bash/sh — empty fences without a language tag are sometimes used
+  // as visual separators and shouldn't be flagged.
+  const FENCE_RE = /^\s*(?:>\s*)?```([A-Za-z0-9_+-]*)/;
   for (let i = 0; i < lines.length; i++) {
     const raw = lines[i];
     if (raw === undefined) continue;
     // Track fenced-code-block state. Markdown fences are `` ``` `` (optionally
     // followed by a language). Blockquoted fences (`> \`\`\`bash`) also count
     // — the recipes.md preamble lives in a blockquote.
-    if (/^\s*(?:>\s*)?```/.test(raw)) {
+    const fenceMatch = raw.match(FENCE_RE);
+    if (fenceMatch) {
+      if (inCodeBlock) {
+        // Closing fence: enforce the empty-bash invariant before toggling.
+        const isShellLang = openFenceLang === "bash" || openFenceLang === "sh";
+        if (isShellLang && nonEmptyContentLines === 0) {
+          violations.push({
+            line: openFenceLine,
+            snippet:
+              `empty \`\`\`${openFenceLang} block — preamble likely promised content ` +
+              `(e.g. how to source $FRIDAYD_URL) but the fence ships empty`,
+          });
+        }
+        openFenceLine = -1;
+        openFenceLang = "";
+      } else {
+        // Opening fence: capture line + language for the close-time check.
+        openFenceLine = i + 1;
+        openFenceLang = fenceMatch[1] || "";
+        nonEmptyContentLines = 0;
+      }
       inCodeBlock = !inCodeBlock;
       continue;
     }
     if (!inCodeBlock) continue;
+
+    // Count non-empty content lines for the empty-fence check. Strip the
+    // blockquote prefix first so `> ` padding doesn't masquerade as content
+    // — `recipes.md` and `updating-workspaces.md` blockquote their fenced
+    // blocks, and a leading `> ` with no following text is a structural
+    // continuation, not a content line.
+    if (raw.replace(/^\s*>\s?/, "").trim().length > 0) nonEmptyContentLines++;
 
     // Strip every acceptable form first, then see if any daemon URL survives.
     let stripped = raw.replace(BASH_FALLBACK_EXPANSION_RE, "");
@@ -391,6 +432,34 @@ const STATIC_NEGATIVE_FIXTURES: { id: string; body: string; expectMin: number }[
     body: "```bash\ncurl -s http://127.0.0.1:18080/api/sessions\n```\n",
     expectMin: 1,
   },
+  // Production-shaped regression fixture: prose promising to teach
+  // `.env` sourcing followed immediately by an empty bash fence. Five
+  // production skills shipped this exact shape — see review
+  // 2026-05-13-worktree-sprightly-twirling-minsky.md (Critical #1). The
+  // detector must flag the empty fence so this class can't regress.
+  {
+    id: "empty-bash-block-after-env-prose",
+    body: [
+      "All examples below use `$FRIDAYD_URL`. Source the daemon `.env` once",
+      "per shell so the variable is set:",
+      "",
+      "```bash",
+      "```",
+      "",
+      "Then run the curl examples.",
+      "",
+    ].join("\n"),
+    expectMin: 1,
+  },
+  // Same regression in a blockquoted fence — `recipes.md` and
+  // `updating-workspaces.md` use this shape. The fence-tracking regex
+  // handles `> ```bash`, but the empty-content check must too: a `> `
+  // prefix line with no text after it must NOT count as content.
+  {
+    id: "empty-blockquoted-bash-block",
+    body: ["> **Preamble.** Source the daemon `.env`:", ">", "> ```bash", "> ```", ""].join("\n"),
+    expectMin: 1,
+  },
 ];
 
 /**
@@ -444,6 +513,28 @@ const STATIC_ACCEPT_FIXTURES: { id: string; body: string }[] = [
     id: "prose-installed-studio-port",
     body: "Installed Friday Studio binds the daemon on `https://localhost:18080`. Dev runs `:8080`.\n",
   },
+  // Pairs with the empty-bash NEGATIVE fixtures: a properly-filled
+  // `.env`-sourcing block must NOT be flagged. Locks in the legitimate
+  // shape so a future tightening of the empty-fence check can't
+  // accidentally over-fire on real teaching content.
+  {
+    id: "filled-bash-block-with-env-source",
+    body: [
+      "Source the daemon `.env`:",
+      "",
+      "```bash",
+      "set -a",
+      '. "${FRIDAY_HOME:-$HOME/.friday/local}/.env" 2>/dev/null \\',
+      '  || . "$HOME/.atlas/.env" 2>/dev/null || true',
+      "set +a",
+      "```",
+      "",
+    ].join("\n"),
+  },
+  // Empty fence with NO language tag — used in some files as a visual
+  // separator. The empty-bash check is scoped to `bash`/`sh` precisely
+  // so this case is not a violation.
+  { id: "empty-untagged-fence", body: "Some prose.\n\n```\n```\n\nMore prose.\n" },
 ];
 
 function runStaticNegativeControls(): EvalResult[] {

@@ -9,14 +9,14 @@ Friday is orchestrated by a daemon at `$FRIDAYD_URL`. The exact scheme/port
 varies by install — installed Friday Studio runs on `:18080` (with TLS
 configured automatically by the launcher), in-tree dev runs on `:8080`
 (plain HTTP unless you opt in with `bash scripts/setup-tls.sh`), and
-`FRIDAY_PORT_FRIDAY` can override either. Don't hardcode the URL — source
-the daemon `.env` (preamble below) and use `$FRIDAYD_URL` everywhere.
+`FRIDAY_PORT_FRIDAY` can override either. Don't hardcode the URL — resolve
+`$FRIDAYD_URL` from your own process env via `run_code` (preamble below)
+and emit the resolved literal in every command you show the user.
 
 There are two surfaces for interacting with the daemon: the `deno task
-atlas` CLI (thin HTTP client, great for humans and shell scripts —
-auto-loads the daemon `.env` so it picks the right scheme) and the raw
-HTTP API (more endpoints, SSE streaming, the only option for many CRUD ops
-on workspace internals).
+atlas` CLI (thin HTTP client, great for humans and shell scripts) and the
+raw HTTP API (more endpoints, SSE streaming, the only option for many
+CRUD ops on workspace internals).
 
 ## Daemon URL — resolve before emitting curl commands
 
@@ -84,8 +84,9 @@ Before touching anything, confirm the daemon is up:
 
 ```bash
 deno task atlas daemon status
-# or (after sourcing the daemon .env — see preamble above):
-curl -k -sf "$FRIDAYD_URL/health" && echo OK
+# or (after resolving $FRIDAYD_URL via run_code and substituting the
+# literal value — see preamble above):
+curl -k -sf "<resolved-url>/health" && echo OK
 ```
 
 If it's not:

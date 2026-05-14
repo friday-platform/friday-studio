@@ -14,6 +14,10 @@ installed-Studio location first (`${FRIDAY_HOME:-~/.friday/local}/.env`)
 then falls back to the dev location (`~/.atlas/.env`):
 
 ```bash
+set -a
+. "${FRIDAY_HOME:-$HOME/.friday/local}/.env" 2>/dev/null \
+  || . "$HOME/.atlas/.env" 2>/dev/null || true
+set +a
 ```
 
 **Rule: every daemon HTTP call in this reference uses `curl -k`, not

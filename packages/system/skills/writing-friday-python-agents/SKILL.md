@@ -369,6 +369,10 @@ the curl examples below work whether your install is on plain HTTP or
 HTTPS:
 
 ```bash
+set -a
+. "${FRIDAY_HOME:-$HOME/.friday/local}/.env" 2>/dev/null \
+  || . "$HOME/.atlas/.env" 2>/dev/null || true
+set +a
 ```
 
 **Rule: every daemon HTTP call below uses `curl -k`, not `curl`.**

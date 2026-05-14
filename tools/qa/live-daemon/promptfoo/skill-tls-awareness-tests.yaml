@@ -104,9 +104,28 @@
   vars:
     scenarioId: 'skill-tls-static-negative:installed-studio-loopback-url'
 
+# Empty-bash-fence regression — five production skills shipped this exact
+# shape (preamble promises to teach .env sourcing, fence ships empty).
+# Detector must catch both the plain and the blockquoted variants.
+- description: NEGATIVE — detector flags empty bash fence following ".env" prose
+  vars:
+    scenarioId: 'skill-tls-static-negative:empty-bash-block-after-env-prose'
+
+- description: NEGATIVE — detector flags empty blockquoted bash fence
+  vars:
+    scenarioId: 'skill-tls-static-negative:empty-blockquoted-bash-block'
+
 - description: ACCEPT — detector allows :18080 in prose describing installed Studio
   vars:
     scenarioId: 'skill-tls-static-accept:prose-installed-studio-port'
+
+- description: ACCEPT — detector allows filled bash fence with `.env` source
+  vars:
+    scenarioId: 'skill-tls-static-accept:filled-bash-block-with-env-source'
+
+- description: ACCEPT — detector allows empty fence with no language tag
+  vars:
+    scenarioId: 'skill-tls-static-accept:empty-untagged-fence'
 
 - description: ACCEPT — detector allows ${FRIDAYD_URL:-...} bash default
   vars:

@@ -130,8 +130,6 @@ If you only need the API:
 
 ```bash
 deno task atlas daemon start --detached
-# atlas auto-loads the daemon .env, so this works on both plain-HTTP and
-# TLS-enabled installs (scheme/port follow FRIDAYD_URL).
 deno task atlas daemon status
 deno task atlas daemon stop
 ```
@@ -140,7 +138,15 @@ deno task atlas daemon stop
 > certs and write `FRIDAYD_URL=https://…` plus `FRIDAY_TLS_CA` into
 > `~/.atlas/.env`. Installed Studio gets the same vars written into
 > `${FRIDAY_HOME:-~/.friday/local}/.env` automatically by the launcher.
-> Every subcommand and skill example below switches scheme automatically.
+> Source the daemon `.env` once per shell so `deno task atlas` and the
+> skill examples below pick up the right scheme/port:
+>
+> ```bash
+> set -a
+> . "${FRIDAY_HOME:-$HOME/.friday/local}/.env" 2>/dev/null \
+>   || . "$HOME/.atlas/.env" 2>/dev/null || true
+> set +a
+> ```
 
 ## Examples
 
