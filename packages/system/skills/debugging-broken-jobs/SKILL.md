@@ -31,6 +31,15 @@ known issue" until you have:
 If you skipped any of those, you don't know enough to claim a bug.
 Run the steps first.
 
+**Run a control before blaming your own change.** When something you just
+created or edited fails, fire an equivalent request at something you have
+*not* touched this session. If the untouched thing fails the same way, your
+edit is not the cause — you're looking at a shared layer (request envelope,
+auth, a stale cache, the runtime), so stop re-editing your change. If only
+your edited thing fails, then it *is* your edit. Either branch halves the
+search space in one call; the expensive mistake is looping on your change on
+the assumption it must be the culprit.
+
 ## Symptom triage table
 
 Match the job tool's return shape OR the session's status, then load
@@ -48,6 +57,7 @@ the matching sibling skill.
 | Session `status: failed`, error contains `Invalid job config` or `Invalid signal config` (Zod rejection) | `debugging-runtime-errors` |
 | Job tool returned `output-error` with no meaningful error text (typically called with bare `{}`) | `debugging-job-invocation` |
 | Job tool returned `output-error` mentioning "tool isn't bound" — this is wrong; you forgot a `prompt` arg | `debugging-job-invocation` |
+| `Model tried to call unavailable tool '<name>'` — you created the job this session; it has no bound tool yet | `debugging-job-invocation` |
 | External MCP tool returned 422 / 401 / 403 with provider-side error | check the workspace's MCP server credentials; not a platform bug |
 
 If no row matches, gather more evidence — don't escalate.
