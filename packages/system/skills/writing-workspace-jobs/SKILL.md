@@ -670,7 +670,14 @@ that narrowing.
 to the workspace dir** (`~/.atlas/workspaces/<workspaceId>/`).
 Absolute paths still work but pin the file outside the workspace —
 prefer relative for portability and so `git`-style backups capture
-your output.
+your output. **For files OUTSIDE the workspace (a repo cloned to
+`~/somewhere`, a path under `$HOME`) use `bash`, not `fs_*`.** The
+`fs_*` tools take a literal path string and do **no** `~` / `$HOME` /
+`$USER` expansion — the model ends up guessing an absolute home dir
+and guesses wrong (a real failure mode: an agent looped on
+`fs_read_file` with invented `/Users/<name>/…` paths until it ran out
+of steps). `bash` runs under `/bin/bash -c` with the daemon's
+environment, so `~` and `$HOME` expand correctly.
 **Shell + data** — `bash`, `csv`, `webfetch`. `bash` is workspace-CWD-
 scoped (same default as `fs_write_file`).
 **State** — `state_append`, `state_filter`, `state_lookup`.
@@ -688,6 +695,13 @@ allowlist narrows the **MCP-server** catalog only. To genuinely lock
 an action down to "memory only," you can't (today) — the platform
 tool surface is fixed. Long-term: a `platform_tools: [...]` opt-in would make
 this narrower.
+
+**You cannot exclude a platform built-in via `tools:`.** Listing or
+omitting `fs_read_file` / `bash` / `save_memory_entry` in `tools:`
+changes nothing — they are ambient. Switching a named agent to an
+inline `type: llm` action does **not** change this; both honor the
+same MCP-only narrowing. If an action keeps misusing a platform tool,
+the lever is the prompt, not the allowlist.
 
 ### Output contract: `complete` is the only durable emission for `outputTo`
 
@@ -1082,6 +1096,27 @@ jobs:
 
 Expired elicitations move to a read-only Activity log entry; acting on one does
 not reify the timed-out job.
+
+## Job `config` block — keys are snake_case
+
+`jobs.<id>.config` carries a few runtime knobs. The key names are
+**snake_case** and the schema is *loose* — an unrecognized key (a
+camelCase typo, a misremembered name) is **silently accepted and
+ignored**, no validation error. So a wrong key is a silent no-op, not a
+failure you'll see in `validate_workspace`.
+
+```yaml
+jobs:
+  pipeline-auto-repair:
+    config:
+      max_steps: 30      # agent-loop step cap for the job's LLM actions
+      timeout: 30m       # job wall-clock; also the elicitation TTL
+```
+
+Common miss: `maxSteps` (camelCase) does nothing — the runtime reads
+`config.max_steps`. If an action keeps hitting "did not call complete"
+because it runs out of steps, raise `config.max_steps` — and confirm
+you spelled it snake_case.
 
 ## Runtime invariants you don't author
 
