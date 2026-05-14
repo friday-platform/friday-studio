@@ -14,9 +14,16 @@
 
   interface Props {
     call: ToolCallDisplay;
+    /**
+     * Fired once after the user confirms the env write and the elicitation
+     * answer mutation succeeds. Lets the parent chat send a synthetic
+     * follow-up message so the agent continues without manual prompting.
+     * Not fired on deny.
+     */
+    onApplied?: (info: { scope: "workspace" | "global"; keys: string[] }) => void;
   }
 
-  const { call }: Props = $props();
+  const { call, onApplied }: Props = $props();
 
   /** Key-name heuristic — kept in sync with the env tools' shared.ts. */
   const SECRET_KEY_RE = /password|secret|token|key|credential/i;
@@ -91,7 +98,17 @@
 
   function answer(value: "confirm" | "deny"): void {
     if (!matched || !isPending || inFlight) return;
-    answerMutation.mutate({ id: matched.id, value });
+    answerMutation.mutate(
+      { id: matched.id, value },
+      {
+        onSuccess: () => {
+          // Tickle the chat only on confirm — deny shouldn't wake the agent.
+          if (value !== "confirm") return;
+          const normalizedScope = scope === "global" ? "global" : "workspace";
+          onApplied?.({ scope: normalizedScope, keys: entries.map(([k]) => k) });
+        },
+      },
+    );
   }
 
   /** Status pill text — drives the one terminal-state line. */

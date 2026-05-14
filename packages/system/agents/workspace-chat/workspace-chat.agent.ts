@@ -1317,6 +1317,18 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
               const name = data?.displayName ?? data?.provider ?? "service";
               return { type: "text" as const, text: `Connected ${name}.` };
             }
+            if (part.type === "data-env-applied") {
+              const data = (
+                part as { type: string; data?: { scope?: string; keys?: string[] } }
+              ).data;
+              const scope = data?.scope === "global" ? "global" : "workspace";
+              const keys = Array.isArray(data?.keys) ? data!.keys : [];
+              const keyList = keys.length > 0 ? keys.join(", ") : "(none)";
+              return {
+                type: "text" as const,
+                text: `Applied env write to ${scope} .env: ${keyList}.`,
+              };
+            }
             return undefined;
           },
         });
