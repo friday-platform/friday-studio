@@ -54,11 +54,16 @@
     brown: "var(--brown-2, #a3824a)",
   };
 
+  const currentWorkspace = $derived(
+    (workspacesQuery.data ?? []).find((w) => w.id === workspaceId),
+  );
+
   const workspaceColor = $derived.by(() => {
-    const ws = (workspacesQuery.data ?? []).find((w) => w.id === workspaceId);
-    const color = ws?.metadata?.color;
+    const color = currentWorkspace?.metadata?.color;
     return COLORS[color ?? "yellow"] ?? COLORS["yellow"];
   });
+
+  const isCanonical = $derived(currentWorkspace?.canonical !== undefined);
 
   // ---------------------------------------------------------------------------
   // Agents
@@ -433,10 +438,12 @@
               <DropdownMenu.Item onclick={() => downloadWorkspaceBundle("migration")}>
                 Download workspace with notes &amp; memory
               </DropdownMenu.Item>
-              <DropdownMenu.Separator />
-              <DropdownMenu.Item onclick={() => deleteDialogOpen.set(true)}>
-                Remove workspace
-              </DropdownMenu.Item>
+              {#if !isCanonical}
+                <DropdownMenu.Separator />
+                <DropdownMenu.Item onclick={() => deleteDialogOpen.set(true)}>
+                  Remove workspace
+                </DropdownMenu.Item>
+              {/if}
             </DropdownMenu.Content>
           {/snippet}
         </DropdownMenu.Root>
