@@ -1,5 +1,5 @@
 <!--
-  Dynamic form for agents with structured JSON input (gh, bb, jira).
+  Dynamic form for agents with structured JSON input (gh, jira).
   Renders operation dropdown from oneOf schema variants and dynamic fields
   per selected operation. Includes raw JSON toggle for power users.
 

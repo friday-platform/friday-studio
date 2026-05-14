@@ -1,4 +1,3 @@
-import { BbOutputSchema, bbAgent } from "./bb/agent.ts";
 import { ClaudeCodeOutputSchema, claudeCodeAgent } from "./claude-code/agent.ts";
 import { FathomOutputSchema, fathomGetTranscriptAgent } from "./fathom-ai/get-transcript.ts";
 import { GhOutputSchema, ghAgent } from "./gh/agent.ts";
@@ -27,9 +26,7 @@ export {
 
 export type { BrowserAgentResult, DiscoveredImages, WebAgentResult };
 export {
-  BbOutputSchema,
   BrowserOutputSchema,
-  bbAgent,
   browserAgent,
   ClaudeCodeOutputSchema,
   claudeCodeAgent,
