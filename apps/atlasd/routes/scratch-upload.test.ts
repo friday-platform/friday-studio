@@ -5,12 +5,17 @@ import { Hono } from "hono";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppVariables } from "../src/factory.ts";
 
+type TestMembership = { userId: string; wsId: string; role: "owner"; addedAt: string };
+
+type TestMembershipResult = { ok: true; data: TestMembership | null };
+
 const membershipGet = vi.hoisted(() =>
-  vi.fn((userId: string, wsId: string) =>
-    Promise.resolve({
-      ok: true,
-      data: { userId, wsId, role: "owner" as const, addedAt: "2026-05-14T00:00:00.000Z" },
-    }),
+  vi.fn(
+    (userId: string, wsId: string): Promise<TestMembershipResult> =>
+      Promise.resolve({
+        ok: true,
+        data: { userId, wsId, role: "owner" as const, addedAt: "2026-05-14T00:00:00.000Z" },
+      }),
   ),
 );
 
