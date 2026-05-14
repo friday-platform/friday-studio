@@ -33,26 +33,14 @@ const TLS = tlsPaths
 const SCHEME = TLS ? "https" : "http";
 // Daemon and tunnel scheme depend on their own s2s cert env, not on this
 // origin's browser cert. They're separate listeners with separate certs.
+// The launcher migrates stale http:// values in .env to https:// at boot
+// (tools/friday-launcher/cert_env.go::migrateStaleURLSchemes) when the
+// s2s mesh is up, so a literal env-var read here matches whatever the
+// daemon / tunnel actually listen on. No consumer-side auto-upgrade
+// needed — single source of truth lives in the launcher.
 const S2S_SCHEME = process.env.FRIDAY_TLS_CERT && process.env.FRIDAY_TLS_KEY ? "https" : "http";
-// Auto-upgrade http→https when s2s is on: the .env shipped by the installer
-// pins these to http:// (the pre-TLS default) and the daemon's TLS listener
-// rejects cleartext requests with "Response does not match HTTP/1.1
-// protocol". Same pattern as packages/openapi-client/src/utils.ts and
-// tools/webhook-tunnel/config.go — keep them in lockstep. Never downgrade
-// https→http: an explicit https config means the operator knows their setup.
-const DAEMON_URL = upgradeToS2sScheme(
-  process.env.FRIDAYD_URL ?? `${S2S_SCHEME}://localhost:8080`,
-);
-const TUNNEL_URL = upgradeToS2sScheme(
-  process.env.EXTERNAL_TUNNEL_URL ?? `${S2S_SCHEME}://localhost:9090`,
-);
-
-function upgradeToS2sScheme(url: string): string {
-  if (S2S_SCHEME === "https" && url.startsWith("http://")) {
-    return "https://" + url.slice("http://".length);
-  }
-  return url;
-}
+const DAEMON_URL = process.env.FRIDAYD_URL ?? `${S2S_SCHEME}://localhost:8080`;
+const TUNNEL_URL = process.env.EXTERNAL_TUNNEL_URL ?? `${S2S_SCHEME}://localhost:9090`;
 
 // Resolve `./build` relative to this source file, so the path is correct
 // both when running via `deno run` from any cwd and when running as a

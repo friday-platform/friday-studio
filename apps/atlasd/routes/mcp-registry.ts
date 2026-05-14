@@ -60,19 +60,12 @@ async function createLinkProvider(
   // the legacy :3100 default. Keeps desktop port-override installs
   // talking to the right link binary. Scheme follows the s2s mesh
   // (https when FRIDAY_TLS_CERT/_KEY set, http fallback otherwise).
-  // Stale http://localhost:13100 in installer-written .env is also
-  // auto-upgraded — same fix as routes/link.ts and the playground
-  // proxy (tools/agent-playground/static-server.ts).
   const linkScheme = process.env.FRIDAY_TLS_CERT && process.env.FRIDAY_TLS_KEY ? "https" : "http";
-  const upgradeLinkScheme = (url: string): string =>
-    linkScheme === "https" && url.startsWith("http://")
-      ? "https://" + url.slice("http://".length)
-      : url;
-  const linkServiceUrl = process.env.LINK_SERVICE_URL
-    ? upgradeLinkScheme(process.env.LINK_SERVICE_URL)
-    : process.env.FRIDAY_PORT_LINK
+  const linkServiceUrl =
+    process.env.LINK_SERVICE_URL ??
+    (process.env.FRIDAY_PORT_LINK
       ? `${linkScheme}://localhost:${process.env.FRIDAY_PORT_LINK}`
-      : `${linkScheme}://localhost:3100`;
+      : `${linkScheme}://localhost:3100`);
   const url = `${linkServiceUrl}/v1/providers`;
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   const atlasKey = process.env.FRIDAY_KEY;
