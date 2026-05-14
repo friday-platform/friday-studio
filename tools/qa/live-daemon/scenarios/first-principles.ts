@@ -17,6 +17,7 @@ import {
   fetchSessionEvents,
   HARNESS_PATHS,
   listArtifactsForSession,
+  makeFixtureDir,
   registerWorkspace,
   type SSEEvent,
   startDaemon,
@@ -38,8 +39,12 @@ const PYTHON_USER_AGENT_FIXTURE = join(
   "user-agents/fake-inbox-python-agent",
 );
 
-async function materializeFixture(srcDir: string, replacements: Record<string, string>) {
-  const tmpDir = await Deno.makeTempDir({ prefix: "friday-first-principles-" });
+async function materializeFixture(
+  fridayHome: string,
+  srcDir: string,
+  replacements: Record<string, string>,
+) {
+  const tmpDir = await makeFixtureDir(fridayHome, "friday-first-principles-");
   const src = await Deno.readTextFile(join(srcDir, "workspace.yml"));
   let rendered = src;
   for (const [from, to] of Object.entries(replacements)) {
@@ -467,7 +472,7 @@ function hasArtifactRef(value: unknown): boolean {
 async function runRefsOverDataScenario(d: DaemonHandle): Promise<EvalResult[]> {
   const notes: string[] = [];
   const metrics: Record<string, unknown> = {};
-  const wsPath = await materializeFixture(REFS_FIXTURE, {
+  const wsPath = await materializeFixture(d.fridayHome, REFS_FIXTURE, {
     __FAKE_INBOX_MCP_PATH__: FAKE_INBOX_MCP,
   });
   const ws = await registerWorkspace(d, wsPath, { name: "First Principles Refs" });
@@ -629,7 +634,7 @@ function numberValue(value: unknown): number | undefined {
 async function runInputFromArrayScenario(d: DaemonHandle): Promise<EvalResult[]> {
   const notes: string[] = [];
   const metrics: Record<string, unknown> = {};
-  const wsPath = await materializeFixture(REFS_FIXTURE, {
+  const wsPath = await materializeFixture(d.fridayHome, REFS_FIXTURE, {
     __FAKE_INBOX_MCP_PATH__: FAKE_INBOX_MCP,
   });
   const ws = await registerWorkspace(d, wsPath, { name: "First Principles Refs Array" });
@@ -697,7 +702,7 @@ async function runInputFromArrayScenario(d: DaemonHandle): Promise<EvalResult[]>
 async function runAgentOutputContractScenario(d: DaemonHandle): Promise<EvalResult[]> {
   const notes: string[] = [];
   const metrics: Record<string, unknown> = {};
-  const wsPath = await materializeFixture(REFS_FIXTURE, {
+  const wsPath = await materializeFixture(d.fridayHome, REFS_FIXTURE, {
     __FAKE_INBOX_MCP_PATH__: FAKE_INBOX_MCP,
   });
   const ws = await registerWorkspace(d, wsPath, { name: "First Principles Agent Contract" });
@@ -777,7 +782,7 @@ async function runAgentOutputContractScenario(d: DaemonHandle): Promise<EvalResu
 async function runLlmAgentInputFromHydrationScenario(d: DaemonHandle): Promise<EvalResult[]> {
   const notes: string[] = [];
   const metrics: Record<string, unknown> = {};
-  const wsPath = await materializeFixture(REFS_FIXTURE, {
+  const wsPath = await materializeFixture(d.fridayHome, REFS_FIXTURE, {
     __FAKE_INBOX_MCP_PATH__: FAKE_INBOX_MCP,
   });
   const ws = await registerWorkspace(d, wsPath, { name: "First Principles LLM Agent InputFrom" });
@@ -858,7 +863,7 @@ async function runLlmAgentInputFromHydrationScenario(d: DaemonHandle): Promise<E
 async function runPythonUserAgentToolsScenario(d: DaemonHandle): Promise<EvalResult[]> {
   const notes: string[] = [];
   const metrics: Record<string, unknown> = {};
-  const wsPath = await materializeFixture(REFS_FIXTURE, {
+  const wsPath = await materializeFixture(d.fridayHome, REFS_FIXTURE, {
     __FAKE_INBOX_MCP_PATH__: FAKE_INBOX_MCP,
   });
   const ws = await registerWorkspace(d, wsPath, { name: "First Principles Python User Agent" });
@@ -940,7 +945,7 @@ async function runPythonUserAgentToolsScenario(d: DaemonHandle): Promise<EvalRes
 async function runPythonUserAgentInputFromScenario(d: DaemonHandle): Promise<EvalResult[]> {
   const notes: string[] = [];
   const metrics: Record<string, unknown> = {};
-  const wsPath = await materializeFixture(REFS_FIXTURE, {
+  const wsPath = await materializeFixture(d.fridayHome, REFS_FIXTURE, {
     __FAKE_INBOX_MCP_PATH__: FAKE_INBOX_MCP,
   });
   const ws = await registerWorkspace(d, wsPath, {
@@ -1038,7 +1043,7 @@ async function runPythonUserAgentInputFromScenario(d: DaemonHandle): Promise<Eva
 async function runAtlasAgentScenario(d: DaemonHandle): Promise<EvalResult[]> {
   const notes: string[] = [];
   const metrics: Record<string, unknown> = {};
-  const wsPath = await materializeFixture(REFS_FIXTURE, {
+  const wsPath = await materializeFixture(d.fridayHome, REFS_FIXTURE, {
     __FAKE_INBOX_MCP_PATH__: FAKE_INBOX_MCP,
   });
   const ws = await registerWorkspace(d, wsPath, { name: "First Principles Atlas Agent" });
@@ -1127,7 +1132,7 @@ async function runAtlasAgentScenario(d: DaemonHandle): Promise<EvalResult[]> {
 async function runAutoTriageReportOutputContractScenario(d: DaemonHandle): Promise<EvalResult[]> {
   const notes: string[] = [];
   const metrics: Record<string, unknown> = {};
-  const wsPath = await materializeFixture(REFS_FIXTURE, {
+  const wsPath = await materializeFixture(d.fridayHome, REFS_FIXTURE, {
     __FAKE_INBOX_MCP_PATH__: FAKE_INBOX_MCP,
   });
   const ws = await registerWorkspace(d, wsPath, { name: "First Principles Report Contract" });
@@ -1234,7 +1239,7 @@ async function runAutoTriageReportOutputContractScenario(d: DaemonHandle): Promi
 async function runAckOnlyMutationScenario(d: DaemonHandle): Promise<EvalResult[]> {
   const notes: string[] = [];
   const metrics: Record<string, unknown> = {};
-  const wsPath = await materializeFixture(REFS_FIXTURE, {
+  const wsPath = await materializeFixture(d.fridayHome, REFS_FIXTURE, {
     __FAKE_INBOX_MCP_PATH__: FAKE_INBOX_MCP,
   });
   const ws = await registerWorkspace(d, wsPath, { name: "First Principles Ack Mutation" });
@@ -1323,7 +1328,7 @@ async function runAckOnlyMutationScenario(d: DaemonHandle): Promise<EvalResult[]
 async function runUnknownToolScenario(d: DaemonHandle): Promise<EvalResult[]> {
   const notes: string[] = [];
   const metrics: Record<string, unknown> = {};
-  const wsPath = await materializeFixture(REFS_FIXTURE, {
+  const wsPath = await materializeFixture(d.fridayHome, REFS_FIXTURE, {
     __FAKE_INBOX_MCP_PATH__: FAKE_INBOX_MCP,
   });
   const ws = await registerWorkspace(d, wsPath, { name: "First Principles Unknown Tool" });
@@ -1400,7 +1405,7 @@ async function runUnknownToolScenario(d: DaemonHandle): Promise<EvalResult[]> {
 async function runBlockingElicitationScenario(d: DaemonHandle): Promise<EvalResult[]> {
   const notes: string[] = [];
   const metrics: Record<string, unknown> = {};
-  const wsPath = await materializeFixture(REFS_FIXTURE, {
+  const wsPath = await materializeFixture(d.fridayHome, REFS_FIXTURE, {
     __FAKE_INBOX_MCP_PATH__: FAKE_INBOX_MCP,
   });
   const ws = await registerWorkspace(d, wsPath, { name: "First Principles Blocking HITL" });
@@ -1479,7 +1484,7 @@ async function runRequestUserDecisionScenario(
 ): Promise<EvalResult[]> {
   const notes: string[] = [];
   const metrics: Record<string, unknown> = {};
-  const wsPath = await materializeFixture(REFS_FIXTURE, {
+  const wsPath = await materializeFixture(d.fridayHome, REFS_FIXTURE, {
     __FAKE_INBOX_MCP_PATH__: FAKE_INBOX_MCP,
   });
   const ws = await registerWorkspace(d, wsPath, {
@@ -1590,7 +1595,7 @@ async function runRequestUserDecisionScenario(
 async function runFanoutDelegateScenario(d: DaemonHandle): Promise<EvalResult[]> {
   const notes: string[] = [];
   const metrics: Record<string, unknown> = {};
-  const wsPath = await materializeFixture(REFS_FIXTURE, {
+  const wsPath = await materializeFixture(d.fridayHome, REFS_FIXTURE, {
     __FAKE_INBOX_MCP_PATH__: FAKE_INBOX_MCP,
   });
   const ws = await registerWorkspace(d, wsPath, { name: "First Principles Fanout Delegate" });
@@ -1691,7 +1696,7 @@ async function runFanoutDelegateScenario(d: DaemonHandle): Promise<EvalResult[]>
 async function runChatFollowupCompactnessScenario(d: DaemonHandle): Promise<EvalResult[]> {
   const notes: string[] = [];
   const metrics: Record<string, unknown> = {};
-  const wsPath = await materializeFixture(REFS_FIXTURE, {
+  const wsPath = await materializeFixture(d.fridayHome, REFS_FIXTURE, {
     __FAKE_INBOX_MCP_PATH__: FAKE_INBOX_MCP,
   });
   const ws = await registerWorkspace(d, wsPath, { name: "First Principles Chat Compactness" });
@@ -1791,7 +1796,7 @@ async function runChatFollowupCompactnessScenario(d: DaemonHandle): Promise<Eval
 async function runChatHumanInputScenario(d: DaemonHandle): Promise<EvalResult[]> {
   const notes: string[] = [];
   const metrics: Record<string, unknown> = {};
-  const wsPath = await materializeFixture(REFS_FIXTURE, {
+  const wsPath = await materializeFixture(d.fridayHome, REFS_FIXTURE, {
     __FAKE_INBOX_MCP_PATH__: FAKE_INBOX_MCP,
   });
   const ws = await registerWorkspace(d, wsPath, { name: "First Principles Chat HITL" });
@@ -1915,7 +1920,7 @@ async function runChatHumanInputScenario(d: DaemonHandle): Promise<EvalResult[]>
 async function runAmbientArtifactInjectionPruningScenario(d: DaemonHandle): Promise<EvalResult[]> {
   const notes: string[] = [];
   const metrics: Record<string, unknown> = {};
-  const wsPath = await materializeFixture(REFS_FIXTURE, {
+  const wsPath = await materializeFixture(d.fridayHome, REFS_FIXTURE, {
     __FAKE_INBOX_MCP_PATH__: FAKE_INBOX_MCP,
   });
   const ws = await registerWorkspace(d, wsPath, { name: "First Principles Ambient Artifacts" });
@@ -1989,7 +1994,7 @@ async function runAmbientArtifactInjectionPruningScenario(d: DaemonHandle): Prom
 async function runReviewChoiceMemoryLearningScenario(d: DaemonHandle): Promise<EvalResult[]> {
   const notes: string[] = [];
   const metrics: Record<string, unknown> = {};
-  const wsPath = await materializeFixture(REFS_FIXTURE, {
+  const wsPath = await materializeFixture(d.fridayHome, REFS_FIXTURE, {
     __FAKE_INBOX_MCP_PATH__: FAKE_INBOX_MCP,
   });
   const ws = await registerWorkspace(d, wsPath, { name: "First Principles Review Memory" });
@@ -2079,7 +2084,7 @@ async function runReviewChoiceMemoryLearningScenario(d: DaemonHandle): Promise<E
 async function runSessionInflightCleanupScenario(d: DaemonHandle): Promise<EvalResult[]> {
   const notes: string[] = [];
   const metrics: Record<string, unknown> = {};
-  const wsPath = await materializeFixture(REFS_FIXTURE, {
+  const wsPath = await materializeFixture(d.fridayHome, REFS_FIXTURE, {
     __FAKE_INBOX_MCP_PATH__: FAKE_INBOX_MCP,
   });
   const ws = await registerWorkspace(d, wsPath, { name: "First Principles Inflight Cleanup" });
@@ -2125,7 +2130,7 @@ async function runSessionInflightCleanupScenario(d: DaemonHandle): Promise<EvalR
 async function runWorkspaceFixSkillGuidanceScenario(d: DaemonHandle): Promise<EvalResult[]> {
   const notes: string[] = [];
   const metrics: Record<string, unknown> = {};
-  const wsPath = await materializeFixture(REFS_FIXTURE, {
+  const wsPath = await materializeFixture(d.fridayHome, REFS_FIXTURE, {
     __FAKE_INBOX_MCP_PATH__: FAKE_INBOX_MCP,
   });
   const ws = await registerWorkspace(d, wsPath, { name: "First Principles Workspace Fix" });

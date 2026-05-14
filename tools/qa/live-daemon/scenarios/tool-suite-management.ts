@@ -35,6 +35,7 @@ import {
   type DaemonHandle,
   ensureCredentialsLoaded,
   HARNESS_PATHS,
+  makeFixtureDir,
   registerWorkspace,
   type SSEEvent,
   startDaemon,
@@ -198,15 +199,15 @@ interface SetupResult {
   workspaceId: string;
 }
 
-async function materializeFixture(srcDir: string): Promise<string> {
-  const tmpDir = await Deno.makeTempDir({ prefix: "friday-tsm-fixture-" });
+async function materializeFixture(fridayHome: string, srcDir: string): Promise<string> {
+  const tmpDir = await makeFixtureDir(fridayHome, "friday-tsm-fixture-");
   const src = await Deno.readTextFile(join(srcDir, "workspace.yml"));
   await Deno.writeTextFile(join(tmpDir, "workspace.yml"), src);
   return tmpDir;
 }
 
 async function setupWorkspace(d: DaemonHandle, name: string): Promise<SetupResult> {
-  const wsPath = await materializeFixture(FIXTURE_DIR);
+  const wsPath = await materializeFixture(d.fridayHome, FIXTURE_DIR);
   const ws = await registerWorkspace(d, wsPath, { name });
   return { workspaceId: ws.id };
 }
