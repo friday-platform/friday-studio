@@ -2,6 +2,7 @@ import type { SkillSummary } from "@atlas/skills";
 import { describe, expect, it } from "vitest";
 import {
   buildSkillsSection,
+  flattenSystemBlocks,
   getSystemBlocks,
   summarizeSkillDescription,
 } from "./workspace-chat.agent.ts";
@@ -148,16 +149,33 @@ describe("getSystemBlocks block-4 (volatile workspace inventory)", () => {
     expect(blocks.block2).toContain("@svelte/core");
   });
 
-  it("prepends the cache salt to block 4, not block 2", () => {
+  it("prepends the cache salt to block 2 so a force-fresh bump cascades", () => {
     const cacheSaltTag = '<cache_salt workspace="ws-1" version="7"/>';
     const blocks = getSystemBlocks(workspaceSection, { cacheSaltTag });
-    expect(blocks.block4).toContain(cacheSaltTag);
-    expect(blocks.block2).not.toContain(cacheSaltTag);
+    // The salt leads block 2 — changing block 2's prefix invalidates
+    // block 3 and block 4 behind it, so "force fresh" busts everything.
+    expect(blocks.block2).toContain(cacheSaltTag);
+    expect(blocks.block4).not.toContain(cacheSaltTag);
   });
 
-  it("block 2 is empty when the workspace has no skills and no user identity", () => {
+  it("block 2 is empty when the workspace has no skills, identity, or salt", () => {
     const blocks = getSystemBlocks(workspaceSection);
     expect(blocks.block2).toBe("");
     expect(blocks.block4).toContain(workspaceSection);
+  });
+});
+
+describe("flattenSystemBlocks", () => {
+  it("omits an empty block 2 and still includes block 4", () => {
+    const workspaceSection = '<workspace id="ws-1" name="Personal"></workspace>';
+    // No skills / identity / salt -> block 2 is empty.
+    const blocks = getSystemBlocks(workspaceSection);
+    expect(blocks.block2).toBe("");
+
+    const flat = flattenSystemBlocks(blocks);
+    expect(flat).toContain(blocks.block1);
+    expect(flat).toContain(workspaceSection);
+    // An empty block 2 must not introduce a stray blank section.
+    expect(flat).not.toContain("\n\n\n\n");
   });
 });

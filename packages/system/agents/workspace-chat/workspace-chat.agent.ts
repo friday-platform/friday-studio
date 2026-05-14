@@ -403,9 +403,12 @@ ${entries.join("\n")}
  *     (agents, signals, jobs, MCP servers). Pulled out of block2 because
  *     it changes on every `upsert_*` / `publish_draft`; co-locating it
  *     with the 1h-TTL identity tier burned a full-rate cache write on
- *     every workspace mutation. Carries the cache salt for the same
- *     reason — "force fresh" should bust the breakpoint that actually
- *     holds mutable structure.
+ *     every workspace mutation.
+ *
+ * The cache salt rides on block2 (not block4): a "force fresh" bump must
+ * bust *everything*, and a change at block2's prefix cascades through
+ * block3 and block4 too. Salting only block4 would leave the skills /
+ * identity breakpoint cached.
  *
  * The turn preface (memory + temporal facts) is NOT in the system prompt
  * — it rides as a synthetic user-message preface so the system stays
@@ -432,18 +435,21 @@ export function getSystemBlocks(
     onboarding?: string;
     userProfile?: string;
     /**
-     * Optional cache-salt tag prepended to block 4. The /debug page
+     * Optional cache-salt tag prepended to block 2. The /debug page
      * "force fresh next turn" button bumps a workspace-scoped salt;
      * the chat handler reads it and threads the rendered tag here so
-     * a one-byte change at block 4's prefix invalidates the volatile-
-     * inventory breakpoint for every chat in the workspace. Empty
-     * string when the workspace has never bumped — no behavior change
-     * in that case.
+     * a one-byte change at block 2's prefix invalidates that breakpoint
+     * — and, because block 3 and block 4 sit behind it, the whole
+     * cached prefix — for every chat in the workspace. Empty string
+     * when the workspace has never bumped — no behavior change then.
      */
     cacheSaltTag?: string;
   },
 ): SystemBlocks {
+  // The salt leads block 2 so a "force fresh" bump cascades: changing
+  // block 2's prefix invalidates block 3 and block 4 along with it.
   const block2Parts: string[] = [];
+  if (options?.cacheSaltTag) block2Parts.push(options.cacheSaltTag.trimEnd());
   if (options?.skills) block2Parts.push(options.skills);
   if (options?.userIdentity) block2Parts.push(options.userIdentity);
 
@@ -451,12 +457,7 @@ export function getSystemBlocks(
   if (options?.onboarding) block3Parts.push(options.onboarding);
   if (options?.userProfile) block3Parts.push(options.userProfile);
 
-  // Block 4 — volatile workspace inventory. The cache salt rides here
-  // (not block 2) so "force fresh" busts the breakpoint that actually
-  // carries mutable workspace structure.
-  const block4Parts: string[] = [];
-  if (options?.cacheSaltTag) block4Parts.push(options.cacheSaltTag.trimEnd());
-  block4Parts.push(workspaceSection);
+  const block4Parts: string[] = [workspaceSection];
 
   return {
     block1: SYSTEM_PROMPT,
