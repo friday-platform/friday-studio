@@ -42,12 +42,6 @@ export const ProviderDetailsSchema = z.object({
     .optional(),
 });
 
-/** Inferred type of a single `secretSchema.properties` entry. */
-export type SecretProperty = z.infer<typeof SecretPropertySchema>;
-
-/** Inferred type of a full provider-details payload. */
-export type ProviderDetails = z.infer<typeof ProviderDetailsSchema>;
-
 const CredentialSummarySchema = z.object({
   id: z.string(),
   type: z.enum(["apikey", "oauth"]),
