@@ -97,8 +97,9 @@ export function createEnvTools(opts: CreateEnvToolsOpts): AtlasTools {
 
         try {
           const created = await ElicitationStorage.create({
-            // The elicitation lives in the session's workspace so the chat
-            // card can find it; the write target rides in `pendingTool.args`.
+            // The elicitation lives in the session's workspace; a `workspace`-
+            // scoped write targets that same workspace via the envelope's
+            // `workspaceId` at commit time, never an args-supplied one.
             workspaceId,
             sessionId,
             kind: "env-write",
@@ -107,7 +108,7 @@ export function createEnvTools(opts: CreateEnvToolsOpts): AtlasTools {
               { label: "Confirm", value: "confirm" },
               { label: "Deny", value: "deny" },
             ],
-            pendingTool: { name: "env_set", args: { scope, vars, workspaceId } },
+            pendingTool: { name: "env_set", args: { scope, vars } },
             expiresAt: new Date(Date.now() + ELICITATION_TTL_MS).toISOString(),
           });
           if (!created.ok) {

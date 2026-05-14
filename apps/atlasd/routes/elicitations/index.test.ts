@@ -349,11 +349,8 @@ describe("POST /:id/answer", () => {
     });
 
     test("workspace confirm writes through setEnvFileVar then marks answered", async () => {
-      const pending = envWriteElicitation({
-        scope: "workspace",
-        vars: { LOG_DIR: "/var/log" },
-        workspaceId: "ws_1",
-      });
+      // Target workspace comes from the elicitation envelope, not the args.
+      const pending = envWriteElicitation({ scope: "workspace", vars: { LOG_DIR: "/var/log" } });
       mockElicitationStorage.get.mockResolvedValueOnce(success(pending));
       mockElicitationStorage.answer.mockResolvedValueOnce(
         success(makeElicitation({ kind: "env-write", status: "answered" })),
@@ -368,6 +365,38 @@ describe("POST /:id/answer", () => {
       expect(res.status).toBe(200);
       expect(mockSetEnvFileVar).toHaveBeenCalledWith("/tmp/ws_1/.env", "LOG_DIR", "/var/log");
       expect(mockElicitationStorage.answer).toHaveBeenCalled();
+    });
+
+    test("workspace confirm ignores an args-supplied workspaceId — envelope wins", async () => {
+      // Security boundary: a tampered `pendingTool.args.workspaceId` must not
+      // redirect the write. The envelope's `workspaceId` (server-controlled at
+      // create time) is authoritative; the stray args key is ignored.
+      const pending = makeElicitation({
+        kind: "env-write",
+        workspaceId: "ws_1",
+        pendingTool: {
+          name: "env_set",
+          args: { scope: "workspace", vars: { LOG_DIR: "/var/log" }, workspaceId: "ws_attacker" },
+        },
+      });
+      mockElicitationStorage.get.mockResolvedValueOnce(success(pending));
+      mockElicitationStorage.answer.mockResolvedValueOnce(
+        success(makeElicitation({ kind: "env-write", status: "answered" })),
+      );
+
+      const res = await createTestApp().request("/elc_1/answer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ value: "confirm" }),
+      });
+
+      expect(res.status).toBe(200);
+      expect(mockSetEnvFileVar).toHaveBeenCalledWith("/tmp/ws_1/.env", "LOG_DIR", "/var/log");
+      expect(mockSetEnvFileVar).not.toHaveBeenCalledWith(
+        "/tmp/ws_attacker/.env",
+        expect.anything(),
+        expect.anything(),
+      );
     });
 
     test("malformed pendingTool args 500s and does not mark answered", async () => {

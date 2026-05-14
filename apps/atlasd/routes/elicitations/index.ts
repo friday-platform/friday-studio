@@ -36,11 +36,17 @@ import { daemonFactory } from "../../src/factory.ts";
 import { errorResponseSchema } from "../../src/utils.ts";
 import { getAccessibleWorkspaceIds, requireWorkspaceMember } from "../../src/workspace-authz.ts";
 
-/** Shape of an `env-write` elicitation's `pendingTool.args`. */
+/**
+ * Shape of an `env-write` elicitation's `pendingTool.args`.
+ *
+ * Note: the write's target workspace is taken from the *elicitation envelope*
+ * (`elicitation.workspaceId`), never from the tool args — the envelope is
+ * server-controlled at create time, the args are not. A `workspace`-scoped
+ * write can therefore only ever touch the elicitation's own workspace.
+ */
 const EnvWriteArgsSchema = z.object({
   scope: z.enum(["workspace", "global"]),
   vars: z.record(z.string(), z.string()),
-  workspaceId: z.string().optional(),
 });
 
 /**
@@ -64,7 +70,7 @@ async function commitEnvWriteElicitation(
     });
     return { ok: false, error: `malformed env-write args: ${parsed.error.message}` };
   }
-  const { scope, vars, workspaceId } = parsed.data;
+  const { scope, vars } = parsed.data;
   const keys = Object.keys(vars);
 
   try {
@@ -73,8 +79,9 @@ async function commitEnvWriteElicitation(
       logger.info("env-write elicitation applied (global)", { id: elicitation.id, keys });
       return { ok: true };
     }
-    // workspace scope — `env_set` writes are local to the elicitation's workspace.
-    const wsId = workspaceId ?? elicitation.workspaceId;
+    // workspace scope — the write target is the elicitation's own workspace,
+    // taken from the server-controlled envelope, not from tool args.
+    const wsId = elicitation.workspaceId;
     const workspace = await c.get("app").getWorkspaceManager().find({ id: wsId });
     if (!workspace) {
       logger.error("env-write elicitation: workspace not found", {

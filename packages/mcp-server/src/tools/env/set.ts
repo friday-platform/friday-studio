@@ -96,8 +96,10 @@ export function registerEnvSetTool(server: McpServer, ctx: ToolContext): void {
 
       try {
         const created = await ElicitationStorage.create({
-          // The elicitation lives in the session's workspace so the chat card
-          // can find it; the write target is carried in `pendingTool.args`.
+          // The elicitation lives in the session's workspace; a `workspace`-
+          // scoped write targets that same workspace via the envelope's
+          // `workspaceId`, never an args-supplied one (see the commit path
+          // in `apps/atlasd/routes/elicitations`).
           workspaceId,
           sessionId: sessionId ?? "unknown",
           ...(actionId ? { actionId } : {}),
@@ -107,7 +109,7 @@ export function registerEnvSetTool(server: McpServer, ctx: ToolContext): void {
             { label: "Confirm", value: "confirm" },
             { label: "Deny", value: "deny" },
           ],
-          pendingTool: { name: "env_set", args: { scope, vars, workspaceId } },
+          pendingTool: { name: "env_set", args: { scope, vars } },
           expiresAt: deriveElicitationExpiresAt(jobTimeoutMs),
         });
         if (!created.ok) {
