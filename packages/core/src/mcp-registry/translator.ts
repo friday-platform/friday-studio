@@ -195,11 +195,16 @@ export function translate(
       ? ["-y", `${stdioPackage.identifier}@${server.version}`]
       : [`${stdioPackage.identifier}==${server.version}`];
 
-    const { requiredConfig, env, linkKeys } = routeEnvVars(envVars, effectiveProviderId);
+    const { requiredConfig, env, linkVars } = routeEnvVars(envVars, effectiveProviderId);
 
     const linkProvider =
-      !annotation?.providerId && linkKeys.length > 0
-        ? buildApiKeyProvider(id, server.name, server.description, linkKeys)
+      !annotation?.providerId && linkVars.length > 0
+        ? buildApiKeyProvider(
+            id,
+            server.name,
+            server.description,
+            linkVars.map((v) => v.name),
+          )
         : undefined;
 
     const entry: MCPServerMetadata = {
@@ -245,9 +250,9 @@ export function translate(
       };
     }
 
-    const { requiredConfig, env, linkKeys } = routeEnvVars(envVars, effectiveProviderId);
+    const { requiredConfig, env, linkVars } = routeEnvVars(envVars, effectiveProviderId);
 
-    if (linkKeys.length > 0) {
+    if (linkVars.length > 0) {
       // http remote with credential env vars → DynamicApiKeyProviderInput
       const entry: MCPServerMetadata = {
         id,
@@ -269,7 +274,12 @@ export function translate(
         entry,
         linkProvider: annotation?.providerId
           ? undefined
-          : buildApiKeyProvider(id, server.name, server.description, linkKeys),
+          : buildApiKeyProvider(
+              id,
+              server.name,
+              server.description,
+              linkVars.map((v) => v.name),
+            ),
       };
     }
 

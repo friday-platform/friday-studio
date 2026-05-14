@@ -4,8 +4,8 @@ import type { UpstreamEnvironmentVariable } from "./upstream-client.ts";
 
 describe("routeEnvVars", () => {
   describe("need rule — four quadrants", () => {
-    it("required + secret → Link ref, link key, required config", ({ expect }) => {
-      const { env, linkKeys, requiredConfig } = routeEnvVars(
+    it("required + secret → Link ref, link var, required config", ({ expect }) => {
+      const { env, linkVars, requiredConfig } = routeEnvVars(
         [{ name: "API_TOKEN", description: "API token", isRequired: true, isSecret: true }],
         "my-provider",
       );
@@ -13,7 +13,9 @@ describe("routeEnvVars", () => {
       expect(env).toEqual({
         API_TOKEN: { from: "link", provider: "my-provider", key: "API_TOKEN" },
       });
-      expect(linkKeys).toEqual(["API_TOKEN"]);
+      expect(linkVars).toEqual([
+        { name: "API_TOKEN", description: "API token", isRequired: true, isSecret: true },
+      ]);
       expect(requiredConfig).toEqual([
         { key: "API_TOKEN", description: "API token", type: "string" },
       ]);
@@ -22,7 +24,7 @@ describe("routeEnvVars", () => {
     it("required + non-secret → Link ref (required alone earns credential handling)", ({
       expect,
     }) => {
-      const { env, linkKeys, requiredConfig } = routeEnvVars(
+      const { env, linkVars, requiredConfig } = routeEnvVars(
         [{ name: "WORKSPACE", description: "Workspace name", isRequired: true, isSecret: false }],
         "my-provider",
       );
@@ -30,14 +32,16 @@ describe("routeEnvVars", () => {
       expect(env).toEqual({
         WORKSPACE: { from: "link", provider: "my-provider", key: "WORKSPACE" },
       });
-      expect(linkKeys).toEqual(["WORKSPACE"]);
+      expect(linkVars).toEqual([
+        { name: "WORKSPACE", description: "Workspace name", isRequired: true, isSecret: false },
+      ]);
       expect(requiredConfig).toEqual([
         { key: "WORKSPACE", description: "Workspace name", type: "string" },
       ]);
     });
 
-    it("optional + secret → Link ref, link key, but not required config", ({ expect }) => {
-      const { env, linkKeys, requiredConfig } = routeEnvVars(
+    it("optional + secret → Link ref, link var, but not required config", ({ expect }) => {
+      const { env, linkVars, requiredConfig } = routeEnvVars(
         [
           {
             name: "OPTIONAL_KEY",
@@ -52,39 +56,41 @@ describe("routeEnvVars", () => {
       expect(env).toEqual({
         OPTIONAL_KEY: { from: "link", provider: "my-provider", key: "OPTIONAL_KEY" },
       });
-      expect(linkKeys).toEqual(["OPTIONAL_KEY"]);
+      expect(linkVars).toEqual([
+        { name: "OPTIONAL_KEY", description: "Optional secret", isRequired: false, isSecret: true },
+      ]);
       expect(requiredConfig).toEqual([]);
     });
 
     it("optional + non-secret with default → plain string carrying the default", ({ expect }) => {
-      const { env, linkKeys, requiredConfig } = routeEnvVars(
+      const { env, linkVars, requiredConfig } = routeEnvVars(
         [{ name: "LOG_LEVEL", description: "Log level", isRequired: false, default: "info" }],
         "my-provider",
       );
 
       expect(env).toEqual({ LOG_LEVEL: "info" });
-      expect(linkKeys).toEqual([]);
+      expect(linkVars).toEqual([]);
       expect(requiredConfig).toEqual([]);
     });
 
     it("optional + non-secret without default → empty string", ({ expect }) => {
-      const { env, linkKeys, requiredConfig } = routeEnvVars(
+      const { env, linkVars, requiredConfig } = routeEnvVars(
         [{ name: "LOG_FILE", description: "Log file path", isRequired: false }],
         "my-provider",
       );
 
       expect(env).toEqual({ LOG_FILE: "" });
-      expect(linkKeys).toEqual([]);
+      expect(linkVars).toEqual([]);
       expect(requiredConfig).toEqual([]);
     });
   });
 
   describe("default flags", () => {
     it("treats missing isRequired / isSecret as false (→ plain string)", ({ expect }) => {
-      const { env, linkKeys } = routeEnvVars([{ name: "PLAIN" }], "my-provider");
+      const { env, linkVars } = routeEnvVars([{ name: "PLAIN" }], "my-provider");
 
       expect(env).toEqual({ PLAIN: "" });
-      expect(linkKeys).toEqual([]);
+      expect(linkVars).toEqual([]);
     });
   });
 
@@ -142,7 +148,7 @@ describe("routeEnvVars", () => {
   });
 
   it("handles an empty env var list", ({ expect }) => {
-    expect(routeEnvVars([], "my-provider")).toEqual({ env: {}, linkKeys: [], requiredConfig: [] });
+    expect(routeEnvVars([], "my-provider")).toEqual({ env: {}, linkVars: [], requiredConfig: [] });
   });
 
   it("routes a Bitbucket-shaped entry — 3 required credentials + 7 optional settings", ({
@@ -161,13 +167,13 @@ describe("routeEnvVars", () => {
       { name: "BITBUCKET_VERIFY_SSL", isRequired: false, default: "true" },
     ];
 
-    const { env, linkKeys, requiredConfig } = routeEnvVars(envVars, "bitbucket-mcp");
+    const { env, linkVars, requiredConfig } = routeEnvVars(envVars, "bitbucket-mcp");
 
-    // 3 required credentials → Link refs.
-    expect(linkKeys).toEqual([
-      "BITBUCKET_USERNAME",
-      "BITBUCKET_APP_PASSWORD",
-      "BITBUCKET_WORKSPACE",
+    // 3 required credentials → Link refs, with full metadata preserved.
+    expect(linkVars).toEqual([
+      { name: "BITBUCKET_USERNAME", isRequired: true },
+      { name: "BITBUCKET_APP_PASSWORD", isRequired: true, isSecret: true },
+      { name: "BITBUCKET_WORKSPACE", isRequired: true },
     ]);
     expect(requiredConfig.map((f) => f.key)).toEqual([
       "BITBUCKET_USERNAME",

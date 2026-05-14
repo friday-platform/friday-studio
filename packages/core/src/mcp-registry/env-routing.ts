@@ -49,10 +49,13 @@ export interface RoutedEnv {
    */
   env: Record<string, string | LinkCredentialRef>;
   /**
-   * Subset of `env` keys routed to Link — these, and only these, become the
-   * Link provider's `secretSchema` fields. Empty when nothing needs a credential.
+   * Subset of input `envVars` routed to Link — these, and only these, become the
+   * Link provider's `secretSchema` fields. Carries the full `RoutableEnvVar`
+   * objects so downstream consumers (e.g. the Link provider builder) can read
+   * `isRequired`, `isSecret`, `description`, and `placeholder` metadata. Empty
+   * when nothing needs a credential.
    */
-  linkKeys: string[];
+  linkVars: RoutableEnvVar[];
   /** Descriptors for the required vars — what the user must supply at install. */
   requiredConfig: RequiredConfigField[];
 }
@@ -64,7 +67,7 @@ export interface RoutedEnv {
  */
 export function routeEnvVars(envVars: RoutableEnvVar[], providerId: string): RoutedEnv {
   const env: Record<string, string | LinkCredentialRef> = {};
-  const linkKeys: string[] = [];
+  const linkVars: RoutableEnvVar[] = [];
   const requiredConfig: RequiredConfigField[] = [];
 
   for (const ev of envVars) {
@@ -73,7 +76,7 @@ export function routeEnvVars(envVars: RoutableEnvVar[], providerId: string): Rou
 
     if (isRequired || isSecret) {
       env[ev.name] = { from: "link", provider: providerId, key: ev.name };
-      linkKeys.push(ev.name);
+      linkVars.push(ev);
     } else {
       env[ev.name] = ev.default ?? "";
     }
@@ -91,7 +94,7 @@ export function routeEnvVars(envVars: RoutableEnvVar[], providerId: string): Rou
     }
   }
 
-  return { env, linkKeys, requiredConfig };
+  return { env, linkVars, requiredConfig };
 }
 
 /** Outcome of lifting literal env values out of a config template's env block. */
