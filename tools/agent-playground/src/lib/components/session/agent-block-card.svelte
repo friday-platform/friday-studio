@@ -286,7 +286,7 @@
     margin-inline-start: calc(-1 * calc(var(--size-2) + 0.5px));
 
     &.running {
-      animation: spin 2s linear infinite;
+      animation: spin 4s linear infinite;
     }
   }
 
