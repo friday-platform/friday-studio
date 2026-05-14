@@ -761,6 +761,31 @@
                   {/each}
                 </div>
               {/if}
+            {:else if segment.type === "file-list"}
+              <!-- User-attached files. The chip is intentionally minimal —
+                   bytes live on the daemon's filesystem (scratch/uploads),
+                   not in artifact storage, so there's no `/content`
+                   endpoint to fetch a preview from. The agent reads each
+                   file via `read_attachment(path)` on demand. -->
+              <div class="user-attachment-list">
+                {#each segment.paths as path, i (path)}
+                  <div class="user-file-chip" title={path}>
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                      <path
+                        d="M9 1.5H3.5A1.5 1.5 0 0 0 2 3v10a1.5 1.5 0 0 0 1.5 1.5h9A1.5 1.5 0 0 0 14 13V6.5L9 1.5Z"
+                        stroke="currentColor"
+                        stroke-width="1.2"
+                        stroke-linejoin="round"
+                      />
+                      <path d="M9 1.5V6.5H14" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" />
+                    </svg>
+                    <span class="user-file-name">{segment.filenames[i] ?? path}</span>
+                    {#if segment.mimeTypes[i]}
+                      <span class="user-file-mime">{segment.mimeTypes[i]}</span>
+                    {/if}
+                  </div>
+                {/each}
+              </div>
             {/if}
           {/each}
 
@@ -1479,6 +1504,41 @@
     display: flex;
     flex-direction: column;
     gap: var(--size-1);
+  }
+
+  /* ─── User-attached files ──────────────────────────────────────────── */
+
+  .user-attachment-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--size-2);
+  }
+
+  .user-file-chip {
+    align-items: center;
+    background-color: var(--color-surface-2);
+    border: 1px solid var(--color-border-1);
+    border-radius: var(--radius-2);
+    color: var(--color-text);
+    display: inline-flex;
+    font-size: var(--font-size-1);
+    gap: var(--size-1);
+    max-inline-size: 320px;
+    padding: var(--size-1) var(--size-2);
+  }
+
+  .user-file-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .user-file-mime {
+    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    font-variant-numeric: tabular-nums;
+    text-transform: uppercase;
+    font-size: var(--font-size-0, 11px);
   }
 
   /* ─── Inline images ─────────────────────────────────────────────────── */

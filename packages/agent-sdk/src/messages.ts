@@ -111,6 +111,20 @@ export const AtlasDataEventSchemas = {
     filenames: z.array(z.string()),
     mimeTypes: z.array(z.string()).optional(),
   }),
+  /**
+   * User dropped files on the chat input. Each path is an absolute path on
+   * the daemon's filesystem under
+   * `{FRIDAY_HOME}/scratch/uploads/{workspaceId}/{chatId}/` — the
+   * scratch-upload route writes the bytes there on drop, and the
+   * agent reads them via the `read_attachment` tool. No artifact storage
+   * (so no library pollution); replaces the prior `artifact-attached` flow
+   * for user-attached files.
+   */
+  "file-attached": z.object({
+    paths: z.array(z.string()),
+    filenames: z.array(z.string()),
+    mimeTypes: z.array(z.string()),
+  }),
   /** Forwarded tool call from an inner (sub-agent) execution */
   "inner-tool-call": z.object({
     toolName: z.string(),
@@ -270,6 +284,7 @@ export type AtlasDataEvents = {
   "integration-disconnected": z.infer<(typeof AtlasDataEventSchemas)["integration-disconnected"]>;
   intent: z.infer<(typeof AtlasDataEventSchemas)["intent"]>;
   "artifact-attached": z.infer<(typeof AtlasDataEventSchemas)["artifact-attached"]>;
+  "file-attached": z.infer<(typeof AtlasDataEventSchemas)["file-attached"]>;
   "inner-tool-call": z.infer<(typeof AtlasDataEventSchemas)["inner-tool-call"]>;
   "delegate-chunk": z.infer<(typeof AtlasDataEventSchemas)["delegate-chunk"]>;
   "delegate-ledger": z.infer<(typeof AtlasDataEventSchemas)["delegate-ledger"]>;
