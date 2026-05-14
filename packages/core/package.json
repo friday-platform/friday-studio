@@ -38,6 +38,7 @@
     "./mcp-registry/upstream-client": "./src/mcp-registry/upstream-client.ts",
     "./mcp-registry/auth-config": "./src/mcp-registry/auth-config.ts",
     "./mcp-registry/env-routing": "./src/mcp-registry/env-routing.ts",
+    "./mcp-registry/env-secret-mask": "./src/mcp-registry/env-secret-mask.ts",
     "./mcp-registry/translator": "./src/mcp-registry/translator.ts",
     "./mcp-registry/readme-fetcher": "./src/mcp-registry/readme-fetcher.ts",
     "./mcp-registry/workspace-mcp": "./src/mcp-registry/workspace-mcp.ts",

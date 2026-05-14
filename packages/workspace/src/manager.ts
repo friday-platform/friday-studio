@@ -6,7 +6,7 @@ import { basename, dirname, join } from "node:path";
 import { env } from "node:process";
 import type { MemoryAdapter } from "@atlas/agent-sdk";
 import { ConfigLoader, ConfigNotFoundError, type MergedConfig } from "@atlas/config";
-import { MissingEnvironmentError, readEnvVar } from "@atlas/core";
+import { findMissingServerEnvVars, MissingEnvironmentError } from "@atlas/core";
 import { logger } from "@atlas/logger";
 import { seedMemories } from "@atlas/memory";
 import { FilesystemConfigAdapter } from "@atlas/storage";
@@ -114,32 +114,7 @@ export function validateMCPEnvironmentForWorkspace(
   const missingVars: Array<{ serverId: string; varName: string }> = [];
 
   for (const [serverId, serverConfig] of Object.entries(mcpServers)) {
-    if (!serverConfig.env) continue;
-
-    for (const [key, value] of Object.entries(serverConfig.env)) {
-      if (value === "auto" || value === "from_environment") {
-        if (!readEnvVar(key, workspaceEnv)) {
-          missingVars.push({ serverId, varName: key });
-        }
-      }
-    }
-
-    // Also check auth config
-    if (serverConfig.auth?.token_env) {
-      const tokenEnv = serverConfig.auth.token_env;
-
-      // Skip if env config has any entry for token_env:
-      // - Link refs are resolved at runtime
-      // - Literal strings provide the value directly
-      // - "auto"/"from_environment" are already validated in the loop above
-      if (serverConfig.env?.[tokenEnv] !== undefined) {
-        continue;
-      }
-
-      if (!readEnvVar(tokenEnv, workspaceEnv)) {
-        missingVars.push({ serverId, varName: tokenEnv });
-      }
-    }
+    missingVars.push(...findMissingServerEnvVars(serverId, serverConfig, workspaceEnv));
   }
 
   if (missingVars.length > 0) {

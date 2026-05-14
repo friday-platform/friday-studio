@@ -14,50 +14,19 @@
 
 import { z } from "zod";
 
+// Secret-masking heuristic lives in `@atlas/core` so the chat-side env tools
+// (`@atlas/system`) share one source of truth — a divergent copy would mask a
+// key on one surface and leak it on the other.
+export {
+  isSecretKey,
+  MASKED_VALUE,
+  maskEnvMap,
+  maskForKey,
+} from "@atlas/core/mcp-registry/env-secret-mask";
+
 /** `workspace` (per-workspace `.env`) or `global` (the daemon's `.env`). */
 export const EnvScopeSchema = z.enum(["workspace", "global"]);
 export type EnvScope = z.infer<typeof EnvScopeSchema>;
-
-/**
- * Key-name heuristic for "this probably holds a credential." Reads of a
- * matching key are masked; `env_set` shows the value masked-with-reveal in
- * its confirmation card and nudges toward Link.
- */
-const SECRET_KEY_RE = /password|secret|token|key|credential/i;
-
-/** True when `key` looks like it holds a secret. */
-export function isSecretKey(key: string): boolean {
-  return SECRET_KEY_RE.test(key);
-}
-
-/**
- * Opaque mask for a secret-bearing value. Fixed-width — no length leak, no
- * plaintext prefix/suffix; the value is genuinely withheld from tool output.
- */
-export const MASKED_VALUE = "********";
-
-/** Mask a single value when its key looks secret-bearing; pass through otherwise. */
-export function maskForKey(key: string, value: string): string {
-  return isSecretKey(key) ? MASKED_VALUE : value;
-}
-
-/** Mask every secret-looking key in an env map. Returns the masked map + the masked key list. */
-export function maskEnvMap(env: Record<string, string>): {
-  env: Record<string, string>;
-  maskedKeys: string[];
-} {
-  const masked: Record<string, string> = {};
-  const maskedKeys: string[] = [];
-  for (const [k, v] of Object.entries(env)) {
-    if (isSecretKey(k)) {
-      masked[k] = MASKED_VALUE;
-      maskedKeys.push(k);
-    } else {
-      masked[k] = v;
-    }
-  }
-  return { env: masked, maskedKeys };
-}
 
 /**
  * Resolve the daemon route base for a scope. `workspace` scope requires a

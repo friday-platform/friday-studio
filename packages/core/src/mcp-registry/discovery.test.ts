@@ -1,5 +1,5 @@
 import type { MCPServerConfig, WorkspaceConfig } from "@atlas/config";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MCPServerMetadata } from "./schemas.ts";
 
 // ---------------------------------------------------------------------------
@@ -98,7 +98,7 @@ beforeEach(() => {
   originalEnv = { ...process.env };
 });
 
-beforeEach(() => {
+afterEach(() => {
   // Restore process.env after each test
   for (const key of Object.keys(process.env)) {
     delete process.env[key];

@@ -1,6 +1,7 @@
 import process from "node:process";
 import type { LinkCredentialRef } from "@atlas/agent-sdk";
 import { client, DetailedError, parseResult } from "@atlas/client/v2";
+import type { MCPServerConfig } from "@atlas/config";
 import type { Logger } from "@atlas/logger";
 
 /** Credential info from Link summary endpoint */
@@ -249,6 +250,41 @@ export function hasUnusableCredentialCause(error: unknown): boolean {
  */
 export function readEnvVar(key: string, overlay?: Record<string, string>): string | undefined {
   return overlay?.[key] ?? process.env[key];
+}
+
+/**
+ * Per-server check that every `auto`/`from_environment` env var (and a bare
+ * `auth.token_env`) a server declares actually resolves against the supplied
+ * overlay + `process.env`.
+ *
+ * The wiring-vs-values split: `discoverMCPServers` reports a `from_environment`
+ * server as `configured` because the *wiring* is complete — but the *value*
+ * may still be unset. This is the value check. Shared by
+ * `validateMCPEnvironmentForWorkspace` (daemon workspace-runtime spawn) and the
+ * `delegate` (sub-agent spawn) so both degrade on exactly the same rule — a
+ * server the daemon drops as broken can't be resurrected by a delegate.
+ */
+export function findMissingServerEnvVars(
+  serverId: string,
+  serverConfig: MCPServerConfig,
+  overlay?: Record<string, string>,
+): Array<{ serverId: string; varName: string }> {
+  const missing: Array<{ serverId: string; varName: string }> = [];
+  const env = serverConfig.env;
+  if (env) {
+    for (const [key, value] of Object.entries(env)) {
+      if ((value === "auto" || value === "from_environment") && !readEnvVar(key, overlay)) {
+        missing.push({ serverId, varName: key });
+      }
+    }
+  }
+  // A bare `auth.token_env` with no matching `env` entry resolves ambiently —
+  // a Link ref / literal / sentinel in `env` is handled by the loop above.
+  const tokenEnv = serverConfig.auth?.token_env;
+  if (tokenEnv && env?.[tokenEnv] === undefined && !readEnvVar(tokenEnv, overlay)) {
+    missing.push({ serverId, varName: tokenEnv });
+  }
+  return missing;
 }
 
 /**

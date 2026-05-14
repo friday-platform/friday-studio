@@ -26,6 +26,7 @@ import type { ToolCallRepairFunction, UIMessageStreamWriter } from "ai";
 import { stepCountIs, streamText, tool } from "ai";
 import { z } from "zod";
 import { liftAnswerForModel } from "../artifacts/scrubber.ts";
+import { findMissingServerEnvVars } from "../mcp-registry/credential-resolver.ts";
 import { discoverMCPServers, type LinkSummary } from "../mcp-registry/discovery.ts";
 import { FINISH_TOOL_NAME, type FinishInput, finishTool, parseFinishInput } from "./finish-tool.ts";
 import { createDelegateProxyWriter } from "./proxy-writer.ts";
@@ -355,6 +356,29 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
           for (const id of mcpServers) {
             const c = candidateMap.get(id);
             if (c) selectedConfigs[id] = c.mergedConfig;
+          }
+
+          // `discoverMCPServers` reports a `from_environment`-wired server as
+          // `configured` once the wiring exists — but the value can still be
+          // unset. The daemon re-checks this at workspace-runtime creation and
+          // degrades by dropping the server; a delegate that skipped the check
+          // would resurrect that same server here and spawn it with
+          // empty-string credentials. Re-apply the daemon's rule against the
+          // workspace `.env` overlay and fail fast with an actionable reason.
+          const envUnresolved = Object.entries(selectedConfigs).flatMap(([id, config]) =>
+            findMissingServerEnvVars(id, config, deps.envOverlay),
+          );
+          if (envUnresolved.length > 0) {
+            const formatted = envUnresolved
+              .map((m) => `${m.varName} (for '${m.serverId}')`)
+              .join(", ");
+            return {
+              ok: false,
+              reason:
+                `MCP server(s) have unresolved env vars: ${formatted}. ` +
+                "Set them in the workspace .env (or the daemon env) and retry.",
+              toolsUsed: [],
+            };
           }
 
           // Do not lift MCP results before the child LLM sees them. The lift's

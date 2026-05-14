@@ -62,6 +62,7 @@ vi.mock("./skills-resolver.ts", async () => {
   return { ...actual, resolveDelegateSkills: mockResolveDelegateSkills };
 });
 
+import process from "node:process";
 import { createDelegateTool, type DelegateResult } from "./index.ts";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -1134,6 +1135,80 @@ describe("createDelegateTool", () => {
       toolsUsed: [],
     });
     expect(mockCreateMCPTools).not.toHaveBeenCalled();
+  });
+
+  it("rejects a wiring-complete server whose from_environment var resolves nowhere", async () => {
+    // `discoverMCPServers` reports `configured: true` because the wiring
+    // exists — but the value is unset. The daemon drops such a server at
+    // workspace-runtime creation; the delegate must apply the same rule
+    // rather than spawn it with empty-string credentials.
+    delete process.env.DELEGATE_NEEDS_TOKEN;
+    mockDiscoverMCPServers.mockResolvedValue([
+      {
+        metadata: {
+          id: "needs-env",
+          name: "Needs Env",
+          source: "workspace",
+          securityRating: "unverified",
+          configTemplate: { transport: { type: "stdio", command: "cmd" } },
+        },
+        mergedConfig: {
+          transport: { type: "stdio", command: "cmd" },
+          env: { DELEGATE_NEEDS_TOKEN: "from_environment" },
+        },
+        configured: true,
+      },
+    ] satisfies MCPServerCandidate[]);
+
+    const { delegateTool } = makeDelegate(undefined, undefined, undefined, undefined, {
+      workspaceConfig: {} as unknown as WorkspaceConfig,
+    });
+    const result = await runDelegate(delegateTool, "del-call-1", { mcpServers: ["needs-env"] });
+
+    expect(result).toEqual({
+      ok: false,
+      reason:
+        "MCP server(s) have unresolved env vars: DELEGATE_NEEDS_TOKEN (for 'needs-env'). " +
+        "Set them in the workspace .env (or the daemon env) and retry.",
+      toolsUsed: [],
+    });
+    expect(mockCreateMCPTools).not.toHaveBeenCalled();
+  });
+
+  it("admits a wiring-complete server when its from_environment var is in the overlay", async () => {
+    mockDiscoverMCPServers.mockResolvedValue([
+      {
+        metadata: {
+          id: "needs-env",
+          name: "Needs Env",
+          source: "workspace",
+          securityRating: "unverified",
+          configTemplate: { transport: { type: "stdio", command: "cmd" } },
+        },
+        mergedConfig: {
+          transport: { type: "stdio", command: "cmd" },
+          env: { DELEGATE_NEEDS_TOKEN: "from_environment" },
+        },
+        configured: true,
+      },
+    ] satisfies MCPServerCandidate[]);
+    const mockDispose = vi.fn();
+    mockCreateMCPTools.mockResolvedValue({ tools: { tool_a: dummyTool }, dispose: mockDispose });
+
+    const captured: CapturedStreamTextArgs = { args: undefined };
+    setupMockStreamText(captured, {
+      steps: [{ finish: { ok: true, answer: "done" } }],
+      finalText: "",
+    });
+
+    const { delegateTool } = makeDelegate(undefined, undefined, undefined, undefined, {
+      workspaceConfig: {} as unknown as WorkspaceConfig,
+      envOverlay: { DELEGATE_NEEDS_TOKEN: "from-overlay" },
+    });
+    const result = await runDelegate(delegateTool, "del-call-1", { mcpServers: ["needs-env"] });
+
+    expect(result.ok).toBe(true);
+    expect(mockCreateMCPTools).toHaveBeenCalled();
   });
 
   it("connects a single MCP server without tool prefix", async () => {

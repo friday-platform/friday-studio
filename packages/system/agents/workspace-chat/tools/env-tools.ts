@@ -1,5 +1,6 @@
 import type { AtlasTools } from "@atlas/agent-sdk";
 import { ElicitationStorage } from "@atlas/core/elicitations";
+import { isSecretKey, MASKED_VALUE } from "@atlas/core/mcp-registry/env-secret-mask";
 import type { Logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
 import { tool } from "ai";
@@ -23,13 +24,6 @@ import { z } from "zod";
  * (see the `env-write` branch in `apps/atlasd/routes/elicitations`). To verify
  * a write landed, call `env_get` on a later turn.
  */
-
-/** Key-name heuristic for "this probably holds a credential" — mirrors `env/shared.ts`. */
-const SECRET_KEY_RE = /password|secret|token|key|credential/i;
-const isSecretKey = (key: string): boolean => SECRET_KEY_RE.test(key);
-
-/** Opaque mask `env_get` returns for secret-looking values — mirrors `env/shared.ts`. */
-const MASKED_VALUE = "********";
 
 /** Chat elicitations have no parent job timeout to derive from — fixed TTL. */
 const ELICITATION_TTL_MS = 30 * 60 * 1000;

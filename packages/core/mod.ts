@@ -66,6 +66,7 @@ export { UserConfigurationError } from "./src/errors/user-configuration-error.ts
 export { WorkspaceNotFoundError } from "./src/errors/workspace-not-found-error.ts";
 export {
   CredentialNotFoundError,
+  findMissingServerEnvVars,
   hasUnusableCredentialCause,
   LinkCredentialExpiredError,
   LinkCredentialNotFoundError,
