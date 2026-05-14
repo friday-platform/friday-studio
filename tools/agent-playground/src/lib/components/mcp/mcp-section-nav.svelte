@@ -1,8 +1,7 @@
 <!--
   Per-server section nav — the middle-column content once a catalog server is
-  selected. Shows the server's identity and a list of detail sections; the
-  catalog list animates out and this animates in within the ListDetail
-  sidebar.
+  selected. Shows the server's name and a list of detail sections; the catalog
+  list animates out and this animates in within the ListDetail sidebar.
 
   Section navigation is unlocked only once the server is `ready` — an install
   still in progress has nothing to configure yet.
@@ -12,8 +11,6 @@
 
 <script lang="ts">
   import type { MCPServerMetadata } from "@atlas/core/mcp-registry/schemas";
-  import { Badge } from "@atlas/ui";
-  import { isOfficialServer, sourceLabel } from "./mcp-server-utils";
 
   interface Props {
     server: MCPServerMetadata | null;
@@ -25,16 +22,25 @@
 
   const SECTIONS = [
     { id: "overview", label: "Overview" },
-    { id: "connections", label: "Live connections" },
-    { id: "configuration", label: "Configuration" },
-    { id: "tools", label: "Tools" },
-    { id: "test", label: "Test" },
+    { id: "connections", label: "Connections" },
+    { id: "configuration", label: "Config Reference" },
+    { id: "tools", label: "Testing" },
     { id: "readme", label: "Readme" },
   ] as const;
 
   const status = $derived(server?.status ?? "ready");
   const isReady = $derived(status === "ready");
-  const isOfficial = $derived(server ? isOfficialServer(server) : false);
+
+  /**
+   * Reverse-DNS server names (`io.github.owner.repo`, `com.my.thing`) lead
+   * with vendor/host segments that aren't worth the width here — drop the
+   * first two segments. A plain name with fewer than three dot-segments is
+   * left as-is.
+   */
+  function displayName(name: string): string {
+    const parts = name.split(".");
+    return parts.length >= 3 ? parts.slice(2).join(".") : name;
+  }
 </script>
 
 <div class="section-nav-root">
@@ -42,19 +48,7 @@
     <p class="loading">Loading server…</p>
   {:else}
     <div class="server-ident">
-      <span class="server-name">{server.name}</span>
-      <div class="ident-badges">
-        {#if server.source}
-          <Badge variant="status">
-            {sourceLabel(server.source)}{#if isOfficial}&nbsp;• Official{/if}
-          </Badge>
-        {/if}
-        {#if status === "setting_up"}
-          <Badge variant="info">Installing</Badge>
-        {:else if status === "awaiting_confirm"}
-          <Badge variant="warning">Awaiting setup</Badge>
-        {/if}
-      </div>
+      <span class="server-name">{displayName(server.name)}</span>
     </div>
 
     {#if isReady}
@@ -93,9 +87,6 @@
   }
 
   .server-ident {
-    display: flex;
-    flex-direction: column;
-    gap: var(--size-2);
     padding: 0 var(--size-1);
   }
 
@@ -104,12 +95,6 @@
     font-size: var(--font-size-5);
     font-weight: var(--font-weight-6);
     word-break: break-word;
-  }
-
-  .ident-badges {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--size-1);
   }
 
   .section-nav {

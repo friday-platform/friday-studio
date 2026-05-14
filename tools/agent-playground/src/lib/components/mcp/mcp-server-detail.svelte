@@ -33,9 +33,11 @@
     markdownToHTMLSafe,
     toast,
   } from "@atlas/ui";
-  import { useQueryClient } from "@tanstack/svelte-query";
+  import { createQuery, useQueryClient } from "@tanstack/svelte-query";
   import { fade } from "svelte/transition";
   import { writable } from "svelte/store";
+  import { goto } from "$app/navigation";
+  import Combobox from "$lib/components/shared/combobox.svelte";
   import {
     type CommitEnvVar,
     type DoctorProgressEvent,
@@ -44,6 +46,7 @@
     useCancelMCPInstall,
     useCommitMCPInstall,
   } from "$lib/queries/mcp-queries";
+  import { workspaceQueries } from "$lib/queries";
   import ManualConfigSetup from "./manual-config-setup.svelte";
   import McpCredentialsPanel from "./mcp-credentials-panel.svelte";
   import { isOfficialServer, sourceLabel } from "./mcp-server-utils";
@@ -285,6 +288,17 @@
     rawConfigOpenFor = rawConfigOpen ? null : (server?.id ?? null);
   }
   const rawConfigJson = $derived(server ? JSON.stringify(server.configTemplate, null, 2) : "");
+
+  // ── Add-to-workspace combobox (Config Reference section) ───────────────
+  const workspacesQuery = createQuery(() => workspaceQueries.list());
+  const workspaceOptions = $derived(
+    (workspacesQuery.data ?? []).map((w) => ({ value: w.id, label: w.name })),
+  );
+  let addToWorkspaceId = $state("");
+
+  function goToWorkspaceMcp(workspaceId: string): void {
+    if (workspaceId) goto(`/platform/${workspaceId}/settings`);
+  }
 </script>
 
 {#snippet sourceBadges()}
@@ -477,7 +491,10 @@
           <div class="section-inner" in:fade={{ duration: 120 }}>
             {#if activeSection === "overview"}
               <section class="section">
-                <h2 class="section-title">Overview</h2>
+                <div class="overview-header">
+                  <h2 class="section-title">{displayName}</h2>
+                  <div class="badge-row">{@render sourceBadges()}</div>
+                </div>
                 <p class="description" class:faded={!description}>
                   {description ?? "No description provided"}
                 </p>
@@ -505,6 +522,10 @@
                     </a>
                   {/if}
                 </div>
+                <div class="transport-row">
+                  <span class="tag" data-tone="neutral">{transport.kind}</span>
+                  <code class="transport-value">{transport.value}</code>
+                </div>
               </section>
 
               <section class="section">
@@ -517,8 +538,8 @@
                 </p>
 
                 {#if report}
-                  <div class="verdict" data-verdict={report.verdict}>
-                    <span class="verdict-icon">
+                  <div class="notice-box" data-verdict={report.verdict}>
+                    <span class="notice-icon">
                       {#if report.verdict === "clean"}
                         <IconSmall.CheckCircle />
                       {:else if report.verdict === "attention"}
@@ -527,32 +548,39 @@
                         <IconSmall.TriangleExclamation />
                       {/if}
                     </span>
-                    <div class="verdict-body">
-                      <span class="verdict-tldr">{report.tldr}</span>
+                    <div class="notice-body">
+                      <span class="notice-title">{report.tldr}</span>
                       {#if report.verdict === "clean"}
-                        <span class="verdict-note">
+                        <span class="notice-detail">
                           Self-contained — no extra configuration needed.
                         </span>
                       {:else if report.verdict === "attention"}
-                        <span class="verdict-note">
-                          Detected configuration is listed under Configuration.
+                        <span class="notice-detail">
+                          Detected configuration is listed under Config Reference.
                         </span>
                       {/if}
                     </div>
                   </div>
 
-                  {#if report.findings.length > 0}
-                    <ul class="findings">
-                      {#each report.findings as finding, i (i)}
-                        <li class="finding" data-severity={finding.severity}>
-                          <span class="finding-title">{finding.title}</span>
-                          {#if finding.detail}
-                            <span class="finding-detail">{finding.detail}</span>
-                          {/if}
-                        </li>
-                      {/each}
-                    </ul>
-                  {/if}
+                  {#each report.findings as finding, i (i)}
+                    <div class="notice-box" data-severity={finding.severity}>
+                      <span class="notice-icon">
+                        {#if finding.severity === "error"}
+                          <IconSmall.TriangleExclamation />
+                        {:else if finding.severity === "warn"}
+                          <IconSmall.InfoCircle />
+                        {:else}
+                          <IconSmall.InfoCircle />
+                        {/if}
+                      </span>
+                      <div class="notice-body">
+                        <span class="notice-title">{finding.title}</span>
+                        {#if finding.detail}
+                          <span class="notice-detail">{finding.detail}</span>
+                        {/if}
+                      </div>
+                    </div>
+                  {/each}
 
                   {#if reportUnknown}
                     <div class="actions-row">
@@ -583,20 +611,46 @@
               </section>
             {:else if activeSection === "connections"}
               <section class="section">
-                <h2 class="section-title">Live connections</h2>
-                <p class="section-desc">Workspaces with this server enabled.</p>
-                <McpWorkspaceUsage serverId={server.id} />
-              </section>
-            {:else if activeSection === "configuration"}
-              <section class="section">
-                <h2 class="section-title">Configuration</h2>
-
+                <h2 class="section-title">Connections</h2>
+                <p class="section-desc">
+                  Workspaces with this server enabled, and the integration credentials it
+                  connects through. Where a credential isn't connected yet, use the connect card.
+                </p>
+                <div class="sub-block">
+                  <h3 class="sub-title">Workspaces</h3>
+                  <McpWorkspaceUsage serverId={server.id} />
+                </div>
                 <div class="sub-block credentials-block">
                   <h3 class="sub-title">Credentials</h3>
                   <McpCredentialsPanel
                     serverId={server.id}
                     configTemplate={server.configTemplate}
                   />
+                </div>
+              </section>
+            {:else if activeSection === "configuration"}
+              <section class="section">
+                <h2 class="section-title">Config Reference</h2>
+                <p class="section-desc">
+                  Reference only — these are the environment variables this server reads. The
+                  actual values are set per workspace, in that workspace's settings. Add the
+                  server to a workspace to configure it there.
+                </p>
+
+                <div class="add-to-workspace">
+                  <Combobox
+                    bind:value={addToWorkspaceId}
+                    options={workspaceOptions}
+                    placeholder="Add to workspace…"
+                  />
+                  <Button
+                    variant="secondary"
+                    size="small"
+                    onclick={() => goToWorkspaceMcp(addToWorkspaceId)}
+                    disabled={!addToWorkspaceId}
+                  >
+                    Open workspace settings
+                  </Button>
                 </div>
 
                 {#if envRows.length > 0}
@@ -605,14 +659,6 @@
                     {@render envTable(envRows)}
                   </div>
                 {/if}
-
-                <div class="sub-block">
-                  <h3 class="sub-title">Transport</h3>
-                  <div class="transport-row">
-                    <span class="tag" data-tone="neutral">{transport.kind}</span>
-                    <code class="transport-value">{transport.value}</code>
-                  </div>
-                </div>
 
                 <div class="sub-block">
                   <button type="button" class="raw-toggle" onclick={toggleRawConfig}>
@@ -630,13 +676,25 @@
               </section>
             {:else if activeSection === "tools"}
               <section class="section">
-                <h2 class="section-title">Tools</h2>
-                <McpToolsSection serverId={server.id} />
-              </section>
-            {:else if activeSection === "test"}
-              <section class="section">
-                <h2 class="section-title">Test</h2>
-                <McpToolInvoker serverId={server.id} />
+                <h2 class="section-title">Testing</h2>
+                <p class="section-desc">
+                  Connect to this server and exercise it directly — browse the tools it exposes,
+                  then invoke one against an optional workspace context to see the real output.
+                  Loading either list opens a connection to the server.
+                </p>
+                <div class="sub-block">
+                  <h3 class="sub-title">Available tools</h3>
+                  <p class="sub-desc">The tools this server exposes, with their input schemas.</p>
+                  <McpToolsSection serverId={server.id} />
+                </div>
+                <div class="sub-block">
+                  <h3 class="sub-title">Invoke a tool</h3>
+                  <p class="sub-desc">
+                    Pick a tool, fill its inputs, and run it. The workspace selector scopes the
+                    call to that workspace's configured credentials and settings.
+                  </p>
+                  <McpToolInvoker serverId={server.id} />
+                </div>
               </section>
             {:else if activeSection === "readme"}
               {#if curatorNotes}
@@ -680,7 +738,7 @@
     flex-direction: column;
     gap: var(--size-6);
     margin: 0 auto;
-    max-inline-size: 80ch;
+    max-inline-size: 96ch;
     padding: var(--size-6) var(--size-10) var(--size-12);
     inline-size: 100%;
   }
@@ -705,7 +763,7 @@
     flex-direction: column;
     gap: var(--size-8);
     margin: 0 auto;
-    max-inline-size: 80ch;
+    max-inline-size: 96ch;
     padding: var(--size-8) var(--size-10) var(--size-12);
     inline-size: 100%;
   }
@@ -822,8 +880,8 @@
   .actions-bar {
     align-items: center;
     display: flex;
-    inset-block-start: var(--size-1-5);
-    inset-inline-end: var(--size-1-5);
+    inset-block-start: 0;
+    inset-inline-end: 0;
     position: absolute;
     z-index: 2;
   }
@@ -859,9 +917,9 @@
     inset-inline-end: 0;
   }
 
-  /* ── Verdict ─────────────────────────────────────────────────────────── */
+  /* ── Notice box — one box style for every notice (verdict + findings) ── */
 
-  .verdict {
+  .notice-box {
     align-items: flex-start;
     background-color: var(--surface);
     border: 1px solid var(--border);
@@ -871,81 +929,95 @@
     padding: var(--size-3);
   }
 
-  .verdict[data-verdict="unknown"] {
+  .notice-box[data-verdict="unknown"],
+  .notice-box[data-severity="error"] {
+    border-color: color-mix(in srgb, var(--red-primary), var(--border) 55%);
+  }
+
+  .notice-box[data-severity="warn"] {
     border-color: color-mix(in srgb, var(--yellow-primary), var(--border) 55%);
   }
 
-  .verdict-icon {
+  .notice-icon {
     align-items: center;
+    color: var(--text-faded);
     display: inline-flex;
     flex-shrink: 0;
     margin-block-start: 1px;
   }
 
-  .verdict[data-verdict="clean"] .verdict-icon {
+  .notice-box[data-verdict="clean"] .notice-icon {
     color: var(--green-primary);
   }
 
-  .verdict[data-verdict="attention"] .verdict-icon {
+  .notice-box[data-verdict="attention"] .notice-icon {
     color: var(--blue-primary);
   }
 
-  .verdict[data-verdict="unknown"] .verdict-icon {
+  .notice-box[data-verdict="unknown"] .notice-icon,
+  .notice-box[data-severity="error"] .notice-icon {
+    color: var(--red-primary);
+  }
+
+  .notice-box[data-severity="warn"] .notice-icon {
     color: var(--yellow-primary);
   }
 
-  .verdict-body {
+  .notice-body {
     display: flex;
     flex-direction: column;
     gap: 2px;
   }
 
-  .verdict-tldr {
+  .notice-title {
     color: var(--text-bright);
     font-size: var(--font-size-3);
     font-weight: var(--font-weight-6);
   }
 
-  .verdict-note {
-    color: var(--text);
-    font-size: var(--font-size-3);
-  }
-
-  .findings {
-    display: flex;
-    flex-direction: column;
-    gap: var(--size-2);
-    list-style: none;
-    margin: 0;
-    padding: 0;
-  }
-
-  .finding {
-    border-inline-start: 2px solid var(--border-bright);
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    padding-inline-start: var(--size-2);
-  }
-
-  .finding[data-severity="warn"] {
-    border-inline-start-color: var(--yellow-primary);
-  }
-
-  .finding[data-severity="error"] {
-    border-inline-start-color: var(--red-primary);
-  }
-
-  .finding-title {
-    color: var(--text-bright);
-    font-size: var(--font-size-3);
-    font-weight: var(--font-weight-6);
-  }
-
-  .finding-detail {
+  .notice-detail {
     color: var(--text);
     font-size: var(--font-size-3);
     line-height: 1.5;
+  }
+
+  /* ── Overview header + badges + add-to-workspace ─────────────────────── */
+
+  .overview-header {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--size-2) var(--size-3);
+  }
+
+  .overview-header .section-title {
+    word-break: break-word;
+  }
+
+  .badge-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--size-1);
+  }
+
+  .sub-desc {
+    color: var(--text);
+    font-size: var(--font-size-3);
+    line-height: 1.5;
+    margin: 0;
+    max-inline-size: 76ch;
+  }
+
+  .add-to-workspace {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--size-2);
+  }
+
+  .add-to-workspace :global(.combobox) {
+    flex: 1;
+    min-inline-size: 20ch;
   }
 
   /* ── Env table ───────────────────────────────────────────────────────── */
