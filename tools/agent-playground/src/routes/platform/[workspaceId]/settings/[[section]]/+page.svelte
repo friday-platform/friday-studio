@@ -29,14 +29,28 @@
 
   const workspaceId = $derived(page.params.workspaceId ?? null);
 
-  // List/detail layout — one settings section per list entry.
-  type SettingsSection = "identity" | "agent-env" | "mcp";
-  const SECTIONS: { id: SettingsSection; label: string; blurb: string }[] = [
-    { id: "identity", label: "Workspace Details", blurb: "Name, description, timeouts" },
-    { id: "agent-env", label: "Agent environment", blurb: "Per-agent env values" },
-    { id: "mcp", label: "MCP servers", blurb: "Per-server settings & credentials" },
+  // List/detail layout — one settings section per list entry. The active
+  // section is driven by the URL: `settings` (no slug) → identity,
+  // `settings/agent-environment`, `settings/mcp`. The slug doubles as the
+  // route segment so nav is just `<a href>` and back/forward works for free.
+  type SettingsSection = "identity" | "agent-environment" | "mcp";
+  const SECTIONS: { id: SettingsSection; slug: string; label: string; blurb: string }[] = [
+    { id: "identity", slug: "", label: "Workspace Details", blurb: "Name, description, timeouts" },
+    {
+      id: "agent-environment",
+      slug: "agent-environment",
+      label: "Agent environment",
+      blurb: "Per-agent env values",
+    },
+    { id: "mcp", slug: "mcp", label: "MCP servers", blurb: "Per-server settings & credentials" },
   ];
-  let activeSection = $state<SettingsSection>("identity");
+  const SECTION_IDS = new Set<SettingsSection>(["identity", "agent-environment", "mcp"]);
+  const activeSection = $derived.by<SettingsSection>(() => {
+    const slug = page.params.section;
+    if (!slug) return "identity";
+    return SECTION_IDS.has(slug as SettingsSection) ? (slug as SettingsSection) : "identity";
+  });
+  const settingsBasePath = $derived(workspaceId ? `/platform/${workspaceId}/settings` : null);
 
   const configQuery = createQuery(() => workspaceQueries.config(workspaceId));
   const envQuery = createQuery(() => workspaceEnvQueries.list(workspaceId));
@@ -200,17 +214,19 @@
   {#snippet sidebar()}
     <nav class="section-nav">
       {#each SECTIONS as section (section.id)}
-        <button
-          type="button"
+        <a
           class="section-nav-item"
           class:active={activeSection === section.id}
-          onclick={() => {
-            activeSection = section.id;
-          }}
+          href={settingsBasePath
+            ? section.slug
+              ? `${settingsBasePath}/${section.slug}`
+              : settingsBasePath
+            : "#"}
+          aria-current={activeSection === section.id ? "page" : undefined}
         >
           <span class="section-nav-label">{section.label}</span>
           <span class="section-nav-blurb">{section.blurb}</span>
-        </button>
+        </a>
       {/each}
     </nav>
   {/snippet}
@@ -296,7 +312,7 @@
           </Button>
         </div>
       </section>
-    {:else if activeSection === "agent-env"}
+    {:else if activeSection === "agent-environment"}
       <!-- ── Agent environment ─────────────────────────────────────────── -->
       <section class="section">
         <header>
@@ -402,12 +418,14 @@
     background: none;
     border: none;
     border-radius: var(--radius-2);
+    color: inherit;
     cursor: pointer;
     display: flex;
     flex-direction: column;
     gap: 1px;
     padding: var(--size-2) var(--size-2-5);
     text-align: start;
+    text-decoration: none;
     transition: background-color 0.12s ease;
   }
 

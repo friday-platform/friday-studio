@@ -92,7 +92,7 @@
   const isSkills = $derived(page.route.id === "/platform/[workspaceId]/skills");
 
   /** Settings page is full-width — its own tabbed layout, no layout sidebar. */
-  const isSettings = $derived(page.route.id === "/platform/[workspaceId]/settings");
+  const isSettings = $derived(page.route.id === "/platform/[workspaceId]/settings/[[section]]");
 
   // --- Agent index sidebar data (TanStack Query deduplicates with agents page) ---
   const preflightQuery = createQuery(() => integrationQueries.preflight(workspaceId));
