@@ -456,6 +456,38 @@ describe("scrubAssistantMessage (pre-persist)", () => {
     const out = (parts[0] as { output: { instructions: string } }).output;
     expect(out.instructions).toContain(blob);
   });
+
+  it("exempts load_skill results inside delegate-chunk envelopes", async () => {
+    // A sub-agent's tool-output chunk carries no toolName — the exemption
+    // resolves it through the earlier tool-input chunk's toolCallId.
+    const blob = bigBase64(SIZE_THRESHOLD_CHARS + 500);
+    const parts: Array<Record<string, unknown>> = [
+      {
+        type: "data-delegate-chunk",
+        data: {
+          delegateToolCallId: "del1",
+          chunk: { type: "tool-input-start", toolCallId: "skill-call", toolName: "load_skill" },
+        },
+      },
+      {
+        type: "data-delegate-chunk",
+        data: {
+          delegateToolCallId: "del1",
+          chunk: {
+            type: "tool-output-available",
+            toolCallId: "skill-call",
+            output: { instructions: `# Skill\n\n${blob}` },
+          },
+        },
+      },
+    ];
+    const r = await scrubAssistantMessage(parts, { workspaceId: "ws", chatId: "ch", logger });
+    expect(r.rewritten).toBe(0);
+    expect(mockFetch).not.toHaveBeenCalled();
+    const outChunk = (parts[1] as { data: { chunk: { output: { instructions: string } } } }).data
+      .chunk;
+    expect(outChunk.output.instructions).toContain(blob);
+  });
 });
 
 describe("liftAnswerForModel (pre-model answer lift)", () => {

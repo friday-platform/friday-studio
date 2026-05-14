@@ -577,6 +577,25 @@ export async function scrubAssistantMessage(
     }
   };
 
+  // Pre-pass: map toolCallId -> toolName across `data-delegate-chunk`
+  // envelopes. A sub-agent's `tool-output-available` chunk carries the
+  // result but not the tool name, so an exempt tool's output (e.g. a
+  // `load_skill` skill body streamed from a delegate child) can only be
+  // recognized by correlating it with the earlier `tool-input-*` chunk
+  // that did carry the name.
+  const delegateToolNames = new Map<string, string>();
+  for (const part of parts) {
+    if (part.type !== "data-delegate-chunk") continue;
+    const data = part.data;
+    if (!data || typeof data !== "object") continue;
+    const chunk = (data as Record<string, unknown>).chunk;
+    if (!chunk || typeof chunk !== "object") continue;
+    const c = chunk as Record<string, unknown>;
+    if (typeof c.toolCallId === "string" && typeof c.toolName === "string") {
+      delegateToolNames.set(c.toolCallId, c.toolName);
+    }
+  }
+
   for (const part of parts) {
     const type = typeof part.type === "string" ? part.type : "";
     // Tool calls from the parent's own tool-use steps. Both `input` and
@@ -607,9 +626,22 @@ export async function scrubAssistantMessage(
     if (type === "data-delegate-chunk" && part.data && typeof part.data === "object") {
       const data = part.data as Record<string, unknown>;
       if ("chunk" in data) {
-        await scrubField(data.chunk, "pre-persist", "delegate-chunk", (next) => {
-          data.chunk = next;
-        });
+        // Skip exempt tools (e.g. load_skill) here too — the chunk's own
+        // toolName is absent on output chunks, so resolve it through the
+        // toolCallId -> toolName map built above.
+        const chunk = data.chunk;
+        const chunkToolCallId =
+          chunk &&
+          typeof chunk === "object" &&
+          typeof (chunk as Record<string, unknown>).toolCallId === "string"
+            ? ((chunk as Record<string, unknown>).toolCallId as string)
+            : undefined;
+        const chunkToolName = chunkToolCallId ? delegateToolNames.get(chunkToolCallId) : undefined;
+        if (!chunkToolName || !SCRUB_EXEMPT_TOOLS.has(chunkToolName)) {
+          await scrubField(data.chunk, "pre-persist", "delegate-chunk", (next) => {
+            data.chunk = next;
+          });
+        }
       }
     }
   }
