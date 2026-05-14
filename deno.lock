@@ -30,9 +30,7 @@
     "jsr:@std/testing@^1.0.16": "1.0.18",
     "jsr:@std/yaml@1": "1.1.0",
     "npm:@ai-sdk/anthropic@^3.0.76": "3.0.76_zod@4.4.3",
-    "npm:@ai-sdk/fireworks@2.0.52": "2.0.52_zod@4.4.3",
     "npm:@ai-sdk/google@^3.0.71": "3.0.71_zod@4.4.3",
-    "npm:@ai-sdk/groq@3.0.39": "3.0.39_zod@4.4.3",
     "npm:@ai-sdk/groq@^3.0.39": "3.0.39_zod@4.4.3",
     "npm:@ai-sdk/mcp@^1.0.41": "1.0.41_zod@4.4.3",
     "npm:@ai-sdk/openai@^3.0.63": "3.0.63_zod@4.4.3",
@@ -176,6 +174,7 @@
     "npm:typescript-eslint@^8.59.2": "8.59.2_eslint@10.3.0_typescript@5.9.3",
     "npm:typescript@^5.9.3": "5.9.3",
     "npm:ulid@^3.0.2": "3.0.2",
+    "npm:undici@7": "7.25.0",
     "npm:undici@^7.25.0": "7.25.0",
     "npm:vite@^7.3.2": "7.3.3_@types+node@25.6.2_yaml@2.8.4",
     "npm:vitest@*": "4.1.5_@opentelemetry+api@1.9.1_@types+node@25.6.2_@vitest+coverage-v8@4.1.5_happy-dom@20.9.0_vite@7.3.3__@types+node@25.6.2__yaml@2.8.4_yaml@2.8.4",
@@ -298,15 +297,6 @@
         "zod"
       ]
     },
-    "@ai-sdk/fireworks@2.0.52_zod@4.4.3": {
-      "integrity": "sha512-TwNi+Eqa6Jdoz/IjIR3RvgW/BaHP6H8X2BhiDD8b9d/PvVC5ywIAcC1LLDYj/7guC/4fRjkIyiJMWFpL4Qiyhw==",
-      "dependencies": [
-        "@ai-sdk/openai-compatible",
-        "@ai-sdk/provider",
-        "@ai-sdk/provider-utils",
-        "zod"
-      ]
-    },
     "@ai-sdk/gateway@3.0.112_zod@4.4.3": {
       "integrity": "sha512-jiBao9pR4owWyjo0BnuNc7WSQBGOD0thysE4AFgZXaG+zMFbISQXUkJr7ePw/phBvePy7jE5FSA2Lf7lwqUiiQ==",
       "dependencies": [
@@ -338,14 +328,6 @@
         "@ai-sdk/provider",
         "@ai-sdk/provider-utils",
         "pkce-challenge",
-        "zod"
-      ]
-    },
-    "@ai-sdk/openai-compatible@2.0.47_zod@4.4.3": {
-      "integrity": "sha512-Enm5UlL0zUCrW3792opk5h7hRWxZOZzDe6eQYVFqX9LUOGGCe1h8MZWAGim765nwzgnjlpeYOsuzZmLtRsTPlg==",
-      "dependencies": [
-        "@ai-sdk/provider",
-        "@ai-sdk/provider-utils",
         "zod"
       ]
     },
@@ -6329,14 +6311,11 @@
         ],
         "packageJson": {
           "dependencies": [
-            "npm:@ai-sdk/fireworks@2.0.52",
-            "npm:@ai-sdk/groq@3.0.39",
             "npm:@ai-sdk/provider@^3.0.10",
             "npm:@anthropic-ai/claude-agent-sdk@~0.2.137",
             "npm:@chat-adapter/slack@4.28.1",
             "npm:@coderabbitai/bitbucket@^1.1.4",
             "npm:@hubspot/api-client@^13.4.0",
-            "npm:@jsr/db__sqlite@0.12",
             "npm:@types/markdown-it@^14.1.2",
             "npm:ai@^6.0.177",
             "npm:jira.js@^5.3.1",
@@ -6636,7 +6615,8 @@
       },
       "tools/agent-playground": {
         "dependencies": [
-          "npm:hono@4.12.18"
+          "npm:hono@4.12.18",
+          "npm:undici@7"
         ],
         "packageJson": {
           "dependencies": [
@@ -6672,6 +6652,7 @@
             "npm:svelte-check@^4.4.7",
             "npm:svelte@^5.55.5",
             "npm:typescript@^5.9.3",
+            "npm:undici@^7.25.0",
             "npm:vite@^7.3.2",
             "npm:vitest@^4.1.0",
             "npm:yaml@^2.8.4",

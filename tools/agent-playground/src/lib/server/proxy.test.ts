@@ -79,13 +79,56 @@ describe("buildProxyHandler", () => {
   });
 
   it("returns 502 with label-tagged JSON when upstream fetch fails", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     fetchMock.mockRejectedValueOnce(new TypeError("connection refused"));
     const handler = buildProxyHandler({ upstream: "https://tunnel.local:9090", label: "tunnel" });
     const res = await handler(event({ path: "status" }));
     expect(res.status).toBe(502);
-    const json = (await res.json()) as { error: string };
+    const json = (await res.json()) as { error: string; elapsedMs: number };
     expect(json.error).toMatch(/^tunnel proxy fetch failed:/);
     expect(json.error).toContain("connection refused");
+    // Elapsed ms is surfaced both in the JSON body and via console.warn
+    // so a slow-then-failing upstream is observable in dev logs (no
+    // observability used to exist for the proxy fail path).
+    expect(typeof json.elapsedMs).toBe("number");
+    expect(json.elapsedMs).toBeGreaterThanOrEqual(0);
+    expect(warnSpy).toHaveBeenCalledOnce();
+    expect(warnSpy.mock.calls[0]?.[0]).toMatch(/\[tunnel proxy\] fetch failed after \d+ms:/);
+    warnSpy.mockRestore();
+  });
+
+  it("passes the long-lived undici dispatcher to upstream fetch", async () => {
+    // The dispatcher routes the call through an undici Agent with a
+    // 1-hour headersTimeout / bodyTimeout (vs Node 22+'s undici 5-min
+    // default), so long-running daemon endpoints (reindex, signal
+    // cascades that wait minutes for the FSM to complete) don't fail
+    // mid-response with UND_ERR_HEADERS_TIMEOUT. Without this assertion
+    // the dispatcher could be silently dropped in a future refactor and
+    // the timeout regression would only surface end-to-end.
+    fetchMock.mockResolvedValueOnce(new Response("ok", { status: 200 }));
+    const handler = buildProxyHandler({ upstream: "https://daemon.local:8080", label: "daemon" });
+    await handler(event({ path: "long" }));
+    const init = fetchMock.mock.calls[0]?.[1] as
+      | { dispatcher?: { constructor?: { name?: string } } }
+      | undefined;
+    expect(init?.dispatcher).toBeDefined();
+    // It's an undici Agent instance; we can't import the value here
+    // (that would couple this test to undici internals), but the
+    // constructor name is a sufficient smoke check.
+    expect(init?.dispatcher?.constructor?.name).toBe("Agent");
+  });
+
+  it("reuses the same dispatcher across calls (singleton, no per-request leak)", async () => {
+    fetchMock.mockResolvedValue(new Response("ok", { status: 200 }));
+    const handler = buildProxyHandler({ upstream: "https://daemon.local:8080", label: "daemon" });
+    await handler(event({ path: "a" }));
+    await handler(event({ path: "b" }));
+    const dispatcherA = (fetchMock.mock.calls[0]?.[1] as { dispatcher?: unknown } | undefined)
+      ?.dispatcher;
+    const dispatcherB = (fetchMock.mock.calls[1]?.[1] as { dispatcher?: unknown } | undefined)
+      ?.dispatcher;
+    expect(dispatcherA).toBeDefined();
+    expect(dispatcherA).toBe(dispatcherB);
   });
 
   it("passes SSE responses through with the same status + cleaned headers", async () => {

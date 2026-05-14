@@ -1,4 +1,35 @@
 import type { RequestHandler } from "@sveltejs/kit";
+import { Agent } from "undici";
+
+// Node 22+ ships undici 6.x with a 300_000ms (5-min) default
+// `headersTimeout` and `bodyTimeout` on the global fetch. Long-running
+// daemon endpoints — chiefly `POST /api/workspaces/{id}/signals/{id}`
+// for jobs like `reindex`, where the daemon awaits the cascade before
+// returning headers — exceed that and the proxy fetch fails with
+// `UND_ERR_HEADERS_TIMEOUT`. The catch-all then aborts the SvelteKit
+// request, the daemon's `onClientAbort` handler cancels the in-flight
+// session, and a 30-min reindex dies at exactly t+5min.
+//
+// Bound — don't disable. A `0` ceiling means a wedged daemon parks
+// SvelteKit request workers indefinitely with no server-side back-
+// pressure. Use a dedicated dispatcher with a 1-hour ceiling: covers
+// the worst documented job (30-min reindex) with headroom, and still
+// fails fast on a genuinely-stuck socket. Connection-level timeouts
+// (TCP, TLS handshake) keep their defaults because those still
+// indicate actual upstream sickness, not slow work.
+const ONE_HOUR_MS = 60 * 60_000;
+const longLivedDispatcher = new Agent({
+  headersTimeout: ONE_HOUR_MS,
+  bodyTimeout: ONE_HOUR_MS,
+});
+
+/** Augments the platform `RequestInit` with undici's `dispatcher`
+ * extension. Lets us pass our long-lived dispatcher into `fetch()`
+ * without an `as any` blanket cast — the only structural mismatch
+ * between this and the platform `RequestInit` is the extra field. */
+interface UndiciRequestInit extends RequestInit {
+  dispatcher?: Agent;
+}
 
 /** Hop-by-hop / connection-specific headers that don't survive the
  * proxy or HTTP/2 boundary:
@@ -111,19 +142,36 @@ export function buildProxyHandler({ upstream, label }: BuildProxyOptions): Reque
       body = new Uint8Array(await request.arrayBuffer());
     }
 
+    const upstreamStartedAt = Date.now();
+    const init: UndiciRequestInit = {
+      method: request.method,
+      headers,
+      body,
+      signal: upstreamController.signal,
+      // `dispatcher` is undici's non-standard extension; it's accepted
+      // by Node's global fetch (which is undici under the hood) and
+      // routes this call through our longer-bound timeout pool.
+      dispatcher: longLivedDispatcher,
+    };
+
     let res: Response;
     try {
-      res = await fetch(target, {
-        method: request.method,
-        headers,
-        body,
-        signal: upstreamController.signal,
-      });
+      res = await fetch(target, init);
     } catch (err) {
       request.signal.removeEventListener("abort", abortUpstream);
       const message = err instanceof Error ? err.message : String(err);
+      const elapsedMs = Date.now() - upstreamStartedAt;
+      // Surface the elapsed time so a stuck upstream is observable in
+      // the dev playground logs — without this, a 1-hour-bound timeout
+      // looks identical to "request handler hung" to the operator.
+      console.warn(
+        `[${label} proxy] fetch failed after ${elapsedMs}ms: ${message}`,
+      );
       return new Response(
-        JSON.stringify({ error: `${label} proxy fetch failed: ${message}` }),
+        JSON.stringify({
+          error: `${label} proxy fetch failed: ${message}`,
+          elapsedMs,
+        }),
         { status: 502, headers: { "content-type": "application/json" } },
       );
     }
