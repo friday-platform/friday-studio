@@ -10,7 +10,17 @@
   import { mergeElicitationIntoCache } from "$lib/queries/elicitation-queries.ts";
   import { subscribeToWorkspaceElicitations } from "$lib/shared-worker/client.ts";
   import { DefaultChatTransport } from "ai";
-  import ChatInput, { type ImageAttachment } from "./chat-input.svelte";
+  import ChatInput from "./chat-input.svelte";
+  import {
+    type FileAttachment,
+    type ChatAttachment,
+    buildFileAttachment,
+    classifyAttachment,
+    duplicateToast,
+    isDuplicateAttachment,
+    rejectionToast,
+    runFileUpload,
+  } from "./chat-attachment.ts";
   import ChatInspector from "./chat-inspector.svelte";
   import ChatMessageList from "./chat-message-list.svelte";
   import ChatSessionUsage from "./chat-session-usage.svelte";
@@ -38,23 +48,38 @@
   const { chatId }: Props = $props();
 
   let inspectorOpen = $state(false);
+  let fullscreen = $state(false);
 
   function handleGlobalKeydown(e: KeyboardEvent) {
     // Cmd+Shift+D (Debug) — Cmd+Shift+I is intercepted by Chrome DevTools
     if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === "d") {
       e.preventDefault();
       inspectorOpen = !inspectorOpen;
+      return;
+    }
+    // Ctrl+F toggles fullscreen — deliberately Ctrl, never ⌘, so Mac's
+    // ⌘+F find-in-page is untouched. Tradeoff: on Windows/Linux Ctrl+F
+    // *is* browser find, so it's shadowed inside the chat surface. This
+    // is a local dev tool and the in-app shortcut is the priority here;
+    // revisit if that becomes a real friction point.
+    if (e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.key === "f") {
+      e.preventDefault();
+      fullscreen = !fullscreen;
+      return;
+    }
+    if (e.key === "Escape" && fullscreen) {
+      fullscreen = false;
     }
   }
   let systemPromptContext: { timestamp: string; systemMessages: string[] } | null = $state(null);
 
   let chatDragOver = $state(false);
   /**
-   * Images attached to the *next* outgoing message. Bound into `ChatInput`
-   * via `bind:images` so the file picker and the chat-surface drop target
-   * share one bucket and one render location (the strip above the input).
+   * Attachments for the *next* outgoing message. Bound into `ChatInput`
+   * via `bind:attachments` so the file picker and the chat-surface drop
+   * target share one bucket and one render location (the strip above the input).
    */
-  let inputImages: ImageAttachment[] = $state([]);
+  let inputAttachments: ChatAttachment[] = $state([]);
 
   async function fileToDataUrl(file: File): Promise<string> {
     return new Promise((resolve, reject) => {
@@ -63,6 +88,30 @@
       reader.onerror = reject;
       reader.readAsDataURL(file);
     });
+  }
+
+  function patchInputFile(id: string, patch: Partial<FileAttachment>) {
+    inputAttachments = inputAttachments.map((a) =>
+      a.kind === "file" && a.id === id ? { ...a, ...patch } : a,
+    );
+
+    // Post-upload dedup. See `chat-input.svelte:patchAttachment` for
+    // the rationale — server returns `{chatId}/{md5}`, two identical
+    // uploads produce identical paths, we collapse the duplicate here.
+    if (patch.path) {
+      const newPath = patch.path;
+      const sharing = inputAttachments.filter(
+        (a) => a.kind === "file" && a.path === newPath,
+      );
+      if (sharing.length > 1) {
+        const removed = inputAttachments.find((a) => a.id === id);
+        inputAttachments = inputAttachments.filter((a) => a.id !== id);
+        if (removed) {
+          const summary = duplicateToast([removed.file]);
+          if (summary) toast({ ...summary });
+        }
+      }
+    }
   }
 
   function handleChatDrop(e: DragEvent) {
@@ -99,11 +148,36 @@
   }
 
   async function addDroppedFiles(files: FileList) {
+    const rejected: File[] = [];
+    const duplicates: File[] = [];
     for (const file of files) {
-      if (!file.type.startsWith("image/")) continue;
-      const dataUrl = await fileToDataUrl(file);
-      inputImages = [...inputImages, { id: crypto.randomUUID(), file, dataUrl }];
+      const kind = classifyAttachment(file);
+      if (kind === "image") {
+        // Images dedup pre-add via dataUrl equality — see
+        // chat-input.svelte:addFiles for rationale.
+        const dataUrl = await fileToDataUrl(file);
+        if (isDuplicateAttachment({ kind: "image", dataUrl }, inputAttachments)) {
+          duplicates.push(file);
+          continue;
+        }
+        inputAttachments = [
+          ...inputAttachments,
+          { kind: "image", id: crypto.randomUUID(), file, dataUrl },
+        ];
+      } else if (kind === "file") {
+        // Files dedup post-upload via the server-returned path — see
+        // `patchInputFile` for the reconcile branch.
+        const att = buildFileAttachment(file);
+        inputAttachments = [...inputAttachments, att];
+        runFileUpload({ att, chatId, workspaceId: wsId, onUpdate: patchInputFile });
+      } else {
+        rejected.push(file);
+      }
     }
+    const dupSummary = duplicateToast(duplicates);
+    if (dupSummary) toast({ ...dupSummary });
+    const summary = rejectionToast(rejected);
+    if (summary) toast({ ...summary, error: true });
   }
 
   const CHAT_API = $derived(`/api/daemon/api/workspaces/${encodeURIComponent(wsId)}/chat`);
@@ -353,8 +427,13 @@
     // into the chat we're switching to.
     queuedMessages = [];
     // Attachments are per-chat drafts; switching mid-draft must not leak
-    // images into the new chat.
-    inputImages = [];
+    // files or images into the new chat. Read the current draft untracked so
+    // this chatId/wsId effect does not re-run on every draft reset.
+    const draftAttachments = untrack(() => inputAttachments);
+    for (const att of draftAttachments) {
+      if (att.kind === "file" && att.status === "uploading") att.abortController.abort();
+    }
+    inputAttachments = [];
 
     shouldResumeStream = true;
     const token = ++rehydrateToken;
@@ -693,13 +772,17 @@
    * Buffer here, then flush from a `$effect` that watches `streaming`.
    *
    * Each queued entry is the exact `parts` array we'd have sent live — text
-   * + any attached/dropped images — so the flush path is identical to the
-   * submit path.
+   * + any attached/dropped files/images — so the flush path is identical to
+   * the submit path.
    */
   type QueuedMessageParts = Array<
     | { type: "text"; text: string }
     | { type: "file"; mediaType: string; url: string; filename?: string }
     | { type: "data-credential-linked"; data: { provider: string; displayName: string } }
+    | {
+        type: "data-file-attached";
+        data: { paths: string[]; filenames: string[]; mimeTypes: string[] };
+      }
   >;
   let queuedMessages: QueuedMessageParts[] = $state([]);
 
@@ -1113,7 +1196,7 @@
     }
   }
 
-  async function handleSubmit(text: string, images: ImageAttachment[] = []) {
+  async function handleSubmit(text: string, attachments: ChatAttachment[] = []) {
     if (!chat) return;
     error = null;
     wasInterrupted = false;
@@ -1124,12 +1207,35 @@
       parts.push({ type: "text", text });
     }
 
-    for (const img of images) {
+    // Images keep their existing data-URL `file` part path — that's
+    // recognized by the provider as a vision input without a tool roundtrip.
+    for (const att of attachments) {
+      if (att.kind === "image") {
+        parts.push({
+          type: "file",
+          mediaType: att.file.type || "image/png",
+          url: att.dataUrl,
+          filename: att.file.name,
+        });
+      }
+    }
+
+    // Non-image attachments uploaded to scratch. The chat-input's
+    // `hasContent` gate blocks send while any upload is still in flight,
+    // so by the time we get here `status === "ready"` and `path` is set
+    // — but `filter` keeps the runtime defensive against future drift.
+    const readyFiles = attachments.filter(
+      (a): a is FileAttachment & { path: string } =>
+        a.kind === "file" && a.status === "ready" && typeof a.path === "string",
+    );
+    if (readyFiles.length > 0) {
       parts.push({
-        type: "file",
-        mediaType: img.file.type || "image/png",
-        url: img.dataUrl,
-        filename: img.file.name,
+        type: "data-file-attached",
+        data: {
+          paths: readyFiles.map((a) => a.path),
+          filenames: readyFiles.map((a) => a.file.name),
+          mimeTypes: readyFiles.map((a) => a.mediaType),
+        },
       });
     }
 
@@ -1242,6 +1348,7 @@
 <div
   class="user-chat"
   class:chat-drag-over={chatDragOver}
+  class:fullscreen
   ondrop={handleChatDrop}
   ondragenter={handleChatDragEnter}
   ondragover={handleChatDragOver}
@@ -1250,9 +1357,10 @@
 >
   {#if chatDragOver}
     <div class="drop-overlay">
-      <span>Drop image here</span>
+      <span>Drop file here</span>
     </div>
   {/if}
+
 
   {#if chat && chat.messages.length > 0}
     <header class="chat-header">
@@ -1265,10 +1373,53 @@
            waste a flex item for the same effect. -->
       <ChatSessionUsage messages={displayedMessages} />
       <button
-        class="new-chat-button"
+        class="icon-button"
+        type="button"
         onclick={handleExportChat}
         disabled={exportInFlight}
-      >{exportInFlight ? "Exporting…" : "Export chat"}</button>
+        aria-label={exportInFlight ? "Exporting chat…" : "Export chat"}
+        title={exportInFlight ? "Exporting…" : "Export chat"}
+      >
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <path
+            d="M8 2v8m-4-4 4 4 4-4M3 14h10"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        </svg>
+      </button>
+      <button
+        class="icon-button"
+        type="button"
+        onclick={() => (fullscreen = !fullscreen)}
+        aria-label={`${fullscreen ? "Exit" : "Enter"} fullscreen (Ctrl+F)`}
+        aria-pressed={fullscreen}
+        title={`${fullscreen ? "Exit" : "Enter"} fullscreen (Ctrl+F)`}
+      >
+        {#if fullscreen}
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path
+              d="M10 2v3a1 1 0 0 0 1 1h3M6 14v-3a1 1 0 0 0-1-1H2M14 6h-3a1 1 0 0 1-1-1V2M2 10h3a1 1 0 0 1 1 1v3"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+        {:else}
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path
+              d="M2 6V3a1 1 0 0 1 1-1h3M14 6V3a1 1 0 0 0-1-1h-3M2 10v3a1 1 0 0 0 1 1h3M14 10v3a1 1 0 0 1-1 1h-3"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+        {/if}
+      </button>
     </header>
   {/if}
 
@@ -1321,8 +1472,10 @@
         {/if}
         {#key chatId}
           <ChatInput
+            workspaceId={wsId}
+            {chatId}
             onsubmit={handleSubmit}
-            bind:images={inputImages}
+            bind:attachments={inputAttachments}
             {streaming}
             {stopping}
             onstop={handleStop}
@@ -1403,27 +1556,42 @@
     padding: var(--size-2) var(--size-4);
   }
 
-  .new-chat-button {
+  .icon-button {
+    align-items: center;
     background: none;
     border: 1px solid var(--color-border-1);
     border-radius: var(--radius-1);
     color: inherit;
     cursor: pointer;
-    font-size: var(--font-size-2);
-    /* Pushes to the trailing edge regardless of how wide the leading-
-       edge ChatSessionUsage row is (or whether it rendered at all,
-       for legacy chats with no recorded usage). */
-    margin-inline-start: auto;
-    padding: var(--size-1) var(--size-3);
+    display: inline-flex;
+    justify-content: center;
+    padding: var(--size-1);
   }
 
-  .new-chat-button:hover:not(:disabled) {
+  /* The first .icon-button after .session-usage pushes itself (and any
+     siblings) to the trailing edge. Replaces the role .new-chat-button
+     used to play when the export button was a text pill. */
+  .icon-button:first-of-type {
+    margin-inline-start: auto;
+  }
+
+  .icon-button:hover:not(:disabled) {
     background-color: color-mix(in srgb, var(--color-text), transparent 95%);
   }
 
-  .new-chat-button:disabled {
+  .icon-button:disabled {
     cursor: not-allowed;
     opacity: 0.6;
+  }
+
+  /* Fullscreen mode: lift the chat surface out of its ListDetail slot to
+     cover the sidebar and any surrounding chrome. Ctrl+F toggles, Esc
+     exits — the keydown handler at the top of the component owns both. */
+  .user-chat.fullscreen {
+    background: var(--surface);
+    inset: 0;
+    position: fixed;
+    z-index: 100;
   }
 
   .chat-body {
@@ -1480,4 +1648,5 @@
     font-weight: var(--font-weight-6);
     padding: var(--size-2) var(--size-4);
   }
+
 </style>

@@ -19,6 +19,7 @@ const WorkspaceSummarySchema = z.object({
   name: z.string(),
   description: z.string().optional(),
   type: z.enum(["ephemeral", "persistent"]),
+  canonical: z.enum(["personal", "system"]).optional(),
   metadata: z
     .object({
       color: z.string().optional(),

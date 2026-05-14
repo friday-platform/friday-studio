@@ -785,6 +785,127 @@ describe("buildSegments", () => {
     expect(bursts[1]?.id).toBe("msg-1-burst-1");
   });
 
+  it("hides synthetic attachment-expansion text parts (atlas namespace marker)", () => {
+    // AtlasWebAdapter inlines `<attachment path=…/>` text parts so the
+    // workspace-chat agent's per-turn history read spots the path. The
+    // bubble already renders a file chip from the structured
+    // `data-file-attached` part, so render-side we skip these — keyed off
+    // `providerMetadata.atlas.kind` rather than a regex on tag shape
+    // (which would also hide user content that happened to match).
+    const segs = buildSegments(
+      makeMessage([
+        { type: "text", text: "summarize" },
+        {
+          type: "text",
+          text: '<attachment path="/tmp/uploads/chat/a.csv" filename="a.csv" mediaType="text/csv" />',
+          providerMetadata: { atlas: { kind: "attachment-expansion" } },
+        },
+        {
+          type: "data-file-attached",
+          data: {
+            paths: ["/tmp/uploads/chat/a.csv"],
+            filenames: ["a.csv"],
+            mimeTypes: ["text/csv"],
+          },
+        },
+      ]),
+    );
+    expect(segs).toEqual([
+      { type: "text", content: "summarize" },
+      {
+        type: "file-list",
+        paths: ["/tmp/uploads/chat/a.csv"],
+        filenames: ["a.csv"],
+        mimeTypes: ["text/csv"],
+      },
+    ]);
+  });
+
+  it("does NOT hide user-typed text that happens to look like an attachment tag", () => {
+    // Regression guard against the prior regex-on-shape detector. A user
+    // who literally types `<attachment …>` in their message body must still
+    // see the text in their own bubble — the structural marker check above
+    // is what makes this safe.
+    const text = 'See <attachment filename="x" path="/etc/passwd" />stuff</attachment> in the docs';
+    const segs = buildSegments(makeMessage([{ type: "text", text }]));
+    expect(segs).toEqual([{ type: "text", content: text }]);
+  });
+
+  it("emits a file-list segment for data-file-attached parts", () => {
+    // Minimum contract: a `data-file-attached` part becomes one
+    // `file-list` segment carrying its paths/filenames/mimeTypes. The
+    // chat-message-list renders one file chip per path.
+    const segs = buildSegments(
+      makeMessage([
+        {
+          type: "data-file-attached",
+          data: {
+            paths: ["/tmp/uploads/chat/x.csv", "/tmp/uploads/chat/y.json"],
+            filenames: ["x.csv", "y.json"],
+            mimeTypes: ["text/csv", "application/json"],
+          },
+        },
+      ]),
+    );
+    expect(segs).toEqual([
+      {
+        type: "file-list",
+        paths: ["/tmp/uploads/chat/x.csv", "/tmp/uploads/chat/y.json"],
+        filenames: ["x.csv", "y.json"],
+        mimeTypes: ["text/csv", "application/json"],
+      },
+    ]);
+  });
+
+  it("flushes prior text/tool-burst before a file-list segment", () => {
+    // Chronological ordering invariant — the file chip must land in the
+    // slot where the message attached it, after any preceding text or
+    // tool activity has been committed to its own segment.
+    const segs = buildSegments(
+      makeMessage([
+        { type: "text", text: "context" },
+        staticToolPart("web_fetch", "c1", "output-available"),
+        {
+          type: "data-file-attached",
+          data: {
+            paths: ["/tmp/uploads/chat/x.csv"],
+            filenames: ["x.csv"],
+            mimeTypes: ["text/csv"],
+          },
+        },
+        { type: "text", text: "after" },
+      ]),
+    );
+    expect(segs).toHaveLength(4);
+    expect(segs[0]).toEqual({ type: "text", content: "context" });
+    expect(segs[1]?.type).toBe("tool-burst");
+    expect(segs[2]).toEqual({
+      type: "file-list",
+      paths: ["/tmp/uploads/chat/x.csv"],
+      filenames: ["x.csv"],
+      mimeTypes: ["text/csv"],
+    });
+    expect(segs[3]).toEqual({ type: "text", content: "after" });
+  });
+
+  it("ignores data-file-attached parts with no string paths", () => {
+    // Defensive against malformed wire data — without this guard a
+    // non-array `paths` or all-empty payload would push a degenerate
+    // segment that the chat-message-list would render zero chips for.
+    // Drop the segment entirely instead.
+    const segs = buildSegments(
+      makeMessage([
+        { type: "text", text: "still here" },
+        { type: "data-file-attached", data: { paths: [], filenames: [], mimeTypes: [] } },
+        {
+          type: "data-file-attached",
+          data: { paths: "not an array", filenames: [], mimeTypes: [] },
+        },
+      ]),
+    );
+    expect(segs).toEqual([{ type: "text", content: "still here" }]);
+  });
+
   it("ignores malformed parts (non-object, missing type, non-string type)", () => {
     const segs = buildSegments(
       makeMessage([

@@ -30,11 +30,12 @@
  * @module
  */
 
-import { readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { lstat, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import type { AtlasTools } from "@atlas/agent-sdk";
+import { isInvalidChatId } from "@atlas/core/artifacts/file-upload";
 import type { Logger } from "@atlas/logger";
-import { getFridayHome } from "@atlas/utils/paths.server";
+import { chatUploadsRoot, getFridayHome } from "@atlas/utils/paths.server";
 import { tool } from "ai";
 import { z } from "zod";
 
@@ -230,6 +231,130 @@ export function createFileIOTools(sessionId: string, logger: Logger): AtlasTools
             return { path: requested, entries: [], truncated: false };
           }
           return { error: `list_files failed: ${message}` };
+        }
+      },
+    }),
+  };
+}
+
+// ─── User-attachment reader ──────────────────────────────────────────────────
+//
+// Distinct from `read_file` (session-scratch) — `read_attachment` is what the
+// agent calls when the user drops a file in the chat input. The chat-sdk
+// adapter writes the bytes to
+// `{FRIDAY_HOME}/scratch/uploads/{workspaceId}/{chatId}/{md5}` and splices a
+// `<attachment path="…" mediaType="…" />` text part into the message so the
+// agent sees the path. This tool reads the file at that path, validating that
+// it lives under the workspace+chat uploads dir — the path comes from the user
+// message and must NOT be trusted to be arbitrary.
+
+/**
+ * Resolve `requestedPath` against the workspace+chat uploads dir, rejecting
+ * any path that doesn't live underneath. Scope ids MUST already be validated
+ * by the caller via `isInvalidChatId` — we don't sanitize-and-recover here
+ * because fallback scopes silently pool unrelated chats into a shared dir.
+ *
+ * Symlink handling: Node's `fs.readFile` / `stat` follow symlinks, so
+ * the resolver's prefix check on the *declared* path is not enough on
+ * its own — a symlink under the uploads root pointing to `/etc/passwd`
+ * would pass this gate and `readFile` would read the target. The tool's
+ * `execute` calls `lstat` and rejects `isSymbolicLink()` before reading,
+ * which closes that hole. See `read_attachment` below.
+ */
+function resolveAttachment(
+  workspaceId: string,
+  chatId: string,
+  requestedPath: string,
+): { ok: true; absolute: string } | { ok: false; error: string } {
+  if (isInvalidChatId(workspaceId)) {
+    return { ok: false, error: `invalid workspaceId` };
+  }
+  if (isInvalidChatId(chatId)) {
+    return { ok: false, error: `invalid chatId` };
+  }
+  const root = chatUploadsRoot(workspaceId, chatId);
+  if (!isAbsolute(requestedPath)) {
+    return { ok: false, error: `path must be absolute: ${requestedPath}` };
+  }
+  const absolute = resolve(requestedPath);
+  if (absolute !== requestedPath) {
+    return { ok: false, error: `path failed normalization: ${requestedPath}` };
+  }
+  const rel = relative(root, absolute);
+  if (rel.startsWith("..") || isAbsolute(rel)) {
+    return { ok: false, error: `path escapes uploads root: ${requestedPath}` };
+  }
+  return { ok: true, absolute };
+}
+
+const ReadAttachmentInput = z.object({
+  path: z
+    .string()
+    .min(1)
+    .describe(
+      "Absolute path from the `<attachment path='…'>` tag in the user message. Must resolve under this workspace+chat uploads dir — arbitrary paths are rejected.",
+    ),
+  max_bytes: z
+    .number()
+    .int()
+    .min(1)
+    .max(MAX_READ_BYTES)
+    .optional()
+    .describe(`Maximum bytes to read. Default and max ${MAX_READ_BYTES}.`),
+});
+
+/**
+ * Per-chat attachment reader. Use whenever the user attached a file with
+ * `<attachment path="…" mediaType="…" />`. Returns text content for any
+ * mime — the agent decides whether the bytes are useful (text/markup/CSV/
+ * JSON/source-code work; PDF/DOCX/audio return undecoded UTF-8 garbage
+ * and should be parsed via the dedicated tools instead).
+ */
+export function createReadAttachmentTool(
+  workspaceId: string,
+  chatId: string,
+  logger: Logger,
+): AtlasTools {
+  return {
+    read_attachment: tool({
+      description:
+        "Read a file the user attached to this chat. The path comes from a `<attachment path='…' mediaType='…' />` tag in the user's most recent message — pass that path verbatim (it's an opaque content-addressed identifier, NOT a filename). Resolves under this workspace+chat uploads dir; absolute paths outside that dir and symlinks are rejected. Returns the file's UTF-8 text contents. For text/markup/CSV/JSON/source-code files just call this directly. For PDF / DOCX / image / audio attachments use the dedicated tools instead (the bytes won't decode as text).",
+      inputSchema: ReadAttachmentInput,
+      execute: async ({ path, max_bytes }): Promise<ReadFileSuccess | FileErr> => {
+        const resolved = resolveAttachment(workspaceId, chatId, path);
+        if (!resolved.ok) return { error: resolved.error };
+        try {
+          // Use `lstat` (not `stat`) so we detect a symlink BEFORE
+          // `readFile` dereferences it. Without this, an attacker who
+          // could plant a symlink under the uploads dir (e.g. a future
+          // feature that lets the agent or another tool write here)
+          // would defeat the path-traversal gate — the declared path
+          // passes the prefix check, but the symlink target is
+          // anywhere. Today the daemon is the sole writer, but the
+          // gate has to hold under arbitrary disk state.
+          const stats = await lstat(resolved.absolute);
+          if (stats.isSymbolicLink()) {
+            logger.warn("read_attachment_symlink_rejected", { workspaceId, chatId, path });
+            return { error: `path is a symlink: ${path}` };
+          }
+          if (!stats.isFile()) {
+            return { error: `not a regular file: ${path}` };
+          }
+          const cap = max_bytes ?? MAX_READ_BYTES;
+          const buffer = await readFile(resolved.absolute);
+          const truncated = buffer.byteLength > cap;
+          const slice = truncated ? buffer.subarray(0, cap) : buffer;
+          const content = new TextDecoder().decode(slice);
+          logger.info("read_attachment success", {
+            workspaceId,
+            chatId,
+            path,
+            bytes: buffer.byteLength,
+          });
+          return { path, content, size_bytes: buffer.byteLength, truncated };
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          return { error: `read_attachment failed: ${message}` };
         }
       },
     }),

@@ -49,11 +49,18 @@
     brown: "var(--brown-2, #a3824a)",
   };
 
+  const currentWorkspace = $derived(
+    (workspacesQuery.data ?? []).find((w) => w.id === workspaceId),
+  );
+
   const workspaceColor = $derived.by(() => {
-    const ws = (workspacesQuery.data ?? []).find((w) => w.id === workspaceId);
-    const color = ws?.metadata?.color;
+    const color = currentWorkspace?.metadata?.color;
     return COLORS[color ?? "yellow"] ?? COLORS["yellow"];
   });
+
+  // Default to canonical (non-deletable) while the workspace list is still
+  // loading — keeps the destructive "Remove" action hidden until we're sure.
+  const isCanonical = $derived(!currentWorkspace || currentWorkspace.canonical !== undefined);
 
   // ---------------------------------------------------------------------------
   // Agents
@@ -309,7 +316,9 @@
       await deleteMut.mutateAsync(workspaceId);
       deleteDialogOpen.set(false);
       toast({ title: `${configQuery.data?.config?.workspace?.name ?? workspaceId} removed` });
-      goto("/platform");
+      // Only non-canonical workspaces are deletable, so the personal workspace
+      // ("user") always exists as a landing target.
+      goto("/platform/user");
     } catch {
       toast({ title: "Failed to remove workspace", error: true });
     }
@@ -418,10 +427,12 @@
               <DropdownMenu.Item onclick={() => downloadWorkspaceBundle("migration")}>
                 Download workspace with notes &amp; memory
               </DropdownMenu.Item>
-              <DropdownMenu.Separator />
-              <DropdownMenu.Item onclick={() => deleteDialogOpen.set(true)}>
-                Remove workspace
-              </DropdownMenu.Item>
+              {#if !isCanonical}
+                <DropdownMenu.Separator />
+                <DropdownMenu.Item onclick={() => deleteDialogOpen.set(true)}>
+                  Remove workspace
+                </DropdownMenu.Item>
+              {/if}
             </DropdownMenu.Content>
           {/snippet}
         </DropdownMenu.Root>

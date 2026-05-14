@@ -1,0 +1,126 @@
+# ─── Positive routing — agent uses `read_attachment` for text / markup / code ─
+
+- description: |
+    Positive — drop a CSV, agent calls `read_attachment` with the scratch
+    path and answers "3" (count of scores >80). End-to-end gate on
+    drop-in UIMessage → adapter splice → agent toolcall → answer.
+  vars:
+    scenarioId: chat-csv-read
+
+- description: |
+    Positive — markdown attachment. Locks the text/markup branch beyond
+    CSV — agent reads `notes.md` and identifies the infra owner (Carol).
+  vars:
+    scenarioId: chat-md-read
+
+- description: |
+    Positive — JSON attachment. Agent reads `config.json` and extracts
+    the database port (5432). Locks JSON routing through `read_attachment`.
+  vars:
+    scenarioId: chat-json-extract
+
+- description: |
+    Positive — YAML attachment. Agent reads `deploy.yml` and returns the
+    `secret_keyword` value (`gabbro`). Locks YAML routing.
+  vars:
+    scenarioId: chat-yaml-extract
+
+- description: |
+    Positive — HTML attachment. Agent reads `onboarding.html` and
+    identifies the buddy (Lukasz). Locks HTML routing.
+  vars:
+    scenarioId: chat-html-read
+
+- description: |
+    Positive — log file (`.log`). Agent reads `app.log` and reports the
+    correlationId on the ERROR line (`abc-42`). Locks plain-text
+    log-grep routing.
+  vars:
+    scenarioId: chat-log-grep
+
+- description: |
+    Positive — source code (`.py`). Agent reads `fib.py` and reports
+    the value the script prints (55 — fib(10)). Locks the source-code
+    branch of the prompt's User-attached-files clause.
+  vars:
+    scenarioId: chat-python-source
+
+# ─── Negative routing — agent must NOT use `read_attachment` for binary ────
+
+- description: |
+    Negative + positive — PDF. Agent must NOT call `read_attachment` on
+    a PDF path (binary bytes would corrupt the prompt as UTF-8); must
+    reach for one of `create_artifact` / `parse_artifact` / `run_code`.
+    Verified discriminating power: stripping the prompt's PDF clause
+    flips this from PASS to FAIL.
+  vars:
+    scenarioId: pdf-routes-to-parse-not-read-attachment
+
+- description: |
+    Negative + positive — DOCX. Mirrors the PDF gate for Word docs.
+    Agent must NOT `read_attachment` and must reach for a parse-capable
+    tool. Locks the DOCX side of the prompt's PDF/DOCX/PPTX clause.
+  vars:
+    scenarioId: docx-routes-to-parse-not-read-attachment
+
+- description: |
+    Negative + positive — PPTX. Mirrors the PDF gate for slide decks.
+    Locks the PPTX side of the prompt's PDF/DOCX/PPTX clause.
+  vars:
+    scenarioId: pptx-routes-to-parse-not-read-attachment
+
+- description: |
+    Negative — image attachment via `data-file-attached`. Agent must
+    NOT call `read_attachment` (PNG bytes are binary). The image path
+    in production goes through the inline-data-URL channel, but if a
+    PNG ever arrived via the file-attached path the prompt forbids
+    `read_attachment` on it.
+  vars:
+    scenarioId: image-not-read-via-attachment
+
+- description: |
+    Negative — audio attachment. Agent must NOT call `read_attachment`
+    on audio bytes (would be garbage). Locks the audio branch of the
+    prompt's "Images / audio → create_artifact" guidance.
+  vars:
+    scenarioId: audio-not-read-via-attachment
+
+# ─── Multi-file + path-traversal ──────────────────────────────────────────
+
+- description: |
+    Multi-file splice contract. Drop two CSVs in a single
+    `data-file-attached` part, ask a cross-file question, assert agent
+    called `read_attachment` for BOTH paths and produced the correct
+    cross-file answer (Carol — 99).
+  vars:
+    scenarioId: multi-file-read
+
+- description: |
+    Negative + positive — defense against filename-as-path
+    hallucination. Drop a file with a distinctive filename
+    (`annual_report_q4_2026.csv`); the `<attachment …>` tag exposes
+    ONLY `path=<md5>` and `mediaType=` (no `filename=`). Assert the
+    agent calls `read_attachment(path=…)` with the EXACT md5 path,
+    never with a fabricated `{uploadsRoot}/annual_report_q4_2026.csv`-
+    style path. Locks the design choice that the model treats path as
+    an opaque identifier.
+  vars:
+    scenarioId: agent-uses-path-verbatim-not-filename
+
+- description: |
+    Negative — a `data-file-attached` part carrying a path under a
+    different chat's uploads dir is rejected by the adapter's
+    path-traversal gate before reaching the agent. Locks the
+    cross-chat IDOR defense.
+  vars:
+    scenarioId: rejects-foreign-path
+
+# ─── Prompt guardrail ────────────────────────────────────────────────────
+
+- description: |
+    Negative — prompt guardrail: agent must NEVER ask the user to
+    re-paste / re-upload / share the contents. The file is on disk and
+    `read_attachment` works. Asserts answer references content (42)
+    AND does NOT match any forbidden re-upload phrasing.
+  vars:
+    scenarioId: agent-does-not-ask-user-to-reupload

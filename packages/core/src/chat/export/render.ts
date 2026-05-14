@@ -51,6 +51,30 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
+ * Detect text parts that exist solely to carry user-attached artifact
+ * content into the agent prompt. The chat-sdk adapter
+ * (`AtlasWebAdapter.inlineAttachedArtifacts`) injects these on persist so the
+ * workspace-chat agent's per-turn history read sees the bytes; the user
+ * bubble already renders the artifact via `data-artifact-attached` →
+ * `ArtifactCard`, so we skip these on the UI.
+ *
+ * Marker: `providerMetadata.atlas.kind === "attachment-expansion"`. AI SDK's
+ * `TextUIPart.providerMetadata` is a stable, namespaced extension point
+ * (`Record<provider, Record<string, JSONValue>>`); we own the `atlas`
+ * namespace. Filtering on a structural flag means a user typing a literal
+ * `<attachment …>` tag in their message still renders verbatim — what
+ * removed the prior failure mode where a regex on tag shape would silently
+ * hide user content.
+ */
+function isAttachmentExpansionText(part: Record<string, unknown>): boolean {
+  const pm = part.providerMetadata;
+  if (typeof pm !== "object" || pm === null) return false;
+  const atlas = (pm as Record<string, unknown>).atlas;
+  if (typeof atlas !== "object" || atlas === null) return false;
+  return (atlas as Record<string, unknown>).kind === "attachment-expansion";
+}
+
+/**
  * Extract a top-level {@link ToolCallDisplay} from a single tool part, or
  * `null` if the part isn't a recognizable tool shape.
  */
@@ -498,6 +522,13 @@ export function buildSegments(msg: AtlasUIMessage): Segment[] {
     const type = part.type;
 
     if (type === "text" && typeof part.text === "string") {
+      // Synthetic attachment-expansion text parts (injected by
+      // `atlas-web-adapter.inlineAttachedArtifacts` so the agent sees
+      // user-attached file content in its prompt) are marked with
+      // `providerMetadata.atlas.kind === "attachment-expansion"`. The user
+      // bubble's ArtifactCard already represents the file visually, so
+      // render-side we skip these blocks — they're agent-only.
+      if (isAttachmentExpansionText(part)) continue;
       flushBurst();
       textBuffer += part.text;
       continue;
@@ -524,6 +555,34 @@ export function buildSegments(msg: AtlasUIMessage): Segment[] {
       if (isRecord(part.data) && typeof part.data.displayName === "string") {
         flushBurst();
         textBuffer += `Connected ${part.data.displayName}.`;
+      }
+      continue;
+    }
+
+    if (type === "data-file-attached") {
+      // The chat-message-list renders one file chip per path. Flush any
+      // pending text/tool buffers first so the chips land in the correct
+      // chronological slot (matches the previous artifact-attached
+      // ordering invariant).
+      if (isRecord(part.data)) {
+        const rawPaths = part.data.paths;
+        const rawNames = part.data.filenames;
+        const rawMimes = part.data.mimeTypes;
+        if (
+          Array.isArray(rawPaths) &&
+          Array.isArray(rawNames) &&
+          Array.isArray(rawMimes) &&
+          rawPaths.length > 0
+        ) {
+          flushText();
+          flushBurst();
+          const paths = rawPaths.filter((v): v is string => typeof v === "string");
+          const filenames = rawNames.filter((v): v is string => typeof v === "string");
+          const mimeTypes = rawMimes.filter((v): v is string => typeof v === "string");
+          if (paths.length > 0) {
+            segments.push({ type: "file-list", paths, filenames, mimeTypes });
+          }
+        }
       }
       continue;
     }
