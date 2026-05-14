@@ -10,9 +10,10 @@
  */
 
 import { join } from "node:path";
-import type { MCPServerConfig } from "@atlas/agent-sdk";
+import type { LinkCredentialRef, MCPServerConfig } from "@atlas/agent-sdk";
 import type { WorkspaceConfig } from "@atlas/config";
 import { disableMCPServer, enableMCPServer, setMCPServerEnvWiring } from "@atlas/config/mutations";
+import { readEnvVar } from "@atlas/core";
 import { discoverMCPServers } from "@atlas/core/mcp-registry/discovery";
 import { splitLiteralEnvValues } from "@atlas/core/mcp-registry/env-routing";
 import { getWorkspaceMCPStatus } from "@atlas/core/mcp-registry/workspace-mcp";
@@ -62,17 +63,52 @@ function isSystemWorkspace(workspace: { metadata?: Record<string, unknown> }): b
 // =============================================================================
 
 /**
+ * Drop `from_environment` / `auto` wiring for vars that resolve nowhere.
+ *
+ * `splitLiteralEnvValues` leaves magic-string wiring (`from_environment` /
+ * `auto`) in place. But a registry template often declares optional env vars
+ * the user has never set — wiring those into the workspace config makes them
+ * *hard requirements*: `validateMCPEnvironmentForWorkspace` throws on any
+ * unresolved magic-string entry, which aborts the whole workspace runtime.
+ *
+ * So a magic-string entry is kept only when the var actually resolves — it is
+ * about to be written to the workspace `.env` (`pendingValues`), or it is
+ * already set in `process.env` / the workspace `.env` overlay. Otherwise the
+ * entry is dropped: the server still enables, it just doesn't declare a var
+ * nothing can satisfy. Literal values and Link refs pass through untouched.
+ */
+function dropUnresolvableWiring(
+  wiring: Record<string, string | LinkCredentialRef>,
+  pendingValues: Record<string, string>,
+  overlay: Record<string, string>,
+): Record<string, string | LinkCredentialRef> {
+  const kept: Record<string, string | LinkCredentialRef> = {};
+  for (const [key, value] of Object.entries(wiring)) {
+    if (value === "from_environment" || value === "auto") {
+      if (key in pendingValues || readEnvVar(key, overlay) !== undefined) {
+        kept[key] = value;
+      }
+      continue;
+    }
+    kept[key] = value;
+  }
+  return kept;
+}
+
+/**
  * Copy-on-enable env split. Lifts literal env values out of the registry
  * template — both the server `env` block and any `startup.env` sidecar block —
- * into a flat value map, leaving `from_environment` wiring behind. Pure: the
- * caller writes the values to the workspace `.env` once the enable mutation
- * has landed, so the config copy holds wiring only and the `.env` holds the
- * values the settings UI edits.
+ * into a flat value map, leaving `from_environment` wiring behind, then drops
+ * magic-string wiring for vars that resolve nowhere (see
+ * {@link dropUnresolvableWiring}). The caller writes the lifted values to the
+ * workspace `.env` once the enable mutation has landed, so the config copy
+ * holds resolvable wiring only and the `.env` holds the values the settings
+ * UI edits.
  */
-function splitTemplateEnv(template: MCPServerConfig): {
-  template: MCPServerConfig;
-  envValues: Record<string, string>;
-} {
+function splitTemplateEnv(
+  template: MCPServerConfig,
+  overlay: Record<string, string>,
+): { template: MCPServerConfig; envValues: Record<string, string> } {
   const envValues: Record<string, string> = {};
   // Spread, never reassign absent keys to `undefined` — `@std/yaml` throws on
   // an explicit `undefined` value when the config copy is written out.
@@ -80,13 +116,16 @@ function splitTemplateEnv(template: MCPServerConfig): {
 
   if (template.env) {
     const split = splitLiteralEnvValues(template.env);
-    prepared.env = split.wiring;
+    prepared.env = dropUnresolvableWiring(split.wiring, split.values, overlay);
     Object.assign(envValues, split.values);
   }
 
   if (template.startup?.env) {
     const split = splitLiteralEnvValues(template.startup.env);
-    prepared.startup = { ...template.startup, env: split.wiring };
+    prepared.startup = {
+      ...template.startup,
+      env: dropUnresolvableWiring(split.wiring, split.values, overlay),
+    };
     Object.assign(envValues, split.values);
   }
 
@@ -244,9 +283,12 @@ const handleEnableMCPServer = async (c: import("hono").Context<AppVariables>) =>
     // Copy-on-enable: snapshot the registry template into the workspace, but
     // split literal setting values out into the workspace `.env` so the config
     // copy holds `from_environment` wiring only — one coherent edit target for
-    // the settings UI.
+    // the settings UI. The overlay lets the split drop wiring for vars that
+    // resolve nowhere, so an optional template var can't brick the runtime.
+    const workspaceEnvOverlay = loadEnvFile(join(workspace.path, ".env"));
     const { template: preparedTemplate, envValues } = splitTemplateEnv(
       candidate.metadata.configTemplate as MCPServerConfig,
+      workspaceEnvOverlay,
     );
 
     const mutationFn = (cfg: WorkspaceConfig) => enableMCPServer(cfg, serverId, preparedTemplate);
