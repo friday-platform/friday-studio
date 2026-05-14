@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import process from "node:process";
 import type { LinkCredentialRef, MCPServerConfig } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
@@ -27,6 +28,8 @@ import {
 import type { PlatformModels } from "@atlas/llm";
 import { createLogger } from "@atlas/logger";
 import { createMCPTools } from "@atlas/mcp";
+import { getFridayHome } from "@atlas/utils/paths.server";
+import { loadWorkspaceEnv } from "@atlas/workspace";
 import { zValidator } from "@hono/zod-validator";
 import { stepCountIs, streamText } from "ai";
 import { z } from "zod";
@@ -1176,6 +1179,9 @@ export const mcpRegistryRouter = daemonFactory
 
             mcpResult = await createMCPTools({ [id]: resolvedConfig }, logger, {
               signal: AbortSignal.timeout(30000),
+              envOverlay: workspaceId
+                ? loadWorkspaceEnv(join(getFridayHome(), "workspaces", workspaceId))
+                : undefined,
             });
 
             const result = streamText({
@@ -1308,6 +1314,7 @@ export const mcpRegistryRouter = daemonFactory
       try {
         mcpResult = await createMCPTools({ [id]: resolvedConfig }, logger, {
           signal: AbortSignal.timeout(30000),
+          envOverlay: loadWorkspaceEnv(join(getFridayHome(), "workspaces", workspaceId)),
         });
         const tool = mcpResult.tools[toolName];
         if (!tool || typeof tool.execute !== "function") {

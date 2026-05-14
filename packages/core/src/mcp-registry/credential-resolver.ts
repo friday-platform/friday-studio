@@ -269,11 +269,12 @@ export async function resolveEnvValues(
   for (const [envKey, value] of Object.entries(env)) {
     if (typeof value === "string") {
       if (value === "auto" || value === "from_environment") {
-        const envValue = readEnvVar(envKey, overlay);
-        if (!envValue) {
-          throw new Error(`Required environment variable '${envKey}' not found.`);
-        }
-        resolved[envKey] = envValue;
+        // Soft-bind: an unbacked sentinel resolves to "". `splitLiteralEnvValues`
+        // liberally rewrites optional empty-default literals into this sentinel,
+        // so throwing here would punish vars the user was never expected to set.
+        // Genuine required vars are enforced by the install-time RequiredConfigField
+        // flow, not at spawn.
+        resolved[envKey] = readEnvVar(envKey, overlay) ?? "";
       } else {
         resolved[envKey] = value;
       }

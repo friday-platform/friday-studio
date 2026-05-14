@@ -530,11 +530,12 @@ describe("resolveEnvValues with workspace .env overlay", () => {
     expect(resolved.OVERLAY_TEST_VAR).toBe("process-value");
   });
 
-  it("still throws when the var is in neither the overlay nor process.env", async () => {
+  it("resolves to empty string when the var is in neither the overlay nor process.env", async () => {
     delete process.env.OVERLAY_TEST_VAR;
-    await expect(
-      resolveEnvValues({ OVERLAY_TEST_VAR: "auto" }, logger, { UNRELATED: "x" }),
-    ).rejects.toThrow("OVERLAY_TEST_VAR");
+    const resolved = await resolveEnvValues({ OVERLAY_TEST_VAR: "auto" }, logger, {
+      UNRELATED: "x",
+    });
+    expect(resolved.OVERLAY_TEST_VAR).toBe("");
   });
 });
 
