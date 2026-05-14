@@ -150,29 +150,17 @@ describe("validateEnvironment", () => {
     // When linkRef is specified, Link credential takes precedence over LITELLM fallback.
     // This prevents proxy keys from being used where real provider keys are needed
     // (e.g., Claude Code needs real sk-ant-* key for Claude CLI).
+    //
+    // A provider-only linkRef resolves through the shared resolver, which fetches
+    // the provider's *default* credential — so we mock the default endpoint.
     const originalFetch = globalThis.fetch;
     const realApiKey = "sk-ant-real-key-from-link";
     const credId = "cred_anthropic_123";
 
-    // Mock both summary and credential endpoints to return a successful credential
     globalThis.fetch = (input: RequestInfo | URL) => {
       const url = typeof input === "string" ? input : input.toString();
 
-      // Summary endpoint returns the credential reference
-      if (url.includes("/v1/summary")) {
-        return Promise.resolve(
-          new Response(
-            JSON.stringify({
-              providers: [],
-              credentials: [{ id: credId, provider: "anthropic", label: "Work", type: "apikey" }],
-            }),
-            { status: 200, headers: { "Content-Type": "application/json" } },
-          ),
-        );
-      }
-
-      // Internal credential endpoint returns the actual secret
-      if (url.includes(`/internal/v1/credentials/${credId}`)) {
+      if (url.includes("/credentials/default/anthropic")) {
         return Promise.resolve(
           new Response(
             JSON.stringify({
@@ -218,30 +206,13 @@ describe("validateEnvironment", () => {
     // Tests the API failure path: when Link HTTP call fails (network error, 500, etc),
     // throws UserConfigurationError with original error preserved as cause.
     const originalFetch = globalThis.fetch;
-    const credId = "cred_calendar_456";
     const apiError = new Error("Link service unavailable");
 
-    // Mock summary to succeed but credential fetch to fail
+    // The default-credential endpoint fails with a non-404 error.
     globalThis.fetch = (input: RequestInfo | URL) => {
       const url = typeof input === "string" ? input : input.toString();
 
-      // Summary endpoint returns a credential reference
-      if (url.includes("/v1/summary")) {
-        return Promise.resolve(
-          new Response(
-            JSON.stringify({
-              providers: [],
-              credentials: [
-                { id: credId, provider: "google-calendar", label: "Work", type: "oauth" },
-              ],
-            }),
-            { status: 200, headers: { "Content-Type": "application/json" } },
-          ),
-        );
-      }
-
-      // Internal credential endpoint fails with an error
-      if (url.includes("/internal/v1/credentials/")) {
+      if (url.includes("/credentials/default/")) {
         return Promise.reject(apiError);
       }
 
@@ -270,6 +241,124 @@ describe("validateEnvironment", () => {
         expect((error as Error).cause).toBeInstanceOf(Error);
         return true;
       });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("treats an unconnected provider as a soft miss (required var)", async () => {
+    // A 404 from the default-credential endpoint means the user simply hasn't
+    // connected the provider — surfaced as a missing-configuration error, not
+    // a hard failure.
+    const originalFetch = globalThis.fetch;
+
+    globalThis.fetch = (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.includes("/credentials/default/")) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ error: "not found" }), {
+            status: 404,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }
+      return Promise.reject(new Error(`Unexpected fetch URL: ${url}`));
+    };
+
+    delete process.env.SLACK_TOKEN;
+    try {
+      const validate = createEnvironmentContext(mockLogger);
+      await expect(
+        validate("workspace", "agent", {
+          required: [
+            {
+              name: "SLACK_TOKEN",
+              description: "Slack token",
+              linkRef: { provider: "slack", key: "access_token" },
+            },
+          ],
+        }),
+      ).rejects.toBeInstanceOf(UserConfigurationError);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("resolves an optional var from its linkRef", async () => {
+    // Optional-var linkRefs were previously accepted by the schema and silently
+    // dropped — they now resolve through the shared resolver.
+    const originalFetch = globalThis.fetch;
+    const token = "xoxb-optional-from-link";
+
+    globalThis.fetch = (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.includes("/credentials/default/slack")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              credential: {
+                id: "cred_slack_1",
+                provider: "slack",
+                type: "oauth",
+                secret: { access_token: token },
+              },
+              status: "valid",
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+      }
+      return Promise.reject(new Error(`Unexpected fetch URL: ${url}`));
+    };
+
+    delete process.env.SLACK_TOKEN;
+    try {
+      const validate = createEnvironmentContext(mockLogger);
+      const result = await validate("workspace", "agent", {
+        optional: [
+          {
+            name: "SLACK_TOKEN",
+            description: "Slack token",
+            linkRef: { provider: "slack", key: "access_token" },
+          },
+        ],
+      });
+      expect(result).toHaveProperty("SLACK_TOKEN", token);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("falls back to the declared default when an optional linkRef cannot resolve", async () => {
+    const originalFetch = globalThis.fetch;
+
+    globalThis.fetch = (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.includes("/credentials/default/")) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ error: "not found" }), {
+            status: 404,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }
+      return Promise.reject(new Error(`Unexpected fetch URL: ${url}`));
+    };
+
+    delete process.env.OPTIONAL_VAR;
+    try {
+      const validate = createEnvironmentContext(mockLogger);
+      const result = await validate("workspace", "agent", {
+        optional: [
+          {
+            name: "OPTIONAL_VAR",
+            description: "Optional var",
+            default: "fallback-value",
+            linkRef: { provider: "slack", key: "access_token" },
+          },
+        ],
+      });
+      expect(result).toHaveProperty("OPTIONAL_VAR", "fallback-value");
     } finally {
       globalThis.fetch = originalFetch;
     }

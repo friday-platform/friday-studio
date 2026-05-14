@@ -27,6 +27,8 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import path from "node:path";
 import process from "node:process";
+import type { LinkCredentialRef } from "@atlas/agent-sdk";
+import { resolveEnvValues } from "@atlas/core/mcp-registry/credential-resolver";
 import { logger } from "@atlas/logger";
 
 export type ToolWorkerRuntime = "subprocess" | "microvm" | "k8s";
@@ -45,8 +47,11 @@ export interface ToolWorkerSpec {
    * (`uv run ...`, `npx ...`) or precompiled worker binaries.
    */
   workerCmd?: string;
-  /** Extra env to layer onto the worker process. */
-  env?: Record<string, string>;
+  /**
+   * Extra env to layer onto the worker process. Values are plain strings or
+   * Link credential refs — resolved through the shared resolver at launch.
+   */
+  env?: Record<string, string | LinkCredentialRef>;
   /** Override the launch script path. Defaults to scripts/run-tool-worker.sh. */
   scriptPath?: string;
 }
@@ -73,7 +78,7 @@ function resolveScriptPath(spec: ToolWorkerSpec): string {
   return path.resolve(here, "../../../scripts/run-tool-worker.sh");
 }
 
-function buildEnv(spec: ToolWorkerSpec): Record<string, string> {
+async function buildEnv(spec: ToolWorkerSpec): Promise<Record<string, string>> {
   const env: Record<string, string> = {};
   // Inherit only the strings we care about — don't blanket-pass parent env
   // into a sandbox we want to keep clean. The caller can opt extra in via
@@ -85,7 +90,9 @@ function buildEnv(spec: ToolWorkerSpec): Record<string, string> {
   if (spec.natsUrl) env.FRIDAY_NATS_URL = spec.natsUrl;
   if (spec.toolsAllowlist) env.FRIDAY_WORKER_TOOLS = spec.toolsAllowlist;
   if (spec.workerCmd) env.FRIDAY_WORKER_CMD = spec.workerCmd;
-  if (spec.env) Object.assign(env, spec.env);
+  // spec.env carries `env:` wiring — plain strings or Link refs — resolved
+  // through the one shared resolver, same as every other spawn site.
+  if (spec.env) Object.assign(env, await resolveEnvValues(spec.env, logger));
   return env;
 }
 
@@ -94,9 +101,9 @@ function buildEnv(spec: ToolWorkerSpec): Record<string, string> {
  * stream into the daemon's logger so worker logs land in the same place
  * as everything else.
  */
-function spawnSubprocess(spec: ToolWorkerSpec): ToolWorkerHandle {
+async function spawnSubprocess(spec: ToolWorkerSpec): Promise<ToolWorkerHandle> {
   const script = resolveScriptPath(spec);
-  const env = buildEnv(spec);
+  const env = await buildEnv(spec);
   const proc: ChildProcess = spawn(script, [], { env, stdio: ["ignore", "pipe", "pipe"] });
 
   proc.stdout?.on("data", (chunk: Uint8Array) => {
@@ -157,15 +164,15 @@ function spawnK8s(_spec: ToolWorkerSpec): ToolWorkerHandle {
  * Spawn a tool worker. Returns a handle the caller can use to stop it.
  * Throws if the chosen runtime adapter isn't implemented.
  */
-export function launchToolWorker(spec: ToolWorkerSpec = {}): ToolWorkerHandle {
+export function launchToolWorker(spec: ToolWorkerSpec = {}): Promise<ToolWorkerHandle> {
   const runtime = spec.runtime ?? DEFAULT_RUNTIME;
   switch (runtime) {
     case "subprocess":
       return spawnSubprocess(spec);
     case "microvm":
-      return spawnMicrovm(spec);
+      return Promise.resolve(spawnMicrovm(spec));
     case "k8s":
-      return spawnK8s(spec);
+      return Promise.resolve(spawnK8s(spec));
     default: {
       const exhaustive: never = runtime;
       throw new Error(`Unknown tool worker runtime: ${exhaustive}`);

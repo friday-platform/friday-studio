@@ -21,12 +21,14 @@ import {
   createAgentExecutionMachine,
   type PrepareContextOutput,
 } from "./agent-execution-machine.ts";
+import type { AgentEnvWiring } from "./types.ts";
 
 type BuildAgentContext = (
   agent: AtlasAgent,
   sessionData: AgentSessionData,
   prompt: string,
   overrides?: Partial<AgentContext>,
+  envWiring?: AgentEnvWiring,
 ) => Promise<PrepareContextOutput>;
 
 /**
@@ -91,6 +93,7 @@ export class AgentExecutionManager {
     requestId?: string,
     outputSchema?: Record<string, unknown>,
     config?: Record<string, unknown>,
+    envWiring?: AgentEnvWiring,
   ): Promise<AgentPayload<unknown>> {
     this.logger.info("Executing agent", { agentId, prompt, requestId, ...sessionData });
     const actor = this.getOrCreateExecutionActor(agentId);
@@ -125,7 +128,7 @@ export class AgentExecutionManager {
         }
       });
 
-      // Start execution - pass the abort signal, outputSchema, and config
+      // Start execution - pass the abort signal, outputSchema, config, env wiring
       actor.send({
         type: "EXECUTE",
         prompt,
@@ -133,6 +136,7 @@ export class AgentExecutionManager {
         abortSignal: abortController?.signal,
         outputSchema,
         config,
+        envWiring,
       });
     });
   }

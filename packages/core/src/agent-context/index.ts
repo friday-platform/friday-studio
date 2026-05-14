@@ -23,6 +23,8 @@ import {
 import { stringifyError } from "@atlas/utils";
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { wrapPlatformToolsWithScope } from "../agent-conversion/agent-tool-filters.ts";
+import type { AgentEnvWiring } from "../agent-server/types.ts";
+import { resolveEnvValues } from "../mcp-registry/credential-resolver.ts";
 import { discoverMCPServers, type LinkSummary } from "../mcp-registry/discovery.ts";
 import { takeMountContext } from "../mount-context-registry.ts";
 import { MCPStreamEmitter } from "../streaming/stream-emitters.ts";
@@ -45,6 +47,7 @@ export function createAgentContextBuilder(deps: AgentContextBuilderDeps) {
     sessionData: AgentSessionData & { streamId?: string },
     prompt: string,
     overrides?: Partial<AgentContext>,
+    envWiring?: AgentEnvWiring,
   ): Promise<{
     context: AgentContext;
     enrichedPrompt: string;
@@ -101,6 +104,13 @@ export function createAgentContextBuilder(deps: AgentContextBuilderDeps) {
         agent.metadata.id,
         agent.environmentConfig,
       );
+
+      // Per-agent `env:` wiring from workspace.yml resolves through the one
+      // shared resolver and layers over the environmentConfig-derived vars —
+      // ambient process.env → environmentConfig → per-agent wiring, most
+      // specific wins. (Phase 2 inserts the workspace `.env` layer here.)
+      const resolvedEnvWiring = envWiring ? await resolveEnvValues(envWiring, agentLogger) : {};
+      const env = { ...envContext, ...resolvedEnvWiring };
 
       let enrichedPrompt = prompt;
       let cleanupSkills: (() => Promise<void>) | undefined;
@@ -210,7 +220,7 @@ export function createAgentContextBuilder(deps: AgentContextBuilderDeps) {
       }
 
       const context: AgentContext = {
-        env: envContext,
+        env,
         session: sessionData,
         stream: streamEmitter,
         skills: resolvedSkills,

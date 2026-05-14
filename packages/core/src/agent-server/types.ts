@@ -139,6 +139,19 @@ const AgentSessionDataSchema = z.object({
 });
 
 /**
+ * Link credential reference. Re-declared locally for the same reason
+ * AgentSessionDataSchema is — the MCP server side is on a different Zod
+ * version than @atlas/agent-sdk. Must stay structurally compatible with
+ * LinkCredentialRefSchema in packages/agent-sdk/src/types.ts.
+ */
+const LinkCredentialRefSchema = z.object({
+  from: z.literal("link"),
+  id: z.string().optional(),
+  provider: z.string().optional(),
+  key: z.string(),
+});
+
+/**
  * MCP tool parameter schema
  *
  * Note: Session context is passed as tool arguments due to MCP SDK limitation.
@@ -161,6 +174,15 @@ export const AgentToolParamsSchema = z.object({
 
   /** Agent-specific config from workspace runtime (e.g. workDir from clone step) */
   config: z.record(z.string(), z.unknown()).optional(),
+
+  /**
+   * Per-agent `env:` wiring from workspace.yml. Values are plain strings or
+   * Link credential refs; resolved into AgentContext.env at context-build time.
+   */
+  env: z.record(z.string(), z.union([z.string(), LinkCredentialRefSchema])).optional(),
 });
 
 export type AgentToolParams = z.infer<typeof AgentToolParamsSchema>;
+
+/** Per-agent `env:` wiring carried by AgentToolParams — plain strings or Link refs. */
+export type AgentEnvWiring = NonNullable<AgentToolParams["env"]>;

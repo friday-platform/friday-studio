@@ -2738,6 +2738,9 @@ export class WorkspaceRuntime {
                 onStreamEvent: signal._context?.onStreamEvent,
                 additionalContext: { documents: fsmContext.documents },
                 config: mergedConfig,
+                // Per-agent `env:` wiring — only atlas agents carry it; resolved
+                // into AgentContext.env at the agents server.
+                env: agentConfig?.type === "atlas" ? agentConfig.env : undefined,
                 outputSchema: options?.outputSchema,
                 // Propagate session cancellation to the agent MCP transport —
                 // the orchestrator already listens for this on line ~296 and

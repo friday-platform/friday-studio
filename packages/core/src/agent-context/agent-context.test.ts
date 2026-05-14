@@ -820,3 +820,115 @@ describe("buildAgentContext memory mount resolution", () => {
     expect(mockMount.read).toHaveBeenCalled();
   });
 });
+
+describe("buildAgentContext env wiring resolution", () => {
+  let originalFetch: typeof globalThis.fetch;
+
+  // Serves the workspace-config request and the Link default-credential
+  // endpoint from one mock so buildAgentContext can run end to end.
+  function mockEnvWiringFetch() {
+    return (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+
+      if (url.includes("/credentials/default/github")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              credential: {
+                id: "cred_github_1",
+                provider: "github",
+                type: "oauth",
+                secret: { token: "ghp-resolved-from-link" },
+              },
+              status: "valid",
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+      }
+
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({ config: { name: "test-workspace", tools: { mcp: { servers: {} } } } }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+    };
+  }
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    mockWarn.mockClear();
+    mockDispose.mockResolvedValue(undefined);
+    mockCreateMCPTools.mockResolvedValue({ tools: {}, dispose: mockDispose, disconnected: [] });
+    mockDiscoverMCPServers.mockClear().mockResolvedValue([]);
+    originalFetch = globalThis.fetch;
+    globalThis.fetch = mockEnvWiringFetch();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    globalThis.fetch = originalFetch;
+  });
+
+  it("resolves per-agent env wiring — plain strings and Link refs — into context.env", async () => {
+    const buildAgentContext = createAgentContextBuilder({
+      logger: mockLogger,
+      platformModels: fakePlatformModels,
+    });
+
+    const { context } = await buildAgentContext(
+      createTestAgent(),
+      createTestSessionData("ws-env-wiring"),
+      "test",
+      undefined,
+      {
+        PLAIN_SETTING: "literal-value",
+        GITHUB_TOKEN: { from: "link", provider: "github", key: "token" },
+      },
+    );
+
+    expect(context.env).toMatchObject({
+      PLAIN_SETTING: "literal-value",
+      GITHUB_TOKEN: "ghp-resolved-from-link",
+    });
+  });
+
+  it("per-agent wiring takes precedence over environmentConfig vars of the same name", async () => {
+    const buildAgentContext = createAgentContextBuilder({
+      logger: mockLogger,
+      platformModels: fakePlatformModels,
+    });
+
+    const agent = createTestAgent({
+      environmentConfig: { optional: [{ name: "SHARED", default: "from-env-config" }] },
+    });
+
+    const { context } = await buildAgentContext(
+      agent,
+      createTestSessionData("ws-env-precedence"),
+      "test",
+      undefined,
+      { SHARED: "from-wiring" },
+    );
+
+    expect(context.env.SHARED).toBe("from-wiring");
+  });
+
+  it("env is just the environmentConfig vars when no wiring is passed", async () => {
+    const buildAgentContext = createAgentContextBuilder({
+      logger: mockLogger,
+      platformModels: fakePlatformModels,
+    });
+
+    const { context } = await buildAgentContext(
+      createTestAgent({
+        environmentConfig: { optional: [{ name: "ONLY_ENV_CONFIG", default: "kept" }] },
+      }),
+      createTestSessionData("ws-env-no-wiring"),
+      "test",
+    );
+
+    expect(context.env).toEqual({ ONLY_ENV_CONFIG: "kept" });
+  });
+});
