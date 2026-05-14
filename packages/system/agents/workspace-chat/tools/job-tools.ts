@@ -160,6 +160,66 @@ export function createJobTools(
     });
   }
 
+  // Generic signal-trigger escape hatch. The per-job tools above are built
+  // from a config snapshot taken when this chat session started — a job
+  // created mid-session (via upsert_job) has no bound tool until the next
+  // session. `trigger_signal` closes that gap: it fires any signal by id
+  // with an arbitrary payload, so the agent can create a job and run it in
+  // the same turn instead of telling the user to "send another message."
+  tools.trigger_signal = tool({
+    description:
+      "Fire a workspace signal by id with an arbitrary payload, and block until the " +
+      "spawned job completes. Use this to run a job you created earlier in THIS chat " +
+      "session — a newly-created job is not bound as its own callable tool until the " +
+      "next session, so `trigger_signal` is the in-session path to invoke it. For jobs " +
+      "that already existed when this chat started, prefer their dedicated bound tool " +
+      "(named after the job). `payload` is sent as the signal's input — its fields are " +
+      "reachable as `{{inputs.<field>}}` in the job's FSM action prompts.",
+    inputSchema: z.object({
+      signalId: z
+        .string()
+        .min(1)
+        .describe("The signal id to fire, as returned by upsert_signal or list_signals."),
+      payload: z
+        .record(z.string(), z.unknown())
+        .optional()
+        .describe("Structured input for the signal. Omit for signals that take no input."),
+    }),
+    execute: ({ signalId, payload }, { toolCallId }) => {
+      const input = payload ?? {};
+      logger.info("trigger_signal executing", {
+        workspaceId,
+        signalId,
+        mode: writer ? "sse" : "json",
+      });
+
+      if (writer) {
+        return executeJobViaSSE({
+          workspaceId,
+          signalId,
+          input,
+          streamId: parentStreamId,
+          toolCallId,
+          writer,
+          abortSignal,
+          logger,
+          jobName: signalId,
+          parentSessionId,
+        });
+      }
+
+      return executeJobViaJSON({
+        workspaceId,
+        signalId,
+        input,
+        streamId: parentStreamId,
+        logger,
+        jobName: signalId,
+        parentSessionId,
+      });
+    },
+  });
+
   return tools;
 }
 
