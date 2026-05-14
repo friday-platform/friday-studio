@@ -175,6 +175,24 @@ describe("POST /workspaces/:workspaceId/signals/:signalId envelope guard", () =>
     expect(triggerWorkspaceSignal).not.toHaveBeenCalled();
   });
 
+  test("rejects a bare payload on the SSE handler too (Accept: text/event-stream)", async () => {
+    // The SSE handler is a separate `.post` registration dispatched by the
+    // accept header — it reads rawBody directly, so its guard branch needs
+    // its own coverage.
+    const { app, triggerWorkspaceSignal } = createTestApp();
+    const res = await post(
+      app,
+      "/workspaces/ws-1/signals/sig-1",
+      { input: "hello" },
+      { Accept: "text/event-stream" },
+    );
+
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toContain('{"payload"');
+    expect(triggerWorkspaceSignal).not.toHaveBeenCalled();
+  });
+
   test("allows a properly enveloped body through the guard", async () => {
     const previous = process.env[INTERNAL_SIGNAL_BYPASS_TOKEN_ENV];
     process.env[INTERNAL_SIGNAL_BYPASS_TOKEN_ENV] = "test-token";

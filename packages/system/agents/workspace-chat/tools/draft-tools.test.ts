@@ -11,6 +11,7 @@ const mockDraftPublishPost = vi.hoisted(() => vi.fn<() => Promise<unknown>>());
 const mockDraftValidatePost = vi.hoisted(() => vi.fn<() => Promise<unknown>>());
 const mockDraftDelete = vi.hoisted(() => vi.fn<() => Promise<unknown>>());
 const mockLintPost = vi.hoisted(() => vi.fn<() => Promise<unknown>>());
+const mockInvalidateBlock2 = vi.hoisted(() => vi.fn<(workspaceId: string) => void>());
 
 function mockResponse(ok: boolean, status: number, body: unknown): unknown {
   return { ok, status, json: () => Promise.resolve(body) };
@@ -31,6 +32,8 @@ vi.mock("@atlas/client/v2", () => ({
     },
   },
 }));
+
+vi.mock("../block2-cache.ts", () => ({ invalidateBlock2: mockInvalidateBlock2 }));
 
 function makeLogger(): Logger {
   return {
@@ -101,6 +104,7 @@ describe("createBoundDraftTools", () => {
     mockDraftValidatePost.mockReset();
     mockDraftDelete.mockReset();
     mockLintPost.mockReset();
+    mockInvalidateBlock2.mockReset();
   });
 
   it("includes begin_draft tool in bound tool set", () => {
@@ -190,6 +194,30 @@ describe("createBoundDraftTools", () => {
     const result = await tools.publish_draft!.execute!({}, TOOL_CALL_OPTS);
 
     expect(result).toEqual({ success: false, error: "No draft to publish" });
+  });
+
+  // Publishing swaps the live workspace.yml — the chat's Block 2 cache must
+  // be dropped so the next turn rebuilds from the newly-published config.
+  it("publish_draft invalidates the workspace cache on success", async () => {
+    mockDraftPublishPost.mockResolvedValueOnce(
+      mockResponse(true, 200, { success: true, livePath: "/tmp/ws-1/workspace.yml" }),
+    );
+
+    const tools = createBoundDraftTools(logger, "ws-1");
+    await tools.publish_draft!.execute!({}, TOOL_CALL_OPTS);
+
+    expect(mockInvalidateBlock2).toHaveBeenCalledWith("ws-1");
+  });
+
+  it("publish_draft does not invalidate the cache when publish fails", async () => {
+    mockDraftPublishPost.mockResolvedValueOnce(
+      mockResponse(false, 409, { success: false, error: "No draft to publish" }),
+    );
+
+    const tools = createBoundDraftTools(logger, "ws-1");
+    await tools.publish_draft!.execute!({}, TOOL_CALL_OPTS);
+
+    expect(mockInvalidateBlock2).not.toHaveBeenCalled();
   });
 
   it("validate_workspace returns draft report when draft exists", async () => {
