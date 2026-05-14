@@ -45,21 +45,24 @@ const EnvWriteArgsSchema = z.object({
 
 /**
  * Apply a confirmed `env-write` elicitation. A chat turn can't block on the
- * user, so `env_set` only proposes — the actual write lands here when the
- * user confirms. Failures are logged, not thrown: the answer is already
- * durable, and re-throwing would hide the accepted answer from the UI.
+ * user, so `env_set` only proposes — the actual write lands here.
+ *
+ * Called *before* the elicitation is marked answered: the write must succeed
+ * for "answered" to be honest. A failure returns `{ ok: false }` so the
+ * caller can 500 and leave the elicitation `pending` for the user to retry
+ * (`setEnvFileVar` / `commitGlobalEnvWrite` are idempotent, so retry is safe).
  */
 async function commitEnvWriteElicitation(
   c: Context<AppVariables>,
   elicitation: Elicitation,
-): Promise<void> {
+): Promise<{ ok: true } | { ok: false; error: string }> {
   const parsed = EnvWriteArgsSchema.safeParse(elicitation.pendingTool?.args);
   if (!parsed.success) {
     logger.error("env-write elicitation has malformed pendingTool args", {
       id: elicitation.id,
       error: parsed.error.message,
     });
-    return;
+    return { ok: false, error: `malformed env-write args: ${parsed.error.message}` };
   }
   const { scope, vars, workspaceId } = parsed.data;
   const keys = Object.keys(vars);
@@ -68,7 +71,7 @@ async function commitEnvWriteElicitation(
     if (scope === "global") {
       for (const [key, value] of Object.entries(vars)) commitGlobalEnvWrite(key, value);
       logger.info("env-write elicitation applied (global)", { id: elicitation.id, keys });
-      return;
+      return { ok: true };
     }
     // workspace scope — `env_set` writes are local to the elicitation's workspace.
     const wsId = workspaceId ?? elicitation.workspaceId;
@@ -78,7 +81,7 @@ async function commitEnvWriteElicitation(
         id: elicitation.id,
         workspaceId: wsId,
       });
-      return;
+      return { ok: false, error: `workspace '${wsId}' not found` };
     }
     const envPath = join(workspace.path, ".env");
     for (const [key, value] of Object.entries(vars)) setEnvFileVar(envPath, key, value);
@@ -87,11 +90,11 @@ async function commitEnvWriteElicitation(
       workspaceId: wsId,
       keys,
     });
+    return { ok: true };
   } catch (error) {
-    logger.error("env-write elicitation commit failed", {
-      id: elicitation.id,
-      error: stringifyError(error),
-    });
+    const message = stringifyError(error);
+    logger.error("env-write elicitation commit failed", { id: elicitation.id, error: message });
+    return { ok: false, error: message };
   }
 }
 
@@ -276,6 +279,17 @@ elicitationApp.post(
       // require the caller to be a member of that workspace.
       await requireWorkspaceMember(c, got.data.workspaceId);
 
+      // For env-write confirmations the write must land *before* the
+      // elicitation is marked answered — "answered" has to mean "applied".
+      // A commit failure leaves the elicitation pending so the user can
+      // retry; the per-key writers are idempotent, so retry is safe.
+      if (got.data.kind === "env-write" && body.value === "confirm") {
+        const commit = await commitEnvWriteElicitation(c, got.data);
+        if (!commit.ok) {
+          return c.json({ error: `env write failed: ${commit.error}` }, 500);
+        }
+      }
+
       const result = await ElicitationStorage.answer({
         id,
         answer: {
@@ -304,11 +318,8 @@ elicitationApp.post(
           logger.warn("Failed to persist allow-always tool grant", { error: grant.error });
         }
       }
-      // `env_set` only proposes — the confirmed write is applied here, server-
-      // side, because the chat turn that called the tool can't block on it.
-      if (result.data.kind === "env-write" && result.data.answer?.value === "confirm") {
-        await commitEnvWriteElicitation(c, result.data);
-      }
+      // env-write commits happen *before* `answer` above — so by here, an
+      // answered+confirm env-write elicitation is genuinely applied.
       return c.json(result.data);
     } catch (error) {
       if (error instanceof HTTPException) throw error;
