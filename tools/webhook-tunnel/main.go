@@ -77,7 +77,7 @@ func main() {
 	if err := provider.Init(); err != nil {
 		log.Fatal("provider init", "error", err)
 	}
-	f, err := forwarder.New(cfg.AtlasdURL, cfg.AtlasdCA)
+	f, err := forwarder.New(cfg.AtlasdURL, cfg.FridayCA)
 	if err != nil {
 		log.Fatal("forwarder init", "error", err)
 	}
@@ -150,6 +150,15 @@ func main() {
 func startTunnel(tlsOn bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
+	// Surface the misconfig that would otherwise look like a 502 from
+	// Cloudflare's edge: HTTPS origin without a CA bundle means
+	// cloudflared falls back to its system trust store, which has no
+	// entry for our private s2s CA, so every webhook x509-errors on the
+	// loopback hop. Logging here saves the next debugger from chasing
+	// the 502 back through cloudflared and the public edge.
+	if tlsOn && cfg.FridayCA == "" {
+		log.Warn("TLS origin without FRIDAY_TLS_CA — cloudflared will likely 502 on inbound webhooks (no --origin-ca-pool)")
+	}
 	bin, err := cloudflared.Resolve(ctx)
 	if err != nil {
 		log.Error("cloudflared resolve failed; tunnel disabled", "error", err)
@@ -161,7 +170,7 @@ func startTunnel(tlsOn bool) {
 		TunnelToken:    cfg.TunnelToken,
 		CloudflaredBin: bin,
 		TLS:            tlsOn,
-		OriginCA:       cfg.AtlasdCA,
+		OriginCA:       cfg.FridayCA,
 		Logger:         log.Child("subcomponent", "tunnel"),
 	})
 	if err := tunMgr.Start(ctx); err != nil {
