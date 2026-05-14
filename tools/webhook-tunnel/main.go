@@ -161,6 +161,7 @@ func startTunnel(tlsOn bool) {
 		TunnelToken:    cfg.TunnelToken,
 		CloudflaredBin: bin,
 		TLS:            tlsOn,
+		OriginCA:       cfg.AtlasdCA,
 		Logger:         log.Child("subcomponent", "tunnel"),
 	})
 	if err := tunMgr.Start(ctx); err != nil {
