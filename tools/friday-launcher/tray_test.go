@@ -58,6 +58,9 @@ func TestComputeBucket_SupervisorExitedRed(t *testing.T) {
 func TestComputeBucket_AllHealthyGreen(t *testing.T) {
 	var sd atomic.Bool
 	cache := NewHealthCache(&sd)
+	cache.SetReady("a", true)
+	cache.SetReady("b", true)
+	cache.SetReady("c", true)
 	cache.Update(makeStates(
 		runningReady("a"),
 		runningReady("b"),
