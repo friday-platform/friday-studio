@@ -3,7 +3,7 @@
   import { Icons, IconSmall, markdownToHTMLSafe } from "@atlas/ui";
   import ToolCallCard from "./tool-call-card.svelte";
   import { getExportContext } from "./export-context";
-  import { jsonHighlighter } from "./json-highlighter";
+  import { formatRawOutput } from "./format-raw-output";
   import {
     argPreview,
     childrenAnyRunning,
@@ -222,26 +222,6 @@
     });
   }
 
-  /* ─── JSON formatting ────────────────────────────────────────────── */
-
-  function formatRawOutput(output: unknown): string {
-    let jsonStr: string;
-    if (typeof output === "string") {
-      try {
-        const parsed: unknown = JSON.parse(output);
-        jsonStr = JSON.stringify(parsed, null, 2);
-      } catch {
-        return output.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-      }
-    } else {
-      try {
-        jsonStr = JSON.stringify(output, null, 2);
-      } catch {
-        return String(output).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-      }
-    }
-    return jsonHighlighter.codeToHtml(jsonStr, { lang: "json", theme: "atlas-json" });
-  }
 </script>
 
 {#snippet jsonCopyBlock(label: string, data: unknown)}
