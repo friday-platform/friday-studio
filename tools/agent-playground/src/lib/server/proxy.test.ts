@@ -1,3 +1,4 @@
+import { Agent } from "undici";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildProxyHandler, HOP_BY_HOP_HEADERS } from "./proxy.ts";
 
@@ -36,6 +37,11 @@ describe("buildProxyHandler", () => {
 
   afterEach(() => {
     globalThis.fetch = originalFetch;
+    // Restore any vi.spyOn() installed inside individual tests (e.g.
+    // the console.warn spy in the 502 test). Without this, a spy that
+    // wasn't manually restored before an assertion threw would silence
+    // / hijack the spied function for every later test in this file.
+    vi.restoreAllMocks();
   });
 
   it("forwards path + query to the upstream URL", async () => {
@@ -79,6 +85,8 @@ describe("buildProxyHandler", () => {
   });
 
   it("returns 502 with label-tagged JSON when upstream fetch fails", async () => {
+    // The afterEach `vi.restoreAllMocks()` cleans this spy up even if
+    // the assertions below throw — no manual mockRestore needed.
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     fetchMock.mockRejectedValueOnce(new TypeError("connection refused"));
     const handler = buildProxyHandler({ upstream: "https://tunnel.local:9090", label: "tunnel" });
@@ -93,8 +101,12 @@ describe("buildProxyHandler", () => {
     expect(typeof json.elapsedMs).toBe("number");
     expect(json.elapsedMs).toBeGreaterThanOrEqual(0);
     expect(warnSpy).toHaveBeenCalledOnce();
-    expect(warnSpy.mock.calls[0]?.[0]).toMatch(/\[tunnel proxy\] fetch failed after \d+ms:/);
-    warnSpy.mockRestore();
+    const warnLine = warnSpy.mock.calls[0]?.[0];
+    expect(warnLine).toMatch(/\[tunnel proxy\] fetch failed after \d+ms:/);
+    // Pin the underlying error message in the warn line too — a future
+    // refactor that drops `${message}` from the log (while keeping it
+    // in the JSON body) would otherwise pass.
+    expect(warnLine).toContain("connection refused");
   });
 
   it("passes the long-lived undici dispatcher to upstream fetch", async () => {
@@ -108,14 +120,8 @@ describe("buildProxyHandler", () => {
     fetchMock.mockResolvedValueOnce(new Response("ok", { status: 200 }));
     const handler = buildProxyHandler({ upstream: "https://daemon.local:8080", label: "daemon" });
     await handler(event({ path: "long" }));
-    const init = fetchMock.mock.calls[0]?.[1] as
-      | { dispatcher?: { constructor?: { name?: string } } }
-      | undefined;
-    expect(init?.dispatcher).toBeDefined();
-    // It's an undici Agent instance; we can't import the value here
-    // (that would couple this test to undici internals), but the
-    // constructor name is a sufficient smoke check.
-    expect(init?.dispatcher?.constructor?.name).toBe("Agent");
+    const init = fetchMock.mock.calls[0]?.[1] as { dispatcher?: unknown } | undefined;
+    expect(init?.dispatcher).toBeInstanceOf(Agent);
   });
 
   it("reuses the same dispatcher across calls (singleton, no per-request leak)", async () => {

@@ -1,4 +1,9 @@
 import type { RequestHandler } from "@sveltejs/kit";
+// undici ships its own RequestInit type with `dispatcher` already on
+// it — same import shape as packages/llm/src/util.ts. Lets us pass
+// our long-lived dispatcher into `fetch()` without a blanket `as any`
+// cast.
+import type { RequestInit as UndiciRequestInit } from "undici";
 import { Agent } from "undici";
 
 // Node 22+ ships undici 6.x with a 300_000ms (5-min) default
@@ -22,14 +27,6 @@ const longLivedDispatcher = new Agent({
   headersTimeout: ONE_HOUR_MS,
   bodyTimeout: ONE_HOUR_MS,
 });
-
-/** Augments the platform `RequestInit` with undici's `dispatcher`
- * extension. Lets us pass our long-lived dispatcher into `fetch()`
- * without an `as any` blanket cast — the only structural mismatch
- * between this and the platform `RequestInit` is the extra field. */
-interface UndiciRequestInit extends RequestInit {
-  dispatcher?: Agent;
-}
 
 /** Hop-by-hop / connection-specific headers that don't survive the
  * proxy or HTTP/2 boundary:
@@ -184,7 +181,12 @@ export async function executeProxyFetch(
 
   let res: Response;
   try {
-    res = await fetch(target, init);
+    // Cast at the boundary: undici and the platform define
+    // structurally-identical-but-nominally-distinct RequestInit
+    // types. The narrow cast scopes the structural mismatch to one
+    // line; everywhere else stays type-checked against undici's
+    // shape, including the dispatcher field.
+    res = await fetch(target, init as unknown as RequestInit);
   } catch (err) {
     request.signal.removeEventListener("abort", abortUpstream);
     const message = err instanceof Error ? err.message : String(err);

@@ -439,13 +439,28 @@ interface FSMJob {
  * undefined as "no per-job timeout configured" — engine falls back to
  * its built-in default).
  */
-function parseJobTimeoutMs(jobName: string, value: string): number | undefined {
+export function parseJobTimeoutMs(jobName: string, value: string): number | undefined {
+  let parsed: number;
   try {
-    return parseDuration(value);
+    parsed = parseDuration(value);
   } catch (err) {
     logger.warn("Invalid job timeout — ignoring", { jobName, value, error: stringifyError(err) });
     return undefined;
   }
+  // Reject 0 explicitly. The downstream consumer (nats.js `nc.request({
+  // timeout })` in ProcessAgentExecutor) treats `timeout: 0` as
+  // "expire immediately" — every job in scope would die on its first
+  // tick. Authors who write `0s` or `0ms` almost certainly mean "no
+  // ceiling"; surface a warn and fall back to the executor default
+  // rather than silently bricking the job.
+  if (parsed <= 0) {
+    logger.warn(
+      "Job timeout must be > 0 — ignoring (use a positive duration; 0 maps to instant-rejection in the underlying transport)",
+      { jobName, value, parsedMs: parsed },
+    );
+    return undefined;
+  }
+  return parsed;
 }
 
 interface ActiveSession {
@@ -2941,10 +2956,9 @@ export class WorkspaceRuntime {
         // the job is meaningful only for elicitation TTL, not for actually
         // letting the agent run that long.
         //
-        // KEEP `!== undefined` — a truthiness check (`opts.jobTimeoutMs && ...`)
-        // would silently drop `timeoutMs: 0`. The executor treats undefined as
-        // "fall back to default" but `0` could plausibly mean "no ceiling" in
-        // a future config schema; preserve the distinction at this boundary.
+        // `parseJobTimeoutMs` already filters out `<= 0` and bad strings
+        // (returns undefined + warns), so anything we forward here is a
+        // positive integer the executor can use directly.
         ...(opts.jobTimeoutMs !== undefined && { timeoutMs: opts.jobTimeoutMs }),
         logger: logger.child({ component: "CodeAgent", agentId: userAgentId }),
         streamEmitter: opts.onStreamEvent
