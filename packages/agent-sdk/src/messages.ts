@@ -283,6 +283,26 @@ export type AtlasDataEvents = {
   usage: z.infer<(typeof AtlasDataEventSchemas)["usage"]>;
 };
 
+function repairToolPartInput(message: unknown): unknown {
+  if (typeof message !== "object" || message === null) return message;
+  const msg = message as Record<string, unknown>;
+  if (!Array.isArray(msg.parts)) return message;
+  let changed = false;
+  const repairedParts = msg.parts.map((part) => {
+    if (typeof part !== "object" || part === null) return part;
+    const p = part as Record<string, unknown>;
+    const type = typeof p.type === "string" ? p.type : "";
+    const isToolPart = type.startsWith("tool-") || type === "dynamic-tool";
+    if (!isToolPart) return part;
+    if (p.state !== "output-error") return part;
+    if (p.input !== undefined) return part;
+    if (!("rawInput" in p)) return part;
+    changed = true;
+    return { ...p, input: p.rawInput };
+  });
+  return changed ? { ...msg, parts: repairedParts } : message;
+}
+
 /**
  * Validates Atlas UI messages.
  * Checks message structure, metadata, and data parts.
@@ -323,8 +343,25 @@ export async function validateAtlasUIMessages(messages: unknown[]): Promise<Atla
     return { ...m, id: crypto.randomUUID() };
   });
 
+  // Backfill `input` from `rawInput` on tool parts with state
+  // `output-error` before validation.
+  //
+  // Why: the AI SDK's tool-input-error chunk handler emits non-dynamic
+  // tool parts as `{ state: "output-error", input: undefined, rawInput:
+  // chunk.input }` (process-ui-message-stream.ts:656-668), which fires
+  // for NoSuchToolError, InvalidToolInputError, and ToolCallRepairError.
+  // But the SDK's own UIMessage schema for `output-error` requires
+  // `input: z.unknown()` as a non-optional field, so the persisted part
+  // fails to round-trip — every subsequent history load throws
+  // AI_TypeValidationError, the route returns 500, and downstream
+  // callers (e.g. workspace-chat agent) silently fall back to empty
+  // history. The SDK's own model-message conversion does this same
+  // fallback at read time, gated to `output-error`
+  // (convert-to-model-messages.ts:183-187); we mirror the gate here.
+  const repaired = withIds.map(repairToolPartInput);
+
   const validated = await validateUIMessages<AtlasUIMessage>({
-    messages: withIds,
+    messages: repaired,
     metadataSchema: MessageMetadataSchema.optional(),
     dataSchemas: AtlasDataEventSchemas,
   });
