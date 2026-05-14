@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { defineApiKeyProvider } from "./types.ts";
+import { DynamicApiKeyProviderInputSchema, defineApiKeyProvider } from "./types.ts";
 
 describe("defineApiKeyProvider autoFields", () => {
   it("provider without autoFields stays backward-compatible", () => {
@@ -59,5 +59,90 @@ describe("defineApiKeyProvider autoFields", () => {
     const userSupplied = { user_field: "u", secret_field: "client-tried-to-set-this" };
     const merged = { ...userSupplied, ...provider.autoFields?.() };
     expect(merged.secret_field).toBe("server-value");
+  });
+});
+
+describe("DynamicApiKeyProviderInputSchema secretSchema", () => {
+  const baseInput = {
+    type: "apikey" as const,
+    id: "wire-test",
+    displayName: "Wire Test",
+    description: "Provider used to validate the wire shape",
+  };
+
+  it("accepts the legacy flat shape and preserves values verbatim", () => {
+    const parsed = DynamicApiKeyProviderInputSchema.parse({
+      ...baseInput,
+      secretSchema: { api_key: "string" },
+    });
+
+    expect(parsed.secretSchema).toEqual({ api_key: "string" });
+  });
+
+  it("accepts the descriptor shape with all metadata fields", () => {
+    const parsed = DynamicApiKeyProviderInputSchema.parse({
+      ...baseInput,
+      secretSchema: {
+        api_key: {
+          type: "string",
+          isRequired: true,
+          isSecret: true,
+          description: "Your token from foo.com",
+        },
+      },
+    });
+
+    expect(parsed.secretSchema).toEqual({
+      api_key: {
+        type: "string",
+        isRequired: true,
+        isSecret: true,
+        description: "Your token from foo.com",
+      },
+    });
+  });
+
+  it("accepts a mixed record where some keys are legacy and others are descriptors", () => {
+    const parsed = DynamicApiKeyProviderInputSchema.parse({
+      ...baseInput,
+      secretSchema: {
+        api_key: "string",
+        workspace_id: { type: "string", isRequired: false, description: "Optional workspace" },
+      },
+    });
+
+    expect(parsed.secretSchema).toEqual({
+      api_key: "string",
+      workspace_id: { type: "string", isRequired: false, description: "Optional workspace" },
+    });
+  });
+
+  it("rejects descriptors whose type literal is not 'string'", () => {
+    const result = DynamicApiKeyProviderInputSchema.safeParse({
+      ...baseInput,
+      secretSchema: { api_key: { type: "number" } },
+    });
+
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    const pathHitsTheField = result.error.issues.some(
+      (issue) => issue.path.includes("secretSchema") && issue.path.includes("api_key"),
+    );
+    expect(pathHitsTheField).toBe(true);
+  });
+
+  it("rejects descriptors whose value is neither the legacy literal nor an object", () => {
+    const result = DynamicApiKeyProviderInputSchema.safeParse({
+      ...baseInput,
+      secretSchema: { api_key: 42 },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it("falls back to the legacy default when secretSchema is omitted", () => {
+    const parsed = DynamicApiKeyProviderInputSchema.parse({ ...baseInput });
+
+    expect(parsed.secretSchema).toEqual({ api_key: "string" });
   });
 });
