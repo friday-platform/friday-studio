@@ -103,6 +103,20 @@ export function createJobTools(
     // Skip handle-chat — that's the workspace-chat agent itself
     if (jobName === "handle-chat") continue;
 
+    // Skip a job named `trigger_signal` — the generic escape-hatch tool
+    // (registered after this loop) owns that name. Binding the job here
+    // would be silently overwritten; skipping keeps the generic tool
+    // predictable, and the job is still runnable via `trigger_signal`
+    // with its own trigger signal id.
+    if (jobName === "trigger_signal") {
+      logger.warn(
+        "Job named 'trigger_signal' shadows the generic signal-trigger tool — " +
+          "skipping its dedicated tool; invoke it via trigger_signal instead",
+        { workspaceId },
+      );
+      continue;
+    }
+
     // Find the trigger signal for this job
     const triggerSignal = jobSpec.triggers?.[0]?.signal;
     if (!triggerSignal) {
