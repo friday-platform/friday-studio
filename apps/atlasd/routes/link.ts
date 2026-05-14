@@ -71,18 +71,20 @@ linkRoutes.all("/*", (c) => {
   const incomingProto = c.req.header("X-Forwarded-Proto");
   const incomingPrefix = c.req.header("X-Forwarded-Prefix") ?? "";
 
-  const headers: Record<string, string> = {
-    ...Object.fromEntries(c.req.raw.headers),
-    // Forwarded headers so Link can generate correct external URLs
-    "X-Forwarded-Host": incomingHost ?? originalUrl.host,
-    "X-Forwarded-Proto": incomingProto ?? originalUrl.protocol.replace(":", ""),
-    "X-Forwarded-Prefix": `${incomingPrefix}${PROXY_PREFIX}`,
-  };
+  // Use a Headers instance so the case-insensitive `.set()` semantics
+  // unambiguously override incoming X-Forwarded-* values. A plain-object
+  // spread keeps both the lowercase key (from `Object.fromEntries`) and
+  // the PascalCase override side-by-side and relies on Hono's internal
+  // iteration order in `preprocessRequestInit` to pick the right one.
+  const headers = new Headers(c.req.raw.headers);
+  headers.set("X-Forwarded-Host", incomingHost ?? originalUrl.host);
+  headers.set("X-Forwarded-Proto", incomingProto ?? originalUrl.protocol.replace(":", ""));
+  headers.set("X-Forwarded-Prefix", `${incomingPrefix}${PROXY_PREFIX}`);
 
   // Authenticate with Link using service FRIDAY_KEY (read at request time, not module load)
   const atlasKey = process.env.FRIDAY_KEY;
   if (atlasKey) {
-    headers.Authorization = `Bearer ${atlasKey}`;
+    headers.set("Authorization", `Bearer ${atlasKey}`);
   }
 
   return proxy(targetUrl, {
