@@ -371,6 +371,12 @@
     }
   }
 
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
   .ephemeral-label {
     font-size: var(--font-size-2);
     opacity: 0.5;
