@@ -11,6 +11,7 @@
 
 <script lang="ts">
   import type { MCPServerMetadata } from "@atlas/core/mcp-registry/schemas";
+  import { shortenServerName } from "./mcp-server-utils";
 
   interface Props {
     server: MCPServerMetadata | null;
@@ -30,17 +31,6 @@
 
   const status = $derived(server?.status ?? "ready");
   const isReady = $derived(status === "ready");
-
-  /**
-   * Reverse-DNS server names (`io.github.owner.repo`, `com.my.thing`) lead
-   * with vendor/host segments that aren't worth the width here — drop the
-   * first two segments. A plain name with fewer than three dot-segments is
-   * left as-is.
-   */
-  function displayName(name: string): string {
-    const parts = name.split(".");
-    return parts.length >= 3 ? parts.slice(2).join(".") : name;
-  }
 </script>
 
 <div class="section-nav-root">
@@ -48,7 +38,7 @@
     <p class="loading">Loading server…</p>
   {:else}
     <div class="server-ident">
-      <span class="server-name">{displayName(server.name)}</span>
+      <span class="server-name">{shortenServerName(server.name)}</span>
     </div>
 
     {#if isReady}

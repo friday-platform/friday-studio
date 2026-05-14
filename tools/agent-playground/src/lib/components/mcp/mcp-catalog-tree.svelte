@@ -17,7 +17,7 @@
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
   import { mcpQueries } from "$lib/queries/mcp-queries";
-  import { sourceLabel } from "./mcp-server-utils";
+  import { shortenServerName, sourceLabel } from "./mcp-server-utils";
 
   interface Props {
     selectedServerId?: string | null;
@@ -158,7 +158,7 @@
               class="security-dot"
               style:--dot-color={securityColor(server.securityRating)}
             ></span>
-            <span class="item-name">{server.name}</span>
+            <span class="item-name">{shortenServerName(server.name)}</span>
             {#if badge}
               <span class="status-badge" data-tone={badge.tone}
                 >{badge.label}</span

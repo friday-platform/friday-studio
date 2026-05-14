@@ -351,7 +351,7 @@
   }
 
   .status-line.muted {
-    color: var(--text-faded);
+    color: var(--text);
   }
 
   .spinner {
@@ -385,7 +385,7 @@
 
   .control-label,
   .output-label {
-    color: var(--text-faded);
+    color: var(--text);
     font-size: var(--font-size-2);
     font-weight: var(--font-weight-6);
   }
@@ -437,7 +437,7 @@
   }
 
   .arg-type {
-    color: var(--text-faded);
+    color: var(--text);
     font-size: var(--font-size-2);
   }
 

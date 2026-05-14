@@ -156,7 +156,7 @@
 
   .status-line.muted,
   .schema-label.muted {
-    color: var(--text-faded);
+    color: var(--text);
   }
 
   .spinner {
@@ -265,7 +265,7 @@
   }
 
   .schema-label {
-    color: var(--text-faded);
+    color: var(--text);
     font-size: var(--font-size-2);
     font-weight: var(--font-weight-6);
   }

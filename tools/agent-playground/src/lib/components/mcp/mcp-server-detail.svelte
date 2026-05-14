@@ -33,11 +33,9 @@
     markdownToHTMLSafe,
     toast,
   } from "@atlas/ui";
-  import { createQuery, useQueryClient } from "@tanstack/svelte-query";
+  import { useQueryClient } from "@tanstack/svelte-query";
   import { fade } from "svelte/transition";
   import { writable } from "svelte/store";
-  import { goto } from "$app/navigation";
-  import Combobox from "$lib/components/shared/combobox.svelte";
   import {
     type CommitEnvVar,
     type DoctorProgressEvent,
@@ -46,7 +44,6 @@
     useCancelMCPInstall,
     useCommitMCPInstall,
   } from "$lib/queries/mcp-queries";
-  import { workspaceQueries } from "$lib/queries";
   import ManualConfigSetup from "./manual-config-setup.svelte";
   import McpCredentialsPanel from "./mcp-credentials-panel.svelte";
   import { isOfficialServer, sourceLabel } from "./mcp-server-utils";
@@ -288,17 +285,6 @@
     rawConfigOpenFor = rawConfigOpen ? null : (server?.id ?? null);
   }
   const rawConfigJson = $derived(server ? JSON.stringify(server.configTemplate, null, 2) : "");
-
-  // ── Add-to-workspace combobox (Config Reference section) ───────────────
-  const workspacesQuery = createQuery(() => workspaceQueries.list());
-  const workspaceOptions = $derived(
-    (workspacesQuery.data ?? []).map((w) => ({ value: w.id, label: w.name })),
-  );
-  let addToWorkspaceId = $state("");
-
-  function goToWorkspaceMcp(workspaceId: string): void {
-    if (workspaceId) goto(`/platform/${workspaceId}/settings`);
-  }
 </script>
 
 {#snippet sourceBadges()}
@@ -613,19 +599,27 @@
               <section class="section">
                 <h2 class="section-title">Connections</h2>
                 <p class="section-desc">
-                  Workspaces with this server enabled, and the integration credentials it
-                  connects through. Where a credential isn't connected yet, use the connect card.
+                  The integration credentials this server connects through, and the workspaces
+                  that have it enabled.
                 </p>
                 <div class="sub-block">
-                  <h3 class="sub-title">Workspaces</h3>
-                  <McpWorkspaceUsage serverId={server.id} />
-                </div>
-                <div class="sub-block credentials-block">
                   <h3 class="sub-title">Credentials</h3>
+                  <p class="sub-desc">
+                    Server-process credentials, managed through Link. If a credential isn't
+                    connected yet, use the connect card to link one.
+                  </p>
                   <McpCredentialsPanel
                     serverId={server.id}
                     configTemplate={server.configTemplate}
                   />
+                </div>
+                <div class="sub-block">
+                  <h3 class="sub-title">Enabled in these workspaces</h3>
+                  <p class="sub-desc">
+                    Workspaces that currently have this server turned on, and the agents and jobs
+                    using it.
+                  </p>
+                  <McpWorkspaceUsage serverId={server.id} />
                 </div>
               </section>
             {:else if activeSection === "configuration"}
@@ -633,41 +627,34 @@
                 <h2 class="section-title">Config Reference</h2>
                 <p class="section-desc">
                   Reference only — these are the environment variables this server reads. The
-                  actual values are set per workspace, in that workspace's settings. Add the
-                  server to a workspace to configure it there.
+                  actual values are set per workspace, in that workspace's settings.
                 </p>
-
-                <div class="add-to-workspace">
-                  <Combobox
-                    bind:value={addToWorkspaceId}
-                    options={workspaceOptions}
-                    placeholder="Add to workspace…"
-                  />
-                  <Button
-                    variant="secondary"
-                    size="small"
-                    onclick={() => goToWorkspaceMcp(addToWorkspaceId)}
-                    disabled={!addToWorkspaceId}
-                  >
-                    Open workspace settings
-                  </Button>
-                </div>
 
                 {#if envRows.length > 0}
                   <div class="sub-block">
                     <h3 class="sub-title">Environment variables</h3>
+                    <p class="sub-desc">
+                      Each variable, whether it's required or secret, and where Friday detected
+                      it. Tags carry through to the per-workspace settings UI.
+                    </p>
                     {@render envTable(envRows)}
                   </div>
+                {:else}
+                  <p class="empty-line">This server declares no environment variables.</p>
                 {/if}
 
                 <div class="sub-block">
+                  <h3 class="sub-title">Raw config</h3>
+                  <p class="sub-desc">
+                    The exact server config snapshotted into each workspace on enable.
+                  </p>
                   <button type="button" class="raw-toggle" onclick={toggleRawConfig}>
                     {#if rawConfigOpen}
                       <IconSmall.ChevronDown />
                     {:else}
                       <IconSmall.ChevronRight />
                     {/if}
-                    View raw config
+                    {rawConfigOpen ? "Hide raw config" : "View raw config"}
                   </button>
                   {#if rawConfigOpen}
                     <pre class="raw-block">{rawConfigJson}</pre>
@@ -771,7 +758,7 @@
   .section {
     display: flex;
     flex-direction: column;
-    gap: var(--size-3);
+    gap: var(--size-4);
   }
 
   .panel {
@@ -780,7 +767,7 @@
     border-radius: var(--radius-3);
     display: flex;
     flex-direction: column;
-    gap: var(--size-3);
+    gap: var(--size-4);
     padding: var(--size-4);
   }
 
@@ -829,7 +816,7 @@
   }
 
   .description.faded {
-    color: var(--text-faded);
+    color: var(--text);
   }
 
   .header-links {
@@ -854,15 +841,11 @@
   .sub-block {
     display: flex;
     flex-direction: column;
-    gap: var(--size-2);
-  }
-
-  .credentials-block:not(:has(> :nth-child(2) *)) {
-    display: none;
+    gap: var(--size-3);
   }
 
   .sub-title {
-    color: var(--text-faded);
+    color: var(--text-bright);
     font-size: var(--font-size-3);
     font-weight: var(--font-weight-6);
     margin: 0;
@@ -981,7 +964,7 @@
     line-height: 1.5;
   }
 
-  /* ── Overview header + badges + add-to-workspace ─────────────────────── */
+  /* ── Overview header + badges ────────────────────────────────────────── */
 
   .overview-header {
     align-items: center;
@@ -1008,16 +991,10 @@
     max-inline-size: 76ch;
   }
 
-  .add-to-workspace {
-    align-items: center;
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--size-2);
-  }
-
-  .add-to-workspace :global(.combobox) {
-    flex: 1;
-    min-inline-size: 20ch;
+  .empty-line {
+    color: var(--text);
+    font-size: var(--font-size-3);
+    margin: 0;
   }
 
   /* ── Env table ───────────────────────────────────────────────────────── */
@@ -1032,7 +1009,7 @@
   .env-table th {
     background-color: var(--surface);
     border-block-end: 1px solid var(--border);
-    color: var(--text-faded);
+    color: var(--text);
     font-weight: var(--font-weight-6);
     padding: var(--size-1-5) var(--size-2);
     text-align: start;
@@ -1109,7 +1086,7 @@
     align-items: center;
     background: none;
     border: none;
-    color: var(--text-faded);
+    color: var(--text);
     cursor: pointer;
     display: flex;
     font: inherit;
