@@ -102,6 +102,13 @@ export function buildProxyHandler({ upstream, label }: BuildProxyOptions): Reque
     // X-Forwarded-* — otherwise they emit URLs pointing at the upstream's
     // own s2s listener (cert not browser-trusted → ERR_CERT_AUTHORITY_INVALID
     // when the OAuth provider redirects the browser back).
+    //
+    // Defense-in-depth: this is an unauthenticated pass-through. Any caller
+    // who reaches the playground origin can inject X-Forwarded-Host. Trust
+    // is gated downstream at apps/atlasd/src/dev-only.ts (Link proxy is
+    // dev-mode-only). Keep this handler dumb — do NOT add validation that
+    // would let new daemon endpoints start trusting these headers
+    // unconditionally.
     const incoming = new URL(request.url);
     headers.set("x-forwarded-host", incoming.host);
     headers.set("x-forwarded-proto", incoming.protocol.replace(":", ""));

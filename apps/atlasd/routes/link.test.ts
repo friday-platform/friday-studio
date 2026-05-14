@@ -13,7 +13,6 @@ describe("daemon /api/link proxy: X-Forwarded-* forwarding", () => {
     fetchMock = vi.fn().mockResolvedValue(new Response("ok", { status: 200 }));
     globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
     process.env.FRIDAY_ENV = "dev";
-    process.env.LINK_SERVICE_URL = "http://link.local:3100";
   });
 
   afterEach(() => {
@@ -23,7 +22,6 @@ describe("daemon /api/link proxy: X-Forwarded-* forwarding", () => {
     } else {
       process.env.FRIDAY_ENV = originalFridayEnv;
     }
-    delete process.env.LINK_SERVICE_URL;
   });
 
   it("preserves incoming X-Forwarded-Host/Proto and appends /api/link to the prefix", async () => {
@@ -44,6 +42,25 @@ describe("daemon /api/link proxy: X-Forwarded-* forwarding", () => {
     expect(forwarded.headers.get("x-forwarded-host")).toBe("localhost:5200");
     expect(forwarded.headers.get("x-forwarded-proto")).toBe("https");
     // Concatenated: playground prefix + this proxy's own prefix.
+    expect(forwarded.headers.get("x-forwarded-prefix")).toBe("/api/daemon/api/link");
+  });
+
+  it("strips a trailing slash from incoming X-Forwarded-Prefix before concatenation", async () => {
+    const res = await linkRoutes.request(
+      "http://127.0.0.1:8080/api/link/v1/oauth/authorize/google-calendar",
+      {
+        method: "GET",
+        headers: {
+          "X-Forwarded-Host": "localhost:5200",
+          "X-Forwarded-Proto": "https",
+          "X-Forwarded-Prefix": "/api/daemon/",
+        },
+      },
+    );
+    expect(res.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const forwarded = fetchMock.mock.calls[0][0] as Request;
+    // Without normalization this would be "/api/daemon//api/link".
     expect(forwarded.headers.get("x-forwarded-prefix")).toBe("/api/daemon/api/link");
   });
 

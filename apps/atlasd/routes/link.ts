@@ -69,7 +69,11 @@ linkRoutes.all("/*", (c) => {
   // The prefix is concatenated so Link sees the full external path.
   const incomingHost = c.req.header("X-Forwarded-Host");
   const incomingProto = c.req.header("X-Forwarded-Proto");
-  const incomingPrefix = c.req.header("X-Forwarded-Prefix") ?? "";
+  // Strip a trailing slash so concatenation with PROXY_PREFIX (which starts
+  // with "/") doesn't produce a doubled separator. Today the only known
+  // upstream emitter (the playground proxy) never sends one, but the daemon
+  // is also reachable from tunnels / future deployments we don't control.
+  const incomingPrefix = (c.req.header("X-Forwarded-Prefix") ?? "").replace(/\/$/, "");
 
   // Use a Headers instance so the case-insensitive `.set()` semantics
   // unambiguously override incoming X-Forwarded-* values. A plain-object
