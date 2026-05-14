@@ -17,7 +17,7 @@
   import { deriveTopology } from "@atlas/config/topology";
   import { deriveWorkspaceAgents } from "@atlas/config/workspace-agents";
   import { Button, Dialog, DropdownMenu, IconLarge, Icons, toast } from "@atlas/ui";
-  import { createQuery, useQueryClient } from "@tanstack/svelte-query";
+  import { createQuery } from "@tanstack/svelte-query";
   import { goto } from "$app/navigation";
   import { browser } from "$app/environment";
   import { page } from "$app/state";
@@ -26,12 +26,7 @@
   import CommunicatorsCard from "$lib/components/workspace/communicators-card.svelte";
   import JobsIntegrationsCard from "$lib/components/workspace/jobs-integrations-card.svelte";
   import SignalsCard from "$lib/components/workspace/signals-card.svelte";
-  import {
-    sessionQueries,
-    useDeleteWorkspace,
-    workspaceQueries,
-    type WorkspaceSummary,
-  } from "$lib/queries";
+  import { sessionQueries, useDeleteWorkspace, workspaceQueries } from "$lib/queries";
   import { writable } from "svelte/store";
   import { stringify } from "yaml";
 
@@ -63,7 +58,9 @@
     return COLORS[color ?? "yellow"] ?? COLORS["yellow"];
   });
 
-  const isCanonical = $derived(currentWorkspace?.canonical !== undefined);
+  // Default to canonical (non-deletable) while the workspace list is still
+  // loading — keeps the destructive "Remove" action hidden until we're sure.
+  const isCanonical = $derived(!currentWorkspace || currentWorkspace.canonical !== undefined);
 
   // ---------------------------------------------------------------------------
   // Agents
@@ -312,24 +309,16 @@
 
   const deleteMut = useDeleteWorkspace();
   const deleteDialogOpen = writable(false);
-  const queryClient = useQueryClient();
 
   async function confirmDelete() {
     if (!workspaceId || deleteMut.isPending) return;
-    const deletedId = workspaceId;
     try {
-      await deleteMut.mutateAsync(deletedId);
+      await deleteMut.mutateAsync(workspaceId);
       deleteDialogOpen.set(false);
-      toast({ title: `${configQuery.data?.config?.workspace?.name ?? deletedId} removed` });
-
-      await queryClient.invalidateQueries({ queryKey: workspaceQueries.all() });
-      const workspaces = queryClient.getQueryData<WorkspaceSummary[]>(
-        workspaceQueries.list().queryKey,
-      );
-      const fallback =
-        workspaces?.find((ws) => ws.id === "user" && ws.id !== deletedId) ??
-        workspaces?.find((ws) => ws.type === "persistent" && ws.id !== deletedId);
-      goto(fallback ? `/platform/${fallback.id}` : "/platform");
+      toast({ title: `${configQuery.data?.config?.workspace?.name ?? workspaceId} removed` });
+      // Only non-canonical workspaces are deletable, so the personal workspace
+      // ("user") always exists as a landing target.
+      goto("/platform/user");
     } catch {
       toast({ title: "Failed to remove workspace", error: true });
     }
