@@ -19,6 +19,7 @@ export {
   type CatalogEntry,
   type CatalogProvider,
   getCatalog,
+  invalidateCatalog,
   type ModelInfo,
   PROVIDER_META,
   type ProviderMeta,
@@ -40,7 +41,7 @@ export {
   tokensToCost,
 } from "./src/pricing.ts";
 export { pruneMessages } from "./src/prune-messages.ts";
-export { registry } from "./src/registry.ts";
+export { registry, resetRegistry } from "./src/registry.ts";
 export {
   buildRegistryModelId,
   isRegistryProvider,

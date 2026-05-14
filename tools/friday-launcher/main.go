@@ -371,6 +371,71 @@ func onReady() {
 		"source", jetstreamStoreSource,
 	)
 
+	// Pick the NATS port once at launcher startup. Iterates Friday's
+	// reserved range (14222..14231) and falls back to OS-assigned if
+	// all 10 slots are taken. The chosen port lands in the
+	// `natsServerPort` package-level so both `natsServerArgs` and
+	// `commonServiceEnv` see the same value when they build the
+	// nats-server spec and the child env respectively.
+	natsServerPort = pickNATSPort()
+	log.Info("nats-server port",
+		"port", natsServerPort,
+		"url", natsServerURL(),
+	)
+
+	// First-run s2s cert generation. Synchronous, idempotent. On a
+	// fresh install (or after manual removal of <friendly_home>/tls/)
+	// the launcher mints a private CA + leaf for service-to-service
+	// TLS, valid for 5 years. Subsequent boots find the files valid
+	// and return immediately. Must run BEFORE supervisedProcesses() so
+	// the cert-path .env writeback below points at real files when the
+	// supervised processes wake up to load .env. Generation failure is
+	// logged but non-fatal — services fall back to plain HTTP on
+	// loopback if the s2s pair isn't present.
+	if err := ensureS2sCerts(); err != nil {
+		log.Warn("s2s: ensureS2sCerts failed (services will fall back to plain HTTP)", "error", err)
+	}
+
+	// Persist resolved cert paths to ~/.friday/local/.env (add-if-missing).
+	// commonServiceEnv() loads .env and passes the result to every spawned
+	// service — going through .env (instead of injecting at spawn time)
+	// keeps the launcher convenient-but-optional. Anyone running `friday
+	// daemon start` manually reads the same .env and gets the same cert
+	// wiring, no launcher dependency at runtime. Operator overrides
+	// already in .env are preserved verbatim.
+	if added, err := ensureCertEnvFile(); err != nil {
+		log.Warn("cert env: writeback to .env failed", "error", err)
+	} else if added > 0 {
+		log.Info("cert env: wrote launcher-managed paths to .env", "keys_added", added)
+	}
+
+	// Migrate stale http://localhost:N URL keys to https:// when the
+	// s2s mesh is up. Tauri installers from before TLS support pinned
+	// FRIDAYD_URL / EXTERNAL_DAEMON_URL / EXTERNAL_TUNNEL_URL /
+	// LINK_SERVICE_URL to http://; without this migration the daemon's
+	// link proxy + the playground's daemon proxy would send cleartext
+	// into TLS listeners and chat tools fail with "Link service is
+	// unavailable" / the UI hangs on "CONNECTING…". Each consumer also
+	// auto-upgrades defensively (cf. packages/openapi-client/src/utils.ts
+	// and tools/agent-playground/static-server.ts), but this migration
+	// is the canonical .env-level fix so external readers — Python
+	// agents, operator `cat .env` — see the right scheme too.
+	if migrated, err := migrateStaleURLSchemes(); err != nil {
+		log.Warn("url migration: rewrite failed", "error", err)
+	} else if migrated > 0 {
+		log.Info("url migration: upgraded stale http→https in .env", "keys_migrated", migrated)
+	}
+
+	// Boot-time browser-cert refresh. Bounded at bootRefreshTimeout
+	// (5s) so a stuck CDN can't delay launcher startup. Run BEFORE
+	// supervisedProcesses() so the playground spec's first read of
+	// browser.{crt,key} (via tls-paths.ts at process startup) sees
+	// the freshly-rotated pair. If it fails or runs out of budget,
+	// the playground starts on whatever's on disk — expired or
+	// missing certs cause tls-paths.ts to return null and the
+	// playground falls back to plain http on its loopback port.
+	maybeBootRefreshTLS()
+
 	// Build project + supervisor.
 	specs := supervisedProcesses(binDir)
 	project := newProjectFromSpecs(specs)
@@ -394,6 +459,24 @@ func onReady() {
 	pollCtx, pollCancel := context.WithCancel(context.Background())
 	healthPollCancel = pollCancel
 	go runHealthPoll(pollCtx, sup, healthCache)
+
+	// Native readiness probes. One goroutine per supervised service,
+	// each owning a go-health checker whose http.Client matches the
+	// scheme the spec serves (TLS-skip-verify for HTTPS on loopback).
+	// Drives both the HealthCache readiness signal AND the
+	// sup.RestartProcess call when a service stays unhealthy past
+	// probeFailureThreshold. Process-compose's own ReadinessProbe is
+	// left nil — see project.go for the rationale.
+	startReadinessRunners(pollCtx, specs, healthCache, sup)
+
+	// Daily browser-cert renewer. Wakes once per tlsRenewInterval
+	// (default 24h, override via FRIDAY_TLS_RENEW_INTERVAL); when the
+	// on-disk cert is past 2/3 of its issued lifetime, expired, or
+	// missing, fetches the manifest, sha256-verifies the new pair,
+	// atomic-installs them, and triggers a single-process restart of
+	// the playground so it picks up the new files. Shares pollCtx so
+	// performShutdown cancels both goroutines in one step.
+	startTLSRenewer(pollCtx, sup)
 
 	// Tray controller (goroutine B + click handlers). healthCache
 	// drives the bucket logic per Decision #4 — the existing

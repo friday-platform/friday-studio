@@ -1,12 +1,24 @@
 package forwarder
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/json"
+	"encoding/pem"
 	"io"
+	"math/big"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -29,7 +41,10 @@ func TestForwardHappyPath(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	f := New(srv.URL)
+	f, err := New(srv.URL, "")
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
 	sid, err := f.Forward("ws-1", "sig-1", map[string]any{"foo": "bar"})
 	if err != nil {
 		t.Fatalf("forward: %v", err)
@@ -45,8 +60,11 @@ func TestForwardNon2xx(t *testing.T) {
 		_, _ = w.Write([]byte(`workspace not found`))
 	}))
 	defer srv.Close()
-	f := New(srv.URL)
-	_, err := f.Forward("ws", "sig", nil)
+	f, err := New(srv.URL, "")
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	_, err = f.Forward("ws", "sig", nil)
 	if err == nil {
 		t.Fatalf("expected error on 5xx response")
 	}
@@ -68,7 +86,10 @@ func TestProxyPathRewrite(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	f := New(srv.URL)
+	f, err := New(srv.URL, "")
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
 	r := chi.NewRouter()
 	r.Handle("/platform/{provider}", f.ProxyHandler())
 	r.Handle("/platform/{provider}/*", f.ProxyHandler())
@@ -113,7 +134,10 @@ func TestProxyStripsHopByHop(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	f := New(srv.URL)
+	f, err := New(srv.URL, "")
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
 	r := chi.NewRouter()
 	r.Handle("/platform/{provider}", f.ProxyHandler())
 	clientSrv := httptest.NewServer(r)
@@ -137,5 +161,93 @@ func TestProxyStripsHopByHop(t *testing.T) {
 	}
 	if got.Get("X-Custom") != "preserved" {
 		t.Errorf("X-Custom should be preserved, got %q", got.Get("X-Custom"))
+	}
+}
+
+// TestForwardTrustsPrivateCA verifies that when New() is given a CA
+// file, the forwarder can reach an HTTPS atlasd whose cert chains to
+// that CA — the path that breaks without FRIDAY_TLS_CA plumbing.
+func TestForwardTrustsPrivateCA(t *testing.T) {
+	// Mint a self-signed CA + leaf for 127.0.0.1.
+	caKey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	caTpl := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: "Test CA"},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(time.Hour),
+		IsCA:                  true,
+		KeyUsage:              x509.KeyUsageCertSign,
+		BasicConstraintsValid: true,
+	}
+	caDER, _ := x509.CreateCertificate(rand.Reader, caTpl, caTpl, &caKey.PublicKey, caKey)
+	caCert, _ := x509.ParseCertificate(caDER)
+
+	leafKey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	leafTpl := &x509.Certificate{
+		SerialNumber: big.NewInt(2),
+		Subject:      pkix.Name{CommonName: "localhost"},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		IPAddresses:  []net.IP{net.ParseIP("127.0.0.1")},
+	}
+	leafDER, _ := x509.CreateCertificate(rand.Reader, leafTpl, caCert, &leafKey.PublicKey, caKey)
+
+	// Persist the CA in PEM so New() can read it via path.
+	tmp := t.TempDir()
+	caPath := filepath.Join(tmp, "ca.crt")
+	caPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caDER})
+	if err := os.WriteFile(caPath, caPEM, 0o600); err != nil {
+		t.Fatalf("write ca: %v", err)
+	}
+
+	// Stand up an httptest TLS server presenting the leaf, then validate
+	// that a forwarder configured WITHOUT the CA fails and one WITH the
+	// CA succeeds — exactly the divergence the s2s rollout introduced.
+	tlsCert := tls.Certificate{Certificate: [][]byte{leafDER}, PrivateKey: leafKey}
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"sessionId":"ok"}`))
+	}))
+	srv.TLS = &tls.Config{Certificates: []tls.Certificate{tlsCert}}
+	srv.StartTLS()
+	defer srv.Close()
+
+	// Without CA: must error with an x509 / unknown-authority message.
+	noCA, err := New(srv.URL, "")
+	if err != nil {
+		t.Fatalf("New no-ca: %v", err)
+	}
+	if _, err := noCA.Forward("ws", "sig", nil); err == nil {
+		t.Fatalf("expected TLS verification error without CA")
+	}
+
+	// With CA: must succeed.
+	withCA, err := New(srv.URL, caPath)
+	if err != nil {
+		t.Fatalf("New with-ca: %v", err)
+	}
+	sid, err := withCA.Forward("ws", "sig", nil)
+	if err != nil {
+		t.Fatalf("forward with CA: %v", err)
+	}
+	if sid != "ok" {
+		t.Errorf("sessionId: want ok, got %q", sid)
+	}
+}
+
+// TestNewRejectsInvalidCA covers the loud-failure case: caller passes
+// a path that isn't a valid PEM. We'd rather fail at startup than
+// silently degrade to "no extra trust" and then mysteriously fail at
+// every forward call.
+func TestNewRejectsInvalidCA(t *testing.T) {
+	tmp := t.TempDir()
+	bogus := filepath.Join(tmp, "bogus.crt")
+	_ = os.WriteFile(bogus, []byte("not a certificate"), 0o600)
+	if _, err := New("http://localhost:8080", bogus); err == nil {
+		t.Fatalf("expected error for invalid PEM, got nil")
+	}
+	if _, err := New("http://localhost:8080", filepath.Join(tmp, "missing.crt")); err == nil {
+		t.Fatalf("expected error for missing CA file, got nil")
 	}
 }

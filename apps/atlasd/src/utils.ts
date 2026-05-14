@@ -21,10 +21,11 @@ export function getAtlasDaemonUrl(): string {
     try {
       new URL(url);
     } catch {
+      const scheme = env.FRIDAY_TLS_CERT && env.FRIDAY_TLS_KEY ? "https" : "http";
       logger.warn(
-        `Invalid FRIDAY_DAEMON_URL: "${url}". Must be a valid URL (e.g., http://127.0.0.1:8080). Using default.`,
+        `Invalid FRIDAY_DAEMON_URL: "${url}". Must be a valid URL (e.g., ${scheme}://127.0.0.1:8080). Using default.`,
       );
-      return "http://127.0.0.1:8080";
+      return `${scheme}://127.0.0.1:8080`;
     }
   }
 

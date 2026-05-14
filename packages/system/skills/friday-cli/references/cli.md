@@ -1,8 +1,26 @@
 # Atlas CLI Reference
 
 Complete reference for `deno task atlas <subcommand>`. The CLI is a thin HTTP
-client over `localhost:8080` — every subcommand maps to one or more daemon
-routes. When the CLI lacks a flag you need, drop to HTTP (`references/http.md`).
+client over `$FRIDAYD_URL` (host/port and scheme vary by install — installed
+Friday Studio runs `:18080`, in-tree dev runs `:8080`, both can be on TLS).
+Every subcommand maps to one or more daemon routes. When the CLI lacks a
+flag you need, drop to HTTP (`references/http.md`).
+
+## Daemon URL preamble (required for raw HTTP)
+
+A few subcommands document HTTP fallback paths (notably `agent register`
+below — there is no CLI subcommand). For those, **use `curl -k`, never
+plain `curl`** — plain `curl` against `$FRIDAYD_URL` on a TLS-enabled
+install fails with `self signed certificate in certificate chain`. Source
+the daemon `.env` once per shell — installed-Studio location first, dev
+location (written by `setup-tls.sh`) as fallback:
+
+```bash
+set -a
+. "${FRIDAY_HOME:-$HOME/.friday/local}/.env" 2>/dev/null \
+  || . "$HOME/.atlas/.env" 2>/dev/null || true
+set +a
+```
 
 Conventions:
 - `--json` on most commands → NDJSON (one object per line) + a final
@@ -139,7 +157,7 @@ Alias: `p`
 
 Sends a prompt. Default output is NDJSON — `cli-summary` at the end has the
 `chatId` for continuation. `--workspace` routes to a workspace-scoped chat
-instead of the default `atlas-conversation` workspace.
+instead of the default `user` workspace.
 
 ### `chat`
 `chat [<chatId>] [--limit 25] [--show-prompts] [--human]`
@@ -182,10 +200,17 @@ Full agent config as JSON (type, prompt, model, tools, integrations).
 
 ### Registering a Python user agent
 
-There is no `atlas agent register` CLI subcommand — register via the daemon's HTTP API directly:
+There is no `atlas agent register` CLI subcommand — register via the daemon's
+HTTP API directly. Source the daemon `.env` once per shell so the example
+works on TLS-enabled installs (see the SKILL.md "Daemon URL" preamble).
+
+**Rule: use `curl -k`, not plain `curl`.** Plain `curl` against
+`$FRIDAYD_URL` on a TLS install fails with `self signed certificate in
+certificate chain`. `-k` skips cert verification — safe because the
+daemon binds loopback only.
 
 ```bash
-curl -X POST http://localhost:8080/api/agents/register \
+curl -k -X POST "$FRIDAYD_URL/api/agents/register" \
   -H 'Content-Type: application/json' \
   -d '{"entrypoint": "/abs/path/to/your-agent/agent.py"}'
 ```

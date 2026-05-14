@@ -103,6 +103,27 @@ func (s *Supervisor) Shutdown() error {
 	return s.runner.ShutDownProject()
 }
 
+// RestartProcess restarts a single supervised process by name.
+// Serialized with RestartAll via restartMu so a renewer-driven
+// restart can't race a user-initiated full restart.
+//
+// Sets inRestart for the duration so the tray's RestartGraceActive
+// stays true through the restart window — without that the bucket
+// briefly paints red when the one restarting service drops below
+// "healthy" before its readiness probe re-passes.
+func (s *Supervisor) RestartProcess(name string) error {
+	s.restartMu.Lock()
+	defer s.restartMu.Unlock()
+
+	s.inRestart.Store(true)
+	defer func() {
+		s.lastRestartEndNano.Store(time.Now().UnixNano())
+		s.inRestart.Store(false)
+	}()
+
+	return s.runner.RestartProcess(name)
+}
+
 // RestartAll restarts every supervised process by calling
 // runner.RestartProcess(name) in startOrder (dependency order so
 // foundational services come back first).

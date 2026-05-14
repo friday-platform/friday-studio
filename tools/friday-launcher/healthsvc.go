@@ -94,6 +94,16 @@ type HealthCache struct {
 	services  []serviceState
 	startedAt time.Time
 
+	// customReady is the readiness signal owned by readinessRunner —
+	// our native-Go probe loop. We disabled process-compose's
+	// ReadinessProbe (HttpProbe has no TLS controls and would reject
+	// our private-CA s2s leaf or our mkcert-issued browser leaf with
+	// the default Go transport), so this map IS the readiness truth
+	// for every supervised service. deriveStatus consults it on every
+	// snapshot. A service with no entry yet (probe runner hasn't
+	// reported a first result) is treated as not-ready.
+	customReady map[string]bool
+
 	// shuttingDown is owned by main.go (the GLOBAL shutdown atomic).
 	// HealthCache holds a pointer so the HTTP handler's 409-conflict
 	// probe and the tray's "Shutting down…" rendering both read the
@@ -118,6 +128,36 @@ func NewHealthCache(shuttingDown *atomic.Bool) *HealthCache {
 		startedAt:    time.Now(),
 		shuttingDown: shuttingDown,
 		subs:         make(map[chan struct{}]struct{}),
+		customReady:  make(map[string]bool),
+	}
+}
+
+// SetReady records the latest readiness verdict from the native probe
+// runner for one service. Triggers a fan-out notification only when
+// the recorded value flips, so the SSE stream doesn't emit a tick on
+// every probe period when nothing changed.
+func (c *HealthCache) SetReady(name string, ready bool) {
+	c.mu.Lock()
+	prev, had := c.customReady[name]
+	c.customReady[name] = ready
+	// Status derivation pulls from customReady on the next snapshot
+	// update — flipping the map here is enough; we don't need to mutate
+	// c.services (the runHealthPoll tick will re-derive). But we DO need
+	// to bump transitionAt for the affected service immediately when the
+	// readiness flips, otherwise "since" semantics report the wrong age.
+	if had && prev != ready {
+		if i := indexByName(c.services, name); i >= 0 {
+			// Recompute status with the new readiness in mind. We don't
+			// have a ProcessState here, so the status field will be
+			// touched up on the next runHealthPoll tick — the immediate
+			// effect is just the transitionAt bump so consumers see the
+			// readiness flip as a state transition.
+			c.services[i].transitionAt = time.Now()
+		}
+	}
+	c.mu.Unlock()
+	if had && prev != ready {
+		c.notifySubscribers()
 	}
 }
 
@@ -149,7 +189,7 @@ func (c *HealthCache) Update(snapshot *types.ProcessesState) {
 		for _, ps := range snapshot.States {
 			c.services = append(c.services, serviceState{
 				name:         ps.Name,
-				status:       deriveStatus(ps),
+				status:       deriveStatus(ps, c.customReady[ps.Name]),
 				transitionAt: now,
 			})
 		}
@@ -160,7 +200,7 @@ func (c *HealthCache) Update(snapshot *types.ProcessesState) {
 		// new service appeared (shouldn't happen post-startup but
 		// future-proof), append it.
 		for _, ps := range snapshot.States {
-			derived := deriveStatus(ps)
+			derived := deriveStatus(ps, c.customReady[ps.Name])
 			i := indexByName(c.services, ps.Name)
 			if i < 0 {
 				c.services = append(c.services, serviceState{
@@ -194,17 +234,17 @@ func indexByName(svcs []serviceState, name string) int {
 	return -1
 }
 
-// deriveStatus translates a process-compose ProcessState into our
-// state-machine vocabulary. Documented in v15 § Service status state
-// machine.
+// deriveStatus translates a process-compose ProcessState (plus our
+// native probe's customReady verdict) into our state-machine vocabulary.
+// Documented in v15 § Service status state machine.
 //
 // Mapping rules:
 //   - Status==Pending or Status==Disabled → "pending" (process not
 //     yet spawned by the supervisor)
 //   - Status==Error AND Restarts >= MaxRestarts → "failed"
 //     (terminal until user clicks Restart-all)
-//   - Status==Running AND Health==Ready → "healthy"
-//   - everything else (Running+NotReady, Launching, Launched,
+//   - Status==Running AND customReady=true → "healthy"
+//   - everything else (Running+not-ready, Launching, Launched,
 //     Restarting, Terminating, Completed-with-nonzero-exit) →
 //     "starting"
 //
@@ -213,7 +253,12 @@ func indexByName(svcs []serviceState, name string) int {
 // 30s cold-start grace window. Failed is terminal (the user has to
 // take action), distinct from a single SIGKILL+restart that
 // process-compose handles internally under MaxRestarts.
-func deriveStatus(ps types.ProcessState) string {
+//
+// customReady is sourced from HealthCache.customReady (written by the
+// native readinessRunner). Process-compose's ReadinessProbe field is
+// nil for all our supervised services — its HttpProbe has no TLS
+// controls, so we own readiness end-to-end in Go.
+func deriveStatus(ps types.ProcessState, customReady bool) string {
 	switch ps.Status {
 	case types.ProcessStatePending, types.ProcessStateDisabled, types.ProcessStateScheduled:
 		return statusPending
@@ -236,13 +281,7 @@ func deriveStatus(ps types.ProcessState) string {
 		}
 		return statusStarting
 	case types.ProcessStateRunning:
-		if !ps.HasHealthProbe {
-			// No health probe declared for this service: treat
-			// Running as healthy. Today every supervised service
-			// has a probe, so this branch is defensive.
-			return statusHealthy
-		}
-		if ps.Health == types.ProcessHealthReady {
+		if customReady {
 			return statusHealthy
 		}
 		return statusStarting

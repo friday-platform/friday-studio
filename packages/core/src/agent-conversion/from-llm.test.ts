@@ -1,273 +1,188 @@
 /**
- * H3 (melodic-strolling-seal-pt3). Audit of B6's `toolChoice` claims at
- * the orchestrator side — the `case "agent"` execution path that flows
- * `case "agent"` (FSM) → `convertLLMToAgent` (here). B6 (1d57456)
- * introduced the `record_validation` tool injection + `toolChoice`
- * resolution rule symmetrically across both call sites, but no test
- * pinned the orchestrator side: `validate-agent-action.test.ts` only
- * verifies decision threading (not what the orchestrator does with it),
- * and `validate-decision.test.ts` only covers the wire format.
+ * Orchestrator-side `complete` injection regression test.
  *
- * E1 (1c8edab) added `hasOutputType` to skip `record_validation`
- * injection on the structured + self path. E1.1 (3aa8796) extended the
- * skip to the validation skill body. This test pins both:
+ * `convertLLMToAgent` is the runtime path for FSM `case "agent"` actions
+ * invoking a `type: llm` agent. When the action declares `outputTo`, the
+ * runtime threads an `outputSchema` through `AgentContext`; the handler
+ * must inject a `complete` tool with that schema as its `inputSchema` so
+ * the LLM has a contracted exit. The `validation-removed` promptfoo eval
+ * pins the source string `"complete: {"` — but a static substring check
+ * cannot catch a regression where `hasRuntimeOutputSchema` flips falsey
+ * unexpectedly, the spread is broken, or a future refactor moves the
+ * injection site without keeping the literal.
  *
- *   - The injection rule (`record_validation` only when self && !outputType)
- *   - The skill body composition rule (skip body on self && outputType)
- *
- * The case "llm" inline path (FSM-side) is covered by
- * `packages/fsm-engine/tests/validation-with-output-type.test.ts`.
- *
- * Runtime `outputSchema` is now the mechanical output contract for LLM-backed
- * agent actions. When present, the orchestrator injects and pins the `complete`
- * tool, mirroring inline FSM LLM actions. Free-form actions keep the author's
- * toolChoice/default `auto` behavior.
+ * This test mocks `streamText` to capture the `tools` map and `toolChoice`
+ * the handler passes in and asserts both branches of the
+ * `hasRuntimeOutputSchema` ternary at `from-llm.ts:73-83`:
+ *   1. With `outputSchema` set, `tools.complete` is present with the
+ *      expected `inputSchema` (derived via `jsonSchema(outputSchema)`).
+ *   2. With `outputSchema` AND no other tools, `toolChoice` pins the LLM
+ *      to `complete` (the load-bearing exit when nothing else is callable).
+ *   3. With `outputSchema` undefined, `tools.complete` is absent and
+ *      `toolChoice` falls through to the configured default. The
+ *      false-branch is reachable in production: Pattern A signals (no
+ *      `outputTo`), `case "agent"` actions where `outputTo` is unset, and
+ *      `type: agent` references whose resolved agent type is not `llm` all
+ *      hit the handler with `context.outputSchema === undefined` (FSM
+ *      omits the field unconditionally per `fsm-engine.ts:1812`).
  */
 
-import type { AgentContext, StreamEmitter } from "@atlas/agent-sdk";
+import type { AtlasTools } from "@atlas/agent-sdk";
 import type { LLMAgentConfig } from "@atlas/config";
 import { createStubPlatformModels } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
-import { _setSkillStorageForTest, type SkillStorageAdapter } from "@atlas/skills";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { buildValidateDecisionConfig } from "../agent-context/validate-decision.ts";
-
-const SENTINEL_BODY = "<<<H3-VALIDATING-LLM-OUTPUTS-SKILL-BODY>>>";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockStreamText = vi.hoisted(() => vi.fn());
-const mockRegistryLanguageModel = vi.hoisted(() => vi.fn(() => "mock-model"));
-const mockTraceModel = vi.hoisted(() => vi.fn((m: unknown) => m));
+const mockStepCountIs = vi.hoisted(() => vi.fn((n: number) => ({ __stepCountIs: n })));
+const mockHasToolCall = vi.hoisted(() => vi.fn((name: string) => ({ __hasToolCall: name })));
 
 vi.mock("ai", async () => {
   const actual = await vi.importActual<typeof import("ai")>("ai");
-  return { ...actual, streamText: mockStreamText };
-});
-
-vi.mock("@atlas/llm", async (importOriginal) => {
-  const actual = (await importOriginal()) as Record<string, unknown>;
   return {
     ...actual,
-    registry: { languageModel: mockRegistryLanguageModel },
-    traceModel: mockTraceModel,
+    streamText: mockStreamText,
+    stepCountIs: mockStepCountIs,
+    hasToolCall: mockHasToolCall,
   };
 });
 
-// Imported AFTER mocks land — `convertLLMToAgent` captures `streamText`
-// at module-eval time inside its handler closure, so the mock must be
-// registered before the import resolves.
-const { convertLLMToAgent } = await import("./from-llm.ts");
-
-function makeMockStreamTextResult(opts: { complete?: boolean } = {}) {
-  const toolCalls = opts.complete
-    ? [
-        {
-          type: "tool-call",
-          toolCallId: "tc-complete",
-          toolName: "complete",
-          input: { response: "done" },
-        },
-      ]
-    : [];
-  return {
-    text: Promise.resolve(""),
-    reasoningText: Promise.resolve(""),
-    toolCalls: Promise.resolve(toolCalls),
-    toolResults: Promise.resolve([]),
-    steps: Promise.resolve([]),
-    usage: Promise.resolve({ promptTokens: 0, completionTokens: 0 }),
-  };
-}
+import { convertLLMToAgent } from "./from-llm.ts";
 
 function makeLogger(): Logger {
-  const noop = () => {};
-  const logger: Logger = {
-    trace: noop,
-    debug: noop,
-    info: noop,
-    warn: noop,
-    error: noop,
-    fatal: noop,
-    child: () => logger,
-  };
-  return logger;
-}
-
-function makeStreamEmitter(): StreamEmitter {
-  return { emit: () => {}, end: () => {}, error: () => {} };
-}
-
-function stubSkillAdapter(): SkillStorageAdapter {
   return {
-    create: () => Promise.resolve({ ok: true, data: { skillId: "s" } }),
-    publish: () =>
-      Promise.resolve({ ok: true, data: { id: "i", version: 1, name: "n", skillId: "s" } }),
-    get: (namespace, name) =>
-      Promise.resolve({
-        ok: true,
-        data: {
-          id: `id-${name}`,
-          skillId: `sid-${name}`,
-          namespace,
-          name,
-          version: 1,
-          description: "",
-          descriptionManual: false,
-          disabled: false,
-          frontmatter: {},
-          instructions: SENTINEL_BODY,
-          archive: null,
-          createdBy: "system",
-          createdAt: new Date(),
-        },
-      }),
-    getById: () => Promise.resolve({ ok: true, data: null }),
-    getBySkillId: () => Promise.resolve({ ok: true, data: null }),
-    list: () => Promise.resolve({ ok: true, data: [] }),
-    listVersions: () => Promise.resolve({ ok: true, data: [] }),
-    deleteVersion: () => Promise.resolve({ ok: true, data: undefined }),
-    setDisabled: () => Promise.resolve({ ok: true, data: undefined }),
-    deleteSkill: () => Promise.resolve({ ok: true, data: undefined }),
-    listAssigned: () => Promise.resolve({ ok: true, data: [] }),
-    assignSkill: () => Promise.resolve({ ok: true, data: undefined }),
-    unassignSkill: () => Promise.resolve({ ok: true, data: undefined }),
-    listAssignments: () => Promise.resolve({ ok: true, data: [] }),
-    assignToJob: () => Promise.resolve({ ok: true, data: undefined }),
-    unassignFromJob: () => Promise.resolve({ ok: true, data: undefined }),
-    listAssignmentsForJob: () => Promise.resolve({ ok: true, data: [] }),
-    listJobOnlySkillIds: () => Promise.resolve({ ok: true, data: [] }),
-  };
+    trace: vi.fn(),
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    fatal: vi.fn(),
+    child: vi.fn(),
+  } satisfies Record<keyof Logger, unknown>;
 }
 
-interface CapturedCall {
-  tools: string[];
-  toolChoice: unknown;
-  systemPrompt: string;
-}
-
-function buildLLMConfig(): LLMAgentConfig {
+function makeConfig(): LLMAgentConfig {
   return {
     type: "llm",
     description: "test agent",
     config: {
       provider: "anthropic",
-      model: "claude-sonnet-4-6",
+      model: "claude-sonnet-4-5",
       prompt: "you are a test agent",
-      temperature: 0.3,
+      temperature: 0,
     },
   };
 }
 
-function buildContext(opts: {
-  decision: "skip" | "self" | "external";
-  hasOutputType: boolean;
-  skill?: string;
-}): AgentContext {
-  const validateConfig = buildValidateDecisionConfig(opts.decision, opts.skill, opts.hasOutputType);
+function makeStreamTextResult() {
+  // The handler awaits `result.text`, `result.reasoningText`,
+  // `result.toolCalls`, `result.toolResults`, `result.steps`,
+  // `result.usage` in parallel. Promise-resolve each so the `Promise.all`
+  // settles and the handler proceeds to the post-call extraction. Returns
+  // a minimal-but-valid shape so the handler's response-resolution path
+  // (the `findCompleteToolArgs` extraction at the bottom) doesn't NPE.
   return {
-    tools: {},
-    session: { sessionId: "h3-sess", workspaceId: "h3-ws" },
+    text: Promise.resolve("synthetic-final-text"),
+    reasoningText: Promise.resolve(undefined),
+    toolCalls: Promise.resolve([
+      {
+        toolCallId: "call_complete",
+        toolName: "complete",
+        input: { response: "synthetic-final-text" },
+      },
+    ]),
+    toolResults: Promise.resolve([]),
+    steps: Promise.resolve([]),
+    usage: Promise.resolve({ inputTokens: 0, outputTokens: 0 }),
+  };
+}
+
+function makeContext(opts: { tools?: AtlasTools; outputSchema?: Record<string, unknown> } = {}) {
+  return {
+    tools: opts.tools ?? ({} as AtlasTools),
+    session: { sessionId: "sess-test", workspaceId: "ws-test", streamId: "stream-test" },
     env: {},
-    config: validateConfig,
-    ...(opts.hasOutputType
-      ? { outputSchema: { type: "object", minProperties: 1, additionalProperties: true } }
-      : {}),
-    stream: makeStreamEmitter(),
+    config: undefined,
+    outputSchema: opts.outputSchema,
+    skills: [],
+    stream: undefined,
     logger: makeLogger(),
     platformModels: createStubPlatformModels(),
   };
 }
 
-async function runOrchestrator(opts: {
-  decision: "skip" | "self" | "external";
-  hasOutputType: boolean;
-}): Promise<CapturedCall> {
-  let captured: CapturedCall | undefined;
-  mockStreamText.mockImplementation((params: Record<string, unknown>) => {
-    const messages = params.messages as Array<{ role: string; content: unknown }> | undefined;
-    const systemMsg = messages?.find((m) => m.role === "system");
-    const systemPrompt = typeof systemMsg?.content === "string" ? systemMsg.content : "";
-    captured = {
-      tools: Object.keys((params.tools as Record<string, unknown>) ?? {}),
-      toolChoice: params.toolChoice,
-      systemPrompt,
-    };
-    const tools = (params.tools as Record<string, unknown>) ?? {};
-    return makeMockStreamTextResult({ complete: "complete" in tools });
-  });
-
-  const agent = convertLLMToAgent(buildLLMConfig(), "h3-test-agent", makeLogger());
-  const context = buildContext(opts);
-  const result = await agent.execute("hello", context);
-  if (!result.ok) {
-    throw new Error(`agent.execute failed: ${result.error}`);
-  }
-  if (!captured) throw new Error("streamText was not invoked");
-  return captured;
-}
-
-describe("H3: convertLLMToAgent toolChoice + tool injection audit (B6 / E1 / E1.1)", () => {
+describe("convertLLMToAgent — orchestrator-side complete injection", () => {
+  // `vi.hoisted()` mocks aren't reset by `vi.restoreAllMocks()` and the
+  // global `clearMocks` flag isn't set — without this, `mock.calls[0]`
+  // and `toHaveBeenCalledOnce()` would silently leak state across tests
+  // and pass only because the suite runs in declaration order.
   beforeEach(() => {
     mockStreamText.mockReset();
-    _setSkillStorageForTest(stubSkillAdapter());
+    mockStepCountIs.mockClear();
+    mockHasToolCall.mockClear();
   });
 
-  afterEach(() => {
-    _setSkillStorageForTest(null);
+  it("injects a `complete` tool when outputSchema is set", async () => {
+    mockStreamText.mockReturnValue(makeStreamTextResult());
+
+    const agent = convertLLMToAgent(makeConfig(), "test-agent", makeLogger());
+    const outputSchema = {
+      type: "object",
+      properties: { response: { type: "string" } },
+      required: ["response"],
+    };
+    await agent.execute("synthetic prompt", makeContext({ outputSchema }));
+
+    expect(mockStreamText).toHaveBeenCalledOnce();
+    const callArgs = mockStreamText.mock.calls[0]?.[0] as {
+      tools?: Record<string, { description?: string; inputSchema?: unknown }>;
+      toolChoice?: unknown;
+    };
+    expect(callArgs.tools).toBeDefined();
+    expect(callArgs.tools?.complete).toBeDefined();
+    expect(callArgs.tools?.complete?.description).toMatch(/store the final output/);
+    // `inputSchema` should be wrapped via `jsonSchema(outputSchema)`. The
+    // helper stamps a `jsonSchema: true` marker on the value, so we just
+    // assert it exists rather than deep-equal the schema (which would
+    // couple to AI-SDK internals).
+    expect(callArgs.tools?.complete?.inputSchema).toBeDefined();
   });
 
-  // -------------------------------------------------------------------
-  // Structured (hasOutputType: true) crossings — E1 + E1.1 enforced
-  // -------------------------------------------------------------------
+  it("pins toolChoice to `complete` when outputSchema is set and there are no other tools", async () => {
+    mockStreamText.mockReturnValue(makeStreamTextResult());
 
-  it("structured + skip → complete tool pinned, no validation tool/body", async () => {
-    const call = await runOrchestrator({ decision: "skip", hasOutputType: true });
-    expect(call.tools).toContain("complete");
-    expect(call.tools).not.toContain("record_validation");
-    expect(call.systemPrompt).not.toContain(SENTINEL_BODY);
-    expect(call.toolChoice).toEqual({ type: "tool", toolName: "complete" });
+    const agent = convertLLMToAgent(makeConfig(), "test-agent", makeLogger());
+    await agent.execute(
+      "prompt",
+      makeContext({ tools: {} as AtlasTools, outputSchema: { type: "object", properties: {} } }),
+    );
+
+    const callArgs = mockStreamText.mock.calls[0]?.[0] as {
+      toolChoice?: { type?: string; toolName?: string };
+    };
+    expect(callArgs.toolChoice).toEqual({ type: "tool", toolName: "complete" });
   });
 
-  it("structured + self → complete tool pinned, no validation tool/body", async () => {
-    const call = await runOrchestrator({ decision: "self", hasOutputType: true });
-    expect(call.tools).toContain("complete");
-    // E1: structured-output skip suppresses tool injection.
-    expect(call.tools).not.toContain("record_validation");
-    // E1.1: skill body is also skipped on this path (would otherwise tell
-    // the LLM to call a tool that doesn't exist).
-    expect(call.systemPrompt).not.toContain(SENTINEL_BODY);
-    expect(call.toolChoice).toEqual({ type: "tool", toolName: "complete" });
-  });
+  it("does NOT inject `complete` and falls through to the default toolChoice when outputSchema is omitted", async () => {
+    // Omit `complete` from the synthetic toolCalls — handler's post-call
+    // resolution looks for it via `findCompleteToolArgs`; without it the
+    // handler falls back to `{ response: resolvedText }` rather than
+    // throwing.
+    mockStreamText.mockReturnValue({ ...makeStreamTextResult(), toolCalls: Promise.resolve([]) });
 
-  it("structured + external → complete tool pinned, no validation tool/body", async () => {
-    const call = await runOrchestrator({ decision: "external", hasOutputType: true });
-    expect(call.tools).toContain("complete");
-    expect(call.tools).not.toContain("record_validation");
-    expect(call.systemPrompt).not.toContain(SENTINEL_BODY);
-    expect(call.toolChoice).toEqual({ type: "tool", toolName: "complete" });
-  });
+    const agent = convertLLMToAgent(makeConfig(), "test-agent", makeLogger());
+    // No `outputSchema` in the context — this is what Pattern A FSM
+    // signals and `case "agent"` actions without `outputTo` produce.
+    await agent.execute("prompt", makeContext({ outputSchema: undefined }));
 
-  // -------------------------------------------------------------------
-  // Free-form (hasOutputType: false) crossings — B6 baseline
-  // -------------------------------------------------------------------
-
-  it("free-form + skip → no record_validation, no skill body, toolChoice 'auto'", async () => {
-    const call = await runOrchestrator({ decision: "skip", hasOutputType: false });
-    expect(call.tools).not.toContain("record_validation");
-    expect(call.systemPrompt).not.toContain(SENTINEL_BODY);
-    expect(call.toolChoice).toBe("auto");
-  });
-
-  it("free-form + self → record_validation IS injected, skill body composed, toolChoice 'auto'", async () => {
-    const call = await runOrchestrator({ decision: "self", hasOutputType: false });
-    expect(call.tools).toContain("record_validation");
-    expect(call.systemPrompt).toContain(SENTINEL_BODY);
-    expect(call.toolChoice).toBe("auto");
-  });
-
-  it("free-form + external → no record_validation, no skill body, toolChoice 'auto'", async () => {
-    const call = await runOrchestrator({ decision: "external", hasOutputType: false });
-    expect(call.tools).not.toContain("record_validation");
-    expect(call.systemPrompt).not.toContain(SENTINEL_BODY);
-    expect(call.toolChoice).toBe("auto");
+    const callArgs = mockStreamText.mock.calls[0]?.[0] as {
+      tools?: Record<string, unknown>;
+      toolChoice?: unknown;
+    };
+    expect(callArgs.tools?.complete).toBeUndefined();
+    // `toolChoice` should fall through to `config.config.tool_choice ||
+    // "auto"` per from-llm.ts:108-110. The fixture config doesn't set
+    // tool_choice, so the default is `"auto"`.
+    expect(callArgs.toolChoice).toBe("auto");
   });
 });

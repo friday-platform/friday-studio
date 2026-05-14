@@ -59,17 +59,25 @@ const SlackCredentialSecretSchema = z.object({ app_id: z.string().min(1) });
  */
 const GitHubCredentialSecretSchema = z.object({ installation_id: z.number().int().positive() });
 
+function s2sScheme(): "http" | "https" {
+  // Match the daemon listener's scheme (set by atlas-cli/start.tsx
+  // from the same env pair). If link / tunnel are on TLS the daemon
+  // must speak TLS to them too, and DENO_CERT in the daemon's env
+  // closes the trust path against the private CA.
+  return process.env.FRIDAY_TLS_CERT && process.env.FRIDAY_TLS_KEY ? "https" : "http";
+}
+
 function getLinkServiceUrl(): string {
-  return process.env.LINK_SERVICE_URL ?? "http://localhost:3100";
+  return process.env.LINK_SERVICE_URL ?? `${s2sScheme()}://localhost:3100`;
 }
 
 /**
- * Local URL for webhook-tunnel's `/status` endpoint. Defaults to
- * `http://localhost:9090` (the standard webhook-tunnel listener); override via
- * `WEBHOOK_TUNNEL_URL` for non-default ports / dev rigs.
+ * Local URL for webhook-tunnel's `/status` endpoint. Defaults to the
+ * standard webhook-tunnel listener; override via `WEBHOOK_TUNNEL_URL`
+ * for non-default ports / dev rigs. Scheme follows the s2s mesh.
  */
 function getWebhookTunnelUrl(): string {
-  return process.env.WEBHOOK_TUNNEL_URL ?? "http://localhost:9090";
+  return process.env.WEBHOOK_TUNNEL_URL ?? `${s2sScheme()}://localhost:9090`;
 }
 
 const TunnelStatusSchema = z.object({ url: z.string().url().nullable().optional() });

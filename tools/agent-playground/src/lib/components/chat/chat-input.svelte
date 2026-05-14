@@ -1,12 +1,46 @@
 <script lang="ts">
-  export interface ImageAttachment {
-    id: string;
-    file: File;
-    dataUrl: string;
-  }
+  import { ALLOWED_EXTENSION_LIST } from "@atlas/core/artifacts/file-upload";
+  import { toast } from "@atlas/ui";
+  import {
+    type FileAttachment,
+    type ChatAttachment,
+    type ImageAttachment,
+    buildFileAttachment,
+    classifyAttachment,
+    duplicateToast,
+    isDuplicateAttachment,
+    rejectionToast,
+    runFileUpload,
+  } from "./chat-attachment.ts";
+
+  // Re-export the attachment types so existing imports
+  // (`import { ChatAttachment } from "./chat-input.svelte"`) keep working.
+  export type { FileAttachment, ChatAttachment, ImageAttachment };
+
+  // The scratch-upload endpoint accepts every extension in ALLOWED_EXTENSION_LIST —
+  // text, JSON, CSV, MD, PDF, DOCX, PPTX, audio. Drop any of them in the
+  // chat and they upload as per-chat scratch attachments instead of library
+  // artifacts.
+  const ACCEPT_ATTR = ALLOWED_EXTENSION_LIST.join(",");
 
   interface Props {
-    onsubmit: (message: string, images: ImageAttachment[]) => void;
+    /**
+     * Workspace owning the chat. Threaded into `uploadFileToScratch()` so
+     * the upload route's `requireWorkspaceMember(c, workspaceId)` gate
+     * passes.
+     */
+    workspaceId: string;
+    /**
+     * Chat id — the scratch-upload route writes each file under
+     * `{FRIDAY_HOME}/scratch/uploads/{workspaceId}/{chatId}/{md5}`. The chat
+     * owns this; user-chat passes it through unchanged.
+     */
+    chatId: string;
+    onsubmit: (message: string, attachments: ChatAttachment[]) => void;
+    /** Attached images/files. Bindable so drop targets outside this component
+     * (e.g. the whole chat surface) can push files into the same preview
+     * strip the file-picker uses, instead of rendering a parallel one. */
+    attachments?: ChatAttachment[];
     /** True while the assistant is producing a response. Swaps the send slot
      * for a stop button; users press Enter to send when idle. */
     streaming?: boolean;
@@ -21,8 +55,11 @@
     onttsToggle?: () => void;
   }
 
-  const {
+  let {
+    workspaceId,
+    chatId,
     onsubmit,
+    attachments = $bindable([]),
     streaming = false,
     stopping = false,
     onstop,
@@ -31,7 +68,6 @@
   }: Props = $props();
 
   let value = $state("");
-  let images: ImageAttachment[] = $state([]);
   let dragOver = $state(false);
   let fileInput: HTMLInputElement | undefined = $state();
   let textareaEl: HTMLTextAreaElement | undefined = $state();
@@ -47,7 +83,23 @@
     textareaEl.style.height = `${textareaEl.scrollHeight}px`;
   });
 
-  const hasContent = $derived(value.trim().length > 0 || images.length > 0);
+  // Block submit while any file upload is in flight or failed — sending now
+  // would either race the upload or clear a failed chip that cannot be sent.
+  // The textbox stays editable; users remove failed chips before retrying.
+  const uploadingCount = $derived(
+    attachments.filter((a) => a.kind === "file" && a.status === "uploading").length,
+  );
+  const failedCount = $derived(
+    attachments.filter((a) => a.kind === "file" && a.status === "error").length,
+  );
+  const sendableAttachmentCount = $derived(
+    attachments.filter((a) => a.kind === "image" || a.status === "ready").length,
+  );
+  const hasContent = $derived(
+    (value.trim().length > 0 || sendableAttachmentCount > 0) &&
+      uploadingCount === 0 &&
+      failedCount === 0,
+  );
   const sttSupported = typeof window !== "undefined"
     && ("webkitSpeechRecognition" in window || "SpeechRecognition" in window);
 
@@ -110,16 +162,88 @@
     });
   }
 
-  async function addFiles(files: FileList | File[]) {
-    for (const file of files) {
-      if (!file.type.startsWith("image/")) continue;
-      const dataUrl = await fileToDataUrl(file);
-      images = [...images, { id: crypto.randomUUID(), file, dataUrl }];
+  /**
+   * Reassign an attachment-by-id with new fields. The list is a `$state`
+   * array of plain objects — replacing the array reference is what makes
+   * Svelte re-render. Per-attachment state updates from the upload
+   * `onProgress` callback land here.
+   */
+  function patchAttachment(id: string, patch: Partial<FileAttachment>) {
+    attachments = attachments.map((a) =>
+      a.kind === "file" && a.id === id ? { ...a, ...patch } : a,
+    );
+
+    // Post-upload dedup. The server returns `{chatId}/{md5}` as the
+    // path — two uploads of identical bytes produce identical paths.
+    // If the chip we just updated now has a `path` that matches
+    // another chip's, the user dropped the same file twice. Collapse
+    // by removing this one (the more recently added) and toasting.
+    // Why not pre-upload? Computing a hash client-side is redundant
+    // work — the server already does it. We pay one wasted upload of
+    // the duplicate bytes; the server's rename-overwrite is idempotent
+    // (atomic POSIX rename of identical bytes onto the same name).
+    if (patch.path) {
+      const newPath = patch.path;
+      const sharing = attachments.filter((a) => a.kind === "file" && a.path === newPath);
+      if (sharing.length > 1) {
+        const removed = attachments.find((a) => a.id === id);
+        attachments = attachments.filter((a) => a.id !== id);
+        if (removed) {
+          const summary = duplicateToast([removed.file]);
+          if (summary) toast({ ...summary });
+        }
+      }
     }
   }
 
-  function removeImage(id: string) {
-    images = images.filter((img) => img.id !== id);
+  async function addFiles(files: FileList | File[]) {
+    const rejected: File[] = [];
+    const duplicates: File[] = [];
+    for (const file of files) {
+      const kind = classifyAttachment(file);
+      if (kind === "image") {
+        // Images dedup pre-add via dataUrl equality — they don't go
+        // through the server upload path, so we can't rely on a
+        // server-returned md5. Two drops of the same image produce
+        // identical base64 dataUrls; string equality catches it
+        // cheaply.
+        const dataUrl = await fileToDataUrl(file);
+        if (isDuplicateAttachment({ kind: "image", dataUrl }, attachments)) {
+          duplicates.push(file);
+          continue;
+        }
+        attachments = [
+          ...attachments,
+          { kind: "image", id: crypto.randomUUID(), file, dataUrl },
+        ];
+      } else if (kind === "file") {
+        // Files upload to the server which already computes md5 and
+        // returns it as part of the path (`{chatId}/{md5}`). We add
+        // the chip optimistically, run the upload, and reconcile in
+        // `patchAttachment` — see the dedup branch there for the
+        // post-upload check that collapses two-chips-with-same-path.
+        const att = buildFileAttachment(file);
+        attachments = [...attachments, att];
+        runFileUpload({ att, chatId, workspaceId, onUpdate: patchAttachment });
+      } else {
+        rejected.push(file);
+      }
+    }
+    // Coalesce: one toast for the whole drop, not one per rejected file.
+    // Single-file rejection still surfaces the specific reason (e.g. SVG
+    // script-injection); multi-file rejection enumerates the filenames.
+    const dupSummary = duplicateToast(duplicates);
+    if (dupSummary) toast({ ...dupSummary });
+    const summary = rejectionToast(rejected);
+    if (summary) toast({ ...summary, error: true });
+  }
+
+  function removeAttachment(id: string) {
+    const target = attachments.find((a) => a.id === id);
+    if (target && target.kind === "file" && target.status === "uploading") {
+      target.abortController.abort();
+    }
+    attachments = attachments.filter((att) => att.id !== id);
   }
 
   function handleKeydown(e: KeyboardEvent) {
@@ -131,21 +255,42 @@
 
   function submit() {
     if (!hasContent) return;
-    onsubmit(value.trim(), images);
+    onsubmit(value.trim(), attachments);
     value = "";
-    images = [];
+    attachments = [];
   }
 
   function handleDrop(e: DragEvent) {
     e.preventDefault();
+    // `user-chat.svelte` wraps this component with its own drop target. Without
+    // stopPropagation the same file is added twice — once here, once on the
+    // outer chat container — and the persisted message ends up with duplicate
+    // parts. Pre-existing bug for images; surfaced now that we ship text
+    // attachments inline (so the duplicate is the *content*, not a hidden
+    // preview chip).
+    e.stopPropagation();
     dragOver = false;
     if (e.dataTransfer?.files) {
       void addFiles(e.dataTransfer.files);
     }
   }
 
+  // Safari requires preventDefault on BOTH dragenter and dragover to register
+  // the element as a valid drop target; without dragenter prevention it falls
+  // back to its default file-open behavior on drop. stopPropagation keeps the
+  // outer user-chat drop overlay from flashing while the user is targeting
+  // the input row.
+  function handleDragEnter(e: DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+    dragOver = true;
+  }
+
   function handleDragOver(e: DragEvent) {
     e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
     dragOver = true;
   }
 
@@ -156,16 +301,20 @@
   function handlePaste(e: ClipboardEvent) {
     const items = e.clipboardData?.items;
     if (!items) return;
-    const imageFiles: File[] = [];
+    const pastedFiles: File[] = [];
     for (const item of items) {
-      if (item.type.startsWith("image/")) {
+      // Only images (and any future binary file types) come through as
+      // `kind: "file"` in the clipboard. Pasted plain text lives in the
+      // `kind: "string"` items and is handled by the default textarea
+      // paste — don't intercept it.
+      if (item.kind === "file" && item.type.startsWith("image/")) {
         const file = item.getAsFile();
-        if (file) imageFiles.push(file);
+        if (file) pastedFiles.push(file);
       }
     }
-    if (imageFiles.length > 0) {
+    if (pastedFiles.length > 0) {
       e.preventDefault();
-      void addFiles(imageFiles);
+      void addFiles(pastedFiles);
     }
   }
 
@@ -182,23 +331,57 @@
   class="chat-input-wrapper"
   class:drag-over={dragOver}
   ondrop={handleDrop}
+  ondragenter={handleDragEnter}
   ondragover={handleDragOver}
   ondragleave={handleDragLeave}
   role="presentation"
 >
-  {#if images.length > 0}
+  {#if attachments.length > 0}
     <div class="image-preview-strip">
-      {#each images as img (img.id)}
-        <div class="image-preview">
-          <img src={img.dataUrl} alt={img.file.name} />
-          <button
-            class="remove-image"
-            onclick={() => removeImage(img.id)}
-            aria-label="Remove image"
+      {#each attachments as att (att.id)}
+        {#if att.kind === "image"}
+          <div class="image-preview">
+            <img src={att.dataUrl} alt={att.file.name} />
+            <button
+              class="remove-image"
+              onclick={() => removeAttachment(att.id)}
+              aria-label="Remove image"
+            >
+              ✕
+            </button>
+          </div>
+        {:else}
+          {@const pct = att.file.size > 0 ? Math.round((att.progress / att.file.size) * 100) : 0}
+          <div
+            class="text-attachment"
+            class:uploading={att.status === "uploading"}
+            class:error={att.status === "error"}
+            title={att.errorMessage ?? `${att.file.name} · ${att.mediaType}`}
           >
-            ✕
-          </button>
-        </div>
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <path
+                d="M9 1.5H3.5A1.5 1.5 0 0 0 2 3v10a1.5 1.5 0 0 0 1.5 1.5h9A1.5 1.5 0 0 0 14 13V6.5L9 1.5Z"
+                stroke="currentColor"
+                stroke-width="1.2"
+                stroke-linejoin="round"
+              />
+              <path d="M9 1.5V6.5H14" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" />
+            </svg>
+            <span class="text-attachment-name">{att.file.name}</span>
+            {#if att.status === "uploading"}
+              <span class="text-attachment-status">{pct}%</span>
+            {:else if att.status === "error"}
+              <span class="text-attachment-status text-attachment-error">!</span>
+            {/if}
+            <button
+              class="remove-image"
+              onclick={() => removeAttachment(att.id)}
+              aria-label={att.status === "uploading" ? "Cancel upload" : "Remove file"}
+            >
+              ✕
+            </button>
+          </div>
+        {/if}
       {/each}
     </div>
   {/if}
@@ -207,7 +390,7 @@
     <button
       class="attach-button"
       onclick={() => fileInput?.click()}
-      aria-label="Attach image"
+      aria-label="Attach file"
     >
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
         <path
@@ -222,7 +405,7 @@
     <input
       bind:this={fileInput}
       type="file"
-      accept="image/*"
+      accept={ACCEPT_ATTR}
       multiple
       onchange={handleFileInput}
       class="file-input-hidden"
@@ -233,7 +416,7 @@
       bind:value
       onkeydown={handleKeydown}
       onpaste={handlePaste}
-      placeholder={dragOver ? "Drop image here..." : recording ? "Listening..." : "Send a message..."}
+      placeholder={dragOver ? "Drop file here..." : recording ? "Listening..." : "Send a message..."}
       rows={1}
     ></textarea>
     {#if sttSupported}
@@ -471,6 +654,62 @@
     inline-size: auto;
     max-inline-size: 120px;
     object-fit: cover;
+  }
+
+  .text-attachment {
+    align-items: center;
+    background-color: var(--color-surface-2);
+    border: 1px solid var(--color-border-1);
+    border-radius: var(--radius-2);
+    color: var(--color-text);
+    display: inline-flex;
+    flex-shrink: 0;
+    font-size: var(--font-size-1);
+    gap: var(--size-1);
+    max-inline-size: 200px;
+    padding: var(--size-1) var(--size-2);
+    position: relative;
+  }
+
+  .text-attachment-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .text-attachment.uploading {
+    opacity: 0.75;
+  }
+
+  .text-attachment.error {
+    border-color: var(--color-error);
+    color: var(--color-error);
+  }
+
+  .text-attachment-status {
+    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .text-attachment-error {
+    color: var(--color-error);
+    font-weight: var(--font-weight-7);
+  }
+
+  .text-attachment .remove-image {
+    background-color: transparent;
+    block-size: 16px;
+    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    inline-size: 16px;
+    inset: auto;
+    margin-inline-start: var(--size-1);
+    position: static;
+  }
+
+  .text-attachment .remove-image:hover {
+    background-color: var(--color-error);
+    color: white;
   }
 
   .remove-image {

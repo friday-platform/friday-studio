@@ -80,31 +80,37 @@ export const EXTENSION_TO_MIME = new Map<string, { mime: string; uploadable: boo
   [".flac", { mime: "audio/flac", uploadable: true }],
   [".mpeg", { mime: "audio/mpeg", uploadable: true }],
   [".mpga", { mime: "audio/mpeg", uploadable: true }],
-  // Agent-inference only: markup
-  [".html", { mime: "text/html", uploadable: false }],
-  [".htm", { mime: "text/html", uploadable: false }],
-  [".xml", { mime: "application/xml", uploadable: false }],
+  // Uploadable: markup. HTML renders via the artifact-card's sandboxed
+  // iframe (`sandbox="allow-scripts"`, no `allow-same-origin`) so inline
+  // `<script>` tags in user content can't reach the chat UI's origin.
+  [".html", { mime: "text/html", uploadable: true }],
+  [".htm", { mime: "text/html", uploadable: true }],
+  [".xml", { mime: "application/xml", uploadable: true }],
+  // SVG stays agent-inference-only — `image/svg+xml` renders as an
+  // <img>, NOT in the sandboxed iframe path, so a user-uploaded SVG
+  // could execute inline JS against the chat origin. Agents emit SVGs
+  // server-side under controlled conditions; user uploads bypass that.
   [".svg", { mime: "image/svg+xml", uploadable: false }],
-  [".css", { mime: "text/css", uploadable: false }],
-  // Agent-inference only: source code
-  [".ts", { mime: "text/x-typescript", uploadable: false }],
-  [".tsx", { mime: "text/x-typescript", uploadable: false }],
-  [".js", { mime: "text/javascript", uploadable: false }],
-  [".jsx", { mime: "text/javascript", uploadable: false }],
-  [".mjs", { mime: "text/javascript", uploadable: false }],
-  [".cjs", { mime: "text/javascript", uploadable: false }],
-  [".py", { mime: "text/x-python", uploadable: false }],
-  [".go", { mime: "text/x-go", uploadable: false }],
-  [".rs", { mime: "text/x-rust", uploadable: false }],
-  [".sh", { mime: "text/x-shellscript", uploadable: false }],
-  [".bash", { mime: "text/x-shellscript", uploadable: false }],
-  [".sql", { mime: "text/x-sql", uploadable: false }],
-  // Agent-inference only: config/log
-  [".toml", { mime: "text/x-toml", uploadable: false }],
-  [".ini", { mime: "text/plain", uploadable: false }],
-  [".conf", { mime: "text/plain", uploadable: false }],
-  [".log", { mime: "text/plain", uploadable: false }],
-  [".tsv", { mime: "text/tab-separated-values", uploadable: false }],
+  [".css", { mime: "text/css", uploadable: true }],
+  // Uploadable: source code (all text)
+  [".ts", { mime: "text/x-typescript", uploadable: true }],
+  [".tsx", { mime: "text/x-typescript", uploadable: true }],
+  [".js", { mime: "text/javascript", uploadable: true }],
+  [".jsx", { mime: "text/javascript", uploadable: true }],
+  [".mjs", { mime: "text/javascript", uploadable: true }],
+  [".cjs", { mime: "text/javascript", uploadable: true }],
+  [".py", { mime: "text/x-python", uploadable: true }],
+  [".go", { mime: "text/x-go", uploadable: true }],
+  [".rs", { mime: "text/x-rust", uploadable: true }],
+  [".sh", { mime: "text/x-shellscript", uploadable: true }],
+  [".bash", { mime: "text/x-shellscript", uploadable: true }],
+  [".sql", { mime: "text/x-sql", uploadable: true }],
+  // Uploadable: config/log (all text)
+  [".toml", { mime: "text/x-toml", uploadable: true }],
+  [".ini", { mime: "text/plain", uploadable: true }],
+  [".conf", { mime: "text/plain", uploadable: true }],
+  [".log", { mime: "text/plain", uploadable: true }],
+  [".tsv", { mime: "text/tab-separated-values", uploadable: true }],
 ]);
 
 /**
@@ -157,15 +163,46 @@ export const CHUNKED_UPLOAD_TTL_MS = 2 * 60 * 60 * 1000;
 
 export function isInvalidChatId(chatId: string): boolean {
   return (
+    chatId.length === 0 ||
+    chatId === "." ||
+    chatId === ".." ||
     chatId.includes("..") ||
-    chatId.startsWith("/") ||
+    chatId.includes("/") ||
     chatId.includes("\\") ||
     chatId.includes("\0")
   );
 }
 
-export const FILE_TYPE_NOT_ALLOWED_ERROR =
-  "File type not allowed. Supported: CSV, JSON, TXT, MD, YML, PDF, DOCX, PPTX, PNG, JPG, JPEG, WebP, GIF, MP3, MP4, M4A, WAV, WebM, OGG, FLAC";
+/**
+ * User-facing categorization of accepted upload extensions. Drives the
+ * three error-message sites (`FILE_TYPE_NOT_ALLOWED_ERROR` here, the
+ * playground `validateFile` error, and the chat-input rejection toast)
+ * via {@link ACCEPTED_TYPES_DESCRIPTION} so they stay in sync.
+ *
+ * When adding a new uploadable extension: add it to `EXTENSION_TO_MIME`
+ * above (with `uploadable: true`) AND to the right category here.
+ * Display casing matches conventional spellings (WebP, WebM, JPG vs JPEG).
+ */
+const ACCEPTED_CATEGORIES: ReadonlyArray<readonly [string, readonly string[]]> = [
+  [
+    "Text/markup",
+    ["TXT", "MD", "CSV", "TSV", "JSON", "YML", "HTML", "XML", "CSS", "LOG", "CONF", "INI", "TOML"],
+  ],
+  ["Source code", ["TS", "TSX", "JS", "JSX", "MJS", "CJS", "PY", "GO", "RS", "SH", "BASH", "SQL"]],
+  ["Documents", ["PDF", "DOCX", "PPTX"]],
+  ["Images", ["PNG", "JPG", "JPEG", "GIF", "WebP"]],
+  ["Audio", ["MP3", "MP4", "M4A", "WAV", "WebM", "OGG", "FLAC"]],
+];
+
+/**
+ * Human-readable enumeration of accepted upload categories. Single source
+ * of truth for the three "not supported" error messages.
+ */
+export const ACCEPTED_TYPES_DESCRIPTION = ACCEPTED_CATEGORIES.map(
+  ([category, exts]) => `${category} (${exts.join(", ")})`,
+).join(", ");
+
+export const FILE_TYPE_NOT_ALLOWED_ERROR = `File type not allowed. Supported: ${ACCEPTED_TYPES_DESCRIPTION}.`;
 
 const SUPPORTED_IMAGE_MIMES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
 

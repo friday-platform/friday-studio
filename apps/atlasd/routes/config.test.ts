@@ -18,9 +18,22 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
 import { Hono } from "hono";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
-import { configRoutes } from "./config.ts";
+// The PUT /env handler busts two caches in @atlas/llm after writing
+// the new env vars to `process.env`. Hoisted spies let the in-memory
+// sync tests observe those calls — without them, a regression that
+// drops either reset call would still ship green.
+const mockResetRegistry = vi.hoisted(() => vi.fn<() => void>());
+const mockInvalidateCatalog = vi.hoisted(() => vi.fn<() => void>());
+
+vi.mock("@atlas/llm", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@atlas/llm")>()),
+  resetRegistry: mockResetRegistry,
+  invalidateCatalog: mockInvalidateCatalog,
+}));
+
+const { configRoutes, HOT_RELOAD_DENYLIST } = await import("./config.ts");
 
 interface PutEnvResponse {
   success: boolean;
@@ -37,6 +50,17 @@ interface GetEnvResponse {
 let tempHome: string;
 let originalFridayHome: string | undefined;
 let originalFridayEnv: string | undefined;
+// process.env keys the sync tests mutate — snapshotted so they don't
+// leak across tests. Includes every denylist entry so the parameterized
+// denylist test (which sets each key to a sentinel pre-PUT) can't leak
+// to the real environment.
+const SYNC_TEST_KEYS: readonly string[] = [
+  "ANTHROPIC_API_KEY",
+  "DEPRECATED_KEY",
+  "KEPT_KEY",
+  ...HOT_RELOAD_DENYLIST,
+];
+const syncTestSnapshot: Record<string, string | undefined> = {};
 
 beforeEach(async () => {
   tempHome = join(tmpdir(), `atlasd-env-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -48,6 +72,9 @@ beforeEach(async () => {
   // these cases. The dev-only gate itself is covered separately.
   originalFridayEnv = process.env.FRIDAY_ENV;
   process.env.FRIDAY_ENV = "dev";
+  for (const k of SYNC_TEST_KEYS) syncTestSnapshot[k] = process.env[k];
+  mockResetRegistry.mockClear();
+  mockInvalidateCatalog.mockClear();
 });
 
 afterEach(async () => {
@@ -60,6 +87,11 @@ afterEach(async () => {
     delete process.env.FRIDAY_ENV;
   } else {
     process.env.FRIDAY_ENV = originalFridayEnv;
+  }
+  for (const k of SYNC_TEST_KEYS) {
+    const orig = syncTestSnapshot[k];
+    if (orig === undefined) delete process.env[k];
+    else process.env[k] = orig;
   }
   await rm(tempHome, { recursive: true, force: true });
 });
@@ -212,6 +244,57 @@ describe("PUT → GET round-trip", () => {
 
     const onDisk = await readFile(envPath, "utf-8");
     expect(onDisk).toBe("ANTHROPIC_API_KEY=sk-ant-legacy");
+  });
+});
+
+describe("PUT /env in-memory sync (hot reload)", () => {
+  test("adds new keys to process.env so they're usable without restart", async () => {
+    delete process.env.ANTHROPIC_API_KEY;
+    await putEnv({ ANTHROPIC_API_KEY: "sk-ant-hot-reload" });
+    expect(process.env.ANTHROPIC_API_KEY).toBe("sk-ant-hot-reload");
+  });
+
+  test("removes keys absent from the new payload from process.env", async () => {
+    await putEnv({ DEPRECATED_KEY: "old-value" });
+    expect(process.env.DEPRECATED_KEY).toBe("old-value");
+
+    await putEnv({ KEPT_KEY: "kept" });
+    expect(process.env.DEPRECATED_KEY).toBeUndefined();
+    expect(process.env.KEPT_KEY).toBe("kept");
+  });
+
+  // Every denylist entry: PUT writes the new value to .env, but
+  // `process.env[key]` must retain its pre-PUT value. Parameterized so
+  // any future addition to HOT_RELOAD_DENYLIST gets coverage for free.
+  // FRIDAY_HOME / FRIDAY_ENV are load-bearing for the test harness
+  // itself (route lookup, dev-only gate), so we keep their beforeEach
+  // values rather than overwriting with a fresh sentinel.
+  const KEYS_PRESERVED_FROM_BEFORE_EACH = new Set(["FRIDAY_HOME", "FRIDAY_ENV"]);
+  test.each([
+    ...HOT_RELOAD_DENYLIST,
+  ])("denylist key %s is written to .env but not mutated on process.env", async (key) => {
+    if (!KEYS_PRESERVED_FROM_BEFORE_EACH.has(key)) {
+      process.env[key] = `pre-put-sentinel-${key}`;
+    }
+    const expected = process.env[key];
+
+    await putEnv({ [key]: `/totally/different/${key}` });
+
+    const onDisk = await readFile(join(tempHome, ".env"), "utf-8");
+    expect(onDisk).toContain(`${key}=/totally/different/${key}`);
+    expect(process.env[key]).toBe(expected);
+  });
+
+  test("busts both the provider registry and the model catalog cache", async () => {
+    // Deno's `--env-file` reads once at startup, and both `@atlas/llm`
+    // caches memoize `process.env` reads — without the resets, a
+    // freshly-saved API key would stay invisible to the running
+    // daemon until restart. Assert the calls so dropping either one
+    // from the handler trips a test.
+    await putEnv({ ANTHROPIC_API_KEY: "sk-ant-cache-bust" });
+
+    expect(mockResetRegistry).toHaveBeenCalledTimes(1);
+    expect(mockInvalidateCatalog).toHaveBeenCalledTimes(1);
   });
 });
 

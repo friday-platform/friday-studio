@@ -12,19 +12,35 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Hono } from "hono";
 import { serveStatic } from "hono/deno";
-import { parse as parseHtml } from "node-html-parser";
+import { buildHonoProxy } from "./src/lib/server/proxy.ts";
 import { api } from "./src/lib/server/router.ts";
+import { resolveBrowserTlsPaths } from "./tls-paths.ts";
 
 const PORT = Number(process.env.PLAYGROUND_PORT ?? "5200");
 const HOST = process.env.PLAYGROUND_HOST ?? "127.0.0.1";
-const DAEMON_URL = process.env.FRIDAYD_URL ?? "http://localhost:8080";
 
-// Browser-facing URLs. The launcher owns the port layout, so we can't
-// bake these into the bundle — read them at runtime and inject into the
-// served HTML. Daemon URL falls back to FRIDAYD_URL since the daemon
-// proxy and the browser-facing daemon are the same endpoint in Studio.
-const EXTERNAL_DAEMON_URL = process.env.EXTERNAL_DAEMON_URL ?? DAEMON_URL;
-const EXTERNAL_TUNNEL_URL = process.env.EXTERNAL_TUNNEL_URL ?? null;
+// Browser-facing TLS for this origin. The cert here must be browser-trusted
+// (mkcert-signed); the s2s `FRIDAY_TLS_CERT/_KEY` pair used by daemon +
+// tunnel is private-CA-signed and intentionally not browser-trusted —
+// browser traffic to those services goes through this origin's
+// /api/{daemon,tunnel}/* proxies instead. When a pair is found, `Deno.serve`
+// negotiates h2 over ALPN and the per-origin 6-socket HTTP/1.1 cap goes
+// away. No cert → HTTP fallback, behaviour unchanged.
+const tlsPaths = resolveBrowserTlsPaths();
+const TLS = tlsPaths
+  ? { cert: Deno.readTextFileSync(tlsPaths.certPath), key: Deno.readTextFileSync(tlsPaths.keyPath) }
+  : null;
+const SCHEME = TLS ? "https" : "http";
+// Daemon and tunnel scheme depend on their own s2s cert env, not on this
+// origin's browser cert. They're separate listeners with separate certs.
+// The launcher migrates stale http:// values in .env to https:// at boot
+// (tools/friday-launcher/cert_env.go::migrateStaleURLSchemes) when the
+// s2s mesh is up, so a literal env-var read here matches whatever the
+// daemon / tunnel actually listen on. No consumer-side auto-upgrade
+// needed — single source of truth lives in the launcher.
+const S2S_SCHEME = process.env.FRIDAY_TLS_CERT && process.env.FRIDAY_TLS_KEY ? "https" : "http";
+const DAEMON_URL = process.env.FRIDAYD_URL ?? `${S2S_SCHEME}://localhost:8080`;
+const TUNNEL_URL = process.env.EXTERNAL_TUNNEL_URL ?? `${S2S_SCHEME}://localhost:9090`;
 
 // Resolve `./build` relative to this source file, so the path is correct
 // both when running via `deno run` from any cwd and when running as a
@@ -33,153 +49,29 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const BUILD_ROOT = join(HERE, "build");
 const INDEX_HTML = join(BUILD_ROOT, "index.html");
 
-const RUNTIME_CONFIG: Record<string, string> = {
-  externalDaemonUrl: EXTERNAL_DAEMON_URL,
-};
-if (EXTERNAL_TUNNEL_URL) RUNTIME_CONFIG.externalTunnelUrl = EXTERNAL_TUNNEL_URL;
-const CONFIG_JSON = JSON.stringify(RUNTIME_CONFIG).replace(/</g, "\\u003c");
-const CONFIG_SCRIPT_HTML = `<script>window.__FRIDAY_CONFIG__=${CONFIG_JSON};</script>`;
+// Reverse proxy for browser → local service. The SvelteKit dev server has
+// per-route versions of this under src/routes/api/{daemon,tunnel}/[...path]/,
+// but adapter-static strips all server routes — the production binary has
+// no proxy unless we explicitly mount it. Without it,
+// /api/daemon/api/workspaces/X falls through to the SPA fallback returning
+// index.html, surfacing as "Unexpected token '<', '<!doctype' is not valid
+// JSON" on every page that loads workspace config.
+//
+// All header rewriting, X-Forwarded-* injection, redirect: "manual",
+// SSE + abort handling lives in `src/lib/server/proxy.ts` so the dev hook
+// and this binary share a single implementation (and a single test suite).
+const proxies = new Hono()
+  .all("/api/daemon/*", buildHonoProxy("/api/daemon", DAEMON_URL, "daemon"))
+  .all("/api/tunnel/*", buildHonoProxy("/api/tunnel", TUNNEL_URL, "tunnel"));
 
 let CACHED_HTML: string | null = null;
 async function indexHtml(): Promise<string> {
-  if (CACHED_HTML !== null) return CACHED_HTML;
-  const raw = await Deno.readTextFile(INDEX_HTML);
-  const root = parseHtml(raw);
-  const head = root.querySelector("head");
-  if (!head) {
-    throw new Error(`build/index.html is missing a <head> element — refusing to serve`);
-  }
-  head.appendChild(parseHtml(CONFIG_SCRIPT_HTML));
-  CACHED_HTML = root.toString();
+  if (CACHED_HTML === null) CACHED_HTML = await Deno.readTextFile(INDEX_HTML);
   return CACHED_HTML;
 }
 
-function proxyAbortableBody(
-  body: ReadableStream<Uint8Array>,
-  requestSignal: AbortSignal,
-  abortUpstream: () => void,
-): ReadableStream<Uint8Array> {
-  let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
-  let cancelled = false;
-
-  const cancelUpstream = () => {
-    if (cancelled) return;
-    cancelled = true;
-    abortUpstream();
-    void reader?.cancel().catch(() => {
-      // The upstream may already be gone.
-    });
-  };
-
-  return new ReadableStream<Uint8Array>({
-    start(controller) {
-      reader = body.getReader();
-      requestSignal.addEventListener("abort", cancelUpstream, { once: true });
-      if (requestSignal.aborted) cancelUpstream();
-
-      void (async () => {
-        try {
-          while (!cancelled) {
-            const { done, value } = await reader!.read();
-            if (done) break;
-            controller.enqueue(value);
-          }
-          if (!cancelled) controller.close();
-        } catch (err) {
-          if (!cancelled) controller.error(err);
-        } finally {
-          requestSignal.removeEventListener("abort", cancelUpstream);
-          try {
-            reader?.releaseLock();
-          } catch {
-            // Reader may already be released after cancellation.
-          }
-          abortUpstream();
-        }
-      })();
-    },
-    cancel() {
-      cancelUpstream();
-    },
-  });
-}
-
-// Daemon proxy for /api/daemon/*. The SvelteKit dev server has this as
-// src/routes/api/daemon/[...path]/+server.ts, but adapter-static strips
-// all server routes — the production binary has no daemon proxy unless
-// we explicitly mount one here. Without it, /api/daemon/api/workspaces/X
-// falls through to the SPA fallback returning index.html, surfacing as
-// "Unexpected token '<', '<!doctype' is not valid JSON" on every page
-// that loads workspace config.
-const daemonProxy = new Hono().all("/api/daemon/*", async (c) => {
-  const url = new URL(c.req.url);
-  // Strip the /api/daemon prefix; preserve query string.
-  const path = url.pathname.replace(/^\/api\/daemon/, "");
-  const target = new URL(path + url.search, DAEMON_URL);
-
-  const headers = new Headers(c.req.raw.headers);
-  headers.delete("host");
-  headers.delete("content-length");
-
-  // Buffer the request body for methods that carry one. Streaming with
-  // `duplex: "half"` races the response: when the daemon short-circuits
-  // (e.g. 401 from requireUser before consuming the body) the in-flight
-  // body sender can error with `TypeError: fetch failed`, swallowing the
-  // upstream's real status code. Buffering eliminates the race so the
-  // browser sees the actual 401 and the user gets a useful message.
-  let body: BodyInit | null = null;
-  if (c.req.method !== "GET" && c.req.method !== "HEAD") {
-    body = new Uint8Array(await c.req.raw.arrayBuffer());
-  }
-
-  const upstreamController = new AbortController();
-  const abortUpstream = () => upstreamController.abort();
-  c.req.raw.signal.addEventListener("abort", abortUpstream, { once: true });
-
-  let res: Response;
-  try {
-    res = await fetch(target, {
-      method: c.req.method,
-      headers,
-      body,
-      signal: upstreamController.signal,
-    });
-  } catch (err) {
-    c.req.raw.signal.removeEventListener("abort", abortUpstream);
-    const message = err instanceof Error ? err.message : String(err);
-    return c.json({ error: `daemon proxy fetch failed: ${message}` }, 502);
-  }
-
-  // SSE: pass the body stream through unbuffered so live event streams
-  // don't get held up at our proxy boundary. Wrap the body so browser
-  // disconnects cancel the daemon fetch instead of leaving subscriptions
-  // and file descriptors open behind the static playground proxy.
-  if (res.headers.get("content-type")?.includes("text/event-stream")) {
-    if (!res.body) {
-      c.req.raw.signal.removeEventListener("abort", abortUpstream);
-      return new Response(null, { status: res.status, headers: res.headers });
-    }
-    c.req.raw.signal.removeEventListener("abort", abortUpstream);
-    const stream = proxyAbortableBody(res.body, c.req.raw.signal, abortUpstream);
-    return new Response(stream, { status: res.status, headers: res.headers });
-  }
-
-  c.req.raw.signal.removeEventListener("abort", abortUpstream);
-
-  // Strip content-encoding/length — fetch() decompressed the body, so
-  // forwarding the original encoding header makes the browser try to
-  // decompress again. Drop content-length too; chunked is fine.
-  const responseHeaders = new Headers(res.headers);
-  responseHeaders.delete("content-encoding");
-  responseHeaders.delete("content-length");
-  return new Response(res.body, { status: res.status, headers: responseHeaders });
-});
-
-// Serve the index with the runtime-config script tag injected. This
-// covers both `/` and the SPA fallback below; a static-file serve of
-// build/index.html would skip the injection.
 const app = new Hono()
-  .route("/", daemonProxy)
+  .route("/", proxies)
   .route("/", api)
   .get("/", async (c) => c.html(await indexHtml()))
   .use(
@@ -190,15 +82,11 @@ const app = new Hono()
     }),
   )
   // SPA fallback: any GET that doesn't resolve to a file or `/api/*` route
-  // gets the SvelteKit shell (with config injected) so client-side
-  // routing can take over.
+  // gets the SvelteKit shell so client-side routing can take over.
   .get("/*", async (c) => c.html(await indexHtml()));
 
 // Log only origins (protocol+host+port) — these are config URLs the user
-// expects in plain text, but never log paths or query strings, since a
-// bad/exotic env value could carry credentials or markup we don't want
-// surfaced in shipped logs (the URLs are also injected into served HTML
-// via window.__FRIDAY_CONFIG__, where escaping is handled separately).
+// expects in plain text, but never log paths or query strings.
 function origin(u: string): string {
   try {
     return new URL(u).origin;
@@ -206,8 +94,81 @@ function origin(u: string): string {
     return "<invalid url>";
   }
 }
-console.log(`[playground] listening on http://${HOST}:${PORT}`);
+console.log(`[playground] listening on ${SCHEME}://${HOST}:${PORT}`);
 console.log(`[playground] daemon proxy → ${origin(DAEMON_URL)}`);
-console.log(`[playground] external daemon → ${origin(EXTERNAL_DAEMON_URL)}`);
-if (EXTERNAL_TUNNEL_URL) console.log(`[playground] external tunnel → ${origin(EXTERNAL_TUNNEL_URL)}`);
-Deno.serve({ port: PORT, hostname: HOST }, app.fetch);
+console.log(`[playground] tunnel proxy → ${origin(TUNNEL_URL)}`);
+Deno.serve(
+  TLS ? { port: PORT, hostname: HOST, cert: TLS.cert, key: TLS.key } : { port: PORT, hostname: HOST },
+  app.fetch,
+);
+
+// OAuth callback shim. Gemini CLI Workspace Extension's Cloud Function
+// (the public OAuth exchanger our Google providers piggy-back on for
+// the verified consent screen) does a literal string check on the
+// `state.uri` hostname — only `localhost` and `127.0.0.1` are allowed;
+// see https://github.com/gemini-cli-extensions/workspace/blob/main/
+// cloud_function/index.js#L91-L104. The desktop install opens the
+// browser at `https://local.hellofriday.ai:PORT` because that's the
+// only hostname the browser-trusted cert covers, so a callback URL
+// derived from X-Forwarded-Host (e.g. local.hellofriday.ai:15200)
+// fails that check and the Cloud Function falls back to its manual
+// JSON-paste page — surfaces to the user as "what the fuck is this
+// screen". The shim accepts the callback hop on plain HTTP at
+// 127.0.0.1 (Cloud-Function-compatible host, no cert required) and
+// 302-redirects to the same path + query on the TLS playground
+// origin so the rest of the existing /api/daemon/api/link/v1/callback
+// chain runs unchanged.
+//
+// The shim is intentionally minimal: it accepts only the canonical
+// callback path prefix and rejects everything else with 404. No body,
+// no method other than GET — anything weird is somebody probing us,
+// not the OAuth flow.
+const SHIM_PORT = Number(process.env.PLAYGROUND_OAUTH_SHIM_PORT ?? "0");
+const SHIM_PATH_PREFIX = "/api/daemon/api/link/v1/callback/";
+if (TLS && SHIM_PORT > 0) {
+  // The TLS origin we redirect TO — must match the cert's CN so the
+  // browser doesn't flash a warning between the Cloud Function and
+  // Link's callback handler.
+  const tlsOriginHost = process.env.PLAYGROUND_TLS_HOSTNAME ?? "local.hellofriday.ai";
+  const tlsOrigin = `https://${tlsOriginHost}:${PORT}`;
+  // Bind defensively: if SHIM_PORT (playground port + 1, not operator-
+  // chosen) is already in use, Deno.serve throws a top-level
+  // AddrInUse error that crashes the entire playground process. The
+  // launcher would then restart playground into the same collision,
+  // dragging us into a crash loop. Failing the OAuth shim alone is the
+  // tolerable degradation: the main playground stays up, and the user
+  // sees the Gemini Cloud Function's manual JSON-paste page (the
+  // pre-shim status quo) rather than a 404 on every page load.
+  try {
+    Deno.serve({
+      port: SHIM_PORT,
+      hostname: "127.0.0.1",
+      onError: (err) => {
+        // Per-request handler errors — keep the shim up; one bad
+        // request shouldn't take it down.
+        console.error(`[playground] oauth-shim request handler error: ${err}`);
+        return new Response("internal error", { status: 500 });
+      },
+      onListen: () => {
+        console.log(`[playground] oauth-shim listening on http://127.0.0.1:${SHIM_PORT}`);
+        console.log(`[playground] oauth-shim redirects → ${tlsOrigin}${SHIM_PATH_PREFIX}*`);
+      },
+    }, (req) => {
+      const url = new URL(req.url);
+      if (req.method !== "GET" || !url.pathname.startsWith(SHIM_PATH_PREFIX)) {
+        return new Response("not found", { status: 404 });
+      }
+      const target = `${tlsOrigin}${url.pathname}${url.search}`;
+      return Response.redirect(target, 302);
+    });
+  } catch (err) {
+    // Most common cause: port collision with another process. Log and
+    // continue — the main playground listener above is already up;
+    // OAuth flows just fall back to the manual-paste page.
+    console.error(
+      `[playground] oauth-shim failed to bind 127.0.0.1:${SHIM_PORT} ` +
+        `(${err instanceof Error ? err.message : String(err)}); ` +
+        `continuing without shim — Google OAuth will show manual JSON page`,
+    );
+  }
+}

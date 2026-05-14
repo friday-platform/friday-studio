@@ -48,17 +48,6 @@ export * from "./src/topology.ts";
 export type { Issue, Registry, ValidationReport } from "./src/validate-workspace.ts";
 // Workspace structural validator
 export { validateWorkspace } from "./src/validate-workspace.ts";
-// Validation defaults resolver (action > job > workspace > "auto"
-// classifier). `ValidationDefaults` + `ValidationDefaultsSchema` are
-// re-exported via workspace.ts; only the resolver helpers + constants
-// ship from here.
-export {
-  DEFAULT_VALIDATION_SKILL,
-  normalizeActionValidate,
-  type ResolvedValidation,
-  type ResolveValidationInput,
-  resolveValidation,
-} from "./src/validation.ts";
 export * from "./src/workspace.ts";
 
 // ==============================================================================

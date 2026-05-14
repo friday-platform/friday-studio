@@ -88,19 +88,6 @@ export interface SignalTriggerResult {
   durationMs: number;
 }
 
-/**
- * One step:complete.validation field captured from a session's event stream.
- * Mirrors `StepValidationOutputSchema` from
- * `packages/core/src/session/session-events.ts`. Only the fields the harness
- * asserts on are narrowed; unknown extra fields pass through untouched.
- */
-export interface CapturedStepValidation {
-  strategy: "skip" | "self" | "external";
-  verdict?: "pass" | "advisory" | "blocking";
-  skipReason?: string;
-  issues?: Array<Record<string, unknown>>;
-}
-
 export interface SessionEventsResult {
   events: Array<Record<string, unknown>>;
   totalUsage: {
@@ -109,16 +96,7 @@ export interface SessionEventsResult {
     cacheReadTokens: number;
     cacheWriteTokens: number;
   };
-  validatorRunCount: number;
-  validatorSkipCount: number;
   toolCallCount: number;
-  /**
-   * Every `step:complete` event's `validation` field, in stream order.
-   * The QA harness asserts the validation-event contract on this array
-   * (one entry per `type: llm` action's step:complete). Pure-agent steps
-   * leave `validation` absent and are omitted here.
-   */
-  stepValidations: CapturedStepValidation[];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -171,7 +149,14 @@ export async function startDaemon(opts: StartDaemonOptions = {}): Promise<Daemon
   await ensureCredentialsLoaded();
   const port = opts.port ?? pickPort();
   const natsPort = pickPort();
-  const fridayHome = opts.fridayHome ?? (await Deno.makeTempDir({ prefix: "friday-qa-" }));
+  // realPath resolves the macOS /var → /private/var symlink. The daemon
+  // realpath-resolves workspace paths before the home-dir isolation check
+  // compares them against FRIDAY_HOME; without this the temp dir comes
+  // back as /var/... while workspaces resolve to /private/var/..., and
+  // every harness-registered workspace is masked as cross-home (404).
+  const fridayHome = await Deno.realPath(
+    opts.fridayHome ?? (await Deno.makeTempDir({ prefix: "friday-qa-" })),
+  );
   const natsUrl = `nats://127.0.0.1:${natsPort}`;
 
   const natsStoreDir = join(fridayHome, "jetstream");
@@ -219,14 +204,40 @@ export async function startDaemon(opts: StartDaemonOptions = {}): Promise<Daemon
     // to ship spans during the test run.
     OTEL_EXPORTER_OTLP_ENDPOINT: "",
     OTEL_EXPORTER_OTLP_HEADERS: "",
+    // Force plaintext: ensureCredentialsLoaded() pulls ~/.atlas/.env into
+    // Deno.env for the Anthropic key, and TLS cert/key ride along in that
+    // same file. Left set, the spawned daemon auto-upgrades to https://
+    // (start.tsx) while the harness probes http:// — health never matches.
+    // The test daemon is a throwaway on a random port; it has no use for TLS.
+    FRIDAY_TLS_CERT: "",
+    FRIDAY_TLS_KEY: "",
     ...(opts.env ?? {}),
   };
 
-  // Spawn `deno task atlas daemon start --port <p> --hostname 127.0.0.1`
-  // from the worktree root so module resolution lines up with the
-  // workspace deno.json.
+  // Spawn the daemon directly rather than via `deno task atlas`. The
+  // `atlas` task in deno.json inlines `FRIDAY_HOME=$HOME/.atlas`, which
+  // overrides the per-run temp FRIDAY_HOME set above — the daemon then
+  // runs against the real ~/.atlas home and the home-dir isolation guard
+  // masks every harness-registered workspace as cross-home (404). Running
+  // the task's underlying command lets the harness FRIDAY_HOME stick.
+  // Mirrors the `atlas` task in deno.json — keep the flags in sync.
   const cmd = new Deno.Command("deno", {
-    args: ["task", "atlas", "daemon", "start", "--port", String(port), "--hostname", "127.0.0.1"],
+    args: [
+      "run",
+      "-q",
+      "--allow-all",
+      "--unstable-worker-options",
+      "--unstable-kv",
+      "--unstable-raw-imports",
+      "--env-file",
+      "apps/atlas-cli/src/otel-bootstrap.ts",
+      "daemon",
+      "start",
+      "--port",
+      String(port),
+      "--hostname",
+      "127.0.0.1",
+    ],
     env,
     cwd: WORKTREE_ROOT,
     stdout: opts.inherit ? "inherit" : "piped",
@@ -340,6 +351,22 @@ export async function stopDaemon(
 // ─────────────────────────────────────────────────────────────────────────────
 // Workspace registration
 // ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Create a unique scratch dir for a workspace fixture *under* the daemon's
+ * FRIDAY_HOME. Post-#296 the workspace manager masks any registry entry
+ * whose path falls outside the active home (`isUnderHome` in
+ * packages/workspace/src/manager.ts) — a fixture in a sibling tmp dir
+ * registers but is then invisible to find()/chat/signals (404). Lives
+ * under `<home>/qa-fixtures/` rather than `<home>/workspaces/` so the
+ * daemon's own workspace bootstrap never scans it. Torn down with the
+ * home dir by stopDaemon().
+ */
+export async function makeFixtureDir(fridayHome: string, prefix: string): Promise<string> {
+  const fixturesRoot = join(fridayHome, "qa-fixtures");
+  await Deno.mkdir(fixturesRoot, { recursive: true });
+  return await Deno.makeTempDir({ dir: fixturesRoot, prefix });
+}
 
 export async function registerWorkspace(
   d: DaemonHandle,
@@ -499,8 +526,6 @@ interface MaybeStepCompleteEvent {
   type?: string;
   usage?: StepUsage;
   toolCalls?: unknown[];
-  validationVerdict?: { skipped?: boolean; ok?: boolean };
-  validation?: CapturedStepValidation;
 }
 
 /**
@@ -548,10 +573,7 @@ export async function fetchSessionEvents(
       return {
         events: [],
         totalUsage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
-        validatorRunCount: 0,
-        validatorSkipCount: 0,
         toolCallCount: 0,
-        stepValidations: [],
       };
     }
     const text = await resp.text();
@@ -606,10 +628,7 @@ export async function fetchSessionEvents(
   }
 
   const totalUsage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
-  let validatorRunCount = 0;
-  let validatorSkipCount = 0;
   let toolCallCount = 0;
-  const stepValidations: CapturedStepValidation[] = [];
 
   for (const ev of events as MaybeStepCompleteEvent[]) {
     if (ev.type === "step:complete") {
@@ -621,35 +640,10 @@ export async function fetchSessionEvents(
         totalUsage.cacheWriteTokens += u.cacheWriteTokens ?? 0;
       }
       if (Array.isArray(ev.toolCalls)) toolCallCount += ev.toolCalls.length;
-      // Structured validation outcome rides on `step:complete` instead of
-      // the legacy `step:validation` event. Capture every populated emit so
-      // the harness can assert the strategy/skipReason/verdict shape.
-      if (ev.validation && typeof ev.validation === "object") {
-        stepValidations.push(ev.validation);
-      }
-    } else if (ev.type === "step:validation") {
-      // Tool-passthrough actions skip the validator. The validator emits
-      // `step:validation` with `validationVerdict.skipped:
-      // true` (or `verdict: "skipped"`) for skip cases; otherwise the
-      // judge ran. Match both shapes for forward compatibility.
-      const v = (ev as unknown as Record<string, unknown>).validationVerdict as
-        | Record<string, unknown>
-        | undefined;
-      const verdict = (ev as unknown as Record<string, unknown>).verdict;
-      const skipped = v?.skipped === true || verdict === "skipped";
-      if (skipped) validatorSkipCount += 1;
-      else validatorRunCount += 1;
     }
   }
 
-  return {
-    events,
-    totalUsage,
-    validatorRunCount,
-    validatorSkipCount,
-    toolCallCount,
-    stepValidations,
-  };
+  return { events, totalUsage, toolCallCount };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -728,11 +722,8 @@ export async function listArtifactsForSession(
 
 /**
  * Tail the daemon's global.log under FRIDAY_HOME and count lines matching
- * `pattern` (substring or regex). Some validator-skip paths only surface in
- * the debug log because the synthetic
- * pass verdict carries no on-the-wire marker (`syntheticPassVerdict` in
- * `packages/hallucination/src/fsm-validator.ts:96`). The harness uses
- * this for assertions that can't be reconstructed from session events.
+ * `pattern` (substring or regex). Used for assertions that can't be
+ * reconstructed from session events alone.
  */
 export async function countLogMatches(d: DaemonHandle, pattern: string | RegExp): Promise<number> {
   const path = join(d.fridayHome, "logs", "global.log");

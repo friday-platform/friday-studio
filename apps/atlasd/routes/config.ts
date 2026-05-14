@@ -6,7 +6,13 @@
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import process from "node:process";
-import { createPlatformModels, getCatalog, PlatformModelsConfigError } from "@atlas/llm";
+import {
+  createPlatformModels,
+  getCatalog,
+  invalidateCatalog,
+  PlatformModelsConfigError,
+  resetRegistry,
+} from "@atlas/llm";
 import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
 import { getFridayHome } from "@atlas/utils/paths.server";
@@ -111,6 +117,35 @@ const envVarsPutRequestSchema = z.object({
   ),
 });
 
+/**
+ * Keys still written to `.env` but never mutated on the running daemon's
+ * `process.env`. Otherwise a Settings save could brick the daemon by
+ * changing its own loader paths or FRIDAY_HOME. The next daemon spawn
+ * picks up the file value via `--env-file`.
+ *
+ * The `FRIDAY_*` subprocess-spawn vars (uv path, agent SDK version,
+ * agent python, claude path) are read per-spawn by agent-spawn.ts and
+ * the claude-code provider — mutating them on the running daemon would
+ * partition reality between already-spawned and future-spawned agents.
+ */
+export const HOT_RELOAD_DENYLIST: ReadonlySet<string> = new Set([
+  "PATH",
+  "HOME",
+  "USER",
+  "SHELL",
+  "NODE_OPTIONS",
+  "LD_PRELOAD",
+  "LD_LIBRARY_PATH",
+  "DYLD_INSERT_LIBRARIES",
+  "DYLD_LIBRARY_PATH",
+  "FRIDAY_HOME",
+  "FRIDAY_ENV",
+  "FRIDAY_UV_PATH",
+  "FRIDAY_AGENT_SDK_VERSION",
+  "FRIDAY_AGENT_PYTHON",
+  "FRIDAY_CLAUDE_PATH",
+]);
+
 const envVarsPutResponseSchema = z.object({ success: z.boolean(), error: z.string().optional() });
 
 const errorResponseSchema = z.object({ success: z.boolean(), error: z.string() });
@@ -204,6 +239,22 @@ configRoutes.put(
         count: Object.keys(envVars).length,
       });
 
+      // Prior on-disk keys feed the delete-set for the in-memory sync.
+      // Shell-inherited env (`export FOO=…` before daemon launch) is
+      // never in this set, so the user "removing" such a key in the UI
+      // leaves the shell value sticky in `process.env`.
+      let priorKeys: Set<string> = new Set();
+      if (await exists(envPath)) {
+        try {
+          priorKeys = new Set(Object.keys(parse(await readFile(envPath, "utf-8"))));
+        } catch (error) {
+          logger.warn("Could not parse prior .env for in-memory sync; deletes will be skipped", {
+            envPath,
+            error: stringifyError(error),
+          });
+        }
+      }
+
       // Create .atlas directory if it doesn't exist
       if (!(await exists(atlasDir))) {
         await mkdir(atlasDir, { recursive: true });
@@ -211,6 +262,31 @@ configRoutes.put(
 
       const content = stringifyEnv(envVars);
       await writeFile(envPath, content, "utf-8");
+
+      // Deno's `--env-file` reads once at startup, and the catalog +
+      // provider registry memoize `process.env` reads, so mirror the
+      // file write into the running process and bust both caches.
+      // Subprocess agents already running keep their spawn-time env.
+      try {
+        for (const k of priorKeys) {
+          if (HOT_RELOAD_DENYLIST.has(k)) continue;
+          if (!(k in envVars)) delete process.env[k];
+        }
+        for (const [k, v] of Object.entries(envVars)) {
+          if (HOT_RELOAD_DENYLIST.has(k)) {
+            logger.warn("Skipping in-memory sync for denylisted key (written to .env only)", {
+              key: k,
+            });
+            continue;
+          }
+          process.env[k] = v;
+        }
+        resetRegistry();
+        invalidateCatalog();
+      } catch (error) {
+        // File write already succeeded; restart fallback still works.
+        logger.warn("In-memory env sync failed after .env write", { error: stringifyError(error) });
+      }
 
       logger.info("Environment variables updated successfully", {
         envPath,

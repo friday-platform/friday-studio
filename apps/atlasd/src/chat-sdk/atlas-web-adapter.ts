@@ -7,13 +7,17 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { resolve, sep } from "node:path";
 import {
   type AtlasUIMessage,
+  type AtlasUIMessagePart,
   normalizeToUIMessages,
   validateAtlasUIMessages,
 } from "@atlas/agent-sdk";
+import { isInvalidChatId } from "@atlas/core/artifacts/file-upload";
 import { UserStorage } from "@atlas/core/users/storage";
 import { logger } from "@atlas/logger";
+import { chatUploadsRoot } from "@atlas/utils/paths.server";
 import type {
   Adapter,
   AdapterPostableMessage,
@@ -63,6 +67,94 @@ function joinTextParts(message: AtlasUIMessage): string {
     )
     .map((part) => part.text)
     .join("\n");
+}
+
+/**
+ * Surface user-attached file paths to the agent by inserting a synthetic
+ * text part with one `<attachment path="…" mediaType="…" />` line per
+ * file, just before each `data-file-attached` part. The text carries the
+ * `providerMetadata.atlas.kind = "attachment-expansion"` marker so
+ * `buildSegments` hides it in the user bubble — the bubble already
+ * renders a file chip from the structured `data-file-attached` part. The
+ * agent reads the bytes via the `read_attachment` tool on demand (no
+ * content inlining — bytes can be large and we want the agent to use the
+ * right reader by extension).
+ *
+ * The tag intentionally does NOT carry `filename=` — the agent routes on
+ * `mediaType=` and reads via `path=`. Exposing the human-readable
+ * filename here invites the model to hallucinate
+ * `read_attachment(path=<filename>)` under noisy context. The display
+ * name still flows to the user bubble via `segment.filenames[i]` from
+ * the structured `data-file-attached` part — that path is unaffected.
+ *
+ * Mutates `message.parts` in place. Walks in reverse so insert indices
+ * stay valid across splices.
+ *
+ * Security gate: every path is verified to live under
+ * `{FRIDAY_HOME}/scratch/uploads/{workspaceId}/{chatId}/` before being passed
+ * on. Without this an attacker could craft a `data-file-attached` part with
+ * any absolute path on the daemon's filesystem and the agent's
+ * `read_attachment` tool would read it. The scratch-upload route writes
+ * here on submit; legitimate clients can't produce other paths.
+ */
+function inlineAttachedFiles(message: AtlasUIMessage, workspaceId: string, chatId: string): void {
+  // Adversarial ids would compute the wrong root → either reject every
+  // attachment (false negative) or, worse, point at a shared dir. Reject
+  // the whole message-level splice if either scope id is malformed.
+  if (isInvalidChatId(workspaceId) || isInvalidChatId(chatId)) {
+    logger.warn("atlas_web_adapter_invalid_attachment_scope_skipping_splice", {
+      workspaceId,
+      chatId,
+    });
+    return;
+  }
+  const root = chatUploadsRoot(workspaceId, chatId);
+  const allowedPrefix = root + sep;
+
+  const parts: AtlasUIMessagePart[] = message.parts;
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const part = parts[i];
+    if (!part || part.type !== "data-file-attached") continue;
+    const data: unknown = part.data;
+    if (typeof data !== "object" || data === null) continue;
+    const rawPaths = (data as { paths?: unknown }).paths;
+    const rawMimes = (data as { mimeTypes?: unknown }).mimeTypes;
+    if (!Array.isArray(rawPaths) || rawPaths.length === 0) continue;
+
+    const lines: string[] = [];
+    for (let j = 0; j < rawPaths.length; j++) {
+      const path = rawPaths[j];
+      if (typeof path !== "string") continue;
+      const resolved = resolve(path);
+      // Path-traversal / scope gate. Without this an attacker could
+      // smuggle `/etc/passwd` through a forged `data-file-attached`
+      // part and the agent's read_attachment tool would happily read it.
+      if (resolved !== path || (!resolved.startsWith(allowedPrefix) && resolved !== root)) {
+        logger.warn("atlas_web_adapter_attached_file_path_rejected", { chatId, path });
+        continue;
+      }
+      const mime =
+        Array.isArray(rawMimes) && typeof rawMimes[j] === "string"
+          ? (rawMimes[j] as string)
+          : "application/octet-stream";
+      const safePath = path.replace(/"/g, "&quot;");
+      const safeMime = mime.replace(/"/g, "&quot;");
+      lines.push(`<attachment path="${safePath}" mediaType="${safeMime}" />`);
+    }
+    if (lines.length === 0) continue;
+
+    // Structural marker so the UI renderer can skip this part without
+    // re-parsing the text — see `buildSegments` in
+    // `@atlas/core/chat/export/render.ts`. Filtering on the marker (not
+    // shape) means a user typing `<attachment …>` literally still
+    // renders as text.
+    const textPart: AtlasUIMessagePart = {
+      type: "text",
+      text: lines.join("\n"),
+      providerMetadata: { atlas: { kind: "attachment-expansion" } },
+    };
+    parts.splice(i, 0, textPart);
+  }
 }
 
 /**
@@ -237,6 +329,15 @@ export class AtlasWebAdapter implements Adapter<string, WebChatPayload> {
     }
 
     const chatId = parsed.data.id;
+    // User-attached files (chat-input drop → POST /api/scratch/upload)
+    // arrive as `data-file-attached` parts carrying absolute paths on the
+    // daemon's filesystem. Mutate the uiMessage to insert one self-closing
+    // `<attachment path="…" mediaType="…" />` text line per file so the
+    // workspace-chat agent (which re-reads history per turn and never sees
+    // `Message.text`) can spot them and call
+    // `read_attachment` based on extension. `workspaceId` + `chatId` scope
+    // the path-validation gate to the per-chat uploads dir.
+    inlineAttachedFiles(uiMessage, this.workspaceId, chatId);
     const messageText = joinTextParts(uiMessage);
     const userId = request.headers.get("X-Atlas-User-Id") ?? UserStorage.getCachedLocalUserId();
     const { datetime, foreground_workspace_ids: foregroundWorkspaceIds } = parsed.data;

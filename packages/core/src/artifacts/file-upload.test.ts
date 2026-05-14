@@ -4,6 +4,7 @@ import {
   deriveDownloadFilename,
   getValidatedMimeType,
   inferMimeFromFilename,
+  isInvalidChatId,
   stripMimeParams,
 } from "./file-upload.ts";
 
@@ -160,14 +161,52 @@ describe("inferMimeFromFilename", () => {
 });
 
 describe("getValidatedMimeType", () => {
-  it("returns the mime for an uploadable extension", () => {
+  it("returns the mime for a baseline uploadable extension", () => {
     expect(getValidatedMimeType("notes.md")).toBe("text/markdown");
   });
 
-  it("returns undefined for a non-uploadable extension (gates UI uploads)", () => {
-    // .ts is inferable for agent-side artifact creation but must NOT be
-    // accepted via the UI upload allowlist.
-    expect(getValidatedMimeType("script.ts")).toBeUndefined();
+  it("returns the mime for the text/markup/source-code extensions added in #292", () => {
+    // The chat input now accepts these; the upload route's
+    // getValidatedMimeType is what gates them at the server boundary.
+    expect(getValidatedMimeType("page.html")).toBe("text/html");
+    expect(getValidatedMimeType("script.ts")).toBe("text/x-typescript");
+    expect(getValidatedMimeType("app.py")).toBe("text/x-python");
+    expect(getValidatedMimeType("run.sh")).toBe("text/x-shellscript");
+    expect(getValidatedMimeType("conf.toml")).toBe("text/x-toml");
+    expect(getValidatedMimeType("server.log")).toBe("text/plain");
+  });
+
+  it("returns undefined for SVG (security: inline <script> in image/svg+xml)", () => {
+    // SVG stays uploadable: false even though it's a known mime. An
+    // `<img src="data:image/svg+xml,...">` won't execute the script, but
+    // refusing at the server boundary is the load-bearing defense.
+    expect(getValidatedMimeType("icon.svg")).toBeUndefined();
+  });
+
+  it("returns undefined for an unknown extension", () => {
+    expect(getValidatedMimeType("malware.exe")).toBeUndefined();
+  });
+});
+
+describe("isInvalidChatId", () => {
+  it("rejects path-shaped ids that would collapse or nest upload roots", () => {
+    for (const id of [
+      "",
+      ".",
+      "..",
+      "chat/child",
+      "/absolute",
+      "chat\\child",
+      "chat..child",
+      "chat\0id",
+    ]) {
+      expect(isInvalidChatId(id)).toBe(true);
+    }
+  });
+
+  it("allows existing colon-shaped and generated ids", () => {
+    expect(isInvalidChatId("chat_abc123")).toBe(false);
+    expect(isInvalidChatId("telegram:thread:123")).toBe(false);
   });
 });
 
@@ -177,10 +216,14 @@ describe("ALLOWED_EXTENSIONS", () => {
     expect(ALLOWED_EXTENSIONS.has(".pdf")).toBe(true);
   });
 
-  it("does not contain agent-only inferred extensions", () => {
-    expect(ALLOWED_EXTENSIONS.has(".ts")).toBe(false);
-    expect(ALLOWED_EXTENSIONS.has(".html")).toBe(false);
-    expect(ALLOWED_EXTENSIONS.has(".sh")).toBe(false);
+  it("contains the text/markup/source-code extensions added in #292", () => {
+    for (const ext of [".html", ".ts", ".py", ".sh", ".toml", ".log", ".tsv"]) {
+      expect(ALLOWED_EXTENSIONS.has(ext)).toBe(true);
+    }
+  });
+
+  it("does NOT contain .svg (script-injection risk)", () => {
+    expect(ALLOWED_EXTENSIONS.has(".svg")).toBe(false);
   });
 });
 

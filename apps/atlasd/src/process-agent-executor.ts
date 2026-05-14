@@ -34,6 +34,7 @@ const READY_TIMEOUT_MS = 30_000;
 export class ProcessAgentExecutor {
   constructor(
     private nc: NatsConnection,
+    private natsUrl: string,
     private capabilityRegistry: CapabilityHandlerRegistry,
   ) {}
 
@@ -109,7 +110,7 @@ export class ProcessAgentExecutor {
         env: {
           ...process.env,
           ...options.env,
-          NATS_URL: process.env.FRIDAY_NATS_URL ?? "nats://localhost:4222",
+          NATS_URL: this.natsUrl,
           FRIDAY_SESSION_ID: sessionId,
         },
         stdio: "pipe",

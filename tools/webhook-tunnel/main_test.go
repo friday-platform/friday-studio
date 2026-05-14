@@ -29,7 +29,11 @@ func setupTestServer(t *testing.T, atlasdURL string) string {
 	if err := provider.Init(); err != nil {
 		t.Fatalf("provider init: %v", err)
 	}
-	fwd = forwarder.New(atlasdURL)
+	f, err := forwarder.New(atlasdURL, "")
+	if err != nil {
+		t.Fatalf("forwarder init: %v", err)
+	}
+	fwd = f
 	tunMgr = nil
 
 	srv := httptest.NewServer(newRouter())

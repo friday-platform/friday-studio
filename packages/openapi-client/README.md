@@ -8,10 +8,13 @@
 ## Usage
 
 ```typescript
-import { createAtlasClient } from "@atlas/oapi-client";
+import { createAtlasClient, getAtlasDaemonUrl } from "@atlas/oapi-client";
 
+// getAtlasDaemonUrl() reads FRIDAYD_URL + FRIDAY_TLS_CERT and returns the
+// right scheme/port automatically. Pass an explicit baseUrl only when
+// targeting a non-local daemon.
 const client = createAtlasClient({
-  baseUrl: "http://localhost:8080",
+  baseUrl: getAtlasDaemonUrl(),
 });
 
 // Type-safe API calls

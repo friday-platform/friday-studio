@@ -1,16 +1,87 @@
 package main
 
 import (
+	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/f1bonacc1/process-compose/src/command"
-	"github.com/f1bonacc1/process-compose/src/health"
 	"github.com/f1bonacc1/process-compose/src/types"
 )
+
+// fridayNATSPortBase is the start of Friday's reserved NATS port range.
+// Mirrors FRIDAY_NATS_PORT_BASE in packages/jetstream/src/spawn.ts —
+// keep in sync. Range is `[Base, Base+Range)` (10 slots).
+const (
+	fridayNATSPortBase  = 14222
+	fridayNATSPortRange = 10
+)
+
+// natsServerPort is picked once at launcher startup by pickNATSPort() and
+// reused for both the nats-server argv and the FRIDAY_NATS_URL env we
+// hand to every supervised child. Defaults to 0 to surface "forgot to
+// initialize" wiring bugs in tests rather than silently spawning on a
+// privileged port.
+var natsServerPort int
+
+// pickNATSPort tries to bind each port in the Friday-reserved range
+// (`fridayNATSPortBase..+Range`) and returns the first one that's free.
+// Falls back to an OS-assigned ephemeral port if all slots are taken
+// (extreme edge case). The chosen port lands in `natsServerPort` and
+// is used by both `natsServerArgs` and the `FRIDAY_NATS_URL` env that
+// the launcher injects into supervised children.
+//
+// TOCTOU: the port may be claimed between the listener close and
+// nats-server's bind. Acceptable — nats-server fails fast with a clear
+// stderr error in that case and process-compose surfaces it.
+func pickNATSPort() int {
+	for offset := 0; offset < fridayNATSPortRange; offset++ {
+		port := fridayNATSPortBase + offset
+		if tryBindTCP(port) {
+			return port
+		}
+	}
+	// All reserved slots taken. Ask the kernel for any free port.
+	return pickEphemeralPort()
+}
+
+func tryBindTCP(port int) bool {
+	addr := "127.0.0.1:" + strconv.Itoa(port)
+	l, err := net.Listen("tcp", addr)
+	if err != nil {
+		return false
+	}
+	_ = l.Close()
+	return true
+}
+
+func pickEphemeralPort() int {
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		// Truly nothing free — shouldn't happen, but keep the launcher
+		// going with the legacy default and let nats-server fail loudly.
+		return 4222
+	}
+	port := l.Addr().(*net.TCPAddr).Port
+	_ = l.Close() // errcheck: best-effort; the port is returned regardless
+	return port
+}
+
+// natsServerURL returns the nats:// URL the broker should be reachable
+// at, based on the port picked by pickNATSPort(). Empty if not yet
+// initialized — caller should check.
+func natsServerURL() string {
+	if natsServerPort == 0 {
+		return ""
+	}
+	return fmt.Sprintf("nats://127.0.0.1:%d", natsServerPort)
+}
 
 // osGetenv is var-bound so tests can stub it.
 var osGetenv = os.Getenv
@@ -68,7 +139,69 @@ func commonServiceEnv() []string {
 	// installs; without this pin the daemon would never find that file
 	// and would crash at boot trying to resolve Anthropic credentials.
 	env = append(env, "FRIDAY_CONFIG_PATH="+friendlyHome())
+	// Pin the NATS URL so every supervised child connects to the broker
+	// the launcher just spawned, regardless of which Friday-reserved
+	// port pickNATSPort() landed on (could be 14222 normally, 14223+
+	// if a sibling install was already running, or an OS-assigned
+	// ephemeral if the whole range was exhausted). Without this pin
+	// the daemon would fall through to its own URL-file lookup, which
+	// is correct in dev but redundant here.
+	if url := natsServerURL(); url != "" {
+		// Respect an operator override only if the user set it in
+		// `.env` — that's an explicit "I have my own broker" signal.
+		// Otherwise the launcher's picked URL wins.
+		if _, ok := seen["FRIDAY_NATS_URL"]; !ok {
+			env = append(env, "FRIDAY_NATS_URL="+url)
+		}
+	}
+	// Cert paths (FRIDAY_TLS_*, FRIDAY_BROWSER_TLS_*, DENO_CERT,
+	// NODE_EXTRA_CA_CERTS) are NOT injected here. The launcher writes
+	// them to ~/.friday/local/.env once (via ensureCertEnvFile) and the
+	// loadDotEnv() above already carried them into this baseline. Going
+	// through .env keeps the launcher convenient-but-optional: anyone
+	// running `friday daemon start` directly, without the launcher,
+	// reads the same .env and gets the same cert wiring.
+
+	// OAuth callback shim. Gemini CLI's Cloud Function (the public
+	// exchanger our Google providers piggy-back on for the verified
+	// consent screen) rejects callback URIs whose hostname isn't the
+	// literal string `localhost` or `127.0.0.1`. The desktop install
+	// proxies through `https://local.hellofriday.ai:<PORT>` because
+	// that's the only hostname the browser-trusted cert covers, so the
+	// X-Forwarded-Host-derived callback URL fails the check. We bind a
+	// plain-HTTP shim in the playground that 302-redirects to the TLS
+	// origin (see tools/agent-playground/static-server.ts) and tell
+	// Link to use it for delegated-mode state.uri. The shim only fires
+	// when the browser cert is actually valid — without it the
+	// playground is on plain http://localhost and the unmodified
+	// callback URL already passes the Cloud Function check.
+	if hasValidBrowserCert() {
+		shimPort := playgroundShimPort()
+		env = append(env, "PLAYGROUND_OAUTH_SHIM_PORT="+strconv.Itoa(shimPort))
+		env = append(env, fmt.Sprintf("FRIDAY_OAUTH_SHIM_BASE=http://127.0.0.1:%d", shimPort))
+	}
 	return env
+}
+
+// playgroundShimPort resolves the loopback HTTP port the playground's
+// OAuth-callback shim binds to. Honors PLAYGROUND_OAUTH_SHIM_PORT if
+// the operator set one in `.env` (escape hatch when the default
+// collides); otherwise picks playground port + 1, which keeps the pair
+// adjacent and lets the launcher's own port-override mechanism (which
+// already moves the playground off 5200 → 15200) carry the shim along
+// without an extra knob to think about.
+func playgroundShimPort() int {
+	if v := osGetenv("PLAYGROUND_OAUTH_SHIM_PORT"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
+	}
+	if v := portOverride("playground"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n + 1
+		}
+	}
+	return 5201 // playground default 5200 + 1
 }
 
 // fridayEnv builds the env-var list specific to the friday daemon
@@ -321,10 +454,19 @@ func resolveJetStreamStoreDir() (storeDir, source string) {
 // process. Extracted as a pure function to keep the args layout (flag
 // order, store-dir position) trivially assertable in tests without
 // touching the surrounding spec wiring.
+//
+// `port` is the value picked by `pickNATSPort()` at launcher startup —
+// falls back to the legacy 4222 only if `pickNATSPort()` was never
+// called (typically a test that builds args without the full launcher
+// init path).
 func natsServerArgs(storeDir string) []string {
+	port := natsServerPort
+	if port == 0 {
+		port = 4222
+	}
 	return []string{
 		"--addr", "127.0.0.1",
-		"--port", "4222",
+		"--port", strconv.Itoa(port),
 		"--jetstream",
 		"-sd", storeDir,
 		"--http_port", "8222",
@@ -401,6 +543,15 @@ type processSpec struct {
 	env        []string // KEY=VALUE pairs added to the child's env
 	healthPort string
 	healthPath string
+	// healthScheme is "http" or "https". When "https" the readiness probe
+	// runs via curl --insecure (loopback only; we control both ends) so it
+	// can negotiate TLS without plumbing a CA bundle through process-
+	// compose's HttpProbe — that type has no client/TLS controls and the
+	// default Go transport would reject our private-CA s2s leaf. Decision
+	// per service mirrors the cert pair each binary actually uses (s2s for
+	// friday/link/webhook-tunnel, browser cert for playground, plain HTTP
+	// only for nats-server's monitoring port).
+	healthScheme string
 }
 
 // supervisedProcessNames returns just the names of the supervised
@@ -519,6 +670,10 @@ func supervisedProcesses(binDir string) []processSpec {
 			// reach static-server.ts, which injects them into the
 			// served HTML for the browser's window.__FRIDAY_CONFIG__.
 			name: "playground", binary: filepath.Join(binDir, "playground"),
+			// commonServiceEnv() now carries FRIDAY_BROWSER_TLS_CERT/_KEY
+			// (and the s2s + DENO_CERT / NODE_EXTRA_CA_CERTS pins) for
+			// every service — no playground-specific env wiring needed
+			// here.
 			env:        commonServiceEnv(),
 			healthPort: "5200", healthPath: "/",
 		},
@@ -564,6 +719,45 @@ func supervisedProcesses(binDir string) []processSpec {
 			// Skip until there's a real need.
 		}
 	}
+	// Probe scheme follows the cert pair each binary actually serves on.
+	// Recomputed every boot (cheap — stat + cert parse) so a renewer-
+	// driven cert rotation that lands between two launches picks up the
+	// new state without manual intervention. nats-server's monitoring
+	// port (8222) is always plain HTTP; only the four user-facing
+	// services switch schemes.
+	s2sUp := s2sCertsValid(time.Now())
+	browserUp := hasValidBrowserCert()
+	for i, s := range specs {
+		switch s.name {
+		case "friday", "link", "webhook-tunnel":
+			// These three speak HTTPS iff the s2s cert pair is present
+			// + currently valid (matches the FRIDAY_TLS_CERT/_KEY check
+			// each binary makes at boot — apps/atlas-cli/.../daemon/
+			// start.tsx, apps/link/src/index.ts, tools/webhook-tunnel/
+			// config.go). The s2s leaf is private-CA signed so probing
+			// it requires --cacert or --insecure; we use the latter
+			// (loopback, we control both ends).
+			if s2sUp {
+				specs[i].healthScheme = "https"
+			} else {
+				specs[i].healthScheme = "http"
+			}
+		case "playground":
+			// Playground serves on its own browser-trusted cert
+			// (FRIDAY_BROWSER_TLS_*), NOT the s2s pair — see
+			// tools/agent-playground/static-server.ts. The two listeners
+			// have separate certs so we have to gate on the right one.
+			if browserUp {
+				specs[i].healthScheme = "https"
+			} else {
+				specs[i].healthScheme = "http"
+			}
+		default:
+			// nats-server (monitoring HTTP) and any future plain-HTTP
+			// service.
+			specs[i].healthScheme = "http"
+		}
+	}
 	return specs
 }
 
@@ -575,19 +769,49 @@ func portOverride(name string) string {
 	return osGetenv(envName)
 }
 
-// playgroundURL returns the loopback URL the tray opens in the user's
-// browser when the platform reaches "all healthy". Honors the
+// playgroundURL returns the URL the tray opens in the user's browser
+// when the platform reaches "all healthy". Honors the
 // FRIDAY_PORT_playground override so installs that move playground off
 // 5200 (e.g. to avoid collision with another local Friday instance) get
 // the right URL — without this the tray click silently lands on the
 // wrong port and the user sees a "can't connect" page.
+//
+// Scheme/host: when the browser-trusted cert pair downloaded by the
+// installer (apps/studio-installer/src-tauri/src/commands/download_tls.rs)
+// is present at <friendlyHome()>/tls/browser.crt, the playground binary
+// is listening on TLS for `local.hellofriday.ai` — a public DNS name
+// that resolves to 127.0.0.1, with a Let's Encrypt cert in the SAN. We
+// open the https URL so the browser lands on a green-lock origin that
+// matches the cert. Without the cert, fall back to http://localhost so
+// dev/source installs and any install that failed the cert download
+// still work.
 func playgroundURL() string {
 	port := portOverride("playground")
 	if port == "" {
 		port = "5200"
 	}
+	if hasValidBrowserCert() {
+		return "https://local.hellofriday.ai:" + port
+	}
 	return "http://localhost:" + port
 }
+
+// Probe timings consumed by the native readinessRunner (readiness.go).
+// process-compose's own ReadinessProbe is intentionally nil for every
+// supervised service — its HttpProbe has no TLS controls and would
+// reject our private-CA s2s leaf — so these constants govern OUR loop:
+// 2s initial + 30 failures × 2s = 62s window before we declare a
+// service unhealthy and ask the supervisor to restart it. The friday
+// daemon takes ~24s on first boot (workspace scan + skill bundle
+// hashing + cron registration), and playground's SvelteKit-first-
+// render takes another ~6-8s — a tighter window bounces healthy-but-
+// slow services.
+const (
+	probeInitialDelay     = 2
+	probePeriodSeconds    = 2
+	probeTimeoutSeconds   = 2
+	probeFailureThreshold = 30
+)
 
 // newProjectFromSpecs builds the typed types.Project from a list of
 // process specs. Health probes, restart policy, and shutdown timeout
@@ -620,29 +844,16 @@ func newProjectFromSpecs(specs []processSpec) *types.Project {
 				BackoffSeconds: 2,
 				MaxRestarts:    supervisedMaxRestarts,
 			},
-			ReadinessProbe: &health.Probe{
-				// Cold-start tolerance: 2s initial + 30 failures × 2s
-				// = 62s window before process-compose declares the
-				// process unhealthy and restarts it. The friday daemon
-				// alone takes ~24s on first boot (workspace scan + skill
-				// bundle hashing + cron registration), and playground's
-				// SvelteKit-first-render takes another ~6-8s. The old
-				// 12s window (5 × 2s) was enough for warm restarts but
-				// not for the very first launch after install — every
-				// supervised process bounced 1-3 times before stabilizing,
-				// surfacing as a "Daemon unreachable" flash in the UI.
-				InitialDelay:     2,
-				PeriodSeconds:    2,
-				TimeoutSeconds:   2,
-				FailureThreshold: 30,
-				SuccessThreshold: 1,
-				HttpGet: &health.HttpProbe{
-					Host:   "127.0.0.1",
-					Port:   s.healthPort,
-					Path:   s.healthPath,
-					Scheme: "http",
-				},
-			},
+			// ReadinessProbe is intentionally nil. Process-compose's
+			// HttpProbe has no TLS controls (no client, no skip-verify,
+			// no CA bundle) and would reject our private-CA-signed s2s
+			// leaf or the mkcert-issued playground origin cert. Instead
+			// we run our own native readinessRunner per service (see
+			// readiness.go), which builds an http.Client with the right
+			// TLS config and drives both the HealthCache readiness
+			// signal AND the call to sup.RestartProcess when a service
+			// stays unhealthy past probeFailureThreshold.
+			ReadinessProbe: nil,
 			ShutDownParams: types.ShutDownParams{
 				ShutDownTimeout: 10,            // seconds; SIGKILL after this
 				Signal:          signalSIGTERM, // 15 — cross-platform-safe literal

@@ -31,11 +31,17 @@ linkRoutes.use("/*", devOnlyMiddleware());
  *      workspace-chat agent can't reach Gmail / Slack / etc.
  *   3. http://localhost:3100 — legacy default for in-tree dev runs.
  */
+// Scheme matches the s2s mesh: when FRIDAY_TLS_CERT/_KEY are set in
+// the daemon's env, link is also listening on TLS via the same env
+// pair (apps/link/src/index.ts), so the daemon must reach it over
+// https. Without TLS env, fall back to http on loopback — the
+// pre-s2s-mesh behavior.
+const linkScheme = process.env.FRIDAY_TLS_CERT && process.env.FRIDAY_TLS_KEY ? "https" : "http";
 const LINK_SERVICE_URL =
   process.env.LINK_SERVICE_URL ??
   (process.env.FRIDAY_PORT_LINK
-    ? `http://localhost:${process.env.FRIDAY_PORT_LINK}`
-    : "http://localhost:3100");
+    ? `${linkScheme}://localhost:${process.env.FRIDAY_PORT_LINK}`
+    : `${linkScheme}://localhost:3100`);
 const PROXY_PREFIX = "/api/link";
 
 /**
@@ -55,18 +61,34 @@ linkRoutes.all("/*", (c) => {
 
   const originalUrl = new URL(c.req.url);
 
-  const headers: Record<string, string> = {
-    ...Object.fromEntries(c.req.raw.headers),
-    // Forwarded headers so Link can generate correct external URLs
-    "X-Forwarded-Host": originalUrl.host,
-    "X-Forwarded-Proto": originalUrl.protocol.replace(":", ""),
-    "X-Forwarded-Prefix": PROXY_PREFIX,
-  };
+  // Preserve forwarded headers from an upstream proxy (e.g. the
+  // playground dev server at https://localhost:5200/api/daemon/*). Without
+  // this, Link emits callback URLs pointing at the daemon's s2s TLS
+  // listener (https://localhost:8080), which uses a non-browser-trusted
+  // cert — the OAuth provider redirect lands on ERR_CERT_AUTHORITY_INVALID.
+  // The prefix is concatenated so Link sees the full external path.
+  const incomingHost = c.req.header("X-Forwarded-Host");
+  const incomingProto = c.req.header("X-Forwarded-Proto");
+  // Strip a trailing slash so concatenation with PROXY_PREFIX (which starts
+  // with "/") doesn't produce a doubled separator. Today the only known
+  // upstream emitter (the playground proxy) never sends one, but the daemon
+  // is also reachable from tunnels / future deployments we don't control.
+  const incomingPrefix = (c.req.header("X-Forwarded-Prefix") ?? "").replace(/\/$/, "");
+
+  // Use a Headers instance so the case-insensitive `.set()` semantics
+  // unambiguously override incoming X-Forwarded-* values. A plain-object
+  // spread keeps both the lowercase key (from `Object.fromEntries`) and
+  // the PascalCase override side-by-side and relies on Hono's internal
+  // iteration order in `preprocessRequestInit` to pick the right one.
+  const headers = new Headers(c.req.raw.headers);
+  headers.set("X-Forwarded-Host", incomingHost ?? originalUrl.host);
+  headers.set("X-Forwarded-Proto", incomingProto ?? originalUrl.protocol.replace(":", ""));
+  headers.set("X-Forwarded-Prefix", `${incomingPrefix}${PROXY_PREFIX}`);
 
   // Authenticate with Link using service FRIDAY_KEY (read at request time, not module load)
   const atlasKey = process.env.FRIDAY_KEY;
   if (atlasKey) {
-    headers.Authorization = `Bearer ${atlasKey}`;
+    headers.set("Authorization", `Bearer ${atlasKey}`);
   }
 
   return proxy(targetUrl, {
