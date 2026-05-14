@@ -2934,6 +2934,18 @@ export class WorkspaceRuntime {
                 (e): e is [string, string] => typeof e[1] === "string",
               ),
             ),
+        // Forward the parsed jobs.<name>.config.timeout into the executor so
+        // the subprocess kill ceiling matches the value operators set in
+        // workspace.yml. Without this, ProcessAgentExecutor falls back to
+        // its silent 180s default and a `config.timeout: "2h"` setting on
+        // the job is meaningful only for elicitation TTL, not for actually
+        // letting the agent run that long.
+        //
+        // KEEP `!== undefined` — a truthiness check (`opts.jobTimeoutMs && ...`)
+        // would silently drop `timeoutMs: 0`. The executor treats undefined as
+        // "fall back to default" but `0` could plausibly mean "no ceiling" in
+        // a future config schema; preserve the distinction at this boundary.
+        ...(opts.jobTimeoutMs !== undefined && { timeoutMs: opts.jobTimeoutMs }),
         logger: logger.child({ component: "CodeAgent", agentId: userAgentId }),
         streamEmitter: opts.onStreamEvent
           ? {
