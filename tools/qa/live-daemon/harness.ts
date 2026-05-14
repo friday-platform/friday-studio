@@ -795,8 +795,8 @@ export const HARNESS_PATHS = {
 
 export function qaProviderReplacements(): Record<string, string> {
   return {
-    "__FRIDAY_QA_PROVIDER__": Deno.env.get("FRIDAY_QA_PROVIDER") ?? "anthropic",
-    "__FRIDAY_QA_MODEL__": Deno.env.get("FRIDAY_QA_MODEL") ?? "claude-sonnet-4-6",
+    __FRIDAY_QA_PROVIDER__: Deno.env.get("FRIDAY_QA_PROVIDER") ?? "anthropic",
+    __FRIDAY_QA_MODEL__: Deno.env.get("FRIDAY_QA_MODEL") ?? "claude-sonnet-4-6",
   };
 }
 

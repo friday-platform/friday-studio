@@ -210,8 +210,11 @@ const PLATFORM_TOOL_ALLOWLIST = LLM_AGENT_ALLOWED_PLATFORM_TOOLS;
 function withStrictObjects(schema: Record<string, unknown>): Record<string, unknown> {
   if (!schema || typeof schema !== "object" || Array.isArray(schema)) return schema;
   const out: Record<string, unknown> = { ...schema };
-  const isObjectNode = out.type === "object" ||
-    (out.properties !== undefined && typeof out.properties === "object" && !Array.isArray(out.properties));
+  const isObjectNode =
+    out.type === "object" ||
+    (out.properties !== undefined &&
+      typeof out.properties === "object" &&
+      !Array.isArray(out.properties));
   if (isObjectNode) {
     if (!("additionalProperties" in out)) out.additionalProperties = false;
     if (out.properties && typeof out.properties === "object") {
