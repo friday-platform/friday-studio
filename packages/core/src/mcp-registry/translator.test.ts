@@ -181,13 +181,28 @@ describe("translate", () => {
         ENDPOINT: { from: "link", provider: "com-example-api-server", key: "ENDPOINT" },
       });
 
-      // The Link provider's secretSchema carries only the credential keys.
+      // The Link provider's secretSchema carries one descriptor per
+      // credential var, with `isRequired` / `isSecret` / `description`
+      // propagated from the upstream env var.
       expect(result.linkProvider).toEqual({
         type: "apikey",
         id: "com-example-api-server",
         displayName: "com.example.api-server",
         description: "API server with env vars",
-        secretSchema: { API_KEY: "string", ENDPOINT: "string" },
+        secretSchema: {
+          API_KEY: {
+            type: "string",
+            isRequired: true,
+            isSecret: false,
+            description: "API key for authentication",
+          },
+          ENDPOINT: {
+            type: "string",
+            isRequired: true,
+            isSecret: false,
+            description: "API endpoint URL",
+          },
+        },
       });
     });
 
@@ -355,13 +370,20 @@ describe("translate", () => {
       ]);
 
       // Link provider is apikey because a credential env var exists; its
-      // secretSchema carries only the credential key.
+      // secretSchema carries one descriptor for that credential.
       expect(result.linkProvider).toEqual({
         type: "apikey",
         id: "io-example-http-with-env",
         displayName: "io.example.http-with-env",
         description: "HTTP server with env vars from packages",
-        secretSchema: { API_KEY: "string" },
+        secretSchema: {
+          API_KEY: {
+            type: "string",
+            isRequired: true,
+            isSecret: false,
+            description: "API key for authentication",
+          },
+        },
       });
     });
 
@@ -578,7 +600,14 @@ describe("translate", () => {
         id: "io-example-simple-env",
         displayName: "io.example.simple-env",
         description: "Simple env vars",
-        secretSchema: { SIMPLE_VAR: "string" },
+        secretSchema: {
+          SIMPLE_VAR: {
+            type: "string",
+            isRequired: true,
+            isSecret: false,
+            description: "A simple variable",
+          },
+        },
       });
     });
 
@@ -634,7 +663,14 @@ describe("translate", () => {
         id: "io-example-placeholder-env",
         displayName: "io.example.placeholder-env",
         description: "Placeholder test",
-        secretSchema: { TOKEN: "string" },
+        secretSchema: {
+          TOKEN: {
+            type: "string",
+            isRequired: true,
+            isSecret: false,
+            description: "Authentication token",
+          },
+        },
       });
     });
   });
@@ -1233,7 +1269,10 @@ describe("translate", () => {
         id: "io-example-mixed-env",
         displayName: "io.example.mixed-env",
         description: "Mixed env vars",
-        secretSchema: { REQ1: "string", REQ2: "string" },
+        secretSchema: {
+          REQ1: { type: "string", isRequired: true, isSecret: false, description: "Required 1" },
+          REQ2: { type: "string", isRequired: true, isSecret: false, description: "Required 2" },
+        },
       });
     });
 
@@ -1363,7 +1402,9 @@ describe("translate", () => {
         id: "io-example-choices",
         displayName: "io.example.choices",
         description: "With choices",
-        secretSchema: { REGION: "string" },
+        secretSchema: {
+          REGION: { type: "string", isRequired: true, isSecret: false, description: "AWS Region" },
+        },
       });
     });
 
@@ -1421,7 +1462,104 @@ describe("translate", () => {
         id: "io-example-secret",
         displayName: "io.example.secret",
         description: "With secret",
-        secretSchema: { OPTIONAL_TOKEN: "string" },
+        secretSchema: {
+          OPTIONAL_TOKEN: {
+            type: "string",
+            isRequired: false,
+            isSecret: true,
+            description: "Optional API token",
+          },
+        },
+      });
+    });
+
+    it("emits per-field metadata for the bitbucket-shaped mix of required creds and an optional secret", ({
+      expect,
+    }) => {
+      const fixture: UpstreamServerEntry = {
+        server: {
+          $schema: "https://example.com/schema.json",
+          name: "io.example.bitbucket-mcp",
+          description: "Bitbucket MCP",
+          version: "1.0.0",
+          packages: [
+            {
+              registryType: "npm",
+              identifier: "@example/bitbucket-mcp",
+              version: "1.0.0",
+              transport: { type: "stdio" },
+              environmentVariables: [
+                {
+                  name: "BITBUCKET_USERNAME",
+                  description: "Bitbucket account username",
+                  isRequired: true,
+                },
+                {
+                  name: "BITBUCKET_APP_PASSWORD",
+                  description: "App password for Bitbucket API",
+                  isRequired: true,
+                  isSecret: true,
+                },
+                {
+                  name: "BITBUCKET_TOKEN",
+                  description: "Optional bearer token, alternative to app password",
+                  isRequired: false,
+                  isSecret: true,
+                },
+                {
+                  name: "BITBUCKET_LOG_LEVEL",
+                  description: "Log level",
+                  isRequired: false,
+                  default: "info",
+                },
+              ],
+            },
+          ],
+        },
+        _meta: {
+          "io.modelcontextprotocol.registry/official": {
+            status: "active",
+            statusChangedAt: "2025-01-01T00:00:00.000000Z",
+            publishedAt: "2025-01-01T00:00:00.000000Z",
+            updatedAt: "2025-01-01T00:00:00.000000Z",
+            isLatest: true,
+          },
+        },
+      };
+
+      const result = translate(fixture);
+
+      expect(result.success).toBe(true);
+      if (!isSuccess(result)) return;
+
+      // The optional non-secret stays out of secretSchema entirely (plain
+      // string in env). The three credentials each carry their own metadata
+      // — including the optional secret with isRequired: false, isSecret: true.
+      expect(result.linkProvider).toEqual({
+        type: "apikey",
+        id: "io-example-bitbucket-mcp",
+        displayName: "io.example.bitbucket-mcp",
+        description: "Bitbucket MCP",
+        secretSchema: {
+          BITBUCKET_USERNAME: {
+            type: "string",
+            isRequired: true,
+            isSecret: false,
+            description: "Bitbucket account username",
+          },
+          BITBUCKET_APP_PASSWORD: {
+            type: "string",
+            isRequired: true,
+            isSecret: true,
+            description: "App password for Bitbucket API",
+          },
+          BITBUCKET_TOKEN: {
+            type: "string",
+            isRequired: false,
+            isSecret: true,
+            description: "Optional bearer token, alternative to app password",
+          },
+        },
       });
     });
 
@@ -1513,7 +1651,14 @@ describe("translate", () => {
         id: "io-example-format",
         displayName: "io.example.format",
         description: "With format",
-        secretSchema: { EMAIL: "string" },
+        secretSchema: {
+          EMAIL: {
+            type: "string",
+            isRequired: true,
+            isSecret: false,
+            description: "Email address",
+          },
+        },
       });
     });
   });
@@ -1571,7 +1716,9 @@ describe("translate — extraEnvVars (doctor path)", () => {
       id: "io-example-doctor-extracted",
       displayName: "io.example.doctor-extracted",
       description: "Server with no declared env vars",
-      secretSchema: { API_TOKEN: "string" },
+      // No upstream description on the doctor-extracted var, so the
+      // descriptor omits `description` entirely.
+      secretSchema: { API_TOKEN: { type: "string", isRequired: true, isSecret: true } },
     });
   });
 

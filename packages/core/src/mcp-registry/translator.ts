@@ -16,13 +16,26 @@ import { type RoutableEnvVar, routeEnvVars } from "./env-routing.ts";
 import type { MCPServerMetadata } from "./schemas.ts";
 import type { UpstreamServerEntry } from "./upstream-client.ts";
 
+/**
+ * Per-field metadata for a Link provider's `secretSchema`. Replaces the older
+ * `"string"` shorthand: carries `isRequired` / `isSecret` so the credential
+ * form can render required-vs-optional and secret-vs-plaintext correctly, plus
+ * an optional `description` for label text.
+ */
+type SecretFieldDescriptor = {
+  type: "string";
+  isRequired?: boolean;
+  isSecret?: boolean;
+  description?: string;
+};
+
 /** Wire-safe input for dynamic API key providers (Link auto-creation). */
 export type DynamicApiKeyProviderInput = {
   type: "apikey";
   id: string;
   displayName: string;
   description: string;
-  secretSchema: Record<string, "string">;
+  secretSchema: Record<string, SecretFieldDescriptor>;
   setupInstructions?: string;
 };
 
@@ -103,15 +116,29 @@ function substituteUrlVariables(
   return { url: result, rejected: false };
 }
 
+/**
+ * Build a `DynamicApiKeyProviderInput` from the routed credential env vars.
+ * Each var becomes one entry in `secretSchema` with `isRequired` / `isSecret`
+ * defaulted to concrete booleans (never undefined) so the wire JSON is
+ * unambiguous, plus `description` only when the upstream var provided one.
+ */
 function buildApiKeyProvider(
   id: string,
   name: string,
   description: string | undefined,
-  linkKeys: string[],
+  linkVars: RoutableEnvVar[],
 ): DynamicApiKeyProviderInput {
-  const secretSchema: Record<string, "string"> = {};
-  for (const key of linkKeys) {
-    secretSchema[key] = "string";
+  const secretSchema: Record<string, SecretFieldDescriptor> = {};
+  for (const v of linkVars) {
+    const field: SecretFieldDescriptor = {
+      type: "string",
+      isRequired: v.isRequired ?? false,
+      isSecret: v.isSecret ?? false,
+    };
+    if (v.description) {
+      field.description = v.description;
+    }
+    secretSchema[v.name] = field;
   }
   return {
     type: "apikey",
@@ -199,12 +226,7 @@ export function translate(
 
     const linkProvider =
       !annotation?.providerId && linkVars.length > 0
-        ? buildApiKeyProvider(
-            id,
-            server.name,
-            server.description,
-            linkVars.map((v) => v.name),
-          )
+        ? buildApiKeyProvider(id, server.name, server.description, linkVars)
         : undefined;
 
     const entry: MCPServerMetadata = {
@@ -274,12 +296,7 @@ export function translate(
         entry,
         linkProvider: annotation?.providerId
           ? undefined
-          : buildApiKeyProvider(
-              id,
-              server.name,
-              server.description,
-              linkVars.map((v) => v.name),
-            ),
+          : buildApiKeyProvider(id, server.name, server.description, linkVars),
       };
     }
 
