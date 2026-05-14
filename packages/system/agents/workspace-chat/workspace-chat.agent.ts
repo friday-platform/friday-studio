@@ -411,25 +411,36 @@ ${entries.join("\n")}
 /**
  * Build workspace-chat system prompt blocks.
  *
- * Returns three logical tiers matching the prompt-cache layout:
+ * Returns four logical tiers matching the prompt-cache layout:
  *   - block1: weeks-stable static instructions (prompt.txt)
- *   - block2: workspace-stable inventory + identity (workspace XML,
- *     skills, integrations, user identity)
+ *   - block2: workspace-stable identity (skills index, user identity)
  *   - block3: session-stable turn-context (onboarding clause, user profile)
+ *   - block4: volatile workspace inventory — the `<workspace>` XML
+ *     (agents, signals, jobs, MCP servers). Pulled out of block2 because
+ *     it changes on every `upsert_*` / `publish_draft`; co-locating it
+ *     with the 1h-TTL identity tier burned a full-rate cache write on
+ *     every workspace mutation.
  *
- * Block 4 (memory + temporal facts) is NOT in the system prompt — it
- * rides as a synthetic user-message preface so the system stays
+ * The cache salt rides on block2 (not block4): a "force fresh" bump must
+ * bust *everything*, and a change at block2's prefix cascades through
+ * block3 and block4 too. Salting only block4 would leave the skills /
+ * identity breakpoint cached.
+ *
+ * The turn preface (memory + temporal facts) is NOT in the system prompt
+ * — it rides as a synthetic user-message preface so the system stays
  * byte-stable across turns and the Anthropic prompt cache hits the
- * prefix.
+ * prefix. It is not a cache breakpoint.
  *
- * Anthropic supports up to 4 cache breakpoints per request. We wire
- * one each at block1/block2/block3 boundaries (see
- * `buildSystemMessages`), leaving headroom for a turn-level marker.
+ * Anthropic supports up to 4 cache breakpoints per request. We wire one
+ * each at the block1/block2/block3/block4 boundaries (see the Anthropic
+ * branch of the streamText setup). TTLs are non-increasing across the
+ * sequence (1h, 1h, 5m, 5m) as Anthropic requires.
  */
 export interface SystemBlocks {
   block1: string;
   block2: string;
   block3: string;
+  block4: string;
 }
 
 export function getSystemBlocks(
@@ -443,17 +454,18 @@ export function getSystemBlocks(
      * Optional cache-salt tag prepended to block 2. The /debug page
      * "force fresh next turn" button bumps a workspace-scoped salt;
      * the chat handler reads it and threads the rendered tag here so
-     * a one-byte change at block 2's prefix invalidates the cached
-     * breakpoint for every chat in the workspace. Empty string when
-     * the workspace has never bumped — no behavior change in that
-     * case.
+     * a one-byte change at block 2's prefix invalidates that breakpoint
+     * — and, because block 3 and block 4 sit behind it, the whole
+     * cached prefix — for every chat in the workspace. Empty string
+     * when the workspace has never bumped — no behavior change then.
      */
     cacheSaltTag?: string;
   },
 ): SystemBlocks {
+  // The salt leads block 2 so a "force fresh" bump cascades: changing
+  // block 2's prefix invalidates block 3 and block 4 along with it.
   const block2Parts: string[] = [];
   if (options?.cacheSaltTag) block2Parts.push(options.cacheSaltTag.trimEnd());
-  block2Parts.push(workspaceSection);
   if (options?.skills) block2Parts.push(options.skills);
   if (options?.userIdentity) block2Parts.push(options.userIdentity);
 
@@ -461,10 +473,13 @@ export function getSystemBlocks(
   if (options?.onboarding) block3Parts.push(options.onboarding);
   if (options?.userProfile) block3Parts.push(options.userProfile);
 
+  const block4Parts: string[] = [workspaceSection];
+
   return {
     block1: SYSTEM_PROMPT,
     block2: block2Parts.join("\n\n"),
     block3: block3Parts.join("\n\n"),
+    block4: block4Parts.join("\n\n"),
   };
 }
 
@@ -474,9 +489,58 @@ export function getSystemBlocks(
  * providers see the full prompt as one string.
  */
 export function flattenSystemBlocks(blocks: SystemBlocks): string {
-  const parts = [blocks.block1, blocks.block2];
+  const parts = [blocks.block1];
+  if (blocks.block2) parts.push(blocks.block2);
   if (blocks.block3) parts.push(blocks.block3);
+  if (blocks.block4) parts.push(blocks.block4);
   return parts.join("\n\n");
+}
+
+/**
+ * Build the Anthropic system-message array — one `role: "system"` message
+ * per non-empty block, each carrying its own `cache_control` breakpoint.
+ *
+ * Anthropic enforces non-increasing TTL across the tools → system →
+ * messages sequence (a 1h breakpoint cannot follow a 5m one). Block 1 and
+ * block 2 are weeks-/workspace-stable so they take the 1h TTL; block 3
+ * (session-stable) and block 4 (volatile workspace inventory, rewritten on
+ * every `upsert_*`/`publish_draft`) take the cheaper 5m TTL. The emitted
+ * order is 1h, 1h, 5m, 5m — non-increasing, so the rule holds.
+ *
+ * block2 may be empty (a workspace with no skills and no stored user
+ * identity); it's skipped rather than emitted as an empty system message.
+ * block3 is likewise conditional. block1 and block4 are always present.
+ */
+export function buildAnthropicSystemMessages(blocks: SystemBlocks): ModelMessage[] {
+  const longTtl = { type: "ephemeral", ttl: "1h" } as const;
+  const shortTtl = { type: "ephemeral" } as const;
+  const msgs: ModelMessage[] = [
+    {
+      role: "system",
+      content: blocks.block1,
+      providerOptions: { anthropic: { cacheControl: longTtl } },
+    },
+  ];
+  if (blocks.block2) {
+    msgs.push({
+      role: "system",
+      content: blocks.block2,
+      providerOptions: { anthropic: { cacheControl: longTtl } },
+    });
+  }
+  if (blocks.block3) {
+    msgs.push({
+      role: "system",
+      content: blocks.block3,
+      providerOptions: { anthropic: { cacheControl: shortTtl } },
+    });
+  }
+  msgs.push({
+    role: "system",
+    content: blocks.block4,
+    providerOptions: { anthropic: { cacheControl: shortTtl } },
+  });
+  return msgs;
 }
 
 /**
@@ -1066,11 +1130,13 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
         const allTools = composeTools(primaryTools, foregroundToolSets);
         allToolsRef = allTools;
 
-        // Block 4 (turn-local): memory + artifacts + temporal facts injected
-        // as a synthetic user-message preface, NOT in the system prompt.
-        // Keeps the system prompt byte-stable across turns so the Anthropic
-        // prompt cache hits on the prefix; per-turn variation rides
-        // alongside the user's actual message.
+        // Turn preface (turn-local): memory + artifacts + temporal facts
+        // injected as a synthetic user-message preface, NOT in the system
+        // prompt. Keeps the system prompt byte-stable across turns so the
+        // Anthropic prompt cache hits on the prefix; per-turn variation rides
+        // alongside the user's actual message. Distinct from system block 4
+        // (the volatile workspace inventory) — the preface is not a cache
+        // breakpoint, it's a turn-local user message.
         //
         // Each section wraps in `<retrieved_content>` with a provenance
         // attribute so the model applies the `<retrieved_content_hygiene>`
@@ -1081,31 +1147,31 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           logger,
         );
         const datetimeMessage = buildTemporalFacts(session.datetime);
-        const block4FetchedAt = new Date().toISOString();
-        const block4Entries: PrefaceEntry[] = [];
+        const prefaceFetchedAt = new Date().toISOString();
+        const prefaceEntries: PrefaceEntry[] = [];
         if (memoryBlocks.length > 0) {
-          block4Entries.push({
+          prefaceEntries.push({
             source: "user-authored",
             origin: "memory:workspace-stores",
             body: memoryBlocks.join("\n\n"),
-            fetched_at: block4FetchedAt,
+            fetched_at: prefaceFetchedAt,
           });
         }
         if (artifactBlocks.length > 0) {
-          block4Entries.push({
+          prefaceEntries.push({
             source: "user-authored",
             origin: "artifacts:session",
             body: artifactBlocks.join("\n\n"),
-            fetched_at: block4FetchedAt,
+            fetched_at: prefaceFetchedAt,
           });
         }
-        block4Entries.push({
+        prefaceEntries.push({
           source: "system-config",
           origin: "temporal",
           body: datetimeMessage,
-          fetched_at: block4FetchedAt,
+          fetched_at: prefaceFetchedAt,
         });
-        const block4Preface = composePreface(block4Entries);
+        const turnPreface = composePreface(prefaceEntries);
 
         const onboardingClause = buildOnboardingClause(profileState);
         const userProfileClause = buildUserProfileClause(profileState);
@@ -1152,15 +1218,17 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
         if (session.streamId) {
           // Capture each cache block separately so the chat-inspector can
           // render the breakpoint layout the model actually saw — block 1
-          // (weeks-stable), block 2 (workspace-stable), block 3 (session-
-          // stable, optional), and block 4 (volatile preface). The
-          // operator can spot prefix drift by comparing block-by-block
-          // across turns instead of squinting at a single 26K-char blob.
-          const capturedSystemMessages: string[] = [systemBlocks.block1, systemBlocks.block2];
-          if (systemBlocks.block3) {
-            capturedSystemMessages.push(systemBlocks.block3);
-          }
-          capturedSystemMessages.push(block4Preface);
+          // (weeks-stable), block 2 (workspace-stable identity, optional),
+          // block 3 (session-stable, optional), block 4 (volatile workspace
+          // inventory), then the turn preface (memory + temporal, not a
+          // breakpoint). The operator can spot prefix drift by comparing
+          // block-by-block across turns instead of squinting at a single
+          // 26K-char blob.
+          const capturedSystemMessages: string[] = [systemBlocks.block1];
+          if (systemBlocks.block2) capturedSystemMessages.push(systemBlocks.block2);
+          if (systemBlocks.block3) capturedSystemMessages.push(systemBlocks.block3);
+          capturedSystemMessages.push(systemBlocks.block4);
+          capturedSystemMessages.push(turnPreface);
           ChatStorage.setSystemPromptContext(
             session.streamId,
             { systemMessages: capturedSystemMessages },
@@ -1212,24 +1280,24 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           return !hasReasoning;
         });
 
-        // Block 4 preface (memory + datetime) injected as a synthetic
+        // Turn preface (memory + datetime) injected as a synthetic
         // user-message at position 0 — NOT inside `system`. This keeps
         // `system` byte-stable across turns so the Anthropic prompt
         // cache hits the prefix; turn-local variation lives in the
         // messages array where it doesn't poison the cacheable prefix.
         // The synthetic message is ephemeral — it isn't appended to
         // ChatStorage so it doesn't accumulate in the conversation.
-        const messagesWithBlock4Preface: AtlasUIMessage[] = block4Preface
+        const messagesWithTurnPreface: AtlasUIMessage[] = turnPreface
           ? [
               {
                 id: crypto.randomUUID(),
                 role: "user",
-                parts: [{ type: "text", text: block4Preface }],
+                parts: [{ type: "text", text: turnPreface }],
               },
               ...sanitizedMessages,
             ]
           : sanitizedMessages;
-        const modelMessages = await convertToModelMessages(messagesWithBlock4Preface, {
+        const modelMessages = await convertToModelMessages(messagesWithTurnPreface, {
           convertDataPart: (part) => {
             if (part.type === "data-credential-linked") {
               const data = (
@@ -1261,37 +1329,7 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
         // every prefix wrote fresh.
         const isAnthropic = conversationalModel.provider.startsWith("anthropic");
         const systemModelMessages: ModelMessage[] = isAnthropic
-          ? (() => {
-              // Anthropic enforces non-increasing TTL across the
-              // tools → system → messages block sequence — a 1h
-              // cache_control cannot come after a 5m one — but the
-              // reverse (1h, 1h, 5m, ...) is valid. Block 1 and 2 are
-              // weeks-stable / workspace-stable; block 3 is session-
-              // stable so it gets the cheaper 5m TTL (~0.6× write cost
-              // vs 1h).
-              const longTtl = { type: "ephemeral", ttl: "1h" } as const;
-              const shortTtl = { type: "ephemeral" } as const;
-              const msgs: ModelMessage[] = [
-                {
-                  role: "system",
-                  content: systemBlocks.block1,
-                  providerOptions: { anthropic: { cacheControl: longTtl } },
-                },
-                {
-                  role: "system",
-                  content: systemBlocks.block2,
-                  providerOptions: { anthropic: { cacheControl: longTtl } },
-                },
-              ];
-              if (systemBlocks.block3) {
-                msgs.push({
-                  role: "system",
-                  content: systemBlocks.block3,
-                  providerOptions: { anthropic: { cacheControl: shortTtl } },
-                });
-              }
-              return msgs;
-            })()
+          ? buildAnthropicSystemMessages(systemBlocks)
           : [];
 
         try {

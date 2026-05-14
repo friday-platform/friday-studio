@@ -14,6 +14,7 @@ import { client } from "@atlas/client/v2";
 import type { Logger } from "@atlas/logger";
 import { jsonSchema, tool } from "ai";
 import { z } from "zod";
+import { invalidateBlock2 } from "../block2-cache.ts";
 
 const StructuralIssueSchema = z.object({ code: z.string(), path: z.string(), message: z.string() });
 
@@ -162,6 +163,10 @@ export function createBoundUpsertTools(logger: Logger, workspaceId: string): Atl
 
       const body = await directRes.json();
       logger.info(`Direct ${kind} upsert succeeded`, { workspaceId: targetWorkspaceId, id });
+      // The workspace structure just changed — drop the Block 2 cache so the
+      // next turn rebuilds the `<workspace>` section and job-as-tools from
+      // fresh config instead of a stale (up to 5 min) snapshot.
+      invalidateBlock2(targetWorkspaceId);
       return {
         ok: body.ok,
         diff: body.diff ?? {},
@@ -191,6 +196,9 @@ export function createBoundUpsertTools(logger: Logger, workspaceId: string): Atl
 
     const body = await draftRes.json();
     logger.info(`Draft ${kind} upsert succeeded`, { workspaceId: targetWorkspaceId, id });
+    // Invalidate even on draft writes — cheap, and keeps the cache honest if
+    // the config endpoint ever starts surfacing draft state.
+    invalidateBlock2(targetWorkspaceId);
     return {
       ok: body.ok,
       diff: body.diff ?? {},

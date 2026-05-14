@@ -77,15 +77,28 @@ with `path: /stale`) and reference it in both `triggers` and
 
 ## When the job tool genuinely isn't bound
 
-The "tool isn't bound" hypothesis is real for:
-- Jobs that exist in `workspace.yml` but the runtime hasn't
-  picked them up yet (workspace was just edited).
-- Jobs whose `triggers` list is empty.
+Distinct from the bare-`{}` case above: here the tool name does not
+exist in your tool set at all — calling it returns
+`Model tried to call unavailable tool '<name>'`.
+
+The usual cause: **you created the job this session.** Job tools are
+bound from a config snapshot taken when the chat session started, so a
+job you just made via `upsert_job` has no dedicated tool until the next
+session. This is expected, not a bug — and you do NOT need to tell the
+user to send another message.
+
+**Fix: run it with `trigger_signal`.** Call
+`trigger_signal({ signalId, payload })` with the job's trigger signal
+id. That fires the job through the signal endpoint and blocks until it
+completes — the in-session equivalent of the bound tool.
+
+Other real causes (rare):
+- Jobs whose `triggers` list is empty — no signal, nothing to fire.
 - Jobs whose signal is unknown to the runtime.
 
-Diagnose by calling `list_jobs(workspaceId)`. If the job appears in
-the list and has triggers, it IS bound. If not, fix the workspace
-config.
+Diagnose by calling `list_jobs(workspaceId)`. If the job appears with a
+trigger signal, invoke it via `trigger_signal` with that signal id. If
+it has no trigger, fix the workspace config.
 
 ## Cross-references
 

@@ -3,6 +3,7 @@ import { client } from "@atlas/client/v2";
 import type { Logger } from "@atlas/logger";
 import { tool } from "ai";
 import { z } from "zod";
+import { invalidateBlock2 } from "../block2-cache.ts";
 
 const DisableInputSchema = z.object({
   serverId: z
@@ -84,6 +85,10 @@ export function createDisableMcpServerTool(workspaceId: string, logger: Logger):
               serverId,
               force,
             });
+            // The workspace's MCP server list just changed — drop the
+            // Block 2 cache so the chat's `<workspace>` section reflects
+            // it on the next turn instead of a stale snapshot.
+            invalidateBlock2(effectiveWorkspaceId);
             return {
               success: true,
               removed: serverId,
