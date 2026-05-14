@@ -7,6 +7,14 @@ description: "Author FSM workspace jobs. Use when creating, editing, or debuggin
 
 Validate cleanly. Run reliably. Load before authoring any `fsm:` job.
 
+**Load `writing-workspace-signals` alongside this skill — always, not
+conditionally.** A job is wired to a trigger signal; authoring one means
+authoring the other. Signal `provider` names (`schedule`, `http`, `fs-watch`,
+`slack`, …) and their `config` shapes live in that skill. Guessing them —
+inventing a `cron` provider, passing unrecognized `config` keys — is the most
+common first-failure when building a workspace, and this skill does not
+duplicate those shapes.
+
 ## Checklist
 
 - [ ] Job uses `fsm:` — `execution:` silently skipped by runtime
@@ -1224,6 +1232,6 @@ Removes panic-driven shotgun debugging producing orphaned agents, malformed FSMs
 
 ## Companion skills
 
-- `writing-workspace-signals` — Signal authoring: JSON Schema payloads, provider configs, HTTP path collisions, cron validation. Load before creating or editing any signal that accepts parameters or needs webhook endpoint.
+- `writing-workspace-signals` — Signal authoring: provider names + `config` shapes, JSON Schema payloads, HTTP path collisions, cron validation. Load alongside this skill for *any* job — the trigger signal is part of the job, and provider/config shapes are not duplicated here.
 - `workspace-api` — Workspace building workflow: draft mode, CRUD, validation, reachability model, tool selection.
 - `writing-to-memory` — Artifact + memory reference pattern for the cross-session bridge described above. Load when a job needs to hand large or persistent data to a later session.
