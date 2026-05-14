@@ -34,8 +34,25 @@ const SCHEME = TLS ? "https" : "http";
 // Daemon and tunnel scheme depend on their own s2s cert env, not on this
 // origin's browser cert. They're separate listeners with separate certs.
 const S2S_SCHEME = process.env.FRIDAY_TLS_CERT && process.env.FRIDAY_TLS_KEY ? "https" : "http";
-const DAEMON_URL = process.env.FRIDAYD_URL ?? `${S2S_SCHEME}://localhost:8080`;
-const TUNNEL_URL = process.env.EXTERNAL_TUNNEL_URL ?? `${S2S_SCHEME}://localhost:9090`;
+// Auto-upgrade http→https when s2s is on: the .env shipped by the installer
+// pins these to http:// (the pre-TLS default) and the daemon's TLS listener
+// rejects cleartext requests with "Response does not match HTTP/1.1
+// protocol". Same pattern as packages/openapi-client/src/utils.ts and
+// tools/webhook-tunnel/config.go — keep them in lockstep. Never downgrade
+// https→http: an explicit https config means the operator knows their setup.
+const DAEMON_URL = upgradeToS2sScheme(
+  process.env.FRIDAYD_URL ?? `${S2S_SCHEME}://localhost:8080`,
+);
+const TUNNEL_URL = upgradeToS2sScheme(
+  process.env.EXTERNAL_TUNNEL_URL ?? `${S2S_SCHEME}://localhost:9090`,
+);
+
+function upgradeToS2sScheme(url: string): string {
+  if (S2S_SCHEME === "https" && url.startsWith("http://")) {
+    return "https://" + url.slice("http://".length);
+  }
+  return url;
+}
 
 // Resolve `./build` relative to this source file, so the path is correct
 // both when running via `deno run` from any cwd and when running as a
@@ -96,3 +113,44 @@ Deno.serve(
   TLS ? { port: PORT, hostname: HOST, cert: TLS.cert, key: TLS.key } : { port: PORT, hostname: HOST },
   app.fetch,
 );
+
+// OAuth callback shim. Gemini CLI Workspace Extension's Cloud Function
+// (the public OAuth exchanger our Google providers piggy-back on for
+// the verified consent screen) does a literal string check on the
+// `state.uri` hostname — only `localhost` and `127.0.0.1` are allowed;
+// see https://github.com/gemini-cli-extensions/workspace/blob/main/
+// cloud_function/index.js#L91-L104. The desktop install opens the
+// browser at `https://local.hellofriday.ai:PORT` because that's the
+// only hostname the browser-trusted cert covers, so a callback URL
+// derived from X-Forwarded-Host (e.g. local.hellofriday.ai:15200)
+// fails that check and the Cloud Function falls back to its manual
+// JSON-paste page — surfaces to the user as "what the fuck is this
+// screen". The shim accepts the callback hop on plain HTTP at
+// 127.0.0.1 (Cloud-Function-compatible host, no cert required) and
+// 302-redirects to the same path + query on the TLS playground
+// origin so the rest of the existing /api/daemon/api/link/v1/callback
+// chain runs unchanged.
+//
+// The shim is intentionally minimal: it accepts only the canonical
+// callback path prefix and rejects everything else with 404. No body,
+// no method other than GET — anything weird is somebody probing us,
+// not the OAuth flow.
+const SHIM_PORT = Number(process.env.PLAYGROUND_OAUTH_SHIM_PORT ?? "0");
+const SHIM_PATH_PREFIX = "/api/daemon/api/link/v1/callback/";
+if (TLS && SHIM_PORT > 0) {
+  // The TLS origin we redirect TO — must match the cert's CN so the
+  // browser doesn't flash a warning between the Cloud Function and
+  // Link's callback handler.
+  const tlsOriginHost = process.env.PLAYGROUND_TLS_HOSTNAME ?? "local.hellofriday.ai";
+  const tlsOrigin = `https://${tlsOriginHost}:${PORT}`;
+  console.log(`[playground] oauth-shim listening on http://127.0.0.1:${SHIM_PORT}`);
+  console.log(`[playground] oauth-shim redirects → ${tlsOrigin}${SHIM_PATH_PREFIX}*`);
+  Deno.serve({ port: SHIM_PORT, hostname: "127.0.0.1" }, (req) => {
+    const url = new URL(req.url);
+    if (req.method !== "GET" || !url.pathname.startsWith(SHIM_PATH_PREFIX)) {
+      return new Response("not found", { status: 404 });
+    }
+    const target = `${tlsOrigin}${url.pathname}${url.search}`;
+    return Response.redirect(target, 302);
+  });
+}

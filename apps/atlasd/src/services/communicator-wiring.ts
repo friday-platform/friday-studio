@@ -59,8 +59,32 @@ function s2sScheme(): "http" | "https" {
   return process.env.FRIDAY_TLS_CERT && process.env.FRIDAY_TLS_KEY ? "https" : "http";
 }
 
+/**
+ * Auto-upgrade `http://` → `https://` when the s2s mesh is on. The
+ * installer wizard wrote `LINK_SERVICE_URL=http://localhost:13100`
+ * (and friends) before TLS support landed; that value lingers in
+ * `.env` after the launcher mints s2s certs and the link listener
+ * flips to TLS, so a literal read of the env var sends cleartext
+ * into a TLS listener — every call surfaces as "Link service is
+ * unavailable" in the chat UI. Same fix the playground proxy
+ * (tools/agent-playground/static-server.ts), the openapi-client
+ * (packages/openapi-client/src/utils.ts:63) and webhook-tunnel
+ * (tools/webhook-tunnel/config.go:55) apply for FRIDAYD_URL.
+ *
+ * Never downgrade https→http — an explicit https value means the
+ * operator chose it.
+ */
+function upgradeToS2sScheme(url: string): string {
+  if (s2sScheme() === "https" && url.startsWith("http://")) {
+    return "https://" + url.slice("http://".length);
+  }
+  return url;
+}
+
 function getLinkServiceUrl(): string {
-  return process.env.LINK_SERVICE_URL ?? `${s2sScheme()}://localhost:3100`;
+  const explicit = process.env.LINK_SERVICE_URL;
+  if (explicit) return upgradeToS2sScheme(explicit);
+  return `${s2sScheme()}://localhost:3100`;
 }
 
 /**
@@ -69,7 +93,9 @@ function getLinkServiceUrl(): string {
  * for non-default ports / dev rigs. Scheme follows the s2s mesh.
  */
 function getWebhookTunnelUrl(): string {
-  return process.env.WEBHOOK_TUNNEL_URL ?? `${s2sScheme()}://localhost:9090`;
+  const explicit = process.env.WEBHOOK_TUNNEL_URL;
+  if (explicit) return upgradeToS2sScheme(explicit);
+  return `${s2sScheme()}://localhost:9090`;
 }
 
 const TunnelStatusSchema = z.object({ url: z.string().url().nullable().optional() });

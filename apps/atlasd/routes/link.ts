@@ -37,11 +37,23 @@ linkRoutes.use("/*", devOnlyMiddleware());
 // https. Without TLS env, fall back to http on loopback — the
 // pre-s2s-mesh behavior.
 const linkScheme = process.env.FRIDAY_TLS_CERT && process.env.FRIDAY_TLS_KEY ? "https" : "http";
-const LINK_SERVICE_URL =
-  process.env.LINK_SERVICE_URL ??
-  (process.env.FRIDAY_PORT_LINK
+// Auto-upgrade http:// → https:// when s2s is on — see the matching
+// comment in apps/atlasd/src/services/communicator-wiring.ts. The
+// installer wizard pins LINK_SERVICE_URL=http://localhost:13100 on
+// installs that predate TLS, so a literal env-var read here would
+// send cleartext into link's TLS listener and every chat tool call
+// routed through link surfaces as "Link service is unavailable".
+function upgradeLinkScheme(url: string): string {
+  if (linkScheme === "https" && url.startsWith("http://")) {
+    return "https://" + url.slice("http://".length);
+  }
+  return url;
+}
+const LINK_SERVICE_URL = process.env.LINK_SERVICE_URL
+  ? upgradeLinkScheme(process.env.LINK_SERVICE_URL)
+  : process.env.FRIDAY_PORT_LINK
     ? `${linkScheme}://localhost:${process.env.FRIDAY_PORT_LINK}`
-    : `${linkScheme}://localhost:3100`);
+    : `${linkScheme}://localhost:3100`;
 const PROXY_PREFIX = "/api/link";
 
 /**

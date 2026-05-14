@@ -51,37 +51,42 @@ func failed(name string, restarts int) types.ProcessState {
 	}
 }
 
-// TestDeriveStatus_Running confirms the Running+Ready / Running+NotReady
-// → healthy / starting mapping. The wizard's checklist depends on
-// this — a service with no health probe (e.g. a future addition with
-// HasHealthProbe=false) treats Running as immediately healthy so it
-// can never get stuck in 'starting'.
+// TestDeriveStatus_Running confirms the Running mapping is driven by
+// the native readinessRunner's customReady verdict, not process-
+// compose's Health field (which is unset for our services because we
+// removed ReadinessProbe). The wizard's checklist depends on the
+// customReady flip to transition a row from amber to green.
 func TestDeriveStatus_Running(t *testing.T) {
 	cases := []struct {
-		name string
-		ps   types.ProcessState
-		want string
+		name        string
+		ps          types.ProcessState
+		customReady bool
+		want        string
 	}{
 		{
-			"running ready",
-			runningReady("playground"),
+			"running custom-ready true → healthy",
+			types.ProcessState{Name: "playground", Status: types.ProcessStateRunning},
+			true,
 			statusHealthy,
 		},
 		{
-			"running not ready",
-			runningNotReady("playground"),
+			"running custom-ready false → starting",
+			types.ProcessState{Name: "playground", Status: types.ProcessStateRunning},
+			false,
 			statusStarting,
 		},
 		{
-			"running no probe",
-			types.ProcessState{Name: "x", Status: types.ProcessStateRunning},
-			statusHealthy,
+			"running with stale HasHealthProbe metadata is irrelevant",
+			runningReady("playground"),
+			false,
+			statusStarting,
 		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if got := deriveStatus(c.ps); got != c.want {
-				t.Errorf("deriveStatus(%+v) = %q, want %q", c.ps, got, c.want)
+			if got := deriveStatus(c.ps, c.customReady); got != c.want {
+				t.Errorf("deriveStatus(%+v, ready=%v) = %q, want %q",
+					c.ps, c.customReady, got, c.want)
 			}
 		})
 	}
@@ -99,7 +104,7 @@ func TestDeriveStatus_Pending(t *testing.T) {
 	for _, status := range cases {
 		t.Run(status, func(t *testing.T) {
 			ps := types.ProcessState{Name: "x", Status: status}
-			if got := deriveStatus(ps); got != statusPending {
+			if got := deriveStatus(ps, false); got != statusPending {
 				t.Errorf("deriveStatus(Status=%s) = %q, want %q", status, got, statusPending)
 			}
 		})
@@ -112,13 +117,13 @@ func TestDeriveStatus_Pending(t *testing.T) {
 // the wizard renders the in-progress restart cycle as amber rather
 // than red.
 func TestDeriveStatus_FailedTerminal(t *testing.T) {
-	if got := deriveStatus(failed("x", 4)); got != statusStarting {
+	if got := deriveStatus(failed("x", 4), false); got != statusStarting {
 		t.Errorf("Restarts=4 should still be starting, got %q", got)
 	}
-	if got := deriveStatus(failed("x", 5)); got != statusFailed {
+	if got := deriveStatus(failed("x", 5), false); got != statusFailed {
 		t.Errorf("Restarts=5 should be failed, got %q", got)
 	}
-	if got := deriveStatus(failed("x", 99)); got != statusFailed {
+	if got := deriveStatus(failed("x", 99), false); got != statusFailed {
 		t.Errorf("Restarts=99 should be failed, got %q", got)
 	}
 }
@@ -136,7 +141,7 @@ func TestDeriveStatus_TransientStarting(t *testing.T) {
 	} {
 		t.Run(status, func(t *testing.T) {
 			ps := types.ProcessState{Name: "x", Status: status}
-			if got := deriveStatus(ps); got != statusStarting {
+			if got := deriveStatus(ps, false); got != statusStarting {
 				t.Errorf("deriveStatus(Status=%s) = %q, want starting", status, got)
 			}
 		})
@@ -150,6 +155,10 @@ func TestDeriveStatus_TransientStarting(t *testing.T) {
 func TestHealthCache_FirstUpdateSeedsServices(t *testing.T) {
 	var sd atomic.Bool
 	c := NewHealthCache(&sd)
+	// Seed the readinessRunner side of the contract: nats-server is
+	// ready, link is not. SetReady before Update is fine — Update
+	// reads customReady on every tick.
+	c.SetReady("nats-server", true)
 	c.Update(makeStates(
 		runningReady("nats-server"),
 		pending("friday"),
@@ -184,8 +193,9 @@ func TestHealthCache_TransitionUpdatesSinceSecs(t *testing.T) {
 	var sd atomic.Bool
 	c := NewHealthCache(&sd)
 
-	// First observation — service is starting.
-	c.Update(makeStates(runningNotReady("playground")))
+	// First observation — service is running but the native
+	// readinessRunner hasn't reported ready yet, so it shows starting.
+	c.Update(makeStates(runningReady("playground")))
 
 	// Sleep enough for SinceSecs to roll past 0 if the service
 	// stayed in starting. Then transition to healthy.
@@ -193,13 +203,14 @@ func TestHealthCache_TransitionUpdatesSinceSecs(t *testing.T) {
 
 	// If we re-Update with the SAME state, transitionAt must NOT
 	// move — SinceSecs reflects how long it's been starting.
-	c.Update(makeStates(runningNotReady("playground")))
+	c.Update(makeStates(runningReady("playground")))
 	got, _, _ := c.Snapshot()
 	if got[0].SinceSecs < 1 {
 		t.Fatalf("expected SinceSecs >= 1 for unchanged status, got %d", got[0].SinceSecs)
 	}
 
-	// Now transition. SinceSecs must reset to 0.
+	// Native probe reports ready. SinceSecs must reset to 0.
+	c.SetReady("playground", true)
 	c.Update(makeStates(runningReady("playground")))
 	got, _, _ = c.Snapshot()
 	if got[0].Status != statusHealthy {
@@ -218,6 +229,8 @@ func TestHealthCache_TransitionUpdatesSinceSecs(t *testing.T) {
 func TestHealthCache_SnapshotIsolated(t *testing.T) {
 	var sd atomic.Bool
 	c := NewHealthCache(&sd)
+	c.SetReady("a", true)
+	c.SetReady("b", true)
 	c.Update(makeStates(runningReady("a"), runningReady("b")))
 
 	first, _, _ := c.Snapshot()
@@ -244,6 +257,8 @@ func TestHealthCache_AllHealthyAndAnyFailed(t *testing.T) {
 		t.Error("empty cache should not have AnyFailed")
 	}
 
+	c.SetReady("a", true)
+	c.SetReady("b", true)
 	c.Update(makeStates(runningReady("a"), runningReady("b")))
 	if !c.AllHealthy() {
 		t.Error("two-healthy cache should be AllHealthy")
@@ -252,6 +267,9 @@ func TestHealthCache_AllHealthyAndAnyFailed(t *testing.T) {
 		t.Error("two-healthy cache should not have AnyFailed")
 	}
 
+	// Flip b's native-probe verdict back to not-ready; the state-machine
+	// path no longer reads process-compose's Health field.
+	c.SetReady("b", false)
 	c.Update(makeStates(runningReady("a"), runningNotReady("b")))
 	if c.AllHealthy() {
 		t.Error("one-not-ready cache should not be AllHealthy")
@@ -315,7 +333,9 @@ func TestHealthCache_Subscribe_NotifyOnChange(t *testing.T) {
 	case <-time.After(50 * time.Millisecond):
 	}
 
-	// Transitioning fires a tick.
+	// Transitioning fires a tick. The native readinessRunner reports
+	// ready; the next Update sees status flip to healthy.
+	c.SetReady("a", true)
 	c.Update(makeStates(runningReady("a")))
 	select {
 	case <-ch:
@@ -356,13 +376,12 @@ func TestHealthCache_Subscribe_SlowSubscriber(t *testing.T) {
 	go func() {
 		// 100 transitions back and forth. If the writer were
 		// blocking on the slow subscriber's full buffer, this
-		// would never complete.
+		// would never complete. Flipping customReady alongside
+		// the Update ensures each call is an actual transition;
+		// otherwise our new derivation path would coalesce them.
 		for i := range 100 {
-			if i%2 == 0 {
-				c.Update(makeStates(runningNotReady("a")))
-			} else {
-				c.Update(makeStates(runningReady("a")))
-			}
+			c.SetReady("a", i%2 != 0)
+			c.Update(makeStates(runningReady("a")))
 		}
 		close(done)
 	}()
@@ -393,11 +412,13 @@ func TestHealthCache_Subscribe_SlowDoesNotStarveFast(t *testing.T) {
 	defer c.Unsubscribe(fast)
 	// Fill slow's buffer (capacity 1) so subsequent notifies hit
 	// the non-blocking-send default branch on it.
-	c.Update(makeStates(runningNotReady("a")))
+	c.Update(makeStates(runningReady("a")))
 
-	// Drive a transition; both subscribers' buffers should now be
-	// full (slow had one queued already → coalesced; fast just got
-	// the new one).
+	// Drive a transition (customReady flip) so the next Update is a
+	// real state change; both subscribers' buffers should now be full
+	// (slow had one queued already → coalesced; fast just got the
+	// new one).
+	c.SetReady("a", true)
 	c.Update(makeStates(runningReady("a")))
 
 	// Fast must observe the tick within a short bound. If the
@@ -412,11 +433,8 @@ func TestHealthCache_Subscribe_SlowDoesNotStarveFast(t *testing.T) {
 	// slow remains undrained — the writer must keep iterating
 	// through subscribers, not stop at the first blocked one.
 	for i := range 10 {
-		if i%2 == 0 {
-			c.Update(makeStates(runningNotReady("a")))
-		} else {
-			c.Update(makeStates(runningReady("a")))
-		}
+		c.SetReady("a", i%2 != 0)
+		c.Update(makeStates(runningReady("a")))
 		select {
 		case <-fast:
 		case <-time.After(500 * time.Millisecond):
@@ -474,6 +492,8 @@ func TestHealthCache_UptimeSecsMonotonic(t *testing.T) {
 func TestHandleHealth_OK(t *testing.T) {
 	var sd atomic.Bool
 	c := NewHealthCache(&sd)
+	c.SetReady("a", true)
+	c.SetReady("b", true)
 	c.Update(makeStates(runningReady("a"), runningReady("b")))
 
 	req := httptest.NewRequest(http.MethodGet, "/api/launcher-health", nil)
@@ -616,6 +636,7 @@ func TestStartHealthServer_PortInUse(t *testing.T) {
 func TestStartHealthServer_EndToEnd_GET(t *testing.T) {
 	var sd atomic.Bool
 	c := NewHealthCache(&sd)
+	c.SetReady("a", true)
 	c.Update(makeStates(runningReady("a")))
 
 	r := chi.NewRouter()
@@ -690,6 +711,7 @@ func TestHealthStream_DeliversInitialAndTransition(t *testing.T) {
 
 	// Transition. SSE consumer should receive a follow-up event
 	// with all_healthy: true.
+	c.SetReady("playground", true)
 	c.Update(makeStates(runningReady("playground")))
 
 	second, err := readSSEEvent(rd)
@@ -844,6 +866,7 @@ func TestHealthStream_NoDuplicateInitialEmit(t *testing.T) {
 	// Drive the transition. Without the drain, the stream's NEXT
 	// event would be a stale duplicate (still NotReady) and the
 	// real transition would land as a third event.
+	c.SetReady("playground", true)
 	c.Update(makeStates(runningReady("playground")))
 
 	second, err := readSSEEvent(rd)

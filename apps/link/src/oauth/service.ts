@@ -5,6 +5,7 @@
  * @module oauth/service
  */
 
+import { env } from "node:process";
 import { logger } from "@atlas/logger";
 import type { ProviderRegistry } from "../providers/registry.ts";
 import type { OAuthProvider } from "../providers/types.ts";
@@ -36,6 +37,39 @@ class OAuthServiceError extends Error {
     super(message);
     this.name = "OAuthServiceError";
   }
+}
+
+/**
+ * Replace the host+port+scheme of `callbackUrl` with `shimBase`'s, keeping
+ * pathname and query as-is. Used by the delegated flow to satisfy Gemini's
+ * Cloud Function `state.uri` hostname check (literal `localhost` or
+ * `127.0.0.1` only — see github.com/gemini-cli-extensions/workspace
+ * cloud_function/index.js#L91-L104) while still routing the final response
+ * back through the browser-trusted playground origin via the shim 302.
+ *
+ * Returns `callbackUrl` unchanged when `shimBase` is empty / undefined
+ * (dev rigs where the playground itself binds on `localhost` — the
+ * Cloud Function accepts that without a shim).
+ *
+ * Exported for unit-test access only.
+ */
+export function rewriteToOAuthShim(callbackUrl: string, shimBase: string | undefined): string {
+  if (!shimBase) return callbackUrl;
+  let cb: URL;
+  let shim: URL;
+  try {
+    cb = new URL(callbackUrl);
+    shim = new URL(shimBase);
+  } catch {
+    // Either URL is malformed — fall back to original behavior rather
+    // than producing a nonsense state.uri. The Cloud Function will
+    // reject it, but at least the failure mode matches what existed
+    // before this rewrite.
+    return callbackUrl;
+  }
+  cb.protocol = shim.protocol;
+  cb.host = shim.host;
+  return cb.toString();
 }
 
 /**
@@ -109,7 +143,22 @@ export class OAuthService {
         u: userId,
       });
 
-      const authorizationUrl = buildDelegatedAuthUrl(config, state, callbackUrl, scopes);
+      // Gemini's Cloud Function (the public exchanger for the verified
+      // consent screen) rejects `state.uri` unless its hostname is the
+      // literal string "localhost" or "127.0.0.1" — see
+      // github.com/gemini-cli-extensions/workspace cloud_function/
+      // index.js#L91-L104. The desktop install proxies through
+      // `https://local.hellofriday.ai:<PORT>` (only name the browser-
+      // trusted cert covers), so the externalBaseUrl-derived callback
+      // URL fails that check and the user lands on the manual JSON-
+      // paste page. When the launcher is up, it sets
+      // FRIDAY_OAUTH_SHIM_BASE to a plain-HTTP loopback URL the
+      // playground's shim listener accepts; the shim 302-redirects to
+      // the real callback on the TLS origin, so the rest of the chain
+      // runs unchanged. Cleared / unset → no shim, use callbackUrl
+      // directly (works in dev where the host is already `localhost`).
+      const finalRedirectUri = rewriteToOAuthShim(callbackUrl, env.FRIDAY_OAUTH_SHIM_BASE);
+      const authorizationUrl = buildDelegatedAuthUrl(config, state, finalRedirectUri, scopes);
       return { authorizationUrl, state };
     }
 
