@@ -31,8 +31,8 @@ export interface ImageAttachment {
 /**
  * File attachment: any non-image file the user dropped. Uploaded to
  * `/api/scratch/upload` on drop, which writes the bytes to
- * `{FRIDAY_HOME}/scratch/uploads/{chatId}/{filename}` and returns the
- * absolute path. The chip shows progress while in flight. On submit, the
+ * `{FRIDAY_HOME}/scratch/uploads/{workspaceId}/{chatId}/{md5}` and returns
+ * the absolute path. The chip shows progress while in flight. On submit, the
  * resolved `path` lands in a `data-file-attached` message part — the
  * agent reads from that path via the `read_attachment` tool. No artifact
  * storage, no library entry.
@@ -57,7 +57,7 @@ export type ChatAttachment = ImageAttachment | FileAttachment;
 
 /**
  * Decide whether a dropped/picked file goes through the inline-image path
- * or the artifact-upload path. Returns `null` for files we don't accept.
+ * or the scratch-file upload path. Returns `null` for files we don't accept.
  *
  * The classification walks both `file.type` (browser-reported MIME) and a
  * fallback inferred from the filename extension — browsers report empty
@@ -79,13 +79,13 @@ export function classifyAttachment(file: File): "image" | "file" | null {
   if (file.type.startsWith("image/")) return "image";
   const inferred = inferMimeFromFilename(file.name);
   if (inferred?.startsWith("image/")) return "image";
-  // Any other inferable mime → artifact upload path. The server's
-  // upload route validates mime + magic bytes; this only gates which
+  // Any other inferable mime → scratch upload path. The server's
+  // upload route validates mime + size; this only gates which
   // client path we route the file down.
   if (inferred !== undefined) return "file";
   // Some text-mime files won't match an extension we recognize (e.g.
   // `.todo`, `.notes`). If the browser reported a text mime, treat as
-  // artifact too — the server's magic-byte sniff has the final say.
+  // scratch too — the server's validation has the final say.
   if (file.type && isTextMimeType(file.type)) return "file";
   return null;
 }

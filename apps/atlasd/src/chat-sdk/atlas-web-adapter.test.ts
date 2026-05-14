@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import type { AtlasUIMessageChunk } from "@atlas/agent-sdk";
-import { getFridayHome } from "@atlas/utils/paths.server";
+import { chatUploadsRoot } from "@atlas/utils/paths.server";
 import { type ChatInstance, Message } from "chat";
 import { describe, expect, it, vi } from "vitest";
 import { StreamRegistry } from "../stream-registry.ts";
@@ -183,16 +183,11 @@ describe("AtlasWebAdapter.handleWebhook", () => {
     // is what later opens the file. So these tests verify path-validation
     // + splice ordering, NOT filesystem I/O.
 
-    // Resolve via the same `getFridayHome()` the adapter calls, so the
-    // test's expected path and the adapter's `allowedPrefix` agree
-    // regardless of env (FRIDAY_HOME, HOME, isSystemService, cwd-based
-    // `.atlas/` detection). Computing it independently from
-    // `process.env.HOME` led to a CI-only mismatch when another test
-    // file in the same worker (`migrate-handler.test.ts`) mutated
-    // FRIDAY_HOME between the test building its `uploadPath` and the
-    // adapter resolving its own `uploadsRoot`.
-    function uploadPath(chatId: string, filename: string): string {
-      return join(getFridayHome(), "scratch", "uploads", chatId, filename);
+    // Resolve via the same helper the adapter calls, so the test's expected
+    // path and the adapter's `allowedPrefix` agree regardless of env
+    // (FRIDAY_HOME, HOME, system-service detection).
+    function uploadPath(workspaceId: string, chatId: string, filename: string): string {
+      return join(chatUploadsRoot(workspaceId, chatId), filename);
     }
 
     function buildAttachedMessage(path: string, filename = "scores.csv", mediaType = "text/csv") {
@@ -211,11 +206,11 @@ describe("AtlasWebAdapter.handleWebhook", () => {
     }
 
     it("inlines a self-closing <attachment path=… /> tag before each data-file-attached part", async () => {
-      const { adapter } = createAdapter();
+      const { adapter, workspaceId } = createAdapter();
       const chat = await initAdapterWithMock(adapter);
 
       const chatId = "chat-attached-test";
-      const path = uploadPath(chatId, "scores.csv");
+      const path = uploadPath(workspaceId, chatId, "scores.csv");
 
       const request = new Request("http://localhost", {
         method: "POST",
@@ -254,14 +249,14 @@ describe("AtlasWebAdapter.handleWebhook", () => {
 
     it("refuses cross-chat paths (path-traversal gate)", async () => {
       // A hostile client could craft a data-file-attached part with a path
-      // pointing at another chat's uploads dir (`scratch/uploads/OTHER/`).
+      // pointing at another chat's workspace-scoped uploads dir.
       // The adapter must reject these so the agent's read_attachment tool
       // never sees the path.
-      const { adapter } = createAdapter();
+      const { adapter, workspaceId } = createAdapter();
       const chat = await initAdapterWithMock(adapter);
 
       const chatId = "chat-self";
-      const sneakyPath = uploadPath("chat-other-tenant", "secret.csv");
+      const sneakyPath = uploadPath(workspaceId, "chat-other-tenant", "secret.csv");
 
       const { logger } = await import("@atlas/logger");
       const warnSpy = vi.spyOn(logger, "warn");
@@ -288,6 +283,40 @@ describe("AtlasWebAdapter.handleWebhook", () => {
         expect(warnSpy).toHaveBeenCalledWith(
           "atlas_web_adapter_attached_file_path_rejected",
           expect.objectContaining({ chatId, path: sneakyPath }),
+        );
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+
+    it("refuses same-chat-id paths from a different workspace", async () => {
+      const workspaceA = freshWorkspaceId("tenant-a");
+      const workspaceB = freshWorkspaceId("tenant-b");
+      const { adapter } = createAdapter(workspaceA);
+      const chat = await initAdapterWithMock(adapter);
+
+      const chatId = "chat-same-id";
+      const foreignWorkspacePath = uploadPath(workspaceB, chatId, "secret.csv");
+
+      const { logger } = await import("@atlas/logger");
+      const warnSpy = vi.spyOn(logger, "warn");
+
+      try {
+        const request = new Request("http://localhost", {
+          method: "POST",
+          body: JSON.stringify({
+            id: chatId,
+            message: buildAttachedMessage(foreignWorkspacePath, "secret.csv"),
+          }),
+          headers: { "Content-Type": "application/json" },
+        });
+        await adapter.handleWebhook(request);
+
+        const message = chat.processMessage.mock.calls[0]?.[2] as Message<WebChatPayload>;
+        expect(message.text).not.toContain("<attachment");
+        expect(warnSpy).toHaveBeenCalledWith(
+          "atlas_web_adapter_attached_file_path_rejected",
+          expect.objectContaining({ chatId, path: foreignWorkspacePath }),
         );
       } finally {
         warnSpy.mockRestore();
@@ -326,12 +355,12 @@ describe("AtlasWebAdapter.handleWebhook", () => {
     });
 
     it("inlines one <attachment> line per file when multiple are attached at once", async () => {
-      const { adapter } = createAdapter();
+      const { adapter, workspaceId } = createAdapter();
       const chat = await initAdapterWithMock(adapter);
 
       const chatId = "chat-multi-file";
-      const pathA = uploadPath(chatId, "a.txt");
-      const pathB = uploadPath(chatId, "b.txt");
+      const pathA = uploadPath(workspaceId, chatId, "a.txt");
+      const pathB = uploadPath(workspaceId, chatId, "b.txt");
 
       const request = new Request("http://localhost", {
         method: "POST",
@@ -369,12 +398,12 @@ describe("AtlasWebAdapter.handleWebhook", () => {
     });
 
     it("reverse-walk splice keeps indices valid for multiple data-file-attached parts", async () => {
-      const { adapter } = createAdapter();
+      const { adapter, workspaceId } = createAdapter();
       const chat = await initAdapterWithMock(adapter);
 
       const chatId = "chat-multi-attach";
-      const pathA = uploadPath(chatId, "a.txt");
-      const pathB = uploadPath(chatId, "b.txt");
+      const pathA = uploadPath(workspaceId, chatId, "a.txt");
+      const pathB = uploadPath(workspaceId, chatId, "b.txt");
 
       const request = new Request("http://localhost", {
         method: "POST",
@@ -435,11 +464,11 @@ describe("AtlasWebAdapter.handleWebhook", () => {
   });
 
   it("preserves data-file-attached parts on WebChatPayload.uiMessage", async () => {
-    const { adapter } = createAdapter();
+    const { adapter, workspaceId } = createAdapter();
     const chat = await initAdapterWithMock(adapter);
 
     const chatId = "chat-with-files";
-    const uploadsDir = join(getFridayHome(), "scratch", "uploads", chatId);
+    const uploadsDir = chatUploadsRoot(workspaceId, chatId);
     const paths = [`${uploadsDir}/sales.csv`, `${uploadsDir}/notes.txt`];
 
     const multiPartMessage = {

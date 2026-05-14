@@ -101,20 +101,23 @@ async function deleteChat(chatId: string, workspaceId?: string): Promise<Result<
   // succeeds but the GC fails, we've orphaned bytes (also recoverable;
   // a sweep over `scratch/uploads/` for dirs whose chatId no longer
   // exists could be added later).
-  const result = await b().deleteChat(chatId, resolveWorkspaceId(workspaceId));
+  const resolvedWorkspaceId = resolveWorkspaceId(workspaceId);
+  const result = await b().deleteChat(chatId, resolvedWorkspaceId);
   if (!result.ok) return result;
 
-  // GC the chat's scratch-uploads dir — bytes the user attached on the
-  // chat input live at `{FRIDAY_HOME}/scratch/uploads/{chatId}/{md5}`.
-  // Without this they accumulate forever (no other reference exists
-  // once the chat record is gone). `force: true` swallows ENOENT — a
-  // chat with no attachments produces no dir, which is fine.
-  await rm(chatUploadsRoot(chatId), { recursive: true, force: true }).catch(() => {
-    // Non-fatal — log path is via the backend's logger; we don't have
-    // one here. An orphaned dir is recoverable; surface only the chat-
-    // record delete result so the caller's UX isn't a confusing
-    // "delete partially failed."
-  });
+  // GC the chat's scratch-uploads dir — bytes the user attached on the chat
+  // input live at `{FRIDAY_HOME}/scratch/uploads/{workspaceId}/{chatId}/{md5}`.
+  // Without this they accumulate forever (no other reference exists once the
+  // chat record is gone). `force: true` swallows ENOENT — a chat with no
+  // attachments produces no dir, which is fine.
+  await rm(chatUploadsRoot(resolvedWorkspaceId, chatId), { recursive: true, force: true }).catch(
+    () => {
+      // Non-fatal — log path is via the backend's logger; we don't have
+      // one here. An orphaned dir is recoverable; surface only the chat-
+      // record delete result so the caller's UX isn't a confusing
+      // "delete partially failed."
+    },
+  );
   return result;
 }
 

@@ -88,22 +88,17 @@ export function getWorkspaceFilesDir(workspaceId: string): string {
 }
 
 /**
- * Per-chat scratch uploads root —
- * `{FRIDAY_HOME}/scratch/uploads/{chatId}/`. The single canonical helper
- * for this path; the upload route writes here, the adapter validates
- * paths against it, the `read_attachment` tool resolves against it, and
- * `ChatStorage.deleteChat` should GC it. Three sites previously had
- * divergent implementations (one no sanitization, one allowlist with a
- * `"default"` fallback that silently pooled tenants, one deny-list)
- * — this lives here to make sure they stay in sync.
+ * Per-workspace, per-chat scratch uploads root —
+ * `{FRIDAY_HOME}/scratch/uploads/{workspaceId}/{chatId}/`. The single
+ * canonical helper for this path; the upload route writes here, the adapter
+ * validates paths against it, the `read_attachment` tool resolves against it,
+ * and `ChatStorage.deleteChat` should GC it.
  *
- * Caller invariant: `chatId` must already be validated via
- * `isInvalidChatId` from `@atlas/core/artifacts/file-upload`. This
- * function does NOT sanitize the input — passing a malicious chatId
- * here gives you a malicious path. The validation lives at the route /
- * adapter boundary where we can return a meaningful error to the
- * client.
+ * Caller invariant: `workspaceId` and `chatId` must already be validated via
+ * `isInvalidChatId` from `@atlas/core/artifacts/file-upload`. This function
+ * does NOT sanitize inputs — validation lives at the route / adapter boundary
+ * where we can return a meaningful error to the client.
  */
-export function chatUploadsRoot(chatId: string): string {
-  return join(getFridayHome(), "scratch", "uploads", chatId);
+export function chatUploadsRoot(workspaceId: string, chatId: string): string {
+  return join(getFridayHome(), "scratch", "uploads", workspaceId, chatId);
 }

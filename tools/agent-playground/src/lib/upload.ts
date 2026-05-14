@@ -151,10 +151,10 @@ export function uploadFile(
 
 /**
  * Schema returned by `POST /api/scratch/upload` — the absolute path on the
- * daemon's filesystem (typically `{FRIDAY_HOME}/scratch/uploads/{chatId}/
- * {filename}`), plus the validated mime and stored byte count. The agent
- * reads from `path` via the `read_attachment` tool; the chat bubble shows
- * `filename` + `mediaType`.
+ * daemon's filesystem (typically
+ * `{FRIDAY_HOME}/scratch/uploads/{workspaceId}/{chatId}/{md5}`), plus the
+ * validated mime and stored byte count. The agent reads from `path` via the
+ * `read_attachment` tool; the chat bubble shows `filename` + `mediaType`.
  */
 const ScratchUploadResponseSchema = z.object({
   path: z.string(),
@@ -190,8 +190,7 @@ export function uploadFileToScratch(
 
   const formData = new FormData();
   formData.set("file", file);
-  formData.set("chatId", opts.chatId);
-  formData.set("workspaceId", opts.workspaceId);
+  const query = new URLSearchParams({ chatId: opts.chatId, workspaceId: opts.workspaceId });
 
   return new Promise((resolve) => {
     const xhr = new XMLHttpRequest();
@@ -232,7 +231,7 @@ export function uploadFileToScratch(
       opts.abortSignal.addEventListener("abort", () => xhr.abort(), { once: true });
     }
 
-    xhr.open("POST", "/api/daemon/api/scratch/upload");
+    xhr.open("POST", `/api/daemon/api/scratch/upload?${query.toString()}`);
     xhr.send(formData);
   });
 }

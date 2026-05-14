@@ -163,8 +163,11 @@ export const CHUNKED_UPLOAD_TTL_MS = 2 * 60 * 60 * 1000;
 
 export function isInvalidChatId(chatId: string): boolean {
   return (
+    chatId.length === 0 ||
+    chatId === "." ||
+    chatId === ".." ||
     chatId.includes("..") ||
-    chatId.startsWith("/") ||
+    chatId.includes("/") ||
     chatId.includes("\\") ||
     chatId.includes("\0")
   );

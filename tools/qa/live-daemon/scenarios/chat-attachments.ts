@@ -5,11 +5,11 @@
  *
  * Captures the contract added in PR #292 v6: when a user drops a file on
  * the chat input, the playground POSTs it to `/api/scratch/upload`, the
- * file lands at `{FRIDAY_HOME}/scratch/uploads/{chatId}/{filename}`, and
+ * file lands at `{FRIDAY_HOME}/scratch/uploads/{workspaceId}/{chatId}/{md5}`, and
  * the message body carries a `data-file-attached` part with that path.
- * The atlas-web adapter then splices `<attachment path="…" filename="…"
- * mediaType="…" />` text into the persisted history so the agent sees
- * the path on its next history read.
+ * The atlas-web adapter then splices `<attachment path="…" mediaType="…" />`
+ * text into the persisted history so the agent sees the path on its next
+ * history read.
  *
  * The agent MUST:
  *   1. invoke the `read_attachment` tool with the exact path it saw
@@ -297,7 +297,7 @@ async function runRoutingExpectation(
   const workspaceId = ws.id;
 
   const chatId = `chat_eval_${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;
-  const uploadsRoot = join(d.fridayHome, "scratch", "uploads", chatId);
+  const uploadsRoot = join(d.fridayHome, "scratch", "uploads", workspaceId, chatId);
   const path = await writeAttachmentBytes(uploadsRoot, exp.content);
   metrics.attachmentPath = path;
   metrics.mediaType = exp.mediaType;
@@ -403,7 +403,7 @@ async function runChatCsvRead(d: DaemonHandle): Promise<EvalResult> {
   // Mirror what `/api/scratch/upload` would do — write the bytes directly
   // to the spot the adapter expects to find them, using the same
   // content-addressed (md5) on-disk filename.
-  const uploadsRoot = join(d.fridayHome, "scratch", "uploads", chatId);
+  const uploadsRoot = join(d.fridayHome, "scratch", "uploads", workspaceId, chatId);
   const path = await writeAttachmentBytes(uploadsRoot, csv);
   metrics.attachmentPath = path;
 
@@ -473,7 +473,7 @@ async function runRejectsForeignPath(d: DaemonHandle): Promise<EvalResult> {
 
   const chatId = `chat_eval_${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;
   const foreignChatId = `chat_other_${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;
-  const foreignRoot = join(d.fridayHome, "scratch", "uploads", foreignChatId);
+  const foreignRoot = join(d.fridayHome, "scratch", "uploads", workspaceId, foreignChatId);
   const foreignPath = await writeAttachmentBytes(foreignRoot, "secret,123\n");
   metrics.foreignPath = foreignPath;
 
@@ -574,7 +574,7 @@ async function runPdfRoutesToParseNotReadAttachment(d: DaemonHandle): Promise<Ev
     ].join("\n"),
   );
 
-  const uploadsRoot = join(d.fridayHome, "scratch", "uploads", chatId);
+  const uploadsRoot = join(d.fridayHome, "scratch", "uploads", workspaceId, chatId);
   const path = await writeAttachmentBytes(uploadsRoot, minimalPdf);
   metrics.attachmentPath = path;
 
@@ -651,7 +651,7 @@ async function runMultiFileRead(d: DaemonHandle): Promise<EvalResult> {
   const workspaceId = ws.id;
 
   const chatId = `chat_eval_${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;
-  const uploadsRoot = join(d.fridayHome, "scratch", "uploads", chatId);
+  const uploadsRoot = join(d.fridayHome, "scratch", "uploads", workspaceId, chatId);
   const pathA = await writeAttachmentBytes(uploadsRoot, "name,score\nAlice,42\nBob,17\n");
   const pathB = await writeAttachmentBytes(uploadsRoot, "name,score\nCarol,99\nDan,8\n");
   metrics.paths = [pathA, pathB];
@@ -747,7 +747,7 @@ async function runAgentUsesPathVerbatimNotFilename(d: DaemonHandle): Promise<Eva
   const distinctiveFilename = "annual_report_q4_2026.csv";
   const csv = "metric,value\nrevenue,12345\nchurn,4\nNPS,67\n";
 
-  const uploadsRoot = join(d.fridayHome, "scratch", "uploads", chatId);
+  const uploadsRoot = join(d.fridayHome, "scratch", "uploads", workspaceId, chatId);
   const md5Path = await writeAttachmentBytes(uploadsRoot, csv);
   metrics.md5Path = md5Path;
   metrics.distinctiveFilename = distinctiveFilename;

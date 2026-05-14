@@ -17,10 +17,10 @@
   // (`import { ChatAttachment } from "./chat-input.svelte"`) keep working.
   export type { FileAttachment, ChatAttachment, ImageAttachment };
 
-  // The artifact endpoint accepts every extension in ALLOWED_EXTENSION_LIST —
+  // The scratch-upload endpoint accepts every extension in ALLOWED_EXTENSION_LIST —
   // text, JSON, CSV, MD, PDF, DOCX, PPTX, audio. Drop any of them in the
-  // chat and they upload as artifacts; the user bubble renders the same
-  // `ArtifactCard` the agent uses for its own outputs.
+  // chat and they upload as per-chat scratch attachments instead of library
+  // artifacts.
   const ACCEPT_ATTR = ALLOWED_EXTENSION_LIST.join(",");
 
   interface Props {
@@ -31,9 +31,9 @@
      */
     workspaceId: string;
     /**
-     * Chat id — the scratch-upload route writes each file to
-     * `{FRIDAY_HOME}/scratch/uploads/{chatId}/{filename}`. The chat owns
-     * this; user-chat passes it through unchanged.
+     * Chat id — the scratch-upload route writes each file under
+     * `{FRIDAY_HOME}/scratch/uploads/{workspaceId}/{chatId}/{md5}`. The chat
+     * owns this; user-chat passes it through unchanged.
      */
     chatId: string;
     onsubmit: (message: string, attachments: ChatAttachment[]) => void;
@@ -83,14 +83,22 @@
     textareaEl.style.height = `${textareaEl.scrollHeight}px`;
   });
 
-  // Block submit while any artifact upload is still in flight — sending now
-  // would race the upload and ship the message without the artifactId. The
-  // textbox stays editable; only Enter is no-op until uploads settle.
+  // Block submit while any file upload is in flight or failed — sending now
+  // would either race the upload or clear a failed chip that cannot be sent.
+  // The textbox stays editable; users remove failed chips before retrying.
   const uploadingCount = $derived(
     attachments.filter((a) => a.kind === "file" && a.status === "uploading").length,
   );
+  const failedCount = $derived(
+    attachments.filter((a) => a.kind === "file" && a.status === "error").length,
+  );
+  const sendableAttachmentCount = $derived(
+    attachments.filter((a) => a.kind === "image" || a.status === "ready").length,
+  );
   const hasContent = $derived(
-    (value.trim().length > 0 || attachments.length > 0) && uploadingCount === 0,
+    (value.trim().length > 0 || sendableAttachmentCount > 0) &&
+      uploadingCount === 0 &&
+      failedCount === 0,
   );
   const sttSupported = typeof window !== "undefined"
     && ("webkitSpeechRecognition" in window || "SpeechRecognition" in window);

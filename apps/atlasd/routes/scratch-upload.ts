@@ -1,7 +1,7 @@
 /**
  * `POST /api/scratch/upload` — write a file the user dropped on the chat
- * input directly to `{FRIDAY_HOME}/scratch/uploads/{chatId}/{filename}` and
- * return its absolute path.
+ * input directly to `{FRIDAY_HOME}/scratch/uploads/{workspaceId}/{chatId}/{md5}`
+ * and return its absolute path.
  *
  * Rationale (PR #292 v5): the prior design stored attachments as full
  * artifacts (JetStream Object Store + KV metadata + library entry).
@@ -33,8 +33,6 @@ import {
   MAX_OFFICE_SIZE,
   MAX_PDF_SIZE,
 } from "@atlas/core/artifacts/file-upload";
-import { ChatStorage } from "@atlas/core/chat/storage";
-import { UserStorage } from "@atlas/core/users/storage";
 import { createLogger } from "@atlas/logger";
 import { chatUploadsRoot } from "@atlas/utils/paths.server";
 import { daemonFactory } from "../src/factory.ts";
@@ -75,14 +73,19 @@ const scratchUploadApp = daemonFactory.createApp().post("/upload", async (c) => 
     return c.json({ error: "Content-Type must be multipart/form-data" }, 400);
   }
 
-  const formData = await c.req.formData();
-  const file = formData.get("file");
-  const chatId = formData.get("chatId")?.toString() ?? "";
-  const workspaceId = formData.get("workspaceId")?.toString() ?? "";
-
-  if (!(file instanceof File)) {
-    return c.json({ error: "file field is required and must be a File" }, 400);
+  const contentLength = Number(c.req.header("content-length") ?? -1);
+  if (Number.isFinite(contentLength) && contentLength > MAX_SCRATCH_UPLOAD_SIZE) {
+    return c.json(
+      { error: `File too large (max ${Math.round(MAX_SCRATCH_UPLOAD_SIZE / 1024 / 1024)}MB)` },
+      413,
+    );
   }
+
+  // Read routing/auth inputs from the URL so membership and chat binding run
+  // before multipart parsing buffers the file body.
+  const chatId = c.req.query("chatId") ?? "";
+  const workspaceId = c.req.query("workspaceId") ?? "";
+
   if (!chatId || isInvalidChatId(chatId)) {
     return c.json({ error: "Invalid chatId" }, 400);
   }
@@ -93,36 +96,17 @@ const scratchUploadApp = daemonFactory.createApp().post("/upload", async (c) => 
   // the artifact-upload route precedent at `routes/artifacts.ts:964`.
   await requireWorkspaceMember(c, workspaceId);
 
-  // chatId↔workspaceId binding. Closes the cross-tenant write primitive:
-  // without this, any authenticated member of *some* workspace could
-  // POST `?workspaceId=<theirs>&chatId=<foreign>` and write bytes into
-  // a chat that belongs to a different workspace. `getChat` lives in
-  // the workspace-scoped namespace — a chat in another workspace
-  // returns null here.
-  //
-  // Lifecycle wrinkle: chats are created lazily on the first message
-  // (via `chat-sdk-state-adapter.subscribe()`), but the user can drop a
-  // file BEFORE typing — so the chat record doesn't exist yet on the
-  // first upload. We create it idempotently here. Safety: createChat is
-  // workspace-scoped, and the caller already passed
-  // `requireWorkspaceMember(workspaceId)` — so the chat ends up owned
-  // by THIS user in THIS workspace. An attacker who races a victim for
-  // a chatId would create their own (empty) chat record under their
-  // own workspace; the victim's eventual subscribe() against a
-  // different workspaceId still works because the namespace key is
-  // (workspaceId, chatId). chatIds are 12-char UUIDs so collisions are
-  // negligible.
-  const userId = c.get("userId") ?? UserStorage.getCachedLocalUserId();
-  const chatLookup = await ChatStorage.getChat(chatId, workspaceId);
-  if (!chatLookup.ok) {
-    return c.json({ error: chatLookup.error }, 500);
+  const formData = await c.req.formData();
+  const file = formData.get("file");
+
+  if (!(file instanceof File)) {
+    return c.json({ error: "file field is required and must be a File" }, 400);
   }
-  if (!chatLookup.data) {
-    const created = await ChatStorage.createChat({ chatId, userId, workspaceId, source: "atlas" });
-    if (!created.ok) {
-      return c.json({ error: `chat-create failed: ${created.error}` }, 500);
-    }
-  }
+
+  // Chats are created lazily on first message. Uploading before the first
+  // send is still safe because bytes are scoped by workspaceId + chatId on
+  // disk; no empty chat record is created merely because a user dropped and
+  // then removed a file.
 
   // Same legacy-format rejection as the artifact route — surfaces the
   // .doc → .docx hint.
@@ -200,7 +184,7 @@ const scratchUploadApp = daemonFactory.createApp().post("/upload", async (c) => 
   // traversal gate's job collapses to a prefix check. MD5 is fine here:
   // the security boundary is the resolver, not the hash. Adversarial
   // collisions read back identical bytes — benign.
-  const root = chatUploadsRoot(chatId);
+  const root = chatUploadsRoot(workspaceId, chatId);
   await mkdir(root, { recursive: true });
   const tmpPath = join(root, `.tmp-${randomUUID()}`);
   const hash = createHash("md5");

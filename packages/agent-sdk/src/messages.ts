@@ -113,8 +113,9 @@ export const AtlasDataEventSchemas = {
   }),
   /**
    * User dropped files on the chat input. Each path is an absolute path on
-   * the daemon's filesystem under `{FRIDAY_HOME}/scratch/uploads/{chatId}/`
-   * — the scratch-upload route writes the bytes there on drop, and the
+   * the daemon's filesystem under
+   * `{FRIDAY_HOME}/scratch/uploads/{workspaceId}/{chatId}/` — the
+   * scratch-upload route writes the bytes there on drop, and the
    * agent reads them via the `read_attachment` tool. No artifact storage
    * (so no library pollution); replaces the prior `artifact-attached` flow
    * for user-attached files.

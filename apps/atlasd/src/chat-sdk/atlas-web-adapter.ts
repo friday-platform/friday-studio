@@ -91,21 +91,24 @@ function joinTextParts(message: AtlasUIMessage): string {
  * stay valid across splices.
  *
  * Security gate: every path is verified to live under
- * `{FRIDAY_HOME}/scratch/uploads/{chatId}/` before being passed on.
- * Without this an attacker could craft a `data-file-attached` part with
+ * `{FRIDAY_HOME}/scratch/uploads/{workspaceId}/{chatId}/` before being passed
+ * on. Without this an attacker could craft a `data-file-attached` part with
  * any absolute path on the daemon's filesystem and the agent's
  * `read_attachment` tool would read it. The scratch-upload route writes
  * here on submit; legitimate clients can't produce other paths.
  */
-function inlineAttachedFiles(message: AtlasUIMessage, chatId: string): void {
-  // Adversarial chatId would compute the wrong root → either reject every
+function inlineAttachedFiles(message: AtlasUIMessage, workspaceId: string, chatId: string): void {
+  // Adversarial ids would compute the wrong root → either reject every
   // attachment (false negative) or, worse, point at a shared dir. Reject
-  // the whole message-level splice if the chatId itself is malformed.
-  if (isInvalidChatId(chatId)) {
-    logger.warn("atlas_web_adapter_invalid_chat_id_skipping_splice", { chatId });
+  // the whole message-level splice if either scope id is malformed.
+  if (isInvalidChatId(workspaceId) || isInvalidChatId(chatId)) {
+    logger.warn("atlas_web_adapter_invalid_attachment_scope_skipping_splice", {
+      workspaceId,
+      chatId,
+    });
     return;
   }
-  const root = chatUploadsRoot(chatId);
+  const root = chatUploadsRoot(workspaceId, chatId);
   const allowedPrefix = root + sep;
 
   const parts: AtlasUIMessagePart[] = message.parts;
@@ -329,12 +332,12 @@ export class AtlasWebAdapter implements Adapter<string, WebChatPayload> {
     // User-attached files (chat-input drop → POST /api/scratch/upload)
     // arrive as `data-file-attached` parts carrying absolute paths on the
     // daemon's filesystem. Mutate the uiMessage to insert one self-closing
-    // `<attachment path="…" filename="…" mediaType="…" />` text line per
-    // file so the workspace-chat agent (which re-reads history per turn
-    // and never sees `Message.text`) can spot them and call
-    // `read_attachment` based on extension. `chatId` scopes the
-    // path-validation gate to the per-chat uploads dir.
-    inlineAttachedFiles(uiMessage, chatId);
+    // `<attachment path="…" mediaType="…" />` text line per file so the
+    // workspace-chat agent (which re-reads history per turn and never sees
+    // `Message.text`) can spot them and call
+    // `read_attachment` based on extension. `workspaceId` + `chatId` scope
+    // the path-validation gate to the per-chat uploads dir.
+    inlineAttachedFiles(uiMessage, this.workspaceId, chatId);
     const messageText = joinTextParts(uiMessage);
     const userId = request.headers.get("X-Atlas-User-Id") ?? UserStorage.getCachedLocalUserId();
     const { datetime, foreground_workspace_ids: foregroundWorkspaceIds } = parsed.data;

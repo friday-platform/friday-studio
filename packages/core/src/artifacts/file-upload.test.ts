@@ -4,6 +4,7 @@ import {
   deriveDownloadFilename,
   getValidatedMimeType,
   inferMimeFromFilename,
+  isInvalidChatId,
   stripMimeParams,
 } from "./file-upload.ts";
 
@@ -184,6 +185,28 @@ describe("getValidatedMimeType", () => {
 
   it("returns undefined for an unknown extension", () => {
     expect(getValidatedMimeType("malware.exe")).toBeUndefined();
+  });
+});
+
+describe("isInvalidChatId", () => {
+  it("rejects path-shaped ids that would collapse or nest upload roots", () => {
+    for (const id of [
+      "",
+      ".",
+      "..",
+      "chat/child",
+      "/absolute",
+      "chat\\child",
+      "chat..child",
+      "chat\0id",
+    ]) {
+      expect(isInvalidChatId(id)).toBe(true);
+    }
+  });
+
+  it("allows existing colon-shaped and generated ids", () => {
+    expect(isInvalidChatId("chat_abc123")).toBe(false);
+    expect(isInvalidChatId("telegram:thread:123")).toBe(false);
   });
 });
 

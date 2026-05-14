@@ -885,12 +885,12 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
         const webSearchTool = createWebSearchTool(logger);
         const runCodeTool = createRunCodeTool(adHocSessionId, logger, abortSignal);
         const fileIOTools = createFileIOTools(adHocSessionId, logger);
-        // User-attached files (chat-input drop → /api/scratch/upload) live
-        // at `{FRIDAY_HOME}/scratch/uploads/{chatId}/{filename}`. The chat
-        // adapter surfaces them in user messages as `<attachment path="…"
-        // filename="…" mediaType="…" />` tags. read_attachment(path) is
-        // how the agent opens them — scoped to this chat's uploads dir.
-        const readAttachmentTool = createReadAttachmentTool(session.streamId, logger);
+        // User-attached files (chat-input drop → /api/scratch/upload) live at
+        // `{FRIDAY_HOME}/scratch/uploads/{workspaceId}/{chatId}/{md5}`. The
+        // chat adapter surfaces them in user messages as `<attachment path="…"
+        // mediaType="…" />` tags. read_attachment(path) is how the agent opens
+        // them — scoped to this workspace+chat uploads dir.
+        const readAttachmentTool = createReadAttachmentTool(workspaceId, session.streamId, logger);
 
         // delegate runs nested streamText sub-agents in-process. The child's
         // tool set is the parent's full composed set minus `delegate` itself
