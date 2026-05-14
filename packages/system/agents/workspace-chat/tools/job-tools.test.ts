@@ -922,6 +922,11 @@ describe("createJobTools trigger_signal (SSE streaming)", () => {
 
   beforeEach(() => {
     originalFetch = globalThis.fetch;
+    // Reset the client mocks for parity with the sibling JSON describe
+    // block — the SSE path doesn't touch them today, but a future
+    // JSON-path test added here would otherwise inherit stale state.
+    mockSignalPost.mockReset();
+    mockParseResult.mockReset();
   });
 
   afterEach(() => {
