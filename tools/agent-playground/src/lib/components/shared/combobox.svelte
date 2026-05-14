@@ -24,9 +24,10 @@
     options: ComboboxOption[];
     placeholder?: string;
     disabled?: boolean;
+    ariaLabel?: string;
   }
 
-  let { value = $bindable(""), options, placeholder = "", disabled = false }: Props = $props();
+  let { value = $bindable(""), options, placeholder = "", disabled = false, ariaLabel }: Props = $props();
 
   // Generic is `string` (the value type), not the option object:
   // melt's `selected` store holds `ListboxOption<T> = {value: T, label?: string}`,
@@ -100,6 +101,7 @@
     class="trigger"
     {placeholder}
     {disabled}
+    aria-label={ariaLabel ?? undefined}
     onkeydown={onKeydown}
   />
   <svg

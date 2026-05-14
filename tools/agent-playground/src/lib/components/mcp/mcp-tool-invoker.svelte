@@ -36,7 +36,7 @@
   const workspacesQuery = createQuery(() => workspaceQueries.list());
   const workspaces = $derived(workspacesQuery.data ?? []);
   let workspaceId = $state("");
-  $effect(() => {
+  $effect.pre(() => {
     if (!workspaceId && workspaces.length > 0) workspaceId = workspaces[0].id;
   });
 
@@ -53,35 +53,41 @@
 
   /** Flatten the selected tool's input schema into a flat field list. */
   const fields = $derived.by((): SchemaField[] => {
-    const schema = selectedTool?.inputSchema;
-    if (!schema || typeof schema !== "object") return [];
-    const props = (schema as { properties?: Record<string, unknown> }).properties;
-    if (!props || typeof props !== "object") return [];
-    const required = new Set(
-      Array.isArray((schema as { required?: unknown }).required)
-        ? ((schema as { required: unknown[] }).required.filter(
-            (r) => typeof r === "string",
-          ) as string[])
-        : [],
-    );
-    return Object.entries(props).map(([key, raw]) => {
-      const def = (raw ?? {}) as { type?: unknown; description?: unknown };
-      const t = def.type;
-      const type: SchemaField["type"] =
-        t === "string"
-          ? "string"
-          : t === "number" || t === "integer"
-            ? "number"
-            : t === "boolean"
-              ? "boolean"
-              : "json";
-      return {
-        key,
-        type,
-        description: typeof def.description === "string" ? def.description : undefined,
-        required: required.has(key),
-      };
-    });
+    try {
+      const schema = selectedTool?.inputSchema;
+      if (!schema || typeof schema !== "object") return [];
+      const props = (schema as { properties?: Record<string, unknown> }).properties;
+      if (!props || typeof props !== "object") return [];
+      const required = new Set(
+        Array.isArray((schema as { required?: unknown }).required)
+          ? ((schema as { required: unknown[] }).required.filter(
+              (r) => typeof r === "string",
+            ) as string[])
+          : [],
+      );
+      return Object.entries(props).map(([key, raw]) => {
+        const def = (raw ?? {}) as { type?: unknown; description?: unknown };
+        const t = def.type;
+        const type: SchemaField["type"] =
+          t === "string"
+            ? "string"
+            : t === "number" || t === "integer"
+              ? "number"
+              : t === "boolean"
+                ? "boolean"
+                : "json";
+        return {
+          key,
+          type,
+          description: typeof def.description === "string" ? def.description : undefined,
+          required: required.has(key),
+        };
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.warn("Malformed tool input schema", { serverId, toolName: selectedToolName, error: msg });
+      return [];
+    }
   });
 
   // Raw string values per field, keyed by `${toolName}:${fieldKey}` so
@@ -213,19 +219,19 @@
     <p class="status-line muted">This server exposes no tools to invoke.</p>
   {:else}
     <div class="controls">
-      <label class="control">
-        <span class="control-label">Tool</span>
-        <select class="control-input" bind:value={selectedToolName}>
+      <div class="control">
+        <label class="control-label" for="invoker-tool">Tool</label>
+        <select id="invoker-tool" class="control-input" bind:value={selectedToolName}>
           <option value="">Select a tool…</option>
           {#each tools as tool (tool.name)}
             <option value={tool.name}>{tool.name}</option>
           {/each}
         </select>
-      </label>
+      </div>
 
-      <label class="control">
-        <span class="control-label">Workspace context</span>
-        <select class="control-input" bind:value={workspaceId}>
+      <div class="control">
+        <label class="control-label" for="invoker-workspace">Workspace context</label>
+        <select id="invoker-workspace" class="control-input" bind:value={workspaceId}>
           {#if workspaces.length === 0}
             <option value="">No workspaces</option>
           {/if}
@@ -233,7 +239,7 @@
             <option value={ws.id}>{ws.name}</option>
           {/each}
         </select>
-      </label>
+      </div>
     </div>
 
     {#if selectedTool}

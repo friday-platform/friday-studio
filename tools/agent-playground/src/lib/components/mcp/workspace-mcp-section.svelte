@@ -181,6 +181,7 @@
       options={availableOptions}
       placeholder={available.length === 0 ? "No servers available to add" : "Search servers…"}
       disabled={enableMut.isPending || available.length === 0}
+      ariaLabel="Add an MCP server"
     />
     <div class="quick-add-action">
       <Button

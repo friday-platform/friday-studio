@@ -76,6 +76,7 @@
             type="button"
             class="tool-head"
             aria-expanded={expanded[tool.name] ?? false}
+            aria-controls="tool-body-{tool.name}"
             onclick={() => {
               expanded = { ...expanded, [tool.name]: !expanded[tool.name] };
             }}
@@ -89,7 +90,7 @@
             {/if}
           </button>
           {#if expanded[tool.name]}
-            <div class="tool-body">
+            <div id="tool-body-{tool.name}" class="tool-body">
               {#if tool.inputSchema}
                 <span class="schema-label">Input schema</span>
                 <pre class="schema-block">{schemaJson(tool.inputSchema)}</pre>
