@@ -203,10 +203,16 @@ const PLATFORM_TOOL_ALLOWLIST = LLM_AGENT_ALLOWED_PLATFORM_TOOLS;
 // that doesn't already set it. OpenAI/Groq strict mode silently downgrades
 // when this is missing — the wire ends up as a permissive schema even though
 // `strict: true` was sent, and `complete({})` slips through.
+// NOTE: composition keywords (`oneOf` / `anyOf` / `allOf`), `patternProperties`,
+// and the schema-form of `additionalProperties` are not recursed into — if a
+// future workspace schema uses them, strict mode will silently downgrade on
+// those branches. Extend the walker before debugging that.
 function withStrictObjects(schema: Record<string, unknown>): Record<string, unknown> {
   if (!schema || typeof schema !== "object" || Array.isArray(schema)) return schema;
   const out: Record<string, unknown> = { ...schema };
-  if (out.type === "object") {
+  const isObjectNode = out.type === "object" ||
+    (out.properties !== undefined && typeof out.properties === "object" && !Array.isArray(out.properties));
+  if (isObjectNode) {
     if (!("additionalProperties" in out)) out.additionalProperties = false;
     if (out.properties && typeof out.properties === "object") {
       const newProps: Record<string, unknown> = {};
