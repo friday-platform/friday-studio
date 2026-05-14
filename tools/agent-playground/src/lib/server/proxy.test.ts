@@ -3,6 +3,7 @@ import {
   buildProxyHandler,
   HOP_BY_HOP_HEADERS,
   longLivedDispatcher,
+  PROXY_DISPATCHER_OPTIONS,
   PROXY_DISPATCHER_TIMEOUT_MS,
 } from "./proxy.ts";
 
@@ -139,6 +140,18 @@ describe("buildProxyHandler", () => {
     // headroom; shorter values would re-create the original bug for
     // the longest-running signals.
     expect(PROXY_DISPATCHER_TIMEOUT_MS).toBe(60 * 60_000);
+  });
+
+  it("dispatcher options pin BOTH headersTimeout and bodyTimeout (PR #314 review)", () => {
+    // Per Vpr99: undici doesn't expose dispatcher options for direct
+    // inspection, so a partial-revert that drops the headersTimeout
+    // back to undici's 5-min default while keeping bodyTimeout at 1h
+    // would still pass the constant + dispatcher-identity assertions.
+    // Lock both knobs at the source-of-truth (PROXY_DISPATCHER_OPTIONS)
+    // so any divergence between them trips this test.
+    expect(PROXY_DISPATCHER_OPTIONS.headersTimeout).toBe(PROXY_DISPATCHER_TIMEOUT_MS);
+    expect(PROXY_DISPATCHER_OPTIONS.bodyTimeout).toBe(PROXY_DISPATCHER_TIMEOUT_MS);
+    expect(PROXY_DISPATCHER_OPTIONS.headersTimeout).toBe(PROXY_DISPATCHER_OPTIONS.bodyTimeout);
   });
 
   it("passes SSE responses through with the same status + cleaned headers", async () => {

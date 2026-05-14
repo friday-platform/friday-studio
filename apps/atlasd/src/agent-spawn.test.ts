@@ -136,6 +136,12 @@ describe("buildAgentSpawnArgs", () => {
         const finalPath = args[args.length - 1] ?? "";
         expect(finalPath.startsWith("/")).toBe(true);
         expect(finalPath.endsWith("/relative/agent.py")).toBe(true);
+        // Per PR #314 review: explicitly pin the absence of `--directory`
+        // — the no-pyproject branch must NOT prepend a project-root flag.
+        // Without this assertion, a regression that prepended
+        // `["run", "--directory", "<cwd>", ...]` would still pass the
+        // shape + absolute-path checks above.
+        expect(args).not.toContain("--directory");
       });
     });
 

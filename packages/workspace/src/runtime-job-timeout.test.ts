@@ -14,14 +14,20 @@ describe("parseJobTimeoutMs", () => {
     expect(parseJobTimeoutMs("job", "")).toBeUndefined();
   });
 
-  it("rejects 0 — would otherwise become an instant-rejection in nats.js", () => {
-    // Foot-gun guard: nats.js `nc.request({ timeout: 0 })` rejects on the
-    // next tick, so a workspace.yml `config.timeout: "0s"` would silently
-    // kill every job in scope. Authors who write `0` almost certainly
-    // mean "no ceiling"; surface a warn and fall back to the executor
-    // default (caller treats undefined as "use default").
-    expect(parseJobTimeoutMs("job", "0s")).toBeUndefined();
-    expect(parseJobTimeoutMs("job", "0ms")).toBeUndefined();
+  // Foot-gun guard: nats.js `nc.request({ timeout: 0 })` rejects on the
+  // next tick, so a workspace.yml `config.timeout: "0s"` would silently
+  // kill every job in scope. Authors who write `0` almost certainly mean
+  // "no ceiling"; surface a warn and fall back to the executor default
+  // (caller treats undefined as "use default").
+  //
+  // Table-drive every supported unit so each row exercises the `<= 0`
+  // guard via a value that genuinely parses to 0. Per review feedback
+  // (PR #314) the previous `"0ms"` row didn't hit the guard because
+  // `parseDuration` only accepts `s|m|h` — `"0ms"` fell through to the
+  // malformed-input catch and would still pass even if the `<= 0` guard
+  // were dropped.
+  it.each(["0s", "0m", "0h"])("rejects %s — falls back to executor default", (input) => {
+    expect(parseJobTimeoutMs("job", input)).toBeUndefined();
   });
 
   it("rejects negative durations", () => {

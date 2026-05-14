@@ -34,13 +34,23 @@ interface UndiciRequestInit extends RequestInit {
 // (TCP, TLS handshake) keep their defaults because those still
 // indicate actual upstream sickness, not slow work.
 export const PROXY_DISPATCHER_TIMEOUT_MS = 60 * 60_000;
+/** Both timeout knobs the dispatcher needs (headers + body) — exported
+ * as a frozen object so tests can assert that BOTH are pinned to
+ * `PROXY_DISPATCHER_TIMEOUT_MS` together, not just one. Per PR #314
+ * review (Vpr99): a partial-revert that did
+ * `new Agent({ headersTimeout: 5000, bodyTimeout: PROXY_DISPATCHER_TIMEOUT_MS })`
+ * would still pass an assertion that only checked the constant value
+ * AND the dispatcher-identity check, because undici doesn't expose
+ * dispatcher options for direct inspection. Test against this object
+ * to lock the contract for both knobs. */
+export const PROXY_DISPATCHER_OPTIONS = {
+  headersTimeout: PROXY_DISPATCHER_TIMEOUT_MS,
+  bodyTimeout: PROXY_DISPATCHER_TIMEOUT_MS,
+} as const;
 /** Exported so tests can assert identity (`toBe(longLivedDispatcher)`)
  * — `toBeInstanceOf(Agent)` would let a bare `new Agent({})` regression
  * pass while reintroducing the original 5-min default. */
-export const longLivedDispatcher = new Agent({
-  headersTimeout: PROXY_DISPATCHER_TIMEOUT_MS,
-  bodyTimeout: PROXY_DISPATCHER_TIMEOUT_MS,
-});
+export const longLivedDispatcher = new Agent(PROXY_DISPATCHER_OPTIONS);
 
 /** Hop-by-hop / connection-specific headers that don't survive the
  * proxy or HTTP/2 boundary:
