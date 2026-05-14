@@ -97,6 +97,16 @@ export function buildProxyHandler({ upstream, label }: BuildProxyOptions): Reque
     headers.delete("host");
     headers.delete("content-length");
 
+    // Tell the upstream where the browser actually lives. Required for
+    // services like Link that synthesize external callback URLs from
+    // X-Forwarded-* — otherwise they emit URLs pointing at the upstream's
+    // own s2s listener (cert not browser-trusted → ERR_CERT_AUTHORITY_INVALID
+    // when the OAuth provider redirects the browser back).
+    const incoming = new URL(request.url);
+    headers.set("x-forwarded-host", incoming.host);
+    headers.set("x-forwarded-proto", incoming.protocol.replace(":", ""));
+    headers.set("x-forwarded-prefix", `/api/${label}`);
+
     const upstreamController = new AbortController();
     const abortUpstream = () => upstreamController.abort();
     request.signal.addEventListener("abort", abortUpstream, { once: true });
@@ -118,6 +128,11 @@ export function buildProxyHandler({ upstream, label }: BuildProxyOptions): Reque
         headers,
         body,
         signal: upstreamController.signal,
+        // Forward 3xx as-is. Node's fetch defaults to redirect: "follow",
+        // which silently walks Location headers on the SSR side — fatal
+        // for OAuth, where the browser must navigate to accounts.google.com
+        // itself, not receive Google's HTML rendered under localhost:5200.
+        redirect: "manual",
       });
     } catch (err) {
       request.signal.removeEventListener("abort", abortUpstream);

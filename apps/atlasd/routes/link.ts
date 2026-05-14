@@ -61,12 +61,22 @@ linkRoutes.all("/*", (c) => {
 
   const originalUrl = new URL(c.req.url);
 
+  // Preserve forwarded headers from an upstream proxy (e.g. the
+  // playground dev server at https://localhost:5200/api/daemon/*). Without
+  // this, Link emits callback URLs pointing at the daemon's s2s TLS
+  // listener (https://localhost:8080), which uses a non-browser-trusted
+  // cert — the OAuth provider redirect lands on ERR_CERT_AUTHORITY_INVALID.
+  // The prefix is concatenated so Link sees the full external path.
+  const incomingHost = c.req.header("X-Forwarded-Host");
+  const incomingProto = c.req.header("X-Forwarded-Proto");
+  const incomingPrefix = c.req.header("X-Forwarded-Prefix") ?? "";
+
   const headers: Record<string, string> = {
     ...Object.fromEntries(c.req.raw.headers),
     // Forwarded headers so Link can generate correct external URLs
-    "X-Forwarded-Host": originalUrl.host,
-    "X-Forwarded-Proto": originalUrl.protocol.replace(":", ""),
-    "X-Forwarded-Prefix": PROXY_PREFIX,
+    "X-Forwarded-Host": incomingHost ?? originalUrl.host,
+    "X-Forwarded-Proto": incomingProto ?? originalUrl.protocol.replace(":", ""),
+    "X-Forwarded-Prefix": `${incomingPrefix}${PROXY_PREFIX}`,
   };
 
   // Authenticate with Link using service FRIDAY_KEY (read at request time, not module load)
