@@ -69,6 +69,7 @@ import { createCreateMcpServerTool } from "./tools/create-mcp-server.ts";
 import { createDisableMcpServerTool } from "./tools/disable-mcp-server.ts";
 import { createBoundDraftTools } from "./tools/draft-tools.ts";
 import { createEnableMcpServerTool } from "./tools/enable-mcp-server.ts";
+import { createEnvTools } from "./tools/env-tools.ts";
 import { createFileIOTools, createReadAttachmentTool } from "./tools/file-io.ts";
 import { createInstallMcpServerTool } from "./tools/install-mcp-server.ts";
 import {
@@ -1056,6 +1057,12 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
             workspaceId,
             sessionId: adHocSessionId,
             workspacePermissions: wsConfig?.permissions,
+            logger,
+          }),
+          ...createEnvTools({
+            workspaceId,
+            sessionId: adHocSessionId,
+            daemonUrl: getAtlasDaemonUrl(),
             logger,
           }),
           ...webFetchTool,
