@@ -286,6 +286,38 @@ describe("export-preview +page.svelte render", () => {
     const { body } = render(Page, { props: { data: makePageData() } });
     expect(body).toContain("Tracer Bullet Chat");
   });
+
+  // Regression: ArtifactCard previously called `createQuery()`
+  // unconditionally. The export-preview layout is chromeless and never
+  // mounts a QueryClientProvider, so a chat that surfaced even one
+  // display_artifact tool call blew up SSR with "No QueryClient was
+  // found in Svelte context". The card now skips both createQuery
+  // hooks when export context is set and hydrates from the prefetched
+  // map instead.
+  it("renders ArtifactCard from a display_artifact tool call without a QueryClient", () => {
+    const data = makePageData();
+    data.messages = [
+      ...data.messages,
+      {
+        id: "m3",
+        role: "assistant",
+        parts: [
+          {
+            type: "tool-display_artifact",
+            toolCallId: "call-1",
+            state: "output-available",
+            input: { artifactId: "art-1" },
+            output: {},
+          },
+        ],
+        metadata: { timestamp: "2026-05-04T12:00:03.000Z" },
+      },
+    ] as unknown as AtlasUIMessage[]; // test fixture exempt from no-`as` rule
+
+    const { body } = render(Page, { props: { data } });
+    expect(body).toContain("Diagram");
+    expect(body).toContain("assets/artifacts/art-1/diagram.png");
+  });
 });
 
 describe("artifactZipPath helper (resolveUrl contract)", () => {
