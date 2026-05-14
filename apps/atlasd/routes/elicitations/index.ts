@@ -283,6 +283,12 @@ elicitationApp.post(
       // elicitation is marked answered — "answered" has to mean "applied".
       // A commit failure leaves the elicitation pending so the user can
       // retry; the per-key writers are idempotent, so retry is safe.
+      //
+      // The inverse — commit succeeds, then `answer` below fails — leaves the
+      // write applied while the elicitation stays `pending`. That's the
+      // accepted asymmetry: the write IS done (idempotent, so a retry confirm
+      // is a no-op), and a stuck-`pending` elicitation is a far better failure
+      // than a silently-lost write. There is no compensating rollback.
       if (got.data.kind === "env-write" && body.value === "confirm") {
         const commit = await commitEnvWriteElicitation(c, got.data);
         if (!commit.ok) {

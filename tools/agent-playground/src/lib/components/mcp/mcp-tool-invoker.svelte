@@ -31,9 +31,14 @@
   const tools = $derived(probeResult?.ok ? probeResult.tools : []);
 
   // ── Workspace context ──────────────────────────────────────────────────
+  // An invocation always runs in a workspace context — the daemon route
+  // requires it. Default to the first workspace once the list loads.
   const workspacesQuery = createQuery(() => workspaceQueries.list());
   const workspaces = $derived(workspacesQuery.data ?? []);
   let workspaceId = $state("");
+  $effect(() => {
+    if (!workspaceId && workspaces.length > 0) workspaceId = workspaces[0].id;
+  });
 
   // ── Tool selection + args form ─────────────────────────────────────────
   let selectedToolName = $state("");
@@ -127,6 +132,10 @@
 
   async function invoke(): Promise<void> {
     if (!selectedToolName || invokeMut.isPending) return;
+    if (!workspaceId) {
+      invokeError = "Pick a workspace context first.";
+      return;
+    }
     const built = buildArgs();
     if (!built.ok) {
       invokeError = built.error;
@@ -140,7 +149,7 @@
         id: serverId,
         toolName: selectedToolName,
         args: built.args,
-        workspaceId: workspaceId || undefined,
+        workspaceId,
       });
       if (res.ok) {
         invokeOutput = res.output;
@@ -217,7 +226,9 @@
       <label class="control">
         <span class="control-label">Workspace context</span>
         <select class="control-input" bind:value={workspaceId}>
-          <option value="">None — server defaults</option>
+          {#if workspaces.length === 0}
+            <option value="">No workspaces</option>
+          {/if}
           {#each workspaces as ws (ws.id)}
             <option value={ws.id}>{ws.name}</option>
           {/each}

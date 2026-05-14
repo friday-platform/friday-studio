@@ -196,28 +196,3 @@ export function useUpdateMCPCredential() {
     },
   }));
 }
-
-/**
- * Delete a single workspace `.env` var.
- * Wraps `DELETE /api/workspaces/:workspaceId/env/:key`.
- * Invalidates the workspace env query on success.
- */
-export function useDeleteWorkspaceEnvVar() {
-  const queryClient = useQueryClient();
-
-  return createMutation(() => ({
-    mutationFn: async (input: { workspaceId: string; key: string }) => {
-      const client = getDaemonClient();
-      const res = await client.workspaceEnv(input.workspaceId)[":key"].$delete({
-        param: { key: input.key },
-      });
-      if (!res.ok) {
-        throw new Error(await errorMessage(res, `Failed to delete '${input.key}': ${res.status}`));
-      }
-      return res.json();
-    },
-    onSuccess: (_data, input) => {
-      queryClient.invalidateQueries({ queryKey: workspaceEnvQueries.all(input.workspaceId) });
-    },
-  }));
-}

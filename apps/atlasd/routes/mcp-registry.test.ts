@@ -38,8 +38,14 @@ vi.mock("@atlas/core/mcp-registry/upstream-client", () => ({
   },
 }));
 
-// Mock createMCPTools for tool probe tests
-type MockTool = { description?: string };
+// Mock createMCPTools for tool probe + invoke tests. `inputSchema` mirrors the
+// AI-SDK tool shape — `probeAndExtract` lifts `inputSchema.jsonSchema` into the
+// probe response; `execute` is what the `/invoke` route calls.
+type MockTool = {
+  description?: string;
+  inputSchema?: { jsonSchema?: Record<string, unknown> };
+  execute?: (args: unknown, opts: unknown) => Promise<unknown>;
+};
 type MockDisconnected = { serverId: string; kind: string; message: string };
 const mockCreateMCPTools =
   vi.fn<
@@ -345,7 +351,13 @@ const UpdateResponseSchema = z.object({
 /** Schema for tool probe success response */
 const ToolProbeSuccessSchema = z.object({
   ok: z.literal(true),
-  tools: z.array(z.object({ name: z.string(), description: z.string().optional() })),
+  tools: z.array(
+    z.object({
+      name: z.string(),
+      description: z.string().optional(),
+      inputSchema: z.record(z.string(), z.unknown()).nullable(),
+    }),
+  ),
 });
 
 /** Schema for tool probe error response */
@@ -2031,7 +2043,13 @@ describe("MCP Registry Routes", () => {
 
       mockCreateMCPTools.mockResolvedValue({
         tools: {
-          "fetch-data": { description: "Fetch data from the server" },
+          // `createMCPTools` exposes the tool's JSON Schema under
+          // `inputSchema.jsonSchema`; `probeAndExtract` lifts that out.
+          "fetch-data": {
+            description: "Fetch data from the server",
+            inputSchema: { jsonSchema: { type: "object", properties: { id: { type: "string" } } } },
+          },
+          // No declared schema → the route returns `inputSchema: null`.
           "send-data": { description: "Send data to the server" },
         },
         dispose: vi.fn().mockResolvedValue(undefined),
@@ -2047,8 +2065,13 @@ describe("MCP Registry Routes", () => {
       expect(body.tools[0]).toEqual({
         name: "fetch-data",
         description: "Fetch data from the server",
+        inputSchema: { type: "object", properties: { id: { type: "string" } } },
       });
-      expect(body.tools[1]).toEqual({ name: "send-data", description: "Send data to the server" });
+      expect(body.tools[1]).toEqual({
+        name: "send-data",
+        description: "Send data to the server",
+        inputSchema: null,
+      });
     });
 
     it("returns 404 for unknown server", async () => {
@@ -2172,7 +2195,11 @@ describe("MCP Registry Routes", () => {
       const body = ToolProbeSuccessSchema.parse(await res.json());
       expect(body.ok).toBe(true);
       expect(body.tools).toHaveLength(1);
-      expect(body.tools[0]).toEqual({ name: "static-tool", description: "A static tool" });
+      expect(body.tools[0]).toEqual({
+        name: "static-tool",
+        description: "A static tool",
+        inputSchema: null,
+      });
     });
 
     it("handles tools without descriptions gracefully", async () => {
@@ -2194,7 +2221,11 @@ describe("MCP Registry Routes", () => {
 
       const body = ToolProbeSuccessSchema.parse(await res.json());
       expect(body.tools).toHaveLength(1);
-      expect(body.tools[0]).toEqual({ name: "bare-tool", description: undefined });
+      expect(body.tools[0]).toEqual({
+        name: "bare-tool",
+        description: undefined,
+        inputSchema: null,
+      });
     });
 
     it("serves cached tools — prewarm populates, GET is a hit, no second probe", async () => {
@@ -2635,6 +2666,134 @@ describe("MCP Registry Routes", () => {
       // through rather than wait on v2 tools).
       expect(getInFlightPrewarm("race-id", v2)).toBe(p2);
       expect(getInFlightPrewarm("race-id", v1)).toBeUndefined();
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // POST /:id/invoke — raw single-tool invocation
+  // ═══════════════════════════════════════════════════════════════════════
+
+  describe("POST /:id/invoke", () => {
+    /** App context with a workspace manager whose config has the server enabled. */
+    function invokeApp(serverId: string) {
+      const mockWorkspaceManager = {
+        getWorkspaceConfig: vi
+          .fn()
+          .mockResolvedValue({
+            workspace: {
+              tools: {
+                mcp: { servers: { [serverId]: { transport: { type: "stdio", command: "echo" } } } },
+              },
+            },
+          }),
+      };
+      return {
+        app: createWrappedRouter({ daemon: { getWorkspaceManager: () => mockWorkspaceManager } }),
+        mockWorkspaceManager,
+      };
+    }
+
+    async function seedEntry(name: string) {
+      const entry = createTestEntry(name);
+      await mcpRegistryRouter.request("/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entry }),
+      });
+      return entry;
+    }
+
+    it("rejects a request with no workspaceId (400)", async () => {
+      const entry = await seedEntry("invoke-no-ws");
+      const { app } = invokeApp(entry.id);
+      const res = await app.request(`/${entry.id}/invoke`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ toolName: "fetch-data", args: {} }),
+      });
+      expect(res.status).toBe(400);
+    });
+
+    it("returns 404 for an unknown server", async () => {
+      const { app } = invokeApp("nonexistent");
+      const res = await app.request("/nonexistent-server/invoke?workspaceId=ws-1", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ toolName: "x", args: {} }),
+      });
+      expect(res.status).toBe(404);
+      const body = z.object({ ok: z.literal(false), error: z.string() }).parse(await res.json());
+      expect(body.error).toContain("not found");
+    });
+
+    it("returns 404 when the tool is not found on the server", async () => {
+      const entry = await seedEntry("invoke-no-tool");
+      mockCreateMCPTools.mockResolvedValue({
+        tools: { "other-tool": { execute: vi.fn() } },
+        dispose: vi.fn().mockResolvedValue(undefined),
+        disconnected: [],
+      });
+      const { app } = invokeApp(entry.id);
+      const res = await app.request(`/${entry.id}/invoke?workspaceId=ws-1`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ toolName: "missing-tool", args: {} }),
+      });
+      expect(res.status).toBe(404);
+      const body = z.object({ ok: z.literal(false), error: z.string() }).parse(await res.json());
+      expect(body.error).toContain("missing-tool");
+    });
+
+    it("invokes the tool, returns its output, and disposes the connection", async () => {
+      const entry = await seedEntry("invoke-ok");
+      const execute = vi.fn().mockResolvedValue({ content: [{ type: "text", text: "done" }] });
+      const dispose = vi.fn().mockResolvedValue(undefined);
+      mockCreateMCPTools.mockResolvedValue({
+        tools: { "run-it": { execute } },
+        dispose,
+        disconnected: [],
+      });
+      const { app } = invokeApp(entry.id);
+      const res = await app.request(`/${entry.id}/invoke?workspaceId=ws-1`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ toolName: "run-it", args: { q: "hi" } }),
+      });
+      expect(res.status).toBe(200);
+      const body = z.object({ ok: z.literal(true), output: z.unknown() }).parse(await res.json());
+      expect(body.output).toEqual({ content: [{ type: "text", text: "done" }] });
+      expect(execute).toHaveBeenCalledWith({ q: "hi" }, expect.objectContaining({ messages: [] }));
+      expect(dispose).toHaveBeenCalled();
+    });
+
+    it("classifies a connection failure into an ok:false response", async () => {
+      const entry = await seedEntry("invoke-fail");
+      mockCreateMCPTools.mockRejectedValue(new Error("getaddrinfo ENOTFOUND nope.example.com"));
+      const { app } = invokeApp(entry.id);
+      const res = await app.request(`/${entry.id}/invoke?workspaceId=ws-1`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ toolName: "run-it", args: {} }),
+      });
+      expect(res.status).toBe(200);
+      const body = z
+        .object({ ok: z.literal(false), error: z.string(), phase: z.string().optional() })
+        .parse(await res.json());
+      expect(body.ok).toBe(false);
+    });
+
+    it("returns 404 when the workspace config is not found", async () => {
+      const entry = await seedEntry("invoke-no-wsconfig");
+      const mockWorkspaceManager = { getWorkspaceConfig: vi.fn().mockResolvedValue(null) };
+      const app = createWrappedRouter({
+        daemon: { getWorkspaceManager: () => mockWorkspaceManager },
+      });
+      const res = await app.request(`/${entry.id}/invoke?workspaceId=ws-gone`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ toolName: "run-it", args: {} }),
+      });
+      expect(res.status).toBe(404);
     });
   });
 

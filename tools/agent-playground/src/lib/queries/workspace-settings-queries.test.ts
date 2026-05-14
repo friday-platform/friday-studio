@@ -26,27 +26,21 @@ vi.mock("@tanstack/svelte-query", () => ({
 
 // Capture per-key requests to the workspace env client without real network.
 const putKey = vi.fn(async () => new Response(JSON.stringify({ success: true, key: "K" })));
-const deleteKey = vi.fn(
-  async () => new Response(JSON.stringify({ success: true, key: "K", removed: true })),
-);
 const putIdentity = vi.fn(async () => new Response(JSON.stringify({ ok: true })));
 
 vi.mock("../daemon-client.ts", () => ({
   getDaemonClient: () => ({
     workspaceEnv: () => ({
       index: { $get: vi.fn() },
-      ":key": { $put: putKey, $delete: deleteKey },
+      ":key": { $put: putKey },
     }),
     workspaceConfig: () => ({ identity: { $put: putIdentity } }),
   }),
 }));
 
-const {
-  workspaceEnvQueries,
-  useSetWorkspaceEnvVar,
-  useDeleteWorkspaceEnvVar,
-  useUpdateWorkspaceIdentity,
-} = await import("./workspace-settings-queries.ts");
+const { workspaceEnvQueries, useSetWorkspaceEnvVar, useUpdateWorkspaceIdentity } = await import(
+  "./workspace-settings-queries.ts"
+);
 
 describe("workspaceEnvQueries", () => {
   it("exposes a hierarchical base key", () => {
@@ -69,12 +63,6 @@ describe("workspace env mutations", () => {
     const mut = useSetWorkspaceEnvVar();
     await mut.mutateAsync({ workspaceId: "ws-1", key: "API_KEY", value: "v" });
     expect(putKey).toHaveBeenCalledWith({ param: { key: "API_KEY" }, json: { value: "v" } });
-  });
-
-  it("DELETEs a single key", async () => {
-    const mut = useDeleteWorkspaceEnvVar();
-    await mut.mutateAsync({ workspaceId: "ws-1", key: "API_KEY" });
-    expect(deleteKey).toHaveBeenCalledWith({ param: { key: "API_KEY" } });
   });
 
   it("PUTs the identity patch as the json body", async () => {

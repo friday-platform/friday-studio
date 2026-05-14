@@ -333,7 +333,7 @@ describe("PUT /mcp/:serverId", () => {
     expect(destroyWorkspaceRuntime).not.toHaveBeenCalled();
   });
 
-  test("enables a server and destroys runtime", async () => {
+  test("enables a server without tearing down the active runtime", async () => {
     mockDiscoverMCPServers.mockResolvedValue([makeCandidate("github", "GitHub", "static")]);
 
     const testDir = getTestDir();
@@ -351,6 +351,8 @@ describe("PUT /mcp/:serverId", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as JsonBody;
     expect(body.server).toMatchObject({ id: "github", name: "GitHub" });
+    // The route doesn't restart the runtime — the config write is enough; the
+    // next spawn picks up the change.
     expect(destroyWorkspaceRuntime).not.toHaveBeenCalled();
   });
 
@@ -539,7 +541,7 @@ describe("DELETE /mcp/:serverId", () => {
     });
   });
 
-  test("disables a server and destroys runtime", async () => {
+  test("disables a server without tearing down the active runtime", async () => {
     const testDir = getTestDir();
     const workspace = createMockWorkspace({ path: testDir });
     const config = makeWorkspaceConfig({

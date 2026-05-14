@@ -101,7 +101,7 @@ export class LinkCredentialUnavailableError extends Error {
 }
 
 /** Build auth headers for Link API calls. Returns empty object in dev mode. */
-function getLinkAuthHeaders(): Record<string, string> {
+export function getLinkAuthHeaders(): Record<string, string> {
   if (process.env.LINK_DEV_MODE === "true") return {};
 
   const atlasKey = process.env.FRIDAY_KEY;

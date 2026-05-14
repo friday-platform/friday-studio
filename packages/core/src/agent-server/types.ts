@@ -141,15 +141,22 @@ const AgentSessionDataSchema = z.object({
 /**
  * Link credential reference. Re-declared locally for the same reason
  * AgentSessionDataSchema is — the MCP server side is on a different Zod
- * version than @atlas/agent-sdk. Must stay structurally compatible with
- * LinkCredentialRefSchema in packages/agent-sdk/src/types.ts.
+ * version than @atlas/agent-sdk. Kept structurally identical to
+ * `LinkCredentialRefSchema` in packages/agent-sdk/src/types.ts (strict
+ * object, non-empty id/provider, at-least-one-of refine) so the two
+ * validate the same set of values — `link-credential-ref-schema.test.ts`
+ * pins that.
  */
-const LinkCredentialRefSchema = z.object({
-  from: z.literal("link"),
-  id: z.string().optional(),
-  provider: z.string().optional(),
-  key: z.string(),
-});
+export const LinkCredentialRefSchema = z
+  .strictObject({
+    from: z.literal("link"),
+    id: z.string().min(1).optional(),
+    provider: z.string().min(1).optional(),
+    key: z.string(),
+  })
+  .refine((data) => Boolean(data.id) || Boolean(data.provider), {
+    message: "At least one of 'id' or 'provider' must be specified",
+  });
 
 /**
  * MCP tool parameter schema

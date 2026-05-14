@@ -3,6 +3,7 @@ import type { LinkCredentialRef, MCPServerConfig } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
 import { getAnnotation, isOfficialCanonicalName } from "@atlas/core/mcp-registry/annotations";
 import { buildBearerAuthConfig } from "@atlas/core/mcp-registry/auth-config";
+import { getLinkAuthHeaders } from "@atlas/core/mcp-registry/credential-resolver";
 import { discoverMCPServers, type LinkSummary } from "@atlas/core/mcp-registry/discovery";
 import { runDoctor } from "@atlas/core/mcp-registry/doctor";
 import { fetchReadme } from "@atlas/core/mcp-registry/readme-fetcher";
@@ -1120,7 +1121,9 @@ export const mcpRegistryRouter = daemonFactory
         workspaceConfig = mergedConfig.workspace;
 
         try {
-          const result = await parseResult(client.link.v1.summary.$get({ query: {} }));
+          const result = await parseResult(
+            client.link.v1.summary.$get({ query: {} }, { headers: getLinkAuthHeaders() }),
+          );
           if (result.ok && "providers" in result.data) {
             linkSummary = result.data as LinkSummary;
           }
@@ -1236,7 +1239,11 @@ export const mcpRegistryRouter = daemonFactory
           .max(64),
       }),
     ),
-    zValidator("query", z.object({ workspaceId: z.string().optional() })),
+    // `workspaceId` is required: an invocation always runs against a specific
+    // workspace's merged config, and membership is checked below. There is no
+    // workspace-less path — that would let any authenticated user invoke
+    // arbitrary tools on any server with the daemon's ambient credentials.
+    zValidator("query", z.object({ workspaceId: z.string().min(1) })),
     zValidator(
       "json",
       z.object({
@@ -1249,9 +1256,7 @@ export const mcpRegistryRouter = daemonFactory
       const { workspaceId } = c.req.valid("query");
       const { toolName, args } = c.req.valid("json");
 
-      if (workspaceId) {
-        await requireWorkspaceMember(c, workspaceId);
-      }
+      await requireWorkspaceMember(c, workspaceId);
 
       let server: MCPServerMetadata | undefined = mcpServersRegistry.servers[id];
       if (!server) {
@@ -1262,34 +1267,30 @@ export const mcpRegistryRouter = daemonFactory
         return c.json({ ok: false as const, error: "Server not found" }, 404);
       }
 
-      // Resolve the config the same way test-chat does — a workspace-scoped
-      // invocation runs against that workspace's merged server config so
-      // credentials and settings match what the workspace's agents see.
+      // Resolve the config the same way test-chat does — the invocation runs
+      // against the workspace's merged server config so credentials and
+      // settings match what the workspace's agents see.
       let resolvedConfig = server.configTemplate;
-      if (workspaceId) {
-        const ctx = c.get("app");
-        const mergedConfig = await ctx.daemon.getWorkspaceManager().getWorkspaceConfig(workspaceId);
-        if (!mergedConfig) {
-          return c.json({ ok: false as const, error: `Workspace not found: ${workspaceId}` }, 404);
-        }
-        let linkSummary: LinkSummary | undefined;
-        try {
-          const result = await parseResult(client.link.v1.summary.$get({ query: {} }));
-          if (result.ok && "providers" in result.data) {
-            linkSummary = result.data as LinkSummary;
-          }
-        } catch {
-          // Unconfigured Link-backed servers surface an auth error below.
-        }
-        const candidates = await discoverMCPServers(
-          workspaceId,
-          mergedConfig.workspace,
-          linkSummary,
+      const ctx = c.get("app");
+      const mergedConfig = await ctx.daemon.getWorkspaceManager().getWorkspaceConfig(workspaceId);
+      if (!mergedConfig) {
+        return c.json({ ok: false as const, error: `Workspace not found: ${workspaceId}` }, 404);
+      }
+      let linkSummary: LinkSummary | undefined;
+      try {
+        const result = await parseResult(
+          client.link.v1.summary.$get({ query: {} }, { headers: getLinkAuthHeaders() }),
         );
-        const candidate = candidates.find((cand) => cand.metadata.id === id);
-        if (candidate) {
-          resolvedConfig = candidate.mergedConfig;
+        if (result.ok && "providers" in result.data) {
+          linkSummary = result.data as LinkSummary;
         }
+      } catch {
+        // Unconfigured Link-backed servers surface an auth error below.
+      }
+      const candidates = await discoverMCPServers(workspaceId, mergedConfig.workspace, linkSummary);
+      const candidate = candidates.find((cand) => cand.metadata.id === id);
+      if (candidate) {
+        resolvedConfig = candidate.mergedConfig;
       }
 
       let mcpResult: Awaited<ReturnType<typeof createMCPTools>> | undefined;

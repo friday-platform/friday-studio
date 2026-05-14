@@ -291,8 +291,9 @@ export function useInstallMCPServer() {
 /**
  * Mutation for invoking a single MCP tool directly — connects to the server,
  * calls `tools/call` with the given args, returns the real output. Wraps
- * `POST /api/mcp-registry/:id/invoke`. Optionally workspace-scoped so the
- * invocation runs against that workspace's merged server config.
+ * `POST /api/mcp-registry/:id/invoke`. Always workspace-scoped: the invocation
+ * runs against that workspace's merged server config, and the route checks
+ * workspace membership.
  */
 export function useInvokeMCPTool() {
   const client = getDaemonClient();
@@ -302,11 +303,11 @@ export function useInvokeMCPTool() {
       id: string;
       toolName: string;
       args: Record<string, unknown>;
-      workspaceId?: string;
+      workspaceId: string;
     }): Promise<ToolInvokeResponse> => {
       const res = await client.mcp[":id"].invoke.$post({
         param: { id: input.id },
-        query: input.workspaceId ? { workspaceId: input.workspaceId } : {},
+        query: { workspaceId: input.workspaceId },
         json: { toolName: input.toolName, args: input.args },
       });
       const body = await res.json().catch(() => ({}));

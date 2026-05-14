@@ -6,7 +6,7 @@ import { z } from "zod";
 import { deriveElicitationExpiresAt } from "../elicitations/wait.ts";
 import type { ToolContext } from "../types.ts";
 import { createErrorResponse, createSuccessResponse } from "../utils.ts";
-import { EnvScopeSchema, isSecretKey } from "./shared.ts";
+import { EnvScopeSchema, isSecretKey, MASKED_VALUE } from "./shared.ts";
 
 /**
  * Register the `env_set` platform tool.
@@ -72,6 +72,18 @@ export function registerEnvSetTool(server: McpServer, ctx: ToolContext): void {
       if (scope === "workspace" && !workspaceId) {
         return createErrorResponse(
           "workspaceId is missing from scope — cannot target 'workspace' env.",
+        );
+      }
+
+      // Reads of secret-looking keys come back masked as `********`. An agent
+      // doing read-modify-write would otherwise propose writing the mask
+      // sentinel as the real value — refuse it rather than corrupt the `.env`.
+      const maskedKeys = keys.filter((k) => vars[k] === MASKED_VALUE);
+      if (maskedKeys.length > 0) {
+        return createErrorResponse(
+          `Refusing to write the masked sentinel (${MASKED_VALUE}) as a value for ` +
+            `${maskedKeys.join(", ")}. env_get masks secret-looking keys — you can't round-trip ` +
+            "a masked read into a write. Supply the real value, or leave the key unchanged.",
         );
       }
 
