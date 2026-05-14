@@ -163,10 +163,13 @@ In `packages/client/v2/mod.ts`:
 ```typescript
 import type { ChatStorageRoutes } from "@atlas/atlasd";
 import type { AgentRoutes } from "@atlas/atlasd"; // Add import
+import { getAtlasDaemonUrl } from "@atlas/oapi-client";
+
+const base = getAtlasDaemonUrl(); // honors FRIDAYD_URL + FRIDAY_TLS_CERT
 
 export const client = {
-  chatStorage: hc<ChatStorageRoutes>("http://localhost:8080/api/chat-storage"),
-  agents: hc<AgentRoutes>("http://localhost:8080/api/agents"), // Add route
+  chatStorage: hc<ChatStorageRoutes>(`${base}/api/chat-storage`),
+  agents: hc<AgentRoutes>(`${base}/api/agents`), // Add route
 };
 ```
 

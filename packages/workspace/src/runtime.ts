@@ -91,7 +91,7 @@ import {
 } from "@atlas/llm";
 import { logger } from "@atlas/logger";
 import { createMCPTools } from "@atlas/mcp";
-import { getAtlasPlatformServerConfig } from "@atlas/oapi-client";
+import { getAtlasDaemonUrl, getAtlasPlatformServerConfig } from "@atlas/oapi-client";
 import { extractArchiveContents, SkillStorage, validateSkillReferences } from "@atlas/skills";
 import { stringifyError } from "@atlas/utils";
 import { getFridayHome } from "@atlas/utils/paths.server";
@@ -1278,8 +1278,11 @@ export class WorkspaceRuntime {
     this.config = config;
     this.options = options;
 
-    // Create shared AgentOrchestrator (can handle concurrent executions)
-    const agentsServerUrl = options.daemonUrl || "http://localhost:8080";
+    // Create shared AgentOrchestrator (can handle concurrent executions).
+    // getAtlasDaemonUrl() picks the right scheme/port from FRIDAYD_URL +
+    // FRIDAY_TLS_CERT — a hardcoded http://localhost:8080 fallback would
+    // misroute on TLS-enabled installs where the daemon rejects cleartext.
+    const agentsServerUrl = options.daemonUrl || getAtlasDaemonUrl();
     this.orchestrator = new AgentOrchestrator(
       {
         agentsServerUrl: `${agentsServerUrl}/agents`,

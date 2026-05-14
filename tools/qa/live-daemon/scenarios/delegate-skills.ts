@@ -20,7 +20,6 @@
  * here.
  */
 
-import { ensureDir } from "jsr:@std/fs@1.0.13/ensure-dir";
 import { dirname, join } from "jsr:@std/path@1";
 import { formatDelegateSkillsBlock } from "@atlas/core/delegate/skills-resolver";
 import { buildTemporalFacts } from "@atlas/llm";
@@ -187,7 +186,7 @@ async function main() {
   const report = { gitSha: sha, startedAt, passed, failed, results };
   if (writeResult || jsonOutputPath) {
     const path = jsonOutputPath ?? join(HARNESS_PATHS.resultsDir, `${sha}-delegate-skills.json`);
-    await ensureDir(dirname(path));
+    await Deno.mkdir(dirname(path), { recursive: true });
     await Deno.writeTextFile(path, JSON.stringify(report, null, 2));
     console.log(`\n→ ${path}`);
   }

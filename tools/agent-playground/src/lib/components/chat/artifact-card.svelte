@@ -25,37 +25,40 @@
   // TanStack Query for the live UI path. Same artifactId across N
   // cards shares one in-flight request and a process-wide cache, which
   // is what makes the chat tree survive a heavy delegation that
-  // produces 30+ artifacts. In export mode the query is disabled
-  // (null id → skipToken) and the prefetched map drives the render.
-  const liveQuery = createQuery(() =>
-    artifactQueries.byId(exportCtx === undefined ? artifactId : null),
-  );
+  // produces 30+ artifacts. In export mode the query is skipped
+  // entirely — the export-preview layout is chromeless and does not
+  // mount a QueryClientProvider, so calling createQuery() there would
+  // throw "No QueryClient was found in Svelte context" during SSR.
+  const liveQuery =
+    exportCtx === undefined
+      ? createQuery(() => artifactQueries.byId(artifactId))
+      : undefined;
 
   const resolvedTitle = $derived(
     exportCtx !== undefined
       ? prefetched?.title || "Artifact"
-      : liveQuery.data?.artifact.title || "Artifact",
+      : liveQuery?.data?.artifact.title || "Artifact",
   );
   const resolvedSummary = $derived(
-    exportCtx !== undefined ? prefetched?.summary : liveQuery.data?.artifact.summary,
+    exportCtx !== undefined ? prefetched?.summary : liveQuery?.data?.artifact.summary,
   );
   const mimeType = $derived(
-    exportCtx !== undefined ? prefetched?.mimeType : liveQuery.data?.artifact.data.mimeType,
+    exportCtx !== undefined ? prefetched?.mimeType : liveQuery?.data?.artifact.data.mimeType,
   );
   const originalName = $derived(
-    exportCtx !== undefined ? prefetched?.originalName : liveQuery.data?.artifact.data.originalName,
+    exportCtx !== undefined ? prefetched?.originalName : liveQuery?.data?.artifact.data.originalName,
   );
   const sizeBytes = $derived(
-    exportCtx !== undefined ? prefetched?.size : liveQuery.data?.artifact.data.size,
+    exportCtx !== undefined ? prefetched?.size : liveQuery?.data?.artifact.data.size,
   );
   const contents = $derived(
-    exportCtx !== undefined ? undefined : liveQuery.data?.contents,
+    exportCtx !== undefined ? undefined : liveQuery?.data?.contents,
   );
-  const loading = $derived(exportCtx === undefined && liveQuery.isPending);
+  const loading = $derived(exportCtx === undefined && (liveQuery?.isPending ?? false));
   const fetchError = $derived(
     exportMissing
       ? `Artifact ${artifactId} missing from export context`
-      : exportCtx === undefined && liveQuery.error
+      : exportCtx === undefined && liveQuery?.error
         ? liveQuery.error.message
         : null,
   );
@@ -173,17 +176,20 @@
 
   // Raw text for tabular artifacts that didn't ship inline with the
   // metadata response. Disabled (skipToken) when the mime isn't
-  // tabular, the metadata already supplied contents, or we're in
-  // export mode. Same TanStack cache as the metadata query — multiple
-  // cards for the same tabular artifact share one network request,
-  // which is what stops `ERR_INSUFFICIENT_RESOURCES` on heavy-
-  // delegation chats that surface 30+ artifact ids.
-  const tabularContentQuery = createQuery(() =>
-    artifactQueries.content(
-      exportCtx === undefined && isTabularMime && !contents ? artifactId : null,
-    ),
-  );
-  const tabularText = $derived(contents ?? tabularContentQuery.data);
+  // tabular or the metadata already supplied contents. Skipped
+  // entirely in export mode — same reason as `liveQuery` above: no
+  // QueryClientProvider in the chromeless preview layout. Same
+  // TanStack cache as the metadata query — multiple cards for the
+  // same tabular artifact share one network request, which is what
+  // stops `ERR_INSUFFICIENT_RESOURCES` on heavy-delegation chats that
+  // surface 30+ artifact ids.
+  const tabularContentQuery =
+    exportCtx === undefined
+      ? createQuery(() =>
+          artifactQueries.content(isTabularMime && !contents ? artifactId : null),
+        )
+      : undefined;
+  const tabularText = $derived(contents ?? tabularContentQuery?.data);
 
   // text/markdown routes through the bare `/artifacts/<id>` dispatcher
   // (one redirect hop) so the same disambiguation lives in one place:
