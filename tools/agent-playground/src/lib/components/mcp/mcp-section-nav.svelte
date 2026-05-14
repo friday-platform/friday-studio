@@ -90,29 +90,28 @@
   .section-nav {
     display: flex;
     flex-direction: column;
-    gap: var(--size-0-5);
   }
 
   .section-nav-item {
     background: none;
     border: none;
-    border-radius: var(--radius-2);
-    color: var(--text);
+    border-radius: var(--radius-2-5);
+    color: var(--text-faded);
     cursor: pointer;
     font: inherit;
-    font-size: var(--font-size-3);
-    font-weight: var(--font-weight-6);
-    padding: var(--size-1-5) var(--size-2);
+    font-size: var(--font-size-2-5);
+    font-weight: var(--font-weight-5);
+    padding: var(--size-1-5) var(--size-2-5);
     text-align: start;
-    transition: background-color 0.12s ease;
+    transition: background-color 100ms ease, color 100ms ease;
   }
 
   .section-nav-item:hover:not(.active) {
-    background-color: color-mix(in srgb, var(--text), transparent 92%);
+    color: var(--text);
   }
 
   .section-nav-item.active {
-    background-color: color-mix(in srgb, var(--text), transparent 88%);
+    background-color: var(--highlight);
     color: var(--text-bright);
   }
 
