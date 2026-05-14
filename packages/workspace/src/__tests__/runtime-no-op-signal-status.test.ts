@@ -14,9 +14,10 @@
  * sentinel> }` — and the chat agent reports "Done — successfully" for a
  * session that did literally nothing.
  *
- * Observed in 2026-05-14 QA on workspace `fermented_lettuce` session
- * `1dbfd103-0ee7-4811-89fa-313ee00b8236`. Root-cause investigation
- * pinpointed the engine's silent return as the contract gap.
+ * Discovered during a chat-driven QA round when a no-op fixture FSM
+ * caused the chat agent to report a clean success on a job that did
+ * literally nothing. Root-cause investigation pinpointed the engine's
+ * silent return as the contract gap.
  *
  * Desired contract (this test asserts the fix): when the engine takes
  * zero transitions on a signal, the session must surface as `SKIPPED`,
