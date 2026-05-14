@@ -61,8 +61,18 @@ type readinessRunner struct {
 	period       time.Duration
 	failureMax   int
 
-	// Counter owned by the goroutine; no mutex needed.
+	// Cap on launcher-driven restarts for the lifetime of this runner
+	// (i.e. one launcher boot). process-compose's MaxRestarts gates its
+	// own in-band restart loop but NOT external sup.RestartProcess
+	// calls (see ProjectRunner.RestartProcess → doRestart in
+	// process-compose; no Restarts < MaxRestarts check). Without this
+	// per-runner cap a wedged service (port bound, /health hangs)
+	// would get bounced every ~62s forever.
+	restartMax int
+
+	// Counters owned by the goroutine; no mutex needed.
 	consecutiveFail int
+	restartsIssued  int
 }
 
 // restarter is the slice of *Supervisor that readinessRunner cares
@@ -91,6 +101,7 @@ func newReadinessRunner(s processSpec, cache *HealthCache, sup restarter) *readi
 		initialDelay: time.Duration(probeInitialDelay) * time.Second,
 		period:       time.Duration(probePeriodSeconds) * time.Second,
 		failureMax:   probeFailureThreshold,
+		restartMax:   supervisedMaxRestarts,
 	}
 }
 
@@ -174,20 +185,43 @@ func (r *readinessRunner) onFailure() {
 	if r.consecutiveFail < r.failureMax {
 		return
 	}
-	// Threshold breached. Ask the supervisor for a restart. Process-
-	// compose's MaxRestarts policy still gates how many times this can
-	// fire before the service is parked in Error.
+	// Threshold breached. process-compose's MaxRestarts gates its own
+	// in-band restart loop (crash + RestartPolicyAlways) but NOT
+	// external sup.RestartProcess — ProjectRunner.RestartProcess →
+	// doRestart unconditionally re-runs the process. Without the
+	// per-runner cap below a wedged service (port bound, /health
+	// hangs) would get bounced every ~62s for the rest of the
+	// launcher's lifetime. Once we hit the cap we keep probing (so
+	// the cache reflects truth + the launcher recovers if the
+	// service comes back) but stop issuing restart requests.
+	if r.restartsIssued >= r.restartMax {
+		// Log once at the boundary so the operator notices, then go
+		// quiet. consecutiveFail keeps climbing — that's intentional;
+		// a downstream "the runner gave up" check can read it.
+		if r.consecutiveFail == r.failureMax {
+			log.Warn("readiness: restart cap reached, giving up on restarts",
+				"service", r.name,
+				"restarts_issued", r.restartsIssued,
+				"restart_max", r.restartMax,
+				"url", r.url,
+			)
+		}
+		return
+	}
+	r.restartsIssued++
 	log.Warn("readiness: failure threshold breached, requesting restart",
 		"service", r.name,
 		"consecutive_failures", r.consecutiveFail,
+		"restarts_issued", r.restartsIssued,
+		"restart_max", r.restartMax,
 		"url", r.url,
 	)
 	if err := r.sup.RestartProcess(r.name); err != nil {
 		log.Error("readiness: RestartProcess failed", "service", r.name, "error", err)
 	}
 	// Reset so the next post-restart cold-start window gets a fresh
-	// budget. If the restart didn't actually take, the next failureMax
-	// failures will trigger another one.
+	// failure budget. restartsIssued does NOT reset — it caps the
+	// runner's lifetime restart count.
 	r.consecutiveFail = 0
 }
 

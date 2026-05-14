@@ -149,22 +149,25 @@ var staleHTTPSchemeKeys = []string{
 	"LINK_SERVICE_URL",
 }
 
-// migrateStaleURLSchemes rewrites `KEY=http://...` to `KEY=https://...`
-// for the URL knobs listed in staleHTTPSchemeKeys, but ONLY when the
-// s2s cert chain is currently valid (== services will actually be
-// listening on TLS). No-op when s2s is off — we never want to flip a
-// real http install to https.
+// migrateStaleURLSchemes keeps the URL knobs in staleHTTPSchemeKeys in
+// sync with the s2s cert state on disk. When TLS is on it rewrites
+// `http://localhost:N` → `https://localhost:N` (the canonical fix for
+// installs whose .env was written before the s2s mesh landed). When
+// TLS is off — first install, manual cert removal, expired-and-not-
+// renewed — it rewrites `https://localhost:N` BACK to `http://`, so a
+// previous-migration leftover doesn't point consumers at a TLS
+// listener the launcher won't bring up this boot.
 //
-// Idempotent: existing https:// values pass through unchanged, lines
-// for absent keys are not added (this function only repairs, it does
-// not seed defaults). Returns the number of lines that flipped, so the
-// boot log can stay silent on warm boots and surface a one-line audit
-// on the first post-TLS launch.
+// Both directions only touch loopback URLs (`localhost` / `127.0.0.1`)
+// — an operator who pinned an explicit external URL like
+// `https://my-reverse-proxy.local:443` knows their setup; we never
+// downgrade it. Lines for absent keys are not added (this function
+// only repairs).
+//
+// Returns the number of lines that flipped, so the boot log can stay
+// silent on warm boots and surface a one-line audit on the first
+// post-state-change launch.
 func migrateStaleURLSchemes() (int, error) {
-	if !s2sCertsValid(time.Now()) {
-		// No TLS → no rewrite. Plain-HTTP installs keep their values.
-		return 0, nil
-	}
 	path := envFilePath()
 	// #nosec G304 -- launcher's own .env, see ensureCertEnvFile comment.
 	raw, err := os.ReadFile(path)
@@ -174,6 +177,7 @@ func migrateStaleURLSchemes() (int, error) {
 		}
 		return 0, fmt.Errorf("read env: %w", err)
 	}
+	tlsOn := s2sCertsValid(time.Now())
 	keySet := make(map[string]struct{}, len(staleHTTPSchemeKeys))
 	for _, k := range staleHTTPSchemeKeys {
 		keySet[k] = struct{}{}
@@ -193,16 +197,14 @@ func migrateStaleURLSchemes() (int, error) {
 		if _, ok := keySet[key]; !ok {
 			continue
 		}
-		// Anything past "=" is the value verbatim (no trim — preserves
-		// trailing whitespace / quoting). Only flip when the value
-		// starts with `http://`; explicit `https://` or `tcp://` etc.
-		// pass through unchanged (operator chose it).
-		value := line[eq+1:]
-		const httpPrefix = "http://"
-		if !strings.HasPrefix(value, httpPrefix) {
+		// Anything past "=" is the value verbatim — preserves trailing
+		// whitespace, CRLF, and quoting. swapURLScheme owns the
+		// loopback-only check + the direction logic.
+		rewritten, changed := swapURLScheme(line[eq+1:], tlsOn)
+		if !changed {
 			continue
 		}
-		lines[i] = key + "=" + "https://" + value[len(httpPrefix):]
+		lines[i] = key + "=" + rewritten
 		migrated++
 	}
 	if migrated == 0 {
@@ -212,4 +214,55 @@ func migrateStaleURLSchemes() (int, error) {
 		return 0, err
 	}
 	return migrated, nil
+}
+
+// swapURLScheme returns the value with its scheme aligned to TLS state,
+// reporting whether anything changed. Only loopback URLs are eligible:
+// any external host — an operator-pinned reverse proxy or cloud URL —
+// passes through unchanged, regardless of TLS state.
+//
+// Direction:
+//   - tlsOn  + value starts with `http://`  → upgrade to `https://`
+//   - !tlsOn + value starts with `https://` → downgrade to `http://`
+//   - everything else: pass-through.
+//
+// The value may carry a trailing `\r` (Windows CRLF) or other
+// whitespace; we preserve it verbatim by slicing past the scheme only.
+func swapURLScheme(value string, tlsOn bool) (string, bool) {
+	const httpPrefix = "http://"
+	const httpsPrefix = "https://"
+	if tlsOn && strings.HasPrefix(value, httpPrefix) {
+		rest := value[len(httpPrefix):]
+		if !startsWithLoopbackHost(rest) {
+			return value, false
+		}
+		return httpsPrefix + rest, true
+	}
+	if !tlsOn && strings.HasPrefix(value, httpsPrefix) {
+		rest := value[len(httpsPrefix):]
+		if !startsWithLoopbackHost(rest) {
+			return value, false
+		}
+		return httpPrefix + rest, true
+	}
+	return value, false
+}
+
+// startsWithLoopbackHost reports whether the host portion of a URL
+// remainder (post-scheme, e.g. `localhost:18080/path` or `127.0.0.1`)
+// is a loopback. We intentionally don't do DNS resolution — `local.
+// hellofriday.ai` resolves to 127.0.0.1 but isn't a loopback we want
+// to flip; operators who put non-trivial hostnames in .env get
+// pass-through behavior.
+func startsWithLoopbackHost(rest string) bool {
+	// host portion ends at the first '/' or ':' (the colon-port).
+	end := len(rest)
+	for i := 0; i < len(rest); i++ {
+		if rest[i] == '/' || rest[i] == ':' {
+			end = i
+			break
+		}
+	}
+	host := rest[:end]
+	return host == "localhost" || host == "127.0.0.1"
 }

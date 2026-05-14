@@ -221,6 +221,126 @@ func TestHealthCache_TransitionUpdatesSinceSecs(t *testing.T) {
 	}
 }
 
+// TestHealthCache_SetReady_NotifiesSubscribers pins the three SetReady
+// branches the cache promises:
+//
+//  1. First write (no prior entry): records the value silently — the
+//     next Update tick is what fans out to subscribers, not SetReady
+//     itself. We assert NO notify fires.
+//  2. Repeated write, same value: idempotent no-op — no notify.
+//  3. Flip from prior value: fires a single notify so SSE consumers
+//     learn about the transition without waiting for the 500ms poll
+//     tick (which would briefly show stale state).
+//
+// A regression that drops the `c.notifySubscribers()` call on flip
+// would break the wizard's live status updates — the SSE channel
+// would only fire on Update boundaries, ~500ms slower than necessary.
+// The existing TestHealthCache_Subscribe_NotifyOnChange exercises
+// SetReady→Update→notify; this one isolates the SetReady-only path.
+func TestHealthCache_SetReady_NotifiesSubscribers(t *testing.T) {
+	var sd atomic.Bool
+	c := NewHealthCache(&sd)
+	ch := c.Subscribe()
+	defer c.Unsubscribe(ch)
+
+	drain := func() {
+		// Empty any pending tick so the next select{} below reads a
+		// fresh notification, not a stale one.
+		for {
+			select {
+			case <-ch:
+			default:
+				return
+			}
+		}
+	}
+
+	// (1) First write — no notify.
+	c.SetReady("x", true)
+	select {
+	case <-ch:
+		t.Error("first SetReady fired notify; want silent (only Update fans out the initial state)")
+	case <-time.After(30 * time.Millisecond):
+	}
+
+	// (2) Same value — no notify.
+	c.SetReady("x", true)
+	select {
+	case <-ch:
+		t.Error("repeated same-value SetReady fired notify; want idempotent no-op")
+	case <-time.After(30 * time.Millisecond):
+	}
+	drain()
+
+	// (3) Flip — exactly one notify.
+	c.SetReady("x", false)
+	select {
+	case <-ch:
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("flip SetReady did not fire notify within 100ms — regression in subscribers fan-out")
+	}
+	// Confirm only one tick lands (not a runaway notify loop).
+	select {
+	case <-ch:
+		t.Error("flip SetReady fired more than once; want exactly one notify per transition")
+	case <-time.After(30 * time.Millisecond):
+	}
+}
+
+// TestHealthCache_UpdateBeforeSetReady_FlipsOnNextUpdate pins the
+// actual production transition order — the seed-then-Update form that
+// most existing tests use is the INVERSE of what happens in production.
+//
+// In production runHealthPoll fires Update every 500ms while the
+// readinessRunner waits initialDelay=2s before its first SetReady. So
+// the first ~4 Updates always see customReady=false and seed running
+// services as "starting"; only when a later SetReady flips the map and
+// the NEXT Update runs does the status derive to healthy. The wizard
+// briefly flashes amber for ~2s on every install before going green.
+//
+// This test replicates that ordering. A regression that broke the
+// SetReady-then-next-Update path (e.g. caching the derived status
+// instead of re-deriving) would ship undetected without this guard.
+func TestHealthCache_UpdateBeforeSetReady_FlipsOnNextUpdate(t *testing.T) {
+	var sd atomic.Bool
+	c := NewHealthCache(&sd)
+
+	// First observation: service is running, but readinessRunner hasn't
+	// reported ready yet → status should be "starting".
+	c.Update(makeStates(runningReady("playground")))
+	got, _, _ := c.Snapshot()
+	if got[0].Status != statusStarting {
+		t.Fatalf("pre-flip status = %q, want %q (customReady=false default)",
+			got[0].Status, statusStarting)
+	}
+
+	// Wait a beat so the transitionAt delta is observable.
+	time.Sleep(20 * time.Millisecond)
+	startedAt := got[0].SinceSecs
+
+	// Native probe reports ready. By itself this does NOT mutate
+	// c.services — only flips the customReady map. Status is unchanged
+	// until the next Update re-derives.
+	c.SetReady("playground", true)
+	got2, _, _ := c.Snapshot()
+	if got2[0].Status != statusStarting {
+		t.Errorf("status changed before next Update; got %q, want still %q "+
+			"(SetReady must not mutate c.services directly)", got2[0].Status, statusStarting)
+	}
+
+	// Next Update tick re-derives → flip to healthy + transitionAt
+	// resets. This is the path runHealthPoll exercises every 500ms.
+	c.Update(makeStates(runningReady("playground")))
+	got3, _, _ := c.Snapshot()
+	if got3[0].Status != statusHealthy {
+		t.Errorf("post-flip status = %q, want %q", got3[0].Status, statusHealthy)
+	}
+	if got3[0].SinceSecs > startedAt {
+		t.Errorf("transitionAt did not reset on flip; SinceSecs went from %d to %d",
+			startedAt, got3[0].SinceSecs)
+	}
+}
+
 // TestHealthCache_SnapshotIsolated ensures Snapshot returns a copy
 // that can be mutated by the caller without affecting subsequent
 // snapshots. Specifically: HTTP handlers JSON-encode the slice
