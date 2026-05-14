@@ -541,7 +541,6 @@ export function buildSegments(msg: AtlasUIMessage): Segment[] {
 
   flushText();
   flushBurst();
-
   return segments;
 }
 

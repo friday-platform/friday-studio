@@ -16,10 +16,14 @@ import { jsonHighlighter } from "./json-highlighter.ts";
  *      tool-call ref stabiliser in `extractToolCalls`, so a `WeakMap` keyed
  *      on the object reference hits as soon as the call's data settles.
  *
- * The string path uses a small LRU because string inputs (e.g. raw text
- * stdout) don't have a stable reference to key on, but identical content
- * across re-renders is the common case. 64 entries is plenty for a chat
- * with a handful of expanded drawers and bounded to keep memory predictable.
+ * The string path uses a small bounded FIFO cache because string inputs
+ * (e.g. raw text stdout) don't have a stable reference to key on, but
+ * identical content across re-renders is the common case. 64 entries is
+ * plenty for a chat with a handful of expanded drawers and bounded to keep
+ * memory predictable. Eviction drops the oldest *inserted* entry — not the
+ * least-recently *used* — because the hit path doesn't re-insert. Adequate
+ * for this access pattern; if hit-rate ever becomes load-bearing, switch to
+ * true LRU by `stringCache.delete(k); stringCache.set(k, cached);` on hit.
  */
 
 const objectCache = new WeakMap<object, string>();
