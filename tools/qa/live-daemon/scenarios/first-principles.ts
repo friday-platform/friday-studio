@@ -17,6 +17,7 @@ import {
   fetchSessionEvents,
   HARNESS_PATHS,
   listArtifactsForSession,
+  makeFixtureDir,
   registerWorkspace,
   type SSEEvent,
   startDaemon,
@@ -38,8 +39,12 @@ const PYTHON_USER_AGENT_FIXTURE = join(
   "user-agents/fake-inbox-python-agent",
 );
 
-async function materializeFixture(srcDir: string, replacements: Record<string, string>) {
-  const tmpDir = await Deno.makeTempDir({ prefix: "friday-first-principles-" });
+async function materializeFixture(
+  fridayHome: string,
+  srcDir: string,
+  replacements: Record<string, string>,
+) {
+  const tmpDir = await makeFixtureDir(fridayHome, "friday-first-principles-");
   const src = await Deno.readTextFile(join(srcDir, "workspace.yml"));
   let rendered = src;
   for (const [from, to] of Object.entries(replacements)) {
@@ -138,7 +143,6 @@ function recordEventMetrics(
     events.totalUsage.cacheReadTokens +
     events.totalUsage.cacheWriteTokens;
   metrics.toolCallCount = events.toolCallCount;
-  metrics.stepValidationCount = events.stepValidations.length;
 }
 
 async function fetchTextArtifactJson(
@@ -468,7 +472,7 @@ function hasArtifactRef(value: unknown): boolean {
 async function runRefsOverDataScenario(d: DaemonHandle): Promise<EvalResult[]> {
   const notes: string[] = [];
   const metrics: Record<string, unknown> = {};
-  const wsPath = await materializeFixture(REFS_FIXTURE, {
+  const wsPath = await materializeFixture(d.fridayHome, REFS_FIXTURE, {
     __FAKE_INBOX_MCP_PATH__: FAKE_INBOX_MCP,
   });
   const ws = await registerWorkspace(d, wsPath, { name: "First Principles Refs" });
@@ -627,16 +631,10 @@ function numberValue(value: unknown): number | undefined {
   return undefined;
 }
 
-function validationSummary(events: Awaited<ReturnType<typeof fetchSessionEvents>>): string {
-  return events.stepValidations
-    .map((v) => `${v.strategy}:${v.verdict ?? v.skipReason ?? "none"}`)
-    .join(",");
-}
-
 async function runInputFromArrayScenario(d: DaemonHandle): Promise<EvalResult[]> {
   const notes: string[] = [];
   const metrics: Record<string, unknown> = {};
-  const wsPath = await materializeFixture(REFS_FIXTURE, {
+  const wsPath = await materializeFixture(d.fridayHome, REFS_FIXTURE, {
     __FAKE_INBOX_MCP_PATH__: FAKE_INBOX_MCP,
   });
   const ws = await registerWorkspace(d, wsPath, { name: "First Principles Refs Array" });
@@ -701,89 +699,10 @@ async function runInputFromArrayScenario(d: DaemonHandle): Promise<EvalResult[]>
   ];
 }
 
-async function runValidationContractScenario(d: DaemonHandle): Promise<EvalResult[]> {
-  const notes: string[] = [];
-  const metrics: Record<string, unknown> = {};
-  const wsPath = await materializeFixture(REFS_FIXTURE, {
-    __FAKE_INBOX_MCP_PATH__: FAKE_INBOX_MCP,
-  });
-  const ws = await registerWorkspace(d, wsPath, { name: "First Principles Validation" });
-  notes.push(`workspace ${ws.id} registered`);
-
-  const trigger = await triggerSignalSSE(d, ws.id, "validation-contract-event", {
-    payload: { query: "validation-contract" },
-    timeoutMs: 8 * 60 * 1000,
-  });
-  recordJobMetrics(metrics, trigger);
-
-  if (!trigger.sessionId) {
-    return [
-      {
-        id: "validation-output-contract",
-        pass: false,
-        notes: [...notes, "no session id returned"],
-        metrics,
-      },
-    ];
-  }
-
-  const bucket = `WS_DOCS_${ws.id}`;
-  const key = `doc/session/${trigger.sessionId}/validation-contract-check/validation-result`;
-  const doc = await natsKvGetJson(d.natsUrl, bucket, key);
-  const data = (doc?.data as Record<string, unknown> | undefined)?.data as
-    | Record<string, unknown>
-    | undefined;
-  const artifactData = await fetchFirstArtifactPayload(d, data);
-  const payload = artifactData ?? data;
-  const events = await fetchSessionEvents(d, trigger.sessionId);
-  recordEventMetrics(metrics, events);
-  const serializedDoc = JSON.stringify(data ?? {});
-  const serializedPayload = JSON.stringify(payload ?? {});
-  const hasRecordValidationStub =
-    serializedDoc.includes("record_validation") || serializedPayload.includes("record_validation");
-  const looksTransitional = /now\s+(let|i)|record validation|validation and return/i.test(
-    serializedPayload,
-  );
-  const validationHasImplicitPass = events.stepValidations.some(
-    (v) => v.strategy === "self" && v.verdict === "pass",
-  );
-
-  metrics.bucket = bucket;
-  metrics.docBytes = doc ? byteLen(doc) : 0;
-  metrics.data = data ?? null;
-  metrics.artifactData = artifactData ?? null;
-  metrics.stepValidations = events.stepValidations;
-  metrics.toolCallCount = events.toolCallCount;
-
-  const pass =
-    payload?.marker === "VALIDATION_CONTRACT_OK" &&
-    payload?.value === 7 &&
-    payload?.explanation === "structured output survived validation" &&
-    validationHasImplicitPass &&
-    !hasRecordValidationStub &&
-    !looksTransitional;
-
-  return [
-    {
-      id: "validation-output-contract",
-      pass,
-      notes: [
-        ...notes,
-        `marker: ${String(payload?.marker ?? "(missing)")}`,
-        `value: ${String(payload?.value ?? "(missing)")}`,
-        `validation: ${validationSummary(events) || "(missing)"}`,
-        `record_validation stub: ${hasRecordValidationStub}`,
-        `transitional prose: ${looksTransitional}`,
-      ],
-      metrics,
-    },
-  ];
-}
-
 async function runAgentOutputContractScenario(d: DaemonHandle): Promise<EvalResult[]> {
   const notes: string[] = [];
   const metrics: Record<string, unknown> = {};
-  const wsPath = await materializeFixture(REFS_FIXTURE, {
+  const wsPath = await materializeFixture(d.fridayHome, REFS_FIXTURE, {
     __FAKE_INBOX_MCP_PATH__: FAKE_INBOX_MCP,
   });
   const ws = await registerWorkspace(d, wsPath, { name: "First Principles Agent Contract" });
@@ -831,26 +750,18 @@ async function runAgentOutputContractScenario(d: DaemonHandle): Promise<EvalResu
         (tc) => tc.toolName,
       ),
     );
-  const validationHasImplicitPass = events.stepValidations.some(
-    (v) => v.strategy === "self" && v.verdict === "pass",
-  );
-  const containsRecordValidation = toolNames.includes("record_validation");
-
   metrics.bucket = bucket;
   metrics.docBytes = doc ? byteLen(doc) : 0;
   metrics.data = data ?? null;
   metrics.artifactData = artifactData ?? null;
   metrics.responseLength = responseText.length;
   metrics.toolNames = toolNames;
-  metrics.stepValidations = events.stepValidations;
 
   const pass =
     payload?.marker === "AGENT_OUTPUT_CONTRACT_OK" &&
     numberValue(payload?.value) === 11 &&
     (responsePresent || Object.keys(payload ?? {}).length > 0) &&
-    validationHasImplicitPass &&
-    toolNames.includes("complete") &&
-    !containsRecordValidation;
+    toolNames.includes("complete");
 
   return [
     {
@@ -861,9 +772,7 @@ async function runAgentOutputContractScenario(d: DaemonHandle): Promise<EvalResu
         `marker: ${String(payload?.marker ?? "(missing)")}`,
         `value: ${String(payload?.value ?? "(missing)")}`,
         `response length: ${responseText.length}`,
-        `validation: ${validationSummary(events) || "(missing)"}`,
         `tool calls: ${toolNames.join(",") || "(missing)"}`,
-        `record_validation called: ${containsRecordValidation}`,
       ],
       metrics,
     },
@@ -873,7 +782,7 @@ async function runAgentOutputContractScenario(d: DaemonHandle): Promise<EvalResu
 async function runLlmAgentInputFromHydrationScenario(d: DaemonHandle): Promise<EvalResult[]> {
   const notes: string[] = [];
   const metrics: Record<string, unknown> = {};
-  const wsPath = await materializeFixture(REFS_FIXTURE, {
+  const wsPath = await materializeFixture(d.fridayHome, REFS_FIXTURE, {
     __FAKE_INBOX_MCP_PATH__: FAKE_INBOX_MCP,
   });
   const ws = await registerWorkspace(d, wsPath, { name: "First Principles LLM Agent InputFrom" });
@@ -954,7 +863,7 @@ async function runLlmAgentInputFromHydrationScenario(d: DaemonHandle): Promise<E
 async function runPythonUserAgentToolsScenario(d: DaemonHandle): Promise<EvalResult[]> {
   const notes: string[] = [];
   const metrics: Record<string, unknown> = {};
-  const wsPath = await materializeFixture(REFS_FIXTURE, {
+  const wsPath = await materializeFixture(d.fridayHome, REFS_FIXTURE, {
     __FAKE_INBOX_MCP_PATH__: FAKE_INBOX_MCP,
   });
   const ws = await registerWorkspace(d, wsPath, { name: "First Principles Python User Agent" });
@@ -1036,7 +945,7 @@ async function runPythonUserAgentToolsScenario(d: DaemonHandle): Promise<EvalRes
 async function runPythonUserAgentInputFromScenario(d: DaemonHandle): Promise<EvalResult[]> {
   const notes: string[] = [];
   const metrics: Record<string, unknown> = {};
-  const wsPath = await materializeFixture(REFS_FIXTURE, {
+  const wsPath = await materializeFixture(d.fridayHome, REFS_FIXTURE, {
     __FAKE_INBOX_MCP_PATH__: FAKE_INBOX_MCP,
   });
   const ws = await registerWorkspace(d, wsPath, {
@@ -1134,7 +1043,7 @@ async function runPythonUserAgentInputFromScenario(d: DaemonHandle): Promise<Eva
 async function runAtlasAgentScenario(d: DaemonHandle): Promise<EvalResult[]> {
   const notes: string[] = [];
   const metrics: Record<string, unknown> = {};
-  const wsPath = await materializeFixture(REFS_FIXTURE, {
+  const wsPath = await materializeFixture(d.fridayHome, REFS_FIXTURE, {
     __FAKE_INBOX_MCP_PATH__: FAKE_INBOX_MCP,
   });
   const ws = await registerWorkspace(d, wsPath, { name: "First Principles Atlas Agent" });
@@ -1172,12 +1081,6 @@ async function runAtlasAgentScenario(d: DaemonHandle): Promise<EvalResult[]> {
     (ev) => (ev as { toolCalls?: Array<Record<string, unknown>> }).toolCalls ?? [],
   );
   const toolNames = stepToolCalls.map((tc) => String(tc.toolName ?? ""));
-  const stepValidationStrategies = stepCompletes
-    .map((ev) => (ev as { validation?: { strategy?: string } }).validation?.strategy)
-    .filter((strategy): strategy is string => typeof strategy === "string");
-  const nonSkipValidationStrategies = stepValidationStrategies.filter(
-    (strategy) => strategy !== "skip",
-  );
   const outputArtifactRefs = Array.isArray(data?.artifactRefs)
     ? (data.artifactRefs as Array<Record<string, unknown>>)
     : [];
@@ -1202,15 +1105,12 @@ async function runAtlasAgentScenario(d: DaemonHandle): Promise<EvalResult[]> {
   metrics.createdArtifactBytes = createdArtifactContents.length;
   metrics.createdArtifactHasMarker = createdArtifactContents.includes("BUILT_IN_ATLAS_AGENT_OK");
   metrics.toolNames = toolNames;
-  metrics.stepValidationStrategies = stepValidationStrategies;
-  metrics.nonSkipValidationStrategies = nonSkipValidationStrategies;
 
   const pass =
     trigger.jobComplete?.success === true &&
     outputArtifactRefs.length > 0 &&
     toolNames.includes("create_artifact") &&
-    createdArtifactContents.length > 50 &&
-    nonSkipValidationStrategies.length === 0;
+    createdArtifactContents.length > 50;
 
   return [
     {
@@ -1223,7 +1123,6 @@ async function runAtlasAgentScenario(d: DaemonHandle): Promise<EvalResult[]> {
         `tool calls: ${toolNames.join(",") || "(missing)"}`,
         `artifact bytes: ${createdArtifactContents.length}`,
         `artifact has marker: ${createdArtifactContents.includes("BUILT_IN_ATLAS_AGENT_OK")}`,
-        `validation strategies: ${stepValidationStrategies.join(",") || "(none)"}`,
       ],
       metrics,
     },
@@ -1233,7 +1132,7 @@ async function runAtlasAgentScenario(d: DaemonHandle): Promise<EvalResult[]> {
 async function runAutoTriageReportOutputContractScenario(d: DaemonHandle): Promise<EvalResult[]> {
   const notes: string[] = [];
   const metrics: Record<string, unknown> = {};
-  const wsPath = await materializeFixture(REFS_FIXTURE, {
+  const wsPath = await materializeFixture(d.fridayHome, REFS_FIXTURE, {
     __FAKE_INBOX_MCP_PATH__: FAKE_INBOX_MCP,
   });
   const ws = await registerWorkspace(d, wsPath, { name: "First Principles Report Contract" });
@@ -1340,7 +1239,7 @@ async function runAutoTriageReportOutputContractScenario(d: DaemonHandle): Promi
 async function runAckOnlyMutationScenario(d: DaemonHandle): Promise<EvalResult[]> {
   const notes: string[] = [];
   const metrics: Record<string, unknown> = {};
-  const wsPath = await materializeFixture(REFS_FIXTURE, {
+  const wsPath = await materializeFixture(d.fridayHome, REFS_FIXTURE, {
     __FAKE_INBOX_MCP_PATH__: FAKE_INBOX_MCP,
   });
   const ws = await registerWorkspace(d, wsPath, { name: "First Principles Ack Mutation" });
@@ -1429,7 +1328,7 @@ async function runAckOnlyMutationScenario(d: DaemonHandle): Promise<EvalResult[]
 async function runUnknownToolScenario(d: DaemonHandle): Promise<EvalResult[]> {
   const notes: string[] = [];
   const metrics: Record<string, unknown> = {};
-  const wsPath = await materializeFixture(REFS_FIXTURE, {
+  const wsPath = await materializeFixture(d.fridayHome, REFS_FIXTURE, {
     __FAKE_INBOX_MCP_PATH__: FAKE_INBOX_MCP,
   });
   const ws = await registerWorkspace(d, wsPath, { name: "First Principles Unknown Tool" });
@@ -1506,7 +1405,7 @@ async function runUnknownToolScenario(d: DaemonHandle): Promise<EvalResult[]> {
 async function runBlockingElicitationScenario(d: DaemonHandle): Promise<EvalResult[]> {
   const notes: string[] = [];
   const metrics: Record<string, unknown> = {};
-  const wsPath = await materializeFixture(REFS_FIXTURE, {
+  const wsPath = await materializeFixture(d.fridayHome, REFS_FIXTURE, {
     __FAKE_INBOX_MCP_PATH__: FAKE_INBOX_MCP,
   });
   const ws = await registerWorkspace(d, wsPath, { name: "First Principles Blocking HITL" });
@@ -1585,7 +1484,7 @@ async function runRequestUserDecisionScenario(
 ): Promise<EvalResult[]> {
   const notes: string[] = [];
   const metrics: Record<string, unknown> = {};
-  const wsPath = await materializeFixture(REFS_FIXTURE, {
+  const wsPath = await materializeFixture(d.fridayHome, REFS_FIXTURE, {
     __FAKE_INBOX_MCP_PATH__: FAKE_INBOX_MCP,
   });
   const ws = await registerWorkspace(d, wsPath, {
@@ -1696,7 +1595,7 @@ async function runRequestUserDecisionScenario(
 async function runFanoutDelegateScenario(d: DaemonHandle): Promise<EvalResult[]> {
   const notes: string[] = [];
   const metrics: Record<string, unknown> = {};
-  const wsPath = await materializeFixture(REFS_FIXTURE, {
+  const wsPath = await materializeFixture(d.fridayHome, REFS_FIXTURE, {
     __FAKE_INBOX_MCP_PATH__: FAKE_INBOX_MCP,
   });
   const ws = await registerWorkspace(d, wsPath, { name: "First Principles Fanout Delegate" });
@@ -1797,7 +1696,7 @@ async function runFanoutDelegateScenario(d: DaemonHandle): Promise<EvalResult[]>
 async function runChatFollowupCompactnessScenario(d: DaemonHandle): Promise<EvalResult[]> {
   const notes: string[] = [];
   const metrics: Record<string, unknown> = {};
-  const wsPath = await materializeFixture(REFS_FIXTURE, {
+  const wsPath = await materializeFixture(d.fridayHome, REFS_FIXTURE, {
     __FAKE_INBOX_MCP_PATH__: FAKE_INBOX_MCP,
   });
   const ws = await registerWorkspace(d, wsPath, { name: "First Principles Chat Compactness" });
@@ -1897,7 +1796,7 @@ async function runChatFollowupCompactnessScenario(d: DaemonHandle): Promise<Eval
 async function runChatHumanInputScenario(d: DaemonHandle): Promise<EvalResult[]> {
   const notes: string[] = [];
   const metrics: Record<string, unknown> = {};
-  const wsPath = await materializeFixture(REFS_FIXTURE, {
+  const wsPath = await materializeFixture(d.fridayHome, REFS_FIXTURE, {
     __FAKE_INBOX_MCP_PATH__: FAKE_INBOX_MCP,
   });
   const ws = await registerWorkspace(d, wsPath, { name: "First Principles Chat HITL" });
@@ -1905,18 +1804,14 @@ async function runChatHumanInputScenario(d: DaemonHandle): Promise<EvalResult[]>
 
   const chatId = crypto.randomUUID();
   const startedAt = Date.now();
-  const chatPromise = postChatMessage(
-    d,
-    ws.id,
-    chatId,
-    [
-      "Call the chat-user-decision-check job tool exactly once with query 'chat-hitl'.",
-      "When the job asks for human input, wait for the answer from request_human_input.",
-      "After the job completes, reply with a short acknowledgement that includes CHAT_HUMAN_INPUT_RESUMED.",
-      "Do not call fake inbox tools directly and do not delegate.",
-    ].join("\n"),
-    { timeoutMs: 12 * 60 * 1000 },
-  );
+  const userMessage = [
+    "Call the chat-user-decision-check job tool exactly once with query 'chat-hitl'.",
+    "When the job asks for human input, wait for the answer from request_human_input.",
+    "After the job completes, reply with a short acknowledgement that includes CHAT_HUMAN_INPUT_RESUMED.",
+    "Do not call fake inbox tools directly and do not delegate.",
+  ].join("\n");
+  metrics.userMessage = userMessage;
+  const chatPromise = postChatMessage(d, ws.id, chatId, userMessage, { timeoutMs: 12 * 60 * 1000 });
 
   const pending = await waitForPendingElicitation(d, ws.id);
   metrics.pendingObservedAtMs = Date.now() - startedAt;
@@ -1946,6 +1841,22 @@ async function runChatHumanInputScenario(d: DaemonHandle): Promise<EvalResult[]>
   const assistantPersisted = messages.some(
     (m) => typeof m === "object" && m !== null && (m as { role?: unknown }).role === "assistant",
   );
+  const assistantTexts = messages
+    .filter(
+      (m): m is Record<string, unknown> =>
+        typeof m === "object" && m !== null && (m as { role?: unknown }).role === "assistant",
+    )
+    .map((m) => {
+      const content = (m as { content?: unknown }).content;
+      if (typeof content === "string") return content;
+      if (Array.isArray(content)) {
+        return content
+          .filter((p): p is Record<string, unknown> => typeof p === "object" && p !== null)
+          .map((p) => (typeof p.text === "string" ? p.text : JSON.stringify(p)))
+          .join("\n");
+      }
+      return JSON.stringify(content);
+    });
   const toolNames = chat.toolCalls.map((tc) => tc.toolName);
   const jobToolOutput = chat.toolCalls.find(
     (tc) => tc.toolName === "chat-user-decision-check" && tc.output !== undefined,
@@ -1970,6 +1881,7 @@ async function runChatHumanInputScenario(d: DaemonHandle): Promise<EvalResult[]>
   metrics.debugHasHumanInput = debugHasHumanInput;
   metrics.nestedHasHumanInput = nestedHasHumanInput;
   metrics.assistantPersisted = assistantPersisted;
+  metrics.assistantTexts = assistantTexts;
   metrics.terminal = terminal ?? null;
 
   const pass =
@@ -2008,7 +1920,7 @@ async function runChatHumanInputScenario(d: DaemonHandle): Promise<EvalResult[]>
 async function runAmbientArtifactInjectionPruningScenario(d: DaemonHandle): Promise<EvalResult[]> {
   const notes: string[] = [];
   const metrics: Record<string, unknown> = {};
-  const wsPath = await materializeFixture(REFS_FIXTURE, {
+  const wsPath = await materializeFixture(d.fridayHome, REFS_FIXTURE, {
     __FAKE_INBOX_MCP_PATH__: FAKE_INBOX_MCP,
   });
   const ws = await registerWorkspace(d, wsPath, { name: "First Principles Ambient Artifacts" });
@@ -2082,7 +1994,7 @@ async function runAmbientArtifactInjectionPruningScenario(d: DaemonHandle): Prom
 async function runReviewChoiceMemoryLearningScenario(d: DaemonHandle): Promise<EvalResult[]> {
   const notes: string[] = [];
   const metrics: Record<string, unknown> = {};
-  const wsPath = await materializeFixture(REFS_FIXTURE, {
+  const wsPath = await materializeFixture(d.fridayHome, REFS_FIXTURE, {
     __FAKE_INBOX_MCP_PATH__: FAKE_INBOX_MCP,
   });
   const ws = await registerWorkspace(d, wsPath, { name: "First Principles Review Memory" });
@@ -2172,7 +2084,7 @@ async function runReviewChoiceMemoryLearningScenario(d: DaemonHandle): Promise<E
 async function runSessionInflightCleanupScenario(d: DaemonHandle): Promise<EvalResult[]> {
   const notes: string[] = [];
   const metrics: Record<string, unknown> = {};
-  const wsPath = await materializeFixture(REFS_FIXTURE, {
+  const wsPath = await materializeFixture(d.fridayHome, REFS_FIXTURE, {
     __FAKE_INBOX_MCP_PATH__: FAKE_INBOX_MCP,
   });
   const ws = await registerWorkspace(d, wsPath, { name: "First Principles Inflight Cleanup" });
@@ -2218,7 +2130,7 @@ async function runSessionInflightCleanupScenario(d: DaemonHandle): Promise<EvalR
 async function runWorkspaceFixSkillGuidanceScenario(d: DaemonHandle): Promise<EvalResult[]> {
   const notes: string[] = [];
   const metrics: Record<string, unknown> = {};
-  const wsPath = await materializeFixture(REFS_FIXTURE, {
+  const wsPath = await materializeFixture(d.fridayHome, REFS_FIXTURE, {
     __FAKE_INBOX_MCP_PATH__: FAKE_INBOX_MCP,
   });
   const ws = await registerWorkspace(d, wsPath, { name: "First Principles Workspace Fix" });
@@ -2230,7 +2142,6 @@ async function runWorkspaceFixSkillGuidanceScenario(d: DaemonHandle): Promise<Ev
     description: targetDescription,
     triggers: [{ signal: "skill-repair-event" }],
     config: { timeout: "1m", max_steps: 1 },
-    validation: { default: "skip" },
     fsm: { initial: "done", states: { done: { type: "final" } } },
   };
   const chatId = crypto.randomUUID();
@@ -2322,8 +2233,6 @@ async function main() {
     results.push(...(await runRefsOverDataScenario(daemon)));
     console.log("\n── inputFrom array ref resolution ──");
     results.push(...(await runInputFromArrayScenario(daemon)));
-    console.log("\n── validation output contract ──");
-    results.push(...(await runValidationContractScenario(daemon)));
     console.log("\n── LLM agent output contract ──");
     results.push(...(await runAgentOutputContractScenario(daemon)));
     console.log("\n── LLM agent inputFrom ref hydration ──");

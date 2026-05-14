@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+
+description: Phase 2 — buildSessionJobResult never returns an empty summary
+
+prompts:
+  - '{{scenarioId}}'
+
+providers:
+  - id: file://aisummary-sse-surface-provider.cjs
+    label: friday-aisummary-sse-surface
+
+defaultTest:
+  assert:
+    - type: is-json
+    - type: javascript
+      value: |
+        const result = JSON.parse(output);
+        if (result.pass !== true) {
+          throw new Error(`${result.id} failed: ${(result.notes || []).join('; ')}`);
+        }
+        return true;
+
+tests: file://aisummary-sse-surface-tests.yaml

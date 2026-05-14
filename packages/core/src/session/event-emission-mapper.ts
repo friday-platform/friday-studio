@@ -8,19 +8,12 @@
  * @module
  */
 
-import type {
-  FSMActionExecutionEvent,
-  FSMStateSkippedEvent,
-  FSMValidationAttemptEvent,
-} from "@atlas/fsm-engine";
-import { logger } from "@atlas/logger";
+import type { FSMActionExecutionEvent, FSMStateSkippedEvent } from "@atlas/fsm-engine";
 import type {
   StepCompleteEvent,
   StepSkippedEvent,
   StepStartEvent,
   StepUsage,
-  StepValidationEvent,
-  StepValidationOutput,
   ToolCallSummary,
 } from "./session-events.ts";
 import { SessionActionTypeSchema } from "./session-events.ts";
@@ -44,12 +37,6 @@ export interface AgentResultData {
   artifactRefs?: unknown[];
   /** Optional LLM token usage. Set by LLM action paths; agent actions leave it absent. */
   usage?: StepUsage;
-  /**
-   * Per-action validation outcome — set on `type: llm` and
-   * `case "agent" → type: llm` paths. Three shapes mirror the resolved
-   * strategy.
-   */
-  validation?: StepValidationOutput;
 }
 
 // ---------------------------------------------------------------------------
@@ -128,11 +115,6 @@ export function mapActionToStepComplete(
     error: event.data.error,
     // Conditionally spread so absence is preserved on the wire.
     ...(agentResult?.usage && { usage: agentResult.usage }),
-    // Structured validation outcome. Conditionally spread so legacy paths
-    // and pure-agent (`type: user` /
-    // `type: atlas`) actions that don't run validation leave the field
-    // absent on the wire.
-    ...(agentResult?.validation && { validation: agentResult.validation }),
     timestamp: new Date(event.data.timestamp).toISOString(),
   };
 }
@@ -152,48 +134,5 @@ export function mapStateSkippedToStepSkipped(event: FSMStateSkippedEvent): StepS
     sessionId: event.data.sessionId,
     stateId: event.data.stateId,
     timestamp: new Date(event.data.timestamp).toISOString(),
-  };
-}
-
-// ---------------------------------------------------------------------------
-// mapValidationAttemptToStepValidation
-// ---------------------------------------------------------------------------
-
-/**
- * Maps an `FSMValidationAttemptEvent` to a `step:validation` session event.
- *
- * Returns `null` when the source event has no `actionId` — surface validation
- * events without an action cannot be correlated to their parent step in the UI,
- * so dropping them is preferable to emitting orphan pills. A warning is logged
- * to surface the dropped event in observability without crashing the pipeline.
- *
- * `terminal` and `verdict` are conditionally spread to preserve the on-the-wire
- * absence/presence semantic from `FSMValidationAttemptEvent` — running events
- * carry neither; passed events carry verdict only; failed events carry both.
- */
-export function mapValidationAttemptToStepValidation(
-  event: FSMValidationAttemptEvent,
-): StepValidationEvent | null {
-  const { actionId, sessionId, attempt, status, terminal, verdict, timestamp } = event.data;
-
-  if (!actionId) {
-    logger.warn("Dropping validation attempt event without actionId", {
-      sessionId,
-      attempt,
-      status,
-      state: event.data.state,
-    });
-    return null;
-  }
-
-  return {
-    type: "step:validation",
-    sessionId,
-    actionId,
-    attempt,
-    status,
-    ...(terminal !== undefined && { terminal }),
-    ...(verdict !== undefined && { verdict }),
-    timestamp: new Date(timestamp).toISOString(),
   };
 }

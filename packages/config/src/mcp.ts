@@ -29,26 +29,11 @@ import { WorkspaceTimeoutConfigSchema } from "./base.ts";
 // are imported from @atlas/agent-sdk above
 
 /**
- * Workspace-level MCP server config that extends the agent-sdk's
- * `MCPServerConfig` with an optional per-server
- * `validation:` override. The `validate-classifier` honors this over its
- * regex / allowlist defaults: `"read-only"` makes ALL tools from that
- * server skip-eligible regardless of name; `"mutating"` makes them
- * never skip-eligible. Default (omitted) falls back to the per-tool
- * regex match in `READ_ONLY_ALLOWLIST` / `MUTATING_VERB_RE`.
- *
- * Structurally a superset of `MCPServerConfig` — values without the new
- * field are assignable in either direction since `validation` is
- * optional.
+ * Workspace-level MCP server config — currently identical to the agent-sdk's
+ * `MCPServerConfig`. Kept as a distinct symbol so workspace-only fields can
+ * be added here without disturbing the agent-sdk schema.
  */
-export const WorkspaceMCPServerConfigSchema = MCPServerConfigSchema.extend({
-  validation: z
-    .enum(["read-only", "mutating"])
-    .optional()
-    .describe(
-      "Author override for the validate-classifier. read-only makes every tool from this server skip-eligible; mutating forces self-validation regardless of name. Omit to fall back to the per-tool regex defaults.",
-    ),
-});
+export const WorkspaceMCPServerConfigSchema = MCPServerConfigSchema.extend({});
 export type WorkspaceMCPServerConfig = z.infer<typeof WorkspaceMCPServerConfigSchema>;
 
 /**
@@ -150,6 +135,3 @@ export {
   type MCPTransportConfig,
   MCPTransportConfigSchema,
 };
-
-/** K6 — short alias for the per-server validation override. */
-export type WorkspaceMCPServerValidation = "read-only" | "mutating";

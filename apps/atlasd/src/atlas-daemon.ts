@@ -115,7 +115,6 @@ import { ChatTurnRegistry } from "./chat-turn-registry.ts";
 import { DiscordGatewayService } from "./discord-gateway-service.ts";
 import { createApp } from "./factory.ts";
 import { ensureInstanceEventsStream } from "./instance-events.ts";
-import { createJudgeRunner } from "./judge-runner.ts";
 import { getAllMigrations } from "./migrations/index.ts";
 import { NatsManager } from "./nats-manager.ts";
 import { ProcessAgentExecutor } from "./process-agent-executor.ts";
@@ -1881,7 +1880,6 @@ export class AtlasDaemon {
             workspaceId: workspace.id,
             getInstance: (id) => this.getOrCreateChatSdkInstance(id),
           }),
-          runJudge: createJudgeRunner(this.getPlatformModels()),
           createSessionStream: (sessionId) =>
             this.sessionStreamRegistry.create(sessionId, this.sessionHistoryAdapter),
           onSessionComplete: async ({

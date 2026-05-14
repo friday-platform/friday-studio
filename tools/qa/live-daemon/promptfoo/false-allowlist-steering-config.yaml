@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+
+description: Phase 3 — ambient steering corrections (false allowlist claim, stale tool names, atlas-agent isolation)
+
+prompts:
+  - '{{scenarioId}}'
+
+providers:
+  - id: file://false-allowlist-steering-provider.cjs
+    label: friday-false-allowlist-steering
+
+defaultTest:
+  assert:
+    - type: is-json
+    - type: javascript
+      value: |
+        const result = JSON.parse(output);
+        if (result.pass !== true) {
+          throw new Error(`${result.id} failed: ${(result.notes || []).join('; ')}`);
+        }
+        return true;
+
+tests: file://false-allowlist-steering-tests.yaml

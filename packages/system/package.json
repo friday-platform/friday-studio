@@ -14,7 +14,6 @@
     "@atlas/client": "workspace:*",
     "@atlas/config": "workspace:*",
     "@atlas/core": "workspace:*",
-    "@atlas/hallucination": "workspace:*",
     "@atlas/llm": "workspace:*",
     "@atlas/logger": "workspace:*",
     "@atlas/oapi-client": "workspace:*",

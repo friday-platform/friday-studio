@@ -1,0 +1,39 @@
+- description: debugging-broken-jobs skill present with triage triggers + cross-refs
+  vars:
+    scenarioId: skill-debugging-broken-jobs
+
+- description: debugging-empty-output skill present with empty-summary triggers + handshake link
+  vars:
+    scenarioId: skill-debugging-empty-output
+
+- description: debugging-tool-loops skill present with stepCountIs triggers
+  vars:
+    scenarioId: skill-debugging-tool-loops
+
+- description: debugging-runtime-errors skill present with did-not-call-complete triggers
+  vars:
+    scenarioId: skill-debugging-runtime-errors
+
+- description: debugging-job-invocation skill present with output-error / Pattern A vs B coverage
+  vars:
+    scenarioId: skill-debugging-job-invocation
+
+- description: agent-action-handshake skill present with outputTo + complete + auto-injects
+  vars:
+    scenarioId: skill-agent-action-handshake
+
+- description: delegate-handoff skill present with skills-pushing contract
+  vars:
+    scenarioId: skill-delegate-handoff
+
+- description: chat-agent prompt has diagnostic_load directive with all 5 debug-skill triggers
+  vars:
+    scenarioId: prompt-directive-diagnostic-load
+
+- description: chat-agent prompt has runtime_bug_discipline directive with the 4-step gate
+  vars:
+    scenarioId: prompt-directive-runtime-bug-discipline
+
+- description: chat-agent prompt has delegation_with_skills directive pointing at delegate-handoff
+  vars:
+    scenarioId: prompt-directive-delegation-with-skills

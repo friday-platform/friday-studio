@@ -26,10 +26,9 @@ Load the narrow skill for the part you are touching:
 | Repair target | Load |
 |---|---|
 | Workspace CRUD, `workspace.yml`, validation, live daemon API | `@friday/workspace-api` |
-| Jobs, FSM actions, `outputTo`, `inputFrom`, validation defaults | `@friday/writing-workspace-jobs` |
+| Jobs, FSM actions, `outputTo`, `inputFrom` | `@friday/writing-workspace-jobs` |
 | Python `type: user` agents, `AgentContext`, tool calls | `@friday/writing-friday-python-agents` |
 | MCP servers, tool discovery, auth/connect flows, real tool names | `@friday/using-mcp-servers` |
-| Output validation, `validate: self`, complete-vs-validation confusion | `@friday/validating-llm-outputs` |
 | Daemon sessions, logs, NATS streams, signals | `@friday/friday-cli` |
 
 Do not treat this skill as a replacement for those. This skill gives the repair sequence and production anti-patterns; the companion skills give exact APIs and authoring details.
@@ -66,12 +65,11 @@ A repaired user agent should list tools when uncertain, call only real tool name
 
 ### `outputTo` actions must emit output explicitly
 
-If an LLM/LLM-agent action has `outputTo`, it must call the required output emission tool (`complete` in current FSM prompts). Validation is advisory; it cannot substitute for output emission.
+If an LLM/LLM-agent action has `outputTo`, it must call the required output emission tool (`complete` in current FSM prompts).
 
 Repair old jobs that:
 
 - Stream prose and stop without calling `complete`.
-- Call `record_validation` and accidentally persist no action output.
 - Return an empty string or stub object to satisfy the action mechanically.
 - Store bulky message bodies inline instead of emitting artifact refs and summaries.
 
@@ -204,7 +202,6 @@ source and re-register.
 - **Do not preserve non-user-visible compatibility shims.** If an old generated pattern is wrong, remove it rather than wrapping it.
 - **Do not invent MCP tool names.** Always inspect the live catalog or fixture catalog.
 - **Do not use local daemon/MCP HTTP from Python agents.** Use `ctx.tools`; the host supplies NATS/session/tool scope.
-- **Do not turn validation into output.** `record_validation` does not satisfy `outputTo`.
 - **Do not fan child data back into the supervisor.** Persist refs/artifacts and return compact summaries.
 - **Do not solve a blocking user decision with a prompt-only menu.** Use `request_human_input`.
 - **Do not silently skip a failing installed agent.** If the installed source under Friday home is wrong, patch/regenerate it or clearly tell the user it remains unrepaired.
