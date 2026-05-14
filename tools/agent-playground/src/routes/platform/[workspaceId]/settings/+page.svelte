@@ -19,6 +19,7 @@
   import { Button, Icons, ListDetail, toast } from "@atlas/ui";
   import { createQuery } from "@tanstack/svelte-query";
   import { page } from "$app/state";
+  import WorkspaceMcpSection from "$lib/components/mcp/workspace-mcp-section.svelte";
   import {
     useSetWorkspaceEnvVar,
     useUpdateWorkspaceIdentity,
@@ -28,12 +29,12 @@
 
   const workspaceId = $derived(page.params.workspaceId ?? null);
 
-  // List/detail layout — one settings section per list entry. The MCP
-  // section composes on as its own entry separately.
-  type SettingsSection = "identity" | "agent-env";
+  // List/detail layout — one settings section per list entry.
+  type SettingsSection = "identity" | "agent-env" | "mcp";
   const SECTIONS: { id: SettingsSection; label: string; blurb: string }[] = [
-    { id: "identity", label: "Identity", blurb: "Name, description, timeouts" },
+    { id: "identity", label: "Workspace Details", blurb: "Name, description, timeouts" },
     { id: "agent-env", label: "Agent environment", blurb: "Per-agent env values" },
+    { id: "mcp", label: "MCP servers", blurb: "Per-server settings & credentials" },
   ];
   let activeSection = $state<SettingsSection>("identity");
 
@@ -226,7 +227,7 @@
       <!-- ── Identity ──────────────────────────────────────────────────── -->
       <section class="section">
         <header>
-          <h2>Identity</h2>
+          <h2>Workspace Details</h2>
           <p class="section-sub">
             Name, description, and operation timeouts for this workspace.
           </p>
@@ -381,6 +382,8 @@
           </div>
         {/if}
       </section>
+    {:else if activeSection === "mcp" && workspaceId}
+      <WorkspaceMcpSection {workspaceId} />
     {/if}
   </div>
 </ListDetail>
@@ -390,6 +393,9 @@
     display: flex;
     flex-direction: column;
     gap: var(--size-1);
+    /* Breathing room so a focused item's outline isn't clipped by the
+       ListDetail sidebar's overflow (it has no block-end padding). */
+    padding: var(--size-1) var(--size-1) var(--size-3);
   }
 
   .section-nav-item {
@@ -415,13 +421,13 @@
 
   .section-nav-label {
     color: var(--text-bright);
-    font-size: var(--font-size-2);
+    font-size: var(--font-size-3);
     font-weight: var(--font-weight-6);
   }
 
   .section-nav-blurb {
     color: color-mix(in srgb, var(--text), transparent 45%);
-    font-size: var(--font-size-1);
+    font-size: var(--font-size-2);
   }
 
   .settings-detail {
@@ -444,21 +450,21 @@
   }
 
   .section h2 {
-    font-size: var(--font-size-3);
+    font-size: var(--font-size-6);
     font-weight: var(--font-weight-6);
     margin: 0;
   }
 
   .section-sub {
-    color: color-mix(in srgb, var(--text), transparent 40%);
-    font-size: var(--font-size-1);
+    color: var(--text);
+    font-size: var(--font-size-3);
     margin: 0;
     max-inline-size: 70ch;
   }
 
   .section-sub code,
   .field-hint code {
-    font-size: var(--font-size-0, 11px);
+    font-size: var(--font-size-2);
   }
 
   .form-grid {
@@ -484,14 +490,14 @@
   }
 
   .field-label {
-    color: color-mix(in srgb, var(--text), transparent 25%);
-    font-size: var(--font-size-1);
+    color: var(--text-bright);
+    font-size: var(--font-size-3);
     font-weight: var(--font-weight-6);
   }
 
   .field-hint {
-    color: color-mix(in srgb, var(--text), transparent 45%);
-    font-size: var(--font-size-1);
+    color: var(--text);
+    font-size: var(--font-size-3);
     margin: 0;
   }
 
@@ -501,7 +507,7 @@
     border-radius: var(--radius-2);
     color: var(--text);
     font: inherit;
-    font-size: var(--font-size-2);
+    font-size: var(--font-size-3);
     padding: var(--size-2) var(--size-3);
   }
 
@@ -543,7 +549,7 @@
 
   .agent-name {
     color: var(--text-bright);
-    font-size: var(--font-size-2);
+    font-size: var(--font-size-3);
     font-weight: var(--font-weight-6);
   }
 
@@ -571,7 +577,7 @@
   .env-key {
     color: var(--text-bright);
     flex-shrink: 0;
-    font-size: var(--font-size-1);
+    font-size: var(--font-size-3);
     inline-size: 26ch;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -585,7 +591,7 @@
     color: var(--text);
     flex: 1;
     font-family: var(--font-family-mono, ui-monospace, monospace);
-    font-size: var(--font-size-1);
+    font-size: var(--font-size-3);
     min-inline-size: 0;
     padding: var(--size-1) var(--size-1-5);
   }
@@ -609,11 +615,11 @@
   }
 
   .env-readonly {
-    color: color-mix(in srgb, var(--text), transparent 45%);
+    color: var(--text);
     display: flex;
     flex: 1;
     gap: var(--size-2);
-    font-size: var(--font-size-1);
+    font-size: var(--font-size-3);
   }
 
   .badge {
@@ -627,8 +633,8 @@
 
   .empty-state,
   .empty-hint {
-    color: color-mix(in srgb, var(--text), transparent 45%);
-    font-size: var(--font-size-1);
+    color: var(--text);
+    font-size: var(--font-size-3);
   }
 
   .empty-state {
@@ -646,7 +652,7 @@
     border-radius: var(--radius-2);
     color: var(--text);
     display: flex;
-    font-size: var(--font-size-1);
+    font-size: var(--font-size-3);
     gap: var(--size-2);
     justify-content: space-between;
     padding: var(--size-2) var(--size-3);

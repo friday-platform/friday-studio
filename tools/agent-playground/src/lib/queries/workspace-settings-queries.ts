@@ -127,6 +127,41 @@ export function useSetWorkspaceEnvVar() {
 }
 
 /**
+ * Point an MCP server's Link-backed env var at a different credential.
+ * Wraps `PUT /api/workspaces/:workspaceId/config/credentials/mcp:serverId:envVar`,
+ * which validates the credential against Link before rewriting the config copy.
+ * Invalidates the workspace config query on success.
+ */
+export function useUpdateMCPCredential() {
+  const queryClient = useQueryClient();
+
+  return createMutation(() => ({
+    mutationFn: async (input: {
+      workspaceId: string;
+      serverId: string;
+      envVar: string;
+      credentialId: string;
+    }) => {
+      const client = getDaemonClient();
+      const path = `mcp:${input.serverId}:${input.envVar}`;
+      const res = await client.workspaceConfig(input.workspaceId).credentials[":path"].$put({
+        param: { path },
+        json: { credentialId: input.credentialId },
+      });
+      if (!res.ok) {
+        throw new Error(await errorMessage(res, `Failed to update credential: ${res.status}`));
+      }
+      return res.json();
+    },
+    onSuccess: (_data, input) => {
+      queryClient.invalidateQueries({
+        queryKey: ["daemon", "workspace", input.workspaceId, "config"],
+      });
+    },
+  }));
+}
+
+/**
  * Delete a single workspace `.env` var.
  * Wraps `DELETE /api/workspaces/:workspaceId/env/:key`.
  * Invalidates the workspace env query on success.

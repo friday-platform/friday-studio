@@ -9,13 +9,16 @@
  * path is the source of truth for those.
  */
 
+import { join } from "node:path";
 import type { MCPServerConfig } from "@atlas/agent-sdk";
 import type { WorkspaceConfig } from "@atlas/config";
 import { disableMCPServer, enableMCPServer } from "@atlas/config/mutations";
 import { discoverMCPServers } from "@atlas/core/mcp-registry/discovery";
+import { splitLiteralEnvValues } from "@atlas/core/mcp-registry/env-routing";
 import { getWorkspaceMCPStatus } from "@atlas/core/mcp-registry/workspace-mcp";
 import { createLogger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
+import { loadEnvFile, setEnvFileVar } from "@atlas/workspace";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import type { AppVariables } from "../../src/factory.ts";
@@ -43,6 +46,59 @@ function isSystemWorkspace(workspace: { metadata?: Record<string, unknown> }): b
   if (workspace.metadata?.canonical === "system") return true;
   if (workspace.metadata?.system && workspace.metadata?.canonical !== "personal") return true;
   return false;
+}
+
+// =============================================================================
+// COPY-ON-ENABLE ENV SPLIT
+// =============================================================================
+
+/**
+ * Copy-on-enable env split. Lifts literal env values out of the registry
+ * template — both the server `env` block and any `startup.env` sidecar block —
+ * into a flat value map, leaving `from_environment` wiring behind. Pure: the
+ * caller writes the values to the workspace `.env` once the enable mutation
+ * has landed, so the config copy holds wiring only and the `.env` holds the
+ * values the settings UI edits.
+ */
+function splitTemplateEnv(template: MCPServerConfig): {
+  template: MCPServerConfig;
+  envValues: Record<string, string>;
+} {
+  const envValues: Record<string, string> = {};
+  // Spread, never reassign absent keys to `undefined` — `@std/yaml` throws on
+  // an explicit `undefined` value when the config copy is written out.
+  const prepared: MCPServerConfig = { ...template };
+
+  if (template.env) {
+    const split = splitLiteralEnvValues(template.env);
+    prepared.env = split.wiring;
+    Object.assign(envValues, split.values);
+  }
+
+  if (template.startup?.env) {
+    const split = splitLiteralEnvValues(template.startup.env);
+    prepared.startup = { ...template.startup, env: split.wiring };
+    Object.assign(envValues, split.values);
+  }
+
+  return { template: prepared, envValues };
+}
+
+/**
+ * Write lifted env values into the workspace `.env`, skipping any key already
+ * present — a value supplied earlier (shared by name with another server or
+ * agent) is authoritative and is never clobbered by a fresh enable.
+ */
+function writeWorkspaceEnvValues(workspacePath: string, values: Record<string, string>): void {
+  const keys = Object.keys(values);
+  if (keys.length === 0) return;
+  const envPath = join(workspacePath, ".env");
+  const existing = loadEnvFile(envPath);
+  for (const key of keys) {
+    if (existing[key] === undefined) {
+      setEnvFileVar(envPath, key, values[key] ?? "");
+    }
+  }
 }
 
 // =============================================================================
@@ -176,8 +232,15 @@ const handleEnableMCPServer = async (c: import("hono").Context<AppVariables>) =>
       return c.json({ success: false, error: "needs_manual_config", serverId }, 409);
     }
 
-    const mutationFn = (cfg: WorkspaceConfig) =>
-      enableMCPServer(cfg, serverId, candidate.metadata.configTemplate as MCPServerConfig);
+    // Copy-on-enable: snapshot the registry template into the workspace, but
+    // split literal setting values out into the workspace `.env` so the config
+    // copy holds `from_environment` wiring only — one coherent edit target for
+    // the settings UI.
+    const { template: preparedTemplate, envValues } = splitTemplateEnv(
+      candidate.metadata.configTemplate as MCPServerConfig,
+    );
+
+    const mutationFn = (cfg: WorkspaceConfig) => enableMCPServer(cfg, serverId, preparedTemplate);
 
     // Workspace config history (storeWorkspaceHistory) was Cortex-backed
     // and got deleted with the rest of the speculative remote-backend
@@ -189,6 +252,10 @@ const handleEnableMCPServer = async (c: import("hono").Context<AppVariables>) =>
     if (!result.ok) {
       return mapMutationError(c, result.error);
     }
+
+    // Mutation landed — persist the lifted setting values into the workspace
+    // `.env`. Done after the mutation so a failed enable leaves no orphans.
+    writeWorkspaceEnvValues(workspace.path, envValues);
 
     return c.json({ server: { id: serverId, name: candidate.metadata.name } }, 200);
   } catch (error) {

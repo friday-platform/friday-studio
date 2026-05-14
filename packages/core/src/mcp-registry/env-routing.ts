@@ -94,6 +94,58 @@ export function routeEnvVars(envVars: RoutableEnvVar[], providerId: string): Rou
   return { env, linkKeys, requiredConfig };
 }
 
+/** Outcome of lifting literal env values out of a config template's env block. */
+export interface SplitLiteralEnv {
+  /**
+   * The env block with literal plain-string values replaced by the
+   * `from_environment` wiring magic string. Link refs and magic strings
+   * (`from_environment` / `auto`) pass through untouched.
+   */
+  wiring: Record<string, string | LinkCredentialRef>;
+  /**
+   * The literal values lifted out, keyed by env var name — to be written to
+   * the workspace `.env`. Empty-string literals carry no value and are
+   * omitted: the var is still wired, the user supplies the value later.
+   */
+  values: Record<string, string>;
+}
+
+/**
+ * Lift literal plain-string env values out of a config template's env block.
+ *
+ * The registry translator writes optional non-secret env vars as literal
+ * strings (their upstream default) directly into `configTemplate.env`. On
+ * enable into a workspace, those values belong in the workspace `.env` — the
+ * single store the settings UI edits — while the config copy holds only
+ * `from_environment` wiring. This splits the two: literals become `values`
+ * plus `from_environment` wiring; Link refs and existing magic strings pass
+ * through unchanged.
+ */
+export function splitLiteralEnvValues(
+  env: Record<string, string | LinkCredentialRef>,
+): SplitLiteralEnv {
+  const wiring: Record<string, string | LinkCredentialRef> = {};
+  const values: Record<string, string> = {};
+
+  for (const [key, value] of Object.entries(env)) {
+    if (typeof value !== "string") {
+      wiring[key] = value; // Link ref — untouched.
+      continue;
+    }
+    if (value === "from_environment" || value === "auto") {
+      wiring[key] = value; // Already wiring — untouched.
+      continue;
+    }
+    // Literal value — lift it to the `.env`, leave `from_environment` behind.
+    wiring[key] = "from_environment";
+    if (value.length > 0) {
+      values[key] = value;
+    }
+  }
+
+  return { wiring, values };
+}
+
 /**
  * Select the config field a server's transport reads its env block from.
  *

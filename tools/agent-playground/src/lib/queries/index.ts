@@ -43,7 +43,9 @@ export type {
 export {
   useDeleteWorkspaceEnvVar,
   useSetWorkspaceEnvVar,
+  useUpdateMCPCredential,
   useUpdateWorkspaceIdentity,
   workspaceEnvQueries,
 } from "./workspace-settings-queries.ts";
 export type { WorkspaceEnv } from "./workspace-settings-queries.ts";
+export { linkProviderQueries } from "./link-provider-queries.ts";

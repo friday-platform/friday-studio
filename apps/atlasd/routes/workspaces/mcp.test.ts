@@ -354,6 +354,82 @@ describe("PUT /mcp/:serverId", () => {
     expect(destroyWorkspaceRuntime).not.toHaveBeenCalled();
   });
 
+  test("enable lifts literal env values into the workspace .env, leaving from_environment wiring", async () => {
+    mockDiscoverMCPServers.mockResolvedValue([
+      {
+        metadata: {
+          id: "github",
+          name: "GitHub",
+          source: "static" as const,
+          securityRating: "high" as const,
+          configTemplate: {
+            transport: { type: "stdio", command: "echo" },
+            env: {
+              LOG_LEVEL: "info",
+              API_TOKEN: { from: "link", provider: "github", key: "API_TOKEN" },
+            },
+          },
+        },
+        mergedConfig: { transport: { type: "stdio", command: "echo" } },
+        configured: true,
+      },
+    ]);
+
+    const testDir = getTestDir();
+    const workspace = createMockWorkspace({ path: testDir });
+    const config = makeWorkspaceConfig({});
+    await writeFile(join(testDir, "workspace.yml"), stringify(config));
+    const { app } = createTestApp({ workspace, config: createMergedConfig(config) });
+
+    const res = await app.request("/ws-test-id/mcp/github", { method: "PUT" });
+    expect(res.status).toBe(200);
+
+    // The literal setting value lands in the workspace `.env`.
+    const envContent = await readFile(join(testDir, ".env"), "utf-8");
+    expect(envContent).toContain("LOG_LEVEL=info");
+
+    // The config copy holds `from_environment` wiring — not the literal — and
+    // the Link ref passes through untouched.
+    const ymlContent = await readFile(join(testDir, "workspace.yml"), "utf-8");
+    expect(ymlContent).toContain("LOG_LEVEL: from_environment");
+    expect(ymlContent).not.toContain("LOG_LEVEL: info");
+    expect(ymlContent).toContain("API_TOKEN");
+  });
+
+  test("enable never clobbers an existing workspace .env value", async () => {
+    mockDiscoverMCPServers.mockResolvedValue([
+      {
+        metadata: {
+          id: "github",
+          name: "GitHub",
+          source: "static" as const,
+          securityRating: "high" as const,
+          configTemplate: {
+            transport: { type: "stdio", command: "echo" },
+            env: { LOG_LEVEL: "info" },
+          },
+        },
+        mergedConfig: { transport: { type: "stdio", command: "echo" } },
+        configured: true,
+      },
+    ]);
+
+    const testDir = getTestDir();
+    const workspace = createMockWorkspace({ path: testDir });
+    const config = makeWorkspaceConfig({});
+    await writeFile(join(testDir, "workspace.yml"), stringify(config));
+    // A value already supplied for this key — must win over the template default.
+    await writeFile(join(testDir, ".env"), "LOG_LEVEL=debug\n");
+    const { app } = createTestApp({ workspace, config: createMergedConfig(config) });
+
+    const res = await app.request("/ws-test-id/mcp/github", { method: "PUT" });
+    expect(res.status).toBe(200);
+
+    const envContent = await readFile(join(testDir, ".env"), "utf-8");
+    expect(envContent).toContain("LOG_LEVEL=debug");
+    expect(envContent).not.toContain("LOG_LEVEL=info");
+  });
+
   test("writes to draft when draft exists, leaving live unchanged and deferring runtime startup", async () => {
     mockDiscoverMCPServers.mockResolvedValue([makeCandidate("github", "GitHub", "static")]);
 

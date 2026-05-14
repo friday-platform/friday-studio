@@ -1,5 +1,5 @@
 import { describe, it } from "vitest";
-import { envSink, routeEnvVars } from "./env-routing.ts";
+import { envSink, routeEnvVars, splitLiteralEnvValues } from "./env-routing.ts";
 import type { UpstreamEnvironmentVariable } from "./upstream-client.ts";
 
 describe("routeEnvVars", () => {
@@ -206,5 +206,39 @@ describe("envSink", () => {
 
   it("HTTP with a startup sidecar → the sidecar's startup.env block", ({ expect }) => {
     expect(envSink({ type: "http", hasStartup: true })).toBe("startup");
+  });
+});
+
+describe("splitLiteralEnvValues", () => {
+  it("lifts a literal value into `values` and leaves `from_environment` wiring", ({ expect }) => {
+    const { wiring, values } = splitLiteralEnvValues({ LOG_LEVEL: "info" });
+    expect(wiring).toEqual({ LOG_LEVEL: "from_environment" });
+    expect(values).toEqual({ LOG_LEVEL: "info" });
+  });
+
+  it("passes Link refs through untouched, never lifting them", ({ expect }) => {
+    const ref = { from: "link" as const, provider: "p", key: "API_KEY" };
+    const { wiring, values } = splitLiteralEnvValues({ API_KEY: ref });
+    expect(wiring).toEqual({ API_KEY: ref });
+    expect(values).toEqual({});
+  });
+
+  it("leaves existing magic strings (`from_environment` / `auto`) as wiring", ({ expect }) => {
+    const { wiring, values } = splitLiteralEnvValues({ A: "from_environment", B: "auto" });
+    expect(wiring).toEqual({ A: "from_environment", B: "auto" });
+    expect(values).toEqual({});
+  });
+
+  it("wires an empty-string literal but lifts no value", ({ expect }) => {
+    const { wiring, values } = splitLiteralEnvValues({ OPTIONAL: "" });
+    expect(wiring).toEqual({ OPTIONAL: "from_environment" });
+    expect(values).toEqual({});
+  });
+
+  it("splits a mixed block — literal lifted, secret ref kept", ({ expect }) => {
+    const ref = { from: "link" as const, provider: "p", key: "TOKEN" };
+    const { wiring, values } = splitLiteralEnvValues({ LOG_LEVEL: "debug", TOKEN: ref });
+    expect(wiring).toEqual({ LOG_LEVEL: "from_environment", TOKEN: ref });
+    expect(values).toEqual({ LOG_LEVEL: "debug" });
   });
 });
