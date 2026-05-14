@@ -109,6 +109,43 @@ describe("buildProxyHandler", () => {
     expect(await res.text()).toBe("data: hello\n\n");
   });
 
+  it("sets X-Forwarded-* so upstream services emit browser-reachable URLs", async () => {
+    // Regression: Link generates OAuth callback URLs from X-Forwarded-Host.
+    // Without these headers it defaults to the daemon's s2s host
+    // (localhost:8080), whose cert is not browser-trusted, breaking the
+    // OAuth-provider → browser callback step.
+    fetchMock.mockResolvedValueOnce(new Response("ok", { status: 200 }));
+    const handler = buildProxyHandler({ upstream: "https://daemon.local:8080", label: "daemon" });
+    await handler(
+      event({
+        path: "api/link/v1/oauth/authorize/google-calendar",
+        url: "https://localhost:5200/api/daemon/api/link/v1/oauth/authorize/google-calendar",
+      }),
+    );
+    const forwardedHeaders = fetchMock.mock.calls[0]?.[1]?.headers as Headers;
+    expect(forwardedHeaders.get("x-forwarded-host")).toBe("localhost:5200");
+    expect(forwardedHeaders.get("x-forwarded-proto")).toBe("https");
+    expect(forwardedHeaders.get("x-forwarded-prefix")).toBe("/api/daemon");
+  });
+
+  it("forwards 3xx redirects to the client instead of following them upstream", async () => {
+    // Regression: OAuth flows (e.g. Link → Google authorize) depend on the
+    // browser navigating the popup to accounts.google.com itself. If the SSR
+    // proxy follows the Location header, the browser stays on localhost:5200
+    // and renders Google's HTML under the wrong origin (CSP / CORS dies).
+    fetchMock.mockResolvedValueOnce(
+      new Response(null, {
+        status: 302,
+        headers: { location: "https://accounts.google.com/o/oauth2/v2/auth?x=1" },
+      }),
+    );
+    const handler = buildProxyHandler({ upstream: "https://daemon.local:8080", label: "daemon" });
+    const res = await handler(event({ path: "api/link/v1/oauth/authorize/google-calendar" }));
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe("https://accounts.google.com/o/oauth2/v2/auth?x=1");
+    expect(fetchMock.mock.calls[0]?.[1]?.redirect).toBe("manual");
+  });
+
   it("aborts the upstream fetch when the client aborts", async () => {
     let abortedSignal: AbortSignal | undefined;
     fetchMock.mockImplementation((_url, init) => {

@@ -1,0 +1,15 @@
+- description: EMPTY_SESSION_SUMMARY constant defined in runtime.ts
+  vars:
+    scenarioId: empty-session-summary-constant-defined
+
+- description: nonEmptySummary wrapper helper defined
+  vars:
+    scenarioId: non-empty-summary-wrapper-defined
+
+- description: every synthesize* fallback inside buildSessionJobResult is wrapped
+  vars:
+    scenarioId: build-session-job-result-uses-non-empty-summary
+
+- description: EMPTY_SESSION_SUMMARY carries diagnostic prose useful to the chat agent
+  vars:
+    scenarioId: empty-session-summary-prose-useful

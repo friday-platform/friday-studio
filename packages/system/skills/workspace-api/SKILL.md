@@ -81,7 +81,7 @@ Create and manage Friday workspaces. This skill is where LLM judgment lives: whe
 **Key one-liners.**
 - Jobs must use `fsm:`, not `execution:` — the runtime silently skips jobs without `fsm:`.
 - `write_file` writes to scratch only; use `run_code` with an absolute path to edit `workspace.yml`.
-- Tool names in `agents.*.config.tools` resolve against `tools.mcp.servers.*` for workspace-scoped MCP servers. Atlas-platform built-ins (memory, artifacts, fs, `request_tool_access`, `request_human_input`) auto-inject everywhere and use bare names (`save_memory_entry`, `fs_glob`, `request_human_input`); no `serverId/` prefix.
+- Tool names in `agents.*.config.tools` resolve against `tools.mcp.servers.*` for workspace-scoped MCP servers — `config.tools` is the **MCP-tool allowlist**, not the complete tool surface. Atlas-platform built-ins (memory, artifacts, fs, `request_tool_access`, `request_human_input`, `complete` when `outputTo` is set, `delegate`, `load_skill` — see `packages/agent-sdk/src/platform-tools.ts`) auto-inject everywhere and use bare names (`save_memory_entry`, `fs_glob`, `request_human_input`); no `serverId/` prefix. The full agent ↔ FSM-action contract — what auto-injects per invocation kind, `outputTo` semantics, the four invocation kinds — lives in `@friday/agent-action-handshake`.
 - Jobs that return data need `outputTo`; LLM-backed `outputTo` actions must finish with the injected `complete` tool (`outputType` schema args, or `{ response }` for untyped output).
 
 ---
@@ -376,7 +376,7 @@ The cheat-sheet table covers the decision rule. These are worked examples for ea
 
 1. **Don't reach for an MCP server when a bundled agent exists for the same domain *and* the work is open-ended.** Common over-MCP traps: `playwright-mcp` instead of `type: atlas, agent: "web"`; `slack-mcp` instead of `type: atlas, agent: "slack"`. The flip side: when the work is a deterministic single call, MCP-as-tool is the right pick — don't over-bundle. Run `list_capabilities` first; if a bundled agent matches and the work is open-ended, use it.
 
-2. **Atlas agents are self-contained black boxes — they do not invoke MCP tools.** Bundled agents ship with hard-wired transport (Playwright for `web`, etc.). If the user's intent requires calling a specific MCP tool — e.g., `google-gmail/send_gmail_message`, `github-mcp/create_issue` — `type: atlas` is the wrong choice. To call an MCP tool, use `type: llm` with the tool in `config.tools`. **Read the bundled agent's `constraints` in `list_capabilities`.** That's where the agent explicitly flags what it *cannot* do. If `constraints` rule out the intent, skip the bundled agent and fall through to MCP-enabled / MCP-available.
+2. **Atlas agents don't invoke workspace MCP tools, but they DO get the platform tools** (memory, artifacts, fs, HITL — see `packages/agent-sdk/src/platform-tools.ts`). Bundled agents ship with hard-wired transport (Playwright for `web`, etc.) for their domain — they can't call `google-gmail/send_gmail_message` or `github-mcp/create_issue`. If the user's intent requires a specific MCP tool, `type: atlas` is the wrong choice; use `type: llm` with the tool in `config.tools` (which is the MCP-tool allowlist; platform tools auto-inject regardless). **Read the bundled agent's `constraints` in `list_capabilities`.** That's where the agent explicitly flags what it *cannot* do. If `constraints` rule out the intent, skip the bundled agent and fall through to MCP-enabled / MCP-available.
 
 3. **For `type: atlas`, the `prompt` field is task-specific context layered on the agent's bundled behavior.** Describe the user's intent, not the mechanics. The bundled agent already knows how to drive a browser / call the GitHub API — don't re-teach it.
 
@@ -416,10 +416,9 @@ The cheat-sheet table covers the decision rule. These are worked examples for ea
 
 11. **Never DELETE+CREATE a workspace to edit it.** That loses the runtime id, kills sessions, and breaks cross-workspace mounts. Use in-place updates (`POST /update` or partial endpoints) instead.
 
-12. **Per-job and per-workspace policy blocks.** workspace.yml carries a few optional blocks beyond the core wiring. All precedence chains follow **per-job > per-workspace > daemon-level** (env var or runtime default), except `validation:` which extends one level higher to action-level.
+12. **Per-job and per-workspace policy blocks.** workspace.yml carries a few optional blocks beyond the core wiring. All precedence chains follow **per-job > per-workspace > daemon-level** (env var or runtime default).
     - **`permissions: { dangerouslySkipAllowlist: bool }`** — bypass tool/skill allowlist enforcement. Floor: daemon `FRIDAY_DANGEROUSLY_SKIP_PERMISSIONS=1` env var. Trusted contexts only. Without bypass, allowlist denials become elicitations: an agent that calls `request_tool_access(toolName, reason)` produces a `tool-allowlist` elicitation surfaced via `GET /api/elicitations`, the Activity page, and sidebar pending badges. The blocked action waits for allow/deny/expiry; on allow it resumes in the same session. For non-permission user decisions, call `request_human_input({ question, options? })`; it creates an `open-question` elicitation and returns the answer to the same run.
     - **`delegation: { max_depth, max_steps_per_call, max_output_tokens, max_input_tokens, max_wall_time_ms, max_cost_usd }`** — bounds for the `delegate` tool when an agent uses it. Workspace-level + per-job override (`jobs.<name>.delegation`) — per-field merge, job wins. Default `max_depth: 1`.
-    - **`validation: { default, skill }`** — default LLM-output validation strategy applied to `type: llm` / `type: agent` actions that don't set `validate:` themselves. See the dedicated `validation:` section below for the full precedence chain (action > job > workspace > `"auto"`).
     - **`memory.own[].ttl: <duration>`** — explicit TTL on a memory store. Without it, `type: short_term` (notes) defaults to ephemeral session-bound and `type: long_term` (memory) to durable.
     - **`artifacts: { default_grace: <duration> }`** — workspace-level grace window after job completion before ephemeral artifacts are swept (default `24h`). Per-job override: `jobs.<name>.artifacts: { default_grace, ephemeral }`. Promotion-by-reference (a `save_memory_entry` text containing the artifact id, a `display_artifact` call, or `aiSummary.keyDetails[].url`) keeps an artifact alive past the grace window with no author opt-in.
     - **`jobs.<name>.elicitations: { timeout: <duration> }`** — per-job elicitation timeout, independent of `config.timeout`. Useful for long batch jobs whose individual prompts shouldn't sit unanswered.
@@ -445,14 +444,6 @@ The cheat-sheet table covers the decision rule. These are worked examples for ea
       max_input_tokens: 100000
       max_wall_time_ms: 120000
       max_cost_usd: null          # reserved; not enforced until cost-tracking lands
-
-    validation:
-      # Default LLM-output validation strategy. Per-field merge with
-      # per-job override; action-level `validate:` always wins. See the
-      # `validation:` section below for the four-level precedence chain
-      # and what each strategy means at runtime.
-      default: auto               # auto | skip | self | external
-      skill: validating-llm-outputs   # OPTIONAL: override the validator skill
 
     artifacts:
       # Workspace-level grace window after job completion before ephemeral
@@ -490,12 +481,6 @@ The cheat-sheet table covers the decision rule. These are worked examples for ea
           max_depth: 2            # only this job; siblings inherit workspace 1
           max_wall_time_ms: 60000
 
-        # Per-job validation override. Per-field merge with workspace;
-        # action-level `validate:` still wins over both.
-        validation:
-          default: external       # this job's actions get judged unless action overrides
-          # skill: "@my/financial-claims"   # OPTIONAL: domain-specific judge
-
         # Per-job artifact lifecycle. EITHER ephemeral (whole-job) OR
         # default_grace (window override) — both can coexist; ephemeral
         # is the kind, default_grace is the sweep delay.
@@ -531,116 +516,6 @@ The cheat-sheet table covers the decision rule. These are worked examples for ea
     - `delegation.max_cost_usd` accepts `null` for "no enforcement";
       a positive number is reserved for the future cost-tracking layer
       and currently has no runtime effect.
-
----
-
-## `validation:` — LLM-output validation defaults
-
-Workspace- and job-level defaults for the LLM-output validation
-policy applied to every `type: llm` and `type: agent` action that
-doesn't set `validate:` itself. Sits alongside `permissions:` and
-`delegation:` and follows the same merge model — except the
-precedence chain extends one level higher to action-level.
-
-### The block
-
-```yaml
-# workspace.yml — workspace-wide default
-validation:
-  default: external      # auto | skip | self | external
-  skill: "@my/judge"     # optional; defaults to validating-llm-outputs
-
-# workspace.yml — job-level override
-jobs:
-  review-inbox:
-    validation:
-      default: skip
-```
-
-Both `default` and `skill` are optional. Per-field merge with the
-workspace block: a job that sets only `default:` inherits
-`workspace.validation.skill`, and vice versa.
-
-### Precedence (highest wins)
-
-```
-action.validate.strategy
-  > job.validation.default
-  > workspace.validation.default
-  > "auto"   (the classifier — see writing-workspace-jobs)
-```
-
-`skill` resolution follows the same chain; falls back to
-`validating-llm-outputs` when nothing is set.
-
-### What each `default:` value means
-
-- `auto` — runtime classifier picks per-action: `skip` for
-  read-only / structured actions, `self` for prose / mutating
-  actions. Never auto-picks `external`.
-- `skip` — bypass validation entirely.
-- `self` — LLM self-checks its draft via the
-  `validating-llm-outputs` skill (or your `skill:` override).
-- `external` — separate-judge LLM call after the action emits.
-
-For the deeper auto-detect rules (which tools count as read-only,
-which verbs as mutating), see the **Validation strategies**
-section in `@friday/writing-workspace-jobs`.
-
-### Skill override
-
-Pin a domain-specific validator with `skill:`:
-
-```yaml
-validation:
-  default: self
-  skill: "@my/financial-claims"
-```
-
-The same skill works for both `self` and `external` strategies —
-one source-of-truth for what counts as a sourced claim. Useful for
-financial / medical / legal workspaces where the generic validator
-under-flags domain claims.
-
-### Real-world configs
-
-Always check everything (high-stakes workspace, latency-tolerant):
-
-```yaml
-validation:
-  default: external
-```
-
-Trust everything; the FSMs verify with deterministic agents:
-
-```yaml
-validation:
-  default: skip
-```
-
-Per-job mix — workspace defaults to `external`, one high-volume
-job downgrades to `self`:
-
-```yaml
-validation:
-  default: external
-
-jobs:
-  triage-inbox:
-    validation:
-      default: self     # cheaper; runs on every inbound message
-    fsm:
-      # ...
-```
-
-### Cross-references
-
-- `@friday/writing-workspace-jobs` — **Validation strategies**
-  section covers action-level `validate:` (string and object form),
-  the auto-detect classifier rules, and worked overrides.
-- `@friday/validating-llm-outputs` — system skill the runtime
-  composes into action prompts when the resolved strategy is
-  `self`. Not user-loadable; runtime composes it automatically.
 
 ---
 

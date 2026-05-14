@@ -276,7 +276,7 @@
 
   .icon {
     align-items: center;
-    background-color: var(--color-surface-1);
+    background-color: var(--surface);
     block-size: var(--size-8);
     color: color-mix(in srgb, var(--color-text), transparent 70%);
     display: flex;
@@ -286,7 +286,7 @@
     margin-inline-start: calc(-1 * calc(var(--size-2) + 0.5px));
 
     &.running {
-      animation: spin 2s linear infinite;
+      animation: spin 4s linear infinite;
     }
   }
 
@@ -368,6 +368,12 @@
 
     50% {
       opacity: 1;
+    }
+  }
+
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
     }
   }
 

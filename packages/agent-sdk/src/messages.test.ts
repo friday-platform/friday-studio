@@ -150,6 +150,35 @@ describe("validateAtlasUIMessages", () => {
     }
   });
 
+  it("validates file-attached data events from persisted chat history", async () => {
+    const messages = [
+      {
+        id: "1",
+        role: "user",
+        parts: [
+          { type: "text", text: "please read this" },
+          {
+            type: "data-file-attached",
+            data: {
+              paths: ["/Users/test/.atlas/scratch/uploads/ws-1/chat-1/file.txt"],
+              filenames: ["file.txt"],
+              mimeTypes: ["text/plain"],
+            },
+          },
+        ],
+        metadata: {},
+      },
+    ];
+
+    const validated = await validateAtlasUIMessages(messages);
+    expect(validated.length).toEqual(1);
+    const dataPart = validated[0]?.parts[1];
+    expect(dataPart?.type).toEqual("data-file-attached");
+    if (dataPart?.type === "data-file-attached") {
+      expect(dataPart.data.filenames).toEqual(["file.txt"]);
+    }
+  });
+
   it("accepts session-start with only sessionId", async () => {
     const messages = [
       {

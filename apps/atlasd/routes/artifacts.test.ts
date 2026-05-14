@@ -361,6 +361,25 @@ describe("Upload endpoint", () => {
     expect((body as { error: string }).error).toMatch(/^File type not allowed\. Supported:/);
   });
 
+  it("rejects .svg upload (script-injection risk; SVG stays agent-emit-only)", async () => {
+    // Defense-in-depth invariant: SVG can carry inline `<script>` which
+    // would execute against the chat origin if the artifact ever rendered
+    // outside the sandboxed iframe path. The chat-input refuses SVG
+    // client-side, and the artifact upload route must refuse it server-
+    // side too. Agents can still emit SVG via `create_artifact` (which
+    // renders inside the sandboxed iframe).
+    const svgBody = '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>';
+    const file = createTestFile(svgBody, "evil.svg", "image/svg+xml");
+    const formData = new FormData();
+    formData.set("file", file);
+
+    const response = await artifactsApp.request("/upload", { method: "POST", body: formData });
+
+    expect(response.status).toEqual(415);
+    const body = await response.json();
+    expect((body as { error: string }).error).toMatch(/^File type not allowed\. Supported:/);
+  });
+
   it("rejects corrupt PDFs with user-friendly error", async () => {
     // PDF magic bytes only - not a valid PDF structure
     const pdfMagicBytes = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e]);

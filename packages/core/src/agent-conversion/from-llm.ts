@@ -19,15 +19,10 @@ import {
 import type { Logger } from "@atlas/logger";
 import { hasToolCall, jsonSchema, stepCountIs, streamText } from "ai";
 import { z } from "zod";
-import { composeValidationBlock } from "../agent-context/compose-blocks.ts";
 import {
-  createRecordValidationTool,
-  RECORD_VALIDATION_TOOL_NAME,
-} from "../agent-context/record-validation-tool.ts";
-import {
-  readValidateDecisionFromConfig,
-  type ValidateDecisionContext,
-} from "../agent-context/validate-decision.ts";
+  AGENT_HONESTY_DIRECTIVE,
+  DESTRUCTIVE_TOOL_GUARD,
+} from "../agent-context/honesty-directives.ts";
 import { throwWithCause } from "../utils/error-helpers.ts";
 import { filterWorkspaceAgentTools } from "./agent-tool-filters.ts";
 
@@ -64,52 +59,16 @@ export function convertLLMToAgent(
     outputSchema: LLMOutputSchema,
     expertise: { examples: [] },
     useWorkspaceSkills: true,
-    handler: async (
-      prompt,
-      { tools, session, stream, abortSignal, config: ctxConfig, outputSchema },
-    ) => {
+    handler: async (prompt, { tools, session, stream, abortSignal, outputSchema }) => {
       try {
-        // Use agent's system prompt directly - no attribution protocol injection
-        let systemPrompt = config.config.prompt || "";
-
-        // Close the case-llm-vs-case-agent validation asymmetry. The FSM
-        // engine resolves the validation
-        // decision in `case "agent"` and threads it through
-        // `AgentExecutorOptions.validateDecision` → workspace runtime →
-        // `AgentExecutionContext.config` (under the reserved
-        // `__atlas_validate` key) → here. When the decision is `self` we
-        // append the bundled `validating-llm-outputs` skill body to the
-        // system prompt — same skill, same helper, same placement
-        // (after the author-declared base, mirroring `case "llm"`'s
-        // ordering after memory + artifact blocks). `skip` and
-        // `external` leave the prompt untouched. Failures inside
-        // `composeValidationBlock` swallow + log; they never block the
-        // agent.
-        const validateCtx: ValidateDecisionContext = readValidateDecisionFromConfig(ctxConfig);
-        // On the structured + self path, skip the validation skill body —
-        // mirrors the `injectRecordValidation`
-        // predicate below. The skill body says "you MUST call
-        // record_validation"; if we've also suppressed the tool injection
-        // below), the LLM sees contradictory instructions and bails into
-        // prose. Skip both for the structured + self case so verdict
-        // is implicit pass on successful complete-tool emission.
-        const skipValidationSkillBody =
-          validateCtx.decision === "self" && validateCtx.hasOutputType === true;
-        const validationBlock = skipValidationSkillBody
-          ? ""
-          : await composeValidationBlock({
-              decision: validateCtx.decision,
-              skillName: validateCtx.skill,
-              logger,
-            });
-        if (validationBlock) {
-          systemPrompt = `${systemPrompt}\n\n${validationBlock}`;
-          logger.debug("Injected validation skill block into LLM agent system prompt", {
-            agentId,
-            decision: validateCtx.decision,
-            blockChars: validationBlock.length,
-          });
-        }
+        // Author's prompt + the universal honesty + destructive-tool
+        // directives. Appended after the author's content so the model
+        // reads the task definition first and the meta-rules as the
+        // closing constraint. Same shape as fsm-engine.ts case "llm"'s
+        // existing complete/failStep instructions.
+        const authorPrompt = config.config.prompt || "";
+        const systemPrompt =
+          `${authorPrompt}\n\n${AGENT_HONESTY_DIRECTIVE}\n\n${DESTRUCTIVE_TOOL_GUARD}`.trim();
 
         stream?.emit({
           type: "data-tool-progress",
@@ -120,47 +79,20 @@ export function convertLLMToAgent(
         // Tools are provided via execution context from workspace-level MCP servers
         const filteredTools = filterWorkspaceAgentTools(tools, logger);
 
-        // Inject the `record_validation` platform tool when the resolved
-        // validation decision is `self`. The FSM engine threads the decision
-        // in via `__atlas_validate`; the
-        // skill body composed above instructs the LLM to call this tool with
-        // its inline self-check verdict. The captured args are read off the
-        // streamText result's toolCalls back in fsm-engine's `case "agent"`
-        // post-execution site so `step:complete.validation` carries them
-        // identically to the inline `case "llm"` path.
-        //
-        // When the action declares an `outputType:` (structured schema), the
-        // orchestrator skips
-        // `record_validation` injection. The structured schema IS the
-        // validation contract; injecting `record_validation` here forces
-        // toolChoice off the forced-complete pin and lets the LLM emit
-        // free-form prose instead of structured output. Verdict on the
-        // structured + self path is implicit pass on successful structured
-        // emission. The skill body is also skipped on this path — see
-        // `skipValidationSkillBody` above for why.
-        const injectRecordValidation =
-          validateCtx.decision === "self" && !validateCtx.hasOutputType;
-        const toolsWithValidation = injectRecordValidation
-          ? {
-              ...filteredTools,
-              [RECORD_VALIDATION_TOOL_NAME]:
-                createRecordValidationTool() as (typeof filteredTools)[string],
-            }
-          : filteredTools;
         const hasRuntimeOutputSchema = !!outputSchema;
         const toolsWithOutputContract = hasRuntimeOutputSchema
           ? {
-              ...toolsWithValidation,
+              ...filteredTools,
               complete: {
                 description:
                   "Call this when finished to store the final output for the FSM action.",
                 inputSchema: jsonSchema(outputSchema as Parameters<typeof jsonSchema>[0]),
                 execute: () => ({ success: true }),
-              } as (typeof toolsWithValidation)[string],
+              } as (typeof filteredTools)[string],
             }
-          : toolsWithValidation;
+          : filteredTools;
 
-        const hasNonOutputTools = Object.keys(toolsWithValidation).length > 0;
+        const hasNonOutputTools = Object.keys(filteredTools).length > 0;
 
         const result = streamText({
           model,
@@ -227,16 +159,14 @@ export function convertLLMToAgent(
         });
 
         // Defensive fallback for empty `result.text`. The AI SDK's
-        // `result.text` reflects only the
-        // FINAL step's assistant text. When the LLM ends on a tool call
-        // (e.g. `record_validation` injected by the validate:self path)
-        // its final assistant message has no text part, so `result.text`
-        // is "" and the orchestrator wraps that as `{response: ""}`.
-        // Earlier steps may still carry the actual text emission. Scan
-        // backward through `steps` for the latest text content as a
-        // fallback so we don't drop legitimate output. Cross-package
-        // contract preserved: pass-through when `result.text` is
-        // already populated.
+        // `result.text` reflects only the FINAL step's assistant text. When
+        // the LLM ends on a tool call its final assistant message has no
+        // text part, so `result.text` is "" and the orchestrator wraps that
+        // as `{response: ""}`. Earlier steps may still carry the actual
+        // text emission. Scan backward through `steps` for the latest text
+        // content as a fallback so we don't drop legitimate output.
+        // Cross-package contract preserved: pass-through when `result.text`
+        // is already populated.
         let resolvedText = text;
         if (!resolvedText) {
           for (let i = steps.length - 1; i >= 0; i--) {

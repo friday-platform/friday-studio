@@ -1,0 +1,19 @@
+- description: "workspace-chat prompt no longer claims `config.tools` is the complete tool surface"
+  vars:
+    scenarioId: workspace-chat-prompt-tools-allowlist
+
+- description: "writing-workspace-jobs no longer says `tools: []` only injects memory + artifacts"
+  vars:
+    scenarioId: writing-workspace-jobs-empty-tools-misclaim
+
+- description: writing-workspace-jobs no longer references stale tool names from the 2026-05 rename
+  vars:
+    scenarioId: writing-workspace-jobs-stale-tool-names
+
+- description: workspace-api skill mentions platform tools alongside the atlas-vs-llm choice
+  vars:
+    scenarioId: workspace-api-platform-tools-clarity
+
+- description: upsert_agent tool description for atlas-type clarifies platform-tool access
+  vars:
+    scenarioId: upsert-tools-atlas-agent-clarity
