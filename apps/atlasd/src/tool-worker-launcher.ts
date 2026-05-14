@@ -52,6 +52,13 @@ export interface ToolWorkerSpec {
    * Link credential refs — resolved through the shared resolver at launch.
    */
   env?: Record<string, string | LinkCredentialRef>;
+  /**
+   * Workspace `.env` overlay — injected between `process.env` and `spec.env`
+   * wiring so workspace-level values take precedence over daemon ambient env.
+   * Currently unused (tool workers run in-process via `tool-dispatch.ts`);
+   * wired correctly for the Friday Cloud microvm / k8s runtime path.
+   */
+  envOverlay?: Record<string, string>;
   /** Override the launch script path. Defaults to scripts/run-tool-worker.sh. */
   scriptPath?: string;
 }
@@ -92,7 +99,7 @@ async function buildEnv(spec: ToolWorkerSpec): Promise<Record<string, string>> {
   if (spec.workerCmd) env.FRIDAY_WORKER_CMD = spec.workerCmd;
   // spec.env carries `env:` wiring — plain strings or Link refs — resolved
   // through the one shared resolver, same as every other spawn site.
-  if (spec.env) Object.assign(env, await resolveEnvValues(spec.env, logger));
+  if (spec.env) Object.assign(env, await resolveEnvValues(spec.env, logger, spec.envOverlay));
   return env;
 }
 
@@ -163,19 +170,24 @@ function spawnK8s(_spec: ToolWorkerSpec): ToolWorkerHandle {
 /**
  * Spawn a tool worker. Returns a handle the caller can use to stop it.
  * Throws if the chosen runtime adapter isn't implemented.
+ *
+ * NOTE — commented out: today tool workers run in-process via
+ * `tool-dispatch.ts` (`registerToolWorker`). This subprocess / microvm / k8s
+ * launcher is scaffolded for the **Friday Cloud** isolation path and will be
+ * re-enabled once microvm + k8s runtime adapters are wired.
  */
-export function launchToolWorker(spec: ToolWorkerSpec = {}): Promise<ToolWorkerHandle> {
-  const runtime = spec.runtime ?? DEFAULT_RUNTIME;
-  switch (runtime) {
-    case "subprocess":
-      return spawnSubprocess(spec);
-    case "microvm":
-      return Promise.resolve(spawnMicrovm(spec));
-    case "k8s":
-      return Promise.resolve(spawnK8s(spec));
-    default: {
-      const exhaustive: never = runtime;
-      throw new Error(`Unknown tool worker runtime: ${exhaustive}`);
-    }
-  }
-}
+// export function launchToolWorker(spec: ToolWorkerSpec = {}): Promise<ToolWorkerHandle> {
+//   const runtime = spec.runtime ?? DEFAULT_RUNTIME;
+//   switch (runtime) {
+//     case "subprocess":
+//       return spawnSubprocess(spec);
+//     case "microvm":
+//       return Promise.resolve(spawnMicrovm(spec));
+//     case "k8s":
+//       return Promise.resolve(spawnK8s(spec));
+//     default: {
+//       const exhaustive: never = runtime;
+//       throw new Error(`Unknown tool worker runtime: ${exhaustive}`);
+//     }
+//   }
+// }
