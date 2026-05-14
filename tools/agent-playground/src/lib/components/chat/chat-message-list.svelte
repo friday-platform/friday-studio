@@ -273,110 +273,23 @@
   // this, every streaming token would re-snap the scroll to the bottom and
   // the user couldn't review earlier messages mid-generation.
   //
-  // Detachment is owned by the gesture listeners (wheel/touch/keydown);
-  // this threshold only controls *re-attach* when the user scrolls back
-  // toward the bottom. Keep it tight — the value is the slack we'll
-  // tolerate from subpixel rounding and the last fraction of a wheel
-  // tick. Too loose (e.g. 80) and a single wheel-up tick that lands
-  // inside the band gets stomped back to "following" on the next frame.
-  const ATTACH_THRESHOLD_PX = 4;
+  // A small threshold (not just === 0) tolerates subpixel rounding and the
+  // half-line of inertia after a fast wheel scroll that settles just above
+  // the bottom — we want "basically at the bottom" to still count as
+  // following.
+  const STICK_THRESHOLD_PX = 80;
   let followBottom = $state(true);
-
-  // Programmatic-scroll sentinel. Each `snapToBottom()` records the exact
-  // post-clamp `scrollTop` it wrote; the corresponding synthetic `scroll`
-  // event that fires next can be matched against this value and ignored.
-  // A boolean would race when writes coalesce across frames or when the
-  // browser delays the scroll event — comparing to the literal pixel
-  // value written is bulletproof. Same pattern as `use-stick-to-bottom`.
-  //
-  // CRITICAL: read `scrollTop` back AFTER the write. Setting
-  // `scrollTop = scrollHeight` is silently clamped by the browser to
-  // `scrollHeight - clientHeight`. Storing the pre-clamp value as the
-  // sentinel makes the comparison miss by `clientHeight` (hundreds of
-  // pixels), so every programmatic snap fell through to re-attach
-  // `followBottom = true` and stomped every gesture detach.
-  let ignoreNextScrollTo: number | null = null;
-  function snapToBottom() {
-    if (!containerEl) return;
-    containerEl.scrollTop = containerEl.scrollHeight;
-    ignoreNextScrollTo = containerEl.scrollTop;
-  }
-
-  // Selection state: if the user is mousedown-dragging a text selection
-  // and the drag scrolls the container, that's not a "detach" gesture.
-  // `mouseup` lives on `window` so a release outside the bounds still
-  // clears the flag.
-  let isSelecting = $state(false);
-
-  // True when the active drag selection has actually highlighted text —
-  // pure mousedown alone shouldn't suppress detach, only a real
-  // selection-in-progress.
-  function hasActiveSelection(): boolean {
-    return isSelecting && (globalThis.getSelection?.()?.toString().length ?? 0) > 0;
-  }
 
   function handleScroll() {
     if (!containerEl) return;
-    // Ignore the synthetic scroll event that our own `snapToBottom()`
-    // just produced. Without this, every programmatic snap looks like a
-    // user landing at the bottom and re-attaches follow — stomping a
-    // detach the user just made.
-    if (
-      ignoreNextScrollTo !== null &&
-      Math.abs(containerEl.scrollTop - ignoreNextScrollTo) <= 2
-    ) {
-      ignoreNextScrollTo = null;
-      return;
-    }
-    ignoreNextScrollTo = null;
     const distanceFromBottom =
       containerEl.scrollHeight - containerEl.scrollTop - containerEl.clientHeight;
-    // Re-attach only. Detachment is owned by the gesture listeners below
-    // so a programmatic scroll can never accidentally clear follow.
-    if (distanceFromBottom < ATTACH_THRESHOLD_PX) followBottom = true;
+    followBottom = distanceFromBottom < STICK_THRESHOLD_PX;
   }
-
-  // Gesture-based detach. Any wheel-up / touchmove / PageUp / ArrowUp /
-  // Home immediately drops follow — position-based detach loses to fast
-  // streams that grow the document under the user's scroll position.
-  // Listeners are passive where supported so we never block scrolling.
-  $effect(() => {
-    if (!containerEl) return;
-    const el = containerEl;
-    const onWheel = (e: WheelEvent) => {
-      if (e.deltaY < 0 && !hasActiveSelection()) followBottom = false;
-    };
-    const onTouchMove = () => {
-      if (!hasActiveSelection()) followBottom = false;
-    };
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "PageUp" || e.key === "ArrowUp" || e.key === "Home") {
-        followBottom = false;
-      }
-    };
-    const onMouseDown = () => {
-      isSelecting = true;
-    };
-    const onMouseUp = () => {
-      isSelecting = false;
-    };
-    el.addEventListener("wheel", onWheel, { passive: true });
-    el.addEventListener("touchmove", onTouchMove, { passive: true });
-    el.addEventListener("keydown", onKeyDown);
-    el.addEventListener("mousedown", onMouseDown);
-    window.addEventListener("mouseup", onMouseUp);
-    return () => {
-      el.removeEventListener("wheel", onWheel);
-      el.removeEventListener("touchmove", onTouchMove);
-      el.removeEventListener("keydown", onKeyDown);
-      el.removeEventListener("mousedown", onMouseDown);
-      window.removeEventListener("mouseup", onMouseUp);
-    };
-  });
 
   async function scrollToBottom() {
     await tick();
-    if (!followBottom || !containerEl) return;
+    if (!containerEl) return;
     // Two complications drive the multi-pass:
     //  1. The virtualizer reports `getTotalSize()` from a mix of
     //     measured + estimated item heights. On first paint after a
@@ -386,22 +299,23 @@
     //     callback, which is async to the render pass. Between
     //     "messages are in the DOM" and "the virtualizer knows their
     //     real sizes" there's at least one animation frame.
-    // The scroll passes below catch each settling step. Re-check
-    // `followBottom` after every await so a mid-pass user detach is
-    // honored on the next frame, not three frames later.
+    // The scroll passes below catch each settling step. Plain
+    // `scrollTop = scrollHeight` works once the virtualizer's total
+    // size is accurate; until then we use `scrollToIndex` which
+    // self-corrects to the last item as measurements arrive.
     if (virtualCount > 0) {
       $virtualizer.scrollToIndex(virtualCount - 1, { align: "end" });
     }
-    snapToBottom();
+    containerEl.scrollTop = containerEl.scrollHeight;
     await new Promise((resolve) => requestAnimationFrame(resolve));
-    if (!followBottom || !containerEl) return;
+    if (!containerEl) return;
     if (virtualCount > 0) {
       $virtualizer.scrollToIndex(virtualCount - 1, { align: "end" });
     }
-    snapToBottom();
+    containerEl.scrollTop = containerEl.scrollHeight;
     await new Promise((resolve) => requestAnimationFrame(resolve));
-    if (!followBottom || !containerEl) return;
-    snapToBottom();
+    if (!containerEl) return;
+    containerEl.scrollTop = containerEl.scrollHeight;
   }
 
   $effect(() => {
@@ -416,6 +330,40 @@
     if (followBottom) {
       void scrollToBottom();
     }
+  });
+
+  // Re-anchor to bottom whenever the virtualizer's inner spacer grows.
+  // `measureElement` is ResizeObserver-backed and async, so the total
+  // size after a rehydration or a streaming delta keeps growing for a
+  // few frames after the each-loop renders. Without this, the initial
+  // `scrollToBottom` calls land mid-scroll because they fire before
+  // the final measurements arrive. Tied to `followBottom` so we don't
+  // hijack a user who has scrolled up.
+  //
+  // During streaming the inner spacer resizes on every measured-row
+  // change, which means a naive ResizeObserver callback fires N times
+  // per chunk and each fire reads `scrollHeight` synchronously —
+  // forcing layout flush right after the virtualizer just dirtied
+  // layout. Coalesce to one anchor per frame so streaming pays for at
+  // most one forced reflow per paint, not N.
+  $effect(() => {
+    if (!containerEl) return;
+    const inner = containerEl.querySelector(".virtual-inner");
+    if (!inner) return;
+    let anchorScheduled = false;
+    const observer = new ResizeObserver(() => {
+      if (!followBottom || !containerEl) return;
+      if (anchorScheduled) return;
+      anchorScheduled = true;
+      requestAnimationFrame(() => {
+        anchorScheduled = false;
+        if (followBottom && containerEl) {
+          containerEl.scrollTop = containerEl.scrollHeight;
+        }
+      });
+    });
+    observer.observe(inner);
+    return () => observer.disconnect();
   });
 
   const BRAILLE_FRAMES = ["⠀", "⠁", "⠉", "⠙", "⠚", "⠛", "⠟", "⠿", "⠟", "⠛", "⠚", "⠙", "⠉", "⠁"];
@@ -1022,10 +970,6 @@
     flex: 1;
     flex-direction: column;
     gap: var(--size-4);
-    /* Disable the browser's built-in scroll anchoring — our follow
-       logic owns scroll position, and the UA's anchor can fight us
-       when a tool card mounts above the viewport mid-stream. */
-    overflow-anchor: none;
     overflow-y: auto;
     padding: var(--size-4);
     scrollbar-width: thin;
