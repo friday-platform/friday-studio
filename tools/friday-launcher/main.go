@@ -409,6 +409,23 @@ func onReady() {
 		log.Info("cert env: wrote launcher-managed paths to .env", "keys_added", added)
 	}
 
+	// Migrate stale http://localhost:N URL keys to https:// when the
+	// s2s mesh is up. Tauri installers from before TLS support pinned
+	// FRIDAYD_URL / EXTERNAL_DAEMON_URL / EXTERNAL_TUNNEL_URL /
+	// LINK_SERVICE_URL to http://; without this migration the daemon's
+	// link proxy + the playground's daemon proxy would send cleartext
+	// into TLS listeners and chat tools fail with "Link service is
+	// unavailable" / the UI hangs on "CONNECTING…". Each consumer also
+	// auto-upgrades defensively (cf. packages/openapi-client/src/utils.ts
+	// and tools/agent-playground/static-server.ts), but this migration
+	// is the canonical .env-level fix so external readers — Python
+	// agents, operator `cat .env` — see the right scheme too.
+	if migrated, err := migrateStaleURLSchemes(); err != nil {
+		log.Warn("url migration: rewrite failed", "error", err)
+	} else if migrated > 0 {
+		log.Info("url migration: upgraded stale http→https in .env", "keys_migrated", migrated)
+	}
+
 	// Boot-time browser-cert refresh. Bounded at bootRefreshTimeout
 	// (5s) so a stuck CDN can't delay launcher startup. Run BEFORE
 	// supervisedProcesses() so the playground spec's first read of
@@ -442,6 +459,15 @@ func onReady() {
 	pollCtx, pollCancel := context.WithCancel(context.Background())
 	healthPollCancel = pollCancel
 	go runHealthPoll(pollCtx, sup, healthCache)
+
+	// Native readiness probes. One goroutine per supervised service,
+	// each owning a go-health checker whose http.Client matches the
+	// scheme the spec serves (TLS-skip-verify for HTTPS on loopback).
+	// Drives both the HealthCache readiness signal AND the
+	// sup.RestartProcess call when a service stays unhealthy past
+	// probeFailureThreshold. Process-compose's own ReadinessProbe is
+	// left nil — see project.go for the rationale.
+	startReadinessRunners(pollCtx, specs, healthCache, sup)
 
 	// Daily browser-cert renewer. Wakes once per tlsRenewInterval
 	// (default 24h, override via FRIDAY_TLS_RENEW_INTERVAL); when the

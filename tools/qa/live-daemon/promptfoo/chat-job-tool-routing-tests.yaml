@@ -1,0 +1,8 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+
+# Workspace exposes a `reindex-knowledge-base` job triggered by an HTTP
+# `reindex` signal. User asks "Please reindex the knowledge base."
+# The agent MUST call the `reindex-knowledge-base` tool. Failure mode
+# observed in 2026-05-14 QA: agent web_fetched localhost:3000/webhooks/...
+- vars:
+    scenarioId: routes-to-job-tool

@@ -3,7 +3,10 @@
   "name": "@atlas/agent-playground",
   "exports": "./mod.ts",
   "version": "0.1.0",
-  "imports": { "hono/client": "npm:hono@4.12.18/client" },
+  "imports": {
+    "hono/client": "npm:hono@4.12.18/client",
+    "undici": "npm:undici@^7"
+  },
   "tasks": {
     "fmt": "npx prettier --write .",
     "fmt:check": "npx prettier --check .",
