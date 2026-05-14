@@ -131,14 +131,44 @@ if (TLS && SHIM_PORT > 0) {
   // Link's callback handler.
   const tlsOriginHost = process.env.PLAYGROUND_TLS_HOSTNAME ?? "local.hellofriday.ai";
   const tlsOrigin = `https://${tlsOriginHost}:${PORT}`;
-  console.log(`[playground] oauth-shim listening on http://127.0.0.1:${SHIM_PORT}`);
-  console.log(`[playground] oauth-shim redirects → ${tlsOrigin}${SHIM_PATH_PREFIX}*`);
-  Deno.serve({ port: SHIM_PORT, hostname: "127.0.0.1" }, (req) => {
-    const url = new URL(req.url);
-    if (req.method !== "GET" || !url.pathname.startsWith(SHIM_PATH_PREFIX)) {
-      return new Response("not found", { status: 404 });
-    }
-    const target = `${tlsOrigin}${url.pathname}${url.search}`;
-    return Response.redirect(target, 302);
-  });
+  // Bind defensively: if SHIM_PORT (playground port + 1, not operator-
+  // chosen) is already in use, Deno.serve throws a top-level
+  // AddrInUse error that crashes the entire playground process. The
+  // launcher would then restart playground into the same collision,
+  // dragging us into a crash loop. Failing the OAuth shim alone is the
+  // tolerable degradation: the main playground stays up, and the user
+  // sees the Gemini Cloud Function's manual JSON-paste page (the
+  // pre-shim status quo) rather than a 404 on every page load.
+  try {
+    Deno.serve({
+      port: SHIM_PORT,
+      hostname: "127.0.0.1",
+      onError: (err) => {
+        // Per-request handler errors — keep the shim up; one bad
+        // request shouldn't take it down.
+        console.error(`[playground] oauth-shim request handler error: ${err}`);
+        return new Response("internal error", { status: 500 });
+      },
+      onListen: () => {
+        console.log(`[playground] oauth-shim listening on http://127.0.0.1:${SHIM_PORT}`);
+        console.log(`[playground] oauth-shim redirects → ${tlsOrigin}${SHIM_PATH_PREFIX}*`);
+      },
+    }, (req) => {
+      const url = new URL(req.url);
+      if (req.method !== "GET" || !url.pathname.startsWith(SHIM_PATH_PREFIX)) {
+        return new Response("not found", { status: 404 });
+      }
+      const target = `${tlsOrigin}${url.pathname}${url.search}`;
+      return Response.redirect(target, 302);
+    });
+  } catch (err) {
+    // Most common cause: port collision with another process. Log and
+    // continue — the main playground listener above is already up;
+    // OAuth flows just fall back to the manual-paste page.
+    console.error(
+      `[playground] oauth-shim failed to bind 127.0.0.1:${SHIM_PORT} ` +
+        `(${err instanceof Error ? err.message : String(err)}); ` +
+        `continuing without shim — Google OAuth will show manual JSON page`,
+    );
+  }
 }

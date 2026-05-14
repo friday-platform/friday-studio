@@ -73,6 +73,12 @@ type readinessRunner struct {
 	// Counters owned by the goroutine; no mutex needed.
 	consecutiveFail int
 	restartsIssued  int
+	// badURLLogged guards the http.NewRequestWithContext error path
+	// from spamming the log every probe period. r.url is fixed for the
+	// runner's lifetime — if NewRequestWithContext rejects it once,
+	// every subsequent call rejects it identically. Log once, then go
+	// quiet but keep flipping the cache to !ready.
+	badURLLogged bool
 }
 
 // restarter is the slice of *Supervisor that readinessRunner cares
@@ -154,9 +160,16 @@ func (r *readinessRunner) Run(ctx context.Context) {
 func (r *readinessRunner) tick(ctx context.Context) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, r.url, nil)
 	if err != nil {
-		// Programmer error — bad URL. Surface once via log and treat
-		// as a failure so the operator notices.
-		log.Error("readiness: bad probe URL", "service", r.name, "url", r.url, "error", err)
+		// Programmer error — bad URL. Same URL is reused every tick,
+		// so a regression here would otherwise produce one log line
+		// per probePeriodSeconds for the rest of the runner's life.
+		// Log once, then go quiet; the cache flip below still fires
+		// every tick so the operator gets a "starting forever" signal
+		// in the UI even after we stop logging.
+		if !r.badURLLogged {
+			log.Error("readiness: bad probe URL", "service", r.name, "url", r.url, "error", err)
+			r.badURLLogged = true
+		}
 		r.onFailure()
 		return
 	}

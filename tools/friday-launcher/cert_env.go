@@ -254,8 +254,28 @@ func swapURLScheme(value string, tlsOn bool) (string, bool) {
 // hellofriday.ai` resolves to 127.0.0.1 but isn't a loopback we want
 // to flip; operators who put non-trivial hostnames in .env get
 // pass-through behavior.
+//
+// Three loopback shapes are recognized:
+//   - `localhost`         — hostname, optionally followed by `:port` or `/path`
+//   - `127.0.0.1`         — IPv4 literal, same suffix rules
+//   - `[::1]`             — IPv6 literal in bracketed URL form (RFC 3986)
+//
+// Bare unbracketed `::1` is not a valid URL host and won't reach this
+// path; we don't try to handle it. Non-loopback IPv4s (`127.0.0.2`,
+// `0.0.0.0`) and the IPv4-mapped IPv6 form (`[::ffff:127.0.0.1]`) are
+// intentionally not flipped — the installer only writes the three
+// canonical loopback strings above.
 func startsWithLoopbackHost(rest string) bool {
-	// host portion ends at the first '/' or ':' (the colon-port).
+	// IPv6 in URL form is always bracketed: `[::1]` or `[::1]:8080`.
+	// Detect it first so the bracket-aware host extraction doesn't get
+	// confused by the embedded colons.
+	if strings.HasPrefix(rest, "[") {
+		if end := strings.IndexByte(rest, ']'); end > 0 {
+			return rest[1:end] == "::1"
+		}
+		return false
+	}
+	// Non-IPv6: host portion ends at the first '/' or ':' (colon-port).
 	end := len(rest)
 	for i := 0; i < len(rest); i++ {
 		if rest[i] == '/' || rest[i] == ':' {

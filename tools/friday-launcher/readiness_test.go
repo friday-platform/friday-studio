@@ -239,6 +239,37 @@ func TestReadinessRunner_RecoveryClearsCounter(t *testing.T) {
 	}
 }
 
+// TestReadinessRunner_BadURLLoggedOnce pins the log-dedupe for the
+// bad-URL branch. r.url is fixed for the runner's lifetime so an
+// invalid URL would otherwise produce one log line per probePeriod
+// forever; the badURLLogged guard must flip after the first tick and
+// stay flipped.
+func TestReadinessRunner_BadURLLoggedOnce(t *testing.T) {
+	var sd atomic.Bool
+	cache := NewHealthCache(&sd)
+	rt := &fakeRestarter{}
+	r := readinessRunnerFromURL("broken", "://not-a-url", "http", cache, rt)
+
+	// First tick: bad URL detected. The flag flips from false to true.
+	r.tick(context.Background())
+	if !r.badURLLogged {
+		t.Errorf("badURLLogged = false after first bad-URL tick; want true")
+	}
+	// Many more ticks: flag stays true; consecutiveFail keeps growing
+	// (the cache flip side-effect is still firing per tick, which is
+	// what we want — the operator sees "starting forever" in the UI).
+	for range 20 {
+		r.tick(context.Background())
+	}
+	if !r.badURLLogged {
+		t.Errorf("badURLLogged unexpectedly reset; should stay true")
+	}
+	if r.consecutiveFail < 21 {
+		t.Errorf("consecutiveFail = %d, want >=21 (each bad-URL tick still counts as failure)",
+			r.consecutiveFail)
+	}
+}
+
 // TestReadinessRunner_HttpsTalksToTlsServer end-to-end probes a
 // httptest TLS server with a self-signed cert. Without
 // readinessTLSConfig in the client's transport the default Go

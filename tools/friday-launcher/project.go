@@ -796,14 +796,16 @@ func playgroundURL() string {
 	return "http://localhost:" + port
 }
 
-// Probe timings — shared between process-compose's stub probe (which
-// we keep wired to a never-fails endpoint so it doesn't tear processes
-// down on its own) and our own native readinessRunner. 2s initial +
-// 30 failures × 2s = 62s window before we declare a service unhealthy
-// and ask the supervisor to restart it. The friday daemon takes ~24s
-// on first boot (workspace scan + skill bundle hashing + cron
-// registration), and playground's SvelteKit-first-render takes
-// another ~6-8s — a tighter window bounces healthy-but-slow services.
+// Probe timings consumed by the native readinessRunner (readiness.go).
+// process-compose's own ReadinessProbe is intentionally nil for every
+// supervised service — its HttpProbe has no TLS controls and would
+// reject our private-CA s2s leaf — so these constants govern OUR loop:
+// 2s initial + 30 failures × 2s = 62s window before we declare a
+// service unhealthy and ask the supervisor to restart it. The friday
+// daemon takes ~24s on first boot (workspace scan + skill bundle
+// hashing + cron registration), and playground's SvelteKit-first-
+// render takes another ~6-8s — a tighter window bounces healthy-but-
+// slow services.
 const (
 	probeInitialDelay     = 2
 	probePeriodSeconds    = 2

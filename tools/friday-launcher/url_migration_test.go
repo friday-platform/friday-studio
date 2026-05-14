@@ -287,6 +287,43 @@ func TestMigrateStaleURLSchemes_PreservesStructure_LF(t *testing.T) {
 	}
 }
 
+// TestMigrateStaleURLSchemes_IPv6Loopback pins recognition of the
+// bracketed IPv6 loopback literal `[::1]`. While the installer only
+// writes `localhost`-style URLs today, an operator who hand-edits
+// `.env` to `FRIDAYD_URL=https://[::1]:18080` should not silently
+// skip migration. Catches a refactor that strips the bracket-aware
+// branch from startsWithLoopbackHost.
+func TestMigrateStaleURLSchemes_IPv6Loopback(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("FRIDAY_LAUNCHER_HOME", tmp)
+	t.Setenv("HOME", tmp)
+	// No s2s certs → migration runs in the downgrade direction.
+
+	envPath := filepath.Join(tmp, ".env")
+	original := "FRIDAYD_URL=https://[::1]:18080\n" +
+		"EXTERNAL_DAEMON_URL=https://[::1]\n" + // bare bracketed, no port
+		"LINK_SERVICE_URL=https://[::ffff:127.0.0.1]:13100\n" // IPv4-mapped; not flipped
+	if err := os.WriteFile(envPath, []byte(original), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := migrateStaleURLSchemes()
+	if err != nil {
+		t.Fatalf("migrateStaleURLSchemes: %v", err)
+	}
+	if got != 2 {
+		t.Errorf("downgraded = %d, want 2 ([::1]:18080 + [::1]; IPv4-mapped form not on the recognized list)", got)
+	}
+
+	out, _ := os.ReadFile(envPath)
+	want := "FRIDAYD_URL=http://[::1]:18080\n" +
+		"EXTERNAL_DAEMON_URL=http://[::1]\n" +
+		"LINK_SERVICE_URL=https://[::ffff:127.0.0.1]:13100\n"
+	if string(out) != want {
+		t.Errorf("output mismatch\nwant=%q\n got=%q", want, string(out))
+	}
+}
+
 // TestMigrateStaleURLSchemes_TLSOff_DowngradesLoopback is the other
 // half of the bidirectional contract. If the launcher boots with
 // no valid s2s certs (first install, manual removal, cert expiry
