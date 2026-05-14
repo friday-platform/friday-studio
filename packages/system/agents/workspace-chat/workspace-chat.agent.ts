@@ -481,6 +481,53 @@ export function flattenSystemBlocks(blocks: SystemBlocks): string {
 }
 
 /**
+ * Build the Anthropic system-message array — one `role: "system"` message
+ * per non-empty block, each carrying its own `cache_control` breakpoint.
+ *
+ * Anthropic enforces non-increasing TTL across the tools → system →
+ * messages sequence (a 1h breakpoint cannot follow a 5m one). Block 1 and
+ * block 2 are weeks-/workspace-stable so they take the 1h TTL; block 3
+ * (session-stable) and block 4 (volatile workspace inventory, rewritten on
+ * every `upsert_*`/`publish_draft`) take the cheaper 5m TTL. The emitted
+ * order is 1h, 1h, 5m, 5m — non-increasing, so the rule holds.
+ *
+ * block2 may be empty (a workspace with no skills and no stored user
+ * identity); it's skipped rather than emitted as an empty system message.
+ * block3 is likewise conditional. block1 and block4 are always present.
+ */
+export function buildAnthropicSystemMessages(blocks: SystemBlocks): ModelMessage[] {
+  const longTtl = { type: "ephemeral", ttl: "1h" } as const;
+  const shortTtl = { type: "ephemeral" } as const;
+  const msgs: ModelMessage[] = [
+    {
+      role: "system",
+      content: blocks.block1,
+      providerOptions: { anthropic: { cacheControl: longTtl } },
+    },
+  ];
+  if (blocks.block2) {
+    msgs.push({
+      role: "system",
+      content: blocks.block2,
+      providerOptions: { anthropic: { cacheControl: longTtl } },
+    });
+  }
+  if (blocks.block3) {
+    msgs.push({
+      role: "system",
+      content: blocks.block3,
+      providerOptions: { anthropic: { cacheControl: shortTtl } },
+    });
+  }
+  msgs.push({
+    role: "system",
+    content: blocks.block4,
+    providerOptions: { anthropic: { cacheControl: shortTtl } },
+  });
+  return msgs;
+}
+
+/**
  * Generates a concise 2-3 word title for a conversation based on its messages.
  */
 export async function generateChatTitle(
@@ -1266,51 +1313,7 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
         // every prefix wrote fresh.
         const isAnthropic = conversationalModel.provider.startsWith("anthropic");
         const systemModelMessages: ModelMessage[] = isAnthropic
-          ? (() => {
-              // Anthropic enforces non-increasing TTL across the
-              // tools → system → messages block sequence — a 1h
-              // cache_control cannot come after a 5m one — but the
-              // reverse (1h, 1h, 5m, ...) is valid. Block 1 and 2 are
-              // weeks-stable / workspace-stable; block 3 is session-
-              // stable so it gets the cheaper 5m TTL (~0.6× write cost
-              // vs 1h).
-              const longTtl = { type: "ephemeral", ttl: "1h" } as const;
-              const shortTtl = { type: "ephemeral" } as const;
-              const msgs: ModelMessage[] = [
-                {
-                  role: "system",
-                  content: systemBlocks.block1,
-                  providerOptions: { anthropic: { cacheControl: longTtl } },
-                },
-              ];
-              // block2 — workspace-stable identity. May be empty (a
-              // workspace with no skills and no stored user identity);
-              // skip rather than emit an empty system message.
-              if (systemBlocks.block2) {
-                msgs.push({
-                  role: "system",
-                  content: systemBlocks.block2,
-                  providerOptions: { anthropic: { cacheControl: longTtl } },
-                });
-              }
-              if (systemBlocks.block3) {
-                msgs.push({
-                  role: "system",
-                  content: systemBlocks.block3,
-                  providerOptions: { anthropic: { cacheControl: shortTtl } },
-                });
-              }
-              // block4 — volatile workspace inventory. 5m TTL: it changes
-              // on every upsert_*/publish_draft, so a full-rate (1h) write
-              // would be wasted. Sits last so the non-increasing-TTL rule
-              // holds across the sequence: 1h, 1h, 5m, 5m.
-              msgs.push({
-                role: "system",
-                content: systemBlocks.block4,
-                providerOptions: { anthropic: { cacheControl: shortTtl } },
-              });
-              return msgs;
-            })()
+          ? buildAnthropicSystemMessages(systemBlocks)
           : [];
 
         try {

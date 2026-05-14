@@ -1,6 +1,8 @@
 import type { SkillSummary } from "@atlas/skills";
+import type { ModelMessage } from "ai";
 import { describe, expect, it } from "vitest";
 import {
+  buildAnthropicSystemMessages,
   buildSkillsSection,
   flattenSystemBlocks,
   getSystemBlocks,
@@ -177,5 +179,53 @@ describe("flattenSystemBlocks", () => {
     expect(flat).toContain(workspaceSection);
     // An empty block 2 must not introduce a stray blank section.
     expect(flat).not.toContain("\n\n\n\n");
+  });
+});
+
+describe("buildAnthropicSystemMessages", () => {
+  const longTtl = { type: "ephemeral", ttl: "1h" };
+  const shortTtl = { type: "ephemeral" };
+
+  function ttlOf(msg: ModelMessage): unknown {
+    return (msg.providerOptions as { anthropic?: { cacheControl?: unknown } } | undefined)
+      ?.anthropic?.cacheControl;
+  }
+
+  it("emits one breakpoint per non-empty block, ordered, with the expected TTLs", () => {
+    const msgs = buildAnthropicSystemMessages({
+      block1: "B1",
+      block2: "B2",
+      block3: "B3",
+      block4: "B4",
+    });
+    expect(msgs.map((m) => m.content)).toEqual(["B1", "B2", "B3", "B4"]);
+    expect(msgs.map(ttlOf)).toEqual([longTtl, longTtl, shortTtl, shortTtl]);
+  });
+
+  it("skips empty block 2 / block 3 but always keeps block 1 and block 4", () => {
+    const msgs = buildAnthropicSystemMessages({
+      block1: "B1",
+      block2: "",
+      block3: "",
+      block4: "B4",
+    });
+    expect(msgs.map((m) => m.content)).toEqual(["B1", "B4"]);
+    expect(msgs.map(ttlOf)).toEqual([longTtl, shortTtl]);
+  });
+
+  it("keeps the TTL sequence non-increasing (Anthropic rejects 1h after 5m)", () => {
+    // 1h -> ordinal 1, 5m -> ordinal 0; the sequence must never rise.
+    const ordinal = (ttl: unknown) => ((ttl as { ttl?: string })?.ttl === "1h" ? 1 : 0);
+    for (const blocks of [
+      { block1: "B1", block2: "B2", block3: "B3", block4: "B4" },
+      { block1: "B1", block2: "", block3: "B3", block4: "B4" },
+      { block1: "B1", block2: "B2", block3: "", block4: "B4" },
+      { block1: "B1", block2: "", block3: "", block4: "B4" },
+    ]) {
+      const seq = buildAnthropicSystemMessages(blocks).map((m) => ordinal(ttlOf(m)));
+      for (let i = 1; i < seq.length; i++) {
+        expect(seq[i]).toBeLessThanOrEqual(seq[i - 1] as number);
+      }
+    }
   });
 });
