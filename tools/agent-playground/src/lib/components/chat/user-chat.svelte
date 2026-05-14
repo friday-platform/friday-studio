@@ -1304,7 +1304,13 @@
    */
   function handleEnvApplied(info: { scope: "workspace" | "global"; keys: string[] }): void {
     if (!chat) return;
+    // Prepend a short text part so the synthetic user-message bubble isn't
+    // empty in the UI. The data part carries the structured signal and is
+    // separately rendered as text for the LLM by `convertDataPart` in the
+    // agent — the redundancy is intentional and small.
+    const bubbleText = info.keys.length > 0 ? `Set ${info.keys.join(", ")}` : "Set env vars";
     const parts: QueuedMessageParts = [
+      { type: "text", text: bubbleText },
       { type: "data-env-applied", data: { scope: info.scope, keys: info.keys } },
     ];
     if (streaming) {
