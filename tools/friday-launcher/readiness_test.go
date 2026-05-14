@@ -42,7 +42,7 @@ func TestReadinessTLSConfig_SkipsVerify(t *testing.T) {
 // is what every https readinessRunner builds at boot:
 // client.Transport.(*http.Transport).TLSClientConfig === readinessTLSConfig.
 func TestNewReadinessClient_HttpsUsesTLSConfig(t *testing.T) {
-	c := newReadinessClient("https", 2*time.Second)
+	c := newReadinessClient("https")
 	tr, ok := c.Transport.(*http.Transport)
 	if !ok {
 		t.Fatalf("expected *http.Transport, got %T", c.Transport)
@@ -56,11 +56,11 @@ func TestNewReadinessClient_HttpsUsesTLSConfig(t *testing.T) {
 // allocate a per-runner transport (Transport stays nil, so http.Client
 // falls back to http.DefaultTransport).
 func TestNewReadinessClient_HttpReusesDefault(t *testing.T) {
-	c := newReadinessClient("http", 2*time.Second)
+	c := newReadinessClient("http")
 	if c.Transport != nil {
 		t.Errorf("http scheme should leave Transport nil, got %T", c.Transport)
 	}
-	c2 := newReadinessClient("", 2*time.Second)
+	c2 := newReadinessClient("")
 	if c2.Transport != nil {
 		t.Errorf("empty scheme should leave Transport nil, got %T", c2.Transport)
 	}
@@ -331,6 +331,7 @@ func TestReadinessRunner_HttpsRejectsWhenSkipVerifyDisabled(t *testing.T) {
 //   - the initialDelay gate before the first tick,
 //   - the period-driven ticker afterwards,
 //   - immediate exit on ctx cancellation (no leaked goroutine).
+//
 // A regression like "ticker not stopped on cancel" or "Run loops on
 // time.After instead of a ticker" would show up here.
 func TestReadinessRunner_RunTicksAndCancels(t *testing.T) {
@@ -439,7 +440,7 @@ func readinessRunnerFromURL(name, rawURL, scheme string, cache *HealthCache, sup
 	return &readinessRunner{
 		name:         name,
 		url:          rawURL,
-		client:       newReadinessClient(scheme, 2*time.Second),
+		client:       newReadinessClient(scheme),
 		cache:        cache,
 		sup:          sup,
 		initialDelay: 0,

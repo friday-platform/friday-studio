@@ -91,11 +91,10 @@ func newReadinessRunner(s processSpec, cache *HealthCache, sup restarter) *readi
 	if scheme == "" {
 		scheme = "http"
 	}
-	timeout := time.Duration(probeTimeoutSeconds) * time.Second
 	return &readinessRunner{
 		name:         s.name,
 		url:          fmt.Sprintf("%s://127.0.0.1:%s%s", scheme, s.healthPort, s.healthPath),
-		client:       newReadinessClient(scheme, timeout),
+		client:       newReadinessClient(scheme),
 		cache:        cache,
 		sup:          sup,
 		initialDelay: time.Duration(probeInitialDelay) * time.Second,
@@ -109,11 +108,14 @@ func newReadinessRunner(s processSpec, cache *HealthCache, sup restarter) *readi
 // use. Plain HTTP gets a vanilla client (default transport, no
 // allocation overhead). HTTPS gets a client whose transport carries
 // readinessTLSConfig — the explicit knob this whole file exists for.
+// Both share the same probeTimeoutSeconds timeout — there's no varied
+// caller, so the value is hardcoded rather than threaded through.
 //
 // Note we clone http.DefaultTransport rather than constructing a fresh
 // *http.Transport from scratch — keeps Go's standard connection pool /
 // keepalive / proxy defaults and only overrides the TLS config.
-func newReadinessClient(scheme string, timeout time.Duration) *http.Client {
+func newReadinessClient(scheme string) *http.Client {
+	timeout := time.Duration(probeTimeoutSeconds) * time.Second
 	if scheme != "https" {
 		return &http.Client{Timeout: timeout}
 	}
@@ -163,7 +165,7 @@ func (r *readinessRunner) tick(ctx context.Context) {
 		r.onFailure()
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		r.onSuccess()
 		return
