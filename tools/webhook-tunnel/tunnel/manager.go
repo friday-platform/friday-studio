@@ -31,12 +31,7 @@ type Options struct {
 	TunnelToken    string // empty = quick tunnel
 	CloudflaredBin string // resolved binary path (caller does discovery)
 	TLS            bool   // origin speaks https — cloudflared connects via https://localhost:<port>
-	// OriginCA is the path to the s2s CA bundle used to verify the local
-	// origin's cert (the webhook-tunnel listener). Required when TLS is true:
-	// cloudflared's system trust store has no entry for the private s2s CA,
-	// so without this it x509-errors and the public edge returns 502.
-	OriginCA string
-	Logger   *logger.Logger
+	Logger         *logger.Logger
 }
 
 // Status is the value-snapshot returned to callers asking about
@@ -212,26 +207,15 @@ func (m *Manager) buildArgs() []string {
 		scheme = "https"
 	}
 	url := fmt.Sprintf("%s://localhost:%d", scheme, m.opts.Port)
-	// When the local origin is HTTPS with the private s2s cert, cloudflared's
-	// system trust store has no entry for our CA. Point it at the s2s CA
-	// bundle via --origin-ca-pool so the loopback hop is still authenticated
-	// (preserves the rest of the mesh's mutual-auth posture). Without this,
-	// cloudflared x509-errors and the public edge returns 502 to GitHub.
-	args := []string{}
 	if m.opts.TunnelToken != "" {
 		// Named tunnel via token. cloudflared accepts the token via
 		// `tunnel run --token <t>` (the npm wrapper uses the same
 		// invocation). --url is ignored when the token's config defines
 		// ingress, but doesn't error if present.
-		args = append(args, "tunnel", "run", "--token", m.opts.TunnelToken, "--url", url)
-	} else {
-		// Quick tunnel: trycloudflare.com URL.
-		args = append(args, "tunnel", "--url", url, "--no-autoupdate")
+		return []string{"tunnel", "run", "--token", m.opts.TunnelToken, "--url", url}
 	}
-	if m.opts.TLS && m.opts.OriginCA != "" {
-		args = append(args, "--origin-ca-pool", m.opts.OriginCA)
-	}
-	return args
+	// Quick tunnel: trycloudflare.com URL.
+	return []string{"tunnel", "--url", url, "--no-autoupdate"}
 }
 
 // scan reads cloudflared lines from r and fans Event values into the
