@@ -8,8 +8,10 @@ import { createDisableMcpServerTool } from "./disable-mcp-server.ts";
 
 const mockDelete = vi.hoisted(() => vi.fn());
 const mockWorkspaceMcp = vi.hoisted(() => vi.fn());
+const mockInvalidateBlock2 = vi.hoisted(() => vi.fn<(workspaceId: string) => void>());
 
 vi.mock("@atlas/client/v2", () => ({ client: { workspaceMcp: mockWorkspaceMcp } }));
+vi.mock("../block2-cache.ts", () => ({ invalidateBlock2: mockInvalidateBlock2 }));
 
 function setupMock(_workspaceId: string) {
   mockWorkspaceMcp.mockReturnValue({ ":serverId": { $delete: mockDelete } });
@@ -47,6 +49,7 @@ describe("createDisableMcpServerTool", () => {
   beforeEach(() => {
     mockDelete.mockReset();
     mockWorkspaceMcp.mockReset();
+    mockInvalidateBlock2.mockReset();
   });
 
   it("returns object with disable_mcp_server key", () => {
@@ -218,5 +221,37 @@ describe("createDisableMcpServerTool", () => {
     expect(mockDelete).toHaveBeenCalledWith(
       expect.objectContaining({ param: { serverId: "github" } }),
     );
+  });
+
+  // Disabling a server mutates the workspace's MCP list — the chat's
+  // Block 2 cache must be dropped or the `<workspace>` section stays
+  // stale for up to the cache TTL.
+  it("invalidates the workspace cache on success, scoped to the target workspace", async () => {
+    setupMock("ws-other");
+    mockDelete.mockResolvedValueOnce({
+      status: 200,
+      json: () => Promise.resolve({ removed: "github" }),
+    });
+
+    const tools = createDisableMcpServerTool("ws-1", logger);
+    await tools.disable_mcp_server!.execute!(
+      { serverId: "github", workspaceId: "ws-other" },
+      TOOL_CALL_OPTS,
+    );
+
+    expect(mockInvalidateBlock2).toHaveBeenCalledWith("ws-other");
+  });
+
+  it("does not invalidate the cache on a 409 conflict", async () => {
+    setupMock("ws-1");
+    mockDelete.mockResolvedValueOnce({
+      status: 409,
+      json: () => Promise.resolve({ message: "Server is referenced by workspace entities." }),
+    });
+
+    const tools = createDisableMcpServerTool("ws-1", logger);
+    await tools.disable_mcp_server!.execute!({ serverId: "github" }, TOOL_CALL_OPTS);
+
+    expect(mockInvalidateBlock2).not.toHaveBeenCalled();
   });
 });
