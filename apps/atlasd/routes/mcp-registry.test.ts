@@ -1793,12 +1793,7 @@ describe("MCP Registry Routes", () => {
         .parse(JSON.parse(init.body));
       expect(requestBody.provider.id).toBe(body.server.id);
       expect(requestBody.provider.secretSchema).toEqual({
-        API_KEY: {
-          type: "string",
-          isRequired: true,
-          isSecret: false,
-          description: "API key",
-        },
+        API_KEY: { type: "string", isRequired: true, isSecret: false, description: "API key" },
       });
 
       fetchSpy.mockRestore();
