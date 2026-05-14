@@ -71,13 +71,16 @@ Manages suspended agent executions awaiting approval:
 import { AtlasAgentsMCPServer } from "@atlas/agent-server";
 import { MyAgentRegistry } from "./my-registry.ts";
 import { AtlasLogger } from "@atlas/core";
+import { getAtlasDaemonUrl } from "@atlas/oapi-client";
 
-// Create the MCP server
+// Create the MCP server. getAtlasDaemonUrl() picks the right scheme/port
+// from FRIDAYD_URL + FRIDAY_TLS_CERT so the server works on plain-HTTP and
+// TLS-enabled installs without per-env config.
 const server = new AtlasAgentsMCPServer({
   agentRegistry: new MyAgentRegistry(),
   logger: AtlasLogger.getInstance(),
   port: 8082,
-  daemonUrl: "http://localhost:8080",
+  daemonUrl: getAtlasDaemonUrl(),
 });
 
 // Start the server

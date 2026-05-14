@@ -1,12 +1,15 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import process from "node:process";
+import { getAtlasDaemonUrl } from "@atlas/oapi-client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   findRepoRoot,
   interpolateConfig,
   resolveWorkspaceVariables,
   type WorkspaceVariables,
+  WorkspaceVariablesSchema,
 } from "../variable-interpolation.ts";
 
 const VARS: WorkspaceVariables = {
@@ -133,17 +136,107 @@ describe("findRepoRoot", () => {
   });
 });
 
+// getAtlasDaemonUrl() reads multiple env keys (FRIDAYD_URL, legacy
+// FRIDAY_DAEMON_URL alias, FRIDAY_PORT_FRIDAY port override) and
+// auto-upgrades the scheme to https:// when FRIDAY_TLS_CERT + _KEY are
+// both set. Mirrors the list at packages/openapi-client/src/utils.test.ts:23
+// so both test files isolate the same surface. Without this, a developer
+// who has run setup-tls.sh or has any of these exported in their shell
+// sees flaky failures.
+const ENV_KEYS = [
+  "FRIDAYD_URL",
+  "FRIDAY_DAEMON_URL",
+  "FRIDAY_PORT_FRIDAY",
+  "FRIDAY_TLS_CERT",
+  "FRIDAY_TLS_KEY",
+  "FRIDAY_ATLAS_PLATFORM_URL",
+];
+
+describe("WorkspaceVariablesSchema.platform_url default", () => {
+  // Direct schema-level test: parse() with platform_url *omitted* triggers
+  // the schema's `.default(() => getAtlasDaemonUrl())`. The original
+  // function-level test was tautological because the call site always
+  // passed a resolved string, so the schema default was dead code (review
+  // v2 Important #1). With the call site now passing `platform_url:
+  // daemonUrl` (possibly undefined), the schema default fires — and this
+  // direct test locks that branch in so a future refactor can't quietly
+  // turn it into dead code again.
+  const envSnapshot: Record<string, string | undefined> = {};
+
+  beforeEach(() => {
+    for (const k of ENV_KEYS) {
+      envSnapshot[k] = process.env[k];
+      delete process.env[k];
+    }
+  });
+
+  afterEach(() => {
+    for (const k of ENV_KEYS) {
+      if (envSnapshot[k] === undefined) delete process.env[k];
+      else process.env[k] = envSnapshot[k];
+    }
+  });
+
+  it("schema default fires when platform_url key is omitted from parse input", () => {
+    const result = WorkspaceVariablesSchema.parse({
+      repo_root: "/tmp/repo",
+      workspace_path: "/tmp/repo/workspaces/x",
+      workspace_id: "x",
+      // platform_url intentionally omitted
+    });
+    // Reverting the schema's `.default(() => getAtlasDaemonUrl())` to a
+    // literal like `.default("http://example.broken")` would make this
+    // assertion fail — proves the branch is actually reached.
+    expect(result.platform_url).toBe(getAtlasDaemonUrl());
+    // And the resolved value reflects env, not a hardcoded literal.
+    expect(result.platform_url).toBe("http://127.0.0.1:8080");
+  });
+
+  it("schema default fires when platform_url is explicitly undefined", () => {
+    const result = WorkspaceVariablesSchema.parse({
+      repo_root: "/tmp/repo",
+      workspace_path: "/tmp/repo/workspaces/x",
+      workspace_id: "x",
+      platform_url: undefined,
+    });
+    expect(result.platform_url).toBe(getAtlasDaemonUrl());
+  });
+
+  it("schema default honors FRIDAYD_URL (proves the default *calls* getAtlasDaemonUrl)", () => {
+    process.env.FRIDAYD_URL = "http://example.test:9999";
+    const result = WorkspaceVariablesSchema.parse({
+      repo_root: "/tmp/repo",
+      workspace_path: "/tmp/repo/workspaces/x",
+      workspace_id: "x",
+    });
+    // Reverting the schema default to a captured-at-startup value (e.g.
+    // `.default(getAtlasDaemonUrl())` instead of `.default(() =>
+    // getAtlasDaemonUrl())`) would break this test — proves the default
+    // resolves *at parse time*, not at module-load time.
+    expect(result.platform_url).toBe("http://example.test:9999");
+  });
+});
+
 describe("resolveWorkspaceVariables", () => {
   let tempDir: string;
+  const envSnapshot: Record<string, string | undefined> = {};
 
   beforeEach(() => {
     tempDir = mkdtempSync(join(tmpdir(), "resolve-vars-"));
     mkdirSync(join(tempDir, ".git"));
     mkdirSync(join(tempDir, "workspaces", "test-ws"), { recursive: true });
+    for (const k of ENV_KEYS) {
+      envSnapshot[k] = process.env[k];
+      delete process.env[k];
+    }
   });
 
   afterEach(() => {
     rmSync(tempDir, { recursive: true, force: true });
+    for (const k of ENV_KEYS) {
+      if (envSnapshot[k] === undefined) delete process.env[k];
+      else process.env[k] = envSnapshot[k];
+    }
   });
 
   it("builds WorkspaceVariables from workspace path", async () => {
@@ -157,14 +250,34 @@ describe("resolveWorkspaceVariables", () => {
     expect(result?.platform_url).toBe("http://localhost:9090");
   });
 
-  it("defaults platform_url to http://localhost:8080", async () => {
+  it("default platform_url falls through to getAtlasDaemonUrl()'s no-env result", async () => {
+    // No env set (beforeEach cleared them) — proves the schema default ran
+    // and returned getAtlasDaemonUrl()'s no-env fallback rather than a
+    // hardcoded literal. If someone re-introduces `.default("http://...")`
+    // on the schema, this catches it because the literal would differ from
+    // what getAtlasDaemonUrl() returns.
     const wsPath = join(tempDir, "workspaces", "test-ws");
     const result = await resolveWorkspaceVariables(wsPath, "test_ws");
 
-    expect(result?.platform_url).toBe("http://localhost:8080");
+    expect(result?.platform_url).toBe(getAtlasDaemonUrl());
+    // Sanity: the value is a parseable URL with an HTTP(S) scheme.
+    expect(() => new URL(result!.platform_url)).not.toThrow();
+    expect(result?.platform_url).toMatch(/^https?:\/\//);
+  });
+
+  it("platform_url default honors FRIDAYD_URL env (non-tautological)", async () => {
+    // Use a URL nothing else in the test could plausibly produce — proves
+    // the env-honoring branch ran, not just that "what we set is what we
+    // got back via interpolation".
+    process.env.FRIDAYD_URL = "http://example.test:9999";
+    const wsPath = join(tempDir, "workspaces", "test-ws");
+    const result = await resolveWorkspaceVariables(wsPath, "test_ws");
+
+    expect(result?.platform_url).toBe("http://example.test:9999");
   });
 
   it("integration: interpolates a sample workspace config", async () => {
+    process.env.FRIDAYD_URL = "http://example.test:9999";
     const wsPath = join(tempDir, "workspaces", "test-ws");
     const vars = await resolveWorkspaceVariables(wsPath, "test_ws");
     expect(vars).not.toBeNull();
@@ -182,12 +295,13 @@ describe("resolveWorkspaceVariables", () => {
       },
     };
 
-    // vars is non-null per assertion above
     const result = interpolateConfig(sampleConfig, vars!);
     expect(result.agents.coder.prompt).toBe(`Monorepo at ${tempDir}, workspace: test_ws`);
     expect(result.agents.coder.config.workDir).toBe(tempDir);
-    expect(result.agents.coder.config.apiUrl).toBe("http://localhost:8080/api");
+    expect(result.agents.coder.config.apiUrl).toBe("http://example.test:9999/api");
     expect(result.agents.coder.config.bootstrap).toContain(`var root = "${tempDir}"`);
-    expect(result.agents.coder.config.bootstrap).toContain('fetch("http://localhost:8080/signal")');
+    expect(result.agents.coder.config.bootstrap).toContain(
+      'fetch("http://example.test:9999/signal")',
+    );
   });
 });
