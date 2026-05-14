@@ -26,7 +26,14 @@ const REINDEX_JOB = {
   fsm: { initial: "done", states: { done: { type: "final" } } },
 };
 
-const config = (over: Partial<WorkspaceConfig>): WorkspaceConfig =>
+/** Build a parsed WorkspaceConfig from a partial input.
+ *
+ * Input is typed as `Record<string, unknown>` rather than
+ * `Partial<WorkspaceConfig>` so the inline literal shapes (REINDEX_SIGNAL,
+ * REINDEX_JOB) don't have to satisfy the strict discriminated-union
+ * shape on `provider` etc. — zod's `parse()` does the validation and
+ * returns the precisely-typed `WorkspaceConfig`. */
+const config = (over: Record<string, unknown>): WorkspaceConfig =>
   WorkspaceConfigSchema.parse({ version: "1.0", workspace: { name: "x" }, ...over });
 
 describe("formatWorkspaceSection signal display", () => {

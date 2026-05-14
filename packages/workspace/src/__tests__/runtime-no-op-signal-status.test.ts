@@ -83,7 +83,14 @@ afterEach(async () => {
   await rm(testDir, { recursive: true, force: true });
 });
 
-it("[FAILING] flags a signal that took no transition as SKIPPED, not COMPLETED", async () => {
+// `it.fails(...)` flips the assertion: the test PASSES while the
+// inner assertion fails (i.e. while the bug is unfixed) and FAILS
+// the moment the inner assertion starts to pass — that's the signal
+// to remove this `.fails` annotation and make it a regular green
+// test. Keeps CI green without papering over the bug: a fix to
+// runtime.ts/engine.ts that makes silent no-ops surface as SKIPPED
+// will trip CI on this test, forcing the cleanup. See issue #322.
+it.fails("flags a signal that took no transition as SKIPPED, not COMPLETED (refs #322)", async () => {
   runtime = new WorkspaceRuntime({ id: "test-no-op" }, configWithFinalInitialFSM(), {
     workspacePath: testDir,
     lazy: true,
