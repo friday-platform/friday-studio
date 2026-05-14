@@ -135,3 +135,29 @@ describe("getSystemBlocks block-2 byte-stability", () => {
     expect(after).not.toContain("@friday/qa");
   });
 });
+
+describe("getSystemBlocks block-4 (volatile workspace inventory)", () => {
+  const workspaceSection = '<workspace id="ws-1" name="Personal"></workspace>';
+
+  it("routes the workspace section into block 4, not block 2", () => {
+    const blocks = getSystemBlocks(workspaceSection, {
+      skills: buildSkillsSection([skill("svelte", "core", "Patterns for Svelte 5.")]),
+    });
+    expect(blocks.block4).toContain(workspaceSection);
+    expect(blocks.block2).not.toContain(workspaceSection);
+    expect(blocks.block2).toContain("@svelte/core");
+  });
+
+  it("prepends the cache salt to block 4, not block 2", () => {
+    const cacheSaltTag = '<cache_salt workspace="ws-1" version="7"/>';
+    const blocks = getSystemBlocks(workspaceSection, { cacheSaltTag });
+    expect(blocks.block4).toContain(cacheSaltTag);
+    expect(blocks.block2).not.toContain(cacheSaltTag);
+  });
+
+  it("block 2 is empty when the workspace has no skills and no user identity", () => {
+    const blocks = getSystemBlocks(workspaceSection);
+    expect(blocks.block2).toBe("");
+    expect(blocks.block4).toContain(workspaceSection);
+  });
+});
