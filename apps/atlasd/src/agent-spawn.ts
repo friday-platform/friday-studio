@@ -29,7 +29,7 @@
  * spawn through `deno run` and don't need uv or the SDK install path.
  */
 import { existsSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import process from "node:process";
 
 export function buildAgentSpawnArgs(agentPath: string): [string, string[]] {
@@ -37,7 +37,14 @@ export function buildAgentSpawnArgs(agentPath: string): [string, string[]] {
     const uvPath = process.env.FRIDAY_UV_PATH;
     const sdkVersion = process.env.FRIDAY_AGENT_SDK_VERSION;
     if (uvPath && sdkVersion) {
-      const agentDir = dirname(agentPath);
+      // Always work with an absolute path. RegisterRequestSchema in
+      // routes/agents/register.ts only validates `z.string().min(1)`,
+      // so a relative `agentPath` would key pyproject detection off
+      // process.cwd() and pass `--directory .` to uv — pointing at
+      // the wrong tree. Resolving here keeps the spawn args
+      // deterministic regardless of caller.
+      const absoluteAgentPath = isAbsolute(agentPath) ? agentPath : resolve(agentPath);
+      const agentDir = dirname(absoluteAgentPath);
       const hasPyproject = existsSync(join(agentDir, "pyproject.toml"));
       // `--with friday-agent-sdk==<ver>` is the launcher's reproducibility
       // pin — it forces every Python user agent onto the bundled SDK
@@ -51,11 +58,20 @@ export function buildAgentSpawnArgs(agentPath: string): [string, string[]] {
         // from its lockfile in addition to the SDK pin above.
         return [
           uvPath,
-          ["run", "--directory", agentDir, "--python", "3.12", ...sdkPin, "python", agentPath],
+          [
+            "run",
+            "--directory",
+            agentDir,
+            "--python",
+            "3.12",
+            ...sdkPin,
+            "python",
+            absoluteAgentPath,
+          ],
         ];
       }
       // Single-file agent: SDK pin is the only dep injected.
-      return [uvPath, ["run", "--python", "3.12", ...sdkPin, agentPath]];
+      return [uvPath, ["run", "--python", "3.12", ...sdkPin, absoluteAgentPath]];
     }
     const py = process.env.FRIDAY_AGENT_PYTHON ?? "python3";
     return [py, [agentPath]];

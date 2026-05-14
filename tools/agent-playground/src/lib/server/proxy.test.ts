@@ -1,6 +1,10 @@
-import { Agent } from "undici";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { buildProxyHandler, HOP_BY_HOP_HEADERS } from "./proxy.ts";
+import {
+  buildProxyHandler,
+  HOP_BY_HOP_HEADERS,
+  longLivedDispatcher,
+  PROXY_DISPATCHER_TIMEOUT_MS,
+} from "./proxy.ts";
 
 /** Build a SvelteKit `RequestEvent`-shaped argument for the handler.
  * The catch-all `[...path]/+server.ts` route would populate
@@ -109,22 +113,14 @@ describe("buildProxyHandler", () => {
     expect(warnLine).toContain("connection refused");
   });
 
-  it("passes the long-lived undici dispatcher to upstream fetch", async () => {
-    // The dispatcher routes the call through an undici Agent with a
-    // 1-hour headersTimeout / bodyTimeout (vs Node 22+'s undici 5-min
-    // default), so long-running daemon endpoints (reindex, signal
-    // cascades that wait minutes for the FSM to complete) don't fail
-    // mid-response with UND_ERR_HEADERS_TIMEOUT. Without this assertion
-    // the dispatcher could be silently dropped in a future refactor and
-    // the timeout regression would only surface end-to-end.
-    fetchMock.mockResolvedValueOnce(new Response("ok", { status: 200 }));
-    const handler = buildProxyHandler({ upstream: "https://daemon.local:8080", label: "daemon" });
-    await handler(event({ path: "long" }));
-    const init = fetchMock.mock.calls[0]?.[1] as { dispatcher?: unknown } | undefined;
-    expect(init?.dispatcher).toBeInstanceOf(Agent);
-  });
-
-  it("reuses the same dispatcher across calls (singleton, no per-request leak)", async () => {
+  it("passes the longLivedDispatcher singleton to upstream fetch", async () => {
+    // Identity assertion (not `instanceof Agent`): the whole point of
+    // the dispatcher is its 1-hour headersTimeout/bodyTimeout. A
+    // future refactor that swapped to a bare `new Agent({})` (default
+    // 5-min timeouts) would pass an `instanceof` check while
+    // reintroducing UND_ERR_HEADERS_TIMEOUT on long signals. Pinning
+    // identity locks in the configured-timeout dispatcher and also
+    // collapses the singleton check (one instance across all calls).
     fetchMock.mockResolvedValue(new Response("ok", { status: 200 }));
     const handler = buildProxyHandler({ upstream: "https://daemon.local:8080", label: "daemon" });
     await handler(event({ path: "a" }));
@@ -133,8 +129,16 @@ describe("buildProxyHandler", () => {
       ?.dispatcher;
     const dispatcherB = (fetchMock.mock.calls[1]?.[1] as { dispatcher?: unknown } | undefined)
       ?.dispatcher;
-    expect(dispatcherA).toBeDefined();
-    expect(dispatcherA).toBe(dispatcherB);
+    expect(dispatcherA).toBe(longLivedDispatcher);
+    expect(dispatcherB).toBe(longLivedDispatcher);
+  });
+
+  it("dispatcher timeout matches the exported constant (1 hour by default)", () => {
+    // Pin the timeout value so a future bump or shrink is intentional.
+    // 1 hour covers the worst documented job (30-min reindex) with
+    // headroom; shorter values would re-create the original bug for
+    // the longest-running signals.
+    expect(PROXY_DISPATCHER_TIMEOUT_MS).toBe(60 * 60_000);
   });
 
   it("passes SSE responses through with the same status + cleaned headers", async () => {

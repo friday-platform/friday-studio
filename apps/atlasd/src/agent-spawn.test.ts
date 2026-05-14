@@ -105,6 +105,38 @@ describe("buildAgentSpawnArgs", () => {
           agentPath,
         ]);
       });
+
+      it("resolves relative agent paths so pyproject detection isn't keyed off cwd", () => {
+        // A relative `agentPath` would make `dirname()` return ".", and
+        // `existsSync(join(".", "pyproject.toml"))` would resolve against
+        // process.cwd() — pointing uv at the wrong tree (and `--directory .`
+        // is similarly cwd-dependent). The function should resolve to an
+        // absolute path before deriving the dir.
+        // We don't put a pyproject in cwd, so this also asserts the bare
+        // `--with` shape — verifying the resolved path doesn't accidentally
+        // pick up a pyproject from the daemon's working directory.
+        const relativePath = "relative/agent.py";
+        process.env.FRIDAY_UV_PATH = "/opt/homebrew/bin/uv";
+        process.env.FRIDAY_AGENT_SDK_VERSION = "0.1.8";
+
+        const [cmd, args] = buildAgentSpawnArgs(relativePath);
+
+        expect(cmd).toBe("/opt/homebrew/bin/uv");
+        // The trailing path is the resolved absolute form, NOT the
+        // input string. We can't pin the exact value without knowing
+        // the test process cwd, so assert the shape + that it's
+        // absolute.
+        expect(args.slice(0, -1)).toEqual([
+          "run",
+          "--python",
+          "3.12",
+          "--with",
+          "friday-agent-sdk==0.1.8",
+        ]);
+        const finalPath = args[args.length - 1] ?? "";
+        expect(finalPath.startsWith("/")).toBe(true);
+        expect(finalPath.endsWith("/relative/agent.py")).toBe(true);
+      });
     });
 
     it("falls through to FRIDAY_AGENT_PYTHON when FRIDAY_AGENT_SDK_VERSION is unset", () => {

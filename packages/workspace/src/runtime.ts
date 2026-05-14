@@ -463,6 +463,21 @@ export function parseJobTimeoutMs(jobName: string, value: string): number | unde
   return parsed;
 }
 
+/** Build the optional `{ timeoutMs }` slice that gets spread into the
+ * executor options. Extracted so the `!== undefined` distinction is
+ * testable without standing up a full WorkspaceRuntime — `parseJobTimeoutMs`
+ * never produces 0, but a careless future refactor that swaps to a
+ * truthiness check (`jobTimeoutMs && ...`) would silently drop the
+ * field for falsy positive values like 0 (executor would fall back to
+ * its 180s default). Returning `{}` for undefined matches the spread
+ * shape `...(false && X)` resolves to. */
+export function buildExecutorTimeoutOption(
+  jobTimeoutMs: number | undefined,
+): { timeoutMs: number } | Record<string, never> {
+  if (jobTimeoutMs === undefined) return {};
+  return { timeoutMs: jobTimeoutMs };
+}
+
 interface ActiveSession {
   id: string;
   jobName: string;
@@ -2956,10 +2971,10 @@ export class WorkspaceRuntime {
         // the job is meaningful only for elicitation TTL, not for actually
         // letting the agent run that long.
         //
-        // `parseJobTimeoutMs` already filters out `<= 0` and bad strings
-        // (returns undefined + warns), so anything we forward here is a
-        // positive integer the executor can use directly.
-        ...(opts.jobTimeoutMs !== undefined && { timeoutMs: opts.jobTimeoutMs }),
+        // The shape is built by `buildExecutorTimeoutOption` so the
+        // undefined-vs-set distinction is unit-tested in
+        // `runtime-job-timeout.test.ts` without standing up the runtime.
+        ...buildExecutorTimeoutOption(opts.jobTimeoutMs),
         logger: logger.child({ component: "CodeAgent", agentId: userAgentId }),
         streamEmitter: opts.onStreamEvent
           ? {

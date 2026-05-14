@@ -6,7 +6,7 @@ import type { RequestHandler } from "@sveltejs/kit";
 import type { RequestInit as UndiciRequestInit } from "undici";
 import { Agent } from "undici";
 
-// Node 22+ ships undici 6.x with a 300_000ms (5-min) default
+// Node's bundled undici ships a 300_000ms (5-min) default
 // `headersTimeout` and `bodyTimeout` on the global fetch. Long-running
 // daemon endpoints — chiefly `POST /api/workspaces/{id}/signals/{id}`
 // for jobs like `reindex`, where the daemon awaits the cascade before
@@ -22,10 +22,13 @@ import { Agent } from "undici";
 // fails fast on a genuinely-stuck socket. Connection-level timeouts
 // (TCP, TLS handshake) keep their defaults because those still
 // indicate actual upstream sickness, not slow work.
-const ONE_HOUR_MS = 60 * 60_000;
-const longLivedDispatcher = new Agent({
-  headersTimeout: ONE_HOUR_MS,
-  bodyTimeout: ONE_HOUR_MS,
+export const PROXY_DISPATCHER_TIMEOUT_MS = 60 * 60_000;
+/** Exported so tests can assert identity (`toBe(longLivedDispatcher)`)
+ * — `toBeInstanceOf(Agent)` would let a bare `new Agent({})` regression
+ * pass while reintroducing the original 5-min default. */
+export const longLivedDispatcher = new Agent({
+  headersTimeout: PROXY_DISPATCHER_TIMEOUT_MS,
+  bodyTimeout: PROXY_DISPATCHER_TIMEOUT_MS,
 });
 
 /** Hop-by-hop / connection-specific headers that don't survive the
