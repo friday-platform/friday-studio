@@ -8,8 +8,6 @@
   import ToolBurst from "./tool-burst.svelte";
   import ToolCallCard from "./tool-call-card.svelte";
   import { needsUserAction } from "./tool-call-utils";
-  import ValidationPillRow from "./validation-pill-row.svelte";
-  import type { ValidationAttemptDisplay } from "./validation-accumulator.ts";
   import UsageBadge from "./usage-badge.svelte";
   import { formatMessageTimestamp } from "@atlas/core/chat/export/render";
   import { tableToMarkdown } from "./table-to-markdown";
@@ -128,13 +126,6 @@
      */
     thinking?: boolean;
     /**
-     * Validation lifecycle attempts grouped by sessionId, then by FSM
-     * actionId. The chat surfaces one `<ValidationPillRow>` per attempt
-     * after the tool calls of the assistant message that owns the
-     * session. Empty / undefined → no pills render.
-     */
-    validationAttemptsBySession?: Map<string, Map<string, ValidationAttemptDisplay[]>>;
-    /**
      * Workspace + chat ids for the inline-table Actions menu's "Open in
      * dedicated view" path. The handler auto-snapshots the rendered
      * <table> to a markdown artifact tagged with these ids, then
@@ -162,46 +153,10 @@
     messages,
     onCredentialConnected,
     thinking = false,
-    validationAttemptsBySession,
     workspaceId,
     chatId,
     unsettledMessageId,
   }: Props = $props();
-
-  /**
-   * Flatten the per-action attempts map for a single session into a
-   * stable render order: sort actions by first-seen attempt index
-   * (tracked implicitly by Map insertion order from the accumulator),
-   * then attempts within an action ascending by `attempt`. The
-   * accumulator already sorts attempts within an action.
-   */
-  function pillsForSession(
-    sessionId: string | undefined,
-  ): Array<{ actionId: string; attempt: ValidationAttemptDisplay }> {
-    if (!sessionId || !validationAttemptsBySession) return [];
-    const byAction = validationAttemptsBySession.get(sessionId);
-    if (!byAction) return [];
-    const flat: Array<{ actionId: string; attempt: ValidationAttemptDisplay }> = [];
-    for (const [actionId, attempts] of byAction) {
-      for (const attempt of attempts) {
-        flat.push({ actionId, attempt });
-      }
-    }
-    return flat;
-  }
-
-  /**
-   * Detect whether any pill in this message reached terminal failure.
-   * Triggers an additional system-level error chunk matching the
-   * existing job-failure UI pattern (Resolved Decision §7).
-   */
-  function hasTerminalFail(
-    pills: ReturnType<typeof pillsForSession>,
-  ): boolean {
-    return pills.some(
-      (p) => p.attempt.status === "failed" && p.attempt.terminal === true,
-    );
-  }
 
   let containerEl: HTMLDivElement | undefined = $state();
 
@@ -761,44 +716,33 @@
                   {/each}
                 </div>
               {/if}
+            {:else if segment.type === "file-list"}
+              <!-- User-attached files. The chip is intentionally minimal —
+                   bytes live on the daemon's filesystem (scratch/uploads),
+                   not in artifact storage, so there's no `/content`
+                   endpoint to fetch a preview from. The agent reads each
+                   file via `read_attachment(path)` on demand. -->
+              <div class="user-attachment-list">
+                {#each segment.paths as path, i (path)}
+                  <div class="user-file-chip" title={path}>
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                      <path
+                        d="M9 1.5H3.5A1.5 1.5 0 0 0 2 3v10a1.5 1.5 0 0 0 1.5 1.5h9A1.5 1.5 0 0 0 14 13V6.5L9 1.5Z"
+                        stroke="currentColor"
+                        stroke-width="1.2"
+                        stroke-linejoin="round"
+                      />
+                      <path d="M9 1.5V6.5H14" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" />
+                    </svg>
+                    <span class="user-file-name">{segment.filenames[i] ?? path}</span>
+                    {#if segment.mimeTypes[i]}
+                      <span class="user-file-mime">{segment.mimeTypes[i]}</span>
+                    {/if}
+                  </div>
+                {/each}
+              </div>
             {/if}
           {/each}
-
-          {@const sessionPills = message.role === "assistant"
-            ? pillsForSession(message.metadata?.sessionId)
-            : []}
-          {#if sessionPills.length > 0}
-            <!-- Validation pills sit after all segments — the validator runs
-                 after the LLM returns, so chronological order matches what
-                 actually happened. -->
-            <div class="validation-pill-list">
-              {#each sessionPills as { actionId, attempt } (`${actionId}-${attempt.attempt}`)}
-                <ValidationPillRow
-                  attempt={attempt.attempt}
-                  status={attempt.status}
-                  terminal={attempt.terminal}
-                  verdict={attempt.verdict}
-                />
-              {/each}
-            </div>
-          {/if}
-
-          {#if hasTerminalFail(sessionPills)}
-            <!-- Terminal-fail second surface (Resolved Decision §7): a
-                 system-level error chunk matching the existing
-                 job-failure pattern, alongside the failed-terminal pill
-                 above. Two layers of state, two surfaces — the user does
-                 not have to learn a new "this job is dead" affordance. -->
-            <div class="message-error" role="alert" aria-live="assertive">
-              <span class="message-error-icon" aria-hidden="true">⚠</span>
-              <div class="message-error-body">
-                <div class="message-error-title">Job stopped: validation failed</div>
-                <div class="message-error-detail">
-                  Output validation failed after retry. See the validation pill above for details.
-                </div>
-              </div>
-            </div>
-          {/if}
 
           {#if message.images && message.images.length > 0}
             <div class="message-images">
@@ -1473,12 +1417,39 @@
     gap: var(--size-1-5);
   }
 
-  /* Validation pills sit alongside (and after) tool-call cards — same
-     indent and gap so the visual hierarchy stays consistent. */
-  .validation-pill-list {
+  /* ─── User-attached files ──────────────────────────────────────────── */
+
+  .user-attachment-list {
     display: flex;
-    flex-direction: column;
+    flex-wrap: wrap;
+    gap: var(--size-2);
+  }
+
+  .user-file-chip {
+    align-items: center;
+    background-color: var(--color-surface-2);
+    border: 1px solid var(--color-border-1);
+    border-radius: var(--radius-2);
+    color: var(--color-text);
+    display: inline-flex;
+    font-size: var(--font-size-1);
     gap: var(--size-1);
+    max-inline-size: 320px;
+    padding: var(--size-1) var(--size-2);
+  }
+
+  .user-file-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .user-file-mime {
+    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    font-variant-numeric: tabular-nums;
+    text-transform: uppercase;
+    font-size: var(--font-size-0, 11px);
   }
 
   /* ─── Inline images ─────────────────────────────────────────────────── */

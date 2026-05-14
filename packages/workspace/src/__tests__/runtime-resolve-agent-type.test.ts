@@ -6,15 +6,10 @@
  *      (`workspace.agents.<id>.type`),
  *   2. maps legacy `type: "system"` config entries to "atlas" (same
  *      classifier semantics — fixed prompt),
- *   3. falls through to bundled system agents (workspace-chat,
- *      judge-agent) — they don't appear in workspace.agents but they're
- *      still atlas-class for the validate-classifier's user/atlas → skip
- *      rule (B1 rule 1 in `validate-classifier.ts`),
+ *   3. falls through to bundled system agents (workspace-chat) —
+ *      they don't appear in workspace.agents but they're still
+ *      atlas-class,
  *   4. returns undefined for truly unknown ids (existing behavior).
- *
- * Mock pattern matches `runtime-validation-defaults.test.ts`: intercept
- * `createEngine` to capture the options it receives and assert the
- * callback's return values directly.
  */
 
 import { rm } from "node:fs/promises";
@@ -118,11 +113,6 @@ describe("WorkspaceRuntime.resolveAgentType (E2)", () => {
   it("bundled system agent workspace-chat resolves to 'atlas'", async () => {
     const resolve = await captureResolveAgentType(buildConfig());
     expect(resolve("workspace-chat")).toBe("atlas");
-  });
-
-  it("bundled system agent judge-agent resolves to 'atlas'", async () => {
-    const resolve = await captureResolveAgentType(buildConfig());
-    expect(resolve("judge-agent")).toBe("atlas");
   });
 
   it("workspace-config-declared agent returns its declared type", async () => {

@@ -132,13 +132,6 @@ export { type DelegationBudget, DelegationBudgetSchema } from "./delegation.ts";
 
 import { DelegationBudgetSchema } from "./delegation.ts";
 
-// ValidationDefaultsSchema lives in `validation.ts` so jobs.ts can
-// import it without creating a workspace.ts ↔ jobs.ts cycle. Re-exported
-// here for callers that previously imported from `@atlas/config/workspace`.
-export { type ValidationDefaults, ValidationDefaultsSchema } from "./validation.ts";
-
-import { ValidationDefaultsSchema } from "./validation.ts";
-
 export const WorkspaceConfigSchema = z.strictObject({
   version: z.literal("1.0").describe("Configuration version (currently '1.0')"),
   workspace: WorkspaceIdentitySchema,
@@ -161,13 +154,6 @@ export const WorkspaceConfigSchema = z.strictObject({
   memory: MemoryConfigSchema.optional(),
   permissions: PermissionsConfigSchema.optional(),
   delegation: DelegationBudgetSchema.optional(),
-  /**
-   * Phase B5 — workspace-level validation policy default. Applied to
-   * every LLM/agent action that doesn't set `validate:` itself. Per-job
-   * `validation:` block overrides per-field. Action-level `validate:`
-   * always wins. Default `"auto"` (classifier) for unset workspaces.
-   */
-  validation: ValidationDefaultsSchema.optional(),
   /**
    * Workspace-level artifact lifecycle policy (Phase 6.B).
    *

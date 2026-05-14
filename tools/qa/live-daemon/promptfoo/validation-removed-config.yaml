@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+
+description: Phase 1 — validation/judge/hallucination subsystem ripped out
+
+prompts:
+  - '{{scenarioId}}'
+
+providers:
+  - id: file://validation-removed-provider.cjs
+    label: friday-validation-removed
+
+defaultTest:
+  assert:
+    - type: is-json
+    - type: javascript
+      value: |
+        const result = JSON.parse(output);
+        if (result.pass !== true) {
+          throw new Error(`${result.id} failed: ${(result.notes || []).join('; ')}`);
+        }
+        return true;
+
+tests: file://validation-removed-tests.yaml

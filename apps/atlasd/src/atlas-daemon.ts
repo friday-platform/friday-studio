@@ -80,6 +80,7 @@ import { meRoutes } from "../routes/me/index.ts";
 import { meStreamRoutes } from "../routes/me/stream.ts";
 import { memoryNarrativeRoutes } from "../routes/memory/index.ts";
 import reportRoutes from "../routes/report.ts";
+import { scratchUploadApp } from "../routes/scratch-upload.ts";
 // O5 (review-2): scratchpad route deleted alongside the rest of the
 // scratchpad surface (K1 removed the agent-sdk adapter + tools; this
 // pass removes the daemon-side route + storage init + KV bucket).
@@ -114,7 +115,6 @@ import { ChatTurnRegistry } from "./chat-turn-registry.ts";
 import { DiscordGatewayService } from "./discord-gateway-service.ts";
 import { createApp } from "./factory.ts";
 import { ensureInstanceEventsStream } from "./instance-events.ts";
-import { createJudgeRunner } from "./judge-runner.ts";
 import { getAllMigrations } from "./migrations/index.ts";
 import { NatsManager } from "./nats-manager.ts";
 import { ProcessAgentExecutor } from "./process-agent-executor.ts";
@@ -1435,6 +1435,7 @@ export class AtlasDaemon {
     this.app.route("/api/events", eventsRoutes);
     this.app.route("/api/instance", instanceEventsRoutes);
     this.app.route("/api/artifacts", artifactsApp);
+    this.app.route("/api/scratch", scratchUploadApp);
     this.app.route("/api/chunked-upload", chunkedUploadApp);
     this.app.route("/api/chat", chatRoutes);
     this.app.route("/api/chat-storage", chatStorageRoutes);
@@ -1879,7 +1880,6 @@ export class AtlasDaemon {
             workspaceId: workspace.id,
             getInstance: (id) => this.getOrCreateChatSdkInstance(id),
           }),
-          runJudge: createJudgeRunner(this.getPlatformModels()),
           createSessionStream: (sessionId) =>
             this.sessionStreamRegistry.create(sessionId, this.sessionHistoryAdapter),
           onSessionComplete: async ({

@@ -243,8 +243,8 @@ describe("resolveVisibleSkills", () => {
   it("excludes skills with userInvocable: false from the resolved list", async () => {
     const userSkill = makeSummary({ skillId: "sk-user", userInvocable: true });
     const systemSkill = makeSummary({
-      skillId: "sk-validating-llm-outputs",
-      name: "validating-llm-outputs",
+      skillId: "sk-system",
+      name: "system-skill",
       namespace: "friday",
       userInvocable: false,
     });

@@ -102,21 +102,25 @@ deno task atlas session list --json | jq '[.[]|select(.status=="active")]'
 ### Bash check after triggering a signal
 
 ```bash
+# Source the daemon .env once per shell so $FRIDAYD_URL is set. The
+# chain tries the installed-Studio location first, then the dev
+# location. See friday-cli SKILL.md "Daemon URL".
 # 1. Fire signal, capture sessionId
-RESP=$(curl -s -X POST http://localhost:8080/api/workspaces/$WS_ID/signals/$SIG \
+RESP=$(curl -k -s -X POST \
+  "$FRIDAYD_URL/api/workspaces/$WS_ID/signals/$SIG" \
   -H 'Content-Type: application/json' \
   -d '{"payload":{}}')
 SID=$(echo "$RESP" | jq -r '.sessionId')
 
 # 2. Wait for completion (poll or stream — streaming covered below)
 while true; do
-  STATUS=$(curl -s http://localhost:8080/api/sessions/$SID | jq -r '.status')
+  STATUS=$(curl -k -s "$FRIDAYD_URL/api/sessions/$SID" | jq -r '.status')
   [ "$STATUS" != "active" ] && break
   sleep 2
 done
 
 # 3. Read summary
-curl -s http://localhost:8080/api/sessions/$SID | jq '{
+curl -k -s "$FRIDAYD_URL/api/sessions/$SID" | jq '{
   status,
   durationMs,
   error,
@@ -129,7 +133,7 @@ curl -s http://localhost:8080/api/sessions/$SID | jq '{
 ### Extract failure info
 
 ```bash
-curl -s http://localhost:8080/api/sessions/$SID | jq '
+curl -k -s "$FRIDAYD_URL/api/sessions/$SID" | jq '
   if .status == "failed" then
     {
       sessionError: .error,
@@ -148,7 +152,7 @@ curl -s http://localhost:8080/api/sessions/$SID | jq '
 ### Tool call inventory across session
 
 ```bash
-curl -s http://localhost:8080/api/sessions/$SID | jq '
+curl -k -s "$FRIDAYD_URL/api/sessions/$SID" | jq '
   [.agentBlocks[] | .toolCalls[] | {agent: input_filename, tool: .toolName, durMs: .durationMs}]'
 ```
 
@@ -169,61 +173,6 @@ Format: `data: <JSON>\n\n`
 - **`step:skipped`** — `{sessionId, stateId, timestamp}`
 - **`session:complete`** — `{sessionId, status, durationMs, error?, timestamp}`
 - **`session:summary`** — `{summary, keyDetails, timestamp}` (the `aiSummary` arrives as its own event)
-
-### `step:complete.validation`
-
-Every `type: llm` action (and `type: agent` actions resolving to a
-`type: llm` agent) carries a structured `validation` block on its
-`step:complete` event. Pure-agent steps (`type: user` / `type: atlas`)
-omit the field.
-
-```ts
-validation?: {
-  strategy: "skip" | "self" | "external"
-  verdict?: "pass" | "advisory" | "blocking"
-  issues?: Array<{
-    category?: string
-    claim: string
-    reasoning?: string
-    severity?: "low" | "medium" | "high"
-    citation?: string
-  }>
-  skipReason?: string             // present when strategy: "skip"
-}
-```
-
-Three emit shapes, one per strategy:
-
-- **`skip`** — validation bypassed (read-only fetcher, deterministic
-  transform, or non-LLM agent type). `skipReason` carries the
-  classifier's reason string: `"read-only-fetcher"`,
-  `"pure-formatter"`, `"non-llm-agent-type:atlas"`,
-  `"non-llm-agent-type:user"`, or an explicit-author reason.
-- **`self`** — LLM self-checked via the `@friday/validating-llm-outputs`
-  skill and called the `record_validation` platform tool before emit.
-  `verdict: "blocking"` means the action errored and the FSM did NOT
-  transition. Missing `verdict` means the LLM forgot to call
-  `record_validation` — observable but non-fatal.
-- **`external`** — separate-judge pass (delegate to
-  `@friday/judge-agent`). `verdict: "blocking"` errors the action.
-
-Operator recipes:
-
-```bash
-# Count blocking verdicts in a session run:
-curl -s http://localhost:8080/api/sessions/<id> \
-  | jq '[.events[] | select(.type=="step:complete") | .validation | select(.verdict=="blocking")] | length'
-
-# See which actions skipped validation and why:
-curl -s http://localhost:8080/api/sessions/<id> \
-  | jq '.events[] | select(.type=="step:complete") | .validation | select(.strategy=="skip") | .skipReason'
-```
-
-To change a workspace's or job's validation behavior — auto-detect
-rules, override syntax, custom validator skills — see the Validation
-strategies section in `@friday/writing-workspace-jobs`. This page
-documents what shows up in events; that page documents how to declare
-it.
 
 ### Ephemeral events
 

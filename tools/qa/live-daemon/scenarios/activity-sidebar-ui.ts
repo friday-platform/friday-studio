@@ -12,7 +12,6 @@
  * Requires the `agent-browser` CLI in PATH.
  */
 
-import { ensureDir } from "jsr:@std/fs@1.0.13/ensure-dir";
 import { dirname, join } from "jsr:@std/path@1";
 import { ElicitationStorage, initElicitationStorage } from "@atlas/core";
 import { connect } from "nats";
@@ -68,7 +67,7 @@ async function waitForHttp(url: string, timeoutMs = 60_000): Promise<void> {
 
 async function drainToLog(stream: ReadableStream<Uint8Array>, path: string): Promise<void> {
   try {
-    await ensureDir(dirname(path));
+    await Deno.mkdir(dirname(path), { recursive: true });
     const file = await Deno.open(path, { create: true, append: true, write: true });
     void stream.pipeTo(file.writable).catch(() => {});
   } catch {

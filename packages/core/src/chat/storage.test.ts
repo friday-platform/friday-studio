@@ -1,4 +1,9 @@
+import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import process from "node:process";
 import type { AtlasUIMessage } from "@atlas/agent-sdk";
+import { chatUploadsRoot } from "@atlas/utils/paths.server";
 import { connect, type NatsConnection } from "nats";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { startNatsTestServer, type TestNatsServer } from "../test-utils/nats-test-server.ts";
@@ -59,6 +64,37 @@ describe("ChatStorage (JetStream-backed)", () => {
     expect(get.ok && get.data?.messages.length).toBe(1);
     if (get.ok && get.data) {
       expect(get.data.messages[0]?.id).toBe(msg.id);
+    }
+  });
+
+  it("persists tool-part input from rawInput on appendMessage", async () => {
+    const chatId = crypto.randomUUID();
+    await createTestChat(chatId);
+
+    const msg = {
+      id: crypto.randomUUID(),
+      role: "assistant",
+      parts: [
+        {
+          type: "tool-echo-job",
+          toolCallId: "toolu_persist_1",
+          state: "output-error",
+          rawInput: { hello: "world" },
+          errorText: "Model tried to call unavailable tool 'echo-job'.",
+        },
+      ],
+    } as unknown as AtlasUIMessage;
+
+    const append = await ChatStorage.appendMessage(chatId, msg);
+    expect(append.ok).toBe(true);
+
+    const get = await ChatStorage.getChat(chatId);
+    expect(get.ok && get.data?.messages.length).toBe(1);
+    if (get.ok && get.data) {
+      const part = get.data.messages[0]?.parts[0] as Record<string, unknown> | undefined;
+      expect(part?.type).toBe("tool-echo-job");
+      expect(part?.state).toBe("output-error");
+      expect(part?.input).toEqual({ hello: "world" });
     }
   });
 
@@ -144,6 +180,38 @@ describe("ChatStorage (JetStream-backed)", () => {
 
     const get = await ChatStorage.getChat(chatId);
     expect(get.ok && get.data).toBeNull();
+  });
+
+  it("deleteChat GCs only the deleted workspace's scratch uploads when chat ids collide", async () => {
+    const originalHome = process.env.FRIDAY_HOME;
+    const tempHome = await mkdtemp(join(tmpdir(), "chat-storage-gc-"));
+    process.env.FRIDAY_HOME = tempHome;
+    try {
+      const chatId = crypto.randomUUID();
+      const wsA = `ws-a-${crypto.randomUUID()}`;
+      const wsB = `ws-b-${crypto.randomUUID()}`;
+      await createTestChat(chatId, wsA);
+      await createTestChat(chatId, wsB);
+
+      const rootA = chatUploadsRoot(wsA, chatId);
+      const rootB = chatUploadsRoot(wsB, chatId);
+      await mkdir(rootA, { recursive: true });
+      await mkdir(rootB, { recursive: true });
+      const pathA = join(rootA, "a.txt");
+      const pathB = join(rootB, "b.txt");
+      await writeFile(pathA, "workspace A", { encoding: "utf8" });
+      await writeFile(pathB, "workspace B", { encoding: "utf8" });
+
+      const del = await ChatStorage.deleteChat(chatId, wsA);
+      expect(del.ok).toBe(true);
+
+      await expect(access(pathA)).rejects.toThrow();
+      await expect(access(pathB)).resolves.toBeUndefined();
+    } finally {
+      if (originalHome === undefined) delete process.env.FRIDAY_HOME;
+      else process.env.FRIDAY_HOME = originalHome;
+      await rm(tempHome, { recursive: true, force: true });
+    }
   });
 
   it("idempotent dedup: same Friday-Message-Id stored once", async () => {

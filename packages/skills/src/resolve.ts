@@ -75,11 +75,10 @@ export async function resolveVisibleSkills(
   for (const skill of [...all, ...direct, ...jobAssigned]) {
     if (seen.has(skill.skillId)) continue;
     seen.add(skill.skillId);
-    // Skills with `user-invocable: false` are runtime-composed system skills
-    // (e.g. `@friday/validating-llm-outputs` for `validate: self`). Authors
-    // are not meant to `load_skill` them — the runtime pulls the body via
-    // `SkillStorage.get(namespace, name)` directly, bypassing this resolver.
-    // Hide them from the workspace's user-facing skill catalog.
+    // Skills with `user-invocable: false` are runtime-composed system skills.
+    // Authors are not meant to `load_skill` them — the runtime pulls the body
+    // via `SkillStorage.get(namespace, name)` directly, bypassing this
+    // resolver. Hide them from the workspace's user-facing skill catalog.
     if (skill.userInvocable === false) continue;
     result.push(skill);
   }

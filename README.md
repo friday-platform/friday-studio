@@ -130,9 +130,23 @@ If you only need the API:
 
 ```bash
 deno task atlas daemon start --detached
-curl -sf http://localhost:8080/health && echo "  daemon ok"
+deno task atlas daemon status
 deno task atlas daemon stop
 ```
+
+> **TLS opt-in (dev).** Run `bash scripts/setup-tls.sh` once to generate
+> certs and write `FRIDAYD_URL=https://…` plus `FRIDAY_TLS_CA` into
+> `~/.atlas/.env`. Installed Studio gets the same vars written into
+> `${FRIDAY_HOME:-~/.friday/local}/.env` automatically by the launcher.
+> Source the daemon `.env` once per shell so `deno task atlas` and the
+> skill examples below pick up the right scheme/port:
+>
+> ```bash
+> set -a
+> . "${FRIDAY_HOME:-$HOME/.friday/local}/.env" 2>/dev/null \
+>   || . "$HOME/.atlas/.env" 2>/dev/null || true
+> set +a
+> ```
 
 ## Examples
 
@@ -167,7 +181,16 @@ tools you used in a `workspace.yml` and bind it to a signal.
 git clone https://github.com/friday-platform/friday-studio-examples
 deno task atlas workspace add ./friday-studio-examples/github-pr-reviewer
 
-curl -X POST http://localhost:8080/review-pr \
+# Source the daemon .env once so $FRIDAYD_URL / $FRIDAY_TLS_CA are set on
+# TLS-enabled installs. The chain tries the installed-Studio location first,
+# then the dev location written by `scripts/setup-tls.sh`. Skip this on
+# plain-HTTP installs.
+set -a
+. "${FRIDAY_HOME:-$HOME/.friday/local}/.env" 2>/dev/null \
+  || . "$HOME/.atlas/.env" 2>/dev/null || true
+set +a
+curl -X POST ${FRIDAY_TLS_CA:+--cacert "$FRIDAY_TLS_CA"} \
+  "${FRIDAYD_URL:-http://localhost:8080}/review-pr" \
   -d '{"pr_url": "https://github.com/your-org/your-repo/pull/42"}'
 ```
 

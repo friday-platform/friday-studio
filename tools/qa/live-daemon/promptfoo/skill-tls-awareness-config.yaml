@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+
+description: Friday skill TLS-awareness evals — proves the documented curl examples don't break under https://localhost:8080
+
+prompts:
+  - '{{scenarioId}}'
+
+providers:
+  - id: file://skill-tls-awareness-provider.cjs
+    label: friday-skill-tls-awareness
+
+defaultTest:
+  assert:
+    - type: is-json
+    - type: javascript
+      value: |
+        const result = JSON.parse(output);
+        if (result.pass !== true) {
+          throw new Error(`${result.id} failed: ${(result.notes || []).join('; ')}`);
+        }
+        return true;
+
+tests: file://skill-tls-awareness-tests.yaml

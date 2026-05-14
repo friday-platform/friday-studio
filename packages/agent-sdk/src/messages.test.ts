@@ -150,6 +150,35 @@ describe("validateAtlasUIMessages", () => {
     }
   });
 
+  it("validates file-attached data events from persisted chat history", async () => {
+    const messages = [
+      {
+        id: "1",
+        role: "user",
+        parts: [
+          { type: "text", text: "please read this" },
+          {
+            type: "data-file-attached",
+            data: {
+              paths: ["/Users/test/.atlas/scratch/uploads/ws-1/chat-1/file.txt"],
+              filenames: ["file.txt"],
+              mimeTypes: ["text/plain"],
+            },
+          },
+        ],
+        metadata: {},
+      },
+    ];
+
+    const validated = await validateAtlasUIMessages(messages);
+    expect(validated.length).toEqual(1);
+    const dataPart = validated[0]?.parts[1];
+    expect(dataPart?.type).toEqual("data-file-attached");
+    if (dataPart?.type === "data-file-attached") {
+      expect(dataPart.data.filenames).toEqual(["file.txt"]);
+    }
+  });
+
   it("accepts session-start with only sessionId", async () => {
     const messages = [
       {
@@ -447,5 +476,143 @@ describe("validateAtlasUIMessages", () => {
     if (dataPart?.type === "data-integration-disconnected") {
       expect(dataPart.data.integrations[0]?.kind).toEqual("credential_temporarily_unavailable");
     }
+  });
+
+  it("repairs static tool parts with rawInput-only output-error shape", async () => {
+    const messages = [
+      {
+        id: "1",
+        role: "assistant",
+        parts: [
+          {
+            type: "tool-echo-job",
+            toolCallId: "toolu_1",
+            state: "output-error",
+            rawInput: { foo: "bar" },
+            errorText: "Model tried to call unavailable tool 'echo-job'.",
+          },
+        ],
+        metadata: {},
+      },
+    ];
+
+    const validated = await validateAtlasUIMessages(messages);
+    expect(validated.length).toEqual(1);
+    expect(validated[0]?.parts[0]).toMatchObject({
+      type: "tool-echo-job",
+      state: "output-error",
+      input: { foo: "bar" },
+      rawInput: { foo: "bar" },
+      errorText: "Model tried to call unavailable tool 'echo-job'.",
+    });
+  });
+
+  it("repairs dynamic-tool parts with rawInput-only output-error shape", async () => {
+    const messages = [
+      {
+        id: "1",
+        role: "assistant",
+        parts: [
+          {
+            type: "dynamic-tool",
+            toolName: "ghost_tool",
+            toolCallId: "toolu_3",
+            state: "output-error",
+            rawInput: { x: 1 },
+            errorText: "tool not found",
+          },
+        ],
+        metadata: {},
+      },
+    ];
+
+    const validated = await validateAtlasUIMessages(messages);
+    expect(validated.length).toEqual(1);
+    expect(validated[0]?.parts[0]).toMatchObject({
+      type: "dynamic-tool",
+      toolName: "ghost_tool",
+      state: "output-error",
+      input: { x: 1 },
+      rawInput: { x: 1 },
+      errorText: "tool not found",
+    });
+  });
+
+  it("skips parts whose state is not output-error", async () => {
+    const messages = [
+      {
+        id: "1",
+        role: "assistant",
+        parts: [
+          {
+            type: "tool-search",
+            toolCallId: "toolu_4",
+            state: "input-streaming",
+            rawInput: { partial: "q" },
+          },
+        ],
+        metadata: {},
+      },
+    ];
+
+    const validated = await validateAtlasUIMessages(messages);
+    const part = validated[0]?.parts[0] as Record<string, unknown> | undefined;
+    expect(part?.state).toEqual("input-streaming");
+    expect(part?.input).toBeUndefined();
+  });
+
+  it("skips output-error parts that already have valid input", async () => {
+    const messages = [
+      {
+        id: "1",
+        role: "assistant",
+        parts: [
+          {
+            type: "tool-echo-job",
+            toolCallId: "toolu_5",
+            state: "output-error",
+            input: { real: "args" },
+            rawInput: { stale: "rawArgs" },
+            errorText: "downstream tool execute threw",
+          },
+        ],
+        metadata: {},
+      },
+    ];
+
+    const validated = await validateAtlasUIMessages(messages);
+    expect(validated[0]?.parts[0]).toMatchObject({
+      type: "tool-echo-job",
+      state: "output-error",
+      input: { real: "args" },
+      rawInput: { stale: "rawArgs" },
+    });
+  });
+
+  it("does not touch tool parts that already have input", async () => {
+    const messages = [
+      {
+        id: "1",
+        role: "assistant",
+        parts: [
+          {
+            type: "tool-search",
+            toolCallId: "toolu_2",
+            state: "output-available",
+            input: { query: "hello" },
+            output: { results: 3 },
+          },
+        ],
+        metadata: {},
+      },
+    ];
+
+    const validated = await validateAtlasUIMessages(messages);
+    expect(validated[0]?.parts[0]).toMatchObject({
+      type: "tool-search",
+      state: "output-available",
+      input: { query: "hello" },
+      output: { results: 3 },
+    });
   });
 });

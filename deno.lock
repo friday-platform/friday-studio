@@ -6431,14 +6431,6 @@
           ]
         }
       },
-      "packages/hallucination": {
-        "packageJson": {
-          "dependencies": [
-            "npm:vitest@^4.1.0",
-            "npm:zod@^4.4.3"
-          ]
-        }
-      },
       "packages/jetstream": {
         "packageJson": {
           "dependencies": [
@@ -6515,7 +6507,8 @@
           "dependencies": [
             "npm:hono-openapi@^1.3.0",
             "npm:openapi-fetch@0.17",
-            "npm:openapi-typescript@^7.13.0"
+            "npm:openapi-typescript@^7.13.0",
+            "npm:vitest@^4.1.0"
           ]
         }
       },

@@ -174,7 +174,7 @@ describe("JetStreamSkillAdapter", () => {
     expect(byName.get("default-flag-skill")?.userInvocable).toBe(true);
 
     // Direct `get(namespace, name)` returns the skill regardless of the flag —
-    // the runtime relies on this for `composeValidationBlock` to load the body.
+    // runtime callers that already know the skill name bypass userInvocable.
     const direct = await adapter.get("user", "hidden-system-skill");
     expect.assert(direct.ok === true);
     expect(direct.data?.name).toBe("hidden-system-skill");

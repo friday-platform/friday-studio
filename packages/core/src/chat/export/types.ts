@@ -98,4 +98,18 @@ export type Segment =
       calls: ToolCallDisplay[];
       /** Coalesced reasoning text from `reasoning-delta` chunks observed inside this burst. */
       reasoning?: string;
+    }
+  | {
+      /**
+       * User-attached files surfaced from `data-file-attached` parts. Each
+       * file lives on the daemon's filesystem at `{FRIDAY_HOME}/scratch/
+       * uploads/{chatId}/{filename}`; the chat-message-list renders a
+       * simple chip per file (filename + mime badge — no inline preview).
+       * The agent reads the file via the `read_attachment` tool on demand
+       * based on extension.
+       */
+      type: "file-list";
+      paths: string[];
+      filenames: string[];
+      mimeTypes: string[];
     };

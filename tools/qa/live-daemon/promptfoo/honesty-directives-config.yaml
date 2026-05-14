@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+
+description: Honesty + destructive-tool-guard directive injection across 5 prompt sites
+
+prompts:
+  - '{{scenarioId}}'
+
+providers:
+  - id: file://honesty-directives-provider.cjs
+    label: friday-honesty-directives
+
+defaultTest:
+  assert:
+    - type: is-json
+    - type: javascript
+      value: |
+        const result = JSON.parse(output);
+        if (result.pass !== true) {
+          throw new Error(`${result.id} failed: ${(result.notes || []).join('; ')}`);
+        }
+        return true;
+
+tests: file://honesty-directives-tests.yaml

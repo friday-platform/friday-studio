@@ -18,10 +18,6 @@
   vars:
     scenarioId: inputFrom-ref-resolution-array
 
-- description: validation output contract
-  vars:
-    scenarioId: validation-output-contract
-
 - description: LLM agent output contract
   vars:
     scenarioId: agent-output-contract

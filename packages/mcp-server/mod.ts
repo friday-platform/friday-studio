@@ -9,17 +9,6 @@ export {
   PlatformMCPServer,
   type PlatformMCPServerDependencies,
 } from "./src/platform-server.ts";
-// `record_validation` — local AI-SDK tool conditionally injected by the FSM
-// runtime when an action's
-// resolved validation strategy is `"self"`. Canonical implementation in
-// @atlas/core/agent-context (so fsm-engine and the agent orchestrator can
-// both import without pulling mcp-server's daemon dep into their closure);
-// the platform-tools file is a thin re-export for catalog discoverability.
-export {
-  createRecordValidationTool,
-  RECORD_VALIDATION_TOOL_NAME,
-  type RecordValidationInput,
-} from "./src/tools/platform/record-validation.ts";
 // Workspace-state storage initializer — daemon wires this once at
 // startup before any state_* MCP tool runs. Per-workspace JetStream
 // KV bucket; see ./src/tools/state/storage.ts.

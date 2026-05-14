@@ -120,14 +120,30 @@ to know the absolute URL of the daemon and the webhook tunnel
 
 | Var | What it controls | Default |
 |---|---|---|
-| `FRIDAYD_URL` | Daemon URL for CLI / launcher / sibling services | `http://localhost:8080` (installer writes `:18080`) |
+| `FRIDAYD_URL` | Daemon URL for CLI / launcher / sibling services | `http://localhost:8080` (installer writes `:18080`; `scripts/setup-tls.sh` rewrites scheme to `https://`) |
 | `EXTERNAL_DAEMON_URL` | UI-facing daemon URL — what the browser hits | falls back to `FRIDAYD_URL` |
 | `EXTERNAL_TUNNEL_URL` | UI-facing webhook-tunnel URL | none |
 | `LINK_SERVICE_URL` | Where the daemon proxies `/api/link/*` | `http://localhost:3100` (installer writes `:13100`) |
+| `FRIDAY_TLS_CERT` / `FRIDAY_TLS_KEY` | Private-CA s2s cert + key. When both set, the daemon binds TLS and `getAtlasDaemonUrl()` auto-upgrades any `http://` `FRIDAYD_URL` to `https://`. | unset (plain HTTP) |
+| `FRIDAY_TLS_CA` | CA cert path passed to `curl --cacert` (and `urllib`/`fetch` via `DENO_CERT`) so processes trust the s2s leaf. | unset |
+| `DENO_CERT` / `NODE_EXTRA_CA_CERTS` | Mirror of `FRIDAY_TLS_CA` in the variables Deno and Node read at startup. | unset |
 
 Set `EXTERNAL_DAEMON_URL` / `EXTERNAL_TUNNEL_URL` when you've placed
 a reverse proxy or tunnel in front of Friday and the browser needs
 the public address.
+
+When TLS is enabled, source the daemon `.env` once per shell so curl and
+ad-hoc scripts pick up the right scheme + CA cert. The block tries
+`${FRIDAY_HOME:-~/.friday/local}/.env` (installed Studio, written by the
+launcher) and falls back to `~/.atlas/.env` (dev convention, written by
+`scripts/setup-tls.sh`):
+
+```bash
+set -a
+. "${FRIDAY_HOME:-$HOME/.friday/local}/.env" 2>/dev/null \
+  || . "$HOME/.atlas/.env" 2>/dev/null || true
+set +a
+```
 
 ### JetStream store directory
 

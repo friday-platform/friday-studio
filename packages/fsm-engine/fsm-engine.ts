@@ -12,8 +12,7 @@ import {
   PLATFORM_TOOL_NAMES,
 } from "@atlas/agent-sdk";
 import { extractToolCallInput, unstringifyNestedJson } from "@atlas/agent-sdk/vercel-helpers";
-import type { MCPServerConfig, ValidationDefaults, WorkspaceMCPServerConfig } from "@atlas/config";
-import { normalizeActionValidate, resolveValidation } from "@atlas/config";
+import type { MCPServerConfig, WorkspaceMCPServerConfig } from "@atlas/config";
 import { resolvePermissions } from "@atlas/config/permissions";
 import {
   createErrorCause,
@@ -29,18 +28,16 @@ import {
 import {
   composeArtifactBlocks,
   composeMemoryBlocks,
-  composeValidationBlock,
 } from "@atlas/core/agent-context/compose-blocks";
 import {
-  createRecordValidationTool,
-  RECORD_VALIDATION_TOOL_NAME,
-} from "@atlas/core/agent-context/record-validation-tool";
+  AGENT_HONESTY_DIRECTIVE,
+  DESTRUCTIVE_TOOL_GUARD,
+} from "@atlas/core/agent-context/honesty-directives";
 import type { ArtifactStorageAdapter } from "@atlas/core/artifacts";
 import { resolveImageParts } from "@atlas/core/artifacts/images";
 import { liftToolResultsForPersist } from "@atlas/core/artifacts/scrubber";
 import { createDelegateTool, DEFAULT_MAX_DEPTH } from "@atlas/core/delegate";
 import type { LinkSummary } from "@atlas/core/mcp-registry/discovery";
-import { ValidationFailedError, type ValidationVerdict } from "@atlas/hallucination/verdict";
 import { buildTemporalFacts, type PlatformModels, wrapRetrieved } from "@atlas/llm";
 import { logger } from "@atlas/logger";
 import { createMCPTools, type MCPToolsResult } from "@atlas/mcp";
@@ -81,108 +78,12 @@ import type {
   FSMBroadcastNotifier,
   FSMDefinition,
   FSMLLMOutput,
-  JudgeAgentRunner,
-  JudgeHandoff,
-  JudgeToolCallEntry,
   LLMAction,
-  LLMActionTrace,
   LLMProvider,
   Signal,
   SignalWithContext,
   TransitionDefinition,
-  ValidateStrategy,
 } from "./types.ts";
-import {
-  type ClassifierInput,
-  classifyAction,
-  type MCPValidationOverride,
-  type ValidateDecision,
-} from "./validate-classifier.ts";
-
-/**
- * Resolve the final `ValidateDecision` + skill for an action, factoring
- * in workspace + job-level defaults.
- *
- * Precedence (strategy and skill independently):
- *   action.validate
- *     > job.validation.default
- *     > workspace.validation.default
- *     > "auto"  (the runtime classifier)
- *
- * `resolveValidation` (in @atlas/config) does the merge across the three
- * config tiers; if the merged strategy is `"auto"`, we hand off to
- * `classifyAction` for the final decision. Skill is propagated up so the
- * orchestrator-side prompt-assembly site (case "agent") and the inline
- * prompt builder (case "llm") can pass it to `composeValidationBlock`
- * without re-running the merge.
- *
- * The classifier's `external` decision remains unreachable from `auto`
- * — the classifier itself enforces this so picking the slower
- * separate-judge path stays an explicit opt-in.
- */
-function resolveValidateDecision(
-  explicit: ValidateStrategy | undefined,
-  classifierInput: ClassifierInput,
-  defaults: { job?: ValidationDefaults; workspace?: ValidationDefaults } = {},
-): {
-  decision: ValidateDecision;
-  source: "explicit" | "auto" | "merged-default";
-  reason: string;
-  skill?: string;
-} {
-  const merged = resolveValidation({
-    action: normalizeActionValidate(explicit),
-    job: defaults.job,
-    workspace: defaults.workspace,
-  });
-
-  // Carry the merged skill forward so callers don't have to re-derive
-  // it. `composeValidationBlock` defaults to DEFAULT_VALIDATION_SKILL
-  // when caller passes undefined; we only forward the resolved skill
-  // when at least one tier set it (preserves "explicit when explicit"
-  // semantics for the observability log).
-  const explicitSkillSet =
-    (typeof explicit === "object" && explicit.skill !== undefined) ||
-    defaults.job?.skill !== undefined ||
-    defaults.workspace?.skill !== undefined;
-  const skill = explicitSkillSet ? merged.skill : undefined;
-
-  if (merged.strategy === "auto") {
-    const auto = classifyAction(classifierInput);
-    return {
-      decision: auto.decision,
-      source: "auto",
-      reason: auto.reason,
-      ...(skill !== undefined ? { skill } : {}),
-    };
-  }
-
-  // The merged strategy came from action / job / workspace — record
-  // which level supplied it so the observability log stays useful.
-  // Action wins → `explicit`; otherwise → `merged-default`.
-  if (typeof explicit === "string" && explicit !== "auto") {
-    return {
-      decision: explicit,
-      source: "explicit",
-      reason: `explicit:${explicit}`,
-      ...(skill !== undefined ? { skill } : {}),
-    };
-  }
-  if (typeof explicit === "object") {
-    return {
-      decision: explicit.strategy,
-      source: "explicit",
-      reason: `explicit-object:${explicit.strategy}`,
-      ...(skill !== undefined ? { skill } : {}),
-    };
-  }
-  return {
-    decision: merged.strategy,
-    source: "merged-default",
-    reason: `merged-default:${merged.strategy}`,
-    ...(skill !== undefined ? { skill } : {}),
-  };
-}
 
 /**
  * Platform tools exposed to FSM LLM steps.
@@ -502,244 +403,12 @@ function findFailStepToolArgs(result: LLMResult): Record<string, unknown> | unde
 }
 
 /**
- * Extract `record_validation` tool args from an LLM result. Mirrors
- * `findCompleteToolArgs` — scans the result's toolCalls for one whose name
- * matches the platform tool, returning the input object verbatim. Caller is
- * responsible for parsing it through `StepValidationOutputSchema` before emit.
- *
- * Returns `undefined` when the LLM didn't call the tool — this is observable
- * (the runtime emits `validation: { strategy: "self" }` without a verdict)
- * rather than fatal, because the goal is visibility into self-check
- * outcomes, not enforcing that every action calls the tool.
- */
-function findRecordValidationToolArgs(result: LLMResult): Record<string, unknown> | undefined {
-  if (!result.ok) return undefined;
-  return extractToolCallInput(result.toolCalls ?? [], RECORD_VALIDATION_TOOL_NAME);
-}
-
-/**
- * Build the structured validation block that rides on `step:complete.validation`.
- * Three resolved strategies → three emit shapes; see `StepValidationOutputSchema`
- * in `@atlas/core/session-events` for the on-the-wire contract.
- *
- * Caller is responsible for the failStep semantics on `verdict: "blocking"` —
- * this helper only assembles the shape; it doesn't throw.
- */
-function buildValidationOutput(input: {
-  decision: ValidateDecision;
-  reason: string;
-  /** Captured `record_validation` args (self path); undefined if LLM didn't call it. */
-  recordedArgs?: Record<string, unknown>;
-  /** Final verdict from the external judge; undefined when judge didn't run. */
-  externalVerdict?: ValidationVerdict;
-  /**
-   * Structured + self path. The action declared an outputType with a defined
-   * schema, so the runtime injected a `complete` tool and elided
-   * `record_validation`. Successful structured emission is the
-   * implicit verdict — surface as `pass` so step:complete.validation isn't
-   * silently empty.
-   */
-  implicitPass?: boolean;
-}): NonNullable<FSMActionExecutionEvent["data"]["llmResult"]>["validation"] {
-  if (input.decision === "skip") {
-    return { strategy: "skip", skipReason: input.reason };
-  }
-  if (input.decision === "self") {
-    if (!input.recordedArgs) {
-      return input.implicitPass ? { strategy: "self", verdict: "pass" } : { strategy: "self" };
-    }
-    const verdict = input.recordedArgs.verdict;
-    const issues = Array.isArray(input.recordedArgs.issues)
-      ? (input.recordedArgs.issues as Array<Record<string, unknown>>).map((i) => ({
-          claim: typeof i.claim === "string" ? i.claim : "",
-          ...(typeof i.category === "string" && { category: i.category }),
-          ...(typeof i.reasoning === "string" && { reasoning: i.reasoning }),
-          ...(typeof i.severity === "string" && {
-            severity: i.severity as "low" | "medium" | "high" | "info" | "warn" | "error",
-          }),
-          ...(typeof i.citation === "string" || i.citation === null
-            ? { citation: i.citation as string | null }
-            : {}),
-        }))
-      : undefined;
-    return {
-      strategy: "self",
-      ...(typeof verdict === "string" &&
-      (verdict === "pass" || verdict === "advisory" || verdict === "blocking")
-        ? { verdict }
-        : {}),
-      ...(issues && issues.length > 0 ? { issues } : {}),
-    };
-  }
-  // external
-  if (!input.externalVerdict) return { strategy: "external" };
-  const issues = input.externalVerdict.issues ?? [];
-  return {
-    strategy: "external",
-    verdict: input.externalVerdict.verdict,
-    ...(issues.length > 0
-      ? {
-          issues: issues.map((iss) => ({
-            claim: iss.claim,
-            ...(iss.category !== undefined && { category: iss.category }),
-            ...(iss.reasoning !== undefined && { reasoning: iss.reasoning }),
-            ...(iss.severity !== undefined && { severity: iss.severity }),
-            ...(iss.citation !== undefined && { citation: iss.citation }),
-          })),
-        }
-      : {}),
-  };
-}
-
-/**
- * Detect a scrubber-lifted (A2) tool result. Mirrors the refMarker
- * pattern from `@atlas/core/artifacts/scrubber.ts`:
- *
- *   `[attachment lifted to artifact <id> (<kb> KB, <mime>, from <server>/<tool>) — use display_artifact or artifacts_get to read]`
- *
- * Returns `{ artifactId, summary }` on match — the runtime hands this to
- * the judge so the judge can call `artifacts_get` only when it needs to
- * verify a specific claim. Cost scales with judgment work, not with input
- * size.
- */
-const REF_MARKER_RE = /^\[attachment lifted to artifact ([\w-]+) \(([^)]+)\) — use [^\]]+\]$/;
-
-function detectLiftedArtifact(
-  output: unknown,
-): { artifactId: string; summary: string } | undefined {
-  const text = extractToolResultText(output);
-  if (!text) return undefined;
-  const trimmed = text.trim();
-  const match = REF_MARKER_RE.exec(trimmed);
-  if (!match || !match[1]) return undefined;
-  return { artifactId: match[1], summary: match[2] ?? "" };
-}
-
-/** Max characters to inline per tool result in the judge handoff. */
-const MAX_JUDGE_INLINE_CHARS = 8000;
-
-/**
- * Extract a string preview of a tool result's `output`. Mirrors the
- * deleted hallucination/detector.ts shape — string passthrough, MCP text
- * content array, JSON.stringify fallback. Inlined here so the judge
- * handoff builder doesn't depend on the deleted package.
- */
-function extractToolResultText(output: unknown): string {
-  if (typeof output === "string") return output;
-  if (output && typeof output === "object") {
-    const obj = output as { content?: unknown };
-    if (Array.isArray(obj.content)) {
-      const texts: string[] = [];
-      for (const item of obj.content) {
-        if (
-          item &&
-          typeof item === "object" &&
-          typeof (item as { text?: unknown }).text === "string"
-        ) {
-          texts.push((item as { text: string }).text);
-        }
-      }
-      if (texts.length > 0) return texts.join("\n");
-    }
-  }
-  try {
-    return JSON.stringify(output);
-  } catch {
-    return String(output);
-  }
-}
-
-function truncateForJudge(text: string): string {
-  if (text.length <= MAX_JUDGE_INLINE_CHARS) return text;
-  return `${text.slice(0, MAX_JUDGE_INLINE_CHARS)}\n[...truncated ${
-    text.length - MAX_JUDGE_INLINE_CHARS
-  } chars]`;
-}
-
-/**
- * Build the judge handoff for an action's external-validation pass. Walks
- * the trace's tool calls and projects each one as either an artifact
- * reference (scrubber-lifted) or an inline preview. The judge agent
- * receives this as its `handoff` payload.
- */
-export function buildJudgeHandoff(trace: LLMActionTrace): JudgeHandoff {
-  const toolResults = trace.toolResults ?? [];
-  const toolCalls = trace.toolCalls ?? [];
-  const callsByCallId = new Map(toolCalls.map((tc) => [tc.toolCallId, tc.input]));
-
-  const entries: JudgeToolCallEntry[] = toolResults.map((tr) => {
-    const args = tr.toolCallId ? callsByCallId.get(tr.toolCallId) : undefined;
-    const lifted = detectLiftedArtifact(tr.output);
-    if (lifted) {
-      return {
-        toolName: tr.toolName,
-        ...(args !== undefined && { args }),
-        resultArtifactId: lifted.artifactId,
-        resultSummary: lifted.summary,
-      };
-    }
-    return {
-      toolName: tr.toolName,
-      ...(args !== undefined && { args }),
-      resultInline: truncateForJudge(extractToolResultText(tr.output)),
-    };
-  });
-
-  return { actionInput: trace.prompt, actionOutput: trace.content, toolCalls: entries };
-}
-
-/**
- * Build LLMActionTrace from an LLM result envelope for hallucination detection.
- * Passes through AI SDK tool types directly without transformation.
- */
-export function buildLLMActionTrace(
-  result: LLMResult,
-  model: string,
-  prompt: string,
-): LLMActionTrace {
-  // Extract content from result - use response field if present, otherwise stringify data
-  const content = result.ok
-    ? "response" in result.data
-      ? String(result.data.response)
-      : JSON.stringify(result.data)
-    : result.error.reason;
-
-  return {
-    content,
-    reasoning: result.ok ? result.reasoning : undefined,
-    toolCalls: result.ok ? result.toolCalls : undefined,
-    toolResults: result.ok ? result.toolResults : undefined,
-    model,
-    prompt,
-  };
-}
-
-/**
  * Per-call options the FSM engine threads into `agentExecutor`. Today: the
- * resolved `outputSchema` (FSM documentTypes) and the resolved validation
- * decision. The orchestrator-side adapter (workspace runtime → agent server
- * → `convertLLMToAgent`) reads `validateDecision` / `validateSkill` and
- * passes them to `composeValidationBlock` at the LLM-prompt-assembly site so
- * `case "agent" → type: llm` ends up with the same validation skill body in
- * its system prompt that an inline `case "llm"` action would.
+ * resolved `outputSchema` (FSM documentTypes).
  */
 export interface AgentExecutorOptions {
   /** JSON Schema resolved from FSM `documentTypes` or default outputTo contract. */
   outputSchema?: Record<string, unknown>;
-  /**
-   * Resolved validation decision for this action — already factored across
-   * `action.validate` and the auto classifier. The orchestrator
-   * forwards it to `composeValidationBlock`. `"skip"` means the helper
-   * isn't called; `"self"` injects the skill body inline; `"external"` is
-   * handled post-execution by the FSM engine, not the orchestrator.
-   */
-  validateDecision?: "skip" | "self" | "external";
-  /**
-   * Optional override skill name for the `self` path (the object form of
-   * `validate:` lets authors point at a custom validating skill). When
-   * absent, `composeValidationBlock` uses `DEFAULT_VALIDATION_SKILL`.
-   */
-  validateSkill?: string;
 }
 
 /**
@@ -749,8 +418,7 @@ export interface AgentExecutorOptions {
  * @param action - The full AgentAction object (includes agentId, prompt, outputTo)
  * @param context - FSM context with documents, state, and utility functions
  * @param signal - Signal with context (sessionId, workspaceId, onEvent callback)
- * @param options - Optional execution options (e.g., resolved outputSchema from documentTypes,
- *   resolved validation decision threaded into the orchestrator's prompt assembly)
+ * @param options - Optional execution options (e.g., resolved outputSchema from documentTypes)
  */
 export type AgentExecutor = (
   action: AgentAction,
@@ -764,24 +432,13 @@ export interface FSMEngineOptions {
   documentStore: DocumentStore;
   scope: DocumentScope;
   agentExecutor?: AgentExecutor;
-  /** MCP server configs from workspace — merged with atlas-platform at call time */
   /**
    * MCP server configs from workspace — merged with atlas-platform at call time.
-   * Accepts the workspace-level superset `WorkspaceMCPServerConfig` so the
-   * per-server `validation:` override
-   * flows through to the validate-classifier. Plain `MCPServerConfig`
-   * from non-workspace callers (tests, atlas) remains structurally
-   * assignable since `validation` is optional.
+   * Accepts the workspace-level superset `WorkspaceMCPServerConfig` for
+   * forward-compat with workspace callers; plain `MCPServerConfig` from
+   * non-workspace callers (tests, atlas) remains structurally assignable.
    */
   mcpServerConfigs?: Record<string, MCPServerConfig | WorkspaceMCPServerConfig>;
-  /**
-   * External-validation runner. Workspace runtime wires this to invoke
-   * `@friday/judge-agent` (or the per-action override from
-   * `validate.agent`) through the agent orchestrator. When unset,
-   * external-validation actions log + fall through to an advisory
-   * verdict so the action still emits.
-   */
-  runJudge?: JudgeAgentRunner;
   /** Storage adapter for resolving image artifact binary data */
   artifactStorage?: ArtifactStorageAdapter;
   /**
@@ -844,37 +501,13 @@ export interface FSMEngineOptions {
    */
   jobTimeoutMs?: number;
   /**
-   * Agent-type resolver for `case "agent"` actions. The validate classifier
-   * short-circuits to `skip` when the resolved agent type is
-   * `"user"` or `"atlas"` (Python is code; bundled SDK agents have fixed
-   * prompts — neither path builds an LLM system prompt that
-   * `composeValidationBlock` could augment). Without this callback the
-   * classifier sees `resolvedAgentType: undefined` and falls through to
-   * the existing tool/prose heuristics, which is fine for `case "llm"`
-   * (where the type is implicitly `"llm"`) but loses the cheap
-   * type-based skip on the agent path.
-   *
-   * Returns `undefined` when the agent isn't registered in the workspace
-   * (the executor itself will then surface a clear error). Synchronous
-   * — the caller (workspace runtime) already has the resolved
-   * `agents.<id>` block in memory at engine-construction time.
+   * Agent-type resolver for `case "agent"` actions. Returns `undefined` when
+   * the agent isn't registered in the workspace (the executor itself will
+   * then surface a clear error). Synchronous — the caller (workspace
+   * runtime) already has the resolved `agents.<id>` block in memory at
+   * engine-construction time.
    */
   resolveAgentType?: (agentId: string) => "llm" | "user" | "atlas" | undefined;
-  /**
-   * Workspace-level validation defaults. Merged at decision-resolution time
-   * inside `case "llm"` and `case "agent"`:
-   * `action.validate > job.validation.default > workspace.validation.default
-   * > "auto"` (classifier). Skill name follows the same merge.
-   * Optional — undefined means "no workspace-level default; fall through
-   * to "auto" classifier when neither job nor action set it".
-   */
-  workspaceValidation?: ValidationDefaults;
-  /**
-   * Per-job validation override. Wins over `workspaceValidation` per field.
-   * Action-level `validate:` still
-   * wins over both. See `workspaceValidation` for full precedence.
-   */
-  jobValidation?: ValidationDefaults;
   /**
    * Per-action artifact persistence hook. Fired immediately after a
    * `case "llm"` or `case "agent"`
@@ -1050,76 +683,7 @@ export class FSMEngine {
     // from storage regardless of which initialization path was taken
     await this.persistDocuments();
 
-    // B1: emit one info log per (state × llm/agent action) summarizing the
-    // statically-resolved validation decision. Authors can grep their
-    // daemon logs to confirm "what's resolving where" without bisecting
-    // the workspace > job > action precedence chain by hand. The
-    // classifier runs with the static context (declared tools, no
-    // calledToolNames, no emittedProse) which matches the pre-call
-    // resolution at runtime — explicit/merged-default decisions are
-    // identical; only `auto` may shift if the LLM emits unexpected prose.
-    this.logResolvedValidationDecisions();
-
     this._initialized = true;
-  }
-
-  /** B1: see the inline call site in `initialize()` for rationale. */
-  private logResolvedValidationDecisions(): void {
-    const job = this.options.jobValidation;
-    const workspace = this.options.workspaceValidation;
-    for (const [stateId, stateNode] of Object.entries(this._definition.states ?? {})) {
-      const collectActions = (): Array<{ trigger: string; action: Action }> => {
-        const out: Array<{ trigger: string; action: Action }> = [];
-        for (const a of stateNode.entry ?? []) {
-          out.push({ trigger: "entry", action: a });
-        }
-        for (const [event, transition] of Object.entries(stateNode.on ?? {})) {
-          const actions = Array.isArray(transition)
-            ? []
-            : ((transition as { actions?: Action[] }).actions ?? []);
-          for (const a of actions) {
-            out.push({ trigger: `on:${event}`, action: a });
-          }
-        }
-        return out;
-      };
-      for (const { trigger, action } of collectActions()) {
-        if (action.type !== "llm" && action.type !== "agent") continue;
-        const declaredTools = "tools" in action && Array.isArray(action.tools) ? action.tools : [];
-        const resolution = resolveValidateDecision(
-          "validate" in action ? action.validate : undefined,
-          {
-            declaredTools,
-            calledToolNames: [],
-            hasOutputType:
-              action.type === "llm" && !!(action as { outputType?: string }).outputType,
-            hasInputFrom: "inputFrom" in action && !!action.inputFrom,
-            resolvedAgentType: undefined,
-            emittedProse: false,
-            toolsAvailable: declaredTools.length > 0,
-            ...(action.type === "llm" &&
-            (action as { run_code?: { readOnly?: boolean } }).run_code?.readOnly
-              ? { runCodeReadOnly: true }
-              : {}),
-          },
-          { ...(job && { job }), ...(workspace && { workspace }) },
-        );
-        logger.info("FSM action validation resolved", {
-          fsm: this._definition.id,
-          state: stateId,
-          trigger,
-          actionType: action.type,
-          ...(action.type === "llm" && action.outputTo ? { outputTo: action.outputTo } : {}),
-          ...(action.type === "agent" && (action as { agentId?: string }).agentId
-            ? { agentId: (action as { agentId: string }).agentId }
-            : {}),
-          decision: resolution.decision,
-          source: resolution.source,
-          reason: resolution.reason,
-          ...(resolution.skill ? { skill: resolution.skill } : {}),
-        });
-      }
-    }
   }
 
   async signal(
@@ -1148,26 +712,6 @@ export class FSMEngine {
     if (!this._processing) {
       await this.processQueue();
     }
-  }
-
-  /**
-   * Collect per-MCP `validation:` overrides from `mcpServerConfigs` into a
-   * flat `Record<serverId, override>` for the
-   * validate-classifier. Returns `undefined` when no servers carry an
-   * override so the classifier can short-circuit.
-   */
-  private buildMCPValidationOverrides(): Record<string, MCPValidationOverride> | undefined {
-    const configs = this.options.mcpServerConfigs;
-    if (!configs) return undefined;
-    let result: Record<string, MCPValidationOverride> | undefined;
-    for (const [id, config] of Object.entries(configs)) {
-      const override = (config as WorkspaceMCPServerConfig).validation;
-      if (override) {
-        result ??= {};
-        result[id] = override;
-      }
-    }
-    return result;
   }
 
   /**
@@ -2027,116 +1571,6 @@ export class FSMEngine {
                 }
               }
 
-              // When the action's resolved validate decision is `self`, compose the
-              // validating-llm-outputs system skill into the prompt so the
-              // LLM self-checks its draft before emitting. This mirrors the
-              // agent-orchestrator prompt assembly path.
-              //
-              // We resolve the decision PRE-call here using only static
-              // signals — `calledToolNames` and `emittedProse` are unknowable
-              // at prompt-build time, so the static path treats them as
-              // empty/false. The post-call gating site below re-resolves
-              // with observed signals; in the rare edge case where they
-              // disagree (e.g. mutating-tool declared but never called),
-              // the prompt-time path may inject the skill while the
-              // post-call path picks `skip` — we eat that asymmetry rather
-              // than build a two-phase classifier knob. Inline self-check
-              // only adds prompt tokens; nothing downstream depends on the
-              // pre-call decision.
-              const declaredToolsStatic = action.tools ?? [];
-              // Thread per-MCP `validation:` overrides and the action's
-              // `run_code: { readOnly: true }` opt-in into the classifier
-              // so author overrides win over the default regex / allowlist.
-              const mcpServerOverrides = this.buildMCPValidationOverrides();
-              const preCallResolution = resolveValidateDecision(
-                action.validate,
-                {
-                  declaredTools: declaredToolsStatic,
-                  calledToolNames: [],
-                  hasOutputType: completeToolInjected,
-                  hasInputFrom: !!action.inputFrom,
-                  resolvedAgentType: undefined,
-                  emittedProse: false,
-                  toolsAvailable: declaredToolsStatic.length > 0,
-                  ...(mcpServerOverrides ? { mcpServerOverrides } : {}),
-                  ...(action.run_code?.readOnly ? { runCodeReadOnly: true } : {}),
-                },
-                { job: this.options.jobValidation, workspace: this.options.workspaceValidation },
-              );
-              const preCallDecision = preCallResolution.decision;
-              // On the structured + self path, skip the validation skill body
-              // too — not just the `record_validation` tool injection below.
-              // The skill body instructs the LLM to call `record_validation`
-              // exactly once, but the tool
-              // isn't in the catalog. The contradictory instructions made
-              // the LLM bail into prose ("the artifact chain keeps
-              // wrapping...") instead of calling `complete`. Use the same
-              // `completeToolInjected` predicate as the tool-skip site
-              // below so both gates share one source of truth.
-              const skipValidationSkillBody = preCallDecision === "self" && completeToolInjected;
-              const validationBlock = skipValidationSkillBody
-                ? ""
-                : await composeValidationBlock({
-                    decision: preCallDecision,
-                    // Prefer merged skill (factors action object form +
-                    // job + workspace overrides) over the older direct read
-                    // of action.validate.skill.
-                    skillName: preCallResolution.skill,
-                    logger,
-                  });
-              const validationSkillLoaded = validationBlock.length > 0;
-              if (validationBlock) {
-                // Validation guidance lives in the cacheable system surface —
-                // the skill body is byte-stable for a given (decision, skill)
-                // pair, so co-locating it with the action prompt extends the
-                // cached prefix.
-                systemPrompt = `${systemPrompt}\n\n${validationBlock}`;
-                logger.debug("Injected validation skill block into LLM action system", {
-                  decision: preCallDecision,
-                  blockChars: validationBlock.length,
-                });
-              }
-
-              // When the pre-call decision is `self`, inject the
-              // `record_validation` platform tool alongside
-              // the skill body. The skill instructs the LLM to call this tool
-              // before emitting; the post-call gating site below reads the
-              // captured args off `result.toolCalls` (mirroring the `complete`
-              // tool's capture path) and surfaces them on `step:complete.validation`.
-              //
-              // Mirrors `completeToolInjected`: a flag carries the injection
-              // state forward to the capture site so we don't re-derive the
-              // decision there. Pre-call asymmetry note: in the rare edge case
-              // where pre-call resolves `self` but the post-call classifier
-              // resolves `skip`, the injected tool is harmless — the LLM may
-              // call it (we capture and emit) or ignore it (we emit a skip
-              // verdict from the post-call path, ignoring whatever the LLM
-              // recorded). The same asymmetry-tolerance applies to the skill
-              // body — see the longer comment above `preCallResolution`.
-              //
-              // Structured-output actions (those with `outputType:` resolving
-              // to a defined schema, i.e. `completeToolInjected`) skip
-              // `record_validation` injection.
-              // The structured schema IS the validation contract — pinning
-              // toolChoice to `complete` is what makes structured output
-              // reliable, and `record_validation` injection forces toolChoice
-              // back to `auto` (see `llmToolChoice` below), letting the LLM
-              // emit free-form prose instead of calling `complete`. Authors
-              // who want explicit self-verdict on structured output should
-              // split into two FSM steps (free-form analyze → structured
-              // emit). The skill body is also skipped on this path — see the
-              // `skipValidationSkillBody` block above for why. Verdict on the
-              // structured + self path is implicit
-              // pass on successful complete-tool emission.
-              const recordValidationInjected = preCallDecision === "self" && !completeToolInjected;
-              if (recordValidationInjected) {
-                tools[RECORD_VALIDATION_TOOL_NAME] = createRecordValidationTool();
-                logger.debug("Injected record_validation tool", {
-                  decision: preCallDecision,
-                  state: currentState,
-                });
-              }
-
               if (completeToolInjected) {
                 systemPrompt +=
                   "\n\nIMPORTANT: When you have gathered all necessary information, you MUST call the `complete` tool to store your results. " +
@@ -2145,6 +1579,12 @@ export class FSMEngine {
                 systemPrompt +=
                   "\n\nIMPORTANT: If you cannot complete this task, call the failStep tool with a reason.";
               }
+
+              // Universal honesty + destructive-tool directives. Appended
+              // after the complete/failStep mechanics so the model reads
+              // the structural rules (which tool ends the action) before
+              // the meta-rules (what to do when it can't source data).
+              systemPrompt += `\n\n${AGENT_HONESTY_DIRECTIVE}\n\n${DESTRUCTIVE_TOOL_GUARD}`;
 
               // Build agentId for the LLM action
               const llmAgentId = `fsm:${this._definition.id}:${action.outputTo ?? "llm"}`;
@@ -2168,27 +1608,17 @@ export class FSMEngine {
                 },
               ];
 
-              // When both `complete` (structured-output capture) and
-              // `record_validation` (self-check capture) are injected, we
-              // can't pin toolChoice to `complete` — that would forbid the
-              // LLM from calling record_validation. Switch to `auto` so the
-              // LLM can sequence record_validation → complete the way the
-              // skill body instructs. Stop semantics still halt on complete
-              // OR failStep, so the second-tool-call assumption stays
-              // sound. When only complete is injected, today's pinned
-              // toolChoice path is preserved.
-              //
-              // With the `recordValidationInjected` guard above
-              // (structured + self skips `record_validation` injection),
-              // structured-output actions always pin toolChoice to
-              // `complete`.
+              // When `complete` is injected (structured-output capture), pin
+              // toolChoice so the LLM emits via the contract. With additional
+              // declared tools, use `required` (any tool, including `complete`
+              // or a workspace tool); otherwise pin directly to `complete`.
+              // Without a `complete` tool, fall back to `auto`.
               const hasActionTools = (action.tools?.length ?? 0) > 0;
-              const llmToolChoice =
-                completeToolInjected && !recordValidationInjected
-                  ? hasActionTools
-                    ? ("required" as const)
-                    : ({ type: "tool", toolName: "complete" } as const)
-                  : ("auto" as const);
+              const llmToolChoice = completeToolInjected
+                ? hasActionTools
+                  ? ("required" as const)
+                  : ({ type: "tool", toolName: "complete" } as const)
+                : ("auto" as const);
 
               const result = await this.options.llmProvider.call({
                 agentId: llmAgentId,
@@ -2215,7 +1645,7 @@ export class FSMEngine {
               }
 
               // Pre-populate the side-channel toolCalls before the
-              // validation-failure throws below (`failStep`, missing
+              // contract-failure throws below (`failStep`, missing
               // `complete`, empty output, empty response). Without this
               // the catch handler at the bottom of executeInSpan sees
               // `llmResultData === undefined` and
@@ -2275,234 +1705,6 @@ export class FSMEngine {
                 }
               }
 
-              // Resolve the per-action validation strategy and gate the
-              // external-judge call by it.
-              // `external` runs the runJudge callback; `self` injects the
-              // inline self-check skill body; `skip` bypasses validation
-              // entirely. The classifier (used when the author hasn't set
-              // `validate:`) never returns `external`.
-              // Trace records the full prompt the model saw — system
-              // (cacheable) + user (volatile preface). Concatenated for
-              // the trace surface; the wire-format split into separate
-              // messages is captured upstream by the adapter.
-              const tracePrompt = `${systemPrompt}\n\n${userText}`;
-              const observedTrace = buildLLMActionTrace(result, action.model, tracePrompt);
-              const declaredTools = action.tools ?? [];
-              const classifierInput: ClassifierInput = {
-                declaredTools,
-                calledToolNames: observedTrace.toolCalls?.map((tc) => tc.toolName) ?? [],
-                hasOutputType: completeToolInjected,
-                hasInputFrom: !!action.inputFrom,
-                // case "llm" — type is always "llm". The case "agent" path
-                // fills in resolvedAgentType before classification.
-                resolvedAgentType: undefined,
-                emittedProse:
-                  typeof observedTrace.content === "string" &&
-                  observedTrace.content.trim().length > 0,
-                toolsAvailable: declaredTools.length > 0,
-                // Re-thread overrides for the post-call resolution.
-                ...(mcpServerOverrides ? { mcpServerOverrides } : {}),
-                ...(action.run_code?.readOnly ? { runCodeReadOnly: true } : {}),
-              };
-              const {
-                decision: validateDecision,
-                source: validateSource,
-                reason: validateReason,
-              } = resolveValidateDecision(action.validate, classifierInput, {
-                job: this.options.jobValidation,
-                workspace: this.options.workspaceValidation,
-              });
-              logger.info("validate-decision resolved", {
-                state: currentState,
-                action: action.outputTo ?? "anonymous",
-                decision: validateDecision,
-                source: validateSource,
-                reason: validateReason,
-                ranExternalJudge: validateDecision === "external" && !!this.options.runJudge,
-                // Whether the inline self-check skill was injected at
-                // prompt-build time. Useful to verify in `global.log` that
-                // self-decisions actually got the skill body — and to spot
-                // pre/post-call decision asymmetry (preCall=self injected
-                // skill, postCall=skip).
-                validationSkillLoaded,
-              });
-
-              // Track the verdict that ultimately survives the external-judge
-              // lifecycle so it can ride on
-              // `step:complete.validation`. Set at every point a verdict is
-              // accepted (first-call pass, first-call uncertain, retry pass,
-              // retry uncertain). On terminal-fail the throw upstream
-              // unwinds before we read this back.
-              let externalSurvivingVerdict: ValidationVerdict | undefined;
-
-              // External validation invokes a system-level judge agent. The
-              // runtime hands the judge an action-output + tool-call manifest
-              // (refs-not-bytes for scrubber-lifted results); the judge returns
-              // a structured verdict. Judge failures synthesize an advisory
-              // verdict so the action still emits.
-              if (validateDecision === "external" && this.options.runJudge) {
-                const trace = buildLLMActionTrace(result, action.model, tracePrompt);
-                const validationActionId = this.getActionId(action);
-                const judgeAgentId =
-                  typeof action.validate === "object" &&
-                  action.validate !== null &&
-                  typeof action.validate.agent === "string"
-                    ? action.validate.agent
-                    : "judge-agent";
-
-                this.emitValidationAttempt(sig, currentState, validationActionId, {
-                  attempt: 1,
-                  status: "running",
-                });
-
-                const judgeResult = await this.options.runJudge({
-                  agentId: judgeAgentId,
-                  handoff: buildJudgeHandoff(trace),
-                  ...(sig._context?.workspaceId ? { workspaceId: sig._context.workspaceId } : {}),
-                  ...(sig._context?.sessionId ? { sessionId: sig._context.sessionId } : {}),
-                  abortSignal: sig._context?.abortSignal,
-                });
-
-                if (judgeResult.ok) {
-                  externalSurvivingVerdict = judgeResult.verdict;
-                  this.emitValidationAttempt(sig, currentState, validationActionId, {
-                    attempt: 1,
-                    status: judgeResult.verdict.verdict === "blocking" ? "failed" : "passed",
-                    terminal: true,
-                    verdict: judgeResult.verdict,
-                  });
-                  if (judgeResult.verdict.verdict === "blocking") {
-                    logger.error("LLM action external validation: blocking", {
-                      state: currentState,
-                      model: action.model,
-                      issues: judgeResult.verdict.issues,
-                    });
-                    throw new ValidationFailedError(judgeResult.verdict, llmAgentId);
-                  }
-                } else {
-                  // Judge failure → advisory verdict with judge-error category.
-                  // Action still emits; the failure is observable
-                  // on `step:complete.validation`.
-                  logger.warn("Judge failed, synthesizing advisory verdict", {
-                    state: currentState,
-                    model: action.model,
-                    error: judgeResult.error,
-                  });
-                  externalSurvivingVerdict = {
-                    verdict: "advisory",
-                    issues: [
-                      {
-                        category: "judge-error",
-                        severity: "info",
-                        claim: "validation",
-                        reasoning: `judge failed: ${judgeResult.error}`,
-                      },
-                    ],
-                  };
-                  this.emitValidationAttempt(sig, currentState, validationActionId, {
-                    attempt: 1,
-                    status: "passed",
-                    terminal: true,
-                    verdict: externalSurvivingVerdict,
-                  });
-                }
-              } else if (validateDecision === "self") {
-                // The validating-llm-outputs skill was already composed into
-                // `contextPrompt` pre-call (see `composeValidationBlock`
-                // above), so the LLM self-checked its draft inside the same
-                // call. No separate post-call step needed at this gate.
-                // The `record_validation` tool was injected pre-call when
-                // preCallDecision === "self"; the captured args are read off
-                // result.toolCalls below for `step:complete.validation`.
-              } else if (validateDecision === "skip") {
-                // No validation. The decision was logged above; nothing else
-                // to do here.
-              }
-
-              // Build the structured validation block for emit. Three resolved
-              // strategies → three shapes:
-              //   skip     → { strategy, skipReason }
-              //   self     → { strategy, verdict?, issues? }   (record_validation)
-              //   external → { strategy, verdict, issues? }    (judge-derived)
-              // The captured `validateDecision` (post-call) wins over the
-              // pre-call decision used to inject the tool — see preCallResolution
-              // for the asymmetry-tolerance comment. For external, the surviving
-              // verdict (after retry, when applicable) is the one we surface.
-              const recordedValidationArgs =
-                validateDecision === "self" ? findRecordValidationToolArgs(result) : undefined;
-              const validationOutput = buildValidationOutput({
-                decision: validateDecision,
-                reason: validateReason,
-                recordedArgs: recordedValidationArgs,
-                // Structured + self path emits an implicit pass verdict.
-                ...(validateDecision === "self" && completeToolInjected
-                  ? { implicitPass: true }
-                  : {}),
-                ...(validateDecision === "external" && externalSurvivingVerdict
-                  ? { externalVerdict: externalSurvivingVerdict }
-                  : {}),
-              });
-
-              // Sentinel-text guard. When `validate: self` resolves and the
-              // LLM had no `complete` tool to pin a structured output,
-              // the outputDoc falls back to `result.data.response` — i.e.
-              // the model's most recent text turn before its closing tool
-              // call. If that text reads like a transition phrase ("Now let
-              // me record validation and return the final output:") rather
-              // than the actual content the action was asked to produce,
-              // the persisted doc will be a stub. Log a warn so the
-              // operator can correlate and either tighten the action's
-              // prompt or add an outputType schema. Heuristic — this
-              // doesn't fail the action, just surfaces it. Repro:
-              // Known trigger: a transition phrase just before `record_validation`.
-              if (
-                validateDecision === "self" &&
-                !completeToolInjected &&
-                recordedValidationArgs !== undefined
-              ) {
-                const responseText =
-                  typeof (result.data as { response?: unknown })?.response === "string"
-                    ? ((result.data as { response: string }).response as string)
-                    : "";
-                const trimmed = responseText.trim();
-                const looksTransitional =
-                  trimmed.length > 0 &&
-                  trimmed.length < 500 &&
-                  (trimmed.endsWith(":") || /^(now\s+(let|i)|let\s+me|i'?ll\s+now)/i.test(trimmed));
-                if (looksTransitional) {
-                  logger.warn(
-                    "LLM action validate:self may have terminated on record_validation without emitting final output",
-                    {
-                      state: currentState,
-                      outputTo: action.outputTo,
-                      responseChars: trimmed.length,
-                      responseHead: trimmed.slice(0, 120),
-                      hint: "Update the action's prompt (or the validating-llm-outputs skill) so the LLM emits its final output before calling record_validation.",
-                    },
-                  );
-                }
-              }
-
-              // failStep semantics on a self-recorded `blocking` verdict.
-              // The LLM has explicitly told us its output is unsourced and
-              // should not emit; treat that signal the same way as a failStep
-              // tool call. Mirrors the `findFailStepToolArgs` → throw path
-              // immediately above. Skipped on `external` because the judge's
-              // retry-and-throw lifecycle already runs upstream; if the
-              // external surviving verdict is `blocking`, we got there via
-              // the already-thrown ValidationFailedError path — not via this
-              // branch.
-              if (
-                validationOutput?.strategy === "self" &&
-                validationOutput.verdict === "blocking"
-              ) {
-                const issuesSummary =
-                  validationOutput.issues
-                    ?.map((i) => `${i.category ?? "issue"}: ${i.claim}`)
-                    .join("; ") || "no issues recorded";
-                throw new Error(`LLM action self-validation: blocking. ${issuesSummary}`);
-              }
-
               if (action.outputTo) {
                 const outputDoc = documents.get(action.outputTo);
                 const newDocType = action.outputType ?? "LLMResult";
@@ -2549,14 +1751,14 @@ export class FSMEngine {
                 );
               }
 
-              // Layer reasoning/output/usage/validation onto the
-              // tool-call manifest captured earlier (post-LLM, pre-throw).
-              // The early-capture block above runs unconditionally once
-              // `result.ok` is confirmed at the adapter-error guard, so
-              // `llmResultData` is guaranteed to be set here. Asserting
-              // rather than defaulting means a future refactor that
-              // moves the early-capture path fails loudly instead of
-              // silently dropping tool calls into an empty array.
+              // Layer reasoning/output/usage onto the tool-call manifest
+              // captured earlier (post-LLM, pre-throw). The early-capture
+              // block above runs unconditionally once `result.ok` is confirmed
+              // at the adapter-error guard, so `llmResultData` is guaranteed
+              // to be set here. Asserting rather than defaulting means a
+              // future refactor that moves the early-capture path fails
+              // loudly instead of silently dropping tool calls into an
+              // empty array.
               if (!llmResultData) {
                 throw new Error(
                   "FSM invariant: llmResultData must be set by the early-capture block " +
@@ -2578,12 +1780,6 @@ export class FSMEngine {
                 // Provider adapters that don't set usage (e.g. tests with
                 // stub providers) leave this undefined — handled downstream.
                 ...(result.usage && { usage: result.usage }),
-                // Ride the structured validation block on the same
-                // side-channel `step:complete` mapping reads. Always set
-                // for `type: llm` actions — the three resolved strategies
-                // each have a non-empty shape; only pure-agent actions
-                // (case "agent" → type: user/atlas) leave this absent.
-                ...(validationOutput && { validation: validationOutput }),
               };
 
               // Add tool call names to OTEL span for trace visibility
@@ -2656,48 +1852,10 @@ export class FSMEngine {
                 : undefined;
             const executorOutputSchema = agentOutputSchema ?? defaultAgentOutputSchema;
 
-            // Resolve the per-action validation decision PRE-call so it can
-            // ride through
-            // `AgentExecutorOptions` to the orchestrator's prompt-assembly
-            // site (`convertLLMToAgent`'s system-prompt builder). The same
-            // shape `case "llm"` uses inline — empty `calledToolNames` and
-            // `emittedProse: false` because we don't have observed signals
-            // yet — plus `resolvedAgentType` from the optional resolver so
-            // the classifier can short-circuit `user`/`atlas` paths to
-            // `skip` (rule 1 in `validate-classifier.ts`).
-            // Agent actions don't carry a `tools:` allowlist — the agent
-            // itself owns its tool surface (workspace.yml `agents.<id>`).
-            // From the FSM engine's vantage we only know structural fields:
-            // `outputType`, `inputFrom`, and the resolved agent kind. The
-            // classifier short-circuits on type "user" / "atlas" before
-            // reaching any tool-based rule, and for type "llm" without
-            // declared tools it falls through to "default-self" — same
-            // safe-by-default behavior as `case "llm"` with no tools.
-            const agentClassifierInput: ClassifierInput = {
-              declaredTools: [],
-              calledToolNames: [],
-              hasOutputType: !!executorOutputSchema,
-              hasInputFrom: !!action.inputFrom,
-              resolvedAgentType,
-              emittedProse: false,
-              toolsAvailable: false,
-            };
-            const {
-              decision: agentValidateDecision,
-              source: agentValidateSource,
-              reason: agentValidateReason,
-              skill: agentValidateSkill,
-            } = resolveValidateDecision(action.validate, agentClassifierInput, {
-              job: this.options.jobValidation,
-              workspace: this.options.workspaceValidation,
-            });
-
             // Execute agent via callback, passing full action object for prompt access
             // Agent returns AgentResult envelope directly
             const executorOptions: AgentExecutorOptions = {
               ...(executorOutputSchema ? { outputSchema: executorOutputSchema } : {}),
-              validateDecision: agentValidateDecision,
-              ...(agentValidateSkill ? { validateSkill: agentValidateSkill } : {}),
             };
             const result = await this.options.agentExecutor(
               action,
@@ -2705,22 +1863,6 @@ export class FSMEngine {
               sig,
               executorOptions,
             );
-
-            // Mirror `case "llm"`'s `validate-decision resolved` info log so
-            // both paths surface uniformly in `global.log`. `validationSkillLoaded`
-            // is unknown from this side (the orchestrator owns the load) — we
-            // report whether the decision was "self" so a reader can correlate
-            // with orchestrator-side composeValidationBlock logs.
-            logger.info("validate-decision resolved", {
-              state: currentState,
-              action: action.agentId,
-              decision: agentValidateDecision,
-              source: agentValidateSource,
-              reason: agentValidateReason,
-              ranExternalJudge: agentValidateDecision === "external" && !!this.options.runJudge,
-              validationSkillLoaded: agentValidateDecision === "self",
-              resolvedAgentType: resolvedAgentType ?? "unknown",
-            });
 
             // Check envelope's ok discriminant for error. Preserve tool-call
             // observability for failed user agents before throwing so the
@@ -2750,112 +1892,6 @@ export class FSMEngine {
               throw new Error(result.error.reason);
             }
 
-            // Track the external surviving verdict for case "agent" so it
-            // can ride on `step:complete.validation`. Mirrors the case
-            // "llm" path's tracking. Set only when the judge accepted the
-            // verdict (no throw); a thrown ValidationFailedError unwinds
-            // before this is read.
-            let agentExternalSurvivingVerdict: ValidationVerdict | undefined;
-
-            // External validation invokes a system-level judge agent — same
-            // shape as the case "llm" path. The judge sees the agent's output
-            // + tool-call manifest (refs-not-bytes for scrubber-lifted results)
-            // and returns a structured verdict. Judge failure synthesizes an
-            // advisory verdict so the action still emits.
-            if (agentValidateDecision === "external" && this.options.runJudge) {
-              const validationActionId = this.getActionId(action);
-              const judgeAgentId =
-                typeof action.validate === "object" &&
-                action.validate !== null &&
-                typeof action.validate.agent === "string"
-                  ? action.validate.agent
-                  : "judge-agent";
-
-              this.emitValidationAttempt(sig, currentState, validationActionId, {
-                attempt: 1,
-                status: "running",
-              });
-              const trace: LLMActionTrace = {
-                content:
-                  result.ok && typeof result.data === "string"
-                    ? result.data
-                    : result.ok
-                      ? JSON.stringify(result.data)
-                      : "",
-                reasoning: result.ok ? result.reasoning : undefined,
-                toolCalls: result.ok ? result.toolCalls : undefined,
-                toolResults: result.ok ? result.toolResults : undefined,
-                model: `agent:${action.agentId}`,
-                prompt: action.prompt ?? "",
-              };
-              const judgeResult = await this.options.runJudge({
-                agentId: judgeAgentId,
-                handoff: buildJudgeHandoff(trace),
-                ...(sig._context?.workspaceId ? { workspaceId: sig._context.workspaceId } : {}),
-                ...(sig._context?.sessionId ? { sessionId: sig._context.sessionId } : {}),
-                abortSignal: sig._context?.abortSignal,
-              });
-
-              if (judgeResult.ok) {
-                agentExternalSurvivingVerdict = judgeResult.verdict;
-                this.emitValidationAttempt(sig, currentState, validationActionId, {
-                  attempt: 1,
-                  status: judgeResult.verdict.verdict === "blocking" ? "failed" : "passed",
-                  terminal: true,
-                  verdict: judgeResult.verdict,
-                });
-                if (judgeResult.verdict.verdict === "blocking") {
-                  throw new ValidationFailedError(judgeResult.verdict, action.agentId);
-                }
-              } else {
-                logger.warn("Judge failed for agent action, synthesizing advisory", {
-                  state: currentState,
-                  agentId: action.agentId,
-                  error: judgeResult.error,
-                });
-                agentExternalSurvivingVerdict = {
-                  verdict: "advisory",
-                  issues: [
-                    {
-                      category: "judge-error",
-                      severity: "info",
-                      claim: "validation",
-                      reasoning: `judge failed: ${judgeResult.error}`,
-                    },
-                  ],
-                };
-                this.emitValidationAttempt(sig, currentState, validationActionId, {
-                  attempt: 1,
-                  status: "passed",
-                  terminal: true,
-                  verdict: agentExternalSurvivingVerdict,
-                });
-              }
-            }
-
-            // Build the structured validation block for `case "agent" → type:
-            // llm`, mirroring the inline
-            // `case "llm"` path. The `record_validation` tool was injected at
-            // the orchestrator's prompt-assembly site (`from-llm.ts`) when
-            // decision === "self"; capture its args off the agent result's
-            // toolCalls — same mechanism `findCompleteToolArgs` uses, just
-            // applied to the agent envelope.
-            const agentRecordedValidationArgs =
-              agentValidateDecision === "self" && result.ok
-                ? extractToolCallInput(result.toolCalls ?? [], RECORD_VALIDATION_TOOL_NAME)
-                : undefined;
-            const agentValidationOutput = buildValidationOutput({
-              decision: agentValidateDecision,
-              reason: agentValidateReason,
-              recordedArgs: agentRecordedValidationArgs,
-              ...(agentValidateDecision === "external" && agentExternalSurvivingVerdict
-                ? { externalVerdict: agentExternalSurvivingVerdict }
-                : {}),
-              ...(agentValidateDecision === "self" && executorOutputSchema
-                ? { implicitPass: true }
-                : {}),
-            });
-
             const agentResultsByCallId = new Map(
               result.toolResults?.map((tr) => [tr.toolCallId, tr.output]) ?? [],
             );
@@ -2883,23 +1919,7 @@ export class FSMEngine {
               output: agentCompleteCall?.args ?? result.data,
               ...(result.artifactRefs ? { artifactRefs: result.artifactRefs } : {}),
               ...(result.usage ? { usage: result.usage } : {}),
-              ...(agentValidationOutput ? { validation: agentValidationOutput } : {}),
             };
-
-            // failStep semantics on a self-recorded `blocking` verdict. Mirrors
-            // the case "llm" path. The agent result projection above
-            // lives directly on the action event; workspace runtime no longer
-            // needs an out-of-band side-channel to build step:complete.
-            if (
-              agentValidationOutput?.strategy === "self" &&
-              agentValidationOutput.verdict === "blocking"
-            ) {
-              const issuesSummary =
-                agentValidationOutput.issues
-                  ?.map((i) => `${i.category ?? "issue"}: ${i.claim}`)
-                  .join("; ") || "no issues recorded";
-              throw new Error(`Agent action self-validation: blocking. ${issuesSummary}`);
-            }
 
             // Store result if outputTo specified
             // result.data is the structured output from the agent
@@ -3089,41 +2109,6 @@ export class FSMEngine {
         sig._context.onEvent({ type: "data-fsm-tool-result", data: { ...baseData, toolResult } });
       }
     }
-  }
-
-  /**
-   * Emit a single validation-attempt lifecycle event.
-   * `running` events have no `verdict`; `passed`/`failed` carry the verdict.
-   * `terminal` is meaningful only on `failed` — `false` on a will-retry failure,
-   * `true` on the second attempt's failure that throws.
-   */
-  private emitValidationAttempt(
-    sig: SignalWithContext,
-    currentState: string,
-    actionId: string | undefined,
-    payload: {
-      attempt: number;
-      status: "running" | "passed" | "failed";
-      terminal?: boolean;
-      verdict?: ValidationVerdict;
-    },
-  ): void {
-    if (!sig._context?.onEvent) return;
-    sig._context.onEvent({
-      type: "data-fsm-validation-attempt",
-      data: {
-        sessionId: sig._context.sessionId,
-        workspaceId: sig._context.workspaceId,
-        jobName: this._definition.id,
-        actionId,
-        state: currentState,
-        attempt: payload.attempt,
-        status: payload.status,
-        ...(payload.terminal !== undefined ? { terminal: payload.terminal } : {}),
-        ...(payload.verdict !== undefined ? { verdict: payload.verdict } : {}),
-        timestamp: Date.now(),
-      },
-    });
   }
 
   private async buildContextPrompt(
