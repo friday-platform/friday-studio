@@ -241,21 +241,35 @@ export function hasUnusableCredentialCause(error: unknown): boolean {
 }
 
 /**
+ * Read an ambient env var by name, honoring the workspace `.env` overlay.
+ *
+ * Precedence is the one rule every spawn site shares: a per-workspace `.env`
+ * value takes precedence over the daemon's `process.env`. Defined once here so
+ * `resolveEnvValues` and the agent-context environment validator can't drift.
+ */
+export function readEnvVar(key: string, overlay?: Record<string, string>): string | undefined {
+  return overlay?.[key] ?? process.env[key];
+}
+
+/**
  * Resolves environment variable values, fetching Link credentials as needed
  * @param env Environment variable configuration (strings or Link credential refs)
  * @param logger Logger instance for debug output
+ * @param overlay Workspace `.env` overlay — `auto`/`from_environment` entries
+ *   resolve from here before falling back to `process.env`
  * @returns Resolved environment variables as strings
  */
 export async function resolveEnvValues(
   env: Record<string, string | LinkCredentialRef>,
   logger: Logger,
+  overlay?: Record<string, string>,
 ): Promise<Record<string, string>> {
   const resolved: Record<string, string> = {};
 
   for (const [envKey, value] of Object.entries(env)) {
     if (typeof value === "string") {
       if (value === "auto" || value === "from_environment") {
-        const envValue = process.env[envKey];
+        const envValue = readEnvVar(envKey, overlay);
         if (!envValue) {
           throw new Error(`Required environment variable '${envKey}' not found.`);
         }

@@ -742,6 +742,13 @@ export interface FSMEngineOptions {
    */
   mcpServerConfigs?: Record<string, MCPServerConfig | WorkspaceMCPServerConfig>;
   /**
+   * Workspace `.env` overlay provider. A thunk — the workspace runtime reads
+   * the file fresh per call so runtime edits (settings UI, env tools) aren't
+   * masked by a stale copy. Layered under each server's `env:` wiring when
+   * MCP env is resolved at spawn.
+   */
+  getEnvOverlay?: () => Record<string, string>;
+  /**
    * External-validation runner. Workspace runtime wires this to invoke
    * `@friday/judge-agent` (or the per-action override from
    * `validate.agent`) through the agent orchestrator. When unset,
@@ -3267,6 +3274,7 @@ export class FSMEngine {
     try {
       mcpResult = await createMCPTools(effectiveConfigs, logger, {
         signal: signalContext?.abortSignal,
+        envOverlay: this.options.getEnvOverlay?.(),
       });
     } catch (error) {
       if (hasUnusableCredentialCause(error)) {

@@ -71,6 +71,7 @@ export {
   LinkCredentialNotFoundError,
   LinkCredentialUnavailableError,
   NoDefaultCredentialError,
+  readEnvVar,
   resolveCredentialsByProvider,
 } from "./src/mcp-registry/credential-resolver.ts";
 // MCP Registry - use @atlas/core/mcp-registry/registry-consolidated subpath to avoid pulling in agent-loader

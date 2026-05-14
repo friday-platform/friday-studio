@@ -194,9 +194,10 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
             .catch(() => undefined)
             .parse(args.config);
 
-          // Per-agent env wiring from workspace.yml — already validated by
-          // AgentToolParamsSchema at the MCP boundary.
+          // Per-agent env wiring + workspace `.env` overlay from workspace.yml
+          // — already validated by AgentToolParamsSchema at the MCP boundary.
           const agentEnv = args.env;
+          const envOverlay = args.envOverlay;
 
           // Pass requestId directly to executeAgent - no instance variable
           const result = await this.executeAgent(
@@ -208,6 +209,7 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
             agentConfig,
             traceparent,
             agentEnv,
+            envOverlay,
           );
 
           this.#logger.debug("Agent execution result", {
@@ -351,6 +353,7 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
     config?: Record<string, unknown>,
     traceparent?: string,
     envWiring?: AgentEnvWiring,
+    envOverlay?: Record<string, string>,
   ): Promise<AgentResult> {
     this.#logger.debug("executeAgent called", {
       agentId,
@@ -378,6 +381,7 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
           outputSchema,
           config,
           envWiring,
+          envOverlay,
         );
       },
       { "agent.id": agentId, "agent.session.id": sessionData.sessionId ?? "" },

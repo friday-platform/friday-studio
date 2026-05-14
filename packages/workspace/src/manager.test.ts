@@ -122,6 +122,31 @@ describe("validateMCPEnvironmentForWorkspace", () => {
     // Should NOT throw - no MCP servers to validate
     validateMCPEnvironmentForWorkspace(config, "/tmp/nonexistent");
   });
+
+  it("passes when a from_environment var is satisfied by the workspace .env", async () => {
+    // Validation is honest: it reads the same workspace `.env` overlay the
+    // runtime now loads at spawn — a value in `.env` resolves at runtime, so
+    // validation must pass.
+    const dir = await mkdtemp(join(tmpdir(), "manager-env-"));
+    try {
+      await writeFile(join(dir, ".env"), "WS_ENV_VAR=present\n");
+      const config = createConfig({ "test-server": { env: { WS_ENV_VAR: "from_environment" } } });
+      validateMCPEnvironmentForWorkspace(config, dir);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("throws when a from_environment var is in neither the workspace .env nor process.env", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "manager-env-"));
+    try {
+      await writeFile(join(dir, ".env"), "UNRELATED=x\n");
+      const config = createConfig({ "test-server": { env: { WS_MISSING_VAR: "auto" } } });
+      expect(() => validateMCPEnvironmentForWorkspace(config, dir)).toThrow("WS_MISSING_VAR");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("WorkspaceManager.registerWorkspace — skipEnvValidation", () => {

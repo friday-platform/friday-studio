@@ -329,6 +329,36 @@ describe("validateEnvironment", () => {
     }
   });
 
+  it("resolves a required var from the workspace .env overlay", async () => {
+    // Per the Phase 2 decision, the workspace `.env` overlay satisfies
+    // author-declared environmentConfig vars too — not just MCP env.
+    delete process.env.WS_OVERLAY_REQUIRED;
+    const validate = createEnvironmentContext(mockLogger);
+    const result = await validate(
+      "workspace",
+      "agent",
+      { required: [reqVar("WS_OVERLAY_REQUIRED")] },
+      { WS_OVERLAY_REQUIRED: "from-overlay" },
+    );
+    expect(result).toHaveProperty("WS_OVERLAY_REQUIRED", "from-overlay");
+  });
+
+  it("the overlay takes precedence over process.env for an optional var", async () => {
+    process.env.WS_OVERLAY_OPTIONAL = "from-process";
+    try {
+      const validate = createEnvironmentContext(mockLogger);
+      const result = await validate(
+        "workspace",
+        "agent",
+        { optional: [{ name: "WS_OVERLAY_OPTIONAL", description: "opt" }] },
+        { WS_OVERLAY_OPTIONAL: "from-overlay" },
+      );
+      expect(result).toHaveProperty("WS_OVERLAY_OPTIONAL", "from-overlay");
+    } finally {
+      delete process.env.WS_OVERLAY_OPTIONAL;
+    }
+  });
+
   it("falls back to the declared default when an optional linkRef cannot resolve", async () => {
     const originalFetch = globalThis.fetch;
 

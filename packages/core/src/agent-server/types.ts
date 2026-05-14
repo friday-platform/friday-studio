@@ -180,6 +180,13 @@ export const AgentToolParamsSchema = z.object({
    * Link credential refs; resolved into AgentContext.env at context-build time.
    */
   env: z.record(z.string(), z.union([z.string(), LinkCredentialRefSchema])).optional(),
+
+  /**
+   * Workspace `.env` overlay — the per-workspace store of non-secret env
+   * values. Layered between the daemon's `process.env` and per-agent `env:`
+   * wiring when AgentContext.env is built.
+   */
+  envOverlay: z.record(z.string(), z.string()).optional(),
 });
 
 export type AgentToolParams = z.infer<typeof AgentToolParamsSchema>;

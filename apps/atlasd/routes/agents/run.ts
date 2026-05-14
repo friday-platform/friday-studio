@@ -20,6 +20,7 @@ import { createLogger } from "@atlas/logger";
 import { createMCPTools } from "@atlas/mcp";
 import { getAtlasPlatformServerConfig } from "@atlas/oapi-client";
 import { getFridayHome } from "@atlas/utils/paths.server";
+import { loadWorkspaceEnv } from "@atlas/workspace";
 import { createBashTool } from "@atlas/workspace/bash-tool";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
@@ -102,6 +103,11 @@ runAgentRoute.post(
           if (mcpConfigs) {
             mcpResult = await createMCPTools(mcpConfigs, logger, {
               signal: AbortSignal.timeout(30000),
+              // Mirror the production runtime: workspace `.env` overlay layered
+              // under each server's `env:` wiring.
+              envOverlay: workspaceId
+                ? loadWorkspaceEnv(join(getFridayHome(), "workspaces", workspaceId))
+                : undefined,
             });
             // Match runtime.ts: filter platform tools to LLM_AGENT_ALLOWED
             // (same surface workspace LLM agents see; blocks workspace mgmt),

@@ -48,6 +48,7 @@ export function createAgentContextBuilder(deps: AgentContextBuilderDeps) {
     prompt: string,
     overrides?: Partial<AgentContext>,
     envWiring?: AgentEnvWiring,
+    envOverlay?: Record<string, string>,
   ): Promise<{
     context: AgentContext;
     enrichedPrompt: string;
@@ -81,6 +82,7 @@ export function createAgentContextBuilder(deps: AgentContextBuilderDeps) {
           actionId: sessionData.actionId,
           jobTimeoutMs: sessionData.jobTimeoutMs,
         },
+        envOverlay,
       );
       allTools = fetched.tools;
       releaseMCPTools = fetched.release;
@@ -103,13 +105,16 @@ export function createAgentContextBuilder(deps: AgentContextBuilderDeps) {
         sessionData.workspaceId,
         agent.metadata.id,
         agent.environmentConfig,
+        envOverlay,
       );
 
       // Per-agent `env:` wiring from workspace.yml resolves through the one
-      // shared resolver and layers over the environmentConfig-derived vars —
-      // ambient process.env → environmentConfig → per-agent wiring, most
-      // specific wins. (Phase 2 inserts the workspace `.env` layer here.)
-      const resolvedEnvWiring = envWiring ? await resolveEnvValues(envWiring, agentLogger) : {};
+      // shared resolver and layers over the environmentConfig-derived vars.
+      // Precedence: ambient process.env → workspace `.env` overlay →
+      // environmentConfig → per-agent wiring, most specific wins.
+      const resolvedEnvWiring = envWiring
+        ? await resolveEnvValues(envWiring, agentLogger, envOverlay)
+        : {};
       const env = { ...envContext, ...resolvedEnvWiring };
 
       let enrichedPrompt = prompt;
@@ -273,6 +278,7 @@ async function fetchAllTools(
   logger: Logger,
   signal?: AbortSignal,
   scope?: { sessionId?: string; actionId?: string; jobTimeoutMs?: number },
+  envOverlay?: Record<string, string>,
 ): Promise<{
   tools: Record<string, AtlasTool>;
   release: () => Promise<void>;
@@ -334,6 +340,7 @@ async function fetchAllTools(
 
   const { tools, dispose, disconnected } = await createMCPTools(allServerConfigs, logger, {
     signal,
+    envOverlay,
   });
   const wrapped = wrapPlatformToolsWithScope(tools, {
     workspaceId,

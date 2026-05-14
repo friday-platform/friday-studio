@@ -6,7 +6,6 @@
  * error messages for missing requirements.
  */
 
-import process from "node:process";
 import type { AgentEnvironmentConfig } from "@atlas/agent-sdk";
 import type { Logger } from "@atlas/logger";
 import { UserConfigurationError } from "../errors/user-configuration-error.ts";
@@ -14,6 +13,7 @@ import {
   CredentialNotFoundError,
   LinkCredentialNotFoundError,
   NoDefaultCredentialError,
+  readEnvVar,
   resolveEnvValues,
 } from "../mcp-registry/credential-resolver.ts";
 
@@ -52,6 +52,7 @@ export function createEnvironmentContext(logger: Logger) {
     workspaceId: string,
     agentId: string,
     environmentConfig?: AgentEnvironmentConfig,
+    overlay?: Record<string, string>,
   ): Promise<Record<string, string>> {
     const env: Record<string, string> = {};
 
@@ -70,10 +71,10 @@ export function createEnvironmentContext(logger: Logger) {
 
     // Validate required environment variables
     if (environmentConfig.required) {
-      const litellmKey = process.env.LITELLM_API_KEY;
+      const litellmKey = readEnvVar("LITELLM_API_KEY", overlay);
 
       for (const reqVar of environmentConfig.required) {
-        let value = process.env[reqVar.name];
+        let value = readEnvVar(reqVar.name, overlay);
         let usedSubstitute = false;
 
         // Resolve from Link through the shared resolver if value is missing
@@ -202,7 +203,7 @@ export function createEnvironmentContext(logger: Logger) {
     // last resort. A failed optional lookup is never fatal.
     if (environmentConfig.optional) {
       for (const optVar of environmentConfig.optional) {
-        let value = process.env[optVar.name];
+        let value = readEnvVar(optVar.name, overlay);
 
         if (!value && optVar.linkRef) {
           try {

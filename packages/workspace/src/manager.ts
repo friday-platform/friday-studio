@@ -1,19 +1,18 @@
 /** Single source of truth for workspace lifecycle and state. */
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { readdir, rm, stat } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { env } from "node:process";
 import type { MemoryAdapter } from "@atlas/agent-sdk";
 import { ConfigLoader, ConfigNotFoundError, type MergedConfig } from "@atlas/config";
-import { MissingEnvironmentError } from "@atlas/core";
+import { MissingEnvironmentError, readEnvVar } from "@atlas/core";
 import { logger } from "@atlas/logger";
 import { seedMemories } from "@atlas/memory";
 import { FilesystemConfigAdapter } from "@atlas/storage";
 import { SYSTEM_WORKSPACES } from "@atlas/system/workspaces";
 import { randomColor } from "@atlas/utils";
 import { getFridayHome } from "@atlas/utils/paths.server";
-import { parse as parseDotenv } from "@std/dotenv";
 import { getCanonicalKind } from "./canonical.ts";
 import { ensureDefaultUserWorkspace } from "./first-run-bootstrap.ts";
 import { generateUniqueWorkspaceName } from "./id-generator.ts";
@@ -21,6 +20,7 @@ import type { WorkspaceRuntime } from "./runtime.ts";
 import type { RegistryStorageAdapter } from "./storage.ts";
 import type { WorkspaceEntry, WorkspaceSignalRegistrar, WorkspaceStatus } from "./types.ts";
 import { WorkspaceConfigWatcher } from "./watchers/index.ts";
+import { loadWorkspaceEnv } from "./workspace-env.ts";
 
 /** Called when a runtime needs to be destroyed (config changed, workspace deleted) */
 export type RuntimeInvalidateCallback = (workspaceId: string) => Promise<void>;
@@ -92,7 +92,15 @@ export interface MembershipWriter {
   stampOwner(input: { wsId: string; ownerUserId: string }): Promise<void>;
 }
 
-/** @internal Exported for testing. */
+/**
+ * Pre-flight check that every `auto`/`from_environment` MCP env var a
+ * workspace declares will actually resolve at spawn — against the same
+ * precedence the runtime uses (workspace `.env` overlay → daemon
+ * `process.env`). Atlas-agent `environmentConfig` vars are validated
+ * separately, at spawn, by the agent-context environment validator.
+ *
+ * @internal Exported for testing.
+ */
 export function validateMCPEnvironmentForWorkspace(
   config: MergedConfig,
   workspacePath: string,
@@ -100,16 +108,8 @@ export function validateMCPEnvironmentForWorkspace(
   const mcpServers = config.workspace.tools?.mcp?.servers;
   if (!mcpServers) return;
 
-  const workspaceEnvPath = join(workspacePath, ".env");
-  let workspaceEnv: Record<string, string> = {};
-  if (existsSync(workspaceEnvPath)) {
-    try {
-      const envContent = readFileSync(workspaceEnvPath, "utf-8");
-      workspaceEnv = parseDotenv(envContent);
-    } catch (error) {
-      logger.debug("Could not parse workspace .env file", { workspacePath, error });
-    }
-  }
+  // The workspace `.env` overlay — an absent file is a valid empty overlay.
+  const workspaceEnv = loadWorkspaceEnv(workspacePath);
 
   const missingVars: Array<{ serverId: string; varName: string }> = [];
 
@@ -118,10 +118,7 @@ export function validateMCPEnvironmentForWorkspace(
 
     for (const [key, value] of Object.entries(serverConfig.env)) {
       if (value === "auto" || value === "from_environment") {
-        const systemValue = env[key];
-        const workspaceValue = workspaceEnv[key];
-
-        if (!systemValue && !workspaceValue) {
+        if (!readEnvVar(key, workspaceEnv)) {
           missingVars.push({ serverId, varName: key });
         }
       }
@@ -139,10 +136,7 @@ export function validateMCPEnvironmentForWorkspace(
         continue;
       }
 
-      const systemValue = env[tokenEnv];
-      const workspaceValue = workspaceEnv[tokenEnv];
-
-      if (!systemValue && !workspaceValue) {
+      if (!readEnvVar(tokenEnv, workspaceEnv)) {
         missingVars.push({ serverId, varName: tokenEnv });
       }
     }
@@ -153,16 +147,18 @@ export function validateMCPEnvironmentForWorkspace(
       .map((m) => `  - ${m.varName} (required by MCP server '${m.serverId}')`)
       .join("\n");
 
-    const workspaceEnvHint = existsSync(workspaceEnvPath)
-      ? `workspace .env (${workspaceEnvPath})`
-      : `workspace .env (create ${workspaceEnvPath})`;
+    const workspaceEnvPath = join(workspacePath, ".env");
 
+    // Lazy-on-write: the workspace `.env` need not exist yet — it is created
+    // on first write. Lead with it as the per-workspace scope; the daemon
+    // `.env` and process environment are the broader fallbacks. These are
+    // plain values only — credentials belong in a connected integration.
     throw new MissingEnvironmentError(
       `Missing required environment variables for workspace:\n${formatted}\n\n` +
-        `Set these in:\n` +
-        `  - ${workspaceEnvHint}\n` +
-        `  - ${join(getFridayHome(), ".env")}\n` +
-        `  - System environment`,
+        `Set each value in whichever scope fits (most specific wins):\n` +
+        `  - this workspace's .env — ${workspaceEnvPath} (created on first write)\n` +
+        `  - the daemon's .env — ${join(getFridayHome(), ".env")}\n` +
+        `  - the daemon's process environment`,
     );
   }
 }

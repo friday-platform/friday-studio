@@ -70,8 +70,11 @@ export class FilesystemWorkspaceCreationAdapter implements WorkspaceCreationAdap
   }
 
   /**
-   * Write workspace configuration files
-   * Creates workspace.yml and .env template
+   * Write workspace configuration files.
+   *
+   * Writes only `workspace.yml` (or `eph_workspace.yml`). The workspace `.env`
+   * is lazy-on-write — absence is a valid empty overlay, so no placeholder is
+   * pre-dropped; the file appears when something first writes a value.
    */
   async writeWorkspaceFiles(
     workspacePath: string,
@@ -82,9 +85,5 @@ export class FilesystemWorkspaceCreationAdapter implements WorkspaceCreationAdap
     const configFileName = options?.ephemeral ? "eph_workspace.yml" : "workspace.yml";
     const configPath = join(workspacePath, configFileName);
     await writeFile(configPath, config, "utf-8");
-
-    // Create .env file with placeholder
-    const envPath = join(workspacePath, ".env");
-    await writeFile(envPath, "# Add your environment variables here\n", "utf-8");
   }
 }

@@ -9,6 +9,7 @@ import {
   LinkCredentialNotFoundError,
   LinkCredentialUnavailableError,
   NoDefaultCredentialError,
+  readEnvVar,
   resolveCredentialsByProvider,
   resolveEnvValues,
 } from "./credential-resolver.ts";
@@ -472,6 +473,68 @@ describe("resolveEnvValues with explicit id ref", () => {
 
     const resolved = await resolveEnvValues(env, logger);
     expect(resolved.SLACK_TOKEN).toEqual("xoxb-explicit");
+  });
+});
+
+describe("readEnvVar", () => {
+  afterEach(() => {
+    delete process.env.READ_ENV_VAR_TEST;
+  });
+
+  it("returns the overlay value when present", () => {
+    process.env.READ_ENV_VAR_TEST = "from-process";
+    expect(readEnvVar("READ_ENV_VAR_TEST", { READ_ENV_VAR_TEST: "from-overlay" })).toBe(
+      "from-overlay",
+    );
+  });
+
+  it("falls back to process.env when the key is not in the overlay", () => {
+    process.env.READ_ENV_VAR_TEST = "from-process";
+    expect(readEnvVar("READ_ENV_VAR_TEST", { OTHER: "x" })).toBe("from-process");
+  });
+
+  it("returns undefined when the key is in neither", () => {
+    expect(readEnvVar("READ_ENV_VAR_TEST", {})).toBeUndefined();
+    expect(readEnvVar("READ_ENV_VAR_TEST")).toBeUndefined();
+  });
+});
+
+describe("resolveEnvValues with workspace .env overlay", () => {
+  const logger = createLogger({ name: "test", level: "silent" });
+
+  afterEach(() => {
+    delete process.env.OVERLAY_TEST_VAR;
+  });
+
+  it("resolves a from_environment entry from the overlay", async () => {
+    delete process.env.OVERLAY_TEST_VAR;
+    const resolved = await resolveEnvValues({ OVERLAY_TEST_VAR: "from_environment" }, logger, {
+      OVERLAY_TEST_VAR: "overlay-value",
+    });
+    expect(resolved.OVERLAY_TEST_VAR).toBe("overlay-value");
+  });
+
+  it("the overlay takes precedence over process.env", async () => {
+    process.env.OVERLAY_TEST_VAR = "process-value";
+    const resolved = await resolveEnvValues({ OVERLAY_TEST_VAR: "auto" }, logger, {
+      OVERLAY_TEST_VAR: "overlay-value",
+    });
+    expect(resolved.OVERLAY_TEST_VAR).toBe("overlay-value");
+  });
+
+  it("falls back to process.env when the key is not in the overlay", async () => {
+    process.env.OVERLAY_TEST_VAR = "process-value";
+    const resolved = await resolveEnvValues({ OVERLAY_TEST_VAR: "from_environment" }, logger, {
+      UNRELATED: "x",
+    });
+    expect(resolved.OVERLAY_TEST_VAR).toBe("process-value");
+  });
+
+  it("still throws when the var is in neither the overlay nor process.env", async () => {
+    delete process.env.OVERLAY_TEST_VAR;
+    await expect(
+      resolveEnvValues({ OVERLAY_TEST_VAR: "auto" }, logger, { UNRELATED: "x" }),
+    ).rejects.toThrow("OVERLAY_TEST_VAR");
   });
 });
 

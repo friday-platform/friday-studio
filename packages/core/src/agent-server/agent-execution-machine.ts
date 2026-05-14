@@ -35,6 +35,7 @@ type PrepareContextInput = {
   outputSchema?: Record<string, unknown>;
   config?: Record<string, unknown>;
   envWiring?: AgentEnvWiring;
+  envOverlay?: Record<string, string>;
 };
 
 export type PrepareContextOutput = {
@@ -59,6 +60,7 @@ type BuildAgentContext = (
   prompt: string,
   overrides?: Partial<AgentContext>,
   envWiring?: AgentEnvWiring,
+  envOverlay?: Record<string, string>,
 ) => Promise<PrepareContextOutput>;
 
 /** Execution context tracked by the state machine */
@@ -72,6 +74,7 @@ interface AgentExecutionContext {
   outputSchema?: Record<string, unknown>;
   config?: Record<string, unknown>;
   envWiring?: AgentEnvWiring;
+  envOverlay?: Record<string, string>;
   preparedContext?: AgentContext;
   releaseMCPTools?: () => Promise<void>;
   disconnectedIntegrations?: DisconnectedIntegration[];
@@ -93,6 +96,7 @@ type AgentExecutionEvents =
       outputSchema?: Record<string, unknown>;
       config?: Record<string, unknown>;
       envWiring?: AgentEnvWiring;
+      envOverlay?: Record<string, string>;
     }
   | { type: "CANCEL" }
   | { type: "TIMEOUT" }
@@ -156,6 +160,7 @@ export function createAgentExecutionMachine(
           input.prompt,
           Object.keys(overrides).length > 0 ? overrides : undefined,
           input.envWiring,
+          input.envOverlay,
         );
       }),
 
@@ -220,6 +225,12 @@ export function createAgentExecutionMachine(
             return undefined;
           }
           return event.envWiring;
+        },
+        envOverlay: ({ event }) => {
+          if (event.type !== "EXECUTE") {
+            return undefined;
+          }
+          return event.envOverlay;
         },
         startTime: () => Date.now(),
       }),
@@ -398,6 +409,7 @@ export function createAgentExecutionMachine(
               outputSchema: context.outputSchema,
               config: context.config,
               envWiring: context.envWiring,
+              envOverlay: context.envOverlay,
             };
           },
           onDone: { target: "executing", actions: "assignPreparedContext" },
