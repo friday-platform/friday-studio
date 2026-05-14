@@ -1,10 +1,21 @@
 import type { RequestHandler } from "@sveltejs/kit";
-// undici ships its own RequestInit type with `dispatcher` already on
-// it — same import shape as packages/llm/src/util.ts. Lets us pass
-// our long-lived dispatcher into `fetch()` without a blanket `as any`
-// cast.
-import type { RequestInit as UndiciRequestInit } from "undici";
 import { Agent } from "undici";
+
+/** Platform `RequestInit` augmented with undici's non-standard
+ * `dispatcher` extension. Lets us pass our long-lived dispatcher into
+ * `fetch()` without a blanket `as any` cast.
+ *
+ * Why we extend the *platform* `RequestInit` rather than importing
+ * undici's: undici 7 narrows `body` to `string | DataView | FormData |
+ * ReadableStream | URLSearchParams | Blob`, dropping the platform's
+ * support for `ArrayBufferView` (and therefore `Uint8Array`). We
+ * construct the proxied body via `new Uint8Array(await
+ * request.arrayBuffer())` further down, so the platform's looser
+ * `BodyInit` is the right base type. The structural mismatch on
+ * `dispatcher` is the only thing the local extension bridges. */
+interface UndiciRequestInit extends RequestInit {
+  dispatcher?: Agent;
+}
 
 // Node's bundled undici ships a 300_000ms (5-min) default
 // `headersTimeout` and `bodyTimeout` on the global fetch. Long-running
@@ -184,12 +195,7 @@ export async function executeProxyFetch(
 
   let res: Response;
   try {
-    // Cast at the boundary: undici and the platform define
-    // structurally-identical-but-nominally-distinct RequestInit
-    // types. The narrow cast scopes the structural mismatch to one
-    // line; everywhere else stays type-checked against undici's
-    // shape, including the dispatcher field.
-    res = await fetch(target, init as unknown as RequestInit);
+    res = await fetch(target, init);
   } catch (err) {
     request.signal.removeEventListener("abort", abortUpstream);
     const message = err instanceof Error ? err.message : String(err);
