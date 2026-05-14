@@ -1489,7 +1489,7 @@ async function runBlockingElicitationScenario(d: DaemonHandle): Promise<EvalResu
 async function runAllowOnceRouteAroundScenario(d: DaemonHandle): Promise<EvalResult[]> {
   const notes: string[] = [];
   const metrics: Record<string, unknown> = {};
-  const wsPath = await materializeFixture(REFS_FIXTURE, {
+  const wsPath = await materializeFixture(d.fridayHome, REFS_FIXTURE, {
     __FAKE_INBOX_MCP_PATH__: FAKE_INBOX_MCP,
   });
   const ws = await registerWorkspace(d, wsPath, { name: "PR302 allow_once route-around" });
@@ -1579,7 +1579,7 @@ async function runAllowOnceRouteAroundScenario(d: DaemonHandle): Promise<EvalRes
  */
 async function runAllowAlwaysFutureFramingScenario(d: DaemonHandle): Promise<EvalResult[]> {
   const notes: string[] = [];
-  const wsPath = await materializeFixture(REFS_FIXTURE, {
+  const wsPath = await materializeFixture(d.fridayHome, REFS_FIXTURE, {
     __FAKE_INBOX_MCP_PATH__: FAKE_INBOX_MCP,
   });
   const ws = await registerWorkspace(d, wsPath, { name: "PR302 allow_always future-framing" });
