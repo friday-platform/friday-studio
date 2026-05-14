@@ -527,6 +527,11 @@
     margin-block: auto 0;
     padding-block: var(--size-6);
     padding-inline: var(--size-6);
+    /* Sticky footer overlays the bottom of the scrollable workspace list.
+       Only the Docs pill is meant to be interactive; everything else
+       (status pill, dead space, fade) passes clicks through to the
+       workspace row beneath. */
+    pointer-events: none;
     position: sticky;
 
     a {
@@ -539,6 +544,7 @@
       font-weight: var(--font-weight-5-5);
       justify-content: center;
       padding-inline: var(--size-2-5);
+      pointer-events: auto;
       transition: all 200ms ease;
 
       &:hover {

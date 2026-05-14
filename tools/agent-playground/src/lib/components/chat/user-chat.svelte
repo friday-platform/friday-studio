@@ -46,12 +46,27 @@
   const { chatId }: Props = $props();
 
   let inspectorOpen = $state(false);
+  let fullscreen = $state(false);
 
   function handleGlobalKeydown(e: KeyboardEvent) {
     // Cmd+Shift+D (Debug) — Cmd+Shift+I is intercepted by Chrome DevTools
     if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === "d") {
       e.preventDefault();
       inspectorOpen = !inspectorOpen;
+      return;
+    }
+    // Ctrl+F toggles fullscreen — deliberately Ctrl, never ⌘, so Mac's
+    // ⌘+F find-in-page is untouched. Tradeoff: on Windows/Linux Ctrl+F
+    // *is* browser find, so it's shadowed inside the chat surface. This
+    // is a local dev tool and the in-app shortcut is the priority here;
+    // revisit if that becomes a real friction point.
+    if (e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.key === "f") {
+      e.preventDefault();
+      fullscreen = !fullscreen;
+      return;
+    }
+    if (e.key === "Escape" && fullscreen) {
+      fullscreen = false;
     }
   }
   let systemPromptContext: { timestamp: string; systemMessages: string[] } | null = $state(null);
@@ -1323,6 +1338,7 @@
 <div
   class="user-chat"
   class:chat-drag-over={chatDragOver}
+  class:fullscreen
   ondrop={handleChatDrop}
   ondragenter={handleChatDragEnter}
   ondragover={handleChatDragOver}
@@ -1346,10 +1362,53 @@
            waste a flex item for the same effect. -->
       <ChatSessionUsage messages={displayedMessages} />
       <button
-        class="new-chat-button"
+        class="icon-button"
+        type="button"
         onclick={handleExportChat}
         disabled={exportInFlight}
-      >{exportInFlight ? "Exporting…" : "Export chat"}</button>
+        aria-label={exportInFlight ? "Exporting chat…" : "Export chat"}
+        title={exportInFlight ? "Exporting…" : "Export chat"}
+      >
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <path
+            d="M8 2v8m-4-4 4 4 4-4M3 14h10"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        </svg>
+      </button>
+      <button
+        class="icon-button"
+        type="button"
+        onclick={() => (fullscreen = !fullscreen)}
+        aria-label={`${fullscreen ? "Exit" : "Enter"} fullscreen (Ctrl+F)`}
+        aria-pressed={fullscreen}
+        title={`${fullscreen ? "Exit" : "Enter"} fullscreen (Ctrl+F)`}
+      >
+        {#if fullscreen}
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path
+              d="M10 2v3a1 1 0 0 0 1 1h3M6 14v-3a1 1 0 0 0-1-1H2M14 6h-3a1 1 0 0 1-1-1V2M2 10h3a1 1 0 0 1 1 1v3"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+        {:else}
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path
+              d="M2 6V3a1 1 0 0 1 1-1h3M14 6V3a1 1 0 0 0-1-1h-3M2 10v3a1 1 0 0 0 1 1h3M14 10v3a1 1 0 0 1-1 1h-3"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+        {/if}
+      </button>
     </header>
   {/if}
 
@@ -1485,27 +1544,42 @@
     padding: var(--size-2) var(--size-4);
   }
 
-  .new-chat-button {
+  .icon-button {
+    align-items: center;
     background: none;
     border: 1px solid var(--color-border-1);
     border-radius: var(--radius-1);
     color: inherit;
     cursor: pointer;
-    font-size: var(--font-size-2);
-    /* Pushes to the trailing edge regardless of how wide the leading-
-       edge ChatSessionUsage row is (or whether it rendered at all,
-       for legacy chats with no recorded usage). */
-    margin-inline-start: auto;
-    padding: var(--size-1) var(--size-3);
+    display: inline-flex;
+    justify-content: center;
+    padding: var(--size-1);
   }
 
-  .new-chat-button:hover:not(:disabled) {
+  /* The first .icon-button after .session-usage pushes itself (and any
+     siblings) to the trailing edge. Replaces the role .new-chat-button
+     used to play when the export button was a text pill. */
+  .icon-button:first-of-type {
+    margin-inline-start: auto;
+  }
+
+  .icon-button:hover:not(:disabled) {
     background-color: color-mix(in srgb, var(--color-text), transparent 95%);
   }
 
-  .new-chat-button:disabled {
+  .icon-button:disabled {
     cursor: not-allowed;
     opacity: 0.6;
+  }
+
+  /* Fullscreen mode: lift the chat surface out of its ListDetail slot to
+     cover the sidebar and any surrounding chrome. Ctrl+F toggles, Esc
+     exits — the keydown handler at the top of the component owns both. */
+  .user-chat.fullscreen {
+    background: var(--surface);
+    inset: 0;
+    position: fixed;
+    z-index: 100;
   }
 
   .chat-body {
