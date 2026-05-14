@@ -76,8 +76,10 @@ function isSystemWorkspace(workspace: { metadata?: Record<string, unknown> }): b
  * already set in `process.env` / the workspace `.env` overlay. Otherwise the
  * entry is dropped: the server still enables, it just doesn't declare a var
  * nothing can satisfy. Literal values and Link refs pass through untouched.
+ *
+ * @internal Exported for testing.
  */
-function dropUnresolvableWiring(
+export function dropUnresolvableWiring(
   wiring: Record<string, string | LinkCredentialRef>,
   pendingValues: Record<string, string>,
   overlay: Record<string, string>,
