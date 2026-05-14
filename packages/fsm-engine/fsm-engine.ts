@@ -78,6 +78,7 @@ import type {
   FSMBroadcastNotifier,
   FSMDefinition,
   FSMLLMOutput,
+  JSONSchema,
   LLMAction,
   LLMProvider,
   Signal,
@@ -108,9 +109,9 @@ const PLATFORM_TOOL_ALLOWLIST = LLM_AGENT_ALLOWED_PLATFORM_TOOLS;
 // and the schema-form of `additionalProperties` are not recursed into — if a
 // future workspace schema uses them, strict mode will silently downgrade on
 // those branches. Extend the walker before debugging that.
-export function withStrictObjects(schema: Record<string, unknown>): Record<string, unknown> {
+export function withStrictObjects(schema: JSONSchema): JSONSchema {
   if (!schema || typeof schema !== "object" || Array.isArray(schema)) return schema;
-  const out: Record<string, unknown> = { ...schema };
+  const out: JSONSchema = { ...schema };
   const isObjectNode =
     out.type === "object" ||
     (out.properties !== undefined &&
@@ -119,15 +120,15 @@ export function withStrictObjects(schema: Record<string, unknown>): Record<strin
   if (isObjectNode) {
     if (!("additionalProperties" in out)) out.additionalProperties = false;
     if (out.properties && typeof out.properties === "object") {
-      const newProps: Record<string, unknown> = {};
-      for (const [k, v] of Object.entries(out.properties as Record<string, unknown>)) {
-        newProps[k] = withStrictObjects(v as Record<string, unknown>);
+      const newProps: Record<string, JSONSchema> = {};
+      for (const [k, v] of Object.entries(out.properties)) {
+        newProps[k] = withStrictObjects(v);
       }
       out.properties = newProps;
     }
   }
   if (out.type === "array" && out.items && typeof out.items === "object") {
-    out.items = withStrictObjects(out.items as Record<string, unknown>);
+    out.items = withStrictObjects(out.items);
   }
   return out;
 }
@@ -1461,7 +1462,7 @@ export class FSMEngine {
                     "Call this to complete the task and store results. You MUST call this when finished. The `result` field is REQUIRED and must contain the full formatted output as a non-empty string.",
                   inputSchema: aiJsonSchema(
                     (hasTyped
-                      ? withStrictObjects(jsonSchema as Record<string, unknown>)
+                      ? withStrictObjects(jsonSchema as JSONSchema)
                       : {
                           type: "object",
                           properties: {
