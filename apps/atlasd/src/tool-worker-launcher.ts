@@ -171,23 +171,26 @@ function spawnK8s(_spec: ToolWorkerSpec): ToolWorkerHandle {
  * Spawn a tool worker. Returns a handle the caller can use to stop it.
  * Throws if the chosen runtime adapter isn't implemented.
  *
- * NOTE — commented out: today tool workers run in-process via
- * `tool-dispatch.ts` (`registerToolWorker`). This subprocess / microvm / k8s
- * launcher is scaffolded for the **Friday Cloud** isolation path and will be
- * re-enabled once microvm + k8s runtime adapters are wired.
+ * NOTE — no callers today: tool workers run in-process via `tool-dispatch.ts`
+ * (`registerToolWorker`). This subprocess / microvm / k8s launcher is
+ * scaffolded for the **Friday Cloud** isolation path and stays exported so
+ * the helper functions below remain reachable; it's wired up once the microvm
+ * + k8s runtime adapters land. (Kept exported rather than commented out — a
+ * commented-out export orphans the helpers and breaks `deno task typecheck`
+ * with TS6133.)
  */
-// export function launchToolWorker(spec: ToolWorkerSpec = {}): Promise<ToolWorkerHandle> {
-//   const runtime = spec.runtime ?? DEFAULT_RUNTIME;
-//   switch (runtime) {
-//     case "subprocess":
-//       return spawnSubprocess(spec);
-//     case "microvm":
-//       return Promise.resolve(spawnMicrovm(spec));
-//     case "k8s":
-//       return Promise.resolve(spawnK8s(spec));
-//     default: {
-//       const exhaustive: never = runtime;
-//       throw new Error(`Unknown tool worker runtime: ${exhaustive}`);
-//     }
-//   }
-// }
+export function launchToolWorker(spec: ToolWorkerSpec = {}): Promise<ToolWorkerHandle> {
+  const runtime = spec.runtime ?? DEFAULT_RUNTIME;
+  switch (runtime) {
+    case "subprocess":
+      return spawnSubprocess(spec);
+    case "microvm":
+      return Promise.resolve(spawnMicrovm(spec));
+    case "k8s":
+      return Promise.resolve(spawnK8s(spec));
+    default: {
+      const exhaustive: never = runtime;
+      throw new Error(`Unknown tool worker runtime: ${exhaustive}`);
+    }
+  }
+}
