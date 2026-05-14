@@ -178,7 +178,7 @@ export async function executeProxyFetch(
  * route) to the upstream service. Used by both `/api/daemon/*` and
  * `/api/tunnel/*` so they stay behaviorally identical. */
 export function buildProxyHandler({ upstream, label }: BuildProxyOptions): RequestHandler {
-  return async ({ params, request }) => {
+  return ({ params, request }) => {
     const path = params.path ?? "";
     const target = new URL(`/${path}`, upstream);
     target.search = new URL(request.url).search;

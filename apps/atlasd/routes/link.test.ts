@@ -38,7 +38,7 @@ describe("daemon /api/link proxy: X-Forwarded-* forwarding", () => {
     );
     expect(res.status).toBe(200);
     expect(fetchMock).toHaveBeenCalledOnce();
-    const forwarded = fetchMock.mock.calls[0][0] as Request;
+    const forwarded = fetchMock.mock.calls[0]?.[0] as Request;
     expect(forwarded.headers.get("x-forwarded-host")).toBe("localhost:5200");
     expect(forwarded.headers.get("x-forwarded-proto")).toBe("https");
     // Concatenated: playground prefix + this proxy's own prefix.
@@ -59,7 +59,7 @@ describe("daemon /api/link proxy: X-Forwarded-* forwarding", () => {
     );
     expect(res.status).toBe(200);
     expect(fetchMock).toHaveBeenCalledOnce();
-    const forwarded = fetchMock.mock.calls[0][0] as Request;
+    const forwarded = fetchMock.mock.calls[0]?.[0] as Request;
     // Without normalization this would be "/api/daemon//api/link".
     expect(forwarded.headers.get("x-forwarded-prefix")).toBe("/api/daemon/api/link");
   });
@@ -71,7 +71,7 @@ describe("daemon /api/link proxy: X-Forwarded-* forwarding", () => {
     );
     expect(res.status).toBe(200);
     expect(fetchMock).toHaveBeenCalledOnce();
-    const forwarded = fetchMock.mock.calls[0][0] as Request;
+    const forwarded = fetchMock.mock.calls[0]?.[0] as Request;
     expect(forwarded.headers.get("x-forwarded-host")).toBe("127.0.0.1:8080");
     expect(forwarded.headers.get("x-forwarded-proto")).toBe("https");
     expect(forwarded.headers.get("x-forwarded-prefix")).toBe("/api/link");

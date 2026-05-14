@@ -37,7 +37,7 @@ describe("buildHonoProxy (compiled binary wrapper)", () => {
       "https://localhost:5200/api/daemon/api/workspaces/x?foo=1",
     );
     expect(fetchMock).toHaveBeenCalledOnce();
-    const target = fetchMock.mock.calls[0][0] as URL;
+    const target = fetchMock.mock.calls[0]?.[0] as URL;
     expect(target.toString()).toBe("https://daemon.local:8080/api/workspaces/x?foo=1");
   });
 
@@ -48,7 +48,7 @@ describe("buildHonoProxy (compiled binary wrapper)", () => {
       "daemon",
       "https://localhost:5200/api/daemon/api/link/v1/oauth/authorize/google-calendar",
     );
-    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
     expect(init.redirect).toBe("manual");
     const headers = init.headers as Headers;
     expect(headers.get("x-forwarded-host")).toBe("localhost:5200");
