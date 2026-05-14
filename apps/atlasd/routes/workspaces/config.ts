@@ -18,6 +18,8 @@ import {
   updateCredential,
   updateFSMAgent,
   updateSignal,
+  updateWorkspaceIdentity,
+  WorkspaceIdentityPatchSchema,
 } from "@atlas/config/mutations";
 import {
   type Credential,
@@ -701,6 +703,15 @@ const handleUpdateAgent = createMutationHandler({
   entityName: "Agent",
 });
 
+/** PUT /identity - Patch the workspace identity block (name, description, timeout) */
+const handleUpdateIdentity = createMutationHandler({
+  schema: WorkspaceIdentityPatchSchema,
+  extractParams: () => ({}),
+  buildMutation: (patch) => (config) => updateWorkspaceIdentity(config, patch),
+  successStatus: 200,
+  entityName: "Workspace",
+});
+
 // ==============================================================================
 // ROUTE DEFINITIONS
 // ==============================================================================
@@ -755,6 +766,10 @@ const configRoutes = daemonFactory
   .get("/credentials", handleListCredentials)
   .put("/credentials/:path", zValidator("json", UpdateCredentialInputSchema), (c) =>
     handleUpdateCredential(c, c.req.valid("json")),
+  )
+  // Workspace identity - patch name / description / timeout
+  .put("/identity", zValidator("json", WorkspaceIdentityPatchSchema), (c) =>
+    handleUpdateIdentity(c, c.req.valid("json")),
   );
 
 export { configRoutes };

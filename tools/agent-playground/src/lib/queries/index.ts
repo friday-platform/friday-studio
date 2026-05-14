@@ -40,3 +40,10 @@ export type {
   TestChatEvent,
   WorkspaceMCPStatus,
 } from "./workspace-mcp-queries.ts";
+export {
+  useDeleteWorkspaceEnvVar,
+  useSetWorkspaceEnvVar,
+  useUpdateWorkspaceIdentity,
+  workspaceEnvQueries,
+} from "./workspace-settings-queries.ts";
+export type { WorkspaceEnv } from "./workspace-settings-queries.ts";

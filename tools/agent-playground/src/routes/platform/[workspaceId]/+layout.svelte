@@ -91,6 +91,9 @@
   /** Skills page renders skill index sidebar. */
   const isSkills = $derived(page.route.id === "/platform/[workspaceId]/skills");
 
+  /** Settings page is full-width — its own tabbed layout, no layout sidebar. */
+  const isSettings = $derived(page.route.id === "/platform/[workspaceId]/settings");
+
   // --- Agent index sidebar data (TanStack Query deduplicates with agents page) ---
   const preflightQuery = createQuery(() => integrationQueries.preflight(workspaceId));
   const workspaceAgents = $derived(config ? deriveWorkspaceAgents(config) : []);
@@ -140,10 +143,10 @@
 <svelte:window onkeydown={handleKeydown} />
 
 <Page.Root>
-  <Page.Content scrollable={!isChat} padded={false}>
+  <Page.Content scrollable={!isChat && !isSettings} padded={false}>
     {@render children?.()}
   </Page.Content>
-  {#if !isSessionDetail && !isSignalDetail && !isOverview && !isEdit && !isChat && !isChatDebug && !isActivity}
+  {#if !isSessionDetail && !isSignalDetail && !isOverview && !isEdit && !isChat && !isChatDebug && !isActivity && !isSettings}
     <Page.Sidebar>
       {#if isAgents}
         <AgentIndexSidebar agents={workspaceAgents} {providerStatus} />

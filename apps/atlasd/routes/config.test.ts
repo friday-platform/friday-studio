@@ -299,8 +299,8 @@ describe("PUT /env in-memory sync (hot reload)", () => {
 });
 
 describe("per-key /env/:key routes", () => {
-  function putKey(key: string, value: string): Promise<Response> {
-    return createApp().request(`/env/${key}`, {
+  async function putKey(key: string, value: string): Promise<Response> {
+    return await createApp().request(`/env/${key}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ value }),
