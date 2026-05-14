@@ -17,7 +17,7 @@
   import { deriveTopology } from "@atlas/config/topology";
   import { deriveWorkspaceAgents } from "@atlas/config/workspace-agents";
   import { Button, Dialog, DropdownMenu, IconLarge, Icons, toast } from "@atlas/ui";
-  import { createQuery } from "@tanstack/svelte-query";
+  import { createQuery, useQueryClient } from "@tanstack/svelte-query";
   import { goto } from "$app/navigation";
   import { browser } from "$app/environment";
   import { page } from "$app/state";
@@ -26,7 +26,12 @@
   import CommunicatorsCard from "$lib/components/workspace/communicators-card.svelte";
   import JobsIntegrationsCard from "$lib/components/workspace/jobs-integrations-card.svelte";
   import SignalsCard from "$lib/components/workspace/signals-card.svelte";
-  import { sessionQueries, useDeleteWorkspace, workspaceQueries } from "$lib/queries";
+  import {
+    sessionQueries,
+    useDeleteWorkspace,
+    workspaceQueries,
+    type WorkspaceSummary,
+  } from "$lib/queries";
   import { writable } from "svelte/store";
   import { stringify } from "yaml";
 
@@ -302,14 +307,24 @@
 
   const deleteMut = useDeleteWorkspace();
   const deleteDialogOpen = writable(false);
+  const queryClient = useQueryClient();
 
   async function confirmDelete() {
     if (!workspaceId || deleteMut.isPending) return;
+    const deletedId = workspaceId;
     try {
-      await deleteMut.mutateAsync(workspaceId);
+      await deleteMut.mutateAsync(deletedId);
       deleteDialogOpen.set(false);
-      toast({ title: `${configQuery.data?.config?.workspace?.name ?? workspaceId} removed` });
-      goto("/platform");
+      toast({ title: `${configQuery.data?.config?.workspace?.name ?? deletedId} removed` });
+
+      await queryClient.invalidateQueries({ queryKey: workspaceQueries.all() });
+      const workspaces = queryClient.getQueryData<WorkspaceSummary[]>(
+        workspaceQueries.list().queryKey,
+      );
+      const fallback =
+        workspaces?.find((ws) => ws.id === "user" && ws.id !== deletedId) ??
+        workspaces?.find((ws) => ws.type === "persistent" && ws.id !== deletedId);
+      goto(fallback ? `/platform/${fallback.id}` : "/platform");
     } catch {
       toast({ title: "Failed to remove workspace", error: true });
     }

@@ -214,8 +214,6 @@ export function useDeleteWorkspace() {
       if (!res.ok) throw new Error(`Failed to delete workspace: ${res.status}`);
       return res.json();
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: workspaceQueries.all() });
-    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: workspaceQueries.all() }),
   }));
 }
