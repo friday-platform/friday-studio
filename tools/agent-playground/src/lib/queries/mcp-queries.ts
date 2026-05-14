@@ -44,6 +44,9 @@ const SearchResponseSchema = z.object({
 const ToolProbeSchema = z.object({
   name: z.string(),
   description: z.string().optional(),
+  // JSON Schema for the tool's arguments — drives the raw invocation form.
+  // `null` when the server declared no input schema.
+  inputSchema: z.record(z.string(), z.unknown()).nullable().optional(),
 });
 
 const ToolsProbeSuccessSchema = z.object({
@@ -63,6 +66,19 @@ const ToolsProbeFailureSchema = z.object({
 });
 
 const ToolsProbeResponseSchema = z.union([ToolsProbeSuccessSchema, ToolsProbeFailureSchema]);
+
+/** Result of a raw tool invocation — the real output, or a classified error. */
+const ToolInvokeResponseSchema = z.union([
+  z.object({ ok: z.literal(true), output: z.unknown() }),
+  z.object({
+    ok: z.literal(false),
+    error: z.string(),
+    phase: z.enum(["dns", "connect", "auth", "tools"]).optional(),
+  }),
+]);
+
+/** Result of a raw tool invocation. */
+export type ToolInvokeResponse = z.infer<typeof ToolInvokeResponseSchema>;
 
 const InstallResponseSchema = z.object({
   server_id: z.string(),
@@ -268,6 +284,37 @@ export function useInstallMCPServer() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: mcpQueries.all() });
+    },
+  }));
+}
+
+/**
+ * Mutation for invoking a single MCP tool directly — connects to the server,
+ * calls `tools/call` with the given args, returns the real output. Wraps
+ * `POST /api/mcp-registry/:id/invoke`. Optionally workspace-scoped so the
+ * invocation runs against that workspace's merged server config.
+ */
+export function useInvokeMCPTool() {
+  const client = getDaemonClient();
+
+  return createMutation(() => ({
+    mutationFn: async (input: {
+      id: string;
+      toolName: string;
+      args: Record<string, unknown>;
+      workspaceId?: string;
+    }): Promise<ToolInvokeResponse> => {
+      const res = await client.mcp[":id"].invoke.$post({
+        param: { id: input.id },
+        query: input.workspaceId ? { workspaceId: input.workspaceId } : {},
+        json: { toolName: input.toolName, args: input.args },
+      });
+      const body = await res.json().catch(() => ({}));
+      // A classified failure (404, connect error) still parses into the
+      // `ok: false` shape — only a totally unexpected body throws.
+      const parsed = ToolInvokeResponseSchema.safeParse(body);
+      if (parsed.success) return parsed.data;
+      throw new Error(`Tool invocation failed: ${res.status}`);
     },
   }));
 }

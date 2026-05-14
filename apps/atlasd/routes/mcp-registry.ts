@@ -1225,6 +1225,106 @@ export const mcpRegistryRouter = daemonFactory
       });
     },
   )
+  .post(
+    "/:id/invoke",
+    zValidator(
+      "param",
+      z.object({
+        id: z
+          .string()
+          .regex(/^[a-z0-9-]+$/)
+          .max(64),
+      }),
+    ),
+    zValidator("query", z.object({ workspaceId: z.string().optional() })),
+    zValidator(
+      "json",
+      z.object({
+        toolName: z.string().min(1),
+        args: z.record(z.string(), z.unknown()).default({}),
+      }),
+    ),
+    async (c) => {
+      const { id } = c.req.valid("param");
+      const { workspaceId } = c.req.valid("query");
+      const { toolName, args } = c.req.valid("json");
+
+      if (workspaceId) {
+        await requireWorkspaceMember(c, workspaceId);
+      }
+
+      let server: MCPServerMetadata | undefined = mcpServersRegistry.servers[id];
+      if (!server) {
+        const adapter = await getMCPRegistryAdapter();
+        server = (await adapter.get(id)) ?? undefined;
+      }
+      if (!server) {
+        return c.json({ ok: false as const, error: "Server not found" }, 404);
+      }
+
+      // Resolve the config the same way test-chat does — a workspace-scoped
+      // invocation runs against that workspace's merged server config so
+      // credentials and settings match what the workspace's agents see.
+      let resolvedConfig = server.configTemplate;
+      if (workspaceId) {
+        const ctx = c.get("app");
+        const mergedConfig = await ctx.daemon.getWorkspaceManager().getWorkspaceConfig(workspaceId);
+        if (!mergedConfig) {
+          return c.json({ ok: false as const, error: `Workspace not found: ${workspaceId}` }, 404);
+        }
+        let linkSummary: LinkSummary | undefined;
+        try {
+          const result = await parseResult(client.link.v1.summary.$get({ query: {} }));
+          if (result.ok && "providers" in result.data) {
+            linkSummary = result.data as LinkSummary;
+          }
+        } catch {
+          // Unconfigured Link-backed servers surface an auth error below.
+        }
+        const candidates = await discoverMCPServers(
+          workspaceId,
+          mergedConfig.workspace,
+          linkSummary,
+        );
+        const candidate = candidates.find((cand) => cand.metadata.id === id);
+        if (candidate) {
+          resolvedConfig = candidate.mergedConfig;
+        }
+      }
+
+      let mcpResult: Awaited<ReturnType<typeof createMCPTools>> | undefined;
+      try {
+        mcpResult = await createMCPTools({ [id]: resolvedConfig }, logger, {
+          signal: AbortSignal.timeout(30000),
+        });
+        const tool = mcpResult.tools[toolName];
+        if (!tool || typeof tool.execute !== "function") {
+          return c.json(
+            { ok: false as const, error: `Tool "${toolName}" not found on this server` },
+            404,
+          );
+        }
+        const output = await tool.execute(args, {
+          toolCallId: `invoke-${Date.now()}`,
+          messages: [],
+        });
+        return c.json({ ok: true as const, output });
+      } catch (error) {
+        const classified = classifyProbeError(error);
+        logger.warn("MCP tool invoke failed", {
+          serverId: id,
+          toolName,
+          phase: classified.phase,
+          error: classified.error,
+        });
+        return c.json({ ok: false as const, error: classified.error, phase: classified.phase });
+      } finally {
+        if (mcpResult) {
+          await mcpResult.dispose().catch(() => {});
+        }
+      }
+    },
+  )
   .get("/:id/stream", zValidator("param", IdParamSchema), async (c) => {
     const { id } = c.req.valid("param");
     const adapter = await getMCPRegistryAdapter();

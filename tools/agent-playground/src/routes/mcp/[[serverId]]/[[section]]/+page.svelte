@@ -1,18 +1,20 @@
 <!--
-  MCP Catalog — two-pane browser layout.
+  MCP Catalog — drill-down browser.
 
-  Left pane: searchable catalog tree of installed + registry servers.
-  Right pane: detail view with README, metadata, and actions.
+  The content area shows either the catalog list or a single server's detail
+  view; navigating between them animates as a drill-down. The app's left
+  sidebar nav stays fixed throughout.
 
-  Route: /mcp          → no selection
+  Route: /mcp          → catalog list
   Route: /mcp/{id}     → detail for server {id}
 
   @component
 -->
 
 <script lang="ts">
-  import { Button, ListDetail, toast } from "@atlas/ui";
+  import { Button, toast } from "@atlas/ui";
   import { createQuery } from "@tanstack/svelte-query";
+  import { fly } from "svelte/transition";
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
   import MCPCatalogTree from "$lib/components/mcp/mcp-catalog-tree.svelte";
@@ -31,6 +33,7 @@
   // ---------------------------------------------------------------------------
 
   const selectedServerId = $derived(page.params.serverId ?? null);
+  const selectedSection = $derived(page.params.section ?? null);
   let importDialogOpen = $state(false);
 
   // ---------------------------------------------------------------------------
@@ -71,7 +74,15 @@
   // ---------------------------------------------------------------------------
 
   function handleSelectServer(serverId: string): void {
-    goto(`/mcp/${serverId}`, { replaceState: true });
+    goto(`/mcp/${serverId}`);
+  }
+
+  function handleBack(): void {
+    goto("/mcp");
+  }
+
+  function handleSelectSection(section: string): void {
+    if (selectedServerId) goto(`/mcp/${selectedServerId}/${section}`);
   }
 
   async function handleInstall(registryName: string): Promise<void> {
@@ -150,34 +161,42 @@
   const hasUpdate = $derived(selectedServerId ? (updateState[selectedServerId] ?? false) : false);
 </script>
 
-<ListDetail>
-  {#snippet header()}
-    <h1>MCP Catalog</h1>
-    <Button
-      variant="secondary"
-      size="small"
-      aria-label="Import from registry"
-      onclick={() => (importDialogOpen = true)}
-    >
-      Add New
-    </Button>
-  {/snippet}
-
-  {#snippet sidebar()}
-    <MCPCatalogTree {selectedServerId} onSelectServer={handleSelectServer} />
-  {/snippet}
-
-  <MCPServerDetail
-    server={selectedServer}
-    onCheckUpdate={handleCheckUpdate}
-    onPullUpdate={handlePullUpdate}
-    onDelete={handleDelete}
-    checking={checkingId === selectedServerId}
-    pulling={pullingId === selectedServerId}
-    deleting={deletingId === selectedServerId}
-    {hasUpdate}
-  />
-</ListDetail>
+<div class="mcp-page">
+  {#if selectedServerId}
+    <!-- Detail view — drills in from the right. -->
+    <div class="view" in:fly={{ x: 24, duration: 200, opacity: 0 }}>
+      <MCPServerDetail
+        server={selectedServer}
+        section={selectedSection}
+        onBack={handleBack}
+        onSelectSection={handleSelectSection}
+        onCheckUpdate={handleCheckUpdate}
+        onPullUpdate={handlePullUpdate}
+        onDelete={handleDelete}
+        checking={checkingId === selectedServerId}
+        pulling={pullingId === selectedServerId}
+        deleting={deletingId === selectedServerId}
+        {hasUpdate}
+      />
+    </div>
+  {:else}
+    <!-- Catalog list — drills back in from the left. -->
+    <div class="view list-view" in:fly={{ x: -24, duration: 200, opacity: 0 }}>
+      <header class="list-header">
+        <h1>MCP Catalog</h1>
+        <Button
+          variant="secondary"
+          size="small"
+          aria-label="Import from registry"
+          onclick={() => (importDialogOpen = true)}
+        >
+          Add New
+        </Button>
+      </header>
+      <MCPCatalogTree {selectedServerId} onSelectServer={handleSelectServer} />
+    </div>
+  {/if}
+</div>
 
 <MCPRegistryImport
   open={importDialogOpen}
@@ -185,3 +204,38 @@
   onInstall={handleInstall}
   installing={installMut.isPending}
 />
+
+<style>
+  .mcp-page {
+    block-size: 100%;
+    display: flex;
+    flex-direction: column;
+    min-block-size: 0;
+  }
+
+  .view {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-block-size: 0;
+  }
+
+  .list-view {
+    gap: var(--size-4);
+    padding: var(--size-6) var(--size-8);
+  }
+
+  .list-header {
+    align-items: center;
+    display: flex;
+    gap: var(--size-3);
+    justify-content: space-between;
+  }
+
+  .list-header h1 {
+    color: var(--text-bright);
+    font-size: var(--font-size-7);
+    font-weight: var(--font-weight-6);
+    margin: 0;
+  }
+</style>

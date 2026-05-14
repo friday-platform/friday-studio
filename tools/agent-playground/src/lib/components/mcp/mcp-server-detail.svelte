@@ -1,25 +1,22 @@
 <!--
-  MCP Server Detail — right pane for the two-pane catalog layout.
+  MCP Server Detail — the full detail view for one catalog server.
 
-  This is the entire UI surface for the setup doctor. What it renders is driven
-  by `server.status` + `server.doctor_report.verdict`:
+  Drilled into from the catalog list. A `ListDetail` layout puts a section nav
+  in the middle column and the active section's content on the right; each
+  section is its own route (`/mcp/{server}/{section}`). A breadcrumb returns
+  to the catalog list.
 
-  - `setting_up`      — a live "Setup doctor running" view consuming the
-                        doctor's SSE progress stream.
-  - `awaiting_confirm`— a review checkpoint over the doctor's detected env vars.
-  - `ready` + verdict — the normal detail view, plus a verdict-appropriate
-                        treatment (findings banner / provenance tags / a clean
-                        note) and a TL;DR strip.
-  - `ready`, no report (legacy / static servers) — the normal detail view.
+  Install-time states (`setting_up`, `awaiting_confirm`) render a focused
+  doctor view with no section nav — there is nothing to navigate until the
+  server is configured.
 
   @component
   @prop server - Installed server metadata (if selected)
-  @prop onCheckUpdate - Called to check for updates
-  @prop onPullUpdate - Called to pull an update
-  @prop onDelete - Called to remove a server
-  @prop checking - Whether check-update is in progress
-  @prop pulling - Whether pull-update is in progress
-  @prop deleting - Whether delete is in progress
+  @prop section - Active section id from the route (null → overview)
+  @prop onBack - Return to the catalog list
+  @prop onSelectSection - Navigate to a section
+  @prop onCheckUpdate / onPullUpdate / onDelete - Catalog actions
+  @prop checking / pulling / deleting - Action-in-progress flags
   @prop hasUpdate - Whether an update is available
 -->
 
@@ -35,12 +32,13 @@
     Button,
     Dialog,
     IconSmall,
+    ListDetail,
     MarkdownRendered,
     markdownToHTMLSafe,
-    SimpleTable,
     toast,
   } from "@atlas/ui";
   import { useQueryClient } from "@tanstack/svelte-query";
+  import { fade } from "svelte/transition";
   import { writable } from "svelte/store";
   import {
     type CommitEnvVar,
@@ -50,15 +48,18 @@
     useCancelMCPInstall,
     useCommitMCPInstall,
   } from "$lib/queries/mcp-queries";
-  import McpConnectionTest from "./mcp-connection-test.svelte";
-  import McpCredentialsPanel from "./mcp-credentials-panel.svelte";
   import ManualConfigSetup from "./manual-config-setup.svelte";
+  import McpCredentialsPanel from "./mcp-credentials-panel.svelte";
   import { isOfficialServer, sourceLabel } from "./mcp-server-utils";
-  import McpTestChat from "./mcp-test-chat.svelte";
+  import McpToolInvoker from "./mcp-tool-invoker.svelte";
+  import McpToolsSection from "./mcp-tools-section.svelte";
   import McpWorkspaceUsage from "./mcp-workspace-usage.svelte";
 
   interface Props {
     server?: MCPServerMetadata | null;
+    section?: string | null;
+    onBack?: () => void;
+    onSelectSection?: (section: string) => void;
     onCheckUpdate?: () => void;
     onPullUpdate?: () => void;
     onDelete?: () => void;
@@ -70,6 +71,9 @@
 
   let {
     server = null,
+    section = null,
+    onBack,
+    onSelectSection,
     onCheckUpdate,
     onPullUpdate,
     onDelete,
@@ -82,101 +86,123 @@
   const queryClient = useQueryClient();
   const deleteDialogOpen = writable(false);
 
-  // Reset delete dialog when navigating to a different server
+  // Reset the delete dialog when navigating to a different server.
   $effect(() => {
     server?.id;
     deleteDialogOpen.set(false);
   });
 
-  // ---------------------------------------------------------------------------
-  // Derived display values
-  // ---------------------------------------------------------------------------
+  // ── Section nav ────────────────────────────────────────────────────────
+  const SECTIONS = [
+    { id: "overview", label: "Overview" },
+    { id: "connections", label: "Live connections" },
+    { id: "configuration", label: "Configuration" },
+    { id: "tools", label: "Tools" },
+    { id: "test", label: "Test" },
+    { id: "readme", label: "Readme" },
+  ] as const;
+  const activeSection = $derived(section ?? "overview");
 
+  // ── Derived display values ─────────────────────────────────────────────
   const displayName = $derived(server?.name ?? "");
   const description = $derived(server?.description ?? null);
   const source = $derived(server?.source ?? null);
   const isInstalled = $derived(server !== null);
   const readme = $derived(server?.readme ?? null);
-
   const isOfficial = $derived(server ? isOfficialServer(server) : false);
 
   // Absent `status` means a legacy / static entry — treat it as `ready`.
   const status = $derived(server?.status ?? "ready");
 
-  // Narrow the discriminated doctor_report union here, in <script>, not inline
-  // in the template — Svelte can't narrow a union across template boundaries.
+  // Narrow the discriminated doctor_report union here, not inline in the
+  // template — Svelte can't narrow a union across template boundaries.
   const report = $derived<DoctorReport | undefined>(server?.doctor_report);
-  const reportClean = $derived(
-    report?.verdict === "clean" ? report : undefined,
-  );
-  const reportAttention = $derived(
-    report?.verdict === "attention" ? report : undefined,
-  );
-  const reportUnknown = $derived(
-    report?.verdict === "unknown" ? report : undefined,
-  );
+  const reportAttention = $derived(report?.verdict === "attention" ? report : undefined);
+  const reportUnknown = $derived(report?.verdict === "unknown" ? report : undefined);
 
-  // Whether the normal detail view (transport, credentials, chat, etc.) shows.
-  const showNormalView = $derived(status === "ready");
-
-  // Curator-authored markdown for this canonical name, rendered above README.
   const curatorNotes = $derived(
     server?.upstream?.canonicalName
       ? (getAnnotation(server.upstream.canonicalName)?.staticNotes ?? null)
       : null,
   );
 
-  // Best-effort upstream repo URL for the "Contact author" link. Registry
-  // canonical names are reverse-DNS; `io.github.OWNER/REPO` maps cleanly to a
-  // GitHub URL. Anything else we can't resolve without persisting the repo URL.
-  const contactAuthorUrl = $derived.by(() => {
+  // External links derived from the reverse-DNS canonical name.
+  const githubUrl = $derived.by(() => {
+    const canonical = server?.upstream?.canonicalName;
+    const match = canonical?.match(/^io\.github\.([^/]+)\/(.+)$/);
+    return match ? `https://github.com/${match[1]}/${match[2]}` : null;
+  });
+  const registryUrl = $derived.by(() => {
     const canonical = server?.upstream?.canonicalName;
     if (!canonical) return null;
-    const match = canonical.match(/^io\.github\.([^/]+)\/(.+)$/);
-    if (!match) return null;
-    return `https://github.com/${match[1]}/${match[2]}`;
+    return `https://registry.modelcontextprotocol.io/v0.1/servers/${encodeURIComponent(
+      canonical,
+    )}/versions/latest`;
   });
 
-  const canCheckUpdate = $derived(
-    isInstalled && server?.source === "registry" && !!onCheckUpdate,
-  );
+  const canCheckUpdate = $derived(isInstalled && server?.source === "registry" && !!onCheckUpdate);
   const canPullUpdate = $derived(
     isInstalled && server?.source === "registry" && hasUpdate && !!onPullUpdate,
   );
-  const canDelete = $derived(
-    isInstalled && server?.source !== "static" && !!onDelete,
-  );
+  const canDelete = $derived(isInstalled && server?.source !== "static" && !!onDelete);
   const hasActions = $derived(canCheckUpdate || canPullUpdate || canDelete);
 
-  function transportInfo(s: MCPServerMetadata): string {
-    const t = s.configTemplate.transport;
-    if (!t) return "unknown";
+  const transport = $derived.by((): { kind: string; value: string } => {
+    const t = server?.configTemplate.transport;
+    if (!t) return { kind: "unknown", value: "—" };
     if (t.type === "stdio") {
-      return `${t.command ?? "npx"} ${(t.args ?? []).join(" ")}`;
+      return { kind: "stdio", value: `${t.command ?? "npx"} ${(t.args ?? []).join(" ")}`.trim() };
     }
     if (t.type === "http") {
-      return t.url ?? "HTTP endpoint";
+      return { kind: "http", value: t.url ?? "HTTP endpoint" };
     }
-    return "unknown";
+    return { kind: "unknown", value: "—" };
+  });
+
+  // ── Environment variables, normalized into one table shape ─────────────
+  interface EnvRow {
+    key: string;
+    tags: { label: string; tone: "required" | "secret" | "friday" | "neutral" }[];
+    description: string;
   }
 
-  function formatDate(iso: string | undefined): string {
-    if (!iso) return "";
-    try {
-      return new Date(iso).toLocaleDateString(undefined, {
-        year: "numeric",
-        month: "short",
-        day: "numeric",
+  function provenanceTag(envVar: DoctorEnvVar): EnvRow["tags"][number] | null {
+    switch (envVar.provenance.source) {
+      case "friday":
+        return { label: "detected by Friday", tone: "friday" };
+      case "registry":
+        return { label: "from registry", tone: "neutral" };
+      case "user":
+        return { label: "added by you", tone: "neutral" };
+    }
+  }
+
+  // The doctor's detected env vars are authoritative when present; otherwise
+  // fall back to the registry-declared `requiredConfig`.
+  const envRows = $derived.by((): EnvRow[] => {
+    if (reportAttention) {
+      return reportAttention.env_vars.map((v) => {
+        const tags: EnvRow["tags"] = [];
+        tags.push(
+          v.isRequired
+            ? { label: "required", tone: "required" }
+            : { label: "optional", tone: "neutral" },
+        );
+        if (v.isSecret) tags.push({ label: "secret", tone: "secret" });
+        const prov = provenanceTag(v);
+        if (prov) tags.push(prov);
+        return { key: v.name, tags, description: v.description ?? "" };
       });
-    } catch {
-      return iso;
     }
-  }
+    const required = server?.requiredConfig ?? [];
+    return required.map((field) => ({
+      key: field.key,
+      tags: [{ label: "required", tone: "required" as const }],
+      description: field.description ?? "",
+    }));
+  });
 
-  // ---------------------------------------------------------------------------
-  // `setting_up` — live doctor progress stream
-  // ---------------------------------------------------------------------------
-
+  // ── `setting_up` — live doctor progress stream ─────────────────────────
   type DoctorPhase = Extract<DoctorProgressEvent, { type: "phase" }>["phase"];
 
   const PHASE_SEQUENCE: { phase: DoctorPhase; label: string }[] = [
@@ -188,10 +214,6 @@
   let activePhase = $state<DoctorPhase | null>(null);
   let streamError = $state<string | null>(null);
 
-  // Consume the doctor's SSE stream while `setting_up`. On the terminal
-  // `result` event, re-fetch the detail query so the page transitions to its
-  // terminal state. The effect re-runs (and cancels the prior stream) whenever
-  // the server id or status changes.
   $effect(() => {
     const id = server?.id;
     if (!id || status !== "setting_up") return;
@@ -207,11 +229,7 @@
           if (event.type === "phase") {
             activePhase = event.phase;
           } else {
-            // Terminal `result` — the entry's persisted status is the source
-            // of truth, so re-fetch it to pick up the transition.
-            await queryClient.invalidateQueries({
-              queryKey: mcpQueries.detail(id).queryKey,
-            });
+            await queryClient.invalidateQueries({ queryKey: mcpQueries.detail(id).queryKey });
             await queryClient.invalidateQueries({ queryKey: mcpQueries.all() });
             return;
           }
@@ -236,10 +254,7 @@
     return "pending";
   }
 
-  // ---------------------------------------------------------------------------
-  // Install flow mutations — cancel + commit
-  // ---------------------------------------------------------------------------
-
+  // ── Install flow mutations — cancel + commit ───────────────────────────
   const cancelMut = useCancelMCPInstall();
   const commitMut = useCommitMCPInstall();
 
@@ -248,10 +263,7 @@
     if (!id || cancelMut.isPending) return;
     try {
       await cancelMut.mutateAsync(id);
-      toast({
-        title: "Install cancelled",
-        description: `${displayName} has been discarded.`,
-      });
+      toast({ title: "Install cancelled", description: `${displayName} has been discarded.` });
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       toast({ title: "Cancel failed", description: message, error: true });
@@ -261,8 +273,6 @@
   async function handleConfirmInstall(): Promise<void> {
     const id = server?.id;
     if (!id || commitMut.isPending || !reportAttention) return;
-    // Map the reviewed list to CommitEnvVar[] — provenance is review-only and
-    // dropped before commit.
     const envVars: CommitEnvVar[] = reportAttention.env_vars.map((v) => ({
       name: v.name,
       description: v.description,
@@ -272,672 +282,577 @@
     }));
     try {
       await commitMut.mutateAsync({ id, envVars });
-      toast({
-        title: "Server configured",
-        description: `${displayName} is ready to use.`,
-      });
+      toast({ title: "Server configured", description: `${displayName} is ready to use.` });
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       toast({ title: "Confirm failed", description: message, error: true });
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // Inline panel toggles — manual-config and the read-only raw-config view.
-  //
-  // Each toggle stores the server id it was opened for, so a `$derived` can ask
-  // "open for the *current* server?" — switching servers collapses the panel
-  // with no reset `$effect` needed.
-  // ---------------------------------------------------------------------------
-
+  // ── Inline panel toggles ───────────────────────────────────────────────
   let manualConfigOpenFor = $state<string | null>(null);
-  const manualConfigOpen = $derived(
-    !!server && manualConfigOpenFor === server.id,
-  );
-
+  const manualConfigOpen = $derived(!!server && manualConfigOpenFor === server.id);
   function toggleManualConfig(): void {
     manualConfigOpenFor = manualConfigOpen ? null : (server?.id ?? null);
   }
 
   let rawConfigOpenFor = $state<string | null>(null);
   const rawConfigOpen = $derived(!!server && rawConfigOpenFor === server.id);
-
   function toggleRawConfig(): void {
     rawConfigOpenFor = rawConfigOpen ? null : (server?.id ?? null);
   }
-
-  const rawConfigJson = $derived(
-    server ? JSON.stringify(server.configTemplate, null, 2) : "",
-  );
-
-  // ---------------------------------------------------------------------------
-  // Provenance label for a committed / detected env var
-  // ---------------------------------------------------------------------------
-
-  function provenanceLabel(envVar: DoctorEnvVar): string {
-    switch (envVar.provenance.source) {
-      case "registry":
-        return "registry";
-      case "friday":
-        return "detected by Friday";
-      case "user":
-        return "added by you";
-    }
-  }
+  const rawConfigJson = $derived(server ? JSON.stringify(server.configTemplate, null, 2) : "");
 </script>
 
-<div class="detail-pane">
-  {#if !server}
-    <!-- Empty state -->
-    <div class="empty-state">
-      <div class="empty-icon">
-        <IconSmall.Search />
-      </div>
-      <h2 class="empty-title">MCP Catalog</h2>
-      <p class="empty-desc">
-        Select a server from the list to view details, or search the upstream
-        registry to discover new servers.
-      </p>
-    </div>
-  {:else}
-    <article>
-      {#if hasActions}
-        <div class="actions-bar">
-          <span class="actions-indent actions-indent-tl" aria-hidden="true"
-          ></span>
-          <div class="actions-int">
-            {#if canCheckUpdate}
-              <Button
-                size="small"
-                variant="none"
-                onclick={onCheckUpdate}
-                disabled={checking || pulling}
-              >
-                {#snippet prepend()}
-                  <IconSmall.ArrowsRotate />
-                {/snippet}
-                {checking ? "Checking…" : "Check for updates"}
-              </Button>
-            {/if}
+{#snippet sourceBadges()}
+  {#if source}
+    <Badge variant="status">
+      {sourceLabel(source)}{#if isOfficial}&nbsp;• Official{/if}
+    </Badge>
+  {/if}
+  {#if status === "setting_up"}
+    <Badge variant="info">Installing</Badge>
+  {:else if status === "awaiting_confirm"}
+    <Badge variant="warning">Awaiting setup</Badge>
+  {:else if reportUnknown}
+    <Badge variant="warning">Needs configuration</Badge>
+  {/if}
+{/snippet}
 
-            {#if canPullUpdate}
-              <Button
-                size="small"
-                variant="primary"
-                onclick={onPullUpdate}
-                disabled={pulling}
-              >
-                {pulling ? "Updating…" : "Pull update"}
-              </Button>
-            {/if}
+{#snippet envTable(rows: EnvRow[])}
+  <table class="env-table">
+    <thead>
+      <tr><th>Key</th><th>Tags</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      {#each rows as row (row.key)}
+        <tr>
+          <td><code class="env-key">{row.key}</code></td>
+          <td>
+            <div class="tag-cell">
+              {#each row.tags as tag (tag.label)}
+                <span class="tag" data-tone={tag.tone}>{tag.label}</span>
+              {/each}
+            </div>
+          </td>
+          <td class="env-desc">{row.description || "—"}</td>
+        </tr>
+      {/each}
+    </tbody>
+  </table>
+{/snippet}
 
-            {#if canDelete}
-              <Button
-                size="small"
-                variant="none"
-                onclick={() => deleteDialogOpen.set(true)}
-                disabled={deleting}
-              >
-                {#snippet prepend()}
-                  <IconSmall.TrashBin />
-                {/snippet}
-                {deleting ? "Removing…" : "Remove"}
-              </Button>
-            {/if}
+{#snippet deleteDialog()}
+  <Dialog.Root open={deleteDialogOpen}>
+    <Dialog.Content>
+      <Dialog.Close />
+      {#snippet header()}
+        <Dialog.Title>Remove server</Dialog.Title>
+        <Dialog.Description>
+          {displayName} will be uninstalled and no longer available to your agents. You can
+          reinstall it from the registry at any time.
+        </Dialog.Description>
+      {/snippet}
+      {#snippet footer()}
+        <Dialog.Button onclick={onDelete} disabled={deleting} closeOnClick={false}>
+          {deleting ? "Removing…" : "Remove"}
+        </Dialog.Button>
+        <Dialog.Cancel onclick={() => deleteDialogOpen.set(false)}>Cancel</Dialog.Cancel>
+      {/snippet}
+    </Dialog.Content>
+  </Dialog.Root>
+{/snippet}
 
-            <Dialog.Root open={deleteDialogOpen}>
-              <Dialog.Content>
-                <Dialog.Close />
-                {#snippet header()}
-                  <Dialog.Title>Remove server</Dialog.Title>
-                  <Dialog.Description>
-                    {displayName} will be uninstalled and no longer available to your
-                    agents. You can reinstall it from the registry at any time.
-                  </Dialog.Description>
-                {/snippet}
-                {#snippet footer()}
-                  <Dialog.Button
-                    onclick={onDelete}
-                    disabled={deleting}
-                    closeOnClick={false}
-                  >
-                    {deleting ? "Removing…" : "Remove"}
-                  </Dialog.Button>
-                  <Dialog.Cancel onclick={() => deleteDialogOpen.set(false)}
-                    >Cancel</Dialog.Cancel
-                  >
-                {/snippet}
-              </Dialog.Content>
-            </Dialog.Root>
-          </div>
-          <span class="actions-indent actions-indent-br" aria-hidden="true"
-          ></span>
-        </div>
-      {/if}
-
-      <header>
+{#if !server}
+  <div class="loading-state">
+    <p>Loading server…</p>
+    <button type="button" class="back-link" onclick={onBack}>
+      <IconSmall.ChevronLeft />
+      MCP Catalog
+    </button>
+  </div>
+{:else if status === "setting_up" || status === "awaiting_confirm"}
+  <!-- ── Focused install view — no section nav ──────────────────────────── -->
+  <div class="install-view">
+    <nav class="crumb-bar">
+      <button type="button" class="back-link" onclick={onBack}>
+        <IconSmall.ChevronLeft />
+        MCP Catalog
+      </button>
+    </nav>
+    <header class="install-header">
+      <div class="title-row">
         <h1>{displayName}</h1>
+        {@render sourceBadges()}
+      </div>
+      <p class="description" class:faded={!description}>
+        {description ?? "No description provided"}
+      </p>
+    </header>
 
-        <div class="header-badges">
-          {#if source}
-            <Badge variant="status">
-              {sourceLabel(source)}
-
-              {#if isOfficial}
-                • Official
-              {/if}
-            </Badge>
-          {/if}
-          {#if status === "setting_up"}
-            <Badge variant="info">Installing</Badge>
-          {:else if status === "awaiting_confirm"}
-            <Badge variant="warning">Awaiting setup</Badge>
-          {:else if reportUnknown}
-            <Badge variant="warning">Needs configuration</Badge>
-          {/if}
-        </div>
-      </header>
-
-      <!-- TL;DR strip — shown whenever the doctor produced a report. -->
-      {#if report}
-        <p class="tldr-strip">{report.tldr}</p>
-      {/if}
-
-      <!-- Content -->
-      <div class="detail-content">
-        <p class="description" class:faded={!description}>
-          {description ?? "No description provided"}
+    {#if status === "setting_up"}
+      <section class="panel">
+        <h2 class="section-title">Setup doctor running</h2>
+        <p class="section-desc">
+          Friday is analyzing this server to work out what configuration it needs. This usually
+          takes a few seconds.
         </p>
-
-        <!-- ── setting_up: live doctor progress ─────────────────────────── -->
-        {#if status === "setting_up"}
-          <div class="doctor-panel">
-            <h3 class="section-title">Setup doctor running</h3>
-            <p class="doctor-panel-desc">
-              Friday is analyzing this server to work out what configuration it
-              needs. This usually takes a few seconds.
-            </p>
-            <ol class="phase-list">
-              {#each PHASE_SEQUENCE as { phase, label } (phase)}
-                {@const state = phaseState(phase)}
-                <li class="phase-item" data-state={state}>
-                  <span class="phase-icon">
-                    {#if state === "done"}
-                      <IconSmall.CheckCircle />
-                    {:else if state === "active"}
-                      <IconSmall.Progress />
-                    {:else}
-                      <IconSmall.Clock />
-                    {/if}
-                  </span>
-                  <span class="phase-label">{label}</span>
-                </li>
-              {/each}
-            </ol>
-            {#if streamError}
-              <p class="doctor-stream-error">
-                Lost the progress stream ({streamError}). Reload the page to
-                reconnect — the server keeps working in the background.
-              </p>
-            {/if}
-            <div class="doctor-actions">
-              <Button
-                variant="secondary"
-                size="small"
-                onclick={handleCancelInstall}
-                disabled={cancelMut.isPending}
-              >
-                {cancelMut.isPending ? "Cancelling…" : "Cancel install"}
-              </Button>
-            </div>
-          </div>
-        {/if}
-
-        <!-- ── awaiting_confirm: review checkpoint ──────────────────────── -->
-        {#if status === "awaiting_confirm" && reportAttention}
-          <div class="doctor-panel">
-            <h3 class="section-title">Review detected configuration</h3>
-            <p class="doctor-panel-desc">
-              The setup doctor found the environment variables below. Check each
-              one against where it came from, then confirm to finish install.
-            </p>
-
-            <ul class="env-review-list">
-              {#each reportAttention.env_vars as envVar (envVar.name)}
-                <li class="env-review-item">
-                  <div class="env-review-head">
-                    <span class="env-name">{envVar.name}</span>
-                    <div class="env-flags">
-                      {#if envVar.isRequired}
-                        <span class="env-flag env-flag-required">Required</span>
-                      {:else}
-                        <span class="env-flag">Optional</span>
-                      {/if}
-                      {#if envVar.isSecret}
-                        <span class="env-flag env-flag-secret">Secret</span>
-                      {/if}
-                      <span class="env-flag env-flag-provenance">
-                        {provenanceLabel(envVar)}
-                      </span>
-                    </div>
-                  </div>
-                  {#if envVar.description}
-                    <p class="env-description">{envVar.description}</p>
-                  {/if}
-                  {#if envVar.provenance.source === "friday"}
-                    <blockquote class="env-excerpt">
-                      {envVar.provenance.readme_excerpt}
-                    </blockquote>
-                  {/if}
-                </li>
-              {/each}
-            </ul>
-
-            <div class="doctor-actions">
-              <Button
-                variant="primary"
-                size="small"
-                onclick={handleConfirmInstall}
-                disabled={commitMut.isPending}
-              >
-                {commitMut.isPending ? "Applying…" : "Confirm & apply"}
-              </Button>
-              <Button
-                variant="secondary"
-                size="small"
-                onclick={handleCancelInstall}
-                disabled={cancelMut.isPending}
-              >
-                {cancelMut.isPending ? "Cancelling…" : "Cancel install"}
-              </Button>
-            </div>
-          </div>
-        {/if}
-
-        <!-- ── ready + unknown: findings banner + manual config ─────────── -->
-        {#if reportUnknown}
-          <div class="doctor-panel doctor-panel-warning">
-            <h3 class="section-title">This server needs configuration</h3>
-            <p class="doctor-panel-desc">
-              The setup doctor couldn't work out exactly what this server needs.
-              Here's what it saw — you can configure it manually below, or reach
-              out to the upstream author.
-            </p>
-
-            <ul class="findings-list">
-              {#each reportUnknown.findings as finding, i (i)}
-                <li class="finding-item" data-severity={finding.severity}>
-                  <span class="finding-title">{finding.title}</span>
-                  {#if finding.detail}
-                    <span class="finding-detail">{finding.detail}</span>
-                  {/if}
-                </li>
-              {/each}
-            </ul>
-
-            <div class="doctor-actions">
-              <Button variant="primary" size="small" onclick={toggleManualConfig}>
-                {manualConfigOpen ? "Hide manual setup" : "Configure manually"}
-              </Button>
-              {#if contactAuthorUrl}
-                <Button
-                  variant="secondary"
-                  size="small"
-                  href={contactAuthorUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  {#snippet prepend()}
-                    <IconSmall.ExternalLink />
-                  {/snippet}
-                  Contact author
-                </Button>
-              {/if}
-            </div>
-
-            {#if manualConfigOpen && server}
-              <ManualConfigSetup
-                serverId={server.id}
-                onDone={() => (manualConfigOpenFor = null)}
-              />
-            {/if}
-          </div>
-        {/if}
-
-        <!-- ── ready + attention: committed env vars with provenance ────── -->
-        {#if showNormalView && reportAttention}
-          <div class="content-section">
-            <h3 class="section-title">Configured environment variables</h3>
-            <ul class="env-summary-list">
-              {#each reportAttention.env_vars as envVar (envVar.name)}
-                <li class="env-summary-item">
-                  <span class="env-name">{envVar.name}</span>
-                  <div class="env-flags">
-                    {#if envVar.isRequired}
-                      <span class="env-flag env-flag-required">Required</span>
-                    {/if}
-                    {#if envVar.isSecret}
-                      <span class="env-flag env-flag-secret">Secret</span>
-                    {/if}
-                    <span class="env-flag env-flag-provenance">
-                      {provenanceLabel(envVar)}
-                    </span>
-                  </div>
-                  {#if envVar.description}
-                    <p class="env-description">{envVar.description}</p>
-                  {/if}
-                </li>
-              {/each}
-            </ul>
-          </div>
-        {/if}
-
-        <!-- ── ready + clean: subtle self-contained note ────────────────── -->
-        {#if showNormalView && reportClean}
-          <p class="clean-note">
-            <IconSmall.Check />
-            Setup doctor: self-contained — no extra configuration needed.
+        <ol class="phase-list">
+          {#each PHASE_SEQUENCE as { phase, label } (phase)}
+            {@const state = phaseState(phase)}
+            <li class="phase-item" data-state={state}>
+              <span class="phase-icon">
+                {#if state === "done"}
+                  <IconSmall.CheckCircle />
+                {:else if state === "active"}
+                  <IconSmall.Progress />
+                {:else}
+                  <IconSmall.Clock />
+                {/if}
+              </span>
+              <span>{label}</span>
+            </li>
+          {/each}
+        </ol>
+        {#if streamError}
+          <p class="stream-error">
+            Lost the progress stream ({streamError}). Reload to reconnect — the server keeps
+            working in the background.
           </p>
         {/if}
-
-        {#if isInstalled && server && showNormalView}
-          <div>
-            <McpConnectionTest serverId={server.id} />
-          </div>
-          <!-- Transport -->
-          <div class="content-section">
-            <h3 class="section-title">Transport</h3>
-            <div class="transport">
-              <span class="transport-url">{transportInfo(server)}</span>
-              {#if server.configTemplate.transport?.type}
-                <span class="transport-type"
-                  >{server.configTemplate.transport.type}</span
-                >
-              {/if}
-            </div>
-          </div>
-
-          <!-- Required config -->
-          {#if server.requiredConfig && server.requiredConfig.length > 0}
-            <div class="content-section">
-              <h3 class="section-title">Required configuration</h3>
-              <SimpleTable>
-                <thead>
-                  <tr>
-                    <th>Key</th>
-                    <th>Value</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {#each server.requiredConfig as field (field.key)}
-                    <tr>
-                      <th scope="row">{field.key}</th>
-                      <td>{field.description}</td>
-                    </tr>
-                  {/each}
-                </tbody>
-              </SimpleTable>
-            </div>
+        <div class="actions-row">
+          <Button
+            variant="secondary"
+            size="small"
+            onclick={handleCancelInstall}
+            disabled={cancelMut.isPending}
+          >
+            {cancelMut.isPending ? "Cancelling…" : "Cancel install"}
+          </Button>
+        </div>
+      </section>
+    {:else if reportAttention}
+      <section class="panel">
+        <h2 class="section-title">Review detected configuration</h2>
+        <p class="section-desc">{reportAttention.tldr}</p>
+        <p class="section-desc">
+          The setup doctor found the environment variables below. Confirm to finish install.
+        </p>
+        {@render envTable(envRows)}
+        <div class="actions-row">
+          <Button
+            variant="primary"
+            size="small"
+            onclick={handleConfirmInstall}
+            disabled={commitMut.isPending}
+          >
+            {commitMut.isPending ? "Applying…" : "Confirm & apply"}
+          </Button>
+          <Button
+            variant="secondary"
+            size="small"
+            onclick={handleCancelInstall}
+            disabled={cancelMut.isPending}
+          >
+            {cancelMut.isPending ? "Cancelling…" : "Cancel install"}
+          </Button>
+        </div>
+      </section>
+    {/if}
+  </div>
+{:else}
+  <!-- ── Ready: ListDetail with section nav ─────────────────────────────── -->
+  <div class="detail-root">
+    {#if hasActions}
+      <div class="actions-bar">
+        <span class="actions-indent actions-indent-tl" aria-hidden="true"></span>
+        <div class="actions-int">
+          {#if canCheckUpdate}
+            <Button
+              size="small"
+              variant="none"
+              onclick={onCheckUpdate}
+              disabled={checking || pulling}
+            >
+              {#snippet prepend()}<IconSmall.ArrowsRotate />{/snippet}
+              {checking ? "Checking…" : "Check for updates"}
+            </Button>
           {/if}
-
-          {#if server.configTemplate}
-            <div class="content-section credentials-section">
-              <h3 class="section-title">Credentials</h3>
-              <McpCredentialsPanel
-                serverId={server.id}
-                configTemplate={server.configTemplate}
-              />
-            </div>
+          {#if canPullUpdate}
+            <Button size="small" variant="primary" onclick={onPullUpdate} disabled={pulling}>
+              {pulling ? "Updating…" : "Pull update"}
+            </Button>
           {/if}
-
-          <div class="content-section">
-            <h3 class="section-title">Workspaces</h3>
-            <McpWorkspaceUsage serverId={server.id} />
-          </div>
-
-          <div class="content-section">
-            <h3 class="section-title">Test Chat</h3>
-            <McpTestChat serverId={server.id} />
-          </div>
-
-          {#if server.upstream}
-            <div class="content-section">
-              <h3 class="section-title">Upstream</h3>
-              <div class="meta-grid">
-                <div class="meta-item">
-                  <span class="meta-label">Canonical name</span>
-                  <span class="meta-value">{server.upstream.canonicalName}</span
-                  >
-                </div>
-                <div class="meta-item">
-                  <span class="meta-label">Version</span>
-                  <span class="meta-value">{server.upstream.version}</span>
-                </div>
-                <div class="meta-item">
-                  <span class="meta-label">Updated</span>
-                  <span class="meta-value"
-                    >{formatDate(server.upstream.updatedAt)}</span
-                  >
-                </div>
-              </div>
-            </div>
+          {#if canDelete}
+            <Button
+              size="small"
+              variant="none"
+              onclick={() => deleteDialogOpen.set(true)}
+              disabled={deleting}
+            >
+              {#snippet prepend()}<IconSmall.TrashBin />{/snippet}
+              {deleting ? "Removing…" : "Remove"}
+            </Button>
           {/if}
+        </div>
+        <span class="actions-indent actions-indent-br" aria-hidden="true"></span>
+      </div>
+    {/if}
 
-          <!-- Raw config — read-only. The root entry is frozen post-install. -->
-          <div class="content-section">
-            <button class="raw-config-toggle" onclick={toggleRawConfig}>
-              {#if rawConfigOpen}
-                <IconSmall.ChevronDown />
-              {:else}
-                <IconSmall.ChevronRight />
-              {/if}
-              View raw config
+    <ListDetail>
+      {#snippet header()}
+        <button type="button" class="back-link" onclick={onBack}>
+          <IconSmall.ChevronLeft />
+          MCP Catalog
+        </button>
+      {/snippet}
+
+      {#snippet sidebar()}
+        <div class="server-ident">
+          <span class="server-name">{displayName}</span>
+          <div class="ident-badges">{@render sourceBadges()}</div>
+        </div>
+        <nav class="section-nav">
+          {#each SECTIONS as s (s.id)}
+            <button
+              type="button"
+              class="section-nav-item"
+              class:active={activeSection === s.id}
+              onclick={() => onSelectSection?.(s.id)}
+            >
+              {s.label}
             </button>
-            {#if rawConfigOpen}
-              <pre class="raw-config-block">{rawConfigJson}</pre>
+          {/each}
+        </nav>
+      {/snippet}
+
+      <div class="section-content">
+        {#key activeSection}
+          <div class="section-inner" in:fade={{ duration: 120 }}>
+            {#if activeSection === "overview"}
+              <section class="section">
+                <h2 class="section-title">Overview</h2>
+                <p class="description" class:faded={!description}>
+                  {description ?? "No description provided"}
+                </p>
+                <div class="header-links">
+                  {#if githubUrl}
+                    <a
+                      class="ext-link"
+                      href={githubUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      <IconSmall.ExternalLink />
+                      GitHub
+                    </a>
+                  {/if}
+                  {#if registryUrl}
+                    <a
+                      class="ext-link"
+                      href={registryUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      <IconSmall.ExternalLink />
+                      Registry record
+                    </a>
+                  {/if}
+                </div>
+              </section>
+
+              <section class="section">
+                <h2 class="section-title">How Friday manages this MCP</h2>
+                <p class="section-desc">
+                  On install, Friday's setup doctor reads the server's README and package
+                  metadata to work out what it needs. Credential-bearing variables are routed to
+                  connected integrations; plain settings are stored per-workspace. Anything the
+                  doctor can't place is left for you to configure manually.
+                </p>
+
+                {#if report}
+                  <div class="verdict" data-verdict={report.verdict}>
+                    <span class="verdict-icon">
+                      {#if report.verdict === "clean"}
+                        <IconSmall.CheckCircle />
+                      {:else if report.verdict === "attention"}
+                        <IconSmall.InfoCircle />
+                      {:else}
+                        <IconSmall.TriangleExclamation />
+                      {/if}
+                    </span>
+                    <div class="verdict-body">
+                      <span class="verdict-tldr">{report.tldr}</span>
+                      {#if report.verdict === "clean"}
+                        <span class="verdict-note">
+                          Self-contained — no extra configuration needed.
+                        </span>
+                      {:else if report.verdict === "attention"}
+                        <span class="verdict-note">
+                          Detected configuration is listed under Configuration.
+                        </span>
+                      {/if}
+                    </div>
+                  </div>
+
+                  {#if report.findings.length > 0}
+                    <ul class="findings">
+                      {#each report.findings as finding, i (i)}
+                        <li class="finding" data-severity={finding.severity}>
+                          <span class="finding-title">{finding.title}</span>
+                          {#if finding.detail}
+                            <span class="finding-detail">{finding.detail}</span>
+                          {/if}
+                        </li>
+                      {/each}
+                    </ul>
+                  {/if}
+
+                  {#if reportUnknown}
+                    <div class="actions-row">
+                      <Button variant="primary" size="small" onclick={toggleManualConfig}>
+                        {manualConfigOpen ? "Hide manual setup" : "Configure manually"}
+                      </Button>
+                      {#if githubUrl}
+                        <Button
+                          variant="secondary"
+                          size="small"
+                          href={githubUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          {#snippet prepend()}<IconSmall.ExternalLink />{/snippet}
+                          Contact author
+                        </Button>
+                      {/if}
+                    </div>
+                    {#if manualConfigOpen}
+                      <ManualConfigSetup
+                        serverId={server.id}
+                        onDone={() => (manualConfigOpenFor = null)}
+                      />
+                    {/if}
+                  {/if}
+                {/if}
+              </section>
+            {:else if activeSection === "connections"}
+              <section class="section">
+                <h2 class="section-title">Live connections</h2>
+                <p class="section-desc">Workspaces with this server enabled.</p>
+                <McpWorkspaceUsage serverId={server.id} />
+              </section>
+            {:else if activeSection === "configuration"}
+              <section class="section">
+                <h2 class="section-title">Configuration</h2>
+
+                <div class="sub-block credentials-block">
+                  <h3 class="sub-title">Credentials</h3>
+                  <McpCredentialsPanel
+                    serverId={server.id}
+                    configTemplate={server.configTemplate}
+                  />
+                </div>
+
+                {#if envRows.length > 0}
+                  <div class="sub-block">
+                    <h3 class="sub-title">Environment variables</h3>
+                    {@render envTable(envRows)}
+                  </div>
+                {/if}
+
+                <div class="sub-block">
+                  <h3 class="sub-title">Transport</h3>
+                  <div class="transport-row">
+                    <span class="tag" data-tone="neutral">{transport.kind}</span>
+                    <code class="transport-value">{transport.value}</code>
+                  </div>
+                </div>
+
+                <div class="sub-block">
+                  <button type="button" class="raw-toggle" onclick={toggleRawConfig}>
+                    {#if rawConfigOpen}
+                      <IconSmall.ChevronDown />
+                    {:else}
+                      <IconSmall.ChevronRight />
+                    {/if}
+                    View raw config
+                  </button>
+                  {#if rawConfigOpen}
+                    <pre class="raw-block">{rawConfigJson}</pre>
+                  {/if}
+                </div>
+              </section>
+            {:else if activeSection === "tools"}
+              <section class="section">
+                <h2 class="section-title">Tools</h2>
+                <McpToolsSection serverId={server.id} />
+              </section>
+            {:else if activeSection === "test"}
+              <section class="section">
+                <h2 class="section-title">Test</h2>
+                <McpToolInvoker serverId={server.id} />
+              </section>
+            {:else if activeSection === "readme"}
+              {#if curatorNotes}
+                <section class="section">
+                  <h2 class="section-title">From the curators</h2>
+                  <div class="readme">
+                    <MarkdownRendered>{@html markdownToHTMLSafe(curatorNotes)}</MarkdownRendered>
+                  </div>
+                </section>
+              {/if}
+              <section class="section">
+                <h2 class="section-title">Readme</h2>
+                {#if readme}
+                  <div class="readme">
+                    <MarkdownRendered>{@html markdownToHTMLSafe(readme)}</MarkdownRendered>
+                  </div>
+                {:else}
+                  <p class="section-desc">This server has no README.</p>
+                {/if}
+              </section>
             {/if}
           </div>
-        {/if}
-
-        <!-- From the curators — curator markdown above the README. -->
-        {#if curatorNotes}
-          <div class="content-section">
-            <h3 class="section-title">From the curators</h3>
-            <div class="readme-content">
-              <MarkdownRendered>
-                {@html markdownToHTMLSafe(curatorNotes)}
-              </MarkdownRendered>
-            </div>
-          </div>
-        {/if}
-
-        <!-- README -->
-        {#if readme}
-          <div class="content-section">
-            <h3 class="section-title">Readme</h3>
-            <div class="readme-content">
-              <MarkdownRendered>
-                {@html markdownToHTMLSafe(readme)}
-              </MarkdownRendered>
-            </div>
-          </div>
-        {/if}
+        {/key}
       </div>
-    </article>
-  {/if}
-</div>
+    </ListDetail>
+  </div>
+{/if}
+
+{@render deleteDialog()}
 
 <style>
-  .detail-pane {
+  /* ── Roots ───────────────────────────────────────────────────────────── */
+
+  .detail-root {
+    block-size: 100%;
+    min-block-size: 0;
+    position: relative;
+  }
+
+  .install-view,
+  .loading-state {
     display: flex;
-    flex: 1;
     flex-direction: column;
-    min-inline-size: 0;
+    min-block-size: 0;
     overflow-y: auto;
     scrollbar-width: thin;
   }
 
-  .actions-bar {
-    display: flex;
-    align-items: center;
-    gap: var(--size-3);
-    position: absolute;
-    inset-block-start: var(--size-1-5);
-    inset-inline-end: var(--size-1-5);
-    z-index: 1;
-
-    .actions-int {
-      background-color: var(--surface-dark);
-      border-start-end-radius: var(--radius-6);
-      border-end-start-radius: var(--radius-6);
-      block-size: var(--size-8);
-      display: flex;
-      gap: var(--size-4);
-      padding-inline: var(--size-4);
-    }
-
-    .actions-indent {
-      background-color: var(--surface-dark);
-      position: absolute;
-    }
-
-    .actions-indent-tl {
-      block-size: 11px;
-      clip-path: path("M11 11C11 4.92487 6.07513 0 0 0H11V11Z");
-      inline-size: 11px;
-      inset-block-start: 0;
-      inset-inline-end: 100%;
-      position: absolute;
-    }
-
-    .actions-indent-br {
-      block-size: 12px;
-      clip-path: path("M12 12C12 5.37258 6.62742 0 0 0H12V12Z");
-      inline-size: 12px;
-      inset-block-start: 100%;
-      inset-inline-end: 0;
-      position: absolute;
-    }
+  .install-view {
+    gap: var(--size-6);
+    margin: 0 auto;
+    max-inline-size: 80ch;
+    padding: var(--size-6) var(--size-10) var(--size-12);
+    inline-size: 100%;
   }
 
-  /* ─── Empty state ────────────────────────────────────────────────────────── */
-
-  .empty-state {
+  .loading-state {
     align-items: center;
-    display: flex;
+    color: var(--text-faded);
     flex: 1;
-    flex-direction: column;
     gap: var(--size-3);
     justify-content: center;
-    padding: var(--size-16);
   }
 
-  .empty-icon {
-    color: color-mix(in srgb, var(--text), transparent 60%);
+  /* ── Breadcrumb ──────────────────────────────────────────────────────── */
+
+  .crumb-bar {
+    display: flex;
   }
 
-  .empty-icon :global(svg) {
-    block-size: 40px;
-    inline-size: 40px;
+  .back-link {
+    align-items: center;
+    background: none;
+    border: none;
+    color: var(--text);
+    cursor: pointer;
+    display: inline-flex;
+    font: inherit;
+    font-size: var(--font-size-3);
+    gap: var(--size-1);
+    padding: var(--size-1) 0;
   }
 
-  .empty-title {
+  .back-link:hover {
+    color: var(--text-bright);
+  }
+
+  /* ── Section nav (ListDetail sidebar) ────────────────────────────────── */
+
+  .server-ident {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-2);
+    padding: 0 var(--size-1);
+  }
+
+  .server-name {
+    color: var(--text-bright);
     font-size: var(--font-size-5);
     font-weight: var(--font-weight-6);
-    margin: 0;
+    word-break: break-word;
   }
 
-  .empty-desc {
-    color: color-mix(in srgb, var(--text), transparent 25%);
-    font-size: var(--font-size-2);
-    line-height: 1.5;
-    margin: 0;
-    max-inline-size: 48ch;
-    text-align: center;
-  }
-
-  article {
-    padding: var(--size-12);
-
-    header {
-      align-items: center;
-      display: flex;
-      flex-shrink: 0;
-      gap: var(--size-3);
-
-      h1 {
-        color: var(--text-bright);
-        font-size: var(--font-size-8);
-        font-weight: var(--font-weight-6);
-        letter-spacing: -0.01em;
-        margin: 0;
-        word-break: break-word;
-      }
-    }
-  }
-
-  /* ─── Header ─────────────────────────────────────────────────────────────── */
-
-  .header-badges {
+  .ident-badges {
     display: flex;
     flex-wrap: wrap;
     gap: var(--size-1);
   }
 
-  /* ─── TL;DR strip ────────────────────────────────────────────────────────── */
+  .section-nav {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-0-5);
+  }
 
-  .tldr-strip {
-    background: var(--surface-dark);
-    border: 1px solid var(--border);
+  .section-nav-item {
+    background: none;
+    border: none;
     border-radius: var(--radius-2);
-    color: var(--text-bright);
-    font-size: var(--font-size-2);
-    line-height: 1.5;
-    margin: var(--size-3) 0 0;
-    padding: var(--size-2) var(--size-3);
-  }
-
-  /* ─── Content ────────────────────────────────────────────────────────────── */
-
-  .detail-content {
-    display: flex;
-    flex: 1;
-    flex-direction: column;
-    gap: var(--size-6);
-  }
-
-  .content-section {
-    display: flex;
-    flex-direction: column;
-    gap: var(--size-2);
-  }
-
-  .credentials-section:not(:has(> *:nth-child(2))) {
-    display: none;
-  }
-
-  .section-title {
-    color: var(--text-faded);
-    font-size: var(--font-size-4);
-    font-weight: var(--font-weight-5);
-  }
-
-  .description {
     color: var(--text);
-    font-size: var(--font-size-5);
-    line-height: var(--font-lineheight-3);
-    margin: 0;
-    max-inline-size: 72ch;
-
-    &.faded {
-      color: var(--text-faded);
-    }
+    cursor: pointer;
+    font: inherit;
+    font-size: var(--font-size-3);
+    font-weight: var(--font-weight-6);
+    padding: var(--size-1-5) var(--size-2);
+    text-align: start;
+    transition: background-color 0.12s ease;
   }
 
-  /* ─── Doctor panels ──────────────────────────────────────────────────────── */
+  .section-nav-item:hover:not(.active) {
+    background-color: color-mix(in srgb, var(--text), transparent 92%);
+  }
 
-  .doctor-panel {
-    background: var(--surface-dark);
+  .section-nav-item.active {
+    background-color: color-mix(in srgb, var(--text), transparent 88%);
+    color: var(--text-bright);
+  }
+
+  /* ── Section content ─────────────────────────────────────────────────── */
+
+  .section-content {
+    block-size: 100%;
+  }
+
+  .section-inner {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-8);
+    margin: 0 auto;
+    max-inline-size: 80ch;
+    padding: var(--size-8) var(--size-10) var(--size-12);
+    inline-size: 100%;
+  }
+
+  .section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-3);
+  }
+
+  .panel {
+    background-color: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--radius-3);
     display: flex;
@@ -946,32 +861,343 @@
     padding: var(--size-4);
   }
 
-  .doctor-panel-warning {
-    border-color: var(--yellow-primary);
-  }
-
-  .doctor-panel-desc {
-    color: var(--text-faded);
-    font-size: var(--font-size-2);
-    line-height: 1.5;
+  .section-title {
+    color: var(--text-bright);
+    font-size: var(--font-size-7);
+    font-weight: var(--font-weight-6);
     margin: 0;
-    max-inline-size: 72ch;
   }
 
-  .doctor-actions {
+  .section-desc {
+    color: var(--text);
+    font-size: var(--font-size-3);
+    line-height: 1.55;
+    margin: 0;
+    max-inline-size: 76ch;
+  }
+
+  .install-header {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-2);
+  }
+
+  .title-row {
     align-items: center;
     display: flex;
     flex-wrap: wrap;
     gap: var(--size-2);
   }
 
-  .doctor-stream-error {
-    color: var(--yellow-primary);
-    font-size: var(--font-size-1);
+  .title-row h1 {
+    color: var(--text-bright);
+    font-size: var(--font-size-8);
+    font-weight: var(--font-weight-6);
+    margin: 0;
+    word-break: break-word;
+  }
+
+  .description {
+    color: var(--text);
+    font-size: var(--font-size-4);
+    line-height: 1.5;
+    margin: 0;
+    max-inline-size: 72ch;
+  }
+
+  .description.faded {
+    color: var(--text-faded);
+  }
+
+  .header-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--size-3);
+  }
+
+  .ext-link {
+    align-items: center;
+    color: var(--blue-primary);
+    display: inline-flex;
+    font-size: var(--font-size-3);
+    gap: var(--size-1);
+    text-decoration: none;
+  }
+
+  .ext-link:hover {
+    text-decoration: underline;
+  }
+
+  .sub-block {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-2);
+  }
+
+  .credentials-block:not(:has(> :nth-child(2) *)) {
+    display: none;
+  }
+
+  .sub-title {
+    color: var(--text-faded);
+    font-size: var(--font-size-3);
+    font-weight: var(--font-weight-6);
     margin: 0;
   }
 
-  /* ─── Phase list (setting_up) ────────────────────────────────────────────── */
+  .actions-row {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--size-2);
+  }
+
+  /* ── Floating top-right actions ──────────────────────────────────────── */
+
+  .actions-bar {
+    align-items: center;
+    display: flex;
+    inset-block-start: var(--size-1-5);
+    inset-inline-end: var(--size-1-5);
+    position: absolute;
+    z-index: 2;
+  }
+
+  .actions-int {
+    background-color: var(--surface-dark);
+    block-size: var(--size-8);
+    border-end-start-radius: var(--radius-6);
+    border-start-end-radius: var(--radius-6);
+    display: flex;
+    gap: var(--size-4);
+    padding-inline: var(--size-4);
+  }
+
+  .actions-indent {
+    background-color: var(--surface-dark);
+    position: absolute;
+  }
+
+  .actions-indent-tl {
+    block-size: 11px;
+    clip-path: path("M11 11C11 4.92487 6.07513 0 0 0H11V11Z");
+    inline-size: 11px;
+    inset-block-start: 0;
+    inset-inline-end: 100%;
+  }
+
+  .actions-indent-br {
+    block-size: 12px;
+    clip-path: path("M12 12C12 5.37258 6.62742 0 0 0H12V12Z");
+    inline-size: 12px;
+    inset-block-start: 100%;
+    inset-inline-end: 0;
+  }
+
+  /* ── Verdict ─────────────────────────────────────────────────────────── */
+
+  .verdict {
+    align-items: flex-start;
+    background-color: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2);
+    display: flex;
+    gap: var(--size-2);
+    padding: var(--size-3);
+  }
+
+  .verdict[data-verdict="unknown"] {
+    border-color: color-mix(in srgb, var(--yellow-primary), var(--border) 55%);
+  }
+
+  .verdict-icon {
+    align-items: center;
+    display: inline-flex;
+    flex-shrink: 0;
+    margin-block-start: 1px;
+  }
+
+  .verdict[data-verdict="clean"] .verdict-icon {
+    color: var(--green-primary);
+  }
+
+  .verdict[data-verdict="attention"] .verdict-icon {
+    color: var(--blue-primary);
+  }
+
+  .verdict[data-verdict="unknown"] .verdict-icon {
+    color: var(--yellow-primary);
+  }
+
+  .verdict-body {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .verdict-tldr {
+    color: var(--text-bright);
+    font-size: var(--font-size-3);
+    font-weight: var(--font-weight-6);
+  }
+
+  .verdict-note {
+    color: var(--text);
+    font-size: var(--font-size-3);
+  }
+
+  .findings {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-2);
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .finding {
+    border-inline-start: 2px solid var(--border-bright);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding-inline-start: var(--size-2);
+  }
+
+  .finding[data-severity="warn"] {
+    border-inline-start-color: var(--yellow-primary);
+  }
+
+  .finding[data-severity="error"] {
+    border-inline-start-color: var(--red-primary);
+  }
+
+  .finding-title {
+    color: var(--text-bright);
+    font-size: var(--font-size-3);
+    font-weight: var(--font-weight-6);
+  }
+
+  .finding-detail {
+    color: var(--text);
+    font-size: var(--font-size-3);
+    line-height: 1.5;
+  }
+
+  /* ── Env table ───────────────────────────────────────────────────────── */
+
+  .env-table {
+    border: 1px solid var(--border);
+    border-collapse: collapse;
+    font-size: var(--font-size-3);
+    inline-size: 100%;
+  }
+
+  .env-table th {
+    background-color: var(--surface);
+    border-block-end: 1px solid var(--border);
+    color: var(--text-faded);
+    font-weight: var(--font-weight-6);
+    padding: var(--size-1-5) var(--size-2);
+    text-align: start;
+  }
+
+  .env-table td {
+    border-block-end: 1px solid color-mix(in srgb, var(--border), transparent 45%);
+    padding: var(--size-1-5) var(--size-2);
+    vertical-align: top;
+  }
+
+  .env-table tr:last-child td {
+    border-block-end: none;
+  }
+
+  .env-key {
+    color: var(--text-bright);
+    font-size: var(--font-size-3);
+    white-space: nowrap;
+  }
+
+  .env-desc {
+    color: var(--text);
+  }
+
+  .tag-cell {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--size-1);
+  }
+
+  .tag {
+    background-color: var(--highlight);
+    border-radius: var(--radius-1);
+    color: var(--text);
+    font-size: var(--font-size-2);
+    font-weight: var(--font-weight-6);
+    padding: 1px var(--size-1-5);
+    white-space: nowrap;
+  }
+
+  .tag[data-tone="required"] {
+    background-color: color-mix(in srgb, var(--yellow-primary), transparent 85%);
+    color: color-mix(in srgb, var(--yellow-primary), var(--text-bright) 35%);
+  }
+
+  .tag[data-tone="secret"] {
+    background-color: color-mix(in srgb, var(--purple-primary), transparent 85%);
+    color: color-mix(in srgb, var(--purple-primary), var(--text-bright) 35%);
+  }
+
+  .tag[data-tone="friday"] {
+    background-color: color-mix(in srgb, var(--blue-primary), transparent 85%);
+    color: color-mix(in srgb, var(--blue-primary), var(--text-bright) 35%);
+  }
+
+  /* ── Transport ───────────────────────────────────────────────────────── */
+
+  .transport-row {
+    align-items: center;
+    display: flex;
+    gap: var(--size-2);
+  }
+
+  .transport-value {
+    color: var(--text);
+    font-size: var(--font-size-3);
+    word-break: break-all;
+  }
+
+  /* ── Raw config ──────────────────────────────────────────────────────── */
+
+  .raw-toggle {
+    align-items: center;
+    background: none;
+    border: none;
+    color: var(--text-faded);
+    cursor: pointer;
+    display: flex;
+    font: inherit;
+    font-size: var(--font-size-3);
+    gap: var(--size-1);
+    padding: 0;
+  }
+
+  .raw-toggle:hover {
+    color: var(--text-bright);
+  }
+
+  .raw-block {
+    background-color: var(--surface-dark);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2);
+    color: var(--text);
+    font-family: var(--font-family-monospace);
+    font-size: var(--font-size-2);
+    margin: 0;
+    overflow-x: auto;
+    padding: var(--size-3);
+  }
+
+  /* ── Phase list (setting_up) ─────────────────────────────────────────── */
 
   .phase-list {
     display: flex;
@@ -986,13 +1212,13 @@
     align-items: center;
     color: var(--text-faded);
     display: flex;
-    font-size: var(--font-size-2);
+    font-size: var(--font-size-3);
     gap: var(--size-2);
   }
 
   .phase-item[data-state="active"] {
     color: var(--text-bright);
-    font-weight: var(--font-weight-5);
+    font-weight: var(--font-weight-6);
   }
 
   .phase-item[data-state="done"] {
@@ -1005,215 +1231,15 @@
     flex-shrink: 0;
   }
 
-  /* ─── Env var review list (awaiting_confirm) ─────────────────────────────── */
-
-  .env-review-list,
-  .env-summary-list,
-  .findings-list {
-    display: flex;
-    flex-direction: column;
-    gap: var(--size-2);
-    list-style: none;
-    margin: 0;
-    padding: 0;
-  }
-
-  .env-review-item,
-  .env-summary-item {
-    background: var(--surface-bright);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-2);
-    display: flex;
-    flex-direction: column;
-    gap: var(--size-1-5);
-    padding: var(--size-2) var(--size-3);
-  }
-
-  .env-review-head {
-    align-items: center;
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--size-2);
-    justify-content: space-between;
-  }
-
-  .env-name {
-    color: var(--text-bright);
-    font-family: var(--font-family-monospace);
-    font-size: var(--font-size-2);
-    font-weight: var(--font-weight-5);
-  }
-
-  .env-flags {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--size-1);
-  }
-
-  .env-flag {
-    background: var(--highlight);
-    border-radius: var(--radius-2);
-    color: var(--text-faded);
-    font-size: var(--font-size-0);
-    font-weight: var(--font-weight-5);
-    letter-spacing: 0.02em;
-    padding: 2px var(--size-1-5);
-    text-transform: uppercase;
-  }
-
-  .env-flag-required {
+  .stream-error {
     color: var(--yellow-primary);
-  }
-
-  .env-flag-secret {
-    color: var(--purple-primary);
-  }
-
-  .env-flag-provenance {
-    text-transform: none;
-    letter-spacing: 0;
-  }
-
-  .env-description {
-    color: var(--text-faded);
-    font-size: var(--font-size-1);
-    line-height: 1.5;
-    margin: 0;
-  }
-
-  .env-excerpt {
-    border-inline-start: 2px solid var(--border);
-    color: var(--text-faded);
-    font-size: var(--font-size-1);
-    font-style: italic;
-    line-height: 1.5;
-    margin: 0;
-    padding-inline-start: var(--size-2);
-  }
-
-  .env-summary-item {
-    background: transparent;
-  }
-
-  /* ─── Findings list (unknown) ────────────────────────────────────────────── */
-
-  .finding-item {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    padding-inline-start: var(--size-2);
-    border-inline-start: 2px solid var(--text-faded);
-  }
-
-  .finding-item[data-severity="warn"] {
-    border-inline-start-color: var(--yellow-primary);
-  }
-
-  .finding-item[data-severity="error"] {
-    border-inline-start-color: var(--red-primary);
-  }
-
-  .finding-title {
-    color: var(--text-bright);
     font-size: var(--font-size-2);
-    font-weight: var(--font-weight-5);
-  }
-
-  .finding-detail {
-    color: var(--text-faded);
-    font-size: var(--font-size-1);
-    line-height: 1.5;
-  }
-
-  /* ─── Clean note ─────────────────────────────────────────────────────────── */
-
-  .clean-note {
-    align-items: center;
-    color: var(--text-faded);
-    display: flex;
-    font-size: var(--font-size-1);
-    gap: var(--size-1);
     margin: 0;
   }
 
-  /* ─── Raw config ─────────────────────────────────────────────────────────── */
+  /* ── Readme ──────────────────────────────────────────────────────────── */
 
-  .raw-config-toggle {
-    align-items: center;
-    background: none;
-    border: none;
-    color: var(--text-faded);
-    cursor: pointer;
-    display: flex;
-    font-family: inherit;
-    font-size: var(--font-size-2);
-    gap: var(--size-1);
-    padding: 0;
-  }
-
-  .raw-config-toggle:hover {
-    color: var(--text-bright);
-  }
-
-  .raw-config-block {
-    background: var(--surface-dark);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-2);
-    color: var(--text);
-    font-family: var(--font-family-monospace);
-    font-size: var(--font-size-1);
-    margin: 0;
-    overflow-x: auto;
-    padding: var(--size-3);
-  }
-
-  /* ─── Transport ──────────────────────────────────────────────────────────── */
-
-  .transport {
-    display: flex;
-    flex-direction: column;
-    gap: var(--size-px);
-  }
-
-  .transport-url {
-    color: var(--text-bright);
-    font-size: var(--font-size-4);
-    font-weight: var(--font-weight-5);
-    line-break: anywhere;
-    word-break: break-word;
-  }
-
-  .transport-type {
-    color: var(--text-faded);
+  .readme {
     font-size: var(--font-size-3);
-    text-transform: lowercase;
-  }
-
-  /* ─── Meta grid ──────────────────────────────────────────────────────────── */
-
-  .meta-grid {
-    display: grid;
-    gap: var(--size-2) var(--size-6);
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  }
-
-  .meta-item {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-  }
-
-  .meta-label {
-    color: color-mix(in srgb, var(--text), transparent 45%);
-    font-size: var(--font-size-0);
-    font-weight: var(--font-weight-5);
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-  }
-
-  .meta-value {
-    color: var(--text);
-    font-family: var(--font-family-monospace);
-    font-size: var(--font-size-1);
   }
 </style>
