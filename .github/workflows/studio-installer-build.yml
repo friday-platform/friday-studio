@@ -115,6 +115,19 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
+      - name: Pin PATH to fresh Rust toolchain (macos-latest-large)
+        # The macos-latest-large image ships a pre-installed /usr/local/bin/cargo
+        # that is actually rustup-init and dies on `cargo metadata` with
+        # "unexpected argument 'metadata' found". The dtolnay step above
+        # installs a working toolchain at ~/.cargo/bin but its PATH entry gets
+        # shadowed by the runner image shim. Force it to the front of PATH.
+        if: matrix.platform == 'macos-intel'
+        shell: bash
+        run: |
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          "$HOME/.cargo/bin/cargo" --version
+          "$HOME/.cargo/bin/rustc" --version
+
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
         with:
