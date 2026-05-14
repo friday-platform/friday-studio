@@ -2,6 +2,7 @@ import { stat } from "node:fs/promises";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { createSuccessResponse } from "../utils.ts";
+import { expandUserPath } from "./path-utils.ts";
 
 async function isCommandAvailable(command: string): Promise<boolean> {
   try {
@@ -89,7 +90,7 @@ export function registerGrepTool(server: McpServer) {
         throw new Error("pattern is required");
       }
 
-      const searchPath = params.path || Deno.cwd();
+      const searchPath = params.path ? expandUserPath(params.path) : Deno.cwd();
 
       // Check if ripgrep is available
       const hasRipgrep = await isCommandAvailable("rg");

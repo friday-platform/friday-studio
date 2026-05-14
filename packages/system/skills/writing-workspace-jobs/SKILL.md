@@ -671,13 +671,14 @@ to the workspace dir** (`~/.atlas/workspaces/<workspaceId>/`).
 Absolute paths still work but pin the file outside the workspace —
 prefer relative for portability and so `git`-style backups capture
 your output. **For files OUTSIDE the workspace (a repo cloned to
-`~/somewhere`, a path under `$HOME`) use `bash`, not `fs_*`.** The
-`fs_*` tools take a literal path string and do **no** `~` / `$HOME` /
-`$USER` expansion — the model ends up guessing an absolute home dir
-and guesses wrong (a real failure mode: an agent looped on
-`fs_read_file` with invented `/Users/<name>/…` paths until it ran out
-of steps). `bash` runs under `/bin/bash -c` with the daemon's
-environment, so `~` and `$HOME` expand correctly.
+`~/somewhere`) use a `~/...` or `$HOME/...` path — `fs_*` expands `~`,
+`$HOME`, and `$USER`.** Do NOT hand-write a literal absolute home dir
+(`/Users/<name>/…`): the model guesses the username wrong (a real
+failure mode — an agent looped on `fs_read_file` with invented
+`/Users/<name>/…` paths until it ran out of steps). For needs the
+`fs_*` tools don't cover (pipes, multi-step shell) `bash` runs under
+`/bin/bash -c` with the daemon's environment and expands `~` / `$HOME`
+the same way.
 **Shell + data** — `bash`, `csv`, `webfetch`. `bash` is workspace-CWD-
 scoped (same default as `fs_write_file`).
 **State** — `state_append`, `state_filter`, `state_lookup`.
