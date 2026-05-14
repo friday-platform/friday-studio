@@ -34,7 +34,7 @@
     type MeIdentity,
     type OnboardingState,
   } from "$lib/api/me.ts";
-  import Combobox from "./combobox.svelte";
+  import Combobox from "$lib/components/shared/combobox.svelte";
 
   let loading = $state(true);
   let submitting = $state(false);

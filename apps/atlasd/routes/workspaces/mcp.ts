@@ -12,7 +12,7 @@
 import { join } from "node:path";
 import type { MCPServerConfig } from "@atlas/agent-sdk";
 import type { WorkspaceConfig } from "@atlas/config";
-import { disableMCPServer, enableMCPServer } from "@atlas/config/mutations";
+import { disableMCPServer, enableMCPServer, setMCPServerEnvWiring } from "@atlas/config/mutations";
 import { discoverMCPServers } from "@atlas/core/mcp-registry/discovery";
 import { splitLiteralEnvValues } from "@atlas/core/mcp-registry/env-routing";
 import { getWorkspaceMCPStatus } from "@atlas/core/mcp-registry/workspace-mcp";
@@ -36,6 +36,15 @@ const logger = createLogger({ component: "workspace-mcp-routes" });
 const ServerIdParamSchema = z.object({ serverId: z.string().min(1) });
 
 const DeleteQuerySchema = z.object({ force: z.literal("true").optional() });
+
+const ServerEnvParamSchema = z.object({
+  serverId: z.string().min(1),
+  key: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/, "env var keys must be POSIX identifiers"),
+});
+
+const ServerEnvBodySchema = z.object({
+  value: z.string().regex(/^[^\r\n]*$/, "env var values must not contain newlines"),
+});
 
 // =============================================================================
 // SHARED GUARDS
@@ -369,6 +378,62 @@ const mcpRoutes = daemonFactory
   .createApp()
   .get("/", handleGetMCPStatus)
   .put("/:serverId", zValidator("param", ServerIdParamSchema), (c) => handleEnableMCPServer(c))
+  // Set one of an enabled server's env values. Writes the value into the
+  // workspace `.env` and points the config copy's `env` entry at it
+  // (`from_environment`) — migrating a legacy literal in the process. Inline
+  // handler so Hono's `c.req.valid()` inference works (see apps/atlasd/CLAUDE.md).
+  .put(
+    "/:serverId/env/:key",
+    zValidator("param", ServerEnvParamSchema),
+    zValidator("json", ServerEnvBodySchema),
+    async (c) => {
+      const workspaceId = c.req.param("workspaceId");
+      const { serverId, key } = c.req.valid("param");
+      const { value } = c.req.valid("json");
+      if (!workspaceId) {
+        return c.json(
+          { success: false, error: "bad_request", message: "Missing workspaceId" },
+          400,
+        );
+      }
+      await requireWorkspaceAdmin(c, workspaceId);
+      const ctx = c.get("app");
+      try {
+        const manager = ctx.getWorkspaceManager();
+        const workspace = await manager.find({ id: workspaceId });
+        if (!workspace) {
+          return c.json(
+            { success: false, error: "not_found", entityType: "workspace", entityId: workspaceId },
+            404,
+          );
+        }
+        if (isSystemWorkspace(workspace)) {
+          return c.json(
+            { success: false, error: "forbidden", message: "Cannot modify system workspace" },
+            403,
+          );
+        }
+        // 1. Persist the value into the workspace `.env` — the value store.
+        setEnvFileVar(join(workspace.path, ".env"), key, value);
+        // 2. Point the config copy at `.env`; migrates a legacy literal entry.
+        const { result } = await applyDraftAwareMutation(workspace.path, (cfg) =>
+          setMCPServerEnvWiring(cfg, serverId, key),
+        );
+        if (!result.ok) {
+          return mapMutationError(c, result.error);
+        }
+        return c.json({ ok: true }, 200);
+      } catch (error) {
+        logger.error("Failed to set MCP server env var", {
+          workspaceId,
+          serverId,
+          key,
+          error: stringifyError(error),
+        });
+        return c.json({ success: false, error: "internal", message: stringifyError(error) }, 500);
+      }
+    },
+  )
   .delete(
     "/:serverId",
     zValidator("param", ServerIdParamSchema),

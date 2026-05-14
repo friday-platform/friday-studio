@@ -433,24 +433,24 @@
   .settings-detail {
     display: flex;
     flex-direction: column;
-    padding: var(--size-8) var(--size-10);
+    padding: var(--size-10) var(--size-12);
   }
 
   .section {
     display: flex;
     flex-direction: column;
-    gap: var(--size-4);
+    gap: var(--size-6);
     max-inline-size: 80ch;
   }
 
   .section > header {
     display: flex;
     flex-direction: column;
-    gap: var(--size-1);
+    gap: var(--size-2);
   }
 
   .section h2 {
-    font-size: var(--font-size-6);
+    font-size: var(--font-size-8);
     font-weight: var(--font-weight-6);
     margin: 0;
   }

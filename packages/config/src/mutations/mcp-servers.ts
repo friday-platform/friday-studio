@@ -139,6 +139,45 @@ export function enableMCPServer(
 }
 
 // ==============================================================================
+// ENV WIRING MUTATION
+// ==============================================================================
+
+/**
+ * Point an MCP server's env var at the workspace `.env` (`from_environment`
+ * wiring). Idempotent: a key already wired this way is left unchanged; a key
+ * carrying a literal value is migrated to wiring (the value moves to the
+ * workspace `.env`, written separately by the caller).
+ *
+ * Does not touch Link credential refs — those are managed via the credentials
+ * route, not here.
+ *
+ * @param config - Current workspace configuration
+ * @param serverId - MCP server identifier
+ * @param key - Env var name within the server's `env` block
+ * @returns MutationResult with updated config or a not-found error
+ */
+export function setMCPServerEnvWiring(
+  config: WorkspaceConfig,
+  serverId: string,
+  key: string,
+): MutationResult<WorkspaceConfig> {
+  const server = config.tools?.mcp?.servers?.[serverId];
+  if (!server) {
+    return { ok: false, error: notFoundError(serverId, "mcp server") };
+  }
+
+  return {
+    ok: true,
+    value: produce(config, (draft) => {
+      const draftServer = draft.tools?.mcp?.servers?.[serverId];
+      if (!draftServer) return;
+      draftServer.env ??= {};
+      draftServer.env[key] = "from_environment";
+    }),
+  };
+}
+
+// ==============================================================================
 // DISABLE MUTATION
 // ==============================================================================
 

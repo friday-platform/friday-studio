@@ -127,6 +127,42 @@ export function useSetWorkspaceEnvVar() {
 }
 
 /**
+ * Set one of an MCP server's env values for this workspace. Wraps
+ * `PUT /api/workspaces/:workspaceId/mcp/:serverId/env/:key`, which writes the
+ * value into the workspace `.env` and points the config copy at it
+ * (`from_environment`) — migrating a legacy literal entry in the process.
+ * Invalidates the workspace config + env queries on success.
+ */
+export function useSetMCPServerEnvVar() {
+  const queryClient = useQueryClient();
+
+  return createMutation(() => ({
+    mutationFn: async (input: {
+      workspaceId: string;
+      serverId: string;
+      key: string;
+      value: string;
+    }) => {
+      const client = getDaemonClient();
+      const res = await client.workspaceMcp(input.workspaceId)[":serverId"].env[":key"].$put({
+        param: { serverId: input.serverId, key: input.key },
+        json: { value: input.value },
+      });
+      if (!res.ok) {
+        throw new Error(await errorMessage(res, `Failed to set '${input.key}': ${res.status}`));
+      }
+      return res.json();
+    },
+    onSuccess: (_data, input) => {
+      queryClient.invalidateQueries({
+        queryKey: ["daemon", "workspace", input.workspaceId, "config"],
+      });
+      queryClient.invalidateQueries({ queryKey: workspaceEnvQueries.all(input.workspaceId) });
+    },
+  }));
+}
+
+/**
  * Point an MCP server's Link-backed env var at a different credential.
  * Wraps `PUT /api/workspaces/:workspaceId/config/credentials/mcp:serverId:envVar`,
  * which validates the credential against Link before rewriting the config copy.

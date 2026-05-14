@@ -2,10 +2,11 @@
   Workspace MCP section for the settings page.
 
   Enable/disable MCP servers for this workspace and, per enabled server, edit
-  that workspace's settings and credentials. Setting values resolve from the
-  workspace `.env` (edited inline here); Link-backed env vars get a per-server
-  credential picker. There is no discovery surface — a quick-add dropdown lists
-  what is installable, and a link points to chat-driven setup.
+  that workspace's setting values and pick Link credentials for its Link-backed
+  env vars. Setting values resolve from the workspace `.env`; saving a value
+  also migrates a legacy literal entry to `from_environment` wiring. There is
+  no discovery surface — a quick-add dropdown lists what is installable, and a
+  link points to chat-driven setup.
 
   @component
 -->
@@ -17,11 +18,12 @@
   import {
     useDisableMCPServer,
     useEnableMCPServer,
-    useSetWorkspaceEnvVar,
+    useSetMCPServerEnvVar,
     workspaceEnvQueries,
     workspaceMcpQueries,
     workspaceQueries,
   } from "$lib/queries";
+  import Combobox from "$lib/components/shared/combobox.svelte";
   import McpCredentialPicker from "./mcp-credential-picker.svelte";
 
   interface Props {
@@ -36,6 +38,7 @@
 
   const enabled = $derived(statusQuery.data?.enabled ?? []);
   const available = $derived(statusQuery.data?.available ?? []);
+  const availableOptions = $derived(available.map((s) => ({ value: s.id, label: s.name })));
   const envMap = $derived(envQuery.data ?? {});
 
   /** Per-server env blocks from the workspace config copy. */
@@ -58,19 +61,25 @@
   const isSecretKey = (key: string): boolean => SECRET_KEY_RE.test(key);
 
   type EnvRow =
-    | { kind: "env-backed"; key: string }
-    | { kind: "literal"; key: string; value: string }
+    | { kind: "value"; key: string; initialValue: string }
     | { kind: "link"; key: string; providerId: string; credentialId?: string };
 
+  /**
+   * Classify a server's env block into editable value rows and credential
+   * rows. A string value is editable regardless of whether it is already
+   * `from_environment` wiring (value comes from the workspace `.env`) or a
+   * legacy literal (value comes from the config copy — saving migrates it).
+   */
   function classifyEnv(env: Record<string, unknown>): EnvRow[] {
     const rows: EnvRow[] = [];
     for (const [key, raw] of Object.entries(env)) {
       if (typeof raw === "string") {
-        if (raw === "from_environment" || raw === "auto") {
-          rows.push({ kind: "env-backed", key });
-        } else {
-          rows.push({ kind: "literal", key, value: raw });
-        }
+        const wired = raw === "from_environment" || raw === "auto";
+        rows.push({
+          kind: "value",
+          key,
+          initialValue: wired ? (envMap[key] ?? "") : raw,
+        });
         continue;
       }
       if (typeof raw === "object" && raw !== null && (raw as { from?: unknown }).from === "link") {
@@ -117,26 +126,23 @@
     }
   }
 
-  // ── Per-key setting edits (workspace `.env`) ───────────────────────────
+  // ── Per-key setting edits ──────────────────────────────────────────────
+  // Edit + reveal state keyed by `${serverId}:${key}` so two servers sharing
+  // an env var name don't share an input box.
   let edits = $state<Record<string, string>>({});
   let revealed = $state<Record<string, boolean>>({});
 
-  function currentValue(key: string): string {
-    return edits[key] ?? envMap[key] ?? "";
-  }
-  function isKeyDirty(key: string): boolean {
-    return key in edits && edits[key] !== (envMap[key] ?? "");
-  }
-
-  const setEnvVar = useSetWorkspaceEnvVar();
+  const setEnvVar = useSetMCPServerEnvVar();
   let savingKey = $state<string | null>(null);
 
-  async function saveEnvKey(key: string): Promise<void> {
-    if (!isKeyDirty(key)) return;
-    savingKey = key;
+  async function saveEnvKey(serverId: string, key: string, initialValue: string): Promise<void> {
+    const editKey = `${serverId}:${key}`;
+    const next = edits[editKey] ?? initialValue;
+    if (next === initialValue) return;
+    savingKey = editKey;
     try {
-      await setEnvVar.mutateAsync({ workspaceId, key, value: edits[key] ?? "" });
-      const { [key]: _saved, ...rest } = edits;
+      await setEnvVar.mutateAsync({ workspaceId, serverId, key, value: next });
+      const { [editKey]: _saved, ...rest } = edits;
       edits = rest;
       toast({ title: `${key} saved` });
     } catch (e) {
@@ -160,20 +166,31 @@
 
   <!-- Quick add -->
   <div class="quick-add">
-    <select class="quick-add-select" bind:value={quickAddId} disabled={enableMut.isPending}>
-      <option value="">Add a server…</option>
-      {#each available as server (server.id)}
-        <option value={server.id}>{server.name}</option>
-      {/each}
-    </select>
-    <Button
-      variant="secondary"
-      onclick={() => enableServer(quickAddId)}
-      disabled={!quickAddId || enableMut.isPending}
-    >
-      {enableMut.isPending ? "Enabling…" : "Enable"}
-    </Button>
-    <a class="chat-link" href="/platform/{workspaceId}/chat">or set one up in chat →</a>
+    <div class="quick-add-head">
+      <h3>Add a server</h3>
+      <p class="quick-add-desc">
+        These are the MCP servers installed in your
+        <a href="/mcp">MCP Catalog</a>. Pick one to turn it on for this workspace — a copy of its
+        setup is made here, so configuring it never affects other workspaces. To install a server
+        that isn't listed, browse the <a href="/mcp">MCP Catalog</a>, or
+        <a href="/platform/{workspaceId}/chat">set one up in chat</a>.
+      </p>
+    </div>
+    <Combobox
+      bind:value={quickAddId}
+      options={availableOptions}
+      placeholder={available.length === 0 ? "No servers available to add" : "Search servers…"}
+      disabled={enableMut.isPending || available.length === 0}
+    />
+    <div class="quick-add-action">
+      <Button
+        variant="primary"
+        onclick={() => enableServer(quickAddId)}
+        disabled={!quickAddId || enableMut.isPending}
+      >
+        {enableMut.isPending ? "Enabling…" : "Enable server"}
+      </Button>
+    </div>
   </div>
 
   {#if statusQuery.isLoading}
@@ -191,7 +208,7 @@
         {@const rows = classifyEnv(serverEnv[server.id] ?? {})}
         <div class="server-block">
           <div class="server-head">
-            <span class="server-name">{server.name}</span>
+            <a class="server-name" href="/mcp/{server.id}">{server.name}</a>
             <Button
               variant="destructive"
               onclick={() => disableServer(server.id)}
@@ -206,53 +223,55 @@
           {:else}
             <div class="env-rows">
               {#each rows as row (row.key)}
+                {@const editKey = `${server.id}:${row.key}`}
                 <div class="env-row">
-                  <code class="env-key">{row.key}</code>
-                  {#if row.kind === "env-backed"}
+                  <code class="env-key" title={row.key}>{row.key}</code>
+                  {#if row.kind === "value"}
                     {@const secret = isSecretKey(row.key)}
-                    <input
-                      class="env-value"
-                      type={secret && !revealed[row.key] ? "password" : "text"}
-                      value={currentValue(row.key)}
-                      oninput={(e) => {
-                        edits = { ...edits, [row.key]: e.currentTarget.value };
-                      }}
-                      placeholder={envQuery.isLoading ? "Loading…" : "Not set"}
-                      autocomplete="off"
-                      spellcheck="false"
-                    />
-                    {#if secret}
-                      <button
-                        type="button"
-                        class="reveal"
-                        aria-label={revealed[row.key] ? "Hide value" : "Show value"}
-                        onclick={() => {
-                          revealed = { ...revealed, [row.key]: !revealed[row.key] };
+                    {@const value = edits[editKey] ?? row.initialValue}
+                    {@const dirty = editKey in edits && edits[editKey] !== row.initialValue}
+                    <div class="env-control">
+                      <input
+                        class="env-input"
+                        type={secret && !revealed[editKey] ? "password" : "text"}
+                        {value}
+                        oninput={(e) => {
+                          edits = { ...edits, [editKey]: e.currentTarget.value };
                         }}
+                        placeholder={envQuery.isLoading ? "Loading…" : "Not set"}
+                        autocomplete="off"
+                        spellcheck="false"
+                      />
+                      {#if secret}
+                        <button
+                          type="button"
+                          class="reveal"
+                          aria-label={revealed[editKey] ? "Hide value" : "Show value"}
+                          onclick={() => {
+                            revealed = { ...revealed, [editKey]: !revealed[editKey] };
+                          }}
+                        >
+                          {#if revealed[editKey]}<Icons.Eye />{:else}<Icons.EyeClosed />{/if}
+                        </button>
+                      {/if}
+                      <Button
+                        variant="secondary"
+                        onclick={() => saveEnvKey(server.id, row.key, row.initialValue)}
+                        disabled={!dirty || savingKey === editKey}
                       >
-                        {#if revealed[row.key]}<Icons.Eye />{:else}<Icons.EyeClosed />{/if}
-                      </button>
-                    {/if}
-                    <Button
-                      variant="secondary"
-                      onclick={() => saveEnvKey(row.key)}
-                      disabled={!isKeyDirty(row.key) || savingKey === row.key}
-                    >
-                      {savingKey === row.key ? "Saving…" : "Save"}
-                    </Button>
-                  {:else if row.kind === "link"}
-                    <McpCredentialPicker
-                      {workspaceId}
-                      serverId={server.id}
-                      envVar={row.key}
-                      providerId={row.providerId}
-                      currentCredentialId={row.credentialId}
-                    />
+                        {savingKey === editKey ? "Saving…" : "Save"}
+                      </Button>
+                    </div>
                   {:else}
-                    <span class="env-readonly">
-                      <span class="badge">Literal</span>
-                      <code>{row.value}</code>
-                    </span>
+                    <div class="env-control">
+                      <McpCredentialPicker
+                        {workspaceId}
+                        serverId={server.id}
+                        envVar={row.key}
+                        providerId={row.providerId}
+                        currentCredentialId={row.credentialId}
+                      />
+                    </div>
                   {/if}
                 </div>
               {/each}
@@ -268,18 +287,18 @@
   .section {
     display: flex;
     flex-direction: column;
-    gap: var(--size-4);
+    gap: var(--size-6);
     max-inline-size: 80ch;
   }
 
   .section > header {
     display: flex;
     flex-direction: column;
-    gap: var(--size-1);
+    gap: var(--size-2);
   }
 
   .section h2 {
-    font-size: var(--font-size-6);
+    font-size: var(--font-size-8);
     font-weight: var(--font-weight-6);
     margin: 0;
   }
@@ -296,36 +315,52 @@
   }
 
   .quick-add {
-    align-items: center;
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--size-2);
-  }
-
-  .quick-add-select {
-    background-color: var(--surface-dark);
+    background-color: var(--surface);
     border: 1px solid var(--border);
-    border-radius: var(--radius-2);
-    color: var(--text);
-    font: inherit;
-    font-size: var(--font-size-3);
-    padding: var(--size-2) var(--size-3);
+    border-radius: var(--radius-3);
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-3);
+    padding: var(--size-3);
   }
 
-  .chat-link {
+  .quick-add-head {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-1);
+  }
+
+  .quick-add-head h3 {
+    color: var(--text-bright);
+    font-size: var(--font-size-6);
+    font-weight: var(--font-weight-6);
+    margin: 0;
+  }
+
+  .quick-add-desc {
+    color: var(--text);
+    font-size: var(--font-size-3);
+    margin: 0;
+    max-inline-size: 70ch;
+  }
+
+  .quick-add-desc a {
     color: var(--blue-primary);
-    font-size: var(--font-size-2);
     text-decoration: none;
   }
 
-  .chat-link:hover {
+  .quick-add-desc a:hover {
     text-decoration: underline;
+  }
+
+  .quick-add-action {
+    display: flex;
   }
 
   .server-list {
     display: flex;
     flex-direction: column;
-    gap: var(--size-4);
+    gap: var(--size-3);
   }
 
   .server-block {
@@ -334,54 +369,74 @@
     border-radius: var(--radius-3);
     display: flex;
     flex-direction: column;
-    gap: var(--size-2);
-    padding: var(--size-3);
   }
 
   .server-head {
     align-items: center;
+    border-block-end: 1px solid var(--border);
     display: flex;
     justify-content: space-between;
+    padding: var(--size-3);
   }
 
   .server-name {
     color: var(--text-bright);
-    font-size: var(--font-size-3);
+    font-size: var(--font-size-6);
     font-weight: var(--font-weight-6);
+    overflow: hidden;
+    text-decoration: none;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .server-name:hover {
+    text-decoration: underline;
   }
 
   .env-rows {
     display: flex;
     flex-direction: column;
-    gap: var(--size-1-5);
   }
 
   .env-row {
     align-items: center;
     display: flex;
-    gap: var(--size-2);
+    gap: var(--size-3);
+    padding: var(--size-2) var(--size-3);
+  }
+
+  .env-row:not(:last-child) {
+    border-block-end: 1px solid color-mix(in srgb, var(--border), transparent 45%);
   }
 
   .env-key {
     color: var(--text-bright);
     flex-shrink: 0;
-    font-size: var(--font-size-3);
-    inline-size: 24ch;
+    font-size: var(--font-size-2);
+    inline-size: 28ch;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .env-value {
+  .env-control {
+    align-items: center;
+    display: flex;
+    flex: 1;
+    gap: var(--size-2);
+    min-inline-size: 0;
+  }
+
+  .env-input {
     background-color: var(--surface-dark);
     border: 1px solid var(--border);
-    border-radius: var(--radius-1);
+    border-radius: var(--radius-2);
     color: var(--text);
     flex: 1;
     font-family: var(--font-family-mono, ui-monospace, monospace);
     font-size: var(--font-size-3);
     min-inline-size: 0;
-    padding: var(--size-1) var(--size-1-5);
+    padding: var(--size-1-5) var(--size-2);
   }
 
   .reveal {
@@ -402,32 +457,6 @@
     block-size: 100%;
   }
 
-  .env-readonly {
-    align-items: center;
-    color: var(--text);
-    display: flex;
-    flex: 1;
-    gap: var(--size-2);
-    font-size: var(--font-size-3);
-    min-inline-size: 0;
-  }
-
-  .env-readonly code {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .badge {
-    background-color: color-mix(in srgb, var(--text), transparent 88%);
-    border-radius: var(--radius-1);
-    color: color-mix(in srgb, var(--text), transparent 25%);
-    flex-shrink: 0;
-    font-size: var(--font-size-2);
-    font-weight: var(--font-weight-6);
-    padding: 1px var(--size-1-5);
-  }
-
   .empty-hint {
     color: var(--text);
     font-size: var(--font-size-3);
@@ -435,6 +464,7 @@
 
   .empty-hint.indent {
     color: color-mix(in srgb, var(--text), transparent 35%);
+    padding: var(--size-3);
   }
 
   .error-banner {

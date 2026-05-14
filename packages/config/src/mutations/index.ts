@@ -52,6 +52,7 @@ export {
   disableMCPServer,
   enableMCPServer,
   findServerReferences,
+  setMCPServerEnvWiring,
 } from "./mcp-servers.ts";
 // Signal mutations
 export {
