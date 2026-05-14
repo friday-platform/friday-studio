@@ -197,6 +197,17 @@ describe("post-stream lift (liftToolResultsForPersist)", () => {
     expect(result).toEqual({ content: [{ type: "text", text }] });
     expect(mockFetch).not.toHaveBeenCalled();
   });
+
+  it("exempts load_skill results — the skill body is the point, never lift it", async () => {
+    // A skill body well over threshold that would otherwise be lifted.
+    const skillResult = {
+      instructions: `# Skill\n\n${bigBase64(SIZE_THRESHOLD_CHARS + 500)}`,
+      frontmatter: { name: "writing-workspace-jobs" },
+    };
+    const result = await lift(skillResult, { serverId: "skill", toolName: "load_skill" });
+    expect(result).toEqual(skillResult);
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
 });
 
 describe("createScrubber — text/JSON lifting", () => {
@@ -426,6 +437,24 @@ describe("scrubAssistantMessage (pre-persist)", () => {
     const r = await scrubAssistantMessage(parts, { workspaceId: "ws", chatId: "ch", logger });
     expect(r.rewritten).toBe(0);
     expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it("exempts tool-load_skill parts — the skill body stays inline", async () => {
+    const blob = bigBase64(SIZE_THRESHOLD_CHARS + 500);
+    const parts: Array<Record<string, unknown>> = [
+      {
+        type: "tool-load_skill",
+        toolCallId: "t-skill",
+        state: "output-available",
+        input: { name: "@friday/writing-workspace-jobs" },
+        output: { instructions: `# Skill\n\n${blob}`, frontmatter: { name: "x" } },
+      },
+    ];
+    const r = await scrubAssistantMessage(parts, { workspaceId: "ws", chatId: "ch", logger });
+    expect(r.rewritten).toBe(0);
+    expect(mockFetch).not.toHaveBeenCalled();
+    const out = (parts[0] as { output: { instructions: string } }).output;
+    expect(out.instructions).toContain(blob);
   });
 });
 

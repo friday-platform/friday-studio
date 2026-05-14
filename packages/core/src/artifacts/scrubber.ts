@@ -52,6 +52,18 @@ const SIZE_THRESHOLD_CHARS = 4 * 1024;
 const TEXT_THRESHOLD_CHARS = 8 * 1024;
 
 /**
+ * Tool results that must never be lifted to artifacts, keyed by tool name.
+ *
+ * `load_skill`'s entire purpose is to inline a skill's body (instructions +
+ * reference files) into the prompt. Lifting that body to an artifact defeats
+ * the tool: the agent "loads" a skill and gets back a `[lifted to artifact]`
+ * marker instead of the guidance it asked for, then proceeds without it.
+ * Skill bodies are authored markdown, not the base64 / 50-email-JSON dumps
+ * the scrubber exists to keep out of the prompt — so they're exempt.
+ */
+const SCRUB_EXEMPT_TOOLS = new Set(["load_skill"]);
+
+/**
  * Literal prefix produced by {@link refMarker}. A scrubbed string that
  * already starts with this prefix is the output of a previous scrub pass
  * (e.g. MCP-boundary scrub re-walked by pre-persist scrub) — lifting it
@@ -496,7 +508,9 @@ export async function liftToolResultsForPersist(
     // `== null` covers both `undefined` (not set) and `null` (explicit
     // "no result"). Either way there's nothing to
     // scrub. Matches the rest of the codebase's nullish-check style.
-    if (call.result == null) {
+    // Exempt tools (e.g. load_skill) keep their full inline result —
+    // their payload is the point, not noise to lift out.
+    if (call.result == null || SCRUB_EXEMPT_TOOLS.has(call.toolName)) {
       out.push(call);
       continue;
     }
@@ -572,15 +586,19 @@ export async function scrubAssistantMessage(
     // string literal in `run_code`'s source argument). Without input scrub,
     // those bytes survive into chat history and into the next turn's prompt.
     if (type.startsWith("tool-")) {
-      if ("output" in part) {
-        await scrubField(part.output, "pre-persist", type, (next) => {
-          part.output = next;
-        });
-      }
-      if ("input" in part) {
-        await scrubField(part.input, "pre-persist", `${type}.input`, (next) => {
-          part.input = next;
-        });
+      // `type` is `tool-<name>` — strip the prefix to match the exempt set.
+      const toolName = type.slice("tool-".length);
+      if (!SCRUB_EXEMPT_TOOLS.has(toolName)) {
+        if ("output" in part) {
+          await scrubField(part.output, "pre-persist", type, (next) => {
+            part.output = next;
+          });
+        }
+        if ("input" in part) {
+          await scrubField(part.input, "pre-persist", `${type}.input`, (next) => {
+            part.input = next;
+          });
+        }
       }
     }
     // Sub-agent stream envelopes — chunk may carry an embedded tool
