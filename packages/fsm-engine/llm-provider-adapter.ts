@@ -70,7 +70,7 @@ export class AtlasLLMProviderAdapter implements LLMProvider {
     abortSignal?: AbortSignal;
   }): Promise<AgentResult<string, FSMLLMOutput>> {
     const startMs = Date.now();
-    const providerName = params.provider ?? this.defaultModel.provider;
+    const providerName = this.defaultModel.provider;
     const modelForCall =
       params.provider && params.model
         ? this.resolveOverride(params.provider, params.model)
@@ -165,9 +165,10 @@ export class AtlasLLMProviderAdapter implements LLMProvider {
         groq?: { strictJsonSchema: boolean };
         openai?: { strictJsonSchema: boolean; structuredOutputs: boolean };
       } = {};
-      if (providerName.startsWith("groq")) {
+      const effectiveProvider = params.provider ?? providerName;
+      if (effectiveProvider.startsWith("groq")) {
         strictModeProviderOptions.groq = { strictJsonSchema: true };
-      } else if (providerName.startsWith("openai")) {
+      } else if (effectiveProvider.startsWith("openai")) {
         strictModeProviderOptions.openai = { strictJsonSchema: true, structuredOutputs: true };
       }
 
