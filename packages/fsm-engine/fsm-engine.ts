@@ -1895,9 +1895,6 @@ export class FSMEngine {
               let completeToolInjected = false;
 
               if (action.outputTo) {
-                // Determine document type name for schema lookup:
-                // 1. action.outputType takes precedence (explicit mapping)
-                // 2. Fall back to document.type if document exists
                 const outputDoc = documents.get(action.outputTo);
                 const docTypeName = action.outputType ?? outputDoc?.type;
                 const jsonSchema = docTypeName

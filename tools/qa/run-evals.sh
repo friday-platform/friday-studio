@@ -138,8 +138,7 @@ printf "%-44s %-10s %s\n" "-----" "------" "------"
 
 OVERALL_PASS=0
 OVERALL_FAIL=0
-# Sort by name for stable output. Build "name|status|report" lines, sort,
-# then split.
+# Sort by name for stable output.
 LINES=()
 for i in "${!NAMES[@]}"; do
   LINES+=("${NAMES[$i]}|${STATUSES[$i]}|${REPORTS[$i]}")
