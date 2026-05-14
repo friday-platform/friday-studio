@@ -6,7 +6,15 @@ import { daemonFactory } from "../../src/factory.ts";
 import { getCurrentUser, updateCurrentUser } from "./adapter.ts";
 import { deletePhoto, getPhoto, savePhoto, validatePhoto } from "./photo-storage.ts";
 
-/** Derive the external-facing origin, respecting reverse-proxy headers. */
+/** Derive the external-facing origin, respecting reverse-proxy headers.
+ *
+ * Header source in dev: tools/agent-playground/src/lib/server/proxy.ts
+ * stamps `x-forwarded-host` = playground origin (localhost:5200) so the
+ * persisted profile-photo URL is browser-reachable through the
+ * browser-trusted cert, not the daemon's s2s listener. Trust on this
+ * endpoint is enforced by session-cookie auth — the X-Forwarded-* values
+ * are not authenticated, so they MUST NOT be used for authorization
+ * decisions, only for synthesizing reply URLs. */
 function getExternalOrigin(c: Context): string {
   const proto = c.req.header("x-forwarded-proto") ?? new URL(c.req.url).protocol.replace(":", "");
   const host = c.req.header("x-forwarded-host") ?? new URL(c.req.url).host;

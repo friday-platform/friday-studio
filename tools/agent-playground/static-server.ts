@@ -12,6 +12,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Hono } from "hono";
 import { serveStatic } from "hono/deno";
+import { buildHonoProxy } from "./src/lib/server/proxy.ts";
 import { api } from "./src/lib/server/router.ts";
 import { resolveBrowserTlsPaths } from "./tls-paths.ts";
 
@@ -43,56 +44,6 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const BUILD_ROOT = join(HERE, "build");
 const INDEX_HTML = join(BUILD_ROOT, "index.html");
 
-function proxyAbortableBody(
-  body: ReadableStream<Uint8Array>,
-  requestSignal: AbortSignal,
-  abortUpstream: () => void,
-): ReadableStream<Uint8Array> {
-  let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
-  let cancelled = false;
-
-  const cancelUpstream = () => {
-    if (cancelled) return;
-    cancelled = true;
-    abortUpstream();
-    void reader?.cancel().catch(() => {
-      // The upstream may already be gone.
-    });
-  };
-
-  return new ReadableStream<Uint8Array>({
-    start(controller) {
-      reader = body.getReader();
-      requestSignal.addEventListener("abort", cancelUpstream, { once: true });
-      if (requestSignal.aborted) cancelUpstream();
-
-      void (async () => {
-        try {
-          while (!cancelled) {
-            const { done, value } = await reader!.read();
-            if (done) break;
-            controller.enqueue(value);
-          }
-          if (!cancelled) controller.close();
-        } catch (err) {
-          if (!cancelled) controller.error(err);
-        } finally {
-          requestSignal.removeEventListener("abort", cancelUpstream);
-          try {
-            reader?.releaseLock();
-          } catch {
-            // Reader may already be released after cancellation.
-          }
-          abortUpstream();
-        }
-      })();
-    },
-    cancel() {
-      cancelUpstream();
-    },
-  });
-}
-
 // Reverse proxy for browser → local service. The SvelteKit dev server has
 // per-route versions of this under src/routes/api/{daemon,tunnel}/[...path]/,
 // but adapter-static strips all server routes — the production binary has
@@ -100,91 +51,13 @@ function proxyAbortableBody(
 // /api/daemon/api/workspaces/X falls through to the SPA fallback returning
 // index.html, surfacing as "Unexpected token '<', '<!doctype' is not valid
 // JSON" on every page that loads workspace config.
-function buildProxy(prefix: string, upstream: string, label: string) {
-  return async (c: { req: { url: string; method: string; raw: Request } }) => {
-    const url = new URL(c.req.url);
-    const path = url.pathname.replace(new RegExp(`^${prefix}`), "");
-    const target = new URL(path + url.search, upstream);
-
-    const headers = new Headers(c.req.raw.headers);
-    headers.delete("host");
-    headers.delete("content-length");
-
-    // Buffer the request body for methods that carry one. Streaming with
-    // `duplex: "half"` races the response: when the upstream short-circuits
-    // (e.g. 401 before consuming the body) the in-flight body sender can
-    // error with `TypeError: fetch failed`, swallowing the real status code.
-    let body: BodyInit | null = null;
-    if (c.req.method !== "GET" && c.req.method !== "HEAD") {
-      body = new Uint8Array(await c.req.raw.arrayBuffer());
-    }
-
-    const upstreamController = new AbortController();
-    const abortUpstream = () => upstreamController.abort();
-    c.req.raw.signal.addEventListener("abort", abortUpstream, { once: true });
-
-    let res: Response;
-    try {
-      res = await fetch(target, {
-        method: c.req.method,
-        headers,
-        body,
-        signal: upstreamController.signal,
-      });
-    } catch (err) {
-      c.req.raw.signal.removeEventListener("abort", abortUpstream);
-      const message = err instanceof Error ? err.message : String(err);
-      return new Response(JSON.stringify({ error: `${label} proxy fetch failed: ${message}` }), {
-        status: 502,
-        headers: { "content-type": "application/json" },
-      });
-    }
-
-    // Strip headers that don't survive the proxy / HTTP/2 boundary:
-    //  - content-encoding: fetch() already decompressed; forwarding makes
-    //    the browser double-decompress.
-    //  - content-length: chunked re-encoding may invalidate it.
-    //  - HTTP/1.1 connection-specific headers: when this binary serves TLS
-    //    (https://) the Deno HTTP server negotiates h2 with the browser;
-    //    h2 forbids `transfer-encoding`, `connection`, etc. The upstream
-    //    is h1.1, so its responses carry these — drop them.
-    const responseHeaders = new Headers(res.headers);
-    for (const h of [
-      "content-encoding",
-      "content-length",
-      "transfer-encoding",
-      "connection",
-      "keep-alive",
-      "upgrade",
-      "proxy-connection",
-      "te",
-      "trailer",
-    ]) {
-      responseHeaders.delete(h);
-    }
-
-    // SSE: pass the body stream through unbuffered so live event streams
-    // don't get held up at our proxy boundary. Wrap the body so browser
-    // disconnects cancel the upstream fetch instead of leaving
-    // subscriptions and file descriptors open behind the proxy.
-    if (res.headers.get("content-type")?.includes("text/event-stream")) {
-      if (!res.body) {
-        c.req.raw.signal.removeEventListener("abort", abortUpstream);
-        return new Response(null, { status: res.status, headers: responseHeaders });
-      }
-      c.req.raw.signal.removeEventListener("abort", abortUpstream);
-      const stream = proxyAbortableBody(res.body, c.req.raw.signal, abortUpstream);
-      return new Response(stream, { status: res.status, headers: responseHeaders });
-    }
-
-    c.req.raw.signal.removeEventListener("abort", abortUpstream);
-    return new Response(res.body, { status: res.status, headers: responseHeaders });
-  };
-}
-
+//
+// All header rewriting, X-Forwarded-* injection, redirect: "manual",
+// SSE + abort handling lives in `src/lib/server/proxy.ts` so the dev hook
+// and this binary share a single implementation (and a single test suite).
 const proxies = new Hono()
-  .all("/api/daemon/*", buildProxy("/api/daemon", DAEMON_URL, "daemon"))
-  .all("/api/tunnel/*", buildProxy("/api/tunnel", TUNNEL_URL, "tunnel"));
+  .all("/api/daemon/*", buildHonoProxy("/api/daemon", DAEMON_URL, "daemon"))
+  .all("/api/tunnel/*", buildHonoProxy("/api/tunnel", TUNNEL_URL, "tunnel"));
 
 let CACHED_HTML: string | null = null;
 async function indexHtml(): Promise<string> {

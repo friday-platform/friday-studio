@@ -98,7 +98,12 @@ describe("connectOrSpawn — URL-file rendezvous (source: url-file)", () => {
     }
   });
 
-  it("falls through to spawn when the URL file points at a dead broker", async () => {
+  // Timeout: two nats-server spawns + a stop with up to 3s SIGTERM grace
+  // can exceed vitest's 5s default on cold CI runners. Sequence:
+  // spawn (~2s) → stop (~3s) → tcpProbe (500ms) → fresh spawn (~2s).
+  it("falls through to spawn when the URL file points at a dead broker", {
+    timeout: 20_000,
+  }, async () => {
     // Spawn + stop a broker, then write its now-dead URL to the file.
     // connectOrSpawn must detect the stale URL (TCP probe fails) and
     // spawn a fresh broker. spawnFallback defaults to true.
