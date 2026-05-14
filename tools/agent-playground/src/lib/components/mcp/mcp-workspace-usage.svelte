@@ -44,7 +44,7 @@
   <div class="workspace-list">
     {#each enabledRows as row (row.workspaceId)}
       <div class="workspace-row">
-        <a class="workspace-name" href="/platform/{row.workspaceId}/settings">
+        <a class="workspace-name" href="/platform/{row.workspaceId}/settings/mcp">
           {row.workspaceName}
         </a>
         {#if row.enabledServer.agentIds && row.enabledServer.agentIds.length > 0}
