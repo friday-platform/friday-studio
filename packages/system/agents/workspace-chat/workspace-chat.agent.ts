@@ -296,7 +296,23 @@ export function formatWorkspaceSection(
 
   if (details.signals.length > 0) {
     const signalConfigs = config?.signals;
+    // Map signal → job that triggers from it. When a job covers a signal,
+    // the signal is reachable via the bound job tool — pointing the model
+    // at the tool name (instead of the HTTP path) closes the failure mode
+    // where chat web_fetched localhost/webhook URLs instead of calling
+    // the registered tool. Locked by tools/qa/live-daemon/scenarios/
+    // chat-job-tool-routing.ts.
+    const signalToJob = new Map<string, string>();
+    for (const [jobName, jobSpec] of Object.entries(config?.jobs ?? {})) {
+      for (const trig of jobSpec.triggers ?? []) {
+        if (trig.signal && !signalToJob.has(trig.signal)) {
+          signalToJob.set(trig.signal, jobName);
+        }
+      }
+    }
     const signalEntries = details.signals.map((s) => {
+      const job = signalToJob.get(s.name);
+      if (job) return `${s.name} (use tool: ${job})`;
       const trigger = signalConfigs ? describeSignalTrigger(signalConfigs[s.name]) : "";
       return trigger ? `${s.name} (${trigger})` : s.name;
     });
