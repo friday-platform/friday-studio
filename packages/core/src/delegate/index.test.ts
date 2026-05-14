@@ -1181,6 +1181,47 @@ describe("createDelegateTool", () => {
     expect(mockDispose).toHaveBeenCalled();
   });
 
+  it("forwards envOverlay to createMCPTools and discovers against live config", async () => {
+    mockDiscoverMCPServers.mockResolvedValue([
+      {
+        metadata: {
+          id: "server-a",
+          name: "A",
+          source: "workspace",
+          securityRating: "unverified",
+          configTemplate: { transport: { type: "stdio", command: "a" } },
+        },
+        mergedConfig: { transport: { type: "stdio", command: "a" } },
+        configured: true,
+      },
+    ] satisfies MCPServerCandidate[]);
+    mockCreateMCPTools.mockResolvedValue({ tools: { tool_a: dummyTool }, dispose: vi.fn() });
+
+    const captured: CapturedStreamTextArgs = { args: undefined };
+    setupMockStreamText(captured, {
+      steps: [{ finish: { ok: true, answer: "done" } }],
+      finalText: "",
+    });
+
+    const { delegateTool } = makeDelegate(undefined, undefined, undefined, undefined, {
+      envOverlay: { FOO: "bar" },
+      linkSummary: { credentials: [] },
+    });
+    const result = await runDelegate(delegateTool, "del-call-1", { mcpServers: ["server-a"] });
+
+    expect(result.ok).toBe(true);
+    // env-supply: the workspace `.env` overlay reaches the MCP tool builder so
+    // a delegated sub-agent's `from_environment` wiring resolves from it.
+    expect(mockCreateMCPTools).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.any(Object),
+      expect.objectContaining({ envOverlay: { FOO: "bar" } }),
+    );
+    // live-fetch contract: discovery is called with `undefined` config, so it
+    // re-fetches live workspace config rather than a stale per-turn snapshot.
+    expect(mockDiscoverMCPServers).toHaveBeenCalledWith("w1", undefined, { credentials: [] });
+  });
+
   it("connects multiple MCP servers with prefixed tool names", async () => {
     mockDiscoverMCPServers.mockResolvedValue([
       {

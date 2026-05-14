@@ -580,7 +580,7 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
   expertise: { examples: [] },
   useWorkspaceSkills: true,
 
-  handler: async (_, { session, logger, stream, abortSignal, platformModels }) => {
+  handler: async (_, { session, logger, stream, abortSignal, platformModels, envOverlay }) => {
     if (!session.streamId) {
       throw new Error("Stream ID is required");
     }
@@ -1003,6 +1003,11 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
             // through verbatim.
             rebindAgentTool,
             linkSummary: linkSummary ?? undefined,
+            // Thread the workspace `.env` overlay so a delegated sub-agent's
+            // MCP `from_environment` / `auto` wiring resolves from the
+            // workspace `.env` — not just `process.env`. Without this, the
+            // env-supply feature silently no-ops for delegated sub-agents.
+            ...(envOverlay ? { envOverlay } : {}),
           },
           () => allToolsRef,
         );
