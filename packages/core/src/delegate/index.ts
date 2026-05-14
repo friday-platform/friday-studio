@@ -17,7 +17,7 @@
  */
 
 import type { AtlasTool, AtlasTools, AtlasUIMessage, AtlasUIMessageChunk } from "@atlas/agent-sdk";
-import type { DelegationBudget, MCPServerConfig, WorkspaceConfig } from "@atlas/config";
+import type { DelegationBudget, MCPServerConfig } from "@atlas/config";
 import { buildTemporalFacts, getDefaultProviderOpts, type PlatformModels } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import { createMCPTools } from "@atlas/mcp";
@@ -123,7 +123,6 @@ export interface DelegateDeps {
     inheritedTool: AtlasTool,
     proxyWriter: UIMessageStreamWriter<AtlasUIMessage>,
   ) => AtlasTool;
-  workspaceConfig?: WorkspaceConfig;
   linkSummary?: LinkSummary;
   /**
    * Workspace `.env` overlay — layered under each selected MCP server's `env:`
@@ -329,11 +328,11 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
         if (mcpServers && mcpServers.length > 0) {
           let candidates: import("@atlas/core/mcp-registry/discovery").MCPServerCandidate[];
           try {
-            candidates = await discoverMCPServers(
-              session.workspaceId,
-              deps.workspaceConfig,
-              deps.linkSummary,
-            );
+            // Pass `undefined` for the config so discovery re-fetches it live.
+            // A cached snapshot (the chat agent's per-turn `wsConfig`) goes
+            // stale the moment the agent enables a server mid-session — the
+            // server it just enabled would be invisible to its own delegate.
+            candidates = await discoverMCPServers(session.workspaceId, undefined, deps.linkSummary);
           } catch (err) {
             const reason = err instanceof Error ? err.message : String(err);
             return { ok: false, reason: `MCP server discovery failed: ${reason}`, toolsUsed: [] };

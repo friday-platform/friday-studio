@@ -1002,7 +1002,6 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
             // this hook unset and the delegate just passes inherited tools
             // through verbatim.
             rebindAgentTool,
-            workspaceConfig: wsConfig,
             linkSummary: linkSummary ?? undefined,
           },
           () => allToolsRef,
