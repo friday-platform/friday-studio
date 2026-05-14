@@ -6,8 +6,6 @@ import { HubSpotOutputSchema, hubspotAgent } from "./hubspot/index.ts";
 import { ImageGenerationOutputSchema, imageGenerationAgent } from "./image-generation/agent.ts";
 import { type DiscoveredImages, discoverImageFiles } from "./image-generation/discovery.ts";
 import { JiraOutputSchema, jiraAgent } from "./jira/agent.ts";
-import { knowledgeHybridAgent } from "./knowledge/agent.ts";
-import { KnowledgeOutputSchema } from "./knowledge/shared.ts";
 import { SlackOutputSchema, slackCommunicatorAgent } from "./slack/communicator.ts";
 import { SummaryOutputSchema, summaryAgent } from "./summary.ts";
 import {
@@ -19,7 +17,6 @@ import {
 } from "./web/compat.ts";
 import { type WebAgentResult, WebOutputSchema, webAgent } from "./web/index.ts";
 
-export type { KnowledgeResult } from "./knowledge/shared.ts";
 export {
   type BundledAgentConfigField,
   type BundledAgentRegistryEntry,
@@ -47,8 +44,6 @@ export {
   imageGenerationAgent,
   JiraOutputSchema,
   jiraAgent,
-  KnowledgeOutputSchema,
-  knowledgeHybridAgent,
   ResearchOutputSchema,
   SlackOutputSchema,
   SummaryOutputSchema,

@@ -1,4 +1,56 @@
 import type { RequestHandler } from "@sveltejs/kit";
+import { Agent } from "undici";
+
+/** Platform `RequestInit` augmented with undici's non-standard
+ * `dispatcher` extension. Lets us pass our long-lived dispatcher into
+ * `fetch()` without a blanket `as any` cast.
+ *
+ * Why we extend the *platform* `RequestInit` rather than importing
+ * undici's: undici 7 narrows `body` to `string | DataView | FormData |
+ * ReadableStream | URLSearchParams | Blob`, dropping the platform's
+ * support for `ArrayBufferView` (and therefore `Uint8Array`). We
+ * construct the proxied body via `new Uint8Array(await
+ * request.arrayBuffer())` further down, so the platform's looser
+ * `BodyInit` is the right base type. The structural mismatch on
+ * `dispatcher` is the only thing the local extension bridges. */
+interface UndiciRequestInit extends RequestInit {
+  dispatcher?: Agent;
+}
+
+// Node's bundled undici ships a 300_000ms (5-min) default
+// `headersTimeout` and `bodyTimeout` on the global fetch. Long-running
+// daemon endpoints — chiefly `POST /api/workspaces/{id}/signals/{id}`
+// for jobs like `reindex`, where the daemon awaits the cascade before
+// returning headers — exceed that and the proxy fetch fails with
+// `UND_ERR_HEADERS_TIMEOUT`. The catch-all then aborts the SvelteKit
+// request, the daemon's `onClientAbort` handler cancels the in-flight
+// session, and a 30-min reindex dies at exactly t+5min.
+//
+// Bound — don't disable. A `0` ceiling means a wedged daemon parks
+// SvelteKit request workers indefinitely with no server-side back-
+// pressure. Use a dedicated dispatcher with a 1-hour ceiling: covers
+// the worst documented job (30-min reindex) with headroom, and still
+// fails fast on a genuinely-stuck socket. Connection-level timeouts
+// (TCP, TLS handshake) keep their defaults because those still
+// indicate actual upstream sickness, not slow work.
+export const PROXY_DISPATCHER_TIMEOUT_MS = 60 * 60_000;
+/** Both timeout knobs the dispatcher needs (headers + body) — exported
+ * as a frozen object so tests can assert that BOTH are pinned to
+ * `PROXY_DISPATCHER_TIMEOUT_MS` together, not just one. Per PR #314
+ * review (Vpr99): a partial-revert that did
+ * `new Agent({ headersTimeout: 5000, bodyTimeout: PROXY_DISPATCHER_TIMEOUT_MS })`
+ * would still pass an assertion that only checked the constant value
+ * AND the dispatcher-identity check, because undici doesn't expose
+ * dispatcher options for direct inspection. Test against this object
+ * to lock the contract for both knobs. */
+export const PROXY_DISPATCHER_OPTIONS = {
+  headersTimeout: PROXY_DISPATCHER_TIMEOUT_MS,
+  bodyTimeout: PROXY_DISPATCHER_TIMEOUT_MS,
+} as const;
+/** Exported so tests can assert identity (`toBe(longLivedDispatcher)`)
+ * — `toBeInstanceOf(Agent)` would let a bare `new Agent({})` regression
+ * pass while reintroducing the original 5-min default. */
+export const longLivedDispatcher = new Agent(PROXY_DISPATCHER_OPTIONS);
 
 /** Hop-by-hop / connection-specific headers that don't survive the
  * proxy or HTTP/2 boundary:
@@ -134,24 +186,41 @@ export async function executeProxyFetch(
     body = new Uint8Array(await request.arrayBuffer());
   }
 
+  const upstreamStartedAt = Date.now();
+  const init: UndiciRequestInit = {
+    method: request.method,
+    headers,
+    body,
+    signal: upstreamController.signal,
+    // Forward 3xx as-is. Node's fetch defaults to redirect: "follow",
+    // which silently walks Location headers on the SSR side — fatal
+    // for OAuth, where the browser must navigate to accounts.google.com
+    // itself, not receive Google's HTML rendered under localhost:5200.
+    redirect: "manual",
+    // `dispatcher` is undici's non-standard extension; it's accepted
+    // by Node's global fetch (which is undici under the hood) and
+    // routes this call through our longer-bound timeout pool.
+    dispatcher: longLivedDispatcher,
+  };
+
   let res: Response;
   try {
-    res = await fetch(target, {
-      method: request.method,
-      headers,
-      body,
-      signal: upstreamController.signal,
-      // Forward 3xx as-is. Node's fetch defaults to redirect: "follow",
-      // which silently walks Location headers on the SSR side — fatal
-      // for OAuth, where the browser must navigate to accounts.google.com
-      // itself, not receive Google's HTML rendered under localhost:5200.
-      redirect: "manual",
-    });
+    res = await fetch(target, init);
   } catch (err) {
     request.signal.removeEventListener("abort", abortUpstream);
     const message = err instanceof Error ? err.message : String(err);
+    const elapsedMs = Date.now() - upstreamStartedAt;
+    // Surface the elapsed time so a stuck upstream is observable in
+    // the dev playground logs — without this, a 1-hour-bound timeout
+    // looks identical to "request handler hung" to the operator.
+    console.warn(
+      `[${label} proxy] fetch failed after ${elapsedMs}ms: ${message}`,
+    );
     return new Response(
-      JSON.stringify({ error: `${label} proxy fetch failed: ${message}` }),
+      JSON.stringify({
+        error: `${label} proxy fetch failed: ${message}`,
+        elapsedMs,
+      }),
       { status: 502, headers: { "content-type": "application/json" } },
     );
   }

@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { buildProxyHandler, HOP_BY_HOP_HEADERS } from "./proxy.ts";
+import {
+  buildProxyHandler,
+  HOP_BY_HOP_HEADERS,
+  longLivedDispatcher,
+  PROXY_DISPATCHER_OPTIONS,
+  PROXY_DISPATCHER_TIMEOUT_MS,
+} from "./proxy.ts";
 
 /** Build a SvelteKit `RequestEvent`-shaped argument for the handler.
  * The catch-all `[...path]/+server.ts` route would populate
@@ -36,6 +42,11 @@ describe("buildProxyHandler", () => {
 
   afterEach(() => {
     globalThis.fetch = originalFetch;
+    // Restore any vi.spyOn() installed inside individual tests (e.g.
+    // the console.warn spy in the 502 test). Without this, a spy that
+    // wasn't manually restored before an assertion threw would silence
+    // / hijack the spied function for every later test in this file.
+    vi.restoreAllMocks();
   });
 
   it("forwards path + query to the upstream URL", async () => {
@@ -79,13 +90,68 @@ describe("buildProxyHandler", () => {
   });
 
   it("returns 502 with label-tagged JSON when upstream fetch fails", async () => {
+    // The afterEach `vi.restoreAllMocks()` cleans this spy up even if
+    // the assertions below throw — no manual mockRestore needed.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     fetchMock.mockRejectedValueOnce(new TypeError("connection refused"));
     const handler = buildProxyHandler({ upstream: "https://tunnel.local:9090", label: "tunnel" });
     const res = await handler(event({ path: "status" }));
     expect(res.status).toBe(502);
-    const json = (await res.json()) as { error: string };
+    const json = (await res.json()) as { error: string; elapsedMs: number };
     expect(json.error).toMatch(/^tunnel proxy fetch failed:/);
     expect(json.error).toContain("connection refused");
+    // Elapsed ms is surfaced both in the JSON body and via console.warn
+    // so a slow-then-failing upstream is observable in dev logs (no
+    // observability used to exist for the proxy fail path).
+    expect(typeof json.elapsedMs).toBe("number");
+    expect(json.elapsedMs).toBeGreaterThanOrEqual(0);
+    expect(warnSpy).toHaveBeenCalledOnce();
+    const warnLine = warnSpy.mock.calls[0]?.[0];
+    expect(warnLine).toMatch(/\[tunnel proxy\] fetch failed after \d+ms:/);
+    // Pin the underlying error message in the warn line too — a future
+    // refactor that drops `${message}` from the log (while keeping it
+    // in the JSON body) would otherwise pass.
+    expect(warnLine).toContain("connection refused");
+  });
+
+  it("passes the longLivedDispatcher singleton to upstream fetch", async () => {
+    // Identity assertion (not `instanceof Agent`): the whole point of
+    // the dispatcher is its 1-hour headersTimeout/bodyTimeout. A
+    // future refactor that swapped to a bare `new Agent({})` (default
+    // 5-min timeouts) would pass an `instanceof` check while
+    // reintroducing UND_ERR_HEADERS_TIMEOUT on long signals. Pinning
+    // identity locks in the configured-timeout dispatcher and also
+    // collapses the singleton check (one instance across all calls).
+    fetchMock.mockResolvedValue(new Response("ok", { status: 200 }));
+    const handler = buildProxyHandler({ upstream: "https://daemon.local:8080", label: "daemon" });
+    await handler(event({ path: "a" }));
+    await handler(event({ path: "b" }));
+    const dispatcherA = (fetchMock.mock.calls[0]?.[1] as { dispatcher?: unknown } | undefined)
+      ?.dispatcher;
+    const dispatcherB = (fetchMock.mock.calls[1]?.[1] as { dispatcher?: unknown } | undefined)
+      ?.dispatcher;
+    expect(dispatcherA).toBe(longLivedDispatcher);
+    expect(dispatcherB).toBe(longLivedDispatcher);
+  });
+
+  it("dispatcher timeout matches the exported constant (1 hour by default)", () => {
+    // Pin the timeout value so a future bump or shrink is intentional.
+    // 1 hour covers the worst documented job (30-min reindex) with
+    // headroom; shorter values would re-create the original bug for
+    // the longest-running signals.
+    expect(PROXY_DISPATCHER_TIMEOUT_MS).toBe(60 * 60_000);
+  });
+
+  it("dispatcher options pin BOTH headersTimeout and bodyTimeout (PR #314 review)", () => {
+    // Per Vpr99: undici doesn't expose dispatcher options for direct
+    // inspection, so a partial-revert that drops the headersTimeout
+    // back to undici's 5-min default while keeping bodyTimeout at 1h
+    // would still pass the constant + dispatcher-identity assertions.
+    // Lock both knobs at the source-of-truth (PROXY_DISPATCHER_OPTIONS)
+    // so any divergence between them trips this test.
+    expect(PROXY_DISPATCHER_OPTIONS.headersTimeout).toBe(PROXY_DISPATCHER_TIMEOUT_MS);
+    expect(PROXY_DISPATCHER_OPTIONS.bodyTimeout).toBe(PROXY_DISPATCHER_TIMEOUT_MS);
+    expect(PROXY_DISPATCHER_OPTIONS.headersTimeout).toBe(PROXY_DISPATCHER_OPTIONS.bodyTimeout);
   });
 
   it("passes SSE responses through with the same status + cleaned headers", async () => {
