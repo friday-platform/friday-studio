@@ -159,6 +159,31 @@ describe("createMCPTools", () => {
     });
   });
 
+  it("threads the workspace .env overlay through to resolveEnvValues", async () => {
+    mockCreateMCPClient.mockResolvedValueOnce({
+      tools: vi.fn().mockResolvedValue({ "a-tool": { description: "ok" } }),
+      close: vi.fn().mockResolvedValue(undefined),
+    });
+
+    const configs: Record<string, MCPServerConfig> = {
+      srv: {
+        transport: { type: "stdio", command: "echo", args: [] },
+        env: { FOO: "from_environment" },
+      },
+    };
+    const envOverlay = { FOO: "overlay-value" };
+
+    await createMCPTools(configs, fakeLogger, { envOverlay });
+
+    // The overlay reaches the shared resolver as its third argument — proving
+    // the createMCPTools → connect path threads it end to end.
+    expect(mockResolveEnvValues).toHaveBeenCalledWith(
+      { FOO: "from_environment" },
+      expect.anything(),
+      envOverlay,
+    );
+  });
+
   it("skips server with LinkCredentialExpiredError and classifies refresh kind", async () => {
     mockResolveEnvValues
       .mockRejectedValueOnce(

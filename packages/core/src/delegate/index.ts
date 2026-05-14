@@ -118,6 +118,11 @@ export interface DelegateDeps {
   workspaceConfig?: WorkspaceConfig;
   linkSummary?: LinkSummary;
   /**
+   * Workspace `.env` overlay — layered under each selected MCP server's `env:`
+   * wiring when the delegate spawns its tools. Forwarded into nested delegates.
+   */
+  envOverlay?: Record<string, string>;
+  /**
    * Resolved delegation budget (per-job merged over workspace).
    * Each unset field falls through to the back-compat defaults above
    * (DEFAULT_MAX_STEPS_PER_CALL, DEFAULT_MAX_OUTPUT_TOKENS, DEFAULT_MAX_DEPTH;
@@ -360,6 +365,7 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
                 // as a `serverFailures` entry on their own.
                 signal: abortSignal,
                 toolPrefix: prefix,
+                envOverlay: deps.envOverlay,
               });
             }),
           );

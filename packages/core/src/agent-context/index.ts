@@ -226,6 +226,9 @@ export function createAgentContextBuilder(deps: AgentContextBuilderDeps) {
 
       const context: AgentContext = {
         env,
+        // Carry the raw overlay so an agent that spawns sub-tools (delegate)
+        // can layer it into those spawns' env resolution.
+        ...(envOverlay ? { envOverlay } : {}),
         session: sessionData,
         stream: streamEmitter,
         skills: resolvedSkills,

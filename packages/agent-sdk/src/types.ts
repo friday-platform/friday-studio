@@ -352,6 +352,13 @@ export interface AgentContext {
   tools: AtlasTools;
   session: AgentSessionData;
   env: Record<string, string>;
+  /**
+   * The workspace `.env` overlay (raw, unresolved) — the per-workspace store
+   * of non-secret values. `env` above is the *resolved* result; this is the
+   * overlay itself, kept so an agent that spawns sub-tools (e.g. `delegate`)
+   * can layer it into those spawns' env resolution.
+   */
+  envOverlay?: Record<string, string>;
   config?: Record<string, unknown>;
   /** JSON Schema for structured output. When provided, agents should use it to return validated data. */
   outputSchema?: Record<string, unknown>;

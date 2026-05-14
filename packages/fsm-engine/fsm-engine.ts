@@ -1847,6 +1847,10 @@ export class FSMEngine {
                           Record<string, Tool>
                         >),
                       linkSummary: this.options.linkSummary,
+                      // Workspace `.env` overlay — read fresh so the delegate's
+                      // MCP spawns layer it the same way every other spawn
+                      // site does.
+                      envOverlay: this.options.getEnvOverlay?.(),
                       // Pass the resolved budget and current depth. The
                       // delegate enforces
                       // wall-clock / input-tokens / output-tokens / steps
