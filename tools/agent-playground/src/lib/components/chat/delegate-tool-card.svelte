@@ -17,10 +17,11 @@
   interface Props {
     call: ToolCallDisplay;
     onCredentialConnected?: (provider: string) => void;
+    onEnvApplied?: (info: { scope: "workspace" | "global"; keys: string[] }) => void;
     depth?: number;
   }
 
-  const { call, onCredentialConnected, depth = 0 }: Props = $props();
+  const { call, onCredentialConnected, onEnvApplied, depth = 0 }: Props = $props();
 
   /* ─── Icon & color mapping ───────────────────────────────────────── */
 
@@ -391,7 +392,7 @@
     {/if}
     <div class="delegate-children" style="--depth: {depth}">
       {#each call.children as child (child.toolCallId || child.toolName)}
-        <ToolCallCard call={child} {onCredentialConnected} depth={depth + 1} />
+        <ToolCallCard call={child} {onCredentialConnected} {onEnvApplied} depth={depth + 1} />
       {/each}
     </div>
     {#if call.delegateText}

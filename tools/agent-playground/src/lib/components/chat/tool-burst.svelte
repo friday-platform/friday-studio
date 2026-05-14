@@ -12,9 +12,11 @@
     reasoning?: string;
     /** Forwarded to each call card. */
     onCredentialConnected?: (provider: string) => void;
+    /** Forwarded to each call card for env_set tickle. */
+    onEnvApplied?: (info: { scope: "workspace" | "global"; keys: string[] }) => void;
   }
 
-  const { calls, reasoning, onCredentialConnected }: Props = $props();
+  const { calls, reasoning, onCredentialConnected, onEnvApplied }: Props = $props();
 
   /**
    * A burst is initially open if any call already needs user action — e.g.
@@ -77,7 +79,7 @@
     {/if}
     <div class="tool-call-list">
       {#each calls as call (call.toolCallId || call.toolName)}
-        <ToolCallCard {call} {onCredentialConnected} />
+        <ToolCallCard {call} {onCredentialConnected} {onEnvApplied} />
       {/each}
     </div>
   </div>

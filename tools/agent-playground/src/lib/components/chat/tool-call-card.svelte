@@ -22,10 +22,12 @@
   interface Props {
     call: ToolCallDisplay;
     onCredentialConnected?: (provider: string) => void;
+    /** Fired when the user confirms an env_set elicitation. */
+    onEnvApplied?: (info: { scope: "workspace" | "global"; keys: string[] }) => void;
     depth?: number;
   }
 
-  const { call, onCredentialConnected, depth = 0 }: Props = $props();
+  const { call, onCredentialConnected, onEnvApplied, depth = 0 }: Props = $props();
 
   /* ─── Icon & color mapping ───────────────────────────────────────── */
 
@@ -409,7 +411,7 @@
 {:else if call.toolName === "request_human_input"}
   <HumanInputToolCard {call} />
 {:else if call.toolName === "env_set"}
-  <EnvSetToolCard {call} />
+  <EnvSetToolCard {call} onApplied={onEnvApplied} />
 {:else if call.toolName === "display_artifact"}
   <!-- Always render ArtifactCard for display_artifact tool calls — including
        during input-streaming when artifactId isn't parseable yet. The card
@@ -423,7 +425,7 @@
        observer only fires on enter, never on initial off-screen state). -->
   <ArtifactCard artifactId={artifactDisplay?.artifactId ?? ""} />
 {:else if call.children && call.children.length > 0}
-  <DelegateToolCard {call} {onCredentialConnected} {depth} />
+  <DelegateToolCard {call} {onCredentialConnected} {onEnvApplied} {depth} />
 {:else}
   <div
     class="tool-card"

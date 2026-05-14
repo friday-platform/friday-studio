@@ -780,6 +780,10 @@
     | { type: "file"; mediaType: string; url: string; filename?: string }
     | { type: "data-credential-linked"; data: { provider: string; displayName: string } }
     | {
+        type: "data-env-applied";
+        data: { scope: "workspace" | "global"; keys: string[] };
+      }
+    | {
         type: "data-file-attached";
         data: { paths: string[]; filenames: string[]; mimeTypes: string[] };
       }
@@ -1293,6 +1297,28 @@
     });
   }
 
+  /**
+   * Called when the user confirms an inline env_set elicitation. Pushes a
+   * synthetic `data-env-applied` user message so the agent resumes without
+   * the user having to type anything. Mirrors `handleCredentialConnected`.
+   */
+  function handleEnvApplied(info: { scope: "workspace" | "global"; keys: string[] }): void {
+    if (!chat) return;
+    const parts: QueuedMessageParts = [
+      { type: "data-env-applied", data: { scope: info.scope, keys: info.keys } },
+    ];
+    if (streaming) {
+      queuedMessages = [...queuedMessages, parts];
+      return;
+    }
+    resetResumeState();
+    void chat.sendMessage({
+      role: "user",
+      parts,
+      metadata: { timestamp: new Date().toISOString() },
+    });
+  }
+
   /* ─── Workspace-list cache invalidation on chat-tool mutations ───── */
 
   /** Tool calls whose completion should trigger a workspace-list refetch. */
@@ -1432,6 +1458,7 @@
       <ChatMessageList
         messages={displayedMessages}
         onCredentialConnected={handleCredentialConnected}
+        onEnvApplied={handleEnvApplied}
         {thinking}
         workspaceId={wsId}
         {chatId}
