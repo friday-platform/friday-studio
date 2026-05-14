@@ -24,12 +24,12 @@
  * subprocess → microvm → k8s by changing configuration, not code.
  */
 
-import { type ChildProcess, spawn } from "node:child_process";
-import path from "node:path";
-import process from "node:process";
+// import { type ChildProcess, spawn } from "node:child_process";
+// import path from "node:path";
+// import process from "node:process";
 import type { LinkCredentialRef } from "@atlas/agent-sdk";
-import { resolveEnvValues } from "@atlas/core/mcp-registry/credential-resolver";
-import { logger } from "@atlas/logger";
+// import { resolveEnvValues } from "@atlas/core/mcp-registry/credential-resolver";
+// import { logger } from "@atlas/logger";
 
 export type ToolWorkerRuntime = "subprocess" | "microvm" | "k8s";
 
@@ -56,7 +56,7 @@ export interface ToolWorkerSpec {
    * Workspace `.env` overlay — injected between `process.env` and `spec.env`
    * wiring so workspace-level values take precedence over daemon ambient env.
    * Currently unused (tool workers run in-process via `tool-dispatch.ts`);
-   * wired correctly for the Friday Cloud microvm / k8s runtime path.
+   * wired correctly for the microvm / k8s runtime path.
    */
   envOverlay?: Record<string, string>;
   /** Override the launch script path. Defaults to scripts/run-tool-worker.sh. */
@@ -74,98 +74,98 @@ export interface ToolWorkerHandle {
   stop(): Promise<void>;
 }
 
-const DEFAULT_RUNTIME: ToolWorkerRuntime =
-  (process.env.FRIDAY_TOOL_WORKER_RUNTIME as ToolWorkerRuntime | undefined) ?? "subprocess";
+// const DEFAULT_RUNTIME: ToolWorkerRuntime =
+//   (process.env.FRIDAY_TOOL_WORKER_RUNTIME as ToolWorkerRuntime | undefined) ?? "subprocess";
 
-function resolveScriptPath(spec: ToolWorkerSpec): string {
-  if (spec.scriptPath) return spec.scriptPath;
-  // Walk up from this file's directory to the repo root, then into scripts/.
-  // (apps/atlasd/src/tool-worker-launcher.ts → ../../../scripts/run-tool-worker.sh)
-  const here = new URL(".", import.meta.url).pathname;
-  return path.resolve(here, "../../../scripts/run-tool-worker.sh");
-}
+// function resolveScriptPath(spec: ToolWorkerSpec): string {
+//   if (spec.scriptPath) return spec.scriptPath;
+//   // Walk up from this file's directory to the repo root, then into scripts/.
+//   // (apps/atlasd/src/tool-worker-launcher.ts → ../../../scripts/run-tool-worker.sh)
+//   const here = new URL(".", import.meta.url).pathname;
+//   return path.resolve(here, "../../../scripts/run-tool-worker.sh");
+// }
 
-async function buildEnv(spec: ToolWorkerSpec): Promise<Record<string, string>> {
-  const env: Record<string, string> = {};
-  // Inherit only the strings we care about — don't blanket-pass parent env
-  // into a sandbox we want to keep clean. The caller can opt extra in via
-  // spec.env.
-  for (const key of ["PATH", "HOME", "USER", "LOGNAME", "SHELL", "TZ", "LANG", "LC_ALL"]) {
-    const v = process.env[key];
-    if (v !== undefined) env[key] = v;
-  }
-  if (spec.natsUrl) env.FRIDAY_NATS_URL = spec.natsUrl;
-  if (spec.toolsAllowlist) env.FRIDAY_WORKER_TOOLS = spec.toolsAllowlist;
-  if (spec.workerCmd) env.FRIDAY_WORKER_CMD = spec.workerCmd;
-  // spec.env carries `env:` wiring — plain strings or Link refs — resolved
-  // through the one shared resolver, same as every other spawn site.
-  if (spec.env) Object.assign(env, await resolveEnvValues(spec.env, logger, spec.envOverlay));
-  return env;
-}
+// async function buildEnv(spec: ToolWorkerSpec): Promise<Record<string, string>> {
+//   const env: Record<string, string> = {};
+//   // Inherit only the strings we care about — don't blanket-pass parent env
+//   // into a sandbox we want to keep clean. The caller can opt extra in via
+//   // spec.env.
+//   for (const key of ["PATH", "HOME", "USER", "LOGNAME", "SHELL", "TZ", "LANG", "LC_ALL"]) {
+//     const v = process.env[key];
+//     if (v !== undefined) env[key] = v;
+//   }
+//   if (spec.natsUrl) env.FRIDAY_NATS_URL = spec.natsUrl;
+//   if (spec.toolsAllowlist) env.FRIDAY_WORKER_TOOLS = spec.toolsAllowlist;
+//   if (spec.workerCmd) env.FRIDAY_WORKER_CMD = spec.workerCmd;
+//   // spec.env carries `env:` wiring — plain strings or Link refs — resolved
+//   // through the one shared resolver, same as every other spawn site.
+//   if (spec.env) Object.assign(env, await resolveEnvValues(spec.env, logger, spec.envOverlay));
+//   return env;
+// }
 
 /**
  * Spawn a worker as a plain child process. No isolation. Stdout/stderr
  * stream into the daemon's logger so worker logs land in the same place
  * as everything else.
  */
-async function spawnSubprocess(spec: ToolWorkerSpec): Promise<ToolWorkerHandle> {
-  const script = resolveScriptPath(spec);
-  const env = await buildEnv(spec);
-  const proc: ChildProcess = spawn(script, [], { env, stdio: ["ignore", "pipe", "pipe"] });
+// async function spawnSubprocess(spec: ToolWorkerSpec): Promise<ToolWorkerHandle> {
+//   const script = resolveScriptPath(spec);
+//   const env = await buildEnv(spec);
+//   const proc: ChildProcess = spawn(script, [], { env, stdio: ["ignore", "pipe", "pipe"] });
+//
+//   proc.stdout?.on("data", (chunk: Uint8Array) => {
+//     for (const line of chunk.toString().split("\n").filter(Boolean)) {
+//       logger.info("tool-worker stdout", { line, pid: proc.pid });
+//     }
+//   });
+//   proc.stderr?.on("data", (chunk: Uint8Array) => {
+//     for (const line of chunk.toString().split("\n").filter(Boolean)) {
+//       logger.warn("tool-worker stderr", { line, pid: proc.pid });
+//     }
+//   });
+//   proc.on("exit", (code, signal) => {
+//     logger.info("tool-worker exited", { code, signal, pid: proc.pid });
+//   });
+//
+//   let stopped = false;
+//   return {
+//     runtime: "subprocess",
+//     pid: proc.pid,
+//     async stop() {
+//       if (stopped) return;
+//       stopped = true;
+//       if (proc.exitCode !== null || proc.signalCode !== null) return;
+//       proc.kill("SIGTERM");
+//       await new Promise<void>((resolve) => {
+//         const t = setTimeout(() => {
+//           // Hung worker → SIGKILL escalation, same pattern as ProcessAgentExecutor.
+//           if (proc.exitCode === null && proc.signalCode === null) proc.kill("SIGKILL");
+//           resolve();
+//         }, 2_000);
+//         proc.once("exit", () => {
+//           clearTimeout(t);
+//           resolve();
+//         });
+//       });
+//     },
+//   };
+// }
 
-  proc.stdout?.on("data", (chunk: Uint8Array) => {
-    for (const line of chunk.toString().split("\n").filter(Boolean)) {
-      logger.info("tool-worker stdout", { line, pid: proc.pid });
-    }
-  });
-  proc.stderr?.on("data", (chunk: Uint8Array) => {
-    for (const line of chunk.toString().split("\n").filter(Boolean)) {
-      logger.warn("tool-worker stderr", { line, pid: proc.pid });
-    }
-  });
-  proc.on("exit", (code, signal) => {
-    logger.info("tool-worker exited", { code, signal, pid: proc.pid });
-  });
+// function spawnMicrovm(_spec: ToolWorkerSpec): ToolWorkerHandle {
+//   throw new Error(
+//     "FRIDAY_TOOL_WORKER_RUNTIME=microvm is not implemented. " +
+//       "Wire spawnMicrovm to the local minimal.dev / Firecracker runtime " +
+//       "and have it `exec` scripts/run-tool-worker.sh inside the VM.",
+//   );
+// }
 
-  let stopped = false;
-  return {
-    runtime: "subprocess",
-    pid: proc.pid,
-    async stop() {
-      if (stopped) return;
-      stopped = true;
-      if (proc.exitCode !== null || proc.signalCode !== null) return;
-      proc.kill("SIGTERM");
-      await new Promise<void>((resolve) => {
-        const t = setTimeout(() => {
-          // Hung worker → SIGKILL escalation, same pattern as ProcessAgentExecutor.
-          if (proc.exitCode === null && proc.signalCode === null) proc.kill("SIGKILL");
-          resolve();
-        }, 2_000);
-        proc.once("exit", () => {
-          clearTimeout(t);
-          resolve();
-        });
-      });
-    },
-  };
-}
-
-function spawnMicrovm(_spec: ToolWorkerSpec): ToolWorkerHandle {
-  throw new Error(
-    "FRIDAY_TOOL_WORKER_RUNTIME=microvm is not implemented. " +
-      "Wire spawnMicrovm to the local minimal.dev / Firecracker runtime " +
-      "and have it `exec` scripts/run-tool-worker.sh inside the VM.",
-  );
-}
-
-function spawnK8s(_spec: ToolWorkerSpec): ToolWorkerHandle {
-  throw new Error(
-    "FRIDAY_TOOL_WORKER_RUNTIME=k8s is not implemented. " +
-      "Wire spawnK8s to a Job/Pod creator that mounts scripts/run-tool-worker.sh " +
-      "as the entrypoint and forwards FRIDAY_NATS_URL / FRIDAY_WORKER_TOOLS env.",
-  );
-}
+// function spawnK8s(_spec: ToolWorkerSpec): ToolWorkerHandle {
+//   throw new Error(
+//     "FRIDAY_TOOL_WORKER_RUNTIME=k8s is not implemented. " +
+//       "Wire spawnK8s to a Job/Pod creator that mounts scripts/run-tool-worker.sh " +
+//       "as the entrypoint and forwards FRIDAY_NATS_URL / FRIDAY_WORKER_TOOLS env.",
+//   );
+// }
 
 /**
  * Spawn a tool worker. Returns a handle the caller can use to stop it.
@@ -173,8 +173,8 @@ function spawnK8s(_spec: ToolWorkerSpec): ToolWorkerHandle {
  *
  * NOTE — commented out: today tool workers run in-process via
  * `tool-dispatch.ts` (`registerToolWorker`). This subprocess / microvm / k8s
- * launcher is scaffolded for the **Friday Cloud** isolation path and will be
- * re-enabled once microvm + k8s runtime adapters are wired.
+ * launcher is scaffolded for the isolation path and will be re-enabled once
+ * microvm + k8s runtime adapters are wired.
  */
 // export function launchToolWorker(spec: ToolWorkerSpec = {}): Promise<ToolWorkerHandle> {
 //   const runtime = spec.runtime ?? DEFAULT_RUNTIME;
