@@ -2,8 +2,7 @@
   import { untrack, type Component } from "svelte";
   import { Icons, IconSmall, markdownToHTMLSafe } from "@atlas/ui";
   import ToolCallCard from "./tool-call-card.svelte";
-  import { getExportContext } from "./export-context";
-  import { jsonHighlighter } from "./json-highlighter";
+  import { formatRawOutput } from "./format-raw-output";
   import {
     argPreview,
     childrenAnyRunning,
@@ -17,10 +16,11 @@
   interface Props {
     call: ToolCallDisplay;
     onCredentialConnected?: (provider: string) => void;
+    onEnvApplied?: (info: { scope: "workspace" | "global"; keys: string[] }) => void;
     depth?: number;
   }
 
-  const { call, onCredentialConnected, depth = 0 }: Props = $props();
+  const { call, onCredentialConnected, onEnvApplied, depth = 0 }: Props = $props();
 
   /* ─── Icon & color mapping ───────────────────────────────────────── */
 
@@ -196,13 +196,6 @@
 
   /* ─── Copy to clipboard ──────────────────────────────────────────── */
 
-  /**
-   * Suppresses the clipboard buttons (which depend on JS) when the card
-   * is rendered inside an export. The data still renders; only the copy
-   * affordance is hidden.
-   */
-  const isExport = getExportContext() !== undefined;
-
   function copyToClipboard(value: unknown, btn: HTMLButtonElement) {
     let text: string;
     if (typeof value === "string") {
@@ -221,43 +214,19 @@
     });
   }
 
-  /* ─── JSON formatting ────────────────────────────────────────────── */
-
-  function formatRawOutput(output: unknown): string {
-    let jsonStr: string;
-    if (typeof output === "string") {
-      try {
-        const parsed: unknown = JSON.parse(output);
-        jsonStr = JSON.stringify(parsed, null, 2);
-      } catch {
-        return output.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-      }
-    } else {
-      try {
-        jsonStr = JSON.stringify(output, null, 2);
-      } catch {
-        return String(output).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-      }
-    }
-    return jsonHighlighter.codeToHtml(jsonStr, { lang: "json", theme: "atlas-json" });
-  }
 </script>
 
 {#snippet jsonCopyBlock(label: string, data: unknown)}
-  {#if isExport}
+  <div class="json-copy-wrapper">
+    <button
+      class="json-copy-btn"
+      aria-label={`Copy ${label}`}
+      onclick={(e: MouseEvent) => copyToClipboard(data, e.currentTarget as HTMLButtonElement)}
+    >
+      Copy
+    </button>
     <pre class="json-render">{@html formatRawOutput(data)}</pre>
-  {:else}
-    <div class="json-copy-wrapper">
-      <button
-        class="json-copy-btn"
-        aria-label={`Copy ${label}`}
-        onclick={(e: MouseEvent) => copyToClipboard(data, e.currentTarget as HTMLButtonElement)}
-      >
-        Copy
-      </button>
-      <pre class="json-render">{@html formatRawOutput(data)}</pre>
-    </div>
-  {/if}
+  </div>
 {/snippet}
 
 {#snippet outputDrawer(c: ToolCallDisplay)}
@@ -294,20 +263,16 @@
             <span class="chevron-icon"><IconSmall.ChevronRight /></span>
             error
           </summary>
-          {#if isExport}
+          <div class="json-copy-wrapper">
+            <button
+              class="json-copy-btn"
+              aria-label="Copy error"
+              onclick={(e: MouseEvent) => copyToClipboard(c.errorText, e.currentTarget as HTMLButtonElement)}
+            >
+              Copy
+            </button>
             <pre class="json-render error-text">{c.errorText}</pre>
-          {:else}
-            <div class="json-copy-wrapper">
-              <button
-                class="json-copy-btn"
-                aria-label="Copy error"
-                onclick={(e: MouseEvent) => copyToClipboard(c.errorText, e.currentTarget as HTMLButtonElement)}
-              >
-                Copy
-              </button>
-              <pre class="json-render error-text">{c.errorText}</pre>
-            </div>
-          {/if}
+          </div>
         </details>
       {/if}
     </div>
@@ -391,7 +356,7 @@
     {/if}
     <div class="delegate-children" style="--depth: {depth}">
       {#each call.children as child (child.toolCallId || child.toolName)}
-        <ToolCallCard call={child} {onCredentialConnected} depth={depth + 1} />
+        <ToolCallCard call={child} {onCredentialConnected} {onEnvApplied} depth={depth + 1} />
       {/each}
     </div>
     {#if call.delegateText}

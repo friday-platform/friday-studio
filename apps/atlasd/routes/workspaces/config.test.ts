@@ -12,7 +12,7 @@
  * - config-agents.test.ts
  */
 
-import { writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { stringify } from "@std/yaml";
 import { describe, expect, test } from "vitest";
@@ -61,6 +61,7 @@ describe("Workspace not found (404)", () => {
       path: "/config/agents/planner",
       body: { type: "llm", prompt: "test" },
     },
+    { method: "PUT" as const, path: "/config/identity", body: { name: "renamed" } },
   ];
 
   test.each(getEndpoints)("GET %s returns 404", async (path) => {
@@ -106,6 +107,7 @@ describe("Validation error (400)", () => {
   const mutationConfigs = [
     { method: "PUT" as const, path: "/config/signals/webhook", entity: "signal" },
     { method: "PUT" as const, path: "/config/agents/planner", entity: "agent" },
+    { method: "PUT" as const, path: "/config/identity", entity: "identity" },
   ] as const;
 
   test.each(mutationConfigs)("$method $path returns 400 for invalid $entity config", async ({
@@ -160,6 +162,7 @@ describe("System workspace protection", () => {
         path: "/ws-test-id/config/agents/any",
         body: { type: "llm", prompt: "test" },
       },
+      { method: "PUT", path: "/ws-test-id/config/identity", body: { name: "renamed" } },
     ];
 
     for (const { method, path, body } of mutations) {
@@ -173,5 +176,71 @@ describe("System workspace protection", () => {
       const json = (await response.json()) as JsonBody;
       expect(json).toMatchObject({ error: "forbidden" });
     }
+  });
+});
+
+// ==============================================================================
+// WORKSPACE IDENTITY - PUT /config/identity
+// ==============================================================================
+
+describe("PUT /config/identity", () => {
+  const getTestDir = useTempDir();
+
+  test("patches name + description and persists to workspace.yml", async () => {
+    const testDir = getTestDir();
+    const workspace = createMockWorkspace({ path: testDir });
+    await writeFile(join(testDir, "workspace.yml"), stringify(createTestConfig()));
+    const { app } = createTestApp({ workspace });
+
+    const response = await app.request("/ws-test-id/config/identity", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Renamed Workspace", description: "now described" }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ ok: true });
+
+    const written = await readFile(join(testDir, "workspace.yml"), "utf8");
+    expect(written).toContain("Renamed Workspace");
+    expect(written).toContain("now described");
+  });
+
+  test("leaves untouched identity fields intact", async () => {
+    const testDir = getTestDir();
+    const workspace = createMockWorkspace({ path: testDir });
+    await writeFile(
+      join(testDir, "workspace.yml"),
+      stringify(
+        createTestConfig({ workspace: { id: "ws-test-id", name: "Keep Me", version: "9.9" } }),
+      ),
+    );
+    const { app } = createTestApp({ workspace });
+
+    const response = await app.request("/ws-test-id/config/identity", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ description: "added later" }),
+    });
+
+    expect(response.status).toBe(200);
+    const written = await readFile(join(testDir, "workspace.yml"), "utf8");
+    expect(written).toContain("Keep Me");
+    expect(written).toContain("9.9");
+  });
+
+  test("rejects an empty patch with 400", async () => {
+    const testDir = getTestDir();
+    const workspace = createMockWorkspace({ path: testDir });
+    await writeFile(join(testDir, "workspace.yml"), stringify(createTestConfig()));
+    const { app } = createTestApp({ workspace });
+
+    const response = await app.request("/ws-test-id/config/identity", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+
+    expect(response.status).toBe(400);
   });
 });

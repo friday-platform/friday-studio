@@ -120,10 +120,12 @@ export async function getBlock2Inputs(workspaceId: string, logger: Logger): Prom
 }
 
 /**
- * Drop the cached entry for a workspace. Called when the workspace
- * structure is known to have changed (publish_draft, upsert_*,
- * skill assignment events). Caller is responsible for triggering;
- * the cache otherwise relies on the 5-minute TTL.
+ * Drop the cached entry for a workspace. Called when workspace state
+ * cached in this entry is known to have changed — `publish_draft`,
+ * `upsert_*`, and MCP server enable/disable. Skills and user identity
+ * are fetched fresh every turn rather than cached here, so their
+ * mutation tools deliberately do not call this. Caller is responsible
+ * for triggering; the cache otherwise relies on the 5-minute TTL.
  */
 export function invalidateBlock2(workspaceId: string): void {
   cache.delete(workspaceId);

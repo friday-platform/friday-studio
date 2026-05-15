@@ -17,7 +17,7 @@
  */
 
 import type { AtlasTool, AtlasTools, AtlasUIMessage, AtlasUIMessageChunk } from "@atlas/agent-sdk";
-import type { DelegationBudget, MCPServerConfig, WorkspaceConfig } from "@atlas/config";
+import type { DelegationBudget, MCPServerConfig } from "@atlas/config";
 import { buildTemporalFacts, getDefaultProviderOpts, type PlatformModels } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import { createMCPTools } from "@atlas/mcp";
@@ -26,6 +26,7 @@ import type { ToolCallRepairFunction, UIMessageStreamWriter } from "ai";
 import { stepCountIs, streamText, tool } from "ai";
 import { z } from "zod";
 import { liftAnswerForModel } from "../artifacts/scrubber.ts";
+import { findMissingServerEnvVars } from "../mcp-registry/credential-resolver.ts";
 import { discoverMCPServers, type LinkSummary } from "../mcp-registry/discovery.ts";
 import { FINISH_TOOL_NAME, type FinishInput, finishTool, parseFinishInput } from "./finish-tool.ts";
 import { createDelegateProxyWriter } from "./proxy-writer.ts";
@@ -123,8 +124,12 @@ export interface DelegateDeps {
     inheritedTool: AtlasTool,
     proxyWriter: UIMessageStreamWriter<AtlasUIMessage>,
   ) => AtlasTool;
-  workspaceConfig?: WorkspaceConfig;
   linkSummary?: LinkSummary;
+  /**
+   * Workspace `.env` overlay — layered under each selected MCP server's `env:`
+   * wiring when the delegate spawns its tools. Forwarded into nested delegates.
+   */
+  envOverlay?: Record<string, string>;
   /**
    * Resolved delegation budget (per-job merged over workspace).
    * Each unset field falls through to the back-compat defaults above
@@ -324,11 +329,11 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
         if (mcpServers && mcpServers.length > 0) {
           let candidates: import("@atlas/core/mcp-registry/discovery").MCPServerCandidate[];
           try {
-            candidates = await discoverMCPServers(
-              session.workspaceId,
-              deps.workspaceConfig,
-              deps.linkSummary,
-            );
+            // Pass `undefined` for the config so discovery re-fetches it live.
+            // A cached snapshot (the chat agent's per-turn `wsConfig`) goes
+            // stale the moment the agent enables a server mid-session — the
+            // server it just enabled would be invisible to its own delegate.
+            candidates = await discoverMCPServers(session.workspaceId, undefined, deps.linkSummary);
           } catch (err) {
             const reason = err instanceof Error ? err.message : String(err);
             return { ok: false, reason: `MCP server discovery failed: ${reason}`, toolsUsed: [] };
@@ -353,6 +358,29 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
             if (c) selectedConfigs[id] = c.mergedConfig;
           }
 
+          // `discoverMCPServers` reports a `from_environment`-wired server as
+          // `configured` once the wiring exists — but the value can still be
+          // unset. The daemon re-checks this at workspace-runtime creation and
+          // degrades by dropping the server; a delegate that skipped the check
+          // would resurrect that same server here and spawn it with
+          // empty-string credentials. Re-apply the daemon's rule against the
+          // workspace `.env` overlay and fail fast with an actionable reason.
+          const envUnresolved = Object.entries(selectedConfigs).flatMap(([id, config]) =>
+            findMissingServerEnvVars(id, config, deps.envOverlay),
+          );
+          if (envUnresolved.length > 0) {
+            const formatted = envUnresolved
+              .map((m) => `${m.varName} (for '${m.serverId}')`)
+              .join(", ");
+            return {
+              ok: false,
+              reason:
+                `MCP server(s) have unresolved env vars: ${formatted}. ` +
+                "Set them in the workspace .env (or the daemon env) and retry.",
+              toolsUsed: [],
+            };
+          }
+
           // Do not lift MCP results before the child LLM sees them. The lift's
           // value is persistence + parent-handoff compactness, not child-LLM
           // context shrinkage; persistence paths scrub/lift the delegate's final
@@ -368,6 +396,7 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
                 // as a `serverFailures` entry on their own.
                 signal: abortSignal,
                 toolPrefix: prefix,
+                envOverlay: deps.envOverlay,
               });
             }),
           );

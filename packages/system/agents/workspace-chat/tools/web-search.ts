@@ -27,6 +27,7 @@
 import process from "node:process";
 import type { AtlasTools } from "@atlas/agent-sdk";
 import type { Logger } from "@atlas/logger";
+import { discardBody } from "@atlas/utils";
 import { tool } from "ai";
 import { z } from "zod";
 
@@ -89,6 +90,7 @@ async function callBrave(query: string, count: number, apiKey: string): Promise<
   });
 
   if (!response.ok) {
+    await discardBody(response);
     throw new Error(`Brave Search API returned HTTP ${response.status}`);
   }
 

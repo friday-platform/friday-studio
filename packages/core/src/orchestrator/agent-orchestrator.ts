@@ -11,6 +11,7 @@ import {
   type AgentResult,
   AgentResultSchema,
   type AtlasUIMessageChunk,
+  type LinkCredentialRef,
 } from "@atlas/agent-sdk";
 import type { Logger } from "@atlas/logger";
 import { AtlasTelemetry } from "@atlas/logger/telemetry";
@@ -61,6 +62,10 @@ export interface AgentExecutionContext {
   abortSignal?: AbortSignal;
   /** Agent-specific configuration from workspace.yml */
   config?: Record<string, unknown>;
+  /** Per-agent `env:` wiring from workspace.yml — resolved into AgentContext.env at the agents server. */
+  env?: Record<string, string | LinkCredentialRef>;
+  /** Workspace `.env` overlay — layered under per-agent wiring when AgentContext.env is built. */
+  envOverlay?: Record<string, string>;
   /** JSON Schema for structured output from FSM documentTypes */
   outputSchema?: Record<string, unknown>;
   /** Process-local key for looking up pre-built AgentMemoryContext from the mount context registry */
@@ -370,6 +375,8 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         },
         outputSchema: context.outputSchema,
         config: context.config,
+        env: context.env,
+        envOverlay: context.envOverlay,
       };
 
       // Propagate OTEL trace context across MCP boundary so agent-side

@@ -11,8 +11,11 @@
 
 import { Buffer } from "node:buffer";
 import { spawn as defaultSpawn } from "node:child_process";
+import { randomBytes } from "node:crypto";
+import { closeSync, fstatSync, openSync, readSync, unlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import process from "node:process";
-import { Writable } from "node:stream";
 import { experimental_createMCPClient as createMCPClient } from "@ai-sdk/mcp";
 import { Experimental_StdioMCPTransport as StdioMCPTransport } from "@ai-sdk/mcp/mcp-stdio";
 import type { MCPServerConfig, MCPServerToolFilter } from "@atlas/config";
@@ -150,6 +153,11 @@ export interface CreateMCPToolsOptions {
    * caller-agnostic / non-chat use.
    */
   scrubResult?: ScrubToolResult;
+  /**
+   * Workspace `.env` overlay. `auto`/`from_environment` entries in a server's
+   * `env` / `startup.env` resolve from here before `process.env`.
+   */
+  envOverlay?: Record<string, string>;
 }
 
 /** Internal result of attempting to connect a single server. */
@@ -180,8 +188,16 @@ export async function createMCPTools(
   const results = await Promise.allSettled(
     Object.entries(configs).map(async ([serverId, config]): Promise<ServerConnectResult> => {
       try {
-        const resolvedEnv = config.env ? await resolveEnvValues(config.env, logger) : {};
-        const connected = await connectServerWithTimeout(config, resolvedEnv, serverId, logger);
+        const resolvedEnv = config.env
+          ? await resolveEnvValues(config.env, logger, options?.envOverlay)
+          : {};
+        const connected = await connectServerWithTimeout(
+          config,
+          resolvedEnv,
+          serverId,
+          logger,
+          options?.envOverlay,
+        );
         const filtered = filterTools(connected.tools, config.tools);
         const prefixed = options?.toolPrefix
           ? prefixToolKeys(filtered, options.toolPrefix)
@@ -395,9 +411,10 @@ function connectServerWithTimeout(
   resolvedEnv: Record<string, string>,
   serverId: string,
   logger: Logger,
+  envOverlay?: Record<string, string>,
 ): Promise<ConnectedServer> {
   return withTimeout(
-    connectServer(config, resolvedEnv, serverId, logger),
+    connectServer(config, resolvedEnv, serverId, logger, envOverlay),
     LIST_TOOLS_TIMEOUT_MS,
     (actualDurationMs) =>
       new MCPTimeoutError(serverId, "list_tools", LIST_TOOLS_TIMEOUT_MS, actualDurationMs),
@@ -410,13 +427,14 @@ async function connectServer(
   resolvedEnv: Record<string, string>,
   serverId: string,
   logger: Logger,
+  envOverlay?: Record<string, string>,
 ): Promise<ConnectedServer> {
   const { transport } = config;
   switch (transport.type) {
     case "stdio":
       return await connectStdio(transport, resolvedEnv, serverId, logger);
     case "http":
-      return await connectHttp(config, resolvedEnv, serverId, logger);
+      return await connectHttp(config, resolvedEnv, serverId, logger, { envOverlay });
   }
 }
 
@@ -435,6 +453,133 @@ async function connectServer(
 function interpolateArg(arg: string): string {
   const home = process.env.HOME ?? "";
   return arg.replaceAll("${HOME}", home).replaceAll("${FRIDAY_HOME}", getFridayHome());
+}
+
+type StdioAttempt =
+  | { ok: true; client: MCPClient; tools: Record<string, Tool> }
+  | { ok: false; error: Error; stderr: string };
+
+async function attemptStdio(
+  command: string,
+  args: readonly string[],
+  env: Record<string, string>,
+): Promise<StdioAttempt> {
+  // Pipe subprocess stderr through a temp file so we can read it on failure.
+  // Two simpler approaches don't work reliably:
+  //   - Passing an in-memory Writable: Deno's node:child_process compat
+  //     silently falls back to "inherit", sending stderr to the parent.
+  //   - Passing "pipe" and attaching a 'data' listener after createMCPClient
+  //     resolves: by then a fast-exiting subprocess has already closed, and
+  //     Deno's pipe drains buffered data on close — too late to recover it.
+  // A real OS file descriptor sidesteps both: the kernel writes synchronously
+  // and we can read after the subprocess dies.
+  const tmpPath = path.join(tmpdir(), `mcp-stderr-${randomBytes(8).toString("hex")}.log`);
+  const fd = openSync(tmpPath, "w+");
+  let fdOpen = true;
+
+  const readStderr = (): string => {
+    const stats = fstatSync(fd);
+    const size = Number(stats.size);
+    if (size === 0) return "";
+    const buf = Buffer.alloc(size);
+    readSync(fd, buf, 0, size, 0);
+    return buf.toString("utf8").trim();
+  };
+
+  let client: MCPClient | undefined;
+  try {
+    try {
+      client = await createMCPClient({
+        transport: new StdioMCPTransport({ command, args: [...args], env, stderr: fd }),
+      });
+    } catch (err) {
+      // The transport's start() can reject (e.g. ENOENT, or the subprocess
+      // dies before completing the MCP handshake). Capture stderr from the
+      // temp file and return failure rather than letting it propagate.
+      const stderr = readStderr();
+      const error = err instanceof Error ? err : new Error(String(err));
+      return { ok: false, error, stderr };
+    }
+
+    // Verify the subprocess is actually responding AND capture tools in one call.
+    // createMCPClient can succeed for stdio even when the server isn't ready yet.
+    try {
+      const tools = await client.tools();
+      return { ok: true, client, tools };
+    } catch (err) {
+      await client.close().catch(() => {});
+      const stderr = readStderr();
+      const error = err instanceof Error ? err : new Error(String(err));
+      return { ok: false, error, stderr };
+    }
+  } finally {
+    // Close the parent's fd in all cases — the subprocess (if still running)
+    // has its own duped fd. Unlink the file to keep /tmp clean; on Unix the
+    // subprocess can keep writing to the now-anonymous file, freed on exit.
+    if (fdOpen) {
+      try {
+        closeSync(fd);
+      } catch {
+        // ignore
+      }
+      fdOpen = false;
+    }
+    try {
+      unlinkSync(tmpPath);
+    } catch {
+      // ignore — file may not exist on Windows after close
+    }
+  }
+}
+
+/**
+ * `uvx <pkg>` looks for an executable matching the package name. When the
+ * registry entry's identifier differs from the package's entrypoint (e.g.
+ * `bitbucket-mcp-py` vs `bitbucket-mcp`), uv refuses and prints the exact
+ * recovery in its own error:
+ *
+ *   Use `uvx --from <pkg> <entrypoint>` instead.
+ *
+ * We parse that suggestion and re-attach the original version spec so the
+ * pin is preserved. Returns null if the stderr doesn't match.
+ */
+function recoverUvxFromArgs(
+  command: string,
+  args: readonly string[],
+  stderr: string,
+): readonly string[] | null {
+  if (command !== "uvx") return null;
+  // User-authored configs may already be in the corrected `--from` form; if
+  // uv still emits a hint in that case it's about something we can't fix by
+  // rewriting args, so we leave the failure to surface as-is.
+  if (args.includes("--from")) return null;
+  // uv may emit ANSI color codes around the package name and entrypoint when
+  // it thinks stderr is a terminal. Strip them before matching so the
+  // captured tokens are clean argv values.
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: stripping ANSI is the intent
+  const plain = stderr.replace(/\[[0-9;]*m/g, "");
+  const match = /Use `uvx --from ([^\s`]+) ([^\s`]+)` instead\./.exec(plain);
+  if (!match) return null;
+  const suggestedPkg = match[1];
+  const entrypoint = match[2];
+  if (!suggestedPkg || !entrypoint) return null;
+  // Find the original positional that carries the suggested package name —
+  // a substring match preserves any version pin (`pkg==1.2.3` includes `pkg`)
+  // and naturally skips value-taking flags like `--python 3.11` whose value
+  // wouldn't contain the package name. Splice `--from <spec> <entry>` in
+  // place of the package, keeping any uvx flags before it and any entrypoint
+  // args after it. Fall back to appending if no positional matched.
+  const pkgIdx = args.findIndex((a) => a.includes(suggestedPkg));
+  if (pkgIdx >= 0) {
+    return [
+      ...args.slice(0, pkgIdx),
+      "--from",
+      args[pkgIdx]!,
+      entrypoint,
+      ...args.slice(pkgIdx + 1),
+    ];
+  }
+  return [...args, "--from", suggestedPkg, entrypoint];
 }
 
 async function connectStdio(
@@ -461,52 +606,51 @@ async function connectStdio(
     args: expandedArgs,
   });
 
-  // Capture subprocess stderr so startup errors (e.g. ENOENT on a root path)
-  // are included in the thrown error instead of silently dropped.
-  const stderrChunks: Buffer[] = [];
-  const stderrCapture = new Writable({
-    write(chunk: Buffer, _encoding, callback) {
-      stderrChunks.push(chunk);
-      callback();
-    },
-  });
+  let result = await attemptStdio(command, expandedArgs, mergedEnv);
+  let firstStderr: string | undefined;
 
-  const client = await createMCPClient({
-    transport: new StdioMCPTransport({
-      command,
-      args: expandedArgs,
-      env: mergedEnv,
-      stderr: stderrCapture,
-    }),
-  });
+  if (!result.ok) {
+    const recoveryArgs = recoverUvxFromArgs(command, expandedArgs, result.stderr);
+    if (recoveryArgs) {
+      logger.warn(`MCP stdio retrying "${serverId}" with uvx --from form`, {
+        operation: "mcp_connect_recover",
+        serverId,
+        command,
+        originalArgs: expandedArgs,
+        recoveryArgs,
+        firstStderr: result.stderr || undefined,
+      });
+      // Hold the triggering stderr so it survives if the retry also fails —
+      // otherwise the only diagnostic for the failure mode this code targets
+      // would be lost in `result`'s reassignment below.
+      firstStderr = result.stderr;
+      result = await attemptStdio(command, recoveryArgs, mergedEnv);
+    }
+  }
 
-  // Verify the subprocess is actually responding AND capture tools in one call.
-  // createMCPClient can succeed for stdio even when the server isn't ready yet.
-  let tools: Record<string, Tool>;
-  try {
-    tools = await client.tools();
-  } catch (err) {
-    // Close the client to kill the orphaned subprocess before re-throwing
-    await client.close().catch(() => {});
-    const stderrOutput = Buffer.concat(stderrChunks).toString("utf8").trim();
+  if (!result.ok) {
+    const combinedStderr =
+      firstStderr && result.stderr !== firstStderr
+        ? `first: ${firstStderr} | retry: ${result.stderr}`
+        : result.stderr;
     logger.debug(`MCP stdio tools() failed for "${serverId}"`, {
       operation: "mcp_connect",
       serverId,
-      error: err instanceof Error ? err.message : String(err),
-      stderrOutput: stderrOutput || undefined,
+      error: result.error.message,
+      stderrOutput: combinedStderr || undefined,
     });
     // Prepend subprocess stderr to the error message so callers see the
     // actual failure reason (e.g. "ENOENT: no such file or directory")
     // rather than just the generic "Connection closed" from the transport.
-    if (stderrOutput && err instanceof Error) {
-      err.message = `${stderrOutput} (${err.message})`;
+    if (combinedStderr) {
+      result.error.message = `${combinedStderr} (${result.error.message})`;
     }
-    throw err;
+    throw result.error;
   }
 
   logger.debug(`MCP stdio connected for "${serverId}"`, { operation: "mcp_connect", serverId });
 
-  return { client, tools };
+  return { client: result.client, tools: result.tools };
 }
 
 /**
@@ -550,7 +694,13 @@ export async function connectHttp(
   resolvedEnv: Record<string, string>,
   serverId: string,
   logger: Logger,
-  deps: { spawn?: typeof defaultSpawn; fetch?: typeof fetch; pidFile?: PidFileWriter } = {},
+  deps: {
+    spawn?: typeof defaultSpawn;
+    fetch?: typeof fetch;
+    pidFile?: PidFileWriter;
+    /** Workspace `.env` overlay for resolving `startup.env` entries. */
+    envOverlay?: Record<string, string>;
+  } = {},
 ): Promise<ConnectedServer> {
   const { transport, auth, startup } = config;
   if (transport.type !== "http") {
@@ -583,7 +733,9 @@ export async function connectHttp(
 
   // Resolve startup.env separately from config.env — bearer tokens must never
   // leak into the child process, and startup.env must never reach HTTP headers.
-  const resolvedStartupEnv = startup.env ? await resolveEnvValues(startup.env, logger) : {};
+  const resolvedStartupEnv = startup.env
+    ? await resolveEnvValues(startup.env, logger, deps.envOverlay)
+    : {};
 
   // Merge parent env + resolved startup env (with interpolation)
   const parentEnv = Object.fromEntries(

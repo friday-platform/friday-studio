@@ -37,7 +37,7 @@ const launcherBundleID = "ai.hellofriday.studio"
 //
 // To bump: see UPDATING-AGENT-SDK.md at the repo root (three pin sites
 // must agree; CI enforces via scripts/check-sdk-pin-sync.ts).
-const bundledAgentSDKVersion = "0.1.8"
+const bundledAgentSDKVersion = "0.1.9"
 
 func friendlyHome() string {
 	if v := os.Getenv("FRIDAY_LAUNCHER_HOME"); v != "" {

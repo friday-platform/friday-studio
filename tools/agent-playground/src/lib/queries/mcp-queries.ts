@@ -6,7 +6,8 @@
  *
  * @module
  */
-import { MCPServerMetadataSchema } from "@atlas/core/mcp-registry/schemas";
+import { DoctorReportSchema, MCPServerMetadataSchema } from "@atlas/core/mcp-registry/schemas";
+import { parseSSEStream } from "@atlas/utils/sse";
 import { createMutation, queryOptions, skipToken, useQueryClient } from "@tanstack/svelte-query";
 import { z } from "zod";
 import { getDaemonClient } from "../daemon-client.ts";
@@ -30,6 +31,7 @@ const SearchResultSchema = z.object({
   description: z.string().optional(),
   vendor: z.string(),
   version: z.string(),
+  updatedAt: z.string(),
   alreadyInstalled: z.boolean(),
   isOfficial: z.boolean(),
   repositoryUrl: z.string().nullable().optional(),
@@ -42,6 +44,9 @@ const SearchResponseSchema = z.object({
 const ToolProbeSchema = z.object({
   name: z.string(),
   description: z.string().optional(),
+  // JSON Schema for the tool's arguments — drives the raw invocation form.
+  // `null` when the server declared no input schema.
+  inputSchema: z.record(z.string(), z.unknown()).nullable().optional(),
 });
 
 const ToolsProbeSuccessSchema = z.object({
@@ -62,7 +67,24 @@ const ToolsProbeFailureSchema = z.object({
 
 const ToolsProbeResponseSchema = z.union([ToolsProbeSuccessSchema, ToolsProbeFailureSchema]);
 
-const InstallResponseSchema = z.object({ server: MCPServerMetadataSchema });
+/** Result of a raw tool invocation — the real output, or a classified error. */
+const ToolInvokeResponseSchema = z.union([
+  z.object({ ok: z.literal(true), output: z.unknown() }),
+  z.object({
+    ok: z.literal(false),
+    error: z.string(),
+    phase: z.enum(["dns", "connect", "auth", "tools"]).optional(),
+  }),
+]);
+
+/** Result of a raw tool invocation. */
+export type ToolInvokeResponse = z.infer<typeof ToolInvokeResponseSchema>;
+
+const InstallResponseSchema = z.object({
+  server_id: z.string(),
+  status: z.enum(["ready", "setting_up"]),
+  warning: z.string().optional(),
+});
 
 const InstallErrorSchema = z.object({
   error: z.string(),
@@ -87,8 +109,44 @@ const AddCustomResponseSchema = z.object({
 
 const AddCustomErrorSchema = z.object({ error: z.string() });
 
+/** A typed event from the doctor's SSE progress stream. */
+const DoctorProgressEventSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("phase"),
+    phase: z.enum(["fetching-readme", "prompting-llm", "validating"]),
+  }),
+  z.object({ type: z.literal("result"), report: DoctorReportSchema }),
+]);
+export type DoctorProgressEvent = z.infer<typeof DoctorProgressEventSchema>;
+
+const CommitResponseSchema = z.object({
+  server_id: z.string(),
+  status: z.literal("ready"),
+  warning: z.string().optional(),
+});
+
+const ManualConfigResponseSchema = z.object({
+  server_id: z.string(),
+  warning: z.string().optional(),
+});
+
 export type SearchResult = z.infer<typeof SearchResultSchema>;
 export type ToolsProbeResponse = z.infer<typeof ToolsProbeResponseSchema>;
+
+/** One reviewed env var sent to the install-commit step. */
+export interface CommitEnvVar {
+  name: string;
+  description?: string;
+  isRequired: boolean;
+  isSecret: boolean;
+  default?: string;
+}
+
+/** Payload for the manual-config step — credentials and plain settings, split by the user. */
+export interface ManualConfigInput {
+  credentials: Array<{ name: string; description?: string; isRequired: boolean }>;
+  settings: Array<{ name: string; description?: string; default?: string }>;
+}
 
 export interface InstallMCPInput {
   registryName: string;
@@ -116,9 +174,12 @@ export interface AddCustomMCPInput {
  * can call it directly without going through TanStack's QueryFunction wrapper
  * (which requires a QueryFunctionContext arg this test doesn't need to mock).
  */
-export async function fetchToolsProbe(id: string): Promise<ToolsProbeResponse> {
+export async function fetchToolsProbe(
+  id: string,
+  signal?: AbortSignal,
+): Promise<ToolsProbeResponse> {
   const client = getDaemonClient();
-  const res = await client.mcp[":id"].tools.$get({ param: { id } });
+  const res = await client.mcp[":id"].tools.$get({ param: { id } }, { init: { signal } });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(`Failed to probe MCP tools: ${res.status} ${JSON.stringify(body)}`);
@@ -190,7 +251,7 @@ export const mcpQueries = {
   toolsProbe: (id: string) =>
     queryOptions({
       queryKey: ["daemon", "mcp", "tools", id] as const,
-      queryFn: () => fetchToolsProbe(id),
+      queryFn: ({ signal }) => fetchToolsProbe(id, signal),
       staleTime: 0,
     }),
 };
@@ -211,7 +272,9 @@ export function useInstallMCPServer() {
 
   return createMutation(() => ({
     mutationFn: async (input: InstallMCPInput) => {
-      const res = await client.mcp.install.$post({ json: { registryName: input.registryName } });
+      const res = await client.mcp.install.preflight.$post({
+        json: { registryName: input.registryName },
+      });
       const body = await res.json();
 
       if (!res.ok) {
@@ -224,6 +287,38 @@ export function useInstallMCPServer() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: mcpQueries.all() });
+    },
+  }));
+}
+
+/**
+ * Mutation for invoking a single MCP tool directly — connects to the server,
+ * calls `tools/call` with the given args, returns the real output. Wraps
+ * `POST /api/mcp-registry/:id/invoke`. Always workspace-scoped: the invocation
+ * runs against that workspace's merged server config, and the route checks
+ * workspace membership.
+ */
+export function useInvokeMCPTool() {
+  const client = getDaemonClient();
+
+  return createMutation(() => ({
+    mutationFn: async (input: {
+      id: string;
+      toolName: string;
+      args: Record<string, unknown>;
+      workspaceId: string;
+    }): Promise<ToolInvokeResponse> => {
+      const res = await client.mcp[":id"].invoke.$post({
+        param: { id: input.id },
+        query: { workspaceId: input.workspaceId },
+        json: { toolName: input.toolName, args: input.args },
+      });
+      const body = await res.json().catch(() => ({}));
+      // A classified failure (404, connect error) still parses into the
+      // `ok: false` shape — only a totally unexpected body throws.
+      const parsed = ToolInvokeResponseSchema.safeParse(body);
+      if (parsed.success) return parsed.data;
+      throw new Error(`Tool invocation failed: ${res.status}`);
     },
   }));
 }
@@ -325,4 +420,125 @@ export function useDeleteMCPServer() {
       queryClient.invalidateQueries({ queryKey: mcpQueries.all() });
     },
   }));
+}
+
+/**
+ * Mutation for committing an `awaiting_confirm` entry's reviewed env var list.
+ * Wraps `POST /api/mcp-registry/install/commit/:id` — translates with the
+ * confirmed vars, creates the Link provider, and flips the entry to `ready`.
+ */
+export function useCommitMCPInstall() {
+  const client = getDaemonClient();
+  const queryClient = useQueryClient();
+
+  return createMutation(() => ({
+    mutationFn: async (input: { id: string; envVars: CommitEnvVar[] }) => {
+      const res = await client.mcp.install.commit[":id"].$post({
+        param: { id: input.id },
+        json: { env_vars: input.envVars },
+      });
+      const body = await res.json();
+      if (!res.ok) {
+        const parsed = InstallErrorSchema.safeParse(body);
+        throw new Error(parsed.success ? parsed.data.error : `Commit failed: ${res.status}`);
+      }
+      return CommitResponseSchema.parse(body);
+    },
+    onSuccess: (_data, input) => {
+      queryClient.invalidateQueries({ queryKey: mcpQueries.all() });
+      queryClient.invalidateQueries({ queryKey: mcpQueries.detail(input.id).queryKey });
+    },
+  }));
+}
+
+/**
+ * Mutation for cancelling an in-progress install.
+ * Wraps `POST /api/mcp-registry/install/cancel/:id` — discards the entry.
+ */
+export function useCancelMCPInstall() {
+  const client = getDaemonClient();
+  const queryClient = useQueryClient();
+
+  return createMutation(() => ({
+    mutationFn: async (id: string) => {
+      const res = await client.mcp.install.cancel[":id"].$post({ param: { id } });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        const parsed = DeleteErrorSchema.safeParse(body);
+        throw new Error(parsed.success ? parsed.data.error : `Cancel failed: ${res.status}`);
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: mcpQueries.all() });
+    },
+  }));
+}
+
+/**
+ * Mutation for applying a user-supplied schema to a no-provider entry
+ * (verdict `clean` or `unknown`). Wraps `POST /api/mcp-registry/manual-config/:id`
+ * — credentials become a Link provider, settings become plain-string env.
+ */
+export function useManualConfigMCP() {
+  const client = getDaemonClient();
+  const queryClient = useQueryClient();
+
+  return createMutation(() => ({
+    mutationFn: async (input: { id: string; config: ManualConfigInput }) => {
+      const res = await client.mcp["manual-config"][":id"].$post({
+        param: { id: input.id },
+        json: input.config,
+      });
+      const body = await res.json();
+      if (!res.ok) {
+        const parsed = InstallErrorSchema.safeParse(body);
+        throw new Error(
+          parsed.success ? parsed.data.error : `Manual configuration failed: ${res.status}`,
+        );
+      }
+      return ManualConfigResponseSchema.parse(body);
+    },
+    onSuccess: (_data, input) => {
+      queryClient.invalidateQueries({ queryKey: mcpQueries.all() });
+      queryClient.invalidateQueries({ queryKey: mcpQueries.detail(input.id).queryKey });
+    },
+  }));
+}
+
+/**
+ * Async generator that consumes the doctor's SSE progress stream for an
+ * installing server. Yields `phase` events while the doctor runs, then a
+ * terminal `result` event carrying the persisted {@link DoctorReport}.
+ * For an already-terminal entry the server replays just the `result`.
+ */
+export async function* doctorProgressStream(
+  serverId: string,
+): AsyncGenerator<DoctorProgressEvent> {
+  const url = new URL(
+    `/api/daemon/api/mcp-registry/${encodeURIComponent(serverId)}/stream`,
+    globalThis.location?.origin ?? "http://localhost",
+  );
+
+  const response = await fetch(url.toString(), {
+    method: "GET",
+    headers: { Accept: "text/event-stream" },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Doctor progress stream failed: ${response.status}`);
+  }
+  if (!response.body) {
+    throw new Error("Doctor progress stream has no body");
+  }
+
+  for await (const message of parseSSEStream(response.body)) {
+    let data: unknown;
+    try {
+      data = JSON.parse(message.data);
+    } catch {
+      continue;
+    }
+    const parsed = DoctorProgressEventSchema.safeParse(data);
+    if (parsed.success) yield parsed.data;
+  }
 }

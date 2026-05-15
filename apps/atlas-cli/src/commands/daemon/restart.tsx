@@ -7,8 +7,6 @@ import type { YargsInstance } from "../../utils/yargs.ts";
 interface RestartArgs {
   port?: number;
   hostname?: string;
-  maxWorkspaces?: number;
-  idleTimeout?: number;
   force?: boolean;
 }
 
@@ -24,16 +22,6 @@ export function builder(y: YargsInstance) {
       default: 8080,
     })
     .option("hostname", { type: "string", describe: "Hostname to bind to", default: "localhost" })
-    .option("max-workspaces", {
-      type: "number",
-      describe: "Maximum number of concurrent workspace runtimes",
-      default: 10,
-    })
-    .option("idle-timeout", {
-      type: "number",
-      describe: "Idle timeout for workspace runtimes in seconds",
-      default: 300,
-    })
     .option("force", {
       type: "boolean",
       alias: "f",
@@ -41,8 +29,7 @@ export function builder(y: YargsInstance) {
       default: false,
     })
     .example("$0 daemon restart", "Restart daemon with same settings")
-    .example("$0 daemon restart --force", "Force restart daemon")
-    .example("$0 daemon restart --max-workspaces 20", "Restart with higher workspace limit");
+    .example("$0 daemon restart --force", "Force restart daemon");
 }
 
 export const handler = async (argv: RestartArgs): Promise<void> => {
@@ -110,10 +97,6 @@ export const handler = async (argv: RestartArgs): Promise<void> => {
         port.toString(),
         "--hostname",
         argv.hostname || "localhost",
-        "--max-workspaces",
-        (argv.maxWorkspaces || 10).toString(),
-        "--idle-timeout",
-        (argv.idleTimeout || 300).toString(),
       ],
       env: process.env as Record<string, string>,
     });

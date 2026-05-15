@@ -1,4 +1,4 @@
-import { stringifyError } from "@atlas/utils";
+import { discardBody, stringifyError } from "@atlas/utils";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
@@ -42,9 +42,11 @@ export function registerMemoryRemoveTool(server: McpServer, ctx: ToolContext): v
       try {
         const res = await fetch(url, { method: "DELETE" });
         if (res.status === 501) {
+          await discardBody(res);
           return createErrorResponse("memory remove not implemented by the memory adapter");
         }
         if (!res.ok) {
+          await discardBody(res);
           return createErrorResponse(`memory remove failed: HTTP ${res.status}`);
         }
         return createSuccessResponse({

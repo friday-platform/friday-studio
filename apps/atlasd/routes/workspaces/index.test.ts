@@ -57,27 +57,21 @@ function createTestApp() {
     .mockResolvedValue({ sessionId: "sess-1", output: [], artifactIds: [], summary: "" });
 
   const mockContext: AppContext = {
-    runtimes: new Map(),
     startTime: Date.now(),
     sseClients: new Map(),
     sseStreams: new Map(),
     getWorkspaceManager: () => mockWorkspaceManager,
-    getOrCreateWorkspaceRuntime: vi.fn(),
-    resetIdleTimeout: vi.fn(),
-    getWorkspaceRuntime: vi.fn(),
-    destroyWorkspaceRuntime: vi.fn(),
     getAgentRegistry: vi.fn(),
     getOrCreateChatSdkInstance: vi.fn(),
-    evictChatSdkInstance: vi.fn(),
     daemon: {
       getWorkspaceManager: () => mockWorkspaceManager,
       triggerWorkspaceSignal,
-      runtimes: new Map(),
     } as unknown as AppContext["daemon"],
     streamRegistry: {} as AppContext["streamRegistry"],
     chatTurnRegistry: {} as AppContext["chatTurnRegistry"],
     sessionStreamRegistry: {} as AppContext["sessionStreamRegistry"],
     sessionHistoryAdapter: {} as AppContext["sessionHistoryAdapter"],
+    sessionDispatchRegistry: {} as AppContext["sessionDispatchRegistry"],
     exposeKernel: false,
     platformModels: createStubPlatformModels(),
   };
@@ -140,6 +134,88 @@ describe("POST /workspaces/:workspaceId/signals/:signalId bypass guard", () => {
         app,
         "/workspaces/ws-1/signals/sig-1",
         { payload: {}, bypassConcurrency: true },
+        { [INTERNAL_SIGNAL_BYPASS_HEADER]: "test-token" },
+      );
+
+      expect(res.status).toBe(200);
+      expect(triggerWorkspaceSignal).toHaveBeenCalledOnce();
+    } finally {
+      if (previous === undefined) delete process.env[INTERNAL_SIGNAL_BYPASS_TOKEN_ENV];
+      else process.env[INTERNAL_SIGNAL_BYPASS_TOKEN_ENV] = previous;
+    }
+  });
+});
+
+describe("POST /workspaces/:workspaceId/signals/:signalId envelope guard", () => {
+  test("rejects a bare (un-enveloped) payload with a clear envelope error", async () => {
+    const { app, triggerWorkspaceSignal } = createTestApp();
+    const res = await post(app, "/workspaces/ws-1/signals/sig-1", { input: "hello" });
+
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toContain('{"payload"');
+    expect(body.error).toContain("input");
+    expect(triggerWorkspaceSignal).not.toHaveBeenCalled();
+  });
+
+  test("rejects stray keys even when a valid envelope key is also present", async () => {
+    const { app, triggerWorkspaceSignal } = createTestApp();
+    const res = await post(app, "/workspaces/ws-1/signals/sig-1", {
+      streamId: "stream-1",
+      input: "hello",
+    });
+
+    expect(res.status).toBe(400);
+    expect(triggerWorkspaceSignal).not.toHaveBeenCalled();
+  });
+
+  test("rejects a bare payload on the SSE handler too (Accept: text/event-stream)", async () => {
+    // The SSE handler is a separate `.post` registration dispatched by the
+    // accept header — it reads rawBody directly, so its guard branch needs
+    // its own coverage.
+    const { app, triggerWorkspaceSignal } = createTestApp();
+    const res = await post(
+      app,
+      "/workspaces/ws-1/signals/sig-1",
+      { input: "hello" },
+      { Accept: "text/event-stream" },
+    );
+
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toContain('{"payload"');
+    expect(triggerWorkspaceSignal).not.toHaveBeenCalled();
+  });
+
+  test("allows a properly enveloped body through the guard", async () => {
+    const previous = process.env[INTERNAL_SIGNAL_BYPASS_TOKEN_ENV];
+    process.env[INTERNAL_SIGNAL_BYPASS_TOKEN_ENV] = "test-token";
+    try {
+      const { app, triggerWorkspaceSignal } = createTestApp();
+      const res = await post(
+        app,
+        "/workspaces/ws-1/signals/sig-1",
+        { payload: { input: "hello" }, bypassConcurrency: true },
+        { [INTERNAL_SIGNAL_BYPASS_HEADER]: "test-token" },
+      );
+
+      expect(res.status).toBe(200);
+      expect(triggerWorkspaceSignal).toHaveBeenCalledOnce();
+    } finally {
+      if (previous === undefined) delete process.env[INTERNAL_SIGNAL_BYPASS_TOKEN_ENV];
+      else process.env[INTERNAL_SIGNAL_BYPASS_TOKEN_ENV] = previous;
+    }
+  });
+
+  test("allows an empty body — no-payload signal triggers stay valid", async () => {
+    const previous = process.env[INTERNAL_SIGNAL_BYPASS_TOKEN_ENV];
+    process.env[INTERNAL_SIGNAL_BYPASS_TOKEN_ENV] = "test-token";
+    try {
+      const { app, triggerWorkspaceSignal } = createTestApp();
+      const res = await post(
+        app,
+        "/workspaces/ws-1/signals/sig-1",
+        { bypassConcurrency: true },
         { [INTERNAL_SIGNAL_BYPASS_HEADER]: "test-token" },
       );
 
@@ -220,25 +296,8 @@ function makeSession(id: string, status: string) {
   return { id, jobName: "test", signalId: "sig", startedAt: new Date(), session: { id, status } };
 }
 
-function createTestAppWithRuntime(options: {
-  sessions?: ReturnType<typeof makeSession>[];
-  orchestratorActiveExecutions?: boolean;
-  includeOrchestrator?: boolean;
-}) {
-  const {
-    sessions = [],
-    orchestratorActiveExecutions = false,
-    includeOrchestrator = false,
-  } = options;
-
-  const mockRuntime: Record<string, unknown> = { getSessions: vi.fn().mockReturnValue(sessions) };
-  if (includeOrchestrator) {
-    mockRuntime.getOrchestrator = vi
-      .fn()
-      .mockReturnValue({
-        hasActiveExecutions: vi.fn().mockReturnValue(orchestratorActiveExecutions),
-      });
-  }
+function createTestAppWithRuntime(options: { sessions?: ReturnType<typeof makeSession>[] }) {
+  const { sessions = [] } = options;
 
   const mockWorkspace = {
     id: "ws-test",
@@ -256,27 +315,31 @@ function createTestAppWithRuntime(options: {
     deleteWorkspace: vi.fn(),
   } as unknown as WorkspaceManager;
 
+  const inflight = sessions
+    .filter((s) => s.session.status === "active")
+    .map((s) => ({
+      sessionId: s.id,
+      startedAt: s.startedAt.toISOString(),
+      workspaceId: "ws-test",
+      signalId: s.signalId,
+    }));
+  const mockSessionHistoryAdapter = {
+    listInflight: vi.fn().mockResolvedValue(inflight),
+  } as unknown as AppContext["sessionHistoryAdapter"];
+
   const mockContext: AppContext = {
-    runtimes: new Map(),
     startTime: Date.now(),
     sseClients: new Map(),
     sseStreams: new Map(),
     getWorkspaceManager: () => mockWorkspaceManager,
-    getOrCreateWorkspaceRuntime: vi.fn(),
-    resetIdleTimeout: vi.fn(),
-    getWorkspaceRuntime: vi.fn().mockReturnValue(mockRuntime),
-    destroyWorkspaceRuntime: vi.fn(),
     getAgentRegistry: vi.fn(),
     getOrCreateChatSdkInstance: vi.fn(),
-    evictChatSdkInstance: vi.fn(),
-    daemon: {
-      getWorkspaceManager: () => mockWorkspaceManager,
-      runtimes: new Map(),
-    } as unknown as AppContext["daemon"],
+    daemon: { getWorkspaceManager: () => mockWorkspaceManager } as unknown as AppContext["daemon"],
     streamRegistry: {} as AppContext["streamRegistry"],
     chatTurnRegistry: {} as AppContext["chatTurnRegistry"],
     sessionStreamRegistry: {} as AppContext["sessionStreamRegistry"],
-    sessionHistoryAdapter: {} as AppContext["sessionHistoryAdapter"],
+    sessionHistoryAdapter: mockSessionHistoryAdapter,
+    sessionDispatchRegistry: {} as AppContext["sessionDispatchRegistry"],
     exposeKernel: false,
     platformModels: createStubPlatformModels(),
   };
@@ -305,16 +368,6 @@ describe("POST /workspaces/:workspaceId/update — session guard", () => {
     expect(res.status).toBe(409);
   });
 
-  test("returns 409 when orchestrator.hasActiveExecutions() is true and force is absent", async () => {
-    const { app } = createTestAppWithRuntime({
-      sessions: [],
-      includeOrchestrator: true,
-      orchestratorActiveExecutions: true,
-    });
-    const res = await post(app, "/workspaces/ws-test/update", { config: {} });
-    expect(res.status).toBe(409);
-  });
-
   test("409 response body contains expected fields", async () => {
     const { app } = createTestAppWithRuntime({
       sessions: [makeSession("sess-xyz", "active"), makeSession("sess-def", "active")],
@@ -336,18 +389,14 @@ describe("POST /workspaces/:workspaceId/update — session guard", () => {
     expect(res.status).not.toBe(409);
   });
 
-  test("proceeds normally when no active sessions and hasActiveExecutions=false", async () => {
-    const { app } = createTestAppWithRuntime({
-      sessions: [makeSession("sess-abc", "completed")],
-      includeOrchestrator: true,
-      orchestratorActiveExecutions: false,
-    });
+  test("proceeds normally when no active sessions are inflight", async () => {
+    const { app } = createTestAppWithRuntime({ sessions: [makeSession("sess-abc", "completed")] });
     const res = await post(app, "/workspaces/ws-test/update", { config: {} });
     expect(res.status).not.toBe(409);
   });
 
-  test("proceeds normally when orchestrator is not available and no active sessions", async () => {
-    const { app } = createTestAppWithRuntime({ sessions: [], includeOrchestrator: false });
+  test("proceeds normally when no inflight sessions are present", async () => {
+    const { app } = createTestAppWithRuntime({ sessions: [] });
     const res = await post(app, "/workspaces/ws-test/update", { config: {} });
     expect(res.status).not.toBe(409);
   });
@@ -537,23 +586,18 @@ describe("GET /workspaces/:workspaceId/jobs", () => {
     const mockDaemon = { getWorkspaceManager: () => mockWorkspaceManager, runtimes: new Map() };
 
     const mockContext: AppContext = {
-      runtimes: new Map(),
       startTime: Date.now(),
       sseClients: new Map(),
       sseStreams: new Map(),
       getWorkspaceManager: () => mockWorkspaceManager,
-      getOrCreateWorkspaceRuntime: vi.fn(),
-      resetIdleTimeout: vi.fn(),
-      getWorkspaceRuntime: vi.fn(),
-      destroyWorkspaceRuntime: vi.fn(),
       getAgentRegistry: vi.fn(),
       getOrCreateChatSdkInstance: vi.fn(),
-      evictChatSdkInstance: vi.fn(),
       daemon: mockDaemon as unknown as AppContext["daemon"],
       streamRegistry: {} as AppContext["streamRegistry"],
       chatTurnRegistry: {} as AppContext["chatTurnRegistry"],
       sessionStreamRegistry: {} as AppContext["sessionStreamRegistry"],
       sessionHistoryAdapter: {} as AppContext["sessionHistoryAdapter"],
+      sessionDispatchRegistry: {} as AppContext["sessionDispatchRegistry"],
       exposeKernel: false,
       platformModels: createStubPlatformModels(),
     };
@@ -858,29 +902,23 @@ describe("POST /workspaces/:workspaceId/signals/:signalId — client-abort cance
     } as unknown as WorkspaceManager;
 
     const mockContext: AppContext = {
-      runtimes: new Map(),
       startTime: Date.now(),
       sseClients: new Map(),
       sseStreams: new Map(),
       getWorkspaceManager: () => mockWorkspaceManager,
-      getOrCreateWorkspaceRuntime: vi.fn(),
-      resetIdleTimeout: vi.fn(),
-      getWorkspaceRuntime: vi.fn(),
-      destroyWorkspaceRuntime: vi.fn(),
       getAgentRegistry: vi.fn(),
       getOrCreateChatSdkInstance: vi.fn(),
-      evictChatSdkInstance: vi.fn(),
       daemon: {
         getWorkspaceManager: () => mockWorkspaceManager,
         getNatsConnection: () => daemonNc,
         publishSignalToJetStream,
         triggerWorkspaceSignal: vi.fn(),
-        runtimes: new Map(),
       } as unknown as AppContext["daemon"],
       streamRegistry: {} as AppContext["streamRegistry"],
       chatTurnRegistry: {} as AppContext["chatTurnRegistry"],
       sessionStreamRegistry: {} as AppContext["sessionStreamRegistry"],
       sessionHistoryAdapter: {} as AppContext["sessionHistoryAdapter"],
+      sessionDispatchRegistry: {} as AppContext["sessionDispatchRegistry"],
       exposeKernel: false,
       platformModels: createStubPlatformModels(),
     };

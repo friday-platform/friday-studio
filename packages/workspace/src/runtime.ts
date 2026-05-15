@@ -123,9 +123,9 @@ import type { MemoryMount } from "./config-schema.ts";
 import { compileExecutionToFsm, ExecutionCompileError } from "./execution-to-fsm.ts";
 import { assertGlobalWriteAllowed, isGlobalWriteAttempt } from "./global-scope-guard.ts";
 import { MountSourceNotFoundError } from "./mount-errors.ts";
-import { mountRegistry } from "./mount-registry.ts";
 import { MountedStoreBinding } from "./mounted-store-binding.ts";
 import { interpolateConfig, resolveWorkspaceVariables } from "./variable-interpolation.ts";
+import { loadWorkspaceEnv } from "./workspace-env.ts";
 
 /**
  * Await a promise but reject as soon as `signal` aborts, even when the
@@ -390,6 +390,23 @@ interface WorkspaceRuntimeOptions {
    * wraps `ChatSdkNotifier` + `broadcastDestinations` and supplies it here.
    */
   broadcastNotifier?: FSMBroadcastNotifier;
+  /**
+   * Daemon-level routing for session-cancel commands published over NATS.
+   * The runtime hands the session's AbortController to the registry as soon
+   * as it's created (so an external cancel can abort mid-execution) and
+   * deregisters when the session settles. The registry is daemon-owned;
+   * the runtime knows nothing about NATS subjects.
+   */
+  sessionAbortRegistry?: SessionAbortRegistry;
+}
+
+export interface SessionAbortRegistry {
+  register(
+    sessionId: string,
+    controller: AbortController,
+    ctx: { workspaceId: string; signalId: string },
+  ): void;
+  deregister(sessionId: string): void;
 }
 
 /**
@@ -439,13 +456,43 @@ interface FSMJob {
  * undefined as "no per-job timeout configured" — engine falls back to
  * its built-in default).
  */
-function parseJobTimeoutMs(jobName: string, value: string): number | undefined {
+export function parseJobTimeoutMs(jobName: string, value: string): number | undefined {
+  let parsed: number;
   try {
-    return parseDuration(value);
+    parsed = parseDuration(value);
   } catch (err) {
     logger.warn("Invalid job timeout — ignoring", { jobName, value, error: stringifyError(err) });
     return undefined;
   }
+  // Reject 0 explicitly. The downstream consumer (nats.js `nc.request({
+  // timeout })` in ProcessAgentExecutor) treats `timeout: 0` as
+  // "expire immediately" — every job in scope would die on its first
+  // tick. Authors who write `0s` or `0ms` almost certainly mean "no
+  // ceiling"; surface a warn and fall back to the executor default
+  // rather than silently bricking the job.
+  if (parsed <= 0) {
+    logger.warn(
+      "Job timeout must be > 0 — ignoring (use a positive duration; 0 maps to instant-rejection in the underlying transport)",
+      { jobName, value, parsedMs: parsed },
+    );
+    return undefined;
+  }
+  return parsed;
+}
+
+/** Build the optional `{ timeoutMs }` slice that gets spread into the
+ * executor options. Extracted so the `!== undefined` distinction is
+ * testable without standing up a full WorkspaceRuntime — `parseJobTimeoutMs`
+ * never produces 0, but a careless future refactor that swaps to a
+ * truthiness check (`jobTimeoutMs && ...`) would silently drop the
+ * field for falsy positive values like 0 (executor would fall back to
+ * its 180s default). Returning `{}` for undefined matches the spread
+ * shape `...(false && X)` resolves to. */
+export function buildExecutorTimeoutOption(
+  jobTimeoutMs: number | undefined,
+): { timeoutMs: number } | Record<string, never> {
+  if (jobTimeoutMs === undefined) return {};
+  return { timeoutMs: jobTimeoutMs };
 }
 
 interface ActiveSession {
@@ -1523,9 +1570,6 @@ export class WorkspaceRuntime {
         assertGlobalWriteAllowed(this.workspace.id, this.options.kernelWorkspaceId);
       }
 
-      mountRegistry.registerSource(sourceId, () => adapter.store(sourceWsId, memoryName));
-      mountRegistry.addConsumer(sourceId, this.workspace.id);
-
       let resolvedStore: NarrativeStore;
       try {
         resolvedStore = await adapter.store(sourceWsId, memoryName);
@@ -1605,6 +1649,25 @@ export class WorkspaceRuntime {
     return fsmFiles;
   }
 
+  /**
+   * This workspace's filesystem path — honors an explicit `workspacePath`
+   * option, else the conventional `<friday-home>/workspaces/:id`.
+   */
+  private get workspacePath(): string {
+    return (
+      this.options.workspacePath || path.join(getFridayHome(), "workspaces", this.workspace.id)
+    );
+  }
+
+  /**
+   * Load this workspace's `.env` overlay fresh. Never cached — the file is
+   * editable at runtime (settings UI, env tools), so a stale copy would mask
+   * edits. Read once per spawn.
+   */
+  private loadEnvOverlay(): Record<string, string> {
+    return loadWorkspaceEnv(this.workspacePath);
+  }
+
   private async createJobEngine(
     job: FSMJob,
     sessionId: string,
@@ -1651,6 +1714,9 @@ export class WorkspaceRuntime {
       }),
       agentExecutor,
       mcpServerConfigs,
+      // Workspace `.env` overlay for FSM LLM-step MCP spawns. A thunk, not a
+      // value — the file is editable at runtime, so it's read fresh per spawn.
+      getEnvOverlay: () => this.loadEnvOverlay(),
       artifactStorage: ArtifactStorage,
       broadcastNotifier: this.options.broadcastNotifier,
       // Wires the optional `delegate` tool for FSM type:llm actions.
@@ -1874,6 +1940,10 @@ export class WorkspaceRuntime {
       }
     }
     this.activeAbortControllers.set(sessionId, sessionAbortController);
+    this.options.sessionAbortRegistry?.register(sessionId, sessionAbortController, {
+      workspaceId: this.workspace.id,
+      signalId: signal.id,
+    });
     const effectiveAbortSignal = sessionAbortController.signal;
 
     return withOtelSpan(
@@ -1930,6 +2000,7 @@ export class WorkspaceRuntime {
           type: "session:start",
           sessionId,
           workspaceId: this.workspace.id,
+          signalId: signal.id,
           jobName: job.name,
           task: typeof signal.data?.task === "string" ? signal.data.task : job.name,
           plannedSteps,
@@ -2411,6 +2482,7 @@ export class WorkspaceRuntime {
           session.finalState = engine.state;
           this.midSessionArtifactRefs.delete(session.id);
           this.activeAbortControllers.delete(sessionId);
+          this.options.sessionAbortRegistry?.deregister(sessionId);
           this.sessionEngines.delete(sessionId);
         }
 
@@ -2677,6 +2749,12 @@ export class WorkspaceRuntime {
                 onStreamEvent: signal._context?.onStreamEvent,
                 additionalContext: { documents: fsmContext.documents },
                 config: mergedConfig,
+                // Per-agent `env:` wiring — only atlas agents carry it; resolved
+                // into AgentContext.env at the agents server.
+                env: agentConfig?.type === "atlas" ? agentConfig.env : undefined,
+                // Workspace `.env` overlay — layered under per-agent wiring and
+                // environmentConfig when AgentContext.env is built.
+                envOverlay: this.loadEnvOverlay(),
                 outputSchema: options?.outputSchema,
                 // Propagate session cancellation to the agent MCP transport —
                 // the orchestrator already listens for this on line ~296 and
@@ -2876,7 +2954,13 @@ export class WorkspaceRuntime {
       }
     }
 
-    const { tools: rawMcpTools, dispose } = await createMCPTools(mcpConfigs, logger);
+    // Load the workspace `.env` overlay once for this spawn — feeds both the
+    // user agent's MCP servers and its own `env:` wiring resolution below.
+    const envOverlay = this.loadEnvOverlay();
+
+    const { tools: rawMcpTools, dispose } = await createMCPTools(mcpConfigs, logger, {
+      envOverlay,
+    });
 
     // Filter platform tools to LLM_AGENT_ALLOWED — same surface workspace LLM
     // agents see (memory, artifacts, state, fs, csv, bash, webfetch,
@@ -2926,14 +3010,25 @@ export class WorkspaceRuntime {
     const observedToolResults: ToolResult[] = [];
 
     try {
+      // The executor layers `process.env` underneath whatever we hand it, so
+      // `options.env` carries only the workspace overlay + resolved per-agent
+      // wiring. Precedence at spawn: process.env → workspace `.env` → wiring.
       const result = await executor.execute(sourceLocation, prompt, {
-        env: opts.agentEnv
-          ? await resolveEnvValues(opts.agentEnv, logger)
-          : Object.fromEntries(
-              Object.entries(process.env).filter(
-                (e): e is [string, string] => typeof e[1] === "string",
-              ),
-            ),
+        env: {
+          ...envOverlay,
+          ...(opts.agentEnv ? await resolveEnvValues(opts.agentEnv, logger, envOverlay) : {}),
+        },
+        // Forward the parsed jobs.<name>.config.timeout into the executor so
+        // the subprocess kill ceiling matches the value operators set in
+        // workspace.yml. Without this, ProcessAgentExecutor falls back to
+        // its silent 180s default and a `config.timeout: "2h"` setting on
+        // the job is meaningful only for elicitation TTL, not for actually
+        // letting the agent run that long.
+        //
+        // The shape is built by `buildExecutorTimeoutOption` so the
+        // undefined-vs-set distinction is unit-tested in
+        // `runtime-job-timeout.test.ts` without standing up the runtime.
+        ...buildExecutorTimeoutOption(opts.jobTimeoutMs),
         logger: logger.child({ component: "CodeAgent", agentId: userAgentId }),
         streamEmitter: opts.onStreamEvent
           ? {
@@ -3373,8 +3468,9 @@ export class WorkspaceRuntime {
     // Engines are per-signal — running ones receive the abort via
     // activeAbortControllers; the engines themselves get GC'd when their
     // signal completes. Nothing to stop here at the job level.
-    for (const controller of this.activeAbortControllers.values()) {
+    for (const [sessionId, controller] of this.activeAbortControllers.entries()) {
       controller.abort("workspace runtime shutting down");
+      this.options.sessionAbortRegistry?.deregister(sessionId);
     }
 
     await this.orchestrator.shutdown();
@@ -3385,7 +3481,6 @@ export class WorkspaceRuntime {
     this.activeAbortControllers.clear();
     this.jobs.clear();
     this.mountBindings.clear();
-    mountRegistry.clear();
     this.initialized = false;
   }
 

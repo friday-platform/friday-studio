@@ -5,9 +5,9 @@
   import ConnectCommunicator from "./connect-communicator.svelte";
   import ConnectService from "./connect-service.svelte";
   import DelegateToolCard from "./delegate-tool-card.svelte";
-  import { getExportContext } from "./export-context";
+  import EnvSetToolCard from "./env-set-tool-card.svelte";
+  import { formatRawOutput } from "./format-raw-output";
   import HumanInputToolCard from "./human-input-tool-card.svelte";
-  import { jsonHighlighter } from "./json-highlighter";
   import { extractLiftedArtifactIds } from "./lifted-markers";
   import {
     argPreview,
@@ -21,10 +21,12 @@
   interface Props {
     call: ToolCallDisplay;
     onCredentialConnected?: (provider: string) => void;
+    /** Fired when the user confirms an env_set elicitation. */
+    onEnvApplied?: (info: { scope: "workspace" | "global"; keys: string[] }) => void;
     depth?: number;
   }
 
-  const { call, onCredentialConnected, depth = 0 }: Props = $props();
+  const { call, onCredentialConnected, onEnvApplied, depth = 0 }: Props = $props();
 
   /* ─── Icon & color mapping ───────────────────────────────────────── */
 
@@ -177,13 +179,6 @@
 
   /* ─── Copy to clipboard ──────────────────────────────────────────── */
 
-  /**
-   * Suppresses the clipboard buttons (which depend on JS) when the card
-   * is rendered inside an export. The data still renders; only the copy
-   * affordance is hidden.
-   */
-  const isExport = getExportContext() !== undefined;
-
   function copyToClipboard(value: unknown, btn: HTMLButtonElement) {
     let text: string;
     if (typeof value === "string") {
@@ -200,27 +195,6 @@
       btn.textContent = "Copied!";
       setTimeout(() => { btn.textContent = original; }, 1500);
     });
-  }
-
-  /* ─── JSON formatting ────────────────────────────────────────────── */
-
-  function formatRawOutput(output: unknown): string {
-    let jsonStr: string;
-    if (typeof output === "string") {
-      try {
-        const parsed: unknown = JSON.parse(output);
-        jsonStr = JSON.stringify(parsed, null, 2);
-      } catch {
-        return output.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-      }
-    } else {
-      try {
-        jsonStr = JSON.stringify(output, null, 2);
-      } catch {
-        return String(output).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-      }
-    }
-    return jsonHighlighter.codeToHtml(jsonStr, { lang: "json", theme: "atlas-json" });
   }
 
   /* ─── Connect service extraction ─────────────────────────────────── */
@@ -275,6 +249,25 @@
     return { artifactId: i.artifactId };
   });
 
+  /* ─── Drawer open state ──────────────────────────────────────────── */
+
+  // Closed drawers do not pay the `formatRawOutput` cost (JSON.stringify +
+  // Shiki tokenisation, ~2-4ms per 50KB output). Without these flags Svelte
+  // renders the content of `<details>` even when collapsed — and during a
+  // heavy stream that was ~6% of total CPU spent highlighting JSON the user
+  // never even looked at (profiled 2026-05-12). `bind:open` keeps the chrome
+  // in sync with browser-managed `<details>` state; the `{#if}` blocks below
+  // tear down the snippet content while closed.
+  //
+  // Once a drawer is opened the cache in `format-raw-output.ts` retains the
+  // result for subsequent re-renders, so toggling stays cheap.
+  let inputOpen = $state(false);
+  let outputOpen = $state(false);
+  // Error always opens by default — matches the prior `<details open>` so
+  // failures stay visible without a click. State is still tracked so the
+  // user can collapse it if they want.
+  let errorOpen = $state(true);
+
   /* ─── Lifted-attachment markers ──────────────────────────────────── */
 
   // The artifact scrubber replaces oversized MCP results with a marker
@@ -283,24 +276,29 @@
   // opaque marker text. ArtifactCard owns fetch-error fallback (it renders an
   // error chip if /api/artifacts/:id 404s) — no content is lost: the raw
   // marker still appears in the output drawer underneath.
-  const liftedArtifacts = $derived(extractLiftedArtifactIds(call.output));
+  //
+  // Defer the walk until `output-available` — `extractLiftedArtifactIds`
+  // recurses the entire output tree with a regex on every string, and the
+  // markers can only appear in the final scrubbed payload. Running it during
+  // `input-streaming` / `input-available` is wasted work per chunk for a
+  // 50KB-class output (profiled 2026-05-12: ~500µs/chunk shaved on the
+  // email-list reproducer).
+  const liftedArtifacts = $derived(
+    call.state === "output-available" ? extractLiftedArtifactIds(call.output) : [],
+  );
 </script>
 
 {#snippet jsonCopyBlock(label: string, data: unknown)}
-  {#if isExport}
+  <div class="json-copy-wrapper">
+    <button
+      class="json-copy-btn"
+      aria-label={`Copy ${label}`}
+      onclick={(e: MouseEvent) => copyToClipboard(data, e.currentTarget as HTMLButtonElement)}
+    >
+      Copy
+    </button>
     <pre class="json-render">{@html formatRawOutput(data)}</pre>
-  {:else}
-    <div class="json-copy-wrapper">
-      <button
-        class="json-copy-btn"
-        aria-label={`Copy ${label}`}
-        onclick={(e: MouseEvent) => copyToClipboard(data, e.currentTarget as HTMLButtonElement)}
-      >
-        Copy
-      </button>
-      <pre class="json-render">{@html formatRawOutput(data)}</pre>
-    </div>
-  {/if}
+  </div>
 {/snippet}
 
 {#snippet outputDrawer(c: ToolCallDisplay)}
@@ -314,32 +312,36 @@
   {#if hasInput || hasOutput || hasError}
     <div class="tool-card-drawer">
       {#if hasInput}
-        <details class="tool-card-details">
+        <!-- Lazy-renders behind `bind:open` so the JSON highlighter
+             stays unloaded while the drawer is collapsed. -->
+        <details class="tool-card-details" bind:open={inputOpen}>
           <summary>
             <span class="chevron-icon"><IconSmall.ChevronRight /></span>
             input
           </summary>
-          {@render jsonCopyBlock("input", c.input)}
+          {#if inputOpen}
+            {@render jsonCopyBlock("input", c.input)}
+          {/if}
         </details>
       {/if}
       {#if hasOutput}
-        <details class="tool-card-details">
+        <details class="tool-card-details" bind:open={outputOpen}>
           <summary>
             <span class="chevron-icon"><IconSmall.ChevronRight /></span>
             output
           </summary>
-          {@render jsonCopyBlock("output", c.output)}
+          {#if outputOpen}
+            {@render jsonCopyBlock("output", c.output)}
+          {/if}
         </details>
       {/if}
       {#if hasError}
-        <details class="tool-card-details" open>
+        <details class="tool-card-details" bind:open={errorOpen}>
           <summary>
             <span class="chevron-icon"><IconSmall.ChevronRight /></span>
             error
           </summary>
-          {#if isExport}
-            <pre class="json-render error-text">{c.errorText}</pre>
-          {:else}
+          {#if errorOpen}
             <div class="json-copy-wrapper">
               <button
                 class="json-copy-btn"
@@ -414,6 +416,8 @@
   </div>
 {:else if call.toolName === "request_human_input"}
   <HumanInputToolCard {call} />
+{:else if call.toolName === "env_set"}
+  <EnvSetToolCard {call} onApplied={onEnvApplied} />
 {:else if call.toolName === "display_artifact"}
   <!-- Always render ArtifactCard for display_artifact tool calls — including
        during input-streaming when artifactId isn't parseable yet. The card
@@ -427,7 +431,7 @@
        observer only fires on enter, never on initial off-screen state). -->
   <ArtifactCard artifactId={artifactDisplay?.artifactId ?? ""} />
 {:else if call.children && call.children.length > 0}
-  <DelegateToolCard {call} {onCredentialConnected} {depth} />
+  <DelegateToolCard {call} {onCredentialConnected} {onEnvApplied} {depth} />
 {:else}
   <div
     class="tool-card"

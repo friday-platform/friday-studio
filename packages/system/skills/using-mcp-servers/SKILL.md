@@ -74,10 +74,28 @@ only when the question genuinely spans both surfaces.
 6. **Graceful degradation:** One failed server does not kill the child.
    `serverFailures` surfaces reasons to the parent.
 
+## Setting an MCP server's env vars
+
+A server often needs config beyond a credential — a workspace slug, a region,
+a log path, a base URL. Two distinct stores, picked by what the value *is*:
+
+- **Non-secret config** (slug, path, region, URL) → `env_set`. It raises a
+  confirmation card and returns `pending_confirmation` — nothing is written
+  until the user confirms. Verify with `env_get` on a *later* turn. This is the
+  only supported way to touch a workspace's `.env` from chat.
+- **Credentials** (API keys, tokens, OAuth) → `connect_service`. Never put a
+  real secret through `env_set` — the workspace `.env` is the non-secret store,
+  and `env_get` masks secret-looking keys.
+
+Never hand-edit `.env` files through `run_code` (curl/python/sed). It has
+corrupted the daemon `.env` in practice. If a `delegate` or `list_mcp_tools`
+call fails because a required env var is unset, the fix is `env_set`.
+
 ## Common Mistakes
 
 | Mistake | Why it happens | Fix |
 |---------|---------------|-----|
+| Hand-editing `.env` via `run_code` to set a server's env var | Didn't know `env_set` exists | `env_set` for non-secret config, `connect_service` for credentials. Never curl/python the `.env`. |
 | Calling `enable` so chat can use a server | Confusing workspace YAML with chat discovery | Catalog servers are visible to `list_capabilities` (as `kind: "mcp_available"`) without enable. |
 | Calling `delete` when user said "remove from workspace" | Confusing catalog deletion with workspace disable | "Remove from workspace" = `disable`. "Delete from catalog" = `delete`. |
 | Calling `install` when user said "add to workspace" | Catalog installation does not wire into workspace YAML | Check catalog first. If present, ask: install (catalog) or enable (workspace YAML)? |

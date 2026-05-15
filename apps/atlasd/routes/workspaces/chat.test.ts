@@ -126,15 +126,9 @@ function createTestApp(
   };
 
   const mockContext = {
-    runtimes: new Map(),
     startTime: Date.now(),
     getWorkspaceManager: vi.fn().mockReturnValue(mockWorkspaceManager),
-    getOrCreateWorkspaceRuntime: vi.fn(),
     getOrCreateChatSdkInstance,
-    evictChatSdkInstance: vi.fn(),
-    resetIdleTimeout: vi.fn(),
-    getWorkspaceRuntime: vi.fn(),
-    destroyWorkspaceRuntime: vi.fn(),
     getAgentRegistry: vi.fn(),
     daemon: {},
     streamRegistry: mockStreamRegistry,

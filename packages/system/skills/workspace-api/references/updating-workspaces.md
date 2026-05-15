@@ -30,11 +30,11 @@ another quietly loses it.
 
 ## The three paths
 
-| Path | Covers | Preserves runtime id, sessions, memory? |
+| Path | Covers | Preserves workspace id, sessions, memory? |
 |---|---|---|
 | **1. Partial-update API** | signals (full CRUD), agent prompt/model/tools edit, credential swap, metadata | Yes |
 | **2. Disk edit via `run_code`** | everything else — add agents, add jobs, restructure FSM, edit `skills:` list | Yes |
-| **3. DELETE + CREATE** | rebuild from scratch | **No** — new runtime id, sessions killed, cron targets break |
+| **3. DELETE + CREATE** | rebuild from scratch | **No** — new workspace id, sessions killed, cron targets break |
 
 Prefer 1 → 2 → 3 in that order. Only drop to 3 when the schema shape itself
 is changing incompatibly.
@@ -42,7 +42,9 @@ is changing incompatibly.
 ## 1. Partial-update API
 
 Mount: `/api/workspaces/:id/config`. Every mutation here writes to
-`workspace.yml` AND destroys the active runtime so it reloads on next signal.
+`workspace.yml`. The next signal dispatch reads the updated config —
+each dispatch builds a fresh runtime from the file, so there's no
+reload step to manage.
 
 ### Signals — full CRUD
 
@@ -140,13 +142,14 @@ For any of those, go to Path 2.
 
 ## 2. Disk edit via `run_code`
 
-The daemon watches `workspace.yml` for every registered workspace. Edits on
-disk trigger a hash-check, validate against the config schema, destroy the
-active runtime, and ready it for the next signal. Active sessions defer the
-reload until they complete.
+The daemon's `WorkspaceManager.getWorkspaceConfig` is mtime-cached at the
+file layer: writing `workspace.yml` invalidates the cache entry, and the
+next dispatch's snapshot reads the new contents. The file watcher also
+runs to reconcile external registrars (cron schedules, fs-watch sources)
+when their `workspace.yml` declarations change.
 
-That means: if you can write to `workspace.yml`, the runtime picks it up.
-Runtime id, sessions, and memory are all preserved.
+That means: if you can write to `workspace.yml`, the next dispatch sees
+the change. Workspace id, sessions, and memory are all preserved.
 
 ### Step-by-step
 
@@ -246,18 +249,17 @@ Or read `configPath` directly:
 curl -k -s "$FRIDAYD_URL/api/workspaces/$WS" | jq -r '.configPath'
 ```
 
-### Verifying the reload
+### Verifying the write
 
 ```bash
-# After writing, wait ~1s for the debouncer, then confirm the new shape
-sleep 1
+# Confirm the new shape via the config endpoint, which re-reads workspace.yml.
 curl -k -s "$FRIDAYD_URL/api/workspaces/$WS/config" \
   | jq '.config | {agents: (.agents // {} | keys), jobs: (.jobs // {} | keys)}'
 ```
 
-If the workspace logs show `"Invalid workspace configuration detected, skipping reload"`,
-the YAML parsed but failed Zod validation — the old runtime is still in
-place. Fix and re-write.
+If the workspace logs show `"Invalid workspace configuration detected"`,
+the YAML parsed but failed Zod validation — the file-layer cache won't
+update until the file is valid. Fix and re-write.
 
 ## Why `write_file` doesn't work
 
@@ -293,7 +295,7 @@ curl -k -s -X POST "$FRIDAYD_URL/api/workspaces/create" \
 
 What you lose:
 
-- The old runtime id (`grilled_xylem` → something new). Anything
+- The old workspace id (`grilled_xylem` → something new). Anything
   hardcoded against the old id is now broken: cron targets in other
   workspaces, cross-workspace memory mounts (`"grilled_xylem/narrative/..."`),
   chat references, skill scoping.
@@ -309,26 +311,18 @@ Delete is rejected with **403** for system workspaces (`thick_endive`,
 
 ## Troubleshooting
 
-**"Signal 'X' not found" right after partial update.** Rare — the
-partial-update handler destroys the runtime synchronously before returning
-200. If you see this, either (a) the workspace wasn't actually updated (check
-the `workspace.yml` content — was it your `write_file` to scratch?), or (b)
-the workspace has an active session that's blocking the reload (check
-`GET /api/workspaces/:id` for `status: "active"`; wait or cancel the session).
+**"Signal 'X' not found" right after a write.** The dispatch you just
+fired captured a config snapshot that doesn't have the new signal. Two
+common causes: (a) the workspace wasn't actually updated — check the
+`workspace.yml` content (a `write_file` call from chat goes to scratch,
+not the real file), or (b) your YAML failed Zod validation, so the
+file-layer cache rejected the new config — check the workspace log for
+`"Invalid workspace configuration detected"`.
 
 **"No FSM job handles signal 'X'" when the cron fires.** Your job uses
 `execution:` instead of `fsm:`. Rewrite as an FSM with `initial` and `states`
 (see the minimal example in `SKILL.md`). Jobs without an `fsm:` block are
 silently skipped by the runtime.
-
-**File edit doesn't reload.** Confirm the file content hash actually changed
-(the watcher skips no-op writes). Confirm the new YAML is valid — the watcher
-logs `"Invalid workspace configuration detected, skipping reload"` with
-validation errors when it isn't.
-
-**Deferred reload.** If a session is active when you write the file, the
-reload is deferred until the session completes. Either wait, or cancel the
-session.
 
 **404 on `POST /api/workspaces/:id/config`.** That route doesn't exist.
 There is no full-replace endpoint. Use the disk-edit path instead.

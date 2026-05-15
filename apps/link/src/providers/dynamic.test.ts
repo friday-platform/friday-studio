@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import { hydrateDynamicProvider } from "./dynamic.ts";
 import type { DynamicApiKeyProviderInput, DynamicOAuthProviderInput } from "./types.ts";
 
@@ -68,6 +69,132 @@ describe("hydrateDynamicProvider", () => {
       throw new Error("Expected apikey provider");
     }
     expect(provider.setupInstructions).toEqual("Enter your My Provider API credentials.");
+  });
+
+  it("apikey: legacy flat-shape secretSchema emits unchanged JSON Schema", () => {
+    const input: DynamicApiKeyProviderInput = {
+      type: "apikey",
+      id: "legacy-flat",
+      displayName: "Legacy Flat",
+      description: "Legacy provider",
+      secretSchema: { api_key: "string", workspace_id: "string" },
+    };
+
+    const provider = hydrateDynamicProvider(input);
+    if (provider.type !== "apikey") throw new Error("Expected apikey provider");
+
+    const jsonSchema = z.toJSONSchema(provider.secretSchema);
+    expect(jsonSchema).toEqual({
+      $schema: "https://json-schema.org/draft/2020-12/schema",
+      type: "object",
+      properties: { api_key: { type: "string" }, workspace_id: { type: "string" } },
+      required: ["api_key", "workspace_id"],
+      additionalProperties: false,
+    });
+  });
+
+  it("apikey: descriptor secretSchema lifts description, format, writeOnly, and required[]", () => {
+    const input: DynamicApiKeyProviderInput = {
+      type: "apikey",
+      id: "rich-descriptor",
+      displayName: "Rich Descriptor",
+      description: "Descriptor-shaped provider",
+      secretSchema: {
+        api_key: {
+          type: "string",
+          isRequired: true,
+          isSecret: true,
+          description: "Personal access token from foo.com/settings/tokens",
+        },
+        workspace_slug: {
+          type: "string",
+          isRequired: false,
+          description: "Optional workspace slug",
+        },
+        opaque_field: { type: "string", isRequired: true },
+      },
+    };
+
+    const provider = hydrateDynamicProvider(input);
+    if (provider.type !== "apikey") throw new Error("Expected apikey provider");
+
+    const jsonSchema = z.toJSONSchema(provider.secretSchema);
+
+    const properties = (jsonSchema as { properties: Record<string, Record<string, unknown>> })
+      .properties;
+    expect(properties.api_key).toEqual({
+      type: "string",
+      description: "Personal access token from foo.com/settings/tokens",
+      format: "password",
+      writeOnly: true,
+    });
+    expect(properties.workspace_slug).toEqual({
+      type: "string",
+      description: "Optional workspace slug",
+    });
+    expect(properties.opaque_field).toEqual({ type: "string" });
+
+    const required = (jsonSchema as { required: string[] }).required;
+    expect(required).toContain("api_key");
+    expect(required).toContain("opaque_field");
+    expect(required).not.toContain("workspace_slug");
+  });
+
+  it("apikey: descriptor without isSecret omits password/writeOnly markers", () => {
+    const input: DynamicApiKeyProviderInput = {
+      type: "apikey",
+      id: "non-secret-descriptor",
+      displayName: "Non-secret descriptor",
+      description: "isSecret omitted",
+      secretSchema: {
+        email: { type: "string", isRequired: true, description: "Your account email" },
+      },
+    };
+
+    const provider = hydrateDynamicProvider(input);
+    if (provider.type !== "apikey") throw new Error("Expected apikey provider");
+
+    const properties = (
+      z.toJSONSchema(provider.secretSchema) as {
+        properties: Record<string, Record<string, unknown>>;
+      }
+    ).properties;
+    expect(properties.email).toEqual({ type: "string", description: "Your account email" });
+  });
+
+  it("apikey: mixed legacy + descriptor record hydrates each value per its own shape", () => {
+    const input: DynamicApiKeyProviderInput = {
+      type: "apikey",
+      id: "mixed-record",
+      displayName: "Mixed",
+      description: "One legacy key, one descriptor key",
+      secretSchema: {
+        legacy_field: "string",
+        rich_field: {
+          type: "string",
+          isRequired: false,
+          isSecret: true,
+          description: "Optional secret",
+        },
+      },
+    };
+
+    const provider = hydrateDynamicProvider(input);
+    if (provider.type !== "apikey") throw new Error("Expected apikey provider");
+
+    const jsonSchema = z.toJSONSchema(provider.secretSchema);
+    const properties = (jsonSchema as { properties: Record<string, Record<string, unknown>> })
+      .properties;
+    expect(properties.legacy_field).toEqual({ type: "string" });
+    expect(properties.rich_field).toEqual({
+      type: "string",
+      description: "Optional secret",
+      format: "password",
+      writeOnly: true,
+    });
+
+    const required = (jsonSchema as { required: string[] }).required;
+    expect(required).toEqual(["legacy_field"]);
   });
 
   it("oauth: produces correct provider type and structure", () => {

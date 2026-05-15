@@ -129,4 +129,57 @@ describe("link-credentials mutations — fetch behavior", () => {
       mutation.mutateAsync({ id: "cred-abc", secret: { bad: true } }),
     ).rejects.toThrow("Validation failed");
   });
+
+  it("PUT sends apikey credential to correct path with correct body", async () => {
+    fetchSpy.mockResolvedValue(
+      new Response(JSON.stringify({ id: "cred-new" }), { status: 201 }),
+    );
+
+    const { useCreateApiKeyCredential } = await import("./link-credentials.ts");
+    const mutation = useCreateApiKeyCredential();
+
+    const id = await mutation.mutateAsync({
+      provider: "openai",
+      label: "Work Account",
+      secret: { apiKey: "sk-123" },
+    });
+
+    expect(id).toBe("cred-new");
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "/api/daemon/api/link/v1/credentials/apikey",
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          provider: "openai",
+          label: "Work Account",
+          secret: { apiKey: "sk-123" },
+        }),
+      },
+    );
+  });
+
+  it("PUT throws with parsed message on non-2xx", async () => {
+    fetchSpy.mockResolvedValue(
+      new Response(JSON.stringify({ message: "Invalid API key" }), { status: 400 }),
+    );
+
+    const { useCreateApiKeyCredential } = await import("./link-credentials.ts");
+    const mutation = useCreateApiKeyCredential();
+
+    await expect(
+      mutation.mutateAsync({ provider: "openai", label: "x", secret: { apiKey: "bad" } }),
+    ).rejects.toThrow("Invalid API key");
+  });
+
+  it("PUT throws with status fallback when error body is unparseable", async () => {
+    fetchSpy.mockResolvedValue(new Response("not json", { status: 500 }));
+
+    const { useCreateApiKeyCredential } = await import("./link-credentials.ts");
+    const mutation = useCreateApiKeyCredential();
+
+    await expect(
+      mutation.mutateAsync({ provider: "openai", label: "x", secret: { apiKey: "y" } }),
+    ).rejects.toThrow("Create failed: 500");
+  });
 });

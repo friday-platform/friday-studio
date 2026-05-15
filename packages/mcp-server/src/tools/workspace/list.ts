@@ -26,10 +26,7 @@ export function registerWorkspaceListTool(server: McpServer, ctx: ToolContext) {
       }
       const workspaces = result.data;
 
-      ctx.logger.info("MCP workspace_list response", {
-        totalWorkspaces: workspaces.length,
-        runningWorkspaces: workspaces.filter((w) => w.status === "running").length,
-      });
+      ctx.logger.info("MCP workspace_list response", { totalWorkspaces: workspaces.length });
 
       return createSuccessResponse({
         workspaces,

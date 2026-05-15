@@ -66,10 +66,6 @@ function buildDaemonArgs(argv: StartArgs): string[] {
     (argv.port || 8080).toString(),
     "--hostname",
     argv.hostname || "127.0.0.1",
-    "--max-workspaces",
-    (argv.maxWorkspaces || 10).toString(),
-    "--idle-timeout",
-    (argv.idleTimeout || 300).toString(),
     ...(argv.logLevel ? ["--log-level", argv.logLevel] : []),
     ...(argv.atlasConfig ? ["--atlas-config", argv.atlasConfig] : []),
   ];
@@ -220,8 +216,6 @@ interface StartArgs {
   port?: number;
   hostname?: string;
   detached?: boolean;
-  maxWorkspaces?: number;
-  idleTimeout?: number;
   logLevel?: string;
   atlasConfig?: string;
 }
@@ -234,7 +228,6 @@ export const examples = [
   ["$0 daemon start", "Start daemon on default port 8080"],
   ["$0 daemon start --port 3000", "Start daemon on specific port"],
   ["$0 daemon start --detached", "Start daemon in background mode"],
-  ["$0 daemon start --max-workspaces 20", "Start with higher workspace limit"],
 ];
 
 export function builder(y: YargsInstance) {
@@ -252,16 +245,6 @@ export function builder(y: YargsInstance) {
       describe: "Run daemon in background (detached mode)",
       default: false,
     })
-    .option("max-workspaces", {
-      type: "number",
-      describe: "Maximum number of concurrent workspace runtimes",
-      default: 10,
-    })
-    .option("idle-timeout", {
-      type: "number",
-      describe: "Idle timeout for workspace runtimes in seconds",
-      default: 300, // 5 minutes
-    })
     .option("logLevel", {
       type: "string",
       describe: "Logging level (debug, info, warn, error)",
@@ -275,7 +258,6 @@ export function builder(y: YargsInstance) {
     .example("$0 daemon start", "Start daemon on default port 8080")
     .example("$0 daemon start --port 3000", "Start daemon on specific port")
     .example("$0 daemon start --detached", "Start daemon in background mode")
-    .example("$0 daemon start --max-workspaces 20", "Start with higher workspace limit")
     .example(
       "$0 daemon start --atlas-config /path/to/config",
       "Start with custom atlas config path",
@@ -649,8 +631,6 @@ async function startForeground(argv: StartArgs): Promise<void> {
   const daemon = new AtlasDaemon({
     port: argv.port,
     hostname: argv.hostname,
-    maxConcurrentWorkspaces: argv.maxWorkspaces,
-    idleTimeoutMs: (argv.idleTimeout || 300) * 1000,
     cors: [corsOrigin],
     tlsCert,
     tlsKey,

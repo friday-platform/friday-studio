@@ -7,6 +7,14 @@ description: "Author FSM workspace jobs. Use when creating, editing, or debuggin
 
 Validate cleanly. Run reliably. Load before authoring any `fsm:` job.
 
+**Load `writing-workspace-signals` alongside this skill — always, not
+conditionally.** A job is wired to a trigger signal; authoring one means
+authoring the other. Signal `provider` names (`schedule`, `http`, `fs-watch`,
+`slack`, …) and their `config` shapes live in that skill. Guessing them —
+inventing a `cron` provider, passing unrecognized `config` keys — is the most
+common first-failure when building a workspace, and this skill does not
+duplicate those shapes.
+
 ## Checklist
 
 - [ ] Job uses `fsm:` — `execution:` silently skipped by runtime
@@ -662,7 +670,15 @@ that narrowing.
 to the workspace dir** (`~/.atlas/workspaces/<workspaceId>/`).
 Absolute paths still work but pin the file outside the workspace —
 prefer relative for portability and so `git`-style backups capture
-your output.
+your output. **For files OUTSIDE the workspace (a repo cloned to
+`~/somewhere`) use a `~/...` or `$HOME/...` path — `fs_*` expands `~`,
+`$HOME`, and `$USER`.** Do NOT hand-write a literal absolute home dir
+(`/Users/<name>/…`): the model guesses the username wrong (a real
+failure mode — an agent looped on `fs_read_file` with invented
+`/Users/<name>/…` paths until it ran out of steps). For needs the
+`fs_*` tools don't cover (pipes, multi-step shell) `bash` runs under
+`/bin/bash -c` with the daemon's environment and expands `~` / `$HOME`
+the same way.
 **Shell + data** — `bash`, `csv`, `webfetch`. `bash` is workspace-CWD-
 scoped (same default as `fs_write_file`).
 **State** — `state_append`, `state_filter`, `state_lookup`.
@@ -680,6 +696,13 @@ allowlist narrows the **MCP-server** catalog only. To genuinely lock
 an action down to "memory only," you can't (today) — the platform
 tool surface is fixed. Long-term: a `platform_tools: [...]` opt-in would make
 this narrower.
+
+**You cannot exclude a platform built-in via `tools:`.** Listing or
+omitting `fs_read_file` / `bash` / `save_memory_entry` in `tools:`
+changes nothing — they are ambient. Switching a named agent to an
+inline `type: llm` action does **not** change this; both honor the
+same MCP-only narrowing. If an action keeps misusing a platform tool,
+the lever is the prompt, not the allowlist.
 
 ### Output contract: `complete` is the only durable emission for `outputTo`
 
@@ -1075,6 +1098,27 @@ jobs:
 Expired elicitations move to a read-only Activity log entry; acting on one does
 not reify the timed-out job.
 
+## Job `config` block — keys are snake_case
+
+`jobs.<id>.config` carries a few runtime knobs. The key names are
+**snake_case** and the schema is *loose* — an unrecognized key (a
+camelCase typo, a misremembered name) is **silently accepted and
+ignored**, no validation error. So a wrong key is a silent no-op, not a
+failure you'll see in `validate_workspace`.
+
+```yaml
+jobs:
+  pipeline-auto-repair:
+    config:
+      max_steps: 30      # agent-loop step cap for the job's LLM actions
+      timeout: 30m       # job wall-clock; also the elicitation TTL
+```
+
+Common miss: `maxSteps` (camelCase) does nothing — the runtime reads
+`config.max_steps`. If an action keeps hitting "did not call complete"
+because it runs out of steps, raise `config.max_steps` — and confirm
+you spelled it snake_case.
+
 ## Runtime invariants you don't author
 
 A few behaviors fire automatically. You don't opt in or out, but
@@ -1224,6 +1268,6 @@ Removes panic-driven shotgun debugging producing orphaned agents, malformed FSMs
 
 ## Companion skills
 
-- `writing-workspace-signals` — Signal authoring: JSON Schema payloads, provider configs, HTTP path collisions, cron validation. Load before creating or editing any signal that accepts parameters or needs webhook endpoint.
+- `writing-workspace-signals` — Signal authoring: provider names + `config` shapes, JSON Schema payloads, HTTP path collisions, cron validation. Load alongside this skill for *any* job — the trigger signal is part of the job, and provider/config shapes are not duplicated here.
 - `workspace-api` — Workspace building workflow: draft mode, CRUD, validation, reachability model, tool selection.
 - `writing-to-memory` — Artifact + memory reference pattern for the cross-session bridge described above. Load when a job needs to hand large or persistent data to a later session.

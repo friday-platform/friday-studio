@@ -69,6 +69,24 @@ vi.mock("@atlas/core/workspace-members/storage", () => ({
   resetWorkspaceMemberStorageForTests: vi.fn(),
 }));
 
+// `env-write` confirmations route the actual write through these — mock both
+// so the `/answer` tests can assert the commit-before-`answer` ordering and
+// the failure path without touching the filesystem.
+const { mockCommitGlobalEnvWrite, mockSetEnvFileVar } = vi.hoisted(() => ({
+  mockCommitGlobalEnvWrite: vi.fn(),
+  mockSetEnvFileVar: vi.fn(),
+}));
+
+vi.mock("../../src/env-commit.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../src/env-commit.ts")>()),
+  commitGlobalEnvWrite: mockCommitGlobalEnvWrite,
+}));
+
+vi.mock("@atlas/workspace", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@atlas/workspace")>()),
+  setEnvFileVar: mockSetEnvFileVar,
+}));
+
 // Import AFTER the mock so the route binds to the mocked facade.
 import { elicitationApp as rawElicitationApp } from "./index.ts";
 
@@ -78,12 +96,24 @@ import { elicitationApp as rawElicitationApp } from "./index.ts";
 // daemon getter never runs.
 // ---------------------------------------------------------------------------
 
-type MockContext = { daemon: { getNatsConnection: () => null } };
+interface MockWorkspaceManager {
+  find: (q: { id: string }) => Promise<{ id: string; path: string } | null>;
+}
+type MockContext = {
+  daemon: { getNatsConnection: () => null };
+  getWorkspaceManager: () => MockWorkspaceManager;
+};
 
-function createTestApp() {
+function createTestApp(workspaceManager?: MockWorkspaceManager) {
   const app = new Hono<{ Variables: { app: MockContext; userId?: string } }>();
   app.use("*", async (c, next) => {
-    c.set("app", { daemon: { getNatsConnection: () => null } });
+    c.set("app", {
+      daemon: { getNatsConnection: () => null },
+      getWorkspaceManager: () =>
+        workspaceManager ?? {
+          find: ({ id }: { id: string }) => Promise.resolve({ id, path: `/tmp/${id}` }),
+        },
+    });
     c.set("userId", "test-user");
     await next();
   });
@@ -272,6 +302,136 @@ describe("POST /:id/answer", () => {
     });
     expect(res.status).toBe(400);
     expect(mockElicitationStorage.answer).not.toHaveBeenCalled();
+  });
+
+  // ── env-write confirmations: the write must land *before* `answer` ──────
+  describe("env-write confirmations", () => {
+    function envWriteElicitation(args: Record<string, unknown>) {
+      return makeElicitation({ kind: "env-write", pendingTool: { name: "env_set", args } });
+    }
+
+    test("global confirm commits the write before marking answered", async () => {
+      const pending = envWriteElicitation({ scope: "global", vars: { LOG_LEVEL: "info" } });
+      mockElicitationStorage.get.mockResolvedValueOnce(success(pending));
+      mockElicitationStorage.answer.mockResolvedValueOnce(
+        success(makeElicitation({ kind: "env-write", status: "answered" })),
+      );
+
+      const res = await createTestApp().request("/elc_1/answer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ value: "confirm" }),
+      });
+
+      expect(res.status).toBe(200);
+      expect(mockCommitGlobalEnvWrite).toHaveBeenCalledWith("LOG_LEVEL", "info");
+      // Ordering: the commit's invocation order is strictly before `answer`'s.
+      const commitOrder = mockCommitGlobalEnvWrite.mock.invocationCallOrder[0];
+      const answerOrder = mockElicitationStorage.answer.mock.invocationCallOrder[0];
+      expect(commitOrder).toBeLessThan(answerOrder ?? Infinity);
+    });
+
+    test("a failed commit 500s and leaves the elicitation pending (answer not called)", async () => {
+      const pending = envWriteElicitation({ scope: "global", vars: { API_URL: "x" } });
+      mockElicitationStorage.get.mockResolvedValueOnce(success(pending));
+      mockCommitGlobalEnvWrite.mockImplementationOnce(() => {
+        throw new Error("disk full");
+      });
+
+      const res = await createTestApp().request("/elc_1/answer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ value: "confirm" }),
+      });
+
+      expect(res.status).toBe(500);
+      expect(mockElicitationStorage.answer).not.toHaveBeenCalled();
+    });
+
+    test("workspace confirm writes through setEnvFileVar then marks answered", async () => {
+      // Target workspace comes from the elicitation envelope, not the args.
+      const pending = envWriteElicitation({ scope: "workspace", vars: { LOG_DIR: "/var/log" } });
+      mockElicitationStorage.get.mockResolvedValueOnce(success(pending));
+      mockElicitationStorage.answer.mockResolvedValueOnce(
+        success(makeElicitation({ kind: "env-write", status: "answered" })),
+      );
+
+      const res = await createTestApp().request("/elc_1/answer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ value: "confirm" }),
+      });
+
+      expect(res.status).toBe(200);
+      expect(mockSetEnvFileVar).toHaveBeenCalledWith("/tmp/ws_1/.env", "LOG_DIR", "/var/log");
+      expect(mockElicitationStorage.answer).toHaveBeenCalled();
+    });
+
+    test("workspace confirm ignores an args-supplied workspaceId — envelope wins", async () => {
+      // Security boundary: a tampered `pendingTool.args.workspaceId` must not
+      // redirect the write. The envelope's `workspaceId` (server-controlled at
+      // create time) is authoritative; the stray args key is ignored.
+      const pending = makeElicitation({
+        kind: "env-write",
+        workspaceId: "ws_1",
+        pendingTool: {
+          name: "env_set",
+          args: { scope: "workspace", vars: { LOG_DIR: "/var/log" }, workspaceId: "ws_attacker" },
+        },
+      });
+      mockElicitationStorage.get.mockResolvedValueOnce(success(pending));
+      mockElicitationStorage.answer.mockResolvedValueOnce(
+        success(makeElicitation({ kind: "env-write", status: "answered" })),
+      );
+
+      const res = await createTestApp().request("/elc_1/answer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ value: "confirm" }),
+      });
+
+      expect(res.status).toBe(200);
+      expect(mockSetEnvFileVar).toHaveBeenCalledWith("/tmp/ws_1/.env", "LOG_DIR", "/var/log");
+      expect(mockSetEnvFileVar).not.toHaveBeenCalledWith(
+        "/tmp/ws_attacker/.env",
+        expect.anything(),
+        expect.anything(),
+      );
+    });
+
+    test("malformed pendingTool args 500s and does not mark answered", async () => {
+      const pending = envWriteElicitation({ not: "a valid env-write payload" });
+      mockElicitationStorage.get.mockResolvedValueOnce(success(pending));
+
+      const res = await createTestApp().request("/elc_1/answer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ value: "confirm" }),
+      });
+
+      expect(res.status).toBe(500);
+      expect(mockCommitGlobalEnvWrite).not.toHaveBeenCalled();
+      expect(mockElicitationStorage.answer).not.toHaveBeenCalled();
+    });
+
+    test("deny does not commit any write", async () => {
+      const pending = envWriteElicitation({ scope: "global", vars: { LOG_LEVEL: "info" } });
+      mockElicitationStorage.get.mockResolvedValueOnce(success(pending));
+      mockElicitationStorage.answer.mockResolvedValueOnce(
+        success(makeElicitation({ kind: "env-write", status: "answered" })),
+      );
+
+      const res = await createTestApp().request("/elc_1/answer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ value: "deny" }),
+      });
+
+      expect(res.status).toBe(200);
+      expect(mockCommitGlobalEnvWrite).not.toHaveBeenCalled();
+      expect(mockSetEnvFileVar).not.toHaveBeenCalled();
+      expect(mockElicitationStorage.answer).toHaveBeenCalled();
+    });
   });
 });
 

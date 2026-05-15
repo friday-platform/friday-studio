@@ -10,7 +10,7 @@
 
 import { parseMemoryMountSource } from "@atlas/config";
 import type { Logger } from "@atlas/logger";
-import { stringifyError } from "@atlas/utils";
+import { discardBody, stringifyError } from "@atlas/utils";
 import { z } from "zod";
 
 /** Operation class — `read` allows any declared memory, `write` requires own or rw mount. */
@@ -66,6 +66,7 @@ export async function resolveStore(args: {
     const url = `${daemonUrl}/api/workspaces/${encodeURIComponent(workspaceId)}/config`;
     const res = await fetch(url);
     if (!res.ok) {
+      await discardBody(res);
       return { ok: false, error: `workspace '${workspaceId}' not found (HTTP ${res.status})` };
     }
     const parsed = ConfigEnvelope.safeParse(await res.json());

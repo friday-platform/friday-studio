@@ -56,4 +56,17 @@ export interface SessionHistoryAdapter {
    * mid-flight don't appear stuck. Returns the number of sessions marked.
    */
   markInterruptedSessions(): Promise<number>;
+
+  /**
+   * List in-flight sessions (have a marker in SESSION_INFLIGHT but no
+   * terminal summary). Optionally filter by workspaceId — markers carry
+   * `workspaceId` and `signalId` set by the start-event writer; legacy
+   * markers without those fields are returned unfiltered when no
+   * workspaceId is requested.
+   */
+  listInflight(
+    workspaceId?: string,
+  ): Promise<
+    Array<{ sessionId: string; startedAt: string; workspaceId?: string; signalId?: string }>
+  >;
 }

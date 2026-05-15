@@ -8,11 +8,8 @@ import { deriveDownloadFilename } from "@atlas/core/artifacts/file-upload";
  * directories or non-portable names.
  *
  * MUST stay byte-identical to the rule the export orchestrator uses when
- * placing artifact bytes in the zip (see Task #8). Both call sites import
- * this helper to enforce that parity by construction. There is a duplicate
- * of this rule in `apps/atlasd/routes/workspaces/chat.ts` (slugifyZipBasename)
- * that gets deleted along with the daemon's export route in Task #9 —
- * keeping it isolated there until then avoids churn on a soon-to-die file.
+ * placing artifact bytes in the zip. Both call sites import this helper
+ * to enforce that parity by construction.
  */
 export function slugifyZipBasename(name: string): string {
   const cleaned = name.replace(/[^a-zA-Z0-9._-]/g, "_");
@@ -39,12 +36,9 @@ export interface ArtifactPathInput {
 
 /**
  * Compute the relative path under which an artifact's bytes live in the
- * export zip — `assets/artifacts/{id}/{slugified-derived-filename}`.
- *
- * The preview page's `ExportContext.resolveUrl` calls this so HTML
- * references resolve against the same path the orchestrator (Task #8)
- * writes to in the zip. No leading slash so the path is resolvable when
- * the file is opened directly off disk.
+ * export zip — `assets/artifacts/{id}/{slugified-derived-filename}`. No
+ * leading slash so the path is resolvable when the file is opened
+ * directly off disk.
  *
  * Both `id` and the derived basename run through `slugifyZipBasename`.
  * Artifact ids are daemon-generated today (so containing `..` or `/` is

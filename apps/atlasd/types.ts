@@ -18,6 +18,7 @@ export type { ShareRoutes } from "./routes/share.ts";
 export type { SkillsRoutes } from "./routes/skills.ts";
 export type { WorkspaceChatRoutes } from "./routes/workspaces/chat.ts";
 export type { WorkspaceConfigRoutes } from "./routes/workspaces/config.ts";
+export type { WorkspaceEnvRoutes } from "./routes/workspaces/env.ts";
 export type { WorkspaceRoutes } from "./routes/workspaces/index.ts";
 export type { IntegrationRoutes } from "./routes/workspaces/integrations.ts";
 export type { WorkspaceMCPRoutes } from "./routes/workspaces/mcp.ts";

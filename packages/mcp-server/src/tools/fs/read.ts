@@ -6,6 +6,7 @@ import { isErrnoException } from "@atlas/utils";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { createSuccessResponse } from "../utils.ts";
+import { expandUserPath } from "./path-utils.ts";
 
 const MAX_READ_SIZE = 250 * 1024;
 const DEFAULT_READ_LIMIT = 2000;
@@ -35,7 +36,7 @@ Usage:
       },
     },
     async (params) => {
-      let filePath = params.filePath;
+      let filePath = expandUserPath(params.filePath);
       if (!path.isAbsolute(filePath)) {
         filePath = path.join(process.cwd(), filePath);
       }

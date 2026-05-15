@@ -19,6 +19,9 @@ export default defineConfig({
           import.meta.url,
         ),
       ),
+      "$app/paths": fileURLToPath(
+        new URL("./tools/agent-playground/src/lib/__test-stubs__/app-paths.ts", import.meta.url),
+      ),
     },
   },
   test: {

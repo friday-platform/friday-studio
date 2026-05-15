@@ -15,6 +15,11 @@
  *    destructive tool.
  *  - **`open-question`** — agents call the `request_human_input`
  *    platform tool when they need a judgment call.
+ *  - **`env-write`** — the `env_set` tool wants to write a value to a
+ *    workspace (or global) `.env`. The user reviews the key + value
+ *    (masked when secret-bearing) and confirms or denies before the write
+ *    lands. `pendingTool` carries `{ name: "env_set", args: { scope, key,
+ *    value, ... } }`.
  *
  * Storage layout lives in `jetstream-adapter.ts`. This file is the shared
  * Zod schema + TypeScript type boundary used by daemon routes, MCP tools,
@@ -29,6 +34,7 @@ export const ElicitationKindSchema = z.enum([
   "auth-refresh",
   "confirm-action",
   "open-question",
+  "env-write",
 ]);
 export type ElicitationKind = z.infer<typeof ElicitationKindSchema>;
 

@@ -26,8 +26,6 @@ export {
   isCanonical,
   isCanonicalEntry,
 } from "./src/canonical.ts";
-export type { RuntimeInvalidateCallback } from "./src/manager.ts";
-// Export WorkspaceManagerOptions interface
 // Export main components
 export { validateMCPEnvironmentForWorkspace, WorkspaceManager } from "./src/manager.ts";
 // Runtime
@@ -63,3 +61,10 @@ export {
 } from "./src/variable-interpolation.ts";
 // Re-export watchers module for convenience
 export * as watchers from "./src/watchers/index.ts";
+// Workspace `.env` overlay — loader + comment-preserving per-key editor
+export {
+  deleteEnvFileVar,
+  loadEnvFile,
+  loadWorkspaceEnv,
+  setEnvFileVar,
+} from "./src/workspace-env.ts";

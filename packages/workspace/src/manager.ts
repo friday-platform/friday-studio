@@ -1,29 +1,25 @@
 /** Single source of truth for workspace lifecycle and state. */
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { readdir, rm, stat } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { env } from "node:process";
 import type { MemoryAdapter } from "@atlas/agent-sdk";
 import { ConfigLoader, ConfigNotFoundError, type MergedConfig } from "@atlas/config";
-import { MissingEnvironmentError } from "@atlas/core";
+import { findMissingServerEnvVars, MissingEnvironmentError } from "@atlas/core";
 import { logger } from "@atlas/logger";
 import { seedMemories } from "@atlas/memory";
 import { FilesystemConfigAdapter } from "@atlas/storage";
 import { SYSTEM_WORKSPACES } from "@atlas/system/workspaces";
 import { randomColor } from "@atlas/utils";
 import { getFridayHome } from "@atlas/utils/paths.server";
-import { parse as parseDotenv } from "@std/dotenv";
 import { getCanonicalKind } from "./canonical.ts";
 import { ensureDefaultUserWorkspace } from "./first-run-bootstrap.ts";
 import { generateUniqueWorkspaceName } from "./id-generator.ts";
-import type { WorkspaceRuntime } from "./runtime.ts";
 import type { RegistryStorageAdapter } from "./storage.ts";
 import type { WorkspaceEntry, WorkspaceSignalRegistrar, WorkspaceStatus } from "./types.ts";
 import { WorkspaceConfigWatcher } from "./watchers/index.ts";
-
-/** Called when a runtime needs to be destroyed (config changed, workspace deleted) */
-export type RuntimeInvalidateCallback = (workspaceId: string) => Promise<void>;
+import { loadWorkspaceEnv } from "./workspace-env.ts";
 
 /**
  * Strip trailing path separators so prefix comparisons aren't tripped up by
@@ -92,7 +88,15 @@ export interface MembershipWriter {
   stampOwner(input: { wsId: string; ownerUserId: string }): Promise<void>;
 }
 
-/** @internal Exported for testing. */
+/**
+ * Pre-flight check that every `auto`/`from_environment` MCP env var a
+ * workspace declares will actually resolve at spawn — against the same
+ * precedence the runtime uses (workspace `.env` overlay → daemon
+ * `process.env`). Atlas-agent `environmentConfig` vars are validated
+ * separately, at spawn, by the agent-context environment validator.
+ *
+ * @internal Exported for testing.
+ */
 export function validateMCPEnvironmentForWorkspace(
   config: MergedConfig,
   workspacePath: string,
@@ -100,52 +104,13 @@ export function validateMCPEnvironmentForWorkspace(
   const mcpServers = config.workspace.tools?.mcp?.servers;
   if (!mcpServers) return;
 
-  const workspaceEnvPath = join(workspacePath, ".env");
-  let workspaceEnv: Record<string, string> = {};
-  if (existsSync(workspaceEnvPath)) {
-    try {
-      const envContent = readFileSync(workspaceEnvPath, "utf-8");
-      workspaceEnv = parseDotenv(envContent);
-    } catch (error) {
-      logger.debug("Could not parse workspace .env file", { workspacePath, error });
-    }
-  }
+  // The workspace `.env` overlay — an absent file is a valid empty overlay.
+  const workspaceEnv = loadWorkspaceEnv(workspacePath);
 
   const missingVars: Array<{ serverId: string; varName: string }> = [];
 
   for (const [serverId, serverConfig] of Object.entries(mcpServers)) {
-    if (!serverConfig.env) continue;
-
-    for (const [key, value] of Object.entries(serverConfig.env)) {
-      if (value === "auto" || value === "from_environment") {
-        const systemValue = env[key];
-        const workspaceValue = workspaceEnv[key];
-
-        if (!systemValue && !workspaceValue) {
-          missingVars.push({ serverId, varName: key });
-        }
-      }
-    }
-
-    // Also check auth config
-    if (serverConfig.auth?.token_env) {
-      const tokenEnv = serverConfig.auth.token_env;
-
-      // Skip if env config has any entry for token_env:
-      // - Link refs are resolved at runtime
-      // - Literal strings provide the value directly
-      // - "auto"/"from_environment" are already validated in the loop above
-      if (serverConfig.env?.[tokenEnv] !== undefined) {
-        continue;
-      }
-
-      const systemValue = env[tokenEnv];
-      const workspaceValue = workspaceEnv[tokenEnv];
-
-      if (!systemValue && !workspaceValue) {
-        missingVars.push({ serverId, varName: tokenEnv });
-      }
-    }
+    missingVars.push(...findMissingServerEnvVars(serverId, serverConfig, workspaceEnv));
   }
 
   if (missingVars.length > 0) {
@@ -153,26 +118,27 @@ export function validateMCPEnvironmentForWorkspace(
       .map((m) => `  - ${m.varName} (required by MCP server '${m.serverId}')`)
       .join("\n");
 
-    const workspaceEnvHint = existsSync(workspaceEnvPath)
-      ? `workspace .env (${workspaceEnvPath})`
-      : `workspace .env (create ${workspaceEnvPath})`;
+    const workspaceEnvPath = join(workspacePath, ".env");
 
+    // Lazy-on-write: the workspace `.env` need not exist yet — it is created
+    // on first write. Lead with it as the per-workspace scope; the daemon
+    // `.env` and process environment are the broader fallbacks. These are
+    // plain values only — credentials belong in a connected integration.
     throw new MissingEnvironmentError(
       `Missing required environment variables for workspace:\n${formatted}\n\n` +
-        `Set these in:\n` +
-        `  - ${workspaceEnvHint}\n` +
-        `  - ${join(getFridayHome(), ".env")}\n` +
-        `  - System environment`,
+        `Set each value in whichever scope fits (most specific wins):\n` +
+        `  - this workspace's .env — ${workspaceEnvPath} (created on first write)\n` +
+        `  - the daemon's .env — ${join(getFridayHome(), ".env")}\n` +
+        `  - the daemon's process environment`,
+      missingVars,
     );
   }
 }
 
 export class WorkspaceManager {
   private registry: RegistryStorageAdapter;
-  private runtimes = new Map<string, WorkspaceRuntime>();
   private signalRegistrars: WorkspaceSignalRegistrar[] = [];
   private fileWatcher: WorkspaceConfigWatcher | null = null;
-  private onRuntimeInvalidate?: RuntimeInvalidateCallback;
   private memoryAdapter?: MemoryAdapter & {
     ensureRoot(workspaceId: string, name: string): Promise<void>;
   };
@@ -186,18 +152,6 @@ export class WorkspaceManager {
    * the daemon has touched.
    */
   private configCache = new Map<string, { mtimeMs: number; config: MergedConfig }>();
-
-  /**
-   * Pending watcher events for workspaces that had active sessions when the
-   * config file changed on disk. Keyed by workspaceId. Re-applied by
-   * processPendingWatcherChange when the daemon detects the workspace has
-   * gone idle. Prevents the FAST self-modification failure mode where a
-   * config edit mid-session kills the running session via runtime tear-down.
-   */
-  private pendingWatcherChanges = new Map<
-    string,
-    { filePath: string } | { oldPath: string; newPath?: string }
-  >();
 
   constructor(registry: RegistryStorageAdapter) {
     this.registry = registry;
@@ -213,11 +167,6 @@ export class WorkspaceManager {
     adapter: MemoryAdapter & { ensureRoot(workspaceId: string, name: string): Promise<void> },
   ): void {
     this.memoryAdapter = adapter;
-  }
-
-  /** Set callback for when runtime needs invalidation. Called by AtlasDaemon. */
-  setRuntimeInvalidateCallback(cb: RuntimeInvalidateCallback): void {
-    this.onRuntimeInvalidate = cb;
   }
 
   /**
@@ -648,13 +597,6 @@ export class WorkspaceManager {
       return null;
     }
 
-    if (workspace) {
-      const runtime = this.runtimes.get(workspace.id);
-      if (runtime) {
-        return { ...workspace, status: "running" };
-      }
-    }
-
     return workspace;
   }
 
@@ -727,12 +669,6 @@ export class WorkspaceManager {
 
     await this.unregisterWithRegistrars(id);
 
-    const runtime = this.runtimes.get(id);
-    if (runtime) {
-      await runtime.shutdown();
-      this.runtimes.delete(id);
-    }
-
     await this.registry.unregisterWorkspace(id);
 
     try {
@@ -780,33 +716,6 @@ export class WorkspaceManager {
     }
 
     await this.registry.updateWorkspaceStatus(id, workspace.status, { name: newName });
-  }
-
-  /** Register active runtime and persist status=running. */
-  async registerRuntime(workspaceId: string, runtime: WorkspaceRuntime): Promise<void> {
-    this.runtimes.set(workspaceId, runtime);
-    logger.info("Runtime registered", { workspaceId });
-
-    try {
-      await this.registry.updateWorkspaceStatus(workspaceId, "running");
-      logger.info("Workspace status updated to running", { workspaceId });
-    } catch (error) {
-      logger.error("Failed to update workspace status", { workspaceId, error });
-    }
-  }
-
-  /** Unregister runtime and persist status=stopped. */
-  async unregisterRuntime(workspaceId: string): Promise<void> {
-    if (this.runtimes.delete(workspaceId)) {
-      logger.info("Runtime unregistered", { workspaceId });
-
-      try {
-        await this.registry.updateWorkspaceStatus(workspaceId, "stopped");
-        logger.info("Workspace status updated to stopped", { workspaceId });
-      } catch (error) {
-        logger.error("Failed to update workspace status", { workspaceId, error });
-      }
-    }
   }
 
   async updateWorkspaceLastSeen(workspaceId: string): Promise<void> {
@@ -988,17 +897,6 @@ export class WorkspaceManager {
       logger.debug("Error unregistering workspace signals during manager close", { error });
     }
 
-    const shutdownPromises = Array.from(this.runtimes.values()).map(async (runtime) => {
-      try {
-        await runtime.shutdown();
-      } catch (error) {
-        logger.error("Error shutting down workspace runtime", { error });
-      }
-    });
-
-    await Promise.all(shutdownPromises);
-    this.runtimes.clear();
-
     if (this.fileWatcher) {
       try {
         this.fileWatcher.stop();
@@ -1055,16 +953,11 @@ export class WorkspaceManager {
   }
 
   /**
-   * React to workspace config change.
-   *
-   * INTENTIONAL HOT-RELOAD: The file watcher detects workspace.yml changes and
-   * destroys the active runtime so it re-creates from the updated config on the
-   * next signal/request. This is a deliberate design choice, not a bug. API route
-   * handlers in config.ts do the same via destroyWorkspaceRuntime.
-   *
-   * If config is missing, delete the workspace entry. If invalid, mark inactive and
-   * record error metadata. Otherwise, stop runtime, restart signals, and mark inactive
-   * (ready state; runtime is started elsewhere).
+   * React to a workspace.yml change. The runtime is per-dispatch, so the
+   * next signal already reads the new config; this hook only reconciles
+   * external-system registrars (cron schedules, fs-watch sources) whose
+   * declarations live in workspace.yml. Missing config → delete entry;
+   * invalid → mark inactive with error metadata; valid → restart signals.
    */
   async handleWorkspaceConfigChange(workspace: WorkspaceEntry, filePath: string): Promise<void> {
     logger.info("Handling workspace configuration change", {
@@ -1089,9 +982,16 @@ export class WorkspaceManager {
       return;
     }
 
-    await this.stopRuntimeIfActive(workspace.id);
     await this.restartSignalsForWorkspace(workspace.id, workspace.path, validation.config);
-    await this.markWorkspaceInactive(workspace.id);
+    // A clean reload means any prior failure no longer applies. Drop the
+    // stale failure metadata — `markWorkspaceInactive` with no metadata
+    // would carry `lastError`/`lastErrorAt` forward verbatim (see
+    // `updateWorkspaceStatus`), leaving a recovered workspace advertising a
+    // resolved error to humans and to the chat agent diagnosing it.
+    const clearedMetadata = { ...(workspace.metadata ?? {}) };
+    delete clearedMetadata.lastError;
+    delete clearedMetadata.lastErrorAt;
+    await this.markWorkspaceInactive(workspace.id, clearedMetadata);
   }
 
   /**
@@ -1112,33 +1012,10 @@ export class WorkspaceManager {
       return;
     }
 
-    // Active-session guard. If the workspace has a running runtime with active
-    // sessions OR in-flight orchestrator executions, defer the reload by
-    // stashing the change in pendingWatcherChanges. AtlasDaemon calls
-    // processPendingWatcherChange after sessions complete (see
-    // atlas-daemon.ts session-complete handler) to re-apply the change at a
-    // safe moment. Prevents the FAST self-modification failure mode.
-    const runtime = this.runtimes.get(workspaceId);
-    if (runtime) {
-      const sessions = runtime.getSessions();
-      const hasActiveSessions = sessions.some(
-        (s: { session: { status: string } }) => s.session.status === "active",
-      );
-      let hasActiveExecutions = false;
-      if ("getOrchestrator" in runtime && typeof runtime.getOrchestrator === "function") {
-        const orchestrator = runtime.getOrchestrator();
-        hasActiveExecutions = orchestrator.hasActiveExecutions();
-      }
-      if (hasActiveSessions || hasActiveExecutions) {
-        logger.info("deferring workspace config reload until active sessions complete", {
-          workspaceId,
-          change,
-        });
-        this.pendingWatcherChanges.set(workspaceId, change);
-        return;
-      }
-    }
-
+    // Per-dispatch runtimes pick up new config on their next signal — no
+    // defer-until-idle needed. The watcher's job here is only to keep the
+    // external-system registrars (cron, fs-watch sources) in sync with
+    // workspace.yml.
     if ("filePath" in change) {
       logger.debug("processing filePath change", { workspaceId, filePath: change.filePath });
       await this.handleWorkspaceConfigChange(workspace, change.filePath);
@@ -1158,40 +1035,6 @@ export class WorkspaceManager {
       return;
     }
     await this.adoptRenamedWorkspace(workspaceId, workspace, newPath);
-  }
-
-  /**
-   * Re-apply a deferred watcher change. Called by AtlasDaemon when a session
-   * completes and the workspace is observed idle. No-op if no deferred change
-   * exists. Should be called AFTER the session-complete handler has confirmed
-   * !hasActiveSessions && !hasActiveExecutions.
-   */
-  async processPendingWatcherChange(workspaceId: string): Promise<void> {
-    const change = this.pendingWatcherChanges.get(workspaceId);
-    if (!change) return;
-
-    // Re-check active sessions; another session may have started since the
-    // defer. If still busy, leave the change pending.
-    const runtime = this.runtimes.get(workspaceId);
-    if (runtime) {
-      const sessions = runtime.getSessions();
-      const hasActiveSessions = sessions.some(
-        (s: { session: { status: string } }) => s.session.status === "active",
-      );
-      let hasActiveExecutions = false;
-      if ("getOrchestrator" in runtime && typeof runtime.getOrchestrator === "function") {
-        const orchestrator = runtime.getOrchestrator();
-        hasActiveExecutions = orchestrator.hasActiveExecutions();
-      }
-      if (hasActiveSessions || hasActiveExecutions) {
-        logger.debug("pending watcher change still blocked by active sessions", { workspaceId });
-        return;
-      }
-    }
-
-    this.pendingWatcherChanges.delete(workspaceId);
-    logger.info("re-applying deferred workspace config change", { workspaceId, change });
-    await this.handleWatcherChange(workspaceId, change);
   }
 
   /**
@@ -1217,8 +1060,6 @@ export class WorkspaceManager {
       const adapter = new FilesystemConfigAdapter(newWorkspaceDir);
       const loader = new ConfigLoader(adapter, newWorkspaceDir);
       const config = await loader.load();
-
-      await this.stopRuntimeIfActive(workspaceId);
 
       const becameEphemeral = newPath.endsWith("eph_workspace.yml");
       const updatedMetadata = {
@@ -1293,24 +1134,6 @@ export class WorkspaceManager {
     }
   }
 
-  private async stopRuntimeIfActive(workspaceId: string): Promise<void> {
-    this.configCache.delete(workspaceId);
-    // If daemon callback set, let daemon handle full cleanup (both maps)
-    if (this.onRuntimeInvalidate) {
-      await this.onRuntimeInvalidate(workspaceId);
-      return;
-    }
-    // Fallback: local cleanup only (for tests without daemon)
-    const runtime = this.runtimes.get(workspaceId);
-    if (!runtime) return;
-    try {
-      await runtime.shutdown();
-    } catch (error) {
-      logger.warn("Error shutting down runtime", { workspaceId, error });
-    }
-    this.runtimes.delete(workspaceId);
-  }
-
   /** Unregister then register signals for a workspace (best-effort). */
   private async restartSignalsForWorkspace(
     workspaceId: string,
@@ -1368,7 +1191,7 @@ export class WorkspaceManager {
       logger.debug("Error during signal unregister after config removal", { workspaceId, error });
     }
 
-    await this.stopRuntimeIfActive(workspaceId);
+    this.configCache.delete(workspaceId);
 
     await this.markWorkspaceInactive(workspaceId, {
       ...workspace.metadata,
@@ -1412,7 +1235,7 @@ export class WorkspaceManager {
     const fromPath = join(workspace.path, fromName);
     const toPath = join(workspace.path, toName);
 
-    await this.stopRuntimeIfActive(id);
+    this.configCache.delete(id);
 
     try {
       this.fileWatcher?.unwatchWorkspace(id);

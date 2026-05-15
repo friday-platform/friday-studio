@@ -8,6 +8,7 @@ import type {
   SkillsRoutes,
   WorkspaceChatRoutes,
   WorkspaceConfigRoutes,
+  WorkspaceEnvRoutes,
   WorkspaceMCPRoutes,
   WorkspaceRoutes,
 } from "@atlas/atlasd/types";
@@ -42,6 +43,10 @@ function makeDaemonClient(customFetch: typeof globalThis.fetch) {
       }),
     workspaceMcp: (workspaceId: string) =>
       hc<WorkspaceMCPRoutes>(`${PROXY_BASE}/api/workspaces/${workspaceId}/mcp`, {
+        fetch: customFetch,
+      }),
+    workspaceEnv: (workspaceId: string) =>
+      hc<WorkspaceEnvRoutes>(`${PROXY_BASE}/api/workspaces/${workspaceId}/env`, {
         fetch: customFetch,
       }),
     sessions: hc<SessionsRoutes>(`${PROXY_BASE}/api/sessions`, { fetch: customFetch }),

@@ -6,10 +6,8 @@ import type {
   NarrativeStore,
   StoreMetadata,
 } from "@atlas/agent-sdk";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { MemoryMount } from "../config-schema.ts";
-import { MountSourceNotFoundError } from "../mount-errors.ts";
-import { mountRegistry } from "../mount-registry.ts";
 import { MountedStoreBinding } from "../mounted-store-binding.ts";
 
 function createMockStore(): NarrativeStore {
@@ -57,21 +55,10 @@ function validMount(overrides: Partial<MemoryMount> = {}): MemoryMount {
 }
 
 describe("runtime mount resolution (unit)", () => {
-  beforeEach(() => {
-    mountRegistry.clear();
-  });
-
-  afterEach(() => {
-    mountRegistry.clear();
-  });
-
-  it("valid mounts parse and bind without error", async () => {
+  it("valid mounts bind without error", async () => {
     const store = createMockStore();
     const adapter = createMockAdapter(store);
     const mount = validMount();
-
-    mountRegistry.registerSource(mount.source, () => adapter.store("_global", "autopilot-backlog"));
-    mountRegistry.addConsumer(mount.source, "test-ws");
 
     const resolvedStore = await adapter.store("_global", "autopilot-backlog");
 
@@ -88,24 +75,6 @@ describe("runtime mount resolution (unit)", () => {
     expect(binding.name).toBe("backlog");
     expect(binding.source).toBe("_global/narrative/autopilot-backlog");
     expect(binding.mode).toBe("ro");
-  });
-
-  it("missing source store throws MountSourceNotFoundError", async () => {
-    await expect(mountRegistry.resolve("nonexistent/narrative/missing")).rejects.toThrow(
-      MountSourceNotFoundError,
-    );
-  });
-
-  it("MountSourceNotFoundError has descriptive message", async () => {
-    try {
-      await mountRegistry.resolve("nonexistent/narrative/missing");
-      expect.unreachable("should have thrown");
-    } catch (err) {
-      expect(err).toBeInstanceOf(MountSourceNotFoundError);
-      if (err instanceof MountSourceNotFoundError) {
-        expect(err.message).toContain("nonexistent/narrative/missing");
-      }
-    }
   });
 
   describe("scope filtering", () => {

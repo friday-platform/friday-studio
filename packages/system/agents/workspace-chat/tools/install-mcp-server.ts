@@ -21,10 +21,12 @@ interface InstallSuccess {
   success: true;
   server: {
     id: string;
-    name: string;
+    /** `ready` finished synchronously; `setting_up` means the doctor is still running. */
+    status: "ready" | "setting_up";
+    name?: string;
     description?: string;
-    source: string;
-    needsCredentials: boolean;
+    source?: string;
+    needsCredentials?: boolean;
     provider?: string;
     requiredConfig?: string[];
   };
@@ -55,12 +57,16 @@ export function createInstallMcpServerTool(logger: Logger): AtlasTools {
       inputSchema: InstallInputSchema,
       execute: async ({ registryName }): Promise<InstallResult> => {
         try {
-          const res = await client.mcpRegistry.install.$post({ json: { registryName } });
+          const res = await client.mcpRegistry.install.preflight.$post({ json: { registryName } });
           const body = await res.json();
 
           if (res.status === 201) {
             const parsed = z
-              .object({ server: MCPServerMetadataSchema, warning: z.string().optional() })
+              .object({
+                server_id: z.string(),
+                status: z.enum(["ready", "setting_up"]),
+                warning: z.string().optional(),
+              })
               .safeParse(body);
 
             if (!parsed.success) {
@@ -72,9 +78,41 @@ export function createInstallMcpServerTool(logger: Logger): AtlasTools {
               return { success: false, error: "Install succeeded but returned unexpected data." };
             }
 
-            const { server, warning } = parsed.data;
-            const hints = deriveCredentialHints(server.configTemplate.env);
+            const { server_id, status, warning } = parsed.data;
 
+            // Doctor path — the install is in progress; credentials (if any)
+            // are detected asynchronously and reviewed on the detail page.
+            if (status === "setting_up") {
+              logger.info("install_mcp_server: setup doctor running", {
+                registryName,
+                id: server_id,
+              });
+              return {
+                success: true,
+                server: { id: server_id, status: "setting_up" },
+                warning:
+                  warning ??
+                  "The setup doctor is analyzing this server. Open its detail page to review and finish setup.",
+              };
+            }
+
+            // Fast path — the entry is ready; fetch it for credential-setup hints.
+            const detailRes = await client.mcpRegistry[":id"].$get({ param: { id: server_id } });
+            const detail = MCPServerMetadataSchema.safeParse(await detailRes.json());
+            if (!detail.success) {
+              logger.info("install_mcp_server succeeded (detail unavailable)", {
+                registryName,
+                id: server_id,
+              });
+              return {
+                success: true,
+                server: { id: server_id, status: "ready" },
+                ...(warning !== undefined && { warning }),
+              };
+            }
+
+            const server = detail.data;
+            const hints = deriveCredentialHints(server.configTemplate.env);
             logger.info("install_mcp_server succeeded", {
               registryName,
               id: server.id,
@@ -86,6 +124,7 @@ export function createInstallMcpServerTool(logger: Logger): AtlasTools {
               success: true,
               server: {
                 id: server.id,
+                status: "ready",
                 name: server.name,
                 description: server.description,
                 source: server.source,

@@ -18,6 +18,7 @@
   import { browser } from "$app/environment";
   import { writable } from "svelte/store";
   import {
+    useCreateApiKeyCredential,
     useDeleteCredential,
     useUpdateCredentialSecret,
   } from "../../queries/link-credentials.ts";
@@ -95,6 +96,7 @@
   const queryClient = useQueryClient();
   const deleteMutation = useDeleteCredential();
   const updateMutation = useUpdateCredentialSecret();
+  const createMutation = useCreateApiKeyCredential();
 
   // ─── Credential connect instances per provider ─────────────────────────────
 
@@ -192,10 +194,14 @@
     secret: Record<string, string | number>,
   ) {
     if (!addingProvider) return;
-    const connect = getConnect(addingProvider);
-    connect.submitApiKey(label, secret).then(() => {
-      addingProvider = null;
-    });
+    createMutation.mutate(
+      { provider: addingProvider, label, secret },
+      {
+        onSuccess: () => {
+          addingProvider = null;
+        },
+      },
+    );
   }
 </script>
 
@@ -275,15 +281,15 @@
               {#if details?.type === "apikey" && details?.secretSchema}
                 <CredentialSecretForm
                   secretSchema={details.secretSchema}
-                  submitting={connect.submitting}
-                  error={connect.error}
+                  submitting={createMutation.isPending}
+                  error={createMutation.error?.message ?? null}
                   onSubmit={handleAddNewSubmit}
                 />
                 <Button
                   variant="secondary"
                   size="small"
                   onclick={handleAddNewCancel}
-                  disabled={connect.submitting}
+                  disabled={createMutation.isPending}
                 >
                   Cancel
                 </Button>
@@ -391,10 +397,10 @@
   }
 
   .id-ref-notice {
-    background: var(--color-surface-3);
-    border: 1px solid var(--color-border-1);
+    background: var(--surface-bright);
+    border: 1px solid var(--border);
     border-radius: var(--radius-2);
-    color: color-mix(in srgb, var(--color-text), transparent 20%);
+    color: color-mix(in srgb, var(--text), transparent 20%);
     font-size: var(--font-size-1);
     padding: var(--size-2) var(--size-3);
   }
@@ -430,8 +436,8 @@
 
   .replace-form,
   .add-new-form {
-    background: var(--color-surface-1);
-    border: 1px solid var(--color-border-1);
+    background: var(--surface-dark);
+    border: 1px solid var(--border);
     border-radius: var(--radius-2);
     display: flex;
     flex-direction: column;
@@ -442,8 +448,8 @@
   .popup-blocked {
     background: color-mix(
       in srgb,
-      var(--color-surface-2),
-      var(--color-text) 5%
+      var(--surface),
+      var(--text) 5%
     );
     border-radius: var(--radius-2);
     font-size: var(--font-size-1);
@@ -456,7 +462,7 @@
   }
 
   .fallback-link {
-    color: var(--color-accent);
+    color: var(--purple-primary);
     text-decoration: underline;
   }
 </style>

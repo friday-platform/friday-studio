@@ -113,7 +113,17 @@ export function useEnableMCPServer() {
       return EnableResponseSchema.parse(body);
     },
     onSuccess: (_data, input) => {
+      // Enable touches three stores: the MCP status partition, the workspace
+      // config copy (the server's `env:` block), and the workspace `.env`
+      // (the enable-time literal split). Invalidate all three so the settings
+      // UI shows the new server's config without a manual refresh.
       queryClient.invalidateQueries({ queryKey: workspaceMcpQueries.all(input.workspaceId) });
+      queryClient.invalidateQueries({
+        queryKey: ["daemon", "workspace", input.workspaceId, "config"],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["daemon", "workspace", input.workspaceId, "env"],
+      });
     },
   }));
 }
@@ -145,6 +155,9 @@ export function useDisableMCPServer() {
     },
     onSuccess: (_data, input) => {
       queryClient.invalidateQueries({ queryKey: workspaceMcpQueries.all(input.workspaceId) });
+      queryClient.invalidateQueries({
+        queryKey: ["daemon", "workspace", input.workspaceId, "config"],
+      });
     },
   }));
 }

@@ -4,7 +4,6 @@
   import { createVirtualizer } from "@tanstack/svelte-virtual";
   import { tick, untrack } from "svelte";
   import type { ChatMessage } from "./types";
-  import { getExportContext } from "./export-context";
   import ToolBurst from "./tool-burst.svelte";
   import ToolCallCard from "./tool-call-card.svelte";
   import { needsUserAction } from "./tool-call-utils";
@@ -118,6 +117,8 @@
     messages: ChatMessage[];
     /** Called when the user successfully connects a credential via an inline connect_service card. */
     onCredentialConnected?: (provider: string) => void;
+    /** Called when the user confirms an env_set elicitation via the inline card. */
+    onEnvApplied?: (info: { scope: "workspace" | "global"; keys: string[] }) => void;
     /**
      * When true, renders a placeholder assistant bubble with animated
      * dots at the bottom of the list — for the "submitted, no response
@@ -152,6 +153,7 @@
   const {
     messages,
     onCredentialConnected,
+    onEnvApplied,
     thinking = false,
     workspaceId,
     chatId,
@@ -336,13 +338,6 @@
   });
 
   /**
-   * Suppresses the markdown copy-button injection (which depends on JS)
-   * when the list renders inside an export. The markdown content still
-   * renders; only the per-block copy affordance is skipped.
-   */
-  const isExport = getExportContext() !== undefined;
-
-  /**
    * Svelte action: inject a "Copy" button on every <pre> and <table>
    * inside a `.markdown-body` container.
    *
@@ -364,11 +359,8 @@
    * text, while the model thinks) that outlast any reasonable timer,
    * so we'd wrap during a pause and then get clobbered when the next
    * chunk arrives.
-   *
-   * No-ops in export mode so the static HTML is button-free.
    */
   function copyButtons(node: HTMLElement, enabled: boolean) {
-    if (isExport) return;
     let injected = false;
     function injectButtons() {
       if (injected) return;
@@ -707,12 +699,13 @@
                   calls={regularCalls}
                   reasoning={segment.reasoning}
                   {onCredentialConnected}
+                  {onEnvApplied}
                 />
               {/if}
               {#if actionCalls.length > 0}
                 <div class="tool-call-list">
                   {#each actionCalls as call (call.toolCallId || call.toolName)}
-                    <ToolCallCard {call} {onCredentialConnected} />
+                    <ToolCallCard {call} {onCredentialConnected} {onEnvApplied} />
                   {/each}
                 </div>
               {/if}
@@ -766,23 +759,15 @@
             </div>
           {/if}
 
-          <!-- Per-message actions row. Two shapes:
-                 • Live UI — compact (alt→full) timestamp + optional turn
-                   duration + UsageBadge + ellipsis menu. Layout flips by
-                   role: assistant left-aligned, user right-aligned.
-                 • Export mode — JS-driven affordances (dropdown, alt-key
-                   toggle, badges) are dead in static HTML, so we render
-                   just the message timestamp in main's full-date style,
-                   no cache/token info. The raw timestamp also lives in
-                   chat.json for anyone who wants it.
-               System messages stay quiet (no menu, no time). -->
+          <!-- Per-message actions row: compact (alt→full) timestamp +
+               optional turn duration + UsageBadge + ellipsis menu.
+               Layout flips by role: assistant left-aligned, user
+               right-aligned. System messages stay quiet (no menu,
+               no time). -->
           {@const fullTime = formatDateTimeFull(message.timestamp)}
           {@const compactTime = formatTimeShort(message.timestamp)}
           {@const duration = message.role === "assistant" ? turnDurationMs(message) : null}
           <div class="message-actions" class:assistant={message.role === "assistant"} class:user={message.role === "user"}>
-            {#if isExport}
-              <span class="message-time">{formatMessageTimestamp(message.metadata)}</span>
-            {:else}
               <span class="message-time" title={fullTime}>
                 {altPressed ? fullTime : compactTime}
               </span>
@@ -851,21 +836,13 @@
                   </DropdownMenu.Content>
                 {/snippet}
               </DropdownMenu.Root>
-            {/if}
           </div>
       {/if}
     </div>
 {/snippet}
 
 <div class="message-list" bind:this={containerEl} onscroll={handleScroll}>
-  {#if isExport}
-    <!-- Export mode (static HTML or SSR — `bind:this` never fires, no
-         scrolling): render every message eagerly. The virtualizer is a
-         live-UI affordance; an exported file is read top-to-bottom. -->
-    {#each messages as message (message.id)}
-      {@render messageBody(message)}
-    {/each}
-  {:else if containerEl}
+  {#if containerEl}
   <div class="virtual-inner" style:block-size="{$virtualizer.getTotalSize()}px">
   {#each $virtualizer.getVirtualItems() as vrow (vrow.key)}
     {@const message = messages[vrow.index]}

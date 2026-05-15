@@ -1,5 +1,5 @@
 import type { MCPServerConfig, WorkspaceConfig } from "@atlas/config";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MCPServerMetadata } from "./schemas.ts";
 
 // ---------------------------------------------------------------------------
@@ -98,7 +98,7 @@ beforeEach(() => {
   originalEnv = { ...process.env };
 });
 
-beforeEach(() => {
+afterEach(() => {
   // Restore process.env after each test
   for (const key of Object.keys(process.env)) {
     delete process.env[key];
@@ -132,6 +132,21 @@ describe("discoverMCPServers", () => {
       expect(result).toHaveLength(1);
       expect(result[0]?.metadata.id).toEqual("registry-server");
       expect(result[0]?.metadata.source).toEqual("registry");
+    });
+
+    it("hides registry servers still being installed (setting_up / awaiting_confirm)", async () => {
+      mockAdapterList.mockResolvedValue([
+        makeRegistryServer("ready-server", { status: "ready" }),
+        makeRegistryServer("installing-server", { status: "setting_up" }),
+        makeRegistryServer("review-server", { status: "awaiting_confirm" }),
+      ]);
+
+      const result = await discoverMCPServers("ws-1", makeWorkspaceConfig({}));
+
+      const ids = result.map((r) => r.metadata.id);
+      expect(ids).toContain("ready-server");
+      expect(ids).not.toContain("installing-server");
+      expect(ids).not.toContain("review-server");
     });
 
     it("returns workspace-only servers with source: workspace", async () => {
@@ -422,7 +437,11 @@ describe("discoverMCPServers", () => {
       expect(entry?.configured).toBe(true);
     });
 
-    it("returns configured: false when auto env var is missing from process.env", async () => {
+    it("returns configured: true for an auto env var even when missing from process.env", async () => {
+      // `auto` / `from_environment` declare the value's *source*, which makes
+      // the wiring complete — the same way a Link ref does. Whether the value
+      // is actually present in process.env or the workspace `.env` overlay is
+      // a runtime concern, not a wiring-completeness one.
       delete process.env.MY_AUTO_KEY;
 
       const wsConfig = makeWorkspaceConfig({
@@ -435,7 +454,7 @@ describe("discoverMCPServers", () => {
       const result = await discoverMCPServers("ws-1", wsConfig);
       const entry = result.find((r) => r.metadata.id === "auto-server");
       expect(entry).toBeDefined();
-      expect(entry?.configured).toBe(false);
+      expect(entry?.configured).toBe(true);
     });
 
     it("returns configured: true when auto env var is present in process.env", async () => {
@@ -454,7 +473,11 @@ describe("discoverMCPServers", () => {
       expect(entry?.configured).toBe(true);
     });
 
-    it("returns configured: false when auto env var in process.env is a placeholder", async () => {
+    it("does not inspect the resolved value of an auto env var (placeholder still configured)", async () => {
+      // The placeholder heuristic applies to *literal* env values left in the
+      // wiring, not to the runtime value behind an `auto` source — `configured`
+      // never resolves an `auto` key, so a placeholder in process.env is
+      // irrelevant to wiring completeness.
       process.env.MY_AUTO_KEY = "your-api-key";
 
       const wsConfig = makeWorkspaceConfig({
@@ -467,10 +490,14 @@ describe("discoverMCPServers", () => {
       const result = await discoverMCPServers("ws-1", wsConfig);
       const entry = result.find((r) => r.metadata.id === "auto-server");
       expect(entry).toBeDefined();
-      expect(entry?.configured).toBe(false);
+      expect(entry?.configured).toBe(true);
     });
 
-    it("returns configured: false for from_environment when missing", async () => {
+    it("returns configured: true for from_environment even when missing", async () => {
+      // Same wiring-completeness rule as `auto`: `from_environment` declares
+      // the source, so the wiring is complete. A value present only in the
+      // workspace `.env` overlay (not process.env) used to read as
+      // `configured: false` here and was wrongly rejected by `delegate`.
       delete process.env.MY_FROM_ENV;
 
       const wsConfig = makeWorkspaceConfig({
@@ -483,7 +510,7 @@ describe("discoverMCPServers", () => {
       const result = await discoverMCPServers("ws-1", wsConfig);
       const entry = result.find((r) => r.metadata.id === "from-env-server");
       expect(entry).toBeDefined();
-      expect(entry?.configured).toBe(false);
+      expect(entry?.configured).toBe(true);
     });
 
     it("returns configured: true for from_environment when present", async () => {

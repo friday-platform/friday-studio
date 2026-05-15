@@ -114,6 +114,17 @@
   const searchResultsQuery = createQuery(() => mcpQueries.search(searchQuery));
   const registryResults = $derived(searchResultsQuery.data?.servers ?? []);
 
+  /** Format an ISO timestamp as a short "last updated" date. */
+  function formatUpdated(iso: string): string {
+    const date = new Date(iso);
+    if (Number.isNaN(date.getTime())) return "unknown";
+    return date.toLocaleDateString(undefined, {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    });
+  }
+
   // ---------------------------------------------------------------------------
   // Install
   // ---------------------------------------------------------------------------
@@ -314,6 +325,7 @@
                           {#if result.description}
                             <p class="result-desc">{result.description}</p>
                           {/if}
+                          <p class="result-meta">Updated {formatUpdated(result.updatedAt)}</p>
                         </div>
 
                         <div class="result-actions">
@@ -352,6 +364,7 @@
                           {#if result.description}
                             <p class="result-desc">{result.description}</p>
                           {/if}
+                          <p class="result-meta">Updated {formatUpdated(result.updatedAt)}</p>
                         </div>
                         <span class="installed-badge">Added</span>
                       </div>
@@ -468,7 +481,7 @@
   .overlay {
     background: radial-gradient(
       circle farthest-side at 50% 50%,
-      var(--color-surface-2) 0%,
+      var(--surface) 0%,
       transparent 100%
     );
     inset: 0;
@@ -479,7 +492,7 @@
   /* ─── Panel ──────────────────────────────────────────────────────────────── */
 
   .panel {
-    background: var(--color-surface-1);
+    background: var(--surface-dark);
     border-radius: var(--radius-6);
     box-shadow: var(--shadow-canvas);
     display: flex;
@@ -495,7 +508,7 @@
 
   .tab-bar {
     align-items: center;
-    border-block-end: 1px solid var(--color-border-1);
+    border-block-end: 1px solid var(--border);
     display: flex;
     flex-shrink: 0;
     gap: var(--size-1);
@@ -506,7 +519,7 @@
     background: none;
     border: none;
     border-block-end: 2px solid transparent;
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--text), transparent 40%);
     cursor: default;
     font-family: inherit;
     font-size: var(--font-size-2);
@@ -516,19 +529,19 @@
   }
 
   .tab.active {
-    border-block-end-color: var(--color-text);
-    color: var(--color-text);
+    border-block-end-color: var(--text);
+    color: var(--text);
   }
 
   .tab:not(.active):hover {
-    color: color-mix(in srgb, var(--color-text), transparent 15%);
+    color: color-mix(in srgb, var(--text), transparent 15%);
   }
 
   /* ─── Search bar ─────────────────────────────────────────────────────────── */
 
   .search-bar {
     align-items: center;
-    background: var(--color-surface-2);
+    background: var(--surface);
     border: none;
     border-radius: var(--radius-4);
     display: flex;
@@ -539,7 +552,7 @@
   }
 
   .search-icon {
-    color: color-mix(in srgb, var(--color-text), transparent 45%);
+    color: color-mix(in srgb, var(--text), transparent 45%);
     display: flex;
     flex-shrink: 0;
   }
@@ -547,7 +560,7 @@
   .search-bar input {
     background: transparent;
     border: none;
-    color: var(--color-text);
+    color: var(--text);
     font-family: inherit;
     font-size: var(--font-size-3);
     inline-size: 100%;
@@ -555,12 +568,12 @@
   }
 
   .search-bar input::placeholder {
-    color: color-mix(in srgb, var(--color-text), transparent 55%);
+    color: color-mix(in srgb, var(--text), transparent 55%);
   }
 
   .search-spinner {
     animation: spin 2s linear infinite;
-    color: color-mix(in srgb, var(--color-text), transparent 45%);
+    color: color-mix(in srgb, var(--text), transparent 45%);
     display: flex;
     flex-shrink: 0;
   }
@@ -629,15 +642,21 @@
   }
 
   .result-name {
-    color: var(--color-text);
+    color: var(--text);
     font-size: var(--font-size-2);
     font-weight: var(--font-weight-5);
   }
 
   .result-desc {
-    color: color-mix(in srgb, var(--color-text), transparent 35%);
+    color: color-mix(in srgb, var(--text), transparent 35%);
     font-size: var(--font-size-2);
     line-height: 1.45;
+    margin: 0;
+  }
+
+  .result-meta {
+    color: color-mix(in srgb, var(--text), transparent 55%);
+    font-size: var(--font-size-1);
     margin: 0;
   }
 
@@ -651,7 +670,7 @@
   }
 
   .installed-badge {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--text), transparent 50%);
     flex-shrink: 0;
     font-size: var(--font-size-0);
     font-weight: var(--font-weight-5);
@@ -663,7 +682,7 @@
 
   .status {
     align-items: center;
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    color: color-mix(in srgb, var(--text), transparent 40%);
     display: flex;
     flex-direction: column;
     font-size: var(--font-size-2);
@@ -678,7 +697,7 @@
   }
 
   .hint-text {
-    color: color-mix(in srgb, var(--color-text), transparent 55%);
+    color: color-mix(in srgb, var(--text), transparent 55%);
   }
 
   .spin {
@@ -705,35 +724,35 @@
   }
 
   .field-label {
-    color: color-mix(in srgb, var(--color-text), transparent 20%);
+    color: color-mix(in srgb, var(--text), transparent 20%);
     font-size: var(--font-size-2);
     font-weight: var(--font-weight-5);
   }
 
   .required {
-    color: var(--color-error);
+    color: var(--red-primary);
   }
 
   .field-input {
-    background: var(--color-surface-2);
+    background: var(--surface);
     border: none;
     border-radius: var(--radius-2-5);
-    color: var(--color-text);
+    color: var(--text);
     font-family: inherit;
     font-size: var(--font-size-2);
     padding: var(--size-2) var(--size-3);
   }
 
   .field-input::placeholder {
-    color: color-mix(in srgb, var(--color-text), transparent 55%);
+    color: color-mix(in srgb, var(--text), transparent 55%);
   }
 
   .field-input:focus-visible {
-    outline: 1px solid var(--color-text);
+    outline: 1px solid var(--text);
   }
 
   .field-hint {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--text), transparent 50%);
     font-size: var(--font-size-1);
   }
 
@@ -745,22 +764,22 @@
   }
 
   .divider-line {
-    background: var(--color-border-1);
+    background: var(--border);
     flex: 1;
     block-size: 1px;
   }
 
   .divider-text {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    color: color-mix(in srgb, var(--text), transparent 50%);
     font-size: var(--font-size-1);
     text-transform: uppercase;
   }
 
   .field-textarea {
-    background: var(--color-surface-2);
+    background: var(--surface);
     border: none;
     border-radius: var(--radius-2-5);
-    color: var(--color-text);
+    color: var(--text);
     font-family: inherit;
     font-size: var(--font-size-2);
     min-block-size: 120px;
@@ -769,15 +788,15 @@
   }
 
   .field-textarea::placeholder {
-    color: color-mix(in srgb, var(--color-text), transparent 55%);
+    color: color-mix(in srgb, var(--text), transparent 55%);
   }
 
   .field-textarea:focus-visible {
-    outline: 1px solid var(--color-text);
+    outline: 1px solid var(--text);
   }
 
   .json-error {
-    color: var(--color-error);
+    color: var(--red-primary);
     font-size: var(--font-size-1);
     margin: 0;
   }

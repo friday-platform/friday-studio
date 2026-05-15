@@ -20,6 +20,7 @@
  * @module
  */
 import process from "node:process";
+import { discardBody } from "@atlas/utils";
 import { z } from "zod";
 import { PROVIDER_ENV_VARS, type ValidProvider } from "./util.ts";
 
@@ -153,7 +154,10 @@ async function fetchGateway(): Promise<GatewayModel[]> {
     headers: GATEWAY_HEADERS,
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
-  if (!res.ok) throw new Error(`gateway returned HTTP ${res.status}`);
+  if (!res.ok) {
+    await discardBody(res);
+    throw new Error(`gateway returned HTTP ${res.status}`);
+  }
   const parsed = gatewayResponseSchema.parse(await res.json());
   return parsed.models;
 }
@@ -163,7 +167,10 @@ async function fetchGroq(apiKey: string): Promise<string[]> {
     headers: { Authorization: `Bearer ${apiKey}` },
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
-  if (!res.ok) throw new Error(`groq returned HTTP ${res.status}`);
+  if (!res.ok) {
+    await discardBody(res);
+    throw new Error(`groq returned HTTP ${res.status}`);
+  }
   const parsed = groqResponseSchema.parse(await res.json());
   return parsed.data.map((m) => m.id);
 }

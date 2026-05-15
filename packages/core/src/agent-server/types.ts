@@ -139,6 +139,26 @@ const AgentSessionDataSchema = z.object({
 });
 
 /**
+ * Link credential reference. Re-declared locally for the same reason
+ * AgentSessionDataSchema is — the MCP server side is on a different Zod
+ * version than @atlas/agent-sdk. Kept structurally identical to
+ * `LinkCredentialRefSchema` in packages/agent-sdk/src/types.ts (strict
+ * object, non-empty id/provider, at-least-one-of refine) so the two
+ * validate the same set of values — `link-credential-ref-schema.test.ts`
+ * pins that.
+ */
+export const LinkCredentialRefSchema = z
+  .strictObject({
+    from: z.literal("link"),
+    id: z.string().min(1).optional(),
+    provider: z.string().min(1).optional(),
+    key: z.string(),
+  })
+  .refine((data) => Boolean(data.id) || Boolean(data.provider), {
+    message: "At least one of 'id' or 'provider' must be specified",
+  });
+
+/**
  * MCP tool parameter schema
  *
  * Note: Session context is passed as tool arguments due to MCP SDK limitation.
@@ -161,6 +181,22 @@ export const AgentToolParamsSchema = z.object({
 
   /** Agent-specific config from workspace runtime (e.g. workDir from clone step) */
   config: z.record(z.string(), z.unknown()).optional(),
+
+  /**
+   * Per-agent `env:` wiring from workspace.yml. Values are plain strings or
+   * Link credential refs; resolved into AgentContext.env at context-build time.
+   */
+  env: z.record(z.string(), z.union([z.string(), LinkCredentialRefSchema])).optional(),
+
+  /**
+   * Workspace `.env` overlay — the per-workspace store of non-secret env
+   * values. Layered between the daemon's `process.env` and per-agent `env:`
+   * wiring when AgentContext.env is built.
+   */
+  envOverlay: z.record(z.string(), z.string()).optional(),
 });
 
 export type AgentToolParams = z.infer<typeof AgentToolParamsSchema>;
+
+/** Per-agent `env:` wiring carried by AgentToolParams — plain strings or Link refs. */
+export type AgentEnvWiring = NonNullable<AgentToolParams["env"]>;

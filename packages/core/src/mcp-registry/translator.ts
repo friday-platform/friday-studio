@@ -9,12 +9,25 @@
  * @module
  */
 
-import type { LinkCredentialRef } from "@atlas/agent-sdk";
 import { createLogger } from "@atlas/logger";
+import { getAnnotation } from "./annotations.ts";
 import { buildBearerAuthConfig } from "./auth-config.ts";
-import { getOfficialOverride } from "./official-servers.ts";
-import type { MCPServerMetadata, RequiredConfigField } from "./schemas.ts";
-import type { UpstreamServer, UpstreamServerEntry } from "./upstream-client.ts";
+import { type RoutableEnvVar, routeEnvVars } from "./env-routing.ts";
+import type { MCPServerMetadata } from "./schemas.ts";
+import type { UpstreamServerEntry } from "./upstream-client.ts";
+
+/**
+ * Per-field metadata for a Link provider's `secretSchema`. Replaces the older
+ * `"string"` shorthand: carries `isRequired` / `isSecret` so the credential
+ * form can render required-vs-optional and secret-vs-plaintext correctly, plus
+ * an optional `description` for label text.
+ */
+export type SecretFieldDescriptor = {
+  type: "string";
+  isRequired?: boolean;
+  isSecret?: boolean;
+  description?: string;
+};
 
 /** Wire-safe input for dynamic API key providers (Link auto-creation). */
 export type DynamicApiKeyProviderInput = {
@@ -22,7 +35,7 @@ export type DynamicApiKeyProviderInput = {
   id: string;
   displayName: string;
   description: string;
-  secretSchema: Record<string, "string">;
+  secretSchema: Record<string, SecretFieldDescriptor>;
   setupInstructions?: string;
 };
 
@@ -46,6 +59,16 @@ const logger = createLogger({ name: "mcp-registry-translator" });
 export type TranslateResult =
   | { success: true; entry: MCPServerMetadata; linkProvider?: DynamicProviderInput }
   | { success: false; reason: string };
+
+/** Options for {@link translate}. */
+export interface TranslateOptions {
+  /**
+   * Env vars from outside the registry entry — the doctor's extracted list, or
+   * the user's manual-config / commit input. Used only when the registry
+   * declares no env vars of its own; registry-declared always wins.
+   */
+  extraEnvVars?: RoutableEnvVar[];
+}
 
 /**
  * Derive kebab-case ID from canonical name.
@@ -94,50 +117,28 @@ function substituteUrlVariables(
 }
 
 /**
- * Map upstream environment variables to RequiredConfigField and configTemplate.env.
+ * Build a `DynamicApiKeyProviderInput` from the routed credential env vars.
+ * Each var becomes one entry in `secretSchema` with `isRequired` / `isSecret`
+ * defaulted to concrete booleans (never undefined) so the wire JSON is
+ * unambiguous, plus `description` only when the upstream var provided one.
  */
-function mapEnvironmentVariables(
-  packages: UpstreamServer["packages"],
-  serverId: string,
-  providerId?: string,
-): { requiredConfig: RequiredConfigField[]; env: Record<string, string | LinkCredentialRef> } {
-  const requiredConfig: RequiredConfigField[] = [];
-  const env: Record<string, string | LinkCredentialRef> = {};
-
-  for (const pkg of packages ?? []) {
-    for (const ev of pkg.environmentVariables ?? []) {
-      // Build description with placeholder in parens if present
-      let description = ev.description ?? ev.name;
-      if (ev.placeholder) {
-        description = `${description} (e.g. ${ev.placeholder})`;
-      }
-
-      // Link credential reference in configTemplate.env
-      env[ev.name] = { from: "link", provider: providerId ?? serverId, key: ev.name };
-
-      // Required fields go into requiredConfig
-      if (ev.isRequired) {
-        const field: RequiredConfigField = { key: ev.name, description, type: "string" };
-        if (ev.default !== undefined) {
-          field.examples = [ev.default];
-        }
-        requiredConfig.push(field);
-      }
-    }
-  }
-
-  return { requiredConfig, env };
-}
-
 function buildApiKeyProvider(
   id: string,
   name: string,
   description: string | undefined,
-  env: Record<string, string | LinkCredentialRef>,
+  linkVars: RoutableEnvVar[],
 ): DynamicApiKeyProviderInput {
-  const secretSchema: Record<string, "string"> = {};
-  for (const key of Object.keys(env)) {
-    secretSchema[key] = "string";
+  const secretSchema: Record<string, SecretFieldDescriptor> = {};
+  for (const v of linkVars) {
+    const field: SecretFieldDescriptor = {
+      type: "string",
+      isRequired: v.isRequired ?? false,
+      isSecret: v.isSecret ?? false,
+    };
+    if (v.description) {
+      field.description = v.description;
+    }
+    secretSchema[v.name] = field;
   }
   return {
     type: "apikey",
@@ -180,7 +181,10 @@ function hasSmitheryOnlyHeaders(remote: {
  *
  * This is a pure function - no side effects, no external dependencies.
  */
-export function translate(upstreamEntry: UpstreamServerEntry): TranslateResult {
+export function translate(
+  upstreamEntry: UpstreamServerEntry,
+  opts?: TranslateOptions,
+): TranslateResult {
   const { server, _meta } = upstreamEntry;
 
   // Validate required fields
@@ -190,31 +194,39 @@ export function translate(upstreamEntry: UpstreamServerEntry): TranslateResult {
 
   const id = deriveId(server.name);
 
-  // Check for official override
-  const official = getOfficialOverride(server.name);
-  const displayName = official?.displayName ?? server.name;
-  const effectiveProviderId = official?.providerId ?? id;
+  // Apply the curated annotation overlay, if any.
+  const annotation = getAnnotation(server.name);
+  const displayName = annotation?.displayName ?? server.name;
+  const effectiveProviderId = annotation?.providerId ?? id;
+
+  // Env vars to route: registry-declared wins; doctor-extracted fills in only
+  // when the registry declared none of its own.
+  const declaredEnvVars = (server.packages ?? []).flatMap((p) => p.environmentVariables ?? []);
+  const envVars = declaredEnvVars.length > 0 ? declaredEnvVars : (opts?.extraEnvVars ?? []);
 
   // Determine transport per precedence rules
-  // Rule 1: npm + stdio wins
+  // Rule 1: a locally-runnable stdio package wins — npm via npx, PyPI via uvx.
+  // npm is preferred when an entry offers both.
   const npmStdioPackage = server.packages?.find(
     (p) => p.registryType === "npm" && p.transport.type === "stdio",
   );
+  const pypiStdioPackage = server.packages?.find(
+    (p) => p.registryType === "pypi" && p.transport.type === "stdio",
+  );
+  const stdioPackage = npmStdioPackage ?? pypiStdioPackage;
 
-  if (npmStdioPackage) {
-    // Build npx command
-    const command = "npx";
-    const args = ["-y", `${npmStdioPackage.identifier}@${server.version}`];
+  if (stdioPackage) {
+    // npm → `npx -y pkg@version`; PyPI → `uvx pkg==version`.
+    const command = npmStdioPackage ? "npx" : "uvx";
+    const args = npmStdioPackage
+      ? ["-y", `${stdioPackage.identifier}@${server.version}`]
+      : [`${stdioPackage.identifier}==${server.version}`];
 
-    const { requiredConfig, env } = mapEnvironmentVariables(
-      server.packages,
-      id,
-      effectiveProviderId,
-    );
+    const { requiredConfig, env, linkVars } = routeEnvVars(envVars, effectiveProviderId);
 
     const linkProvider =
-      !official?.providerId && Object.keys(env).length > 0
-        ? buildApiKeyProvider(id, server.name, server.description, env)
+      !annotation?.providerId && linkVars.length > 0
+        ? buildApiKeyProvider(id, server.name, server.description, linkVars)
         : undefined;
 
     const entry: MCPServerMetadata = {
@@ -260,14 +272,10 @@ export function translate(upstreamEntry: UpstreamServerEntry): TranslateResult {
       };
     }
 
-    const { requiredConfig, env } = mapEnvironmentVariables(
-      server.packages,
-      id,
-      effectiveProviderId,
-    );
+    const { requiredConfig, env, linkVars } = routeEnvVars(envVars, effectiveProviderId);
 
-    if (Object.keys(env).length > 0) {
-      // http remote with env vars → DynamicApiKeyProviderInput
+    if (linkVars.length > 0) {
+      // http remote with credential env vars → DynamicApiKeyProviderInput
       const entry: MCPServerMetadata = {
         id,
         name: displayName,
@@ -286,13 +294,15 @@ export function translate(upstreamEntry: UpstreamServerEntry): TranslateResult {
       return {
         success: true,
         entry,
-        linkProvider: official?.providerId
+        linkProvider: annotation?.providerId
           ? undefined
-          : buildApiKeyProvider(id, server.name, server.description, env),
+          : buildApiKeyProvider(id, server.name, server.description, linkVars),
       };
     }
 
-    // http remote without env vars → OAuth via Link provider
+    // http remote without credential env vars → OAuth via Link provider.
+    // Any optional non-secret plain strings still route alongside the
+    // bearer-token ref so registry-declared settings aren't dropped.
     const {
       auth,
       env: oauthEnv,
@@ -310,14 +320,18 @@ export function translate(upstreamEntry: UpstreamServerEntry): TranslateResult {
         version: server.version,
         updatedAt: _meta["io.modelcontextprotocol.registry/official"].updatedAt,
       },
-      configTemplate: { transport: { type: "http", url: urlResult.url }, env: oauthEnv, auth },
+      configTemplate: {
+        transport: { type: "http", url: urlResult.url },
+        env: { ...env, ...oauthEnv },
+        auth,
+      },
       requiredConfig: oauthRequiredConfig,
     };
 
     return {
       success: true,
       entry,
-      linkProvider: official?.providerId
+      linkProvider: annotation?.providerId
         ? undefined
         : buildOAuthProvider(id, server.name, server.description, urlResult.url),
     };
@@ -334,11 +348,13 @@ export function translate(upstreamEntry: UpstreamServerEntry): TranslateResult {
     };
   }
 
-  const hasPypi = server.packages?.some((p) => p.registryType === "pypi");
-  if (hasPypi) {
+  const hasPypiNonStdio = server.packages?.some(
+    (p) => p.registryType === "pypi" && p.transport.type !== "stdio",
+  );
+  if (hasPypiNonStdio) {
     return {
       success: false,
-      reason: `This server uses PyPI which is not yet supported. Install manually.`,
+      reason: `This server uses PyPI with an unsupported transport (only stdio is supported). Install manually.`,
     };
   }
 

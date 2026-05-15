@@ -17,23 +17,13 @@ function formatUptime(ms: number): string {
   return parts.join(" ") || "0s";
 }
 
-function formatTimeout(ms: number): string {
-  const totalMinutes = Math.floor(ms / 60000);
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-
-  return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
-}
-
 export function displayDaemonStatus(
   status: InferResponseType<typeof client.daemon.status.$get>,
   port: number,
 ): void {
   successOutput(`Atlas daemon is running on port ${port}`);
   infoOutput(`Uptime: ${formatUptime(status.uptime)}`);
-  infoOutput(`Active workspaces: ${status.activeWorkspaces}`);
-  infoOutput(`Max concurrent workspaces: ${status.configuration.maxConcurrentWorkspaces}`);
-  infoOutput(`Idle timeout: ${formatTimeout(status.configuration.idleTimeoutMs)}`);
+  infoOutput(`Active dispatches: ${status.activeWorkspaces}`);
 
   if (status.activeWorkspaces > 0) {
     infoOutput(`Active workspace IDs: ${status.workspaces.join(", ")}`);

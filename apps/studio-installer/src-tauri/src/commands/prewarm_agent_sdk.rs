@@ -52,7 +52,7 @@ use crate::friday_home::friday_home_dir;
 /// in the husky pre-commit hook for the three pin files.
 ///
 /// To bump: see UPDATING-AGENT-SDK.md at the repo root.
-const BUNDLED_AGENT_SDK_VERSION: &str = "0.1.8";
+const BUNDLED_AGENT_SDK_VERSION: &str = "0.1.9";
 
 /// Wall-clock cap on the uv pre-warm. uv's network ops (cpython
 /// download + PyPI fetch) finish in 5–30s on a healthy connection.

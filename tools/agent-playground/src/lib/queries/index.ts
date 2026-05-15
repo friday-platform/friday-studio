@@ -30,7 +30,6 @@ export type {
   WorkspaceWithJobs,
 } from "./workspace-queries.ts";
 export {
-  testChatEventStream,
   useDisableMCPServer,
   useEnableMCPServer,
   workspaceMcpQueries,
@@ -40,3 +39,12 @@ export type {
   TestChatEvent,
   WorkspaceMCPStatus,
 } from "./workspace-mcp-queries.ts";
+export {
+  useSetMCPServerEnvVar,
+  useSetWorkspaceEnvVar,
+  useUpdateMCPCredential,
+  useUpdateWorkspaceIdentity,
+  workspaceEnvQueries,
+} from "./workspace-settings-queries.ts";
+export type { WorkspaceEnv } from "./workspace-settings-queries.ts";
+export { linkProviderQueries } from "./link-provider-queries.ts";

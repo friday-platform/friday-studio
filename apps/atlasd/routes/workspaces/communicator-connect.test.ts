@@ -138,26 +138,19 @@ async function createTestApp() {
     deleteWorkspace: vi.fn(),
   } as unknown as WorkspaceManager;
 
-  const evictChatSdkInstance = vi.fn().mockResolvedValue(undefined);
-
   const mockContext: AppContext = {
-    runtimes: new Map(),
     startTime: Date.now(),
     sseClients: new Map(),
     sseStreams: new Map(),
     getWorkspaceManager: () => mockWorkspaceManager,
-    getOrCreateWorkspaceRuntime: vi.fn(),
-    resetIdleTimeout: vi.fn(),
-    getWorkspaceRuntime: vi.fn(),
-    destroyWorkspaceRuntime: vi.fn(),
     getAgentRegistry: vi.fn(),
     getOrCreateChatSdkInstance: vi.fn(),
-    evictChatSdkInstance,
     daemon: { getWorkspaceManager: () => mockWorkspaceManager } as AppContext["daemon"],
     streamRegistry: {} as AppContext["streamRegistry"],
     chatTurnRegistry: {} as AppContext["chatTurnRegistry"],
     sessionStreamRegistry: {} as AppContext["sessionStreamRegistry"],
     sessionHistoryAdapter: {} as AppContext["sessionHistoryAdapter"],
+    sessionDispatchRegistry: {} as AppContext["sessionDispatchRegistry"],
     exposeKernel: false,
     platformModels: createStubPlatformModels(),
   };
@@ -172,13 +165,13 @@ async function createTestApp() {
   const { workspacesRoutes } = await import("./index.ts");
   app.route("/", workspacesRoutes);
 
-  return { app, evictChatSdkInstance };
+  return { app };
 }
 
 describe("POST /:workspaceId/connect-communicator", () => {
   test("happy path: wires Link, writes kind-only block to yml, evicts chat-sdk", async () => {
     await writeWorkspaceConfig(emptyConfig());
-    const { app, evictChatSdkInstance } = await createTestApp();
+    const { app } = await createTestApp();
 
     const res = await app.request("/ws-1/connect-communicator", {
       method: "POST",
@@ -202,7 +195,6 @@ describe("POST /:workspaceId/connect-communicator", () => {
     expect(written.communicators).toEqual({ telegram: { kind: "telegram" } });
     // No bot_token / webhook_secret in yml — Link owns secrets.
     expect(written.communicators?.telegram).not.toHaveProperty("bot_token");
-    expect(evictChatSdkInstance).toHaveBeenCalledWith("ws-1");
   });
 
   test("idempotent: posting twice produces the same yml block", async () => {
@@ -267,7 +259,7 @@ describe("POST /:workspaceId/connect-communicator", () => {
   test("Link wire failure leaves yml untouched and does NOT evict chat-sdk", async () => {
     await writeWorkspaceConfig(emptyConfig());
     mockWireCommunicator.mockRejectedValueOnce(new Error("Link wire returned 500"));
-    const { app, evictChatSdkInstance } = await createTestApp();
+    const { app } = await createTestApp();
 
     const res = await app.request("/ws-1/connect-communicator", {
       method: "POST",
@@ -277,7 +269,6 @@ describe("POST /:workspaceId/connect-communicator", () => {
 
     expect(res.status).toBe(500);
     expect((await readWorkspaceConfig()).communicators).toBeUndefined();
-    expect(evictChatSdkInstance).not.toHaveBeenCalled();
   });
 
   test("tunnel unavailable: connect fails before touching wiring or yml", async () => {
@@ -302,7 +293,7 @@ describe("POST /:workspaceId/connect-communicator", () => {
 describe("POST /:workspaceId/disconnect-communicator", () => {
   test("happy path: removes yml block, calls Link disconnect, evicts chat-sdk", async () => {
     await writeWorkspaceConfig(configWithTelegramCommunicator());
-    const { app, evictChatSdkInstance } = await createTestApp();
+    const { app } = await createTestApp();
 
     const res = await app.request("/ws-1/disconnect-communicator", {
       method: "POST",
@@ -320,7 +311,6 @@ describe("POST /:workspaceId/disconnect-communicator", () => {
       "telegram",
       "https://tunnel.example.com",
     );
-    expect(evictChatSdkInstance).toHaveBeenCalledWith("ws-1");
   });
 
   test("idempotent when no communicator block exists", async () => {
@@ -365,7 +355,7 @@ describe("POST /:workspaceId/disconnect-communicator", () => {
   test("tunnel unavailable: disconnect proceeds with empty callback URL", async () => {
     await writeWorkspaceConfig(configWithTelegramCommunicator());
     mockResolveTunnelUrl.mockRejectedValueOnce(new Error("Public tunnel not available."));
-    const { app, evictChatSdkInstance } = await createTestApp();
+    const { app } = await createTestApp();
 
     const res = await app.request("/ws-1/disconnect-communicator", {
       method: "POST",
@@ -376,6 +366,5 @@ describe("POST /:workspaceId/disconnect-communicator", () => {
     expect(res.status).toBe(200);
     expect(mockDisconnectCommunicator).toHaveBeenCalledWith("ws-1", "telegram", "");
     expect((await readWorkspaceConfig()).communicators).toBeUndefined();
-    expect(evictChatSdkInstance).toHaveBeenCalledWith("ws-1");
   });
 });

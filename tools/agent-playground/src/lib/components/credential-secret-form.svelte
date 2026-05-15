@@ -50,23 +50,25 @@
 
   // ─── Derived ─────────────────────────────────────────────────────────────────
 
-  // JSON Schema property hints we read off each field. `type` is standard;
-  // `format: "multiline"` is a Friday convention surfaced via `.meta()` on the
-  // Zod side so the form can render a textarea (e.g. PEM private keys).
-  // Anything else (object/array/boolean/null, unknown formats) falls back to a
-  // plain text input.
-  const FieldHintsSchema = z
-    .object({
-      type: z.enum(["string", "integer", "number"]),
-      format: z.enum(["multiline"]),
-    })
-    .partial();
+  /**
+   * Mirrors `SecretPropertySchema` from `link-provider-queries.ts`: the JSON
+   * Schema property descriptor that the Link service emits. `type` widens to
+   * include `integer`/`number` so providers with numeric fields (e.g. the
+   * github-app App ID / installation_id) parse. `format: "multiline"` is a
+   * Friday convention surfaced via `.meta()` on the Zod side so the form can
+   * render a textarea (e.g. PEM private keys). Unknown keys pass through so
+   * older providers that ship a bare `{ type: "string" }` still parse cleanly.
+   */
+  const PropertyShape = z.looseObject({
+    type: z.enum(["string", "integer", "number"]),
+    description: z.string().optional(),
+    format: z.union([z.literal("password"), z.literal("multiline"), z.string()]).optional(),
+    writeOnly: z.boolean().optional(),
+  });
 
   const schemaShape = $derived.by(() => {
     const shape = z.object({
-      properties: z
-        .record(z.string(), z.object({}).passthrough())
-        .optional(),
+      properties: z.record(z.string(), PropertyShape).optional(),
       required: z.array(z.string()).optional(),
     });
     const parsed = shape.safeParse(secretSchema);
@@ -75,25 +77,23 @@
   });
 
   type FieldType = "string" | "integer" | "number";
-  type FieldFormat = "multiline" | undefined;
 
   const secretFields = $derived.by(() => {
     if (!schemaShape?.properties) return [];
     const required = new Set(schemaShape.required ?? []);
     return Object.entries(schemaShape.properties).map(([key, prop]) => {
-      const parsedHints = FieldHintsSchema.safeParse(prop);
-      const type: FieldType = parsedHints.success
-        ? parsedHints.data.type ?? "string"
-        : "string";
-      const format: FieldFormat = parsedHints.success
-        ? parsedHints.data.format
-        : undefined;
+      const type: FieldType = prop.type ?? "string";
+      const multiline = prop.format === "multiline";
       return {
         key,
         label: secretKeyToLabel(key),
+        description: prop.description ?? "",
         required: required.has(key),
         type,
-        format,
+        multiline,
+        // Single-line text-mode sensitive fields render as `<input type="password">`.
+        // Multiline (PEM) fields use a textarea regardless.
+        masked: !multiline && (prop.format === "password" || isSensitiveField(key)),
       };
     });
   });
@@ -114,6 +114,11 @@
       .join(" ");
   }
 
+  /**
+   * Heuristic fallback for hardcoded providers (and pre-descriptor installs)
+   * that don't emit `format` on the JSON Schema property — keeps existing
+   * masking behavior unchanged when `format === "password"` is absent.
+   */
   function isSensitiveField(key: string): boolean {
     return /password|secret|token|key/i.test(key);
   }
@@ -191,8 +196,13 @@
 
   {#each secretFields as field (field.key)}
     <div class="field">
-      <label for="credential-{field.key}">{field.label}</label>
-      {#if field.format === "multiline"}
+      <label for="credential-{field.key}">
+        <span class="label-text">{field.label}</span>
+        {#if !field.required}
+          <span class="tag" data-tone="neutral">optional</span>
+        {/if}
+      </label>
+      {#if field.multiline}
         <textarea
           id="credential-{field.key}"
           class="multiline"
@@ -207,7 +217,7 @@
       {:else}
         <input
           id="credential-{field.key}"
-          type={isSensitiveField(field.key) ? "password" : "text"}
+          type={field.masked ? "password" : "text"}
           inputmode={field.type === "integer" || field.type === "number"
             ? "numeric"
             : undefined}
@@ -219,6 +229,9 @@
           disabled={submitting}
           required={field.required}
         />
+      {/if}
+      {#if field.description}
+        <p class="field-help">{field.description}</p>
       {/if}
     </div>
   {/each}
@@ -266,6 +279,30 @@
     font-size: var(--font-size-1);
     font-weight: var(--font-weight-4);
     color: var(--color-text);
+  }
+
+  .field label {
+    align-items: baseline;
+    display: flex;
+    gap: var(--size-1-5);
+  }
+
+  .field-help {
+    color: var(--color-text-muted, var(--color-text));
+    font-size: var(--font-size-1);
+    line-height: 1.4;
+    margin: 0;
+    opacity: 0.75;
+  }
+
+  .tag {
+    background-color: var(--highlight);
+    border-radius: var(--radius-1);
+    color: var(--color-text);
+    font-size: var(--font-size-1);
+    font-weight: var(--font-weight-6);
+    padding: 1px var(--size-1-5);
+    white-space: nowrap;
   }
 
   .field input,

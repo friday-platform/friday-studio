@@ -1,0 +1,126 @@
+version: "1.0"
+
+# Eval fixture for workspace-chat job-tool routing.
+#
+# Shape mirrors the production QA scenario where the bug surfaced:
+# multiple HTTP signals with `config.path` set + multiple jobs.
+# `formatWorkspaceSection` (workspace-chat.agent.ts) inlines each HTTP
+# signal as `<signals>NAME (POST /webhooks/...)</signals>` — the chat
+# model can mistake those paths for instructions to `web_fetch` against
+# localhost / the daemon, instead of calling the bound job tool.
+#
+# Job names match signal names so the bound-tool contract is unambiguous:
+# "reindex the knowledge base" → tool `reindex-knowledge-base` (not
+# `web_fetch http://localhost:3000/webhooks/reindex`).
+
+workspace:
+  name: "Chat Job-Tool Routing QA"
+  description: >-
+    Knowledge-corpus support workspace. Reindex the corpus, query it for an
+    answer, or auto-process new tickets on a schedule. All triggers are
+    exposed as workspace jobs.
+
+permissions:
+  dangerouslySkipAllowlist: false
+
+signals:
+  reindex:
+    provider: http
+    title: "Reindex Corpus"
+    description: "Rebuild the knowledge corpus from the configured data directory."
+    config:
+      path: "/webhooks/reindex"
+    schema:
+      type: object
+      properties:
+        data_dir:
+          type: string
+          description: "Optional override for the data directory."
+      required: []
+  query:
+    provider: http
+    title: "Query Knowledge Base"
+    description: "Ask a question against the indexed knowledge corpus."
+    config:
+      path: "/webhooks/query"
+    schema:
+      type: object
+      properties:
+        question:
+          type: string
+          description: "The question to answer from the knowledge base."
+      required:
+        - question
+  answer-ticket:
+    provider: http
+    title: "Answer Ticket"
+    description: "Read a ticket and post a draft reply as an internal note."
+    config:
+      path: "/webhooks/answer-ticket"
+    schema:
+      type: object
+      properties:
+        ticket_url:
+          type: string
+          description: "Full ticket URL."
+      required:
+        - ticket_url
+  auto-answer-tickets:
+    provider: schedule
+    title: "Auto-Answer New Tickets"
+    description: "Cron — pick one new ticket and run the answer pipeline."
+    config:
+      schedule: "*/5 * * * *"
+      timezone: UTC
+
+jobs:
+  reindex-knowledge-base:
+    description: >-
+      Rebuild the knowledge corpus from the data directory. Use this whenever
+      the user asks to reindex, rebuild, or refresh the corpus / knowledge base.
+    title: "Reindex Knowledge Corpus"
+    triggers:
+      - signal: reindex
+    config:
+      timeout: "1m"
+    fsm:
+      initial: done
+      states:
+        done:
+          type: final
+  query-knowledge-base:
+    description: "Answer a support question using the indexed knowledge corpus."
+    title: "Query Knowledge Base"
+    triggers:
+      - signal: query
+    config:
+      timeout: "1m"
+    fsm:
+      initial: done
+      states:
+        done:
+          type: final
+  answer-support-ticket:
+    description: "Read a single support ticket, draft an answer, post as note."
+    title: "Answer Support Ticket"
+    triggers:
+      - signal: answer-ticket
+    config:
+      timeout: "1m"
+    fsm:
+      initial: done
+      states:
+        done:
+          type: final
+  auto-answer-new-tickets:
+    description: "Cron job — picks one new ticket per tick and answers it."
+    title: "Auto-Answer New Tickets"
+    triggers:
+      - signal: auto-answer-tickets
+    config:
+      timeout: "1m"
+    fsm:
+      initial: done
+      states:
+        done:
+          type: final

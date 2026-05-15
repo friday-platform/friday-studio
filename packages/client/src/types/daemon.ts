@@ -8,5 +8,4 @@ export interface DaemonStatus {
   uptime: number;
   memoryUsage: { rss: number; heapTotal: number; heapUsed: number; external: number };
   workspaces: string[];
-  configuration: { maxConcurrentWorkspaces: number; idleTimeoutMs: number };
 }

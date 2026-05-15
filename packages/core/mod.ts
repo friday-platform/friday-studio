@@ -66,11 +66,13 @@ export { UserConfigurationError } from "./src/errors/user-configuration-error.ts
 export { WorkspaceNotFoundError } from "./src/errors/workspace-not-found-error.ts";
 export {
   CredentialNotFoundError,
+  findMissingServerEnvVars,
   hasUnusableCredentialCause,
   LinkCredentialExpiredError,
   LinkCredentialNotFoundError,
   LinkCredentialUnavailableError,
   NoDefaultCredentialError,
+  readEnvVar,
   resolveCredentialsByProvider,
 } from "./src/mcp-registry/credential-resolver.ts";
 // MCP Registry - use @atlas/core/mcp-registry/registry-consolidated subpath to avoid pulling in agent-loader

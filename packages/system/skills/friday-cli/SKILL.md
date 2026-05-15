@@ -207,8 +207,7 @@ deno task atlas workspace add -p ./workspaces/my-thing
 **Rule:** when a workspace needs changes, use the `@friday/workspace-api` skill's
 typed tools (`upsert_agent`, `upsert_signal`, `upsert_job`, `begin_draft` /
 `publish_draft`, etc.). Do not curl partial-config endpoints from chat. Do not
-`POST /api/workspaces/:id/update` (it tears down the runtime — including the
-one your chat is running in). Do not `DELETE` + `POST /create`.
+`POST /api/workspaces/:id/update`. Do not `DELETE` + `POST /create`.
 
 **Why typed tools, not curl:**
 - They handle draft-vs-live mode automatically.
@@ -217,18 +216,19 @@ one your chat is running in). Do not `DELETE` + `POST /create`.
 - They accept the natural shape (full agent config) — the partial REST
   surface accepts only `{prompt?, model?, tools?}` and rejects everything
   else with a generic 400.
-- They don't tear down anything: edits hot-reload via the next signal.
+- The next dispatch reads fresh config from `workspace.yml` automatically;
+  no reload step to manage.
 
 **Why never `/update`:**
-- It calls `destroyWorkspaceRuntime` on a successful write.
-- Mid-chat, that destroys the runtime your chat is running in → MCP
-  transports close, your stream errors, the next message hits a half-rebuilt
-  pipeline. Self-immolation.
+- Wholesale config replace, no diff guardrails. `upsert_*` (single change)
+  and `begin_draft → upserts → publish_draft` (multi-entity, atomic) cover
+  every use case with the same validator and a structured failure report.
+- 409s when the workspace has in-flight sessions; a chat turn always does.
 
 **Why never `DELETE` + recreate:**
 - Loses durable state (sessions, chats, memory, scratchpad).
-- New workspace gets a different runtime ID (random, e.g.
-  `grilled_xylem` → `fuzzy_plum`). Hardcoded references break silently.
+- New workspace gets a different id (random, e.g. `grilled_xylem` →
+  `fuzzy_plum`). Hardcoded references break silently.
 
 **Tool choice cheatsheet:**
 
@@ -259,7 +259,7 @@ Reversible vs sticky ops:
 
 **Sticky — verify before firing:**
 - `POST /api/workspaces/create` — writes a directory; dup name → 409
-- `POST /api/workspaces/:id/update` — **destroys the active runtime**; never call from chat (use `upsert_*` / `publish_draft` instead)
+- `POST /api/workspaces/:id/update` — wholesale config replace, no diff guardrails; never call from chat (use `upsert_*` / `publish_draft` instead)
 - `PUT /signals/:id`, `PATCH /signals/:id` — persists to workspace.yml
 - `DELETE /api/workspaces/:id` — removes the directory entirely (system
   workspaces rejected with 403; userland workspaces just vanish)
@@ -317,13 +317,14 @@ image.
 - **Session starts but no agent output** — check `deno task atlas logs
   --session <id>` (`debugging-friday` skill has the log playbook).
 - **`"Signal 'X' not found"` on `POST /signals/:id` immediately after
-  creating the signal** — the runtime hasn't seen the edit yet. Three
-  common causes: (a) you used the `write_file` tool to edit `workspace.yml`,
-  which writes to `{FRIDAY_HOME}/scratch/{sessionId}/` only — the real file
-  never changed. Use `run_code` with an absolute path instead. (b) Your
-  config edit failed Zod validation — check the workspace log for
-  `"Invalid workspace configuration detected, skipping reload"`. (c) An
-  active session deferred the reload — wait for it to finish or cancel it.
+  creating the signal** — the dispatch read a config snapshot that
+  doesn't have the new signal. Two common causes: (a) you used the
+  `write_file` tool to edit `workspace.yml`, which writes to
+  `{FRIDAY_HOME}/scratch/{sessionId}/` only — the real file never changed.
+  Use `run_code` with an absolute path instead. (b) Your config edit
+  failed Zod validation, so the workspace's mtime-cached entry rejected
+  the new config — check the workspace log for `"Invalid workspace
+  configuration detected"`.
 - **`"No FSM job handles signal 'X'"` when a cron or HTTP signal fires** —
   the job uses `execution:` only. The runtime silently skips jobs without
   an `fsm:` block. Rewrite as an FSM (see the `workspace-api` skill). The

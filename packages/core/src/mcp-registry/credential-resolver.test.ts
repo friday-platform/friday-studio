@@ -1,17 +1,25 @@
 import process from "node:process";
+import type { MCPServerConfig } from "@atlas/config";
 import { createLogger } from "@atlas/logger";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   CredentialNotFoundError,
+  findMissingServerEnvVars,
   hasUnusableCredentialCause,
   InvalidProviderError,
   LinkCredentialExpiredError,
   LinkCredentialNotFoundError,
   LinkCredentialUnavailableError,
   NoDefaultCredentialError,
+  readEnvVar,
   resolveCredentialsByProvider,
   resolveEnvValues,
 } from "./credential-resolver.ts";
+
+/** Minimal MCPServerConfig — only `env`/`auth` matter for env-var checks. */
+function makeServer(partial: Partial<MCPServerConfig>): MCPServerConfig {
+  return { transport: { type: "stdio", command: "noop" }, ...partial } as MCPServerConfig;
+}
 
 // =============================================================================
 // Mock Fetch Helpers
@@ -472,6 +480,121 @@ describe("resolveEnvValues with explicit id ref", () => {
 
     const resolved = await resolveEnvValues(env, logger);
     expect(resolved.SLACK_TOKEN).toEqual("xoxb-explicit");
+  });
+});
+
+describe("readEnvVar", () => {
+  afterEach(() => {
+    delete process.env.READ_ENV_VAR_TEST;
+  });
+
+  it("returns the overlay value when present", () => {
+    process.env.READ_ENV_VAR_TEST = "from-process";
+    expect(readEnvVar("READ_ENV_VAR_TEST", { READ_ENV_VAR_TEST: "from-overlay" })).toBe(
+      "from-overlay",
+    );
+  });
+
+  it("falls back to process.env when the key is not in the overlay", () => {
+    process.env.READ_ENV_VAR_TEST = "from-process";
+    expect(readEnvVar("READ_ENV_VAR_TEST", { OTHER: "x" })).toBe("from-process");
+  });
+
+  it("returns undefined when the key is in neither", () => {
+    expect(readEnvVar("READ_ENV_VAR_TEST", {})).toBeUndefined();
+    expect(readEnvVar("READ_ENV_VAR_TEST")).toBeUndefined();
+  });
+});
+
+describe("findMissingServerEnvVars", () => {
+  afterEach(() => {
+    delete process.env.FMSEV_TOKEN;
+  });
+
+  it("returns nothing when the server declares no env or auth", () => {
+    expect(findMissingServerEnvVars("s1", makeServer({}))).toEqual([]);
+  });
+
+  it("flags an `auto` / `from_environment` var that resolves nowhere", () => {
+    const config = makeServer({ env: { FMSEV_TOKEN: "from_environment", REGION: "auto" } });
+    expect(findMissingServerEnvVars("s1", config, {})).toEqual([
+      { serverId: "s1", varName: "FMSEV_TOKEN" },
+      { serverId: "s1", varName: "REGION" },
+    ]);
+  });
+
+  it("treats an overlay value as resolving the var", () => {
+    const config = makeServer({ env: { FMSEV_TOKEN: "from_environment" } });
+    expect(findMissingServerEnvVars("s1", config, { FMSEV_TOKEN: "x" })).toEqual([]);
+  });
+
+  it("treats a process.env value as resolving the var", () => {
+    process.env.FMSEV_TOKEN = "from-process";
+    const config = makeServer({ env: { FMSEV_TOKEN: "from_environment" } });
+    expect(findMissingServerEnvVars("s1", config, {})).toEqual([]);
+  });
+
+  it("ignores literal env values — only sentinels are checked", () => {
+    const config = makeServer({ env: { FMSEV_TOKEN: "literal-value" } });
+    expect(findMissingServerEnvVars("s1", config, {})).toEqual([]);
+  });
+
+  it("flags a bare auth.token_env with no matching env entry", () => {
+    const config = makeServer({ auth: { type: "bearer", token_env: "FMSEV_TOKEN" } });
+    expect(findMissingServerEnvVars("s1", config, {})).toEqual([
+      { serverId: "s1", varName: "FMSEV_TOKEN" },
+    ]);
+  });
+
+  it("does not double-check token_env when env already declares it", () => {
+    const config = makeServer({
+      auth: { type: "bearer", token_env: "FMSEV_TOKEN" },
+      env: { FMSEV_TOKEN: "from_environment" },
+    });
+    // Reported once by the env loop, not again by the auth check.
+    expect(findMissingServerEnvVars("s1", config, {})).toEqual([
+      { serverId: "s1", varName: "FMSEV_TOKEN" },
+    ]);
+  });
+});
+
+describe("resolveEnvValues with workspace .env overlay", () => {
+  const logger = createLogger({ name: "test", level: "silent" });
+
+  afterEach(() => {
+    delete process.env.OVERLAY_TEST_VAR;
+  });
+
+  it("resolves a from_environment entry from the overlay", async () => {
+    delete process.env.OVERLAY_TEST_VAR;
+    const resolved = await resolveEnvValues({ OVERLAY_TEST_VAR: "from_environment" }, logger, {
+      OVERLAY_TEST_VAR: "overlay-value",
+    });
+    expect(resolved.OVERLAY_TEST_VAR).toBe("overlay-value");
+  });
+
+  it("the overlay takes precedence over process.env", async () => {
+    process.env.OVERLAY_TEST_VAR = "process-value";
+    const resolved = await resolveEnvValues({ OVERLAY_TEST_VAR: "auto" }, logger, {
+      OVERLAY_TEST_VAR: "overlay-value",
+    });
+    expect(resolved.OVERLAY_TEST_VAR).toBe("overlay-value");
+  });
+
+  it("falls back to process.env when the key is not in the overlay", async () => {
+    process.env.OVERLAY_TEST_VAR = "process-value";
+    const resolved = await resolveEnvValues({ OVERLAY_TEST_VAR: "from_environment" }, logger, {
+      UNRELATED: "x",
+    });
+    expect(resolved.OVERLAY_TEST_VAR).toBe("process-value");
+  });
+
+  it("resolves to empty string when the var is in neither the overlay nor process.env", async () => {
+    delete process.env.OVERLAY_TEST_VAR;
+    const resolved = await resolveEnvValues({ OVERLAY_TEST_VAR: "auto" }, logger, {
+      UNRELATED: "x",
+    });
+    expect(resolved.OVERLAY_TEST_VAR).toBe("");
   });
 });
 

@@ -44,7 +44,9 @@
   <div class="workspace-list">
     {#each enabledRows as row (row.workspaceId)}
       <div class="workspace-row">
-        <div class="workspace-name">{row.workspaceName}</div>
+        <a class="workspace-name" href="/platform/{row.workspaceId}/settings/mcp">
+          {row.workspaceName}
+        </a>
         {#if row.enabledServer.agentIds && row.enabledServer.agentIds.length > 0}
           <div class="references">
             <span class="ref-label">Agents:</span>
@@ -79,9 +81,15 @@
   }
 
   .workspace-name {
-    color: var(--text-bright);
+    align-self: flex-start;
+    color: var(--blue-primary);
     font-size: var(--font-size-3);
-    font-weight: var(--font-weight-5);
+    font-weight: var(--font-weight-6);
+    text-decoration: none;
+  }
+
+  .workspace-name:hover {
+    text-decoration: underline;
   }
 
   .references {
@@ -90,8 +98,8 @@
   }
 
   .ref-label {
-    color: var(--text-faded);
-    font-weight: var(--font-weight-5);
+    color: var(--text);
+    font-weight: var(--font-weight-6);
     margin-inline-end: var(--size-1);
   }
 
@@ -100,7 +108,7 @@
   }
 
   .empty-state {
-    color: var(--text-faded);
+    color: var(--text);
     font-size: var(--font-size-3);
   }
 </style>

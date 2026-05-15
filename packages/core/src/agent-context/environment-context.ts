@@ -6,15 +6,31 @@
  * error messages for missing requirements.
  */
 
-import process from "node:process";
 import type { AgentEnvironmentConfig } from "@atlas/agent-sdk";
 import type { Logger } from "@atlas/logger";
 import { UserConfigurationError } from "../errors/user-configuration-error.ts";
 import {
   CredentialNotFoundError,
-  fetchLinkCredential,
-  resolveCredentialsByProvider,
+  LinkCredentialNotFoundError,
+  NoDefaultCredentialError,
+  readEnvVar,
+  resolveEnvValues,
 } from "../mcp-registry/credential-resolver.ts";
+
+/**
+ * A credential lookup that failed because the user simply hasn't connected the
+ * provider yet — expected, not an app bug. Treated as a soft miss (the var
+ * falls through to the missing-required handling). Anything else (expired
+ * credential, refresh failure, non-string secret) is a hard failure surfaced
+ * immediately.
+ */
+function isUnconnectedProviderError(err: unknown): boolean {
+  return (
+    err instanceof CredentialNotFoundError ||
+    err instanceof NoDefaultCredentialError ||
+    err instanceof LinkCredentialNotFoundError
+  );
+}
 
 /**
  * Keys that LITELLM_API_KEY can substitute for.
@@ -36,6 +52,7 @@ export function createEnvironmentContext(logger: Logger) {
     workspaceId: string,
     agentId: string,
     environmentConfig?: AgentEnvironmentConfig,
+    overlay?: Record<string, string>,
   ): Promise<Record<string, string>> {
     const env: Record<string, string> = {};
 
@@ -54,45 +71,39 @@ export function createEnvironmentContext(logger: Logger) {
 
     // Validate required environment variables
     if (environmentConfig.required) {
-      const litellmKey = process.env.LITELLM_API_KEY;
+      const litellmKey = readEnvVar("LITELLM_API_KEY", overlay);
 
       for (const reqVar of environmentConfig.required) {
-        let value = process.env[reqVar.name];
+        let value = readEnvVar(reqVar.name, overlay);
         let usedSubstitute = false;
 
-        // Try to resolve from Link if linkRef is provided and value is missing
+        // Resolve from Link through the shared resolver if value is missing
+        // and a linkRef is declared. A provider-only ref resolves the
+        // provider's default credential.
         if (!value && reqVar.linkRef) {
           try {
-            const credentials = await resolveCredentialsByProvider(reqVar.linkRef.provider);
-            const firstCredential = credentials.at(0);
-            if (firstCredential) {
-              const credential = await fetchLinkCredential(firstCredential.id, logger);
-              const secretValue = credential.secret[reqVar.linkRef.key];
-
-              if (typeof secretValue === "string") {
-                value = secretValue;
-                logger.debug("Resolved credential from Link", {
-                  operation: "environment_validation",
-                  workspaceId,
-                  agentId,
-                  variable: reqVar.name,
-                  provider: reqVar.linkRef.provider,
-                });
-              } else if (secretValue !== undefined) {
-                logger.warn("Link credential key value is not a string", {
-                  operation: "environment_validation",
-                  workspaceId,
-                  agentId,
-                  variable: reqVar.name,
+            const resolved = await resolveEnvValues(
+              {
+                [reqVar.name]: {
+                  from: "link",
                   provider: reqVar.linkRef.provider,
                   key: reqVar.linkRef.key,
-                });
-              }
-            }
+                },
+              },
+              logger,
+            );
+            value = resolved[reqVar.name];
+            logger.debug("Resolved credential from Link", {
+              operation: "environment_validation",
+              workspaceId,
+              agentId,
+              variable: reqVar.name,
+              provider: reqVar.linkRef.provider,
+            });
           } catch (err) {
-            // CredentialNotFoundError means user hasn't connected to the provider yet.
-            // This is expected - continue and mark as missing required variable.
-            if (err instanceof CredentialNotFoundError) {
+            // An unconnected provider is expected — continue and mark as a
+            // missing required variable below.
+            if (isUnconnectedProviderError(err)) {
               logger.debug("No credentials found for provider", {
                 operation: "environment_validation",
                 workspaceId,
@@ -187,10 +198,38 @@ export function createEnvironmentContext(logger: Logger) {
       }
     }
 
-    // Add optional environment variables with defaults
+    // Add optional environment variables. process.env wins; a linkRef resolves
+    // the fallback through the shared resolver; the declared default is the
+    // last resort. A failed optional lookup is never fatal.
     if (environmentConfig.optional) {
       for (const optVar of environmentConfig.optional) {
-        const value = process.env[optVar.name];
+        let value = readEnvVar(optVar.name, overlay);
+
+        if (!value && optVar.linkRef) {
+          try {
+            const resolved = await resolveEnvValues(
+              {
+                [optVar.name]: {
+                  from: "link",
+                  provider: optVar.linkRef.provider,
+                  key: optVar.linkRef.key,
+                },
+              },
+              logger,
+            );
+            value = resolved[optVar.name];
+          } catch (err) {
+            logger.debug("Optional credential not resolved from Link", {
+              operation: "environment_validation",
+              workspaceId,
+              agentId,
+              variable: optVar.name,
+              provider: optVar.linkRef.provider,
+              error: err,
+            });
+          }
+        }
+
         env[optVar.name] = value ?? optVar.default ?? "";
       }
     }

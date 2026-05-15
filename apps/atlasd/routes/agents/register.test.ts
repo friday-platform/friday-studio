@@ -110,7 +110,21 @@ function makeApp(subPayload: unknown = null, natsUrl = "nats://127.0.0.1:14222")
 }
 
 function makeProc() {
-  return { kill: mockKill, stderr: { on: vi.fn() } };
+  // `exitCode: 0` short-circuits the SIGKILL escalation path in register.ts
+  // (which is gated on `exitCode === null && signalCode === null`). The
+  // `once("exit", cb)` mock fires the callback on the next microtask so the
+  // route's `await exited` promise resolves promptly — without this the test
+  // hangs on the 2 s grace timeout. queueMicrotask (vs setTimeout(0)) keeps
+  // ordering deterministic across the route's own microtask chain.
+  return {
+    kill: mockKill,
+    stderr: { on: vi.fn() },
+    once: vi.fn((event: string, cb: () => void) => {
+      if (event === "exit") queueMicrotask(cb);
+    }),
+    exitCode: 0,
+    signalCode: null,
+  };
 }
 
 beforeEach(() => {

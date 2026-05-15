@@ -14,6 +14,8 @@ import { registerArtifactsParseTool } from "./artifacts/parse.ts";
 import { registerArtifactsUpdateTool } from "./artifacts/update.ts";
 // Data processing tools
 import { registerCsvTool } from "./data-processing/csv/index.ts";
+// Env tools
+import { registerEnvTools } from "./env/index.ts";
 import { registerFetchTool } from "./fetch.ts";
 // Import filesystem tools
 import { registerGlobTool } from "./fs/glob.ts";
@@ -106,6 +108,9 @@ export function registerTools(server: McpServer, context: ToolContext): void {
   registerMemorySaveTool(server, context);
   registerMemoryReadTool(server, context);
   registerMemoryRemoveTool(server, context);
+
+  // Env tools — workspace / global `.env` CRUD
+  registerEnvTools(server, context);
 
   // System tools
   registerBashTool(server, context);

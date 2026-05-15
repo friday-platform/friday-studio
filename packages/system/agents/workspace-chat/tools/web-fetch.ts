@@ -42,6 +42,7 @@ import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 import type { AtlasTools } from "@atlas/agent-sdk";
 import type { Logger } from "@atlas/logger";
+import { discardBody } from "@atlas/utils";
 import { HTMLRewriter } from "@worker-tools/html-rewriter";
 import { tool } from "ai";
 import TurndownService from "turndown";
@@ -311,12 +312,14 @@ export function createWebFetchTool(logger: Logger): AtlasTools {
         }
 
         if (!response.ok) {
+          await discardBody(response);
           return { error: `web_fetch HTTP ${response.status} for ${normalizedUrl}` };
         }
 
         // Size cap check via Content-Length when present.
         const contentLength = response.headers.get("content-length");
         if (contentLength && Number.parseInt(contentLength, 10) > MAX_RAW_BYTES) {
+          await discardBody(response);
           return {
             error: `web_fetch response too large (${contentLength} bytes, limit ${MAX_RAW_BYTES})`,
           };
