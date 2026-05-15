@@ -1,6 +1,7 @@
 import {
   CredentialNotFoundError,
   type fetchLinkCredential,
+  InvalidProviderError,
   LinkCredentialExpiredError,
   LinkCredentialNotFoundError,
   type resolveCredentialsByProvider,
@@ -702,6 +703,65 @@ describe("POST /create — credential resolution", () => {
     expect(body.unresolvedCredentials).toEqual(
       expect.arrayContaining(["mcp:github:GITHUB_TOKEN", "mcp:slack:SLACK_TOKEN"]),
     );
+  });
+
+  // Previously: providers Link doesn't recognize at all (InvalidProviderError)
+  // hard-failed the upload with 400 `missing_providers`. That blocked the
+  // installer-default workflow where users put `HUBSPOT_ACCESS_TOKEN`
+  // (and similar) in `~/.friday/local/.env` instead of registering a Link
+  // credential — the bundled atlas agent reads from env at runtime, so
+  // the workspace ran fine once you worked around the validator.
+  //
+  // Now: InvalidProviderError is treated the same as CredentialNotFound —
+  // the workspace imports successfully, the unresolved provider paths are
+  // tracked under `unresolvedCredentials`, and `requires_setup` flips so
+  // the per-workspace integrations sidebar can still surface a Connect
+  // button if the user wants to register a Link credential later.
+  test("creates workspace with requires_setup when providers are unknown to Link (InvalidProviderError)", async () => {
+    const { app, mockUpdateWorkspaceStatus } = createImportTestApp();
+    await mountRoutes(app);
+
+    mockResolveCredentialsByProvider.mockImplementation((provider: string) => {
+      return Promise.reject(new InvalidProviderError(provider));
+    });
+
+    const config = makeConfig({
+      tools: {
+        mcp: {
+          servers: {
+            hubspot: {
+              transport: { type: "stdio", command: "npx", args: ["-y", "server-hubspot"] },
+              env: {
+                HUBSPOT_ACCESS_TOKEN: { from: "link", provider: "hubspot", key: "access_token" },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    const response = await app.request("/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ config }),
+    });
+
+    expect(response.status).toBe(201);
+    const body = (await response.json()) as JsonBody;
+    expect(body.success).toBe(true);
+    expect(body.error).toBeUndefined();
+    expect(mockUpdateWorkspaceStatus).toHaveBeenCalledWith(
+      "ws-new",
+      "inactive",
+      expect.objectContaining({ metadata: expect.objectContaining({ requires_setup: true }) }),
+    );
+    expect(body.unresolvedCredentials).toEqual(
+      expect.arrayContaining(["mcp:hubspot:HUBSPOT_ACCESS_TOKEN"]),
+    );
+    // The provider-only ref is preserved in the written config so the
+    // setup page can render a Connect button later.
+    const hubspotRef = getWrittenRef("hubspot", "HUBSPOT_ACCESS_TOKEN");
+    expect(hubspotRef).toEqual({ from: "link", provider: "hubspot", key: "access_token" });
   });
 
   test("surfaces ambiguousProviders when multiple credentials exist for a provider", async () => {

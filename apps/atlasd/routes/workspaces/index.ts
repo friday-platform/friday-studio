@@ -584,23 +584,25 @@ const workspacesRoutes = daemonFactory
           }
         }
 
-        if (invalidProviders.length > 0) {
-          return c.json(
-            {
-              error: "missing_providers",
-              message: "Cannot import workspace: required providers are not configured",
-              providers: invalidProviders,
-            },
-            400,
-          );
-        }
-
-        // Track unresolved provider refs for requires_setup flag, but keep them
-        // in the config — they're declarative requirements the setup page needs
-        // to show Connect buttons for MCP server credentials.
-        if (unresolvedProviders.length > 0) {
+        // Previously: `if (invalidProviders.length > 0)` returned a 400
+        // `missing_providers` to block the upload. That was wrong for the
+        // common installer setup where users put `HUBSPOT_ACCESS_TOKEN`
+        // (and similar) in `~/.friday/local/.env` rather than configuring
+        // a Link credential. The runtime path for bundled atlas agents
+        // already reads from `process.env`, so the workspace ran fine
+        // — only the validator was rejecting the upload.
+        //
+        // Treat unknown-to-Link providers the same way as
+        // CredentialNotFound: track them as `unresolvedCredentialPaths`
+        // so the setup page can still surface a Connect button if the
+        // user wants to register a Link credential later, and let the
+        // workspace import succeed. If the agent genuinely needs a
+        // credential and neither env nor Link have one, the runtime
+        // call site surfaces a clear error then.
+        const allUnresolvedProviders = [...unresolvedProviders, ...invalidProviders];
+        if (allUnresolvedProviders.length > 0) {
           unresolvedCredentialPaths = providerOnlyRefs
-            .filter((ref) => unresolvedProviders.includes(ref.provider))
+            .filter((ref) => allUnresolvedProviders.includes(ref.provider))
             .map((ref) => ref.path);
         }
 
