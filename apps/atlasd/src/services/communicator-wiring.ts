@@ -2,7 +2,7 @@
  * Generic atlasd → Link communicator wiring client.
  *
  * Single connect-communicator path for all chat providers (Slack, Telegram,
- * Discord, Teams, WhatsApp). The wiring table stores `(workspace_id, provider,
+ * Discord, Teams, WhatsApp, GitHub). The wiring table stores `(workspace_id, provider,
  * credential_id, connection_id)`; daemon resolves credentials per-workspace at
  * runtime via the wiring lookup, so workspace.yml only carries `{ kind }` —
  * no inline secrets.
@@ -50,6 +50,14 @@ const TeamsCredentialSecretSchema = z.object({ app_id: z.string().min(1) });
 const WhatsappCredentialSecretSchema = z.object({ phone_number_id: z.string().min(1) });
 
 const SlackCredentialSecretSchema = z.object({ app_id: z.string().min(1) });
+
+/**
+ * GitHub App credential secret. `installation_id` is stored and returned as
+ * a positive integer (see `apps/link/src/providers/github-app.ts`); the
+ * JSON round-trip through Cypher storage preserves number types. The deriver
+ * coerces to string via `String(...)` for the `connection_id` column.
+ */
+const GitHubCredentialSecretSchema = z.object({ installation_id: z.number().int().positive() });
 
 function s2sScheme(): "http" | "https" {
   // Match the daemon listener's scheme (set by atlas-cli/start.tsx
@@ -129,6 +137,9 @@ function getLinkAuthHeaders(): Record<string, string> {
  *   - discord:  `application_id` (Discord interactions arrive keyed on app)
  *   - teams:    `app_id` (matches `recipient.id` Teams sends inbound)
  *   - whatsapp: `phone_number_id` (Meta echoes via `metadata.phone_number_id`)
+ *   - github:   `installation_id` (stringified — matches `installation.id` in
+ *               GitHub webhook payloads; the App is multi-tenant so the
+ *               installation pair (App, install) is the routing key)
  */
 export async function deriveConnectionId(
   kind: CommunicatorKind,
@@ -162,6 +173,11 @@ export async function deriveConnectionId(
     const credential = await fetchLinkCredential(credentialId, logger);
     const secret = WhatsappCredentialSecretSchema.parse(credential.secret);
     return secret.phone_number_id;
+  }
+  if (kind === "github") {
+    const credential = await fetchLinkCredential(credentialId, logger);
+    const secret = GitHubCredentialSecretSchema.parse(credential.secret);
+    return String(secret.installation_id);
   }
   return credentialId;
 }

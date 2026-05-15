@@ -1,7 +1,7 @@
 <!--
   ConnectCommunicator — chat-rendered card that wires an external chat
-  platform (Slack, Telegram, Discord, Teams, WhatsApp) as a conversation
-  surface for the current workspace.
+  platform (Slack, Telegram, Discord, Teams, WhatsApp, GitHub) as a
+  conversation surface for the current workspace.
 
   Mirrors the connect-service flow but for communicators rather than
   services Friday calls as tools. Telegram is the tracer-bullet kind: this
@@ -20,7 +20,13 @@
   import { page } from "$app/stores";
   import CommunicatorApiKeyForm from "$lib/components/shared/communicator-apikey-form.svelte";
 
-  type CommunicatorKind = "slack" | "telegram" | "discord" | "teams" | "whatsapp";
+  type CommunicatorKind =
+    | "slack"
+    | "telegram"
+    | "discord"
+    | "teams"
+    | "whatsapp"
+    | "github";
 
   interface Props {
     kind: CommunicatorKind;
@@ -35,6 +41,7 @@
     discord: "Discord",
     teams: "Microsoft Teams",
     whatsapp: "WhatsApp",
+    github: "GitHub",
   };
 
   // Workspace ID lives in the route params for `/platform/[workspaceId]/...`

@@ -295,6 +295,29 @@ describe("GET /:workspaceId/chat/:chatId — get chat", () => {
     expect(body.error).toBe("Chat not found");
   });
 
+  // Regression: github thread ids contain `/` (e.g.
+  // `github:org/repo:issue:1`). Hono's `:chatId` matcher only spans a single
+  // path segment, so callers must `encodeURIComponent` the id; Hono's param()
+  // decodes it back. If a future refactor breaks this round-trip, the
+  // workspace-chat agent silently falls back to `messages = []` and posts an
+  // empty body that GitHub rejects with 422.
+  test.each([
+    { name: "slash + colon (github)", chatId: "github:org/repo:issue:1" },
+    { name: "multiple slashes", chatId: "ns:a/b/c/d" },
+    { name: "URL-fishy chars", chatId: "weird id?with#stuff&more=1" },
+  ])("decodes encoded chatId with $name", async ({ chatId }) => {
+    mockChatStorage.getChat.mockResolvedValue({
+      ok: true,
+      data: { id: chatId, workspaceId: "ws-1", messages: [], systemPromptContext: null },
+    });
+    const { app } = createTestApp();
+
+    const res = await app.request(`/ws-1/chat/${encodeURIComponent(chatId)}`);
+
+    expect(res.status).toBe(200);
+    expect(mockChatStorage.getChat).toHaveBeenCalledWith(chatId, "ws-1");
+  });
+
   // ?full controls the route-layer trim. Default behavior keeps the
   // legacy last-100 slice for live UI rehydrate; ?full=true is the
   // export preview path that needs every message.

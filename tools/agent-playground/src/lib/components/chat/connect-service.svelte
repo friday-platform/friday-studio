@@ -112,7 +112,10 @@
 
   // ─── Handlers ──────────────────────────────────────────────────────────────
 
-  function handleApiKeySubmit(label: string, secret: Record<string, string>) {
+  function handleApiKeySubmit(
+    label: string,
+    secret: Record<string, string | number>,
+  ) {
     createMutation.mutate(
       { provider, label, secret },
       {

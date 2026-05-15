@@ -42,7 +42,7 @@ const StoredChatSchema = z.object({
   id: z.string().min(1),
   userId: z.string().min(1),
   workspaceId: z.string().min(1),
-  source: z.enum(["atlas", "slack", "discord", "telegram", "whatsapp", "teams"]),
+  source: z.enum(["atlas", "slack", "discord", "telegram", "whatsapp", "teams", "github"]),
   color: z.string().optional(),
   title: z.string().optional(),
   createdAt: z.iso.datetime(),

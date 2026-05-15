@@ -368,6 +368,28 @@ describe("createMessageHandler", () => {
     expect(stateAdapter.clearSource).toHaveBeenCalledWith("slack-thread-1");
   });
 
+  it("pre-sets the source for github-originated threads", async () => {
+    const registry = new StreamRegistry();
+    const stateAdapter = {
+      setSource: vi.fn(),
+      clearSource: vi.fn(),
+    } as unknown as import("@atlas/core/chat/chat-sdk-state-adapter").ChatSdkStateAdapter;
+    const handler = createMessageHandler(
+      "ws-test",
+      makeTriggerFn([{ type: "text-delta", delta: "x" }]),
+      registry,
+      stateAdapter,
+    );
+
+    const thread = makeThread("github-thread-1");
+    (thread as unknown as { adapter: { name: string } }).adapter = { name: "github" };
+    registry.createStream(WS, "github-thread-1");
+
+    await handler(thread, makeMessage({ threadId: "github-thread-1" }));
+
+    expect(stateAdapter.setSource).toHaveBeenCalledWith("github-thread-1", "github");
+  });
+
   it("logs and continues on appendMessage failure, but propagates thread.post errors via finally", async () => {
     const registry = new StreamRegistry();
     const handler = createMessageHandler(

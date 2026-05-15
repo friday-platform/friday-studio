@@ -18,13 +18,16 @@ import { z } from "zod";
  *
  * The Link service emits JSON-Schema-shaped property descriptors that may
  * include rich annotations (`description`, `format: "password"`, `writeOnly`).
- * Older/hardcoded providers emit a bare `{ type: "string" }`, so the
- * annotation slots are optional and unknown keys pass through.
+ * `type` widens beyond `"string"` because providers with numeric fields (the
+ * github-app App ID / installation_id are `z.number().int()`) round-trip
+ * through `z.toJSONSchema` as `"integer"` / `"number"`. Older/hardcoded
+ * providers emit a bare `{ type: "string" }`, so annotation slots are optional
+ * and unknown keys pass through.
  */
 const SecretPropertySchema = z.looseObject({
-  type: z.literal("string"),
+  type: z.enum(["string", "integer", "number"]),
   description: z.string().optional(),
-  format: z.union([z.literal("password"), z.string()]).optional(),
+  format: z.union([z.literal("password"), z.literal("multiline"), z.string()]).optional(),
   writeOnly: z.boolean().optional(),
 });
 

@@ -74,8 +74,22 @@ describe("CommunicatorConfigSchema", () => {
       ["discord", { kind: "discord", unexpected_field: "no" }],
       ["teams", { kind: "teams", unexpected_field: "no" }],
       ["whatsapp", { kind: "whatsapp", unexpected_field: "no" }],
+      ["github", { kind: "github", unexpected_field: "no" }],
     ])("rejects unknown field on %s communicator", (_label, input) => {
       const result = CommunicatorConfigSchema.safeParse(input);
+      expect(result.success).toBe(false);
+    });
+
+    it("rejects webhook_secret on github communicator (Link owns it)", () => {
+      const result = CommunicatorConfigSchema.safeParse({ kind: "github", webhook_secret: "shhh" });
+      expect(result.success).toBe(false);
+    });
+
+    it("rejects credential_id on github communicator", () => {
+      const result = CommunicatorConfigSchema.safeParse({
+        kind: "github",
+        credential_id: "cred-123",
+      });
       expect(result.success).toBe(false);
     });
   });
@@ -95,6 +109,15 @@ describe("WorkspaceConfigSchema with communicators", () => {
       ops_slack: { kind: "slack", bot_token: "xoxb" },
       ops_telegram: { kind: "telegram", bot_token: "123:abc" },
     });
+  });
+
+  it("accepts a workspace with a github communicator", () => {
+    const parsed = WorkspaceConfigSchema.parse({
+      version: "1.0",
+      workspace: { id: "test", name: "Test" },
+      communicators: { ops_github: { kind: "github" } },
+    });
+    expect(parsed.communicators).toEqual({ ops_github: { kind: "github" } });
   });
 
   it("parses an existing workspace.yml with signals.provider and no communicators block", () => {

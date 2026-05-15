@@ -1,6 +1,6 @@
 <!--
   Wrapper around `CredentialSecretForm` for connecting a workspace
-  communicator (slack/telegram/discord/teams/whatsapp) via apikey.
+  communicator (slack/telegram/discord/teams/whatsapp/github) via apikey.
 
   Encapsulates the kind→provider-details fetch, the chained
   create-credential → `useConnectCommunicator()` wire mutation, and the
@@ -15,14 +15,16 @@
 -->
 
 <script lang="ts">
+  import {
+    COMMUNICATOR_KIND_TO_PROVIDER_ID,
+    type CommunicatorKind,
+  } from "@atlas/config";
   import { Button } from "@atlas/ui";
   import { createQuery } from "@tanstack/svelte-query";
   import CredentialSecretForm from "$lib/components/credential-secret-form.svelte";
   import { useConnectCommunicator } from "$lib/queries";
   import { useCreateApiKeyCredential } from "$lib/queries/link-credentials.ts";
   import { linkProviderQueries } from "$lib/queries/link-provider-queries.ts";
-
-  type CommunicatorKind = "slack" | "telegram" | "discord" | "teams" | "whatsapp";
 
   interface Props {
     workspaceId: string;
@@ -33,16 +35,21 @@
 
   let { workspaceId, kind, onConnected, onCancel }: Props = $props();
 
-  const detailsQuery = createQuery(() => linkProviderQueries.providerDetails(kind));
+  const providerId = $derived(COMMUNICATOR_KIND_TO_PROVIDER_ID[kind]);
+
+  const detailsQuery = createQuery(() => linkProviderQueries.providerDetails(providerId));
   const createMutation = useCreateApiKeyCredential();
   const connectMut = useConnectCommunicator();
 
   let wireError = $state<string | null>(null);
 
-  function handleSubmit(label: string, secret: Record<string, string>) {
+  function handleSubmit(
+    label: string,
+    secret: Record<string, string | number>,
+  ) {
     wireError = null;
     createMutation.mutate(
-      { provider: kind, label, secret },
+      { provider: providerId, label, secret },
       {
         onSuccess: (credentialId) => {
           connectMut.mutate(

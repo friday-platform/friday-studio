@@ -263,7 +263,8 @@
       jobSummaries.length === 0 &&
       signalsWithJobs.length === 0 &&
       workspaceAgents.length === 0 &&
-      visibleSessions.length === 0,
+      visibleSessions.length === 0 &&
+      Object.keys(config?.communicators ?? {}).length === 0,
   );
 
   let startMessage = $state("");

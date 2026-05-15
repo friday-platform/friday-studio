@@ -61,7 +61,7 @@ export function useCreateApiKeyCredential() {
 
   return createMutation(() => ({
     mutationFn: async (
-      input: { provider: string; label: string; secret: Record<string, string> },
+      input: { provider: string; label: string; secret: Record<string, string | number> },
     ) => {
       const res = await fetch(`/api/daemon/api/link/v1/credentials/apikey`, {
         method: "PUT",

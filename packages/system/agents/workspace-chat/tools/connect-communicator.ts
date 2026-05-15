@@ -9,12 +9,14 @@ const KIND_DISPLAY_NAMES: Record<CommunicatorKind, string> = {
   discord: "Discord",
   teams: "Microsoft Teams",
   whatsapp: "WhatsApp",
+  github: "GitHub",
 };
 
 /**
  * Factory that creates the `connect_communicator` tool — opens a chat-side
  * form so the user can wire an external chat platform (Slack, Telegram,
- * Discord, Teams, WhatsApp) as a surface for the workspace conversation.
+ * Discord, Teams, WhatsApp, GitHub) as a surface for the workspace
+ * conversation.
  *
  * Communicators are surfaces for the same conversation that happens in the
  * playground — not tools Friday calls. Returning `{ kind, progress }` halts
@@ -24,7 +26,7 @@ const KIND_DISPLAY_NAMES: Record<CommunicatorKind, string> = {
 export function createConnectCommunicatorTool() {
   return tool({
     description:
-      "Wire an *inbound chat surface* — Slack, Telegram, Discord, Microsoft Teams, or WhatsApp — so the user can type to Friday from that client and Friday's replies arrive there. Use ONLY when the user wants to reach Friday from one of these five platforms. Do NOT use for OAuth, credentials, Gmail, email, SMS, calendars, file storage, or any service Friday calls on the user's behalf — those go through the service-connection flow (`connect_service` / `enable_mcp_server` / `delegate`).",
+      "Wire an *inbound chat surface* — Slack, Telegram, Discord, Microsoft Teams, WhatsApp, or GitHub (Issue/PR comments) — so the user can reach Friday from that platform and Friday's replies arrive there. Use ONLY when the user wants to reach Friday from one of these six platforms. Do NOT use for OAuth, credentials, Gmail, email, SMS, calendars, file storage, or any service Friday calls on the user's behalf — those go through the service-connection flow (`connect_service` / `enable_mcp_server` / `delegate`).",
     inputSchema: z.object({
       kind: CommunicatorKindSchema.describe("Chat platform to wire as a communicator surface"),
     }),

@@ -7,6 +7,7 @@
 
 import { createLogger } from "@atlas/logger";
 import { createDiscordAdapter } from "@chat-adapter/discord";
+import { createGitHubAdapter } from "@chat-adapter/github";
 import { SlackAdapter } from "@chat-adapter/slack";
 import { createTeamsAdapter } from "@chat-adapter/teams";
 import { createTelegramAdapter } from "@chat-adapter/telegram";
@@ -36,10 +37,25 @@ export type PlatformCredentials =
       appPassword: string;
       appTenantId?: string;
       appType?: "MultiTenant" | "SingleTenant";
+    }
+  | {
+      kind: "github";
+      appId: string;
+      privateKey: string;
+      webhookSecret: string;
+      botUserSlug: string;
+      botUserId: number;
     };
 
 /** Supported chat-capable platform providers. */
-export const CHAT_PROVIDERS = ["slack", "telegram", "whatsapp", "discord", "teams"] as const;
+export const CHAT_PROVIDERS = [
+  "slack",
+  "telegram",
+  "whatsapp",
+  "discord",
+  "teams",
+  "github",
+] as const;
 export type ChatProvider = (typeof CHAT_PROVIDERS)[number];
 
 /**
@@ -85,6 +101,19 @@ function buildAdapter(creds: PlatformCredentials): Adapter {
         appPassword: creds.appPassword,
         appTenantId: creds.appTenantId,
         appType: creds.appType,
+      });
+    case "github":
+      // Multi-tenant mode: omit `installationId` so the adapter auto-extracts it
+      // from inbound `installation.id` in webhook payloads. One App can serve
+      // many installations across many workspaces; routing-by-installation
+      // happens in `/signals/github` via `resolveCommunicatorByConnection`.
+      return createGitHubAdapter({
+        appId: creds.appId,
+        privateKey: creds.privateKey,
+        webhookSecret: creds.webhookSecret,
+        // userName drives chat-sdk's @mention detection regex (chat@4.27.0:3528).
+        userName: creds.botUserSlug,
+        botUserId: creds.botUserId,
       });
   }
 }

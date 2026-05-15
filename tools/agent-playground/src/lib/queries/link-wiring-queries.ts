@@ -90,7 +90,7 @@ export function useConnectCommunicator() {
   return createMutation(() => ({
     mutationFn: async (input: {
       workspaceId: string;
-      kind: "slack" | "telegram" | "discord" | "teams" | "whatsapp";
+      kind: "slack" | "telegram" | "discord" | "teams" | "whatsapp" | "github";
       credentialId: string;
     }): Promise<void> => {
       const client = getDaemonClient();
@@ -132,7 +132,7 @@ export function useDisconnectCommunicator() {
   return createMutation(() => ({
     mutationFn: async (input: {
       workspaceId: string;
-      kind: "slack" | "telegram" | "discord" | "teams" | "whatsapp";
+      kind: "slack" | "telegram" | "discord" | "teams" | "whatsapp" | "github";
     }): Promise<void> => {
       const client = getDaemonClient();
       const res = await client.workspace[":workspaceId"]["disconnect-communicator"].$post({

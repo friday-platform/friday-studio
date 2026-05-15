@@ -26,7 +26,10 @@
     initialLabel?: string;
     submitting: boolean;
     error: string | null;
-    onSubmit: (label: string, secret: Record<string, string>) => void;
+    onSubmit: (
+      label: string,
+      secret: Record<string, string | number>,
+    ) => void;
     onCancel?: () => void;
   }
 
@@ -49,14 +52,17 @@
 
   /**
    * Mirrors `SecretPropertySchema` from `link-provider-queries.ts`: the JSON
-   * Schema property descriptor that the Link service emits. Unknown keys pass
-   * through so older providers that ship a bare `{ type: "string" }` still
-   * parse cleanly.
+   * Schema property descriptor that the Link service emits. `type` widens to
+   * include `integer`/`number` so providers with numeric fields (e.g. the
+   * github-app App ID / installation_id) parse. `format: "multiline"` is a
+   * Friday convention surfaced via `.meta()` on the Zod side so the form can
+   * render a textarea (e.g. PEM private keys). Unknown keys pass through so
+   * older providers that ship a bare `{ type: "string" }` still parse cleanly.
    */
   const PropertyShape = z.looseObject({
-    type: z.literal("string"),
+    type: z.enum(["string", "integer", "number"]),
     description: z.string().optional(),
-    format: z.union([z.literal("password"), z.string()]).optional(),
+    format: z.union([z.literal("password"), z.literal("multiline"), z.string()]).optional(),
     writeOnly: z.boolean().optional(),
   });
 
@@ -70,16 +76,26 @@
     return parsed.data;
   });
 
+  type FieldType = "string" | "integer" | "number";
+
   const secretFields = $derived.by(() => {
     if (!schemaShape?.properties) return [];
     const required = new Set(schemaShape.required ?? []);
-    return Object.entries(schemaShape.properties).map(([key, prop]) => ({
-      key,
-      label: secretKeyToLabel(key),
-      description: prop.description ?? "",
-      required: required.has(key),
-      masked: prop.format === "password" || isSensitiveField(key),
-    }));
+    return Object.entries(schemaShape.properties).map(([key, prop]) => {
+      const type: FieldType = prop.type ?? "string";
+      const multiline = prop.format === "multiline";
+      return {
+        key,
+        label: secretKeyToLabel(key),
+        description: prop.description ?? "",
+        required: required.has(key),
+        type,
+        multiline,
+        // Single-line text-mode sensitive fields render as `<input type="password">`.
+        // Multiline (PEM) fields use a textarea regardless.
+        masked: !multiline && (prop.format === "password" || isSensitiveField(key)),
+      };
+    });
   });
 
   const isAddMode = $derived(initialLabel === undefined);
@@ -126,10 +142,25 @@
       return;
     }
 
-    const secret: Record<string, string> = {};
+    const secret: Record<string, string | number> = {};
     for (const field of secretFields) {
       const value = fieldValues[field.key]?.trim();
-      if (value) secret[field.key] = value;
+      if (!value) continue;
+
+      if (field.type === "integer" || field.type === "number") {
+        const num = Number(value);
+        if (!Number.isFinite(num)) {
+          validationError = `${field.label} must be a number`;
+          return;
+        }
+        if (field.type === "integer" && !Number.isInteger(num)) {
+          validationError = `${field.label} must be an integer`;
+          return;
+        }
+        secret[field.key] = num;
+      } else {
+        secret[field.key] = value;
+      }
     }
 
     onSubmit(submitLabel, secret);
@@ -171,16 +202,34 @@
           <span class="tag" data-tone="neutral">optional</span>
         {/if}
       </label>
-      <input
-        id="credential-{field.key}"
-        type={field.masked ? "password" : "text"}
-        bind:value={fieldValues[field.key]}
-        placeholder={field.required
-          ? `Enter ${field.label.toLowerCase()}`
-          : `${field.label} (optional)`}
-        disabled={submitting}
-        required={field.required}
-      />
+      {#if field.multiline}
+        <textarea
+          id="credential-{field.key}"
+          class="multiline"
+          bind:value={fieldValues[field.key]}
+          placeholder={field.required
+            ? `Enter ${field.label.toLowerCase()}`
+            : `${field.label} (optional)`}
+          disabled={submitting}
+          required={field.required}
+          rows="6"
+        ></textarea>
+      {:else}
+        <input
+          id="credential-{field.key}"
+          type={field.masked ? "password" : "text"}
+          inputmode={field.type === "integer" || field.type === "number"
+            ? "numeric"
+            : undefined}
+          pattern={field.type === "integer" ? "[0-9]*" : undefined}
+          bind:value={fieldValues[field.key]}
+          placeholder={field.required
+            ? `Enter ${field.label.toLowerCase()}`
+            : `${field.label} (optional)`}
+          disabled={submitting}
+          required={field.required}
+        />
+      {/if}
       {#if field.description}
         <p class="field-help">{field.description}</p>
       {/if}
@@ -256,7 +305,8 @@
     white-space: nowrap;
   }
 
-  .field input {
+  .field input,
+  .field textarea {
     background: var(--color-surface-1);
     border: 1px solid var(--color-border-1);
     border-radius: var(--radius-2);
@@ -266,7 +316,13 @@
     width: 100%;
   }
 
-  .field input:focus {
+  .field textarea.multiline {
+    font-family: var(--font-family-monospace);
+    resize: vertical;
+  }
+
+  .field input:focus,
+  .field textarea:focus {
     outline: 2px solid var(--color-accent);
     outline-offset: -2px;
   }

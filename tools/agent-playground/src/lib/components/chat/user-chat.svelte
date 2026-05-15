@@ -1,15 +1,16 @@
 <script lang="ts">
-  import { untrack } from "svelte";
   import { Chat as ChatImpl } from "@ai-sdk/svelte";
   import type { AtlasUIMessage } from "@atlas/agent-sdk";
+  import { buildSegments, extractImages } from "@atlas/core/chat/export/render";
   import { toast } from "@atlas/ui";
   import { createQuery, useQueryClient } from "@tanstack/svelte-query";
-  import { page } from "$app/state";
   import { browser } from "$app/environment";
+  import { page } from "$app/state";
   import { workspaceQueries } from "$lib/queries";
   import { mergeElicitationIntoCache } from "$lib/queries/elicitation-queries.ts";
   import { subscribeToWorkspaceElicitations } from "$lib/shared-worker/client.ts";
   import { DefaultChatTransport } from "ai";
+  import { untrack } from "svelte";
   import ChatInput from "./chat-input.svelte";
   import {
     type FileAttachment,
@@ -23,13 +24,13 @@
   } from "./chat-attachment.ts";
   import ChatInspector from "./chat-inspector.svelte";
   import ChatMessageList from "./chat-message-list.svelte";
-  import ChatSessionUsage from "./chat-session-usage.svelte";
-  import { createCursorTrackingFetch } from "./cursor-tracking-fetch.ts";
   import { nextQueueStep } from "./chat-queue.ts";
-  import { nextResumeBudgetStep } from "./resume-budget.ts";
+  import ChatSessionUsage from "./chat-session-usage.svelte";
   import { nextSpeechChunk } from "./chat-tts.ts";
-  import { buildSegments, extractImages } from "@atlas/core/chat/export/render";
+  import { createCursorTrackingFetch } from "./cursor-tracking-fetch.ts";
+  import { wrapEncodeChatIdFetch } from "./encode-chat-id-fetch.ts";
   import { extractErrorText, hasErrorPart, hasRenderableContent } from "./message-error.ts";
+  import { nextResumeBudgetStep } from "./resume-budget.ts";
   import type { ChatMessage, ToolCallDisplay } from "./types";
   import { GetChatResponseSchema } from "./types";
 
@@ -229,6 +230,11 @@
     },
   });
 
+  // AI SDK's transport builds URLs as `${api}/${id}/stream` without encoding
+  // `id`. GitHub chat IDs contain literal `/`, which splits the path and
+  // 404s the daemon — wrap once to re-encode just the chat-id segment.
+  const safeFetch = wrapEncodeChatIdFetch(trackingFetch, () => chatId);
+
   /**
    * Keep the inline HITL cards in sync with Activity.  The card itself
    * queries the replay list, but newly-created elicitations are delivered via
@@ -380,8 +386,7 @@
         ) {
           // We trust the server-side validator — it ran
           // `validateAtlasUIMessages` on write, so the shape is valid.
-          const stamped =
-            msg.role === "assistant" ? { ...msg, state: "done" as const } : msg;
+          const stamped = msg.role === "assistant" ? { ...msg, state: "done" as const } : msg;
           rehydrated.push(stamped as unknown as AtlasUIMessage);
         }
       }
@@ -445,10 +450,14 @@
   const transport = $derived(
     new DefaultChatTransport({
       api: CHAT_API,
-      fetch: trackingFetch,
+      fetch: safeFetch,
       prepareSendMessagesRequest({ messages: msgs, id }) {
         // Adapter pulls history server-side; sending msgs[] would waste bandwidth.
-        const body: Record<string, unknown> = { id, message: msgs.at(-1), datetime: buildDatetime() };
+        const body: Record<string, unknown> = {
+          id,
+          message: msgs.at(-1),
+          datetime: buildDatetime(),
+        };
         return { body };
       },
     }),
@@ -603,7 +612,7 @@
           (p as { type: string }).type === "text" &&
           "text" in p &&
           typeof (p as { text: unknown }).text === "string" &&
-          ((p as { text: string }).text.length > 0),
+          (p as { text: string }).text.length > 0,
       );
     const hasToolCall =
       Array.isArray(last.parts) &&
@@ -862,7 +871,12 @@
 
     const credentialParts = msg.parts
       .filter(
-        (p): p is { type: "data-credential-linked"; data: { provider: string; displayName: string } } =>
+        (
+          p,
+        ): p is {
+          type: "data-credential-linked";
+          data: { provider: string; displayName: string };
+        } =>
           typeof p === "object" &&
           p !== null &&
           "type" in p &&
@@ -906,7 +920,9 @@
       return typeof v === "number" ? v : undefined;
     }
 
-    function shape(source: unknown):
+    function shape(
+      source: unknown,
+    ):
       | {
           inputTokens?: number;
           outputTokens?: number;
@@ -943,7 +959,6 @@
     return undefined;
   }
 
-
   // Stable per-message first-seen fallback for messages whose metadata
   // carries no timestamp (legacy user messages written before we started
   // stamping, with no following assistant turn to borrow from). A plain
@@ -978,8 +993,7 @@
           "text" in last && typeof (last as Record<string, unknown>).text === "string"
             ? ((last as Record<string, unknown>).text as string).length
             : 0;
-        const state =
-          "state" in last ? String((last as Record<string, unknown>).state ?? "") : "";
+        const state = "state" in last ? String((last as Record<string, unknown>).state ?? "") : "";
         lastSig = `${type}:${text}:${state}`;
       }
     }
@@ -1077,16 +1091,15 @@
       if (cached && cached.sig === sig && cached.result.timestamp === ts) {
         return cached.result;
       }
-      const m = (typeof msg.metadata === "object" && msg.metadata !== null
-        ? msg.metadata
-        : {}) as Record<string, unknown>;
+      const m = (
+        typeof msg.metadata === "object" && msg.metadata !== null ? msg.metadata : {}
+      ) as Record<string, unknown>;
       const result: ChatMessage = {
         id: msg.id,
-        role: (msg.role === "user"
-          ? "user"
-          : msg.role === "system"
-            ? "system"
-            : "assistant") as "user" | "assistant" | "system",
+        role: (msg.role === "user" ? "user" : msg.role === "system" ? "system" : "assistant") as
+          | "user"
+          | "assistant"
+          | "system",
         segments: buildSegments(msg),
         timestamp: ts,
         images: extractImages(msg),
@@ -1485,7 +1498,9 @@
                 .join("");
               if (lastText) void handleSubmit(lastText);
             }}
-          >Resend</button>
+          >
+            Resend
+          </button>
         </div>
       {/if}
 

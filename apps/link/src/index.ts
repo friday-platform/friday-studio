@@ -30,12 +30,14 @@ import { getMetrics, recordRequest } from "./metrics.ts";
 import { OAuthService } from "./oauth/service.ts";
 import {
   DISCORD_PROVIDER,
+  GITHUB_APP_PROVIDER,
   SLACK_PROVIDER,
   TEAMS_PROVIDER,
   TELEGRAM_PROVIDER,
   WHATSAPP_PROVIDER,
 } from "./providers/constants.ts";
 import { discordProvider } from "./providers/discord.ts";
+import { githubAppProvider } from "./providers/github-app.ts";
 import { registry } from "./providers/registry.ts";
 import { slackProvider } from "./providers/slack.ts";
 import { teamsProvider } from "./providers/teams.ts";
@@ -183,6 +185,10 @@ export function createApp(
 
   if (!registry.has(WHATSAPP_PROVIDER)) {
     registry.register(whatsappProvider);
+  }
+
+  if (!registry.has(GITHUB_APP_PROVIDER)) {
+    registry.register(githubAppProvider);
   }
 
   return baseApp

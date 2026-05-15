@@ -27,7 +27,15 @@ import { z } from "zod";
 
 const logger = createLogger({ component: "chat-jetstream-backend" });
 
-const ChatSourceSchema = z.enum(["atlas", "slack", "discord", "telegram", "whatsapp", "teams"]);
+const ChatSourceSchema = z.enum([
+  "atlas",
+  "slack",
+  "discord",
+  "telegram",
+  "whatsapp",
+  "teams",
+  "github",
+]);
 type ChatSource = z.infer<typeof ChatSourceSchema>;
 
 const SystemPromptContextSchema = z.object({

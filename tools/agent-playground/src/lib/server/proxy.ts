@@ -242,15 +242,21 @@ export async function executeProxyFetch(
   return new Response(res.body, { status: res.status, headers: responseHeaders });
 }
 
-/** Build a SvelteKit `RequestHandler` that reverse-proxies the path
- * parameter (`params.path`, set by the catch-all `[...path]/+server.ts`
- * route) to the upstream service. Used by both `/api/daemon/*` and
- * `/api/tunnel/*` so they stay behaviorally identical. */
+/** Build a SvelteKit `RequestHandler` that reverse-proxies the
+ * `/api/${label}/*` path to the upstream service. Used by both
+ * `/api/daemon/*` and `/api/tunnel/*` so they stay behaviorally identical.
+ *
+ * The post-prefix path is taken from the raw `request.url` pathname rather
+ * than SvelteKit's `params.path`, because SvelteKit decodes captured rest
+ * params — which corrupts identifiers that contain percent-encoded slashes
+ * (e.g. GitHub chat IDs like `github:owner/repo:issue:N`). Mirrors
+ * `buildHonoProxy` below. */
 export function buildProxyHandler({ upstream, label }: BuildProxyOptions): RequestHandler {
-  return ({ params, request }) => {
-    const path = params.path ?? "";
-    const target = new URL(`/${path}`, upstream);
-    target.search = new URL(request.url).search;
+  const prefix = `/api/${label}`;
+  return ({ request }) => {
+    const incoming = new URL(request.url);
+    const path = incoming.pathname.replace(new RegExp(`^${prefix}`), "");
+    const target = new URL(path + incoming.search, upstream);
     return executeProxyFetch(target, request, label);
   };
 }

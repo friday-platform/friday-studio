@@ -122,6 +122,27 @@ describe("buildChatSdkAdapters", () => {
   });
 });
 
+describe("buildChatSdkAdapters — github userName", () => {
+  // Link stores `botUserSlug` as the bare App slug (no `[bot]` suffix); the
+  // factory passes it through verbatim to chat-sdk, whose `detectMention`
+  // compiles `@${userName}\b` against the raw comment body.
+  const githubCreds: PlatformCredentials = {
+    kind: "github",
+    appId: "12345",
+    privateKey: "-----BEGIN PRIVATE KEY-----\nfake\n-----END PRIVATE KEY-----",
+    webhookSecret: "secret",
+    botUserSlug: "friday-bot",
+    botUserId: 42,
+  };
+  const githubSignals = { "github-chat": { provider: "github", config: {} } };
+
+  it("passes botUserSlug through verbatim as userName", () => {
+    const adapters = build({ signals: githubSignals, credentials: githubCreds });
+    const github = adapters.github as { userName?: unknown } | undefined;
+    expect(github?.userName).toBe("friday-bot");
+  });
+});
+
 describe("buildChatSdkAdapters — communicators map", () => {
   it("discovers a kind declared only in communicators (no signal of that provider)", () => {
     const adapters = build({

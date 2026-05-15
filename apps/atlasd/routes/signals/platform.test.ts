@@ -94,7 +94,7 @@ function makeNonSlackConfig(): MergedConfig {
  * platform webhook; omit both for "adapter not configured" scenarios.
  */
 function makeChatSdkInstance(
-  webhookKey?: "slack" | "discord" | "telegram" | "whatsapp" | "teams",
+  webhookKey?: "slack" | "discord" | "telegram" | "whatsapp" | "teams" | "github",
   handler?: (request: Request) => Promise<Response>,
 ): ChatSdkInstance {
   const webhooks: Record<string, unknown> = { atlas: vi.fn() };
@@ -940,5 +940,258 @@ describe("POST /teams", () => {
 
     expect(res.status).toBe(200);
     expect(getOrCreateChatSdkInstance).toHaveBeenCalledWith("ws-alpha");
+  });
+});
+
+// ─── GitHub App webhooks (POST) ───────────────────────────────────────
+
+/**
+ * Synthetic `issue_comment.created` payload — minimum shape the route
+ * extracts (`installation.id`) plus enough body to be a believable webhook.
+ * The route does NOT inspect anything below `installation`; the chat-sdk
+ * adapter does the HMAC check + payload parse downstream.
+ */
+const githubIssueCommentPayload = {
+  action: "created",
+  installation: { id: 12345 },
+  issue: { number: 42 },
+  repository: { full_name: "octo/repo" },
+  comment: { id: 999, body: "@friday-bot hello", user: { login: "alice", id: 1 } },
+};
+
+const githubHeaders = {
+  "Content-Type": "application/json",
+  "X-Hub-Signature-256": "sha256=deadbeef",
+  "X-GitHub-Event": "issue_comment",
+  "X-GitHub-Delivery": "abc-123",
+};
+
+function postGithub(
+  app: ReturnType<typeof createPlatformSignalRoutes>,
+  body: unknown = githubIssueCommentPayload,
+  headers: Record<string, string> = githubHeaders,
+) {
+  return app.request("/github", { method: "POST", headers, body: JSON.stringify(body) });
+}
+
+describe("POST /github", () => {
+  it("routes by installation.id via wiring and forwards the cloned raw request + GitHub headers", async () => {
+    // Pin: the chat-sdk adapter needs the raw body intact for HMAC-SHA256
+    // verification against the stored webhook_secret, plus the
+    // X-Hub-Signature-256 + X-GitHub-Event + X-GitHub-Delivery headers.
+    // A regression that consumes the body before delegating, or strips any
+    // of these headers, would silently break every inbound github event.
+    wiringMocks.resolveCommunicatorByConnection.mockImplementation((connectionId, provider) => {
+      if (provider === "github" && connectionId === "12345") {
+        return Promise.resolve({
+          workspaceId: "ws-target",
+          credentialId: "cred-1",
+          secret: { app_id: 99, installation_id: 12345 },
+        });
+      }
+      return Promise.resolve(null);
+    });
+
+    let capturedRequest: Request | undefined;
+    let capturedBody: string | undefined;
+    const githubHandler = vi
+      .fn<(req: Request) => Promise<Response>>()
+      .mockImplementation(async (req) => {
+        capturedRequest = req;
+        capturedBody = await req.text();
+        return new Response("ok", { status: 200 });
+      });
+
+    const { daemon, getOrCreateChatSdkInstance } = makeDaemon([], () =>
+      Promise.resolve(makeChatSdkInstance("github", githubHandler)),
+    );
+
+    const app = createPlatformSignalRoutes(daemon);
+    const res = await postGithub(app);
+
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("ok");
+    expect(getOrCreateChatSdkInstance).toHaveBeenCalledWith("ws-target");
+    expect(githubHandler).toHaveBeenCalledOnce();
+    expect(capturedBody).toBe(JSON.stringify(githubIssueCommentPayload));
+    expect(capturedRequest?.headers.get("x-hub-signature-256")).toBe("sha256=deadbeef");
+    expect(capturedRequest?.headers.get("x-github-event")).toBe("issue_comment");
+    expect(capturedRequest?.headers.get("x-github-delivery")).toBe("abc-123");
+    expect(capturedRequest?.headers.get("content-type")).toBe("application/json");
+    expect(wiringMocks.resolveCommunicatorByConnection).toHaveBeenCalledWith("12345", "github");
+  });
+
+  it("stringifies numeric installation.id at the boundary so it matches the wiring table's string key", async () => {
+    // GitHub sends installation.id as a number; connection_id columns are
+    // strings across the wiring table. The route must coerce on the way in,
+    // not the way out — pin the coercion so a future "trust the int" refactor
+    // can't silently break wiring lookups.
+    wiringMocks.resolveCommunicatorByConnection.mockResolvedValue({
+      workspaceId: "ws-target",
+      credentialId: "cred-1",
+      secret: {},
+    });
+
+    const handler = vi
+      .fn<(req: Request) => Promise<Response>>()
+      .mockResolvedValue(new Response("ok", { status: 200 }));
+    const { daemon } = makeDaemon([], () =>
+      Promise.resolve(makeChatSdkInstance("github", handler)),
+    );
+
+    const app = createPlatformSignalRoutes(daemon);
+    await postGithub(app, { installation: { id: 9876543210 } });
+
+    expect(wiringMocks.resolveCommunicatorByConnection).toHaveBeenCalledWith(
+      "9876543210",
+      "github",
+    );
+  });
+
+  it("returns 400 on invalid JSON body", async () => {
+    const { daemon } = makeDaemon([]);
+    const app = createPlatformSignalRoutes(daemon);
+    const res = await app.request("/github", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "not json at all",
+    });
+
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.error).toBe("Invalid JSON body");
+    expect(wiringMocks.resolveCommunicatorByConnection).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 when payload is missing installation.id", async () => {
+    // Some GitHub webhook events (marketplace, sponsorship pings) lack
+    // installation.id; the App-scoped events the chat adapter cares about
+    // (issue_comment, pull_request_review_comment) always carry it. A
+    // 400 here surfaces a misconfigured App webhook that's subscribed
+    // to non-app-scoped events without exposing internals.
+    const { daemon } = makeDaemon([]);
+    const app = createPlatformSignalRoutes(daemon);
+    const res = await postGithub(app, { action: "created", repository: { full_name: "octo/r" } });
+
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.error).toBe("Missing installation.id in payload");
+    expect(wiringMocks.resolveCommunicatorByConnection).not.toHaveBeenCalled();
+  });
+
+  it("returns 404 when installation is unwired (GitHub will retry with backoff)", async () => {
+    // No wiring row → the App was installed but never connected to a
+    // workspace, OR Link is briefly unreachable mid-delivery. Either way,
+    // 404 lets GitHub's built-in retry semantics resolve the race; a silent
+    // 200-no-op would mask configuration drift.
+    wiringMocks.resolveCommunicatorByConnection.mockResolvedValue(null);
+
+    const { daemon, getOrCreateChatSdkInstance } = makeDaemon([]);
+    const app = createPlatformSignalRoutes(daemon);
+    const res = await postGithub(app);
+
+    expect(res.status).toBe(404);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.error).toBe("No workspace configured for this installation");
+    expect(getOrCreateChatSdkInstance).not.toHaveBeenCalled();
+  });
+
+  it("returns 404 when wiring lookup throws (Link unreachable)", async () => {
+    // Github has no yml-fallback path (workspace.yml carries `{ kind: github }`
+    // only). A wiring-table error is a hard 404 so GitHub's retries can pick
+    // up the delivery once Link is reachable again.
+    wiringMocks.resolveCommunicatorByConnection.mockRejectedValue(new Error("link unreachable"));
+
+    const { daemon, getOrCreateChatSdkInstance } = makeDaemon([]);
+    const app = createPlatformSignalRoutes(daemon);
+    const res = await postGithub(app);
+
+    expect(res.status).toBe(404);
+    expect(getOrCreateChatSdkInstance).not.toHaveBeenCalled();
+  });
+
+  it("returns 404 when the workspace has no github adapter in Chat SDK", async () => {
+    wiringMocks.resolveCommunicatorByConnection.mockResolvedValue({
+      workspaceId: "ws-target",
+      credentialId: "cred-1",
+      secret: {},
+    });
+
+    const { daemon } = makeDaemon([], () => Promise.resolve(makeChatSdkInstance()));
+    const app = createPlatformSignalRoutes(daemon);
+    const res = await postGithub(app);
+
+    expect(res.status).toBe(404);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.error).toBe("No GitHub adapter configured for this workspace");
+  });
+
+  it("returns 500 when Chat SDK instance creation fails", async () => {
+    wiringMocks.resolveCommunicatorByConnection.mockResolvedValue({
+      workspaceId: "ws-target",
+      credentialId: "cred-1",
+      secret: {},
+    });
+
+    const { daemon } = makeDaemon([], () =>
+      Promise.reject(new Error("credential resolution failed")),
+    );
+    const app = createPlatformSignalRoutes(daemon);
+    const res = await postGithub(app);
+
+    expect(res.status).toBe(500);
+  });
+
+  it("returns 500 when chat.webhooks.github throws", async () => {
+    // Adapter-internal failure (rotated private key → JWT mint fails on the
+    // adapter's outbound reply, bad webhook_secret → signature mismatch
+    // throws). The route's try/catch keeps the daemon alive and emits
+    // github_webhook_handler_failed.
+    wiringMocks.resolveCommunicatorByConnection.mockResolvedValue({
+      workspaceId: "ws-target",
+      credentialId: "cred-1",
+      secret: {},
+    });
+    const rejectingHandler = vi
+      .fn<(req: Request) => Promise<Response>>()
+      .mockRejectedValue(new Error("HMAC validation failed"));
+    const { daemon } = makeDaemon([], () =>
+      Promise.resolve(makeChatSdkInstance("github", rejectingHandler)),
+    );
+
+    const app = createPlatformSignalRoutes(daemon);
+    const res = await postGithub(app);
+
+    expect(res.status).toBe(500);
+    expect(await res.text()).toBe("Internal error");
+    expect(rejectingHandler).toHaveBeenCalledOnce();
+  });
+
+  it("propagates the adapter's 401 response on bad HMAC (signature verification is the adapter's job)", async () => {
+    // Pin the boundary: signature verification lives inside the chat-sdk
+    // adapter, NOT in the route. The route's contract is "find workspace,
+    // forward raw request" — a 401 from the adapter must reach the caller
+    // verbatim (GitHub's webhook UI shows it in Recent Deliveries) so an
+    // operator with a wrong webhook_secret in Link can spot the problem.
+    wiringMocks.resolveCommunicatorByConnection.mockResolvedValue({
+      workspaceId: "ws-target",
+      credentialId: "cred-1",
+      secret: {},
+    });
+    const adapter401 = vi
+      .fn<(req: Request) => Promise<Response>>()
+      .mockResolvedValue(new Response("invalid signature", { status: 401 }));
+    const { daemon } = makeDaemon([], () =>
+      Promise.resolve(makeChatSdkInstance("github", adapter401)),
+    );
+
+    const app = createPlatformSignalRoutes(daemon);
+    const res = await postGithub(app, githubIssueCommentPayload, {
+      ...githubHeaders,
+      "X-Hub-Signature-256": "sha256=tampered",
+    });
+
+    expect(res.status).toBe(401);
+    expect(adapter401).toHaveBeenCalledOnce();
   });
 });
