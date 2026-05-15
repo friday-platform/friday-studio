@@ -18,7 +18,7 @@
 
   let { serverId }: Props = $props();
 
-  const workspaceListQuery = createQuery(() => workspaceQueries.list());
+  const workspaceListQuery = createQuery(() => workspaceQueries.enriched());
   const workspaces = $derived(workspaceListQuery.data ?? []);
 
   const statusQueries = createQueries(() => ({
@@ -35,7 +35,7 @@
     return workspaces.flatMap((ws, i): Row[] => {
       const enabledServer = statusQueries[i]?.data?.enabled.find((s) => s.id === serverId);
       if (!enabledServer) return [];
-      return [{ workspaceId: ws.id, workspaceName: ws.name || ws.id, enabledServer }];
+      return [{ workspaceId: ws.id, workspaceName: ws.displayName, enabledServer }];
     });
   });
 </script>
