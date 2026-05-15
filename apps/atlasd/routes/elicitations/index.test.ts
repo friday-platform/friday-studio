@@ -355,27 +355,27 @@ describe("POST /:id/answer", () => {
       expect(mockElicitationStorage.answer).not.toHaveBeenCalled();
     });
 
-    test.each(["answered", "expired"] as const)(
-      "%s env-write confirm is rejected before committing",
-      async (status) => {
-        const terminal = envWriteElicitation(
-          { scope: "workspace", vars: { API_KEY: "" } },
-          { status },
-        );
-        mockElicitationStorage.get.mockResolvedValueOnce(success(terminal));
+    test.each([
+      "answered",
+      "expired",
+    ] as const)("%s env-write confirm is rejected before committing", async (status) => {
+      const terminal = envWriteElicitation(
+        { scope: "workspace", vars: { API_KEY: "" } },
+        { status },
+      );
+      mockElicitationStorage.get.mockResolvedValueOnce(success(terminal));
 
-        const res = await createTestApp().request("/elc_1/answer", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ value: "confirm", varsOverride: { API_KEY: "stale-secret" } }),
-        });
+      const res = await createTestApp().request("/elc_1/answer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ value: "confirm", varsOverride: { API_KEY: "stale-secret" } }),
+      });
 
-        expect(res.status).toBe(500);
-        expect(mockSetEnvFileVar).not.toHaveBeenCalled();
-        expect(mockCommitGlobalEnvWrite).not.toHaveBeenCalled();
-        expect(mockElicitationStorage.answer).not.toHaveBeenCalled();
-      },
-    );
+      expect(res.status).toBe(500);
+      expect(mockSetEnvFileVar).not.toHaveBeenCalled();
+      expect(mockCommitGlobalEnvWrite).not.toHaveBeenCalled();
+      expect(mockElicitationStorage.answer).not.toHaveBeenCalled();
+    });
 
     test("workspace confirm writes through setEnvFileVar then marks answered", async () => {
       // Target workspace comes from the elicitation envelope, not the args.
@@ -537,10 +537,7 @@ describe("POST /:id/answer", () => {
       const res = await createTestApp().request("/elc_1/answer", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          value: "confirm",
-          varsOverride: { SECRET_TOKEN: "real-secret" },
-        }),
+        body: JSON.stringify({ value: "confirm", varsOverride: { SECRET_TOKEN: "real-secret" } }),
       });
 
       expect(res.status).toBe(200);
