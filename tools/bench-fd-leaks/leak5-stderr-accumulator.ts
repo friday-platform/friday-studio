@@ -64,9 +64,14 @@ async function runBroken(): Promise<{ accLen: number; rss: number }> {
   // Wait for child to exit so we measure post-stream state.
   await new Promise<void>((resolve) => child.once("exit", () => resolve()));
 
-  // Settle: give v8 a moment + force a major GC if we can.
+  // Settle: give v8 a moment + force a major GC if it's exposed (the bench
+  // is occasionally re-run under `deno --v8-flags=--expose-gc` for tighter
+  // RSS measurements). The cast is the standard escape hatch for the
+  // optional --expose-gc helper, which Deno doesn't declare on typeof
+  // globalThis.
   await new Promise((r) => setTimeout(r, 500));
-  if (typeof globalThis.gc === "function") globalThis.gc();
+  const maybeGc = (globalThis as { gc?: () => void }).gc;
+  if (typeof maybeGc === "function") maybeGc();
   await new Promise((r) => setTimeout(r, 200));
 
   const after = rssMiB();
@@ -108,7 +113,8 @@ async function runFixed(): Promise<{ accLen: number; rss: number }> {
   await new Promise<void>((resolve) => child.once("exit", () => resolve()));
 
   await new Promise((r) => setTimeout(r, 500));
-  if (typeof globalThis.gc === "function") globalThis.gc();
+  const maybeGc = (globalThis as { gc?: () => void }).gc;
+  if (typeof maybeGc === "function") maybeGc();
   await new Promise((r) => setTimeout(r, 200));
 
   const after = rssMiB();
