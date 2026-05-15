@@ -56,12 +56,22 @@
   {:else if probeQuery.isError}
     <div class="error-box" role="alert">
       <p>Couldn't load tools: {probeQuery.error?.message ?? "unknown error"}</p>
-      <button type="button" class="retry-btn" onclick={() => probeQuery.refetch()}>Retry</button>
+      <button
+        type="button"
+        class="retry-btn"
+        disabled={probeQuery.isFetching}
+        onclick={() => probeQuery.refetch()}
+      >Retry</button>
     </div>
   {:else if result && !result.ok}
     <div class="error-box" role="alert">
       <p>{result.error}</p>
-      <button type="button" class="retry-btn" onclick={() => probeQuery.refetch()}>
+      <button
+        type="button"
+        class="retry-btn"
+        disabled={probeQuery.isFetching}
+        onclick={() => probeQuery.refetch()}
+      >
         {result.retryable ? "Try again" : "Retry"}
       </button>
     </div>
