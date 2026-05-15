@@ -21,6 +21,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
 import type { Logger } from "@atlas/logger";
+import { discardBody } from "@atlas/utils";
 import { MCPStartupError } from "./errors.ts";
 
 export interface SharedProcessSpec {
@@ -385,10 +386,31 @@ class ProcessRegistry {
     // Capture stderr for error messages only — never pattern-matched. uvicorn
     // fails silently on bind errors so the buffer is unreliable for control
     // flow.
+    //
+    // Three constraints driving the shape below:
+    //   1. We need stderr text for the "spawn exited before ready" error
+    //      thrown in the readiness loop below — only useful BEFORE
+    //      readiness, never after.
+    //   2. We must keep consuming stderr forever, even post-readiness, or
+    //      the kernel pipe buffer (~64 KiB on macOS) fills and the child
+    //      blocks on its next stderr write — a chatty uvicorn child would
+    //      then hang permanently a few seconds after first request.
+    //   3. The accumulator must not grow unbounded. Before this fix, a
+    //      handler that appended every byte stayed attached for the
+    //      daemon's lifetime; on multi-day uptime it ran to hundreds of
+    //      MiB (29 MiB observed in a 5 s synthetic burst).
+    //
+    // Solution: a switchable handler. During readiness it appends; once
+    // ready we swap it for a drain-and-discard sink. The pre-ready bytes
+    // stay around — they're load-bearing for failure diagnosis — but the
+    // accumulator stops growing.
     let stderrAccumulator = "";
-    child.stderr?.on("data", (data: Uint8Array) => {
-      stderrAccumulator += new TextDecoder().decode(data);
-    });
+    let accumulating = true;
+    const drainStderr = (data: Uint8Array) => {
+      if (accumulating) stderrAccumulator += new TextDecoder().decode(data);
+      // else: bytes are consumed (so the pipe doesn't fill) and discarded.
+    };
+    child.stderr?.on("data", drainStderr);
 
     let childExited = false;
     let exitCode: number | null = null;
@@ -418,6 +440,14 @@ class ProcessRegistry {
 
       try {
         const response = await deps.fetch(readyUrl, { method: "GET" });
+        // Drain the probe body immediately on every poll iteration. The
+        // body content is irrelevant — we only care about the status code
+        // — but a slow-to-bind child (workspace-mcp during OAuth bootstrap
+        // emits multi-line 5xx pages) can otherwise leak one socket per
+        // poll across N iterations of the readiness loop. Single drain
+        // here covers both the 5xx-not-ready branch and the success
+        // branch, so neither has to remember.
+        await discardBody(response);
         // Reject 5xx as still-starting. Servers that bind their port
         // before completing init (workspace-mcp during OAuth bootstrap is
         // the canonical example) answer GETs with 5xx until they're
@@ -443,6 +473,10 @@ class ProcessRegistry {
             status: response.status,
             elapsedMs: Date.now() - startTime,
           });
+          // Stop accumulating once we're past the failure-diagnostic window.
+          // The handler stays attached (kernel pipe buffer would otherwise
+          // back-pressure a chatty child) but now drops bytes on the floor.
+          accumulating = false;
           return { child };
         }
       } catch {

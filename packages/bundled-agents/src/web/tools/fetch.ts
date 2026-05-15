@@ -1,4 +1,5 @@
 import type { Logger } from "@atlas/logger";
+import { discardBody } from "@atlas/utils";
 import { tool } from "ai";
 import TurndownService from "turndown";
 import { z } from "zod";
@@ -84,12 +85,14 @@ export function createFetchTool(logger?: Logger) {
           clearTimeout(timeoutId);
 
           if (!response.ok) {
+            await discardBody(response);
             logger?.warn(`[fetch] fail ${response.status}: ${url}`);
             return `Fetch failed: HTTP ${response.status} ${response.statusText}`;
           }
 
           const contentLength = response.headers.get("content-length");
           if (contentLength && parseInt(contentLength, 10) > MAX_RESPONSE_SIZE) {
+            await discardBody(response);
             return "Fetch failed: response exceeds 5MB size limit";
           }
 

@@ -8,6 +8,7 @@
  */
 
 import { createLogger } from "@atlas/logger";
+import { discardBody } from "@atlas/utils";
 import { z } from "zod";
 
 const logger = createLogger({ name: "skills-sh-client" });
@@ -130,6 +131,7 @@ export class SkillsShClient {
     const response = await this.fetchFn(url, { headers: { Accept: "application/json" } });
 
     if (!response.ok) {
+      await discardBody(response);
       throw new Error(`skills.sh search failed: ${String(response.status)} ${response.statusText}`);
     }
 
@@ -164,6 +166,7 @@ export class SkillsShClient {
     const response = await this.fetchFn(url, { headers: { Accept: "application/json" } });
 
     if (!response.ok) {
+      await discardBody(response);
       throw new Error(
         `skills.sh download failed: ${String(response.status)} ${response.statusText}`,
       );

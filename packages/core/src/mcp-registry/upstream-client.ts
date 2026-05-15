@@ -7,6 +7,7 @@
  */
 
 import { createLogger } from "@atlas/logger";
+import { discardBody } from "@atlas/utils";
 import { z } from "zod";
 
 const logger = createLogger({ name: "mcp-registry-upstream-client" });
@@ -215,6 +216,7 @@ export class MCPUpstreamClient {
     const response = await this.fetchFn(url, { headers: { Accept: "application/json" } });
 
     if (!response.ok) {
+      await discardBody(response);
       throw new Error(
         `upstream registry search failed: ${String(response.status)} ${response.statusText}`,
       );
@@ -273,6 +275,7 @@ export class MCPUpstreamClient {
     const response = await this.fetchFn(url, { headers: { Accept: "application/json" } });
 
     if (!response.ok) {
+      await discardBody(response);
       throw new Error(
         `upstream registry fetch failed: ${String(response.status)} ${response.statusText}`,
       );

@@ -10,7 +10,7 @@
 
 import type { Logger } from "@atlas/logger";
 import { getAtlasDaemonUrl } from "@atlas/oapi-client";
-import { stringifyError } from "@atlas/utils";
+import { discardBody, stringifyError } from "@atlas/utils";
 import { z } from "zod";
 import type { ArtifactSummary } from "../artifacts/model.ts";
 import { ArtifactStorage } from "../artifacts/storage.ts";
@@ -63,7 +63,10 @@ export async function composeMemoryBlocks(
   const results = await Promise.allSettled(
     allIds.map(async (workspaceId) => {
       const listRes = await fetch(`${daemonUrl}/api/memory/${encodeURIComponent(workspaceId)}`);
-      if (!listRes.ok) return [];
+      if (!listRes.ok) {
+        await discardBody(listRes);
+        return [];
+      }
 
       const listData = MemoryListSchema.safeParse(await listRes.json());
       if (!listData.success || listData.data.length === 0) return [];
@@ -93,7 +96,10 @@ export async function composeMemoryBlocks(
               store.workspaceId,
             )}/narrative/${encodeURIComponent(store.name)}?limit=20`;
             const res = await fetch(url);
-            if (!res.ok) return null;
+            if (!res.ok) {
+              await discardBody(res);
+              return null;
+            }
             const data = z.array(NarrativeEntrySchema).safeParse(await res.json());
             const entries = data.success ? data.data : [];
             if (entries.length === 0) return null;

@@ -1,4 +1,4 @@
-import { stringifyError } from "@atlas/utils";
+import { discardBody, stringifyError } from "@atlas/utils";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
@@ -50,6 +50,7 @@ export function registerMemoryReadTool(server: McpServer, ctx: ToolContext): voi
       try {
         const res = await fetch(url);
         if (!res.ok) {
+          await discardBody(res);
           return createErrorResponse(`memory read failed: HTTP ${res.status}`);
         }
         const entries = await res.json();

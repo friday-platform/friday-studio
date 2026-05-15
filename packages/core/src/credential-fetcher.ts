@@ -1,6 +1,6 @@
 import process from "node:process";
 import { logger } from "@atlas/logger";
-import { formatDate } from "@atlas/utils";
+import { discardBody, formatDate } from "@atlas/utils";
 import { type RetryOptions, retry } from "@std/async/retry";
 import { decodeJwt, type JWTPayload } from "jose";
 import { z } from "zod";
@@ -120,6 +120,10 @@ export async function fetchCredentials(options: FetchCredentialsOptions): Promis
     });
 
     if (!response.ok) {
+      // Drain the body before any throw branch — otherwise the retry loop
+      // above re-fetches into a hyper pool that's still holding the prior
+      // attempt's socket as borrowed, and we eventually trip EMFILE.
+      await discardBody(response);
       const error = new Error(`${response.status} ${response.statusText}`);
 
       // 4xx errors should not be retried - these are client errors

@@ -1,4 +1,4 @@
-import { stringifyError } from "@atlas/utils";
+import { discardBody, stringifyError } from "@atlas/utils";
 import type { Client } from "@hubspot/api-client";
 import { AssociationSpecAssociationCategoryEnum } from "@hubspot/api-client/lib/codegen/crm/objects/models/AssociationSpec.js";
 import { FilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/objects/models/Filter.js";
@@ -358,6 +358,7 @@ async function hubspotFetch<T>(
   });
 
   if (!response.ok) {
+    await discardBody(response);
     throw new Error(`HubSpot API error: ${response.status} ${response.statusText}`);
   }
 

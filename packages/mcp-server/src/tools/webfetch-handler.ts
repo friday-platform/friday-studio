@@ -5,6 +5,7 @@
  * lives in the sandbox.
  */
 
+import { discardBody } from "@atlas/utils";
 import { HTMLRewriter } from "@worker-tools/html-rewriter";
 import TurndownService from "turndown";
 import { z } from "zod";
@@ -77,11 +78,13 @@ export async function executeWebfetch(
     clearTimeout(timeoutId);
 
     if (!response.ok) {
+      await discardBody(response);
       throw new Error(`Request failed with status code: ${response.status}`);
     }
 
     const contentLength = response.headers.get("content-length");
     if (contentLength && parseInt(contentLength, 10) > MAX_RESPONSE_SIZE) {
+      await discardBody(response);
       throw new Error("Response too large (exceeds 5MB limit)");
     }
 

@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+export { discardBody } from "./src/fetch-drain.ts";
 export { ReleaseChannel } from "./src/release-channel.ts";
 export type { SSEMessage } from "./src/sse.ts";
 export { parseSSEEvents, parseSSEMessage, parseSSEStream } from "./src/sse.ts";
