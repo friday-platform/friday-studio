@@ -1,3 +1,4 @@
+import { writeSync } from "node:fs";
 import process from "node:process";
 import type { MCPServerConfig } from "@atlas/config";
 import {
@@ -820,6 +821,267 @@ describe("createMCPTools", () => {
 
     await resultA.dispose();
     await resultB.dispose();
+  });
+
+  describe("uvx --from recovery", () => {
+    // fakeLogger.warn accumulates across tests; clear it before each so
+    // not.toHaveBeenCalledWith(...) assertions only see this test's calls.
+    beforeEach(() => {
+      (fakeLogger.warn as unknown as ReturnType<typeof vi.fn>).mockClear();
+    });
+
+    // attemptStdio writes subprocess stderr to a temp file (the fd is passed
+    // to the transport). To simulate that under mocks, MockStdioTransport
+    // writes our test stderr into that fd synchronously; the real
+    // attemptStdio reads it back via fstat/read.
+    function writeStderrToFd(opts: { stderr: number }, content: string) {
+      writeSync(opts.stderr, content);
+    }
+
+    it("retries uvx with --from when uv emits the entrypoint-mismatch hint", async () => {
+      const uvHint = [
+        "An executable named `bitbucket-mcp-py` is not provided by package `bitbucket-mcp-py`.",
+        "The following executables are available:",
+        "- bitbucket-mcp",
+        "",
+        "Use `uvx --from bitbucket-mcp-py bitbucket-mcp` instead.",
+      ].join("\n");
+
+      let attempt = 0;
+      MockStdioTransport.mockImplementation(function (this: unknown, opts: { stderr: number }) {
+        attempt++;
+        if (attempt === 1) writeStderrToFd(opts, uvHint);
+      });
+
+      mockTools
+        .mockImplementationOnce(() => Promise.reject(new Error("Connection closed")))
+        .mockImplementationOnce(() =>
+          Promise.resolve({ "bb-tool": { description: "ok", parameters: {} } }),
+        );
+      mockClose.mockResolvedValue(undefined);
+      mockCreateMCPClient.mockResolvedValue({ tools: mockTools, close: mockClose });
+
+      const configs: Record<string, MCPServerConfig> = {
+        bitbucket: {
+          transport: { type: "stdio", command: "uvx", args: ["bitbucket-mcp-py==1.2.3"] },
+        },
+      };
+
+      const result = await createMCPTools(configs, fakeLogger);
+
+      expect(result.tools).toHaveProperty("bb-tool");
+      expect(MockStdioTransport).toHaveBeenCalledTimes(2);
+      expect(MockStdioTransport).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({ args: ["--from", "bitbucket-mcp-py==1.2.3", "bitbucket-mcp"] }),
+      );
+      expect(fakeLogger.warn).toHaveBeenCalledWith(
+        expect.stringContaining("retrying"),
+        expect.objectContaining({
+          operation: "mcp_connect_recover",
+          serverId: "bitbucket",
+          recoveryArgs: ["--from", "bitbucket-mcp-py==1.2.3", "bitbucket-mcp"],
+        }),
+      );
+    });
+
+    it("does not retry when stderr lacks the uv hint", async () => {
+      MockStdioTransport.mockImplementation(function (this: unknown, opts: { stderr: number }) {
+        writeStderrToFd(opts, "ENOENT: command not found\n");
+      });
+      mockTools.mockImplementation(() => Promise.reject(new Error("Connection closed")));
+      mockClose.mockResolvedValue(undefined);
+      mockCreateMCPClient.mockResolvedValue({ tools: mockTools, close: mockClose });
+
+      const configs: Record<string, MCPServerConfig> = {
+        bogus: { transport: { type: "stdio", command: "uvx", args: ["nonexistent-pkg"] } },
+      };
+
+      await createMCPTools(configs, fakeLogger);
+
+      expect(MockStdioTransport).toHaveBeenCalledTimes(1);
+      expect(fakeLogger.warn).not.toHaveBeenCalledWith(
+        expect.stringContaining("retrying"),
+        expect.anything(),
+      );
+    });
+
+    it("strips ANSI color codes from the captured hint before parsing", async () => {
+      // uv wraps the package name and entrypoint in CSI color codes when it
+      // detects a terminal-ish stderr. The recovery parser must strip them or
+      // the captured argv will contain raw ESC bytes.
+      const ESC = "";
+      const coloredHint = [
+        `An executable named \`${ESC}[36mfoo-pkg${ESC}[39m\` is not provided by package \`${ESC}[36mfoo-pkg${ESC}[39m\`.`,
+        "The following executables are available:",
+        `- ${ESC}[36mfoo-bin${ESC}[39m`,
+        "",
+        `Use \`uvx --from ${ESC}[36mfoo-pkg${ESC}[39m ${ESC}[36mfoo-bin${ESC}[39m\` instead.`,
+      ].join("\n");
+
+      let attempt = 0;
+      MockStdioTransport.mockImplementation(function (this: unknown, opts: { stderr: number }) {
+        attempt++;
+        if (attempt === 1) writeStderrToFd(opts, coloredHint);
+      });
+
+      mockTools
+        .mockImplementationOnce(() => Promise.reject(new Error("Connection closed")))
+        .mockImplementationOnce(() =>
+          Promise.resolve({ x: { description: "ok", parameters: {} } }),
+        );
+      mockClose.mockResolvedValue(undefined);
+      mockCreateMCPClient.mockResolvedValue({ tools: mockTools, close: mockClose });
+
+      const configs: Record<string, MCPServerConfig> = {
+        colored: { transport: { type: "stdio", command: "uvx", args: ["foo-pkg==2.0"] } },
+      };
+
+      await createMCPTools(configs, fakeLogger);
+
+      expect(MockStdioTransport).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({ args: ["--from", "foo-pkg==2.0", "foo-bin"] }),
+      );
+    });
+
+    it("does not retry when the command is not uvx, even if stderr contains the hint", async () => {
+      const hint = "Use `uvx --from foo-pkg foo-bin` instead.";
+      MockStdioTransport.mockImplementation(function (this: unknown, opts: { stderr: number }) {
+        writeStderrToFd(opts, hint);
+      });
+      mockTools.mockImplementation(() => Promise.reject(new Error("Connection closed")));
+      mockClose.mockResolvedValue(undefined);
+      mockCreateMCPClient.mockResolvedValue({ tools: mockTools, close: mockClose });
+
+      const configs: Record<string, MCPServerConfig> = {
+        wrapper: { transport: { type: "stdio", command: "my-wrapper", args: ["foo-pkg"] } },
+      };
+
+      await createMCPTools(configs, fakeLogger);
+
+      expect(MockStdioTransport).toHaveBeenCalledTimes(1);
+      expect(fakeLogger.warn).not.toHaveBeenCalledWith(
+        expect.stringContaining("retrying"),
+        expect.anything(),
+      );
+    });
+
+    it("does not retry when the original args already contain --from", async () => {
+      const hint = "Use `uvx --from foo-pkg foo-bin` instead.";
+      MockStdioTransport.mockImplementation(function (this: unknown, opts: { stderr: number }) {
+        writeStderrToFd(opts, hint);
+      });
+      mockTools.mockImplementation(() => Promise.reject(new Error("Connection closed")));
+      mockClose.mockResolvedValue(undefined);
+      mockCreateMCPClient.mockResolvedValue({ tools: mockTools, close: mockClose });
+
+      const configs: Record<string, MCPServerConfig> = {
+        already: {
+          transport: { type: "stdio", command: "uvx", args: ["--from", "foo-pkg", "wrong-entry"] },
+        },
+      };
+
+      await createMCPTools(configs, fakeLogger);
+
+      expect(MockStdioTransport).toHaveBeenCalledTimes(1);
+      expect(fakeLogger.warn).not.toHaveBeenCalledWith(
+        expect.stringContaining("retrying"),
+        expect.anything(),
+      );
+    });
+
+    it("falls back to uv's suggested package when no positional carries the name", async () => {
+      const hint = "Use `uvx --from solo-pkg solo-bin` instead.";
+      let attempt = 0;
+      MockStdioTransport.mockImplementation(function (this: unknown, opts: { stderr: number }) {
+        attempt++;
+        if (attempt === 1) writeStderrToFd(opts, hint);
+      });
+      mockTools
+        .mockImplementationOnce(() => Promise.reject(new Error("Connection closed")))
+        .mockImplementationOnce(() =>
+          Promise.resolve({ t: { description: "ok", parameters: {} } }),
+        );
+      mockClose.mockResolvedValue(undefined);
+      mockCreateMCPClient.mockResolvedValue({ tools: mockTools, close: mockClose });
+
+      const configs: Record<string, MCPServerConfig> = {
+        // args contain no token that includes "solo-pkg" — flag-only case.
+        // The recovery falls back to uv's suggested package, preserving the
+        // original `--quiet` flag.
+        flagsonly: { transport: { type: "stdio", command: "uvx", args: ["--quiet"] } },
+      };
+
+      await createMCPTools(configs, fakeLogger);
+
+      expect(MockStdioTransport).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({ args: ["--quiet", "--from", "solo-pkg", "solo-bin"] }),
+      );
+    });
+
+    it("recovers from --python flag-with-value invocations", async () => {
+      // `uvx --python 3.11 mypkg` — the previous "first non-flag arg" heuristic
+      // would have picked "3.11"; substring match correctly picks "mypkg".
+      const hint = "Use `uvx --from mypkg mybin` instead.";
+      let attempt = 0;
+      MockStdioTransport.mockImplementation(function (this: unknown, opts: { stderr: number }) {
+        attempt++;
+        if (attempt === 1) writeStderrToFd(opts, hint);
+      });
+      mockTools
+        .mockImplementationOnce(() => Promise.reject(new Error("Connection closed")))
+        .mockImplementationOnce(() =>
+          Promise.resolve({ t: { description: "ok", parameters: {} } }),
+        );
+      mockClose.mockResolvedValue(undefined);
+      mockCreateMCPClient.mockResolvedValue({ tools: mockTools, close: mockClose });
+
+      const configs: Record<string, MCPServerConfig> = {
+        py: {
+          transport: { type: "stdio", command: "uvx", args: ["--python", "3.11", "mypkg==1.0"] },
+        },
+      };
+
+      await createMCPTools(configs, fakeLogger);
+
+      expect(MockStdioTransport).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({ args: ["--python", "3.11", "--from", "mypkg==1.0", "mybin"] }),
+      );
+    });
+
+    it("preserves both stderr outputs when the retry also fails", async () => {
+      const firstHint = "Use `uvx --from foo-pkg foo-bin` instead.";
+      const retryError = "RETRY_FAILURE_TOKEN: something else went wrong";
+      let attempt = 0;
+      MockStdioTransport.mockImplementation(function (this: unknown, opts: { stderr: number }) {
+        attempt++;
+        writeStderrToFd(opts, attempt === 1 ? firstHint : retryError);
+      });
+      mockTools.mockImplementation(() => Promise.reject(new Error("Connection closed")));
+      mockClose.mockResolvedValue(undefined);
+      mockCreateMCPClient.mockResolvedValue({ tools: mockTools, close: mockClose });
+
+      const configs: Record<string, MCPServerConfig> = {
+        both: { transport: { type: "stdio", command: "uvx", args: ["foo-pkg"] } },
+      };
+
+      await createMCPTools(configs, fakeLogger);
+
+      // The surfaced error should carry both stderrs — the original uv hint
+      // (so the operator knows why we retried) and the retry's distinct
+      // failure (so they know it didn't fix things).
+      expect(fakeLogger.warn).toHaveBeenCalledWith(
+        "MCP server skipped due to connection error",
+        expect.objectContaining({ error: expect.stringContaining(firstHint) }),
+      );
+      expect(fakeLogger.warn).toHaveBeenCalledWith(
+        "MCP server skipped due to connection error",
+        expect.objectContaining({ error: expect.stringContaining("RETRY_FAILURE_TOKEN") }),
+      );
+    });
   });
 
   describe("timeout behaviour", () => {
