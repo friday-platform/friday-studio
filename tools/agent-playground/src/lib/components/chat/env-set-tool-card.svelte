@@ -3,10 +3,7 @@
   import { Button, Icons, Tooltip } from "@atlas/ui";
   import { createQuery } from "@tanstack/svelte-query";
   import { page } from "$app/state";
-  import {
-    elicitationQueries,
-    useAnswerElicitation,
-  } from "$lib/queries/elicitation-queries.ts";
+  import { elicitationQueries, useAnswerElicitation } from "$lib/queries/elicitation-queries.ts";
   import { buildVarsOverride } from "./env-set-tool-card.ts";
   import { readElicitationIdFromToolOutput } from "./human-input-matcher.ts";
   import { isInProgress } from "./tool-call-utils.ts";
@@ -36,9 +33,7 @@
   /** The proposed write: { scope, vars }. Authoritative source is the matched
    *  elicitation's pendingTool.args; falls back to the tool call input while
    *  the elicitation is still syncing. */
-  function readProposal(
-    source: unknown,
-  ): { scope: string; vars: Record<string, string> } | null {
+  function readProposal(source: unknown): { scope: string; vars: Record<string, string> } | null {
     if (!isRecord(source)) return null;
     const scope = typeof source.scope === "string" ? source.scope : "workspace";
     if (!isRecord(source.vars)) return null;
@@ -71,9 +66,7 @@
     void listQuery.refetch();
   });
 
-  const proposal = $derived(
-    readProposal(matched?.pendingTool?.args) ?? readProposal(call.input),
-  );
+  const proposal = $derived(readProposal(matched?.pendingTool?.args) ?? readProposal(call.input));
   const scope = $derived(proposal?.scope ?? "workspace");
   const entries = $derived(Object.entries(proposal?.vars ?? {}));
   const hasSecretLooking = $derived(entries.some(([k]) => isSecretKey(k)));
@@ -86,17 +79,21 @@
   // Reveal state for secret-looking values, keyed by env var name.
   let revealed = $state<Record<string, boolean>>({});
 
-  // User-typed values for secret-looking keys. The agent should propose `""`
-  // for secret keys (see env_set tool description); the user types the real
-  // value here and we send it as `varsOverride` so it never enters chat. If
-  // the agent did propose a value, we pre-fill it once so the user can edit.
-  // Note: component-state only. If the commit fails server-side and the user
-  // refreshes, they retype the secret — failure rate is low enough that we
-  // accept the tradeoff over persisting plaintext to sessionStorage.
+  // User-typed values for every key in the proposal. The agent should
+  // propose `""` for secret-bearing keys (see env_set tool description) so
+  // the user types the real value here; non-secret keys come pre-filled
+  // with the agent's literal value but stay editable so the user can fix
+  // a typo or fill in a value the agent left blank without round-tripping
+  // through chat. Either way, `varsOverride` carries the final committed
+  // value so what the user sees in the card is what hits `.env`.
+  // Note: component-state only. If the commit fails server-side and the
+  // user refreshes, they retype any secret they entered — failure rate is
+  // low enough that we accept the tradeoff over persisting plaintext to
+  // sessionStorage.
   let userValues = $state<Record<string, string>>({});
   $effect(() => {
     for (const [key, value] of entries) {
-      if (isSecretKey(key) && !(key in userValues)) {
+      if (!(key in userValues)) {
         userValues = { ...userValues, [key]: value };
       }
     }
@@ -113,10 +110,11 @@
   function answer(value: "confirm" | "deny"): void {
     if (!matched || !isPending || inFlight) return;
     if (value === "confirm" && missingSecretValue) return;
-    // For each secret-looking key, send the user-typed value as override —
-    // this is what keeps real secrets out of chat history. Non-secret keys
-    // commit with their proposed value (no override needed).
-    const varsOverride = buildVarsOverride(entries, userValues, isSecretKey);
+    // `varsOverride` carries the user's final value for every proposed
+    // key — secret-bearing keys get the real value the user typed (kept
+    // out of chat history because the agent proposed `""`), and non-
+    // secret keys get whatever the user left or edited in the card.
+    const varsOverride = buildVarsOverride(entries, userValues);
     const hasOverride = value === "confirm" && Object.keys(varsOverride).length > 0;
     answerMutation.mutate(
       hasOverride ? { id: matched.id, value, varsOverride } : { id: matched.id, value },
@@ -186,19 +184,19 @@
         {@const secret = isSecretKey(key)}
         <div class="var-row">
           <code class="var-key">{key}</code>
+          <input
+            class="var-value"
+            type={secret && !revealed[key] ? "password" : "text"}
+            value={userValues[key] ?? value}
+            placeholder="Enter value"
+            autocomplete="off"
+            spellcheck="false"
+            disabled={!isPending || inFlight}
+            oninput={(e) => {
+              userValues = { ...userValues, [key]: e.currentTarget.value };
+            }}
+          />
           {#if secret}
-            <input
-              class="var-value"
-              type={revealed[key] ? "text" : "password"}
-              value={userValues[key] ?? value}
-              placeholder="Enter value"
-              autocomplete="off"
-              spellcheck="false"
-              disabled={!isPending || inFlight}
-              oninput={(e) => {
-                userValues = { ...userValues, [key]: e.currentTarget.value };
-              }}
-            />
             <button
               type="button"
               class="reveal"
@@ -209,8 +207,6 @@
             >
               {#if revealed[key]}<Icons.Eye />{:else}<Icons.EyeClosed />{/if}
             </button>
-          {:else}
-            <code class="var-value plain">{value}</code>
           {/if}
         </div>
       {/each}
@@ -218,14 +214,18 @@
 
     {#if hasSecretLooking}
       <p class="hint secret-hint">
-        Some keys look credential-bearing. The workspace <code>.env</code> is for
-        non-secret values.
+        Some keys look credential-bearing. The workspace <code>.env</code>
+         is for non-secret values.
       </p>
     {/if}
 
     {#if isPending}
       <div class="actions">
-        <Button variant="destructive" onclick={() => answer("deny")} disabled={!matched || inFlight}>
+        <Button
+          variant="destructive"
+          onclick={() => answer("deny")}
+          disabled={!matched || inFlight}
+        >
           Deny
         </Button>
         <Tooltip
@@ -408,12 +408,6 @@
 
   .var-value::placeholder {
     color: color-mix(in oklch, var(--color-text), transparent 50%);
-  }
-
-  .var-value.plain {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 
   .reveal {

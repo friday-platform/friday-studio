@@ -521,10 +521,9 @@ describe("POST /:id/answer", () => {
       expect(mockElicitationStorage.answer).not.toHaveBeenCalled();
     });
 
-    test("mixed override: secret-looking key takes the override, non-secret keeps proposed", async () => {
-      // SECRET_TOKEN matches `isSecretKey`, LOG_DIR does not. Only the
-      // secret-looking key picks up the user-typed value; the non-secret
-      // key keeps its proposed value (and the times count bounds it).
+    test("mixed override: both secret and non-secret keys take the user-typed value", async () => {
+      // The card edits every value, so SECRET_TOKEN gets its real value
+      // and LOG_DIR can be corrected by the user before confirm.
       const pending = envWriteElicitation({
         scope: "workspace",
         vars: { SECRET_TOKEN: "", LOG_DIR: "/var/log" },
@@ -537,7 +536,10 @@ describe("POST /:id/answer", () => {
       const res = await createTestApp().request("/elc_1/answer", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ value: "confirm", varsOverride: { SECRET_TOKEN: "real-secret" } }),
+        body: JSON.stringify({
+          value: "confirm",
+          varsOverride: { SECRET_TOKEN: "real-secret", LOG_DIR: "/srv/log" },
+        }),
       });
 
       expect(res.status).toBe(200);
@@ -546,15 +548,15 @@ describe("POST /:id/answer", () => {
         "SECRET_TOKEN",
         "real-secret",
       );
-      expect(mockSetEnvFileVar).toHaveBeenCalledWith("/tmp/ws_1/.env", "LOG_DIR", "/var/log");
+      expect(mockSetEnvFileVar).toHaveBeenCalledWith("/tmp/ws_1/.env", "LOG_DIR", "/srv/log");
       expect(mockSetEnvFileVar).toHaveBeenCalledTimes(2);
     });
 
-    test("varsOverride for a non-secret-looking key is ignored", async () => {
-      // Even when LOG_DIR is in the proposal, the server-side gate refuses
-      // to apply a non-secret override — the card never sends one, and we
-      // don't want a buggy/malicious client to silently rewrite proposed
-      // non-secret values via this channel.
+    test("varsOverride applies to a non-secret-looking key when its key is in the proposal", async () => {
+      // The card edits every proposed value, so the user can correct a typo
+      // or fill in a value the agent left blank without round-tripping
+      // through chat. Server gate is `Object.hasOwn` on the proposal — the
+      // override can change a value but never inject a new key.
       const pending = envWriteElicitation({ scope: "workspace", vars: { LOG_DIR: "/var/log" } });
       mockElicitationStorage.get.mockResolvedValueOnce(success(pending));
       mockElicitationStorage.answer.mockResolvedValueOnce(
@@ -568,7 +570,7 @@ describe("POST /:id/answer", () => {
       });
 
       expect(res.status).toBe(200);
-      expect(mockSetEnvFileVar).toHaveBeenCalledWith("/tmp/ws_1/.env", "LOG_DIR", "/var/log");
+      expect(mockSetEnvFileVar).toHaveBeenCalledWith("/tmp/ws_1/.env", "LOG_DIR", "/etc/log");
       expect(mockSetEnvFileVar).toHaveBeenCalledTimes(1);
     });
 

@@ -23,7 +23,6 @@ import {
   ElicitationStorage,
   ToolAccessGrants,
 } from "@atlas/core";
-import { isSecretKey } from "@atlas/core/mcp-registry/env-secret-mask";
 import { createLogger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
 import { setEnvFileVar } from "@atlas/workspace";
@@ -54,13 +53,15 @@ const EnvWriteArgsSchema = z.object({
  * Apply a confirmed `env-write` elicitation. A chat turn can't block on the
  * user, so `env_set` only proposes — the actual write lands here.
  *
- * `varsOverride` carries user-typed values from the confirmation card (e.g.
- * the real value of a secret-looking key the agent proposed as `""`). It
+ * `varsOverride` carries user-typed values from the confirmation card —
+ * the real value of a secret-bearing key the agent proposed as `""`, plus
+ * any non-secret value the user fixed/filled in via the card's input. It
  * only overrides keys already present in the proposal — the override can't
- * smuggle in a new key — and only for secret-looking keys (matches
- * `isSecretKey`) — the card never sends non-secret overrides. Each value
- * is validated by `AnswerBodySchema` before this is called, so we don't
- * re-validate here.
+ * smuggle in a new key. Each value is validated by `AnswerBodySchema`
+ * before this is called, so we don't re-validate here. The card UI shows
+ * the value being committed (it's bound to the input), so user-driven
+ * non-secret overrides aren't a confused-deputy risk: the proposal in
+ * chat is the agent's ask; the override is the user's edit.
  *
  * Called *before* the elicitation is marked answered: the write must succeed
  * for "answered" to be honest. A failure returns `{ ok: false }` so the
@@ -86,19 +87,10 @@ async function commitEnvWriteElicitation(
     for (const [key, value] of Object.entries(varsOverride)) {
       // Override can only set values for keys the agent already proposed —
       // never inject a new key. `Object.hasOwn` (not `key in vars`) skips
-      // inherited `Object.prototype` keys like `toString`. Additionally
-      // gated to secret-looking keys so the server contract matches the
-      // card (which only sends overrides for `isSecretKey` entries).
-      // Unknown / non-secret override keys are ignored (logged, no value).
+      // inherited `Object.prototype` keys like `toString`. Unknown override
+      // keys are ignored (logged, no value).
       if (!Object.hasOwn(vars, key)) {
         logger.warn("env-write override referenced unknown key — ignored", {
-          id: elicitation.id,
-          key,
-        });
-        continue;
-      }
-      if (!isSecretKey(key)) {
-        logger.warn("env-write override referenced non-secret key — ignored", {
           id: elicitation.id,
           key,
         });
