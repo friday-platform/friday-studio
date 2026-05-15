@@ -257,7 +257,9 @@ const ManualConfigSchema = z.object({
   credentials: z
     .array(
       z.object({
-        name: z.string().min(1),
+        name: z
+          .string()
+          .regex(/^[A-Za-z_][A-Za-z0-9_]*$/, "env var names must be POSIX identifiers"),
         description: z.string().optional(),
         isRequired: z.boolean(),
       }),
@@ -266,7 +268,9 @@ const ManualConfigSchema = z.object({
   settings: z
     .array(
       z.object({
-        name: z.string().min(1),
+        name: z
+          .string()
+          .regex(/^[A-Za-z_][A-Za-z0-9_]*$/, "env var names must be POSIX identifiers"),
         description: z.string().optional(),
         default: z.string().optional(),
       }),
