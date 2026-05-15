@@ -8,11 +8,8 @@ import { deriveDownloadFilename } from "@atlas/core/artifacts/file-upload";
  * directories or non-portable names.
  *
  * MUST stay byte-identical to the rule the export orchestrator uses when
- * placing artifact bytes in the zip (see Task #8). Both call sites import
- * this helper to enforce that parity by construction. There is a duplicate
- * of this rule in `apps/atlasd/routes/workspaces/chat.ts` (slugifyZipBasename)
- * that gets deleted along with the daemon's export route in Task #9 —
- * keeping it isolated there until then avoids churn on a soon-to-die file.
+ * placing artifact bytes in the zip. Both call sites import this helper
+ * to enforce that parity by construction.
  */
 export function slugifyZipBasename(name: string): string {
   const cleaned = name.replace(/[^a-zA-Z0-9._-]/g, "_");
