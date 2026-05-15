@@ -222,9 +222,9 @@ export function createListJobsTool(defaultWorkspaceId: string, logger: Logger): 
     list_jobs: tool({
       description:
         "List jobs configured on the current chat's workspace. Returns id + name + description " +
-        "per job. Each job that existed when this chat session started is also bound as a " +
-        "callable tool with the same name. A job you create mid-session (via upsert_job) is " +
-        "NOT bound until the next session — invoke it via `trigger_signal` with its trigger " +
+        "per job. Each job that existed when this chat turn started is also bound as a " +
+        "callable tool with the same name. A job you create mid-turn (via upsert_job) is " +
+        "NOT bound until the next chat turn — invoke it via `trigger_signal` with its trigger " +
         "signal id instead. This tool gives a flat overview of which jobs exist and what they " +
         "do, separate from invoking them. Use describe_job(name) to pull the full FSM definition.",
       inputSchema: z.object({ scope: WorkspaceScope }),
