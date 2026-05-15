@@ -8,7 +8,7 @@ providers:
     config:
       tools:
         - name: complete
-          description: "Call this to complete the task and store results. You MUST call this when finished. Required fields: marker (string)."
+          description: "Call this to complete the task and store results. You MUST call this when finished. The `result` field is REQUIRED and must contain the full formatted output as a non-empty string."
           input_schema:
             type: object
             properties:
@@ -24,7 +24,7 @@ providers:
         - type: function
           function:
             name: complete
-            description: "Call this to complete the task and store results. You MUST call this when finished. Required fields: marker (string)."
+            description: "Call this to complete the task and store results. You MUST call this when finished. The `result` field is REQUIRED and must contain the full formatted output as a non-empty string."
             parameters:
               type: object
               properties:
@@ -41,7 +41,24 @@ providers:
         - type: function
           function:
             name: complete
-            description: "Call this to complete the task and store results. You MUST call this when finished. Required fields: marker (string)."
+            description: "Call this to complete the task and store results. You MUST call this when finished. The `result` field is REQUIRED and must contain the full formatted output as a non-empty string."
+            parameters:
+              type: object
+              properties:
+                marker: { type: string }
+              required: [marker]
+              additionalProperties: false
+            strict: true
+      tool_choice: required
+
+  - id: openrouter:nvidia/nemotron-3-super-120b-a12b:free
+    label: or-nemotron-super-free
+    config:
+      tools:
+        - type: function
+          function:
+            name: complete
+            description: "Call this to complete the task and store results. You MUST call this when finished. The `result` field is REQUIRED and must contain the full formatted output as a non-empty string."
             parameters:
               type: object
               properties:

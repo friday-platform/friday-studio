@@ -8,7 +8,7 @@ providers:
     config:
       tools:
         - name: complete
-          description: "Call this to complete the task and store results. You MUST call this when finished. Required fields: marker (string), count (number), firstId (string), sawBodySentinel (boolean)."
+          description: "Call this to complete the task and store results. You MUST call this when finished. The `result` field is REQUIRED and must contain the full formatted output as a non-empty string."
           input_schema: &schema
             type: object
             properties:
@@ -27,7 +27,7 @@ providers:
         - type: function
           function:
             name: complete
-            description: "Call this to complete the task and store results. You MUST call this when finished. Required fields: marker (string), count (number), firstId (string), sawBodySentinel (boolean)."
+            description: "Call this to complete the task and store results. You MUST call this when finished. The `result` field is REQUIRED and must contain the full formatted output as a non-empty string."
             parameters: *schema
             strict: true
       tool_choice: required
@@ -39,7 +39,19 @@ providers:
         - type: function
           function:
             name: complete
-            description: "Call this to complete the task and store results. You MUST call this when finished. Required fields: marker (string), count (number), firstId (string), sawBodySentinel (boolean)."
+            description: "Call this to complete the task and store results. You MUST call this when finished. The `result` field is REQUIRED and must contain the full formatted output as a non-empty string."
+            parameters: *schema
+            strict: true
+      tool_choice: required
+
+  - id: openrouter:nvidia/nemotron-3-super-120b-a12b:free
+    label: or-nemotron-super-free
+    config:
+      tools:
+        - type: function
+          function:
+            name: complete
+            description: "Call this to complete the task and store results. You MUST call this when finished. The `result` field is REQUIRED and must contain the full formatted output as a non-empty string."
             parameters: *schema
             strict: true
       tool_choice: required
@@ -50,7 +62,7 @@ prompts:
 tests:
   - description: AgentHydrationResult — 3 messages, all bodies contain sentinel
     vars:
-      user_message: "An EmailBatch has 3 messages with ids fake-001/fake-002/fake-003. Every message body contains the sentinel string `FIRST_PRINCIPLES_EMAIL_BODY`. Emit an AgentHydrationResult: marker=`LLM_AGENT_INPUTFROM_HYDRATED`, count=3, firstId=`fake-001`, sawBodySentinel=true."
+      user_message: "An EmailBatch has 3 messages with ids fake-001/fake-002/fake-003. Every message body contains the sentinel string `FIRST_PRINCIPLES_EMAIL_BODY`. Emit an AgentHydrationResult with marker=`LLM_AGENT_INPUTFROM_HYDRATED`; populate count, firstId, and sawBodySentinel from the facts above (sawBodySentinel is a boolean — true iff every body contains the sentinel)."
     assert:
       - type: javascript
         value: |

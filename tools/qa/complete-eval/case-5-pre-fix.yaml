@@ -38,13 +38,23 @@ providers:
             description: "Call this to complete the task and store results. You MUST call this when finished. The `result` field is REQUIRED and must contain the full formatted output as a non-empty string."
             parameters: *schema
 
+  - id: openrouter:nvidia/nemotron-3-super-120b-a12b:free
+    label: or-nemotron-super-free
+    config:
+      tools:
+        - type: function
+          function:
+            name: complete
+            description: "Call this to complete the task and store results. You MUST call this when finished. The `result` field is REQUIRED and must contain the full formatted output as a non-empty string."
+            parameters: *schema
+
 prompts:
   - "You are a deterministic outputs writer. Emit the final result by calling the `complete` tool. {{user_message}}"
 
 tests:
   - description: AgentHydrationResult — boolean coercion check (pre-fix schema)
     vars:
-      user_message: "An EmailBatch has 3 messages with ids fake-001/fake-002/fake-003. Every message body contains the sentinel string `FIRST_PRINCIPLES_EMAIL_BODY`. Emit an AgentHydrationResult: marker=`LLM_AGENT_INPUTFROM_HYDRATED`, count=3, firstId=`fake-001`, sawBodySentinel=true."
+      user_message: "An EmailBatch has 3 messages with ids fake-001/fake-002/fake-003. Every message body contains the sentinel string `FIRST_PRINCIPLES_EMAIL_BODY`. Emit an AgentHydrationResult with marker=`LLM_AGENT_INPUTFROM_HYDRATED`; populate count, firstId, and sawBodySentinel from the facts above (sawBodySentinel is a boolean — true iff every body contains the sentinel)."
     assert:
       - type: javascript
         value: |

@@ -49,6 +49,17 @@ providers:
             parameters: *schema
             # no strict: true — pre-fix state
 
+  - id: openrouter:nvidia/nemotron-3-super-120b-a12b:free
+    label: or-nemotron-super-free
+    config:
+      tools:
+        - type: function
+          function:
+            name: complete
+            description: "Call this to complete the task and store results. You MUST call this when finished. The `result` field is REQUIRED and must contain the full formatted output as a non-empty string."
+            parameters: *schema
+            # no strict: true — pre-fix state
+
 prompts:
   - "You are a deterministic outputs writer. Emit the final result by calling the `complete` tool. {{user_message}}"
 
