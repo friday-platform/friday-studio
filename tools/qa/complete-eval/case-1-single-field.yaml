@@ -1,0 +1,90 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+
+description: complete() smoke — 1 required string field
+
+providers:
+  - id: anthropic:messages:claude-sonnet-4-6
+    label: anthropic-sonnet
+    config:
+      tools:
+        - name: complete
+          description: "Call this to complete the task and store results. You MUST call this when finished. Required fields: marker (string)."
+          input_schema:
+            type: object
+            properties:
+              marker: { type: string }
+            required: [marker]
+            additionalProperties: false
+      tool_choice: { type: tool, name: complete }
+
+  - id: groq:meta-llama/llama-4-scout-17b-16e-instruct
+    label: groq-scout
+    config:
+      tools:
+        - type: function
+          function:
+            name: complete
+            description: "Call this to complete the task and store results. You MUST call this when finished. Required fields: marker (string)."
+            parameters:
+              type: object
+              properties:
+                marker: { type: string }
+              required: [marker]
+              additionalProperties: false
+            strict: true
+      tool_choice: required
+
+  - id: openrouter:openai/gpt-oss-120b
+    label: or-gpt-oss-120b-free
+    config:
+      tools:
+        - type: function
+          function:
+            name: complete
+            description: "Call this to complete the task and store results. You MUST call this when finished. Required fields: marker (string)."
+            parameters:
+              type: object
+              properties:
+                marker: { type: string }
+              required: [marker]
+              additionalProperties: false
+            strict: true
+      tool_choice: required
+
+prompts:
+  - "You are a deterministic outputs writer. Emit the final result by calling the `complete` tool. {{user_message}}"
+
+tests:
+  - description: emit marker SMOKE_OK
+    vars:
+      user_message: "Emit marker `SMOKE_OK`."
+    assert:
+      - type: javascript
+        value: |
+          // Extract the tool call from provider-specific output shapes.
+          const out = output;
+          const extractCall = (o) => {
+            if (typeof o === "string") {
+              try { o = JSON.parse(o); } catch { /* leave as-is */ }
+            }
+            if (Array.isArray(o)) {
+              // OpenAI: [{function:{name,arguments}}] | Anthropic content: [{type:"tool_use", name, input}]
+              for (const item of o) {
+                if (item?.function?.name) return { name: item.function.name, args: typeof item.function.arguments === "string" ? JSON.parse(item.function.arguments) : item.function.arguments };
+                if (item?.type === "tool_use" && item?.name) return { name: item.name, args: item.input };
+              }
+              throw new Error(`no tool call in array: ${JSON.stringify(o).slice(0,300)}`);
+            }
+            if (o && typeof o === "object") {
+              if (o.type === "tool_use" && o.name) return { name: o.name, args: o.input };
+              if (o.function?.name) return { name: o.function.name, args: typeof o.function.arguments === "string" ? JSON.parse(o.function.arguments) : o.function.arguments };
+              if (o.name && o.input) return { name: o.name, args: o.input };
+            }
+            throw new Error(`cannot extract tool call from: ${JSON.stringify(o).slice(0,300)}`);
+          };
+          const { name, args } = extractCall(out);
+          if (name !== "complete") throw new Error(`wrong tool: ${name}`);
+          if (!args || typeof args !== "object") throw new Error(`no args`);
+          if (typeof args.marker !== "string") throw new Error(`marker not string: ${JSON.stringify(args)}`);
+          if (args.marker !== "SMOKE_OK") throw new Error(`marker=${args.marker}, want SMOKE_OK`);
+          return true;

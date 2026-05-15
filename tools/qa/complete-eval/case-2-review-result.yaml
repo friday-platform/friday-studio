@@ -1,0 +1,73 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+
+description: complete() — 3 flat primitives (ReviewResult shape from workspace.yml)
+
+providers:
+  - id: anthropic:messages:claude-sonnet-4-6
+    label: anthropic-sonnet
+    config:
+      tools:
+        - name: complete
+          description: "Call this to complete the task and store results. You MUST call this when finished. Required fields: marker (string), count (number), firstId (string)."
+          input_schema: &schema
+            type: object
+            properties:
+              marker: { type: string }
+              count: { type: number }
+              firstId: { type: string }
+            required: [marker, count, firstId]
+            additionalProperties: false
+      tool_choice: { type: tool, name: complete }
+
+  - id: groq:meta-llama/llama-4-scout-17b-16e-instruct
+    label: groq-scout
+    config:
+      tools:
+        - type: function
+          function:
+            name: complete
+            description: "Call this to complete the task and store results. You MUST call this when finished. Required fields: marker (string), count (number), firstId (string)."
+            parameters: *schema
+            strict: true
+      tool_choice: required
+
+  - id: openrouter:openai/gpt-oss-120b
+    label: or-gpt-oss-120b-free
+    config:
+      tools:
+        - type: function
+          function:
+            name: complete
+            description: "Call this to complete the task and store results. You MUST call this when finished. Required fields: marker (string), count (number), firstId (string)."
+            parameters: *schema
+            strict: true
+      tool_choice: required
+
+prompts:
+  - "You are a deterministic outputs writer. Emit the final result by calling the `complete` tool. {{user_message}}"
+
+tests:
+  - description: ReviewResult from EmailBatch fixture
+    vars:
+      user_message: "An EmailBatch has marker `FIRST_PRINCIPLES_EMAIL_BATCH` and 12 messages with ids fake-001 through fake-012. Emit a ReviewResult: marker=`CONSUMED_EMAIL_BATCH`, count=12, firstId=`fake-001`."
+    assert:
+      - type: javascript
+        value: |
+          const extract = (o) => {
+            if (typeof o === "string") { try { o = JSON.parse(o); } catch {} }
+            if (Array.isArray(o)) {
+              for (const it of o) {
+                if (it?.function?.name) return { name: it.function.name, args: typeof it.function.arguments === "string" ? JSON.parse(it.function.arguments) : it.function.arguments };
+                if (it?.type === "tool_use" && it?.name) return { name: it.name, args: it.input };
+              }
+            }
+            if (o?.type === "tool_use" && o.name) return { name: o.name, args: o.input };
+            if (o?.function?.name) return { name: o.function.name, args: typeof o.function.arguments === "string" ? JSON.parse(o.function.arguments) : o.function.arguments };
+            throw new Error(`cannot extract: ${JSON.stringify(o).slice(0,300)}`);
+          };
+          const { name, args } = extract(output);
+          if (name !== "complete") throw new Error(`wrong tool: ${name}`);
+          if (args.marker !== "CONSUMED_EMAIL_BATCH") throw new Error(`marker=${args.marker}`);
+          if (args.count !== 12) throw new Error(`count=${args.count} (type ${typeof args.count})`);
+          if (args.firstId !== "fake-001") throw new Error(`firstId=${args.firstId}`);
+          return true;
