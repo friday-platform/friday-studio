@@ -149,6 +149,7 @@
     display: flex;
     flex-direction: column;
     gap: var(--size-px);
+    min-inline-size: 0;
     padding-block: var(--size-2);
   }
 
@@ -156,11 +157,15 @@
     align-items: center;
     display: flex;
     gap: var(--size-2);
+    min-inline-size: 0;
   }
 
   .cred-label {
     font-size: var(--font-size-4);
     font-weight: var(--font-weight-5);
+    min-inline-size: 0;
+    overflow-wrap: anywhere;
+    white-space: normal;
   }
 
   .cred-status {
