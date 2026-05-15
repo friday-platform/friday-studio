@@ -90,7 +90,8 @@ func TestCurrentAutostartBundleID_V008FormatReturnsEmpty(t *testing.T) {
 }
 
 // TestCurrentAutostartBundleID_CurrentFormatReturnsBundleID: the
-// happy path — a Stack 3 plist returns its bundle ID. Pinned
+// happy path — a current plist (with the crash-recovery KeepAlive
+// dict from the v0.0.10+ upgrade) returns its bundle ID. Pinned
 // against the canonical launcherBundleID const so a future ID
 // rename forces a deliberate test update.
 func TestCurrentAutostartBundleID_CurrentFormatReturnsBundleID(t *testing.T) {
@@ -109,7 +110,11 @@ func TestCurrentAutostartBundleID_CurrentFormatReturnsBundleID(t *testing.T) {
     <string>--no-browser</string>
   </array>
   <key>RunAtLoad</key><true/>
-  <key>KeepAlive</key><false/>
+  <key>KeepAlive</key>
+  <dict>
+    <key>Crashed</key>
+    <true/>
+  </dict>
 </dict>
 </plist>`
 	if err := os.WriteFile(path, []byte(currentPlist), 0o600); err != nil {
@@ -117,6 +122,14 @@ func TestCurrentAutostartBundleID_CurrentFormatReturnsBundleID(t *testing.T) {
 	}
 	if got := currentAutostartBundleID(); got != launcherBundleID {
 		t.Errorf("got %q, want %q", got, launcherBundleID)
+	}
+	// Sister assertion: a canonically-shaped plist must NOT be marked
+	// stale. Without this, the staleness-repair pass would rewrite the
+	// plist on every launcher start — chewing through file I/O for no
+	// reason AND breaking any "the plist was rewritten" signal that
+	// telemetry might want to attach in future.
+	if isAutostartStale() {
+		t.Error("isAutostartStale() = true on canonically-shaped plist, want false")
 	}
 }
 
@@ -176,6 +189,150 @@ func TestCurrentAutostartBundleID_TooFewArgsReturnsEmpty(t *testing.T) {
 	}
 	if got := currentAutostartBundleID(); got != "" {
 		t.Errorf("got %q, want \"\" for ProgramArguments len < 3", got)
+	}
+}
+
+// TestHasCrashOnlyKeepAlive_BoolFalse: the historical v0.0.x plist
+// shape (`<key>KeepAlive</key><false/>`) parses to `bool(false)`,
+// which must be rejected by hasCrashOnlyKeepAlive so the staleness
+// pass rewrites it with the dict form. THIS IS THE LOAD-BEARING PATH
+// FOR THE v0.0.x → crash-recovery KeepAlive MIGRATION — without it,
+// users who deployed before the upgrade would never get the new
+// shape and crashed launchers would stay dead.
+func TestHasCrashOnlyKeepAlive_BoolFalse(t *testing.T) {
+	if hasCrashOnlyKeepAlive(launchAgent{KeepAlive: false}) {
+		t.Error("hasCrashOnlyKeepAlive(bool false) = true, want false")
+	}
+}
+
+// TestHasCrashOnlyKeepAlive_BoolTrue: defensively rejects the
+// `<key>KeepAlive</key><true/>` shape too. Friday has never written
+// that, but a hand-edited or future-altered plist mustn't sneak past
+// the staleness check just because the value is "truthy."
+func TestHasCrashOnlyKeepAlive_BoolTrue(t *testing.T) {
+	if hasCrashOnlyKeepAlive(launchAgent{KeepAlive: true}) {
+		t.Error("hasCrashOnlyKeepAlive(bool true) = true, want false")
+	}
+}
+
+// TestHasCrashOnlyKeepAlive_DictWithCrashedTrue: the canonical shape
+// we write today. This is the only input that should return true.
+func TestHasCrashOnlyKeepAlive_DictWithCrashedTrue(t *testing.T) {
+	agent := launchAgent{KeepAlive: map[string]any{"Crashed": true}}
+	if !hasCrashOnlyKeepAlive(agent) {
+		t.Error("hasCrashOnlyKeepAlive({Crashed: true}) = false, want true")
+	}
+}
+
+// TestHasCrashOnlyKeepAlive_DictWithCrashedFalse: a dict with the
+// right key but the wrong value — `{Crashed: false}` would tell
+// launchd to restart on CLEAN exit instead of crash, the opposite of
+// what we want. Must be rejected so the rewrite path replaces it.
+func TestHasCrashOnlyKeepAlive_DictWithCrashedFalse(t *testing.T) {
+	agent := launchAgent{KeepAlive: map[string]any{"Crashed": false}}
+	if hasCrashOnlyKeepAlive(agent) {
+		t.Error("hasCrashOnlyKeepAlive({Crashed: false}) = true, want false")
+	}
+}
+
+// TestHasCrashOnlyKeepAlive_DictWithExtraKey: a dict that has
+// {Crashed: true} but also a second sub-key (NetworkState,
+// SuccessfulExit, AfterInitialDemand, etc.) is not our canonical
+// shape. Strict-equality match: extra keys → stale, because future
+// versions of this launcher may add a key for a new feature and the
+// staleness check needs to fire so the upgrade rolls out.
+func TestHasCrashOnlyKeepAlive_DictWithExtraKey(t *testing.T) {
+	agent := launchAgent{KeepAlive: map[string]any{
+		"Crashed":        true,
+		"SuccessfulExit": false,
+	}}
+	if hasCrashOnlyKeepAlive(agent) {
+		t.Error("hasCrashOnlyKeepAlive({Crashed:true, SuccessfulExit:false}) = true, want false")
+	}
+}
+
+// TestHasCrashOnlyKeepAlive_EmptyDict: a plist with `<key>KeepAlive
+// </key><dict></dict>` is technically valid launchd syntax (means
+// "always keep alive") — definitely not our crash-only shape. Reject.
+func TestHasCrashOnlyKeepAlive_EmptyDict(t *testing.T) {
+	if hasCrashOnlyKeepAlive(launchAgent{KeepAlive: map[string]any{}}) {
+		t.Error("hasCrashOnlyKeepAlive(empty dict) = true, want false")
+	}
+}
+
+// TestHasCrashOnlyKeepAlive_AbsentField: a plist with no KeepAlive
+// key at all (default: never restart) parses to a nil any. Reject —
+// even though the behaviour is "no restart on anything," it's not
+// the shape we now own, and we want the upgrade to install our
+// explicit `{Crashed: true}` dict.
+func TestHasCrashOnlyKeepAlive_AbsentField(t *testing.T) {
+	if hasCrashOnlyKeepAlive(launchAgent{KeepAlive: nil}) {
+		t.Error("hasCrashOnlyKeepAlive(nil) = true, want false")
+	}
+}
+
+// TestIsAutostartStale_OldKeepAliveShapeIsStale: the migration
+// trigger — an installed plist that has the correct bundle ID but
+// the old `<key>KeepAlive</key><false/>` shape must be marked stale
+// so the next launcher boot rewrites it with the new dict. Without
+// this assertion, the v0.0.x → crash-recovery rollout would silently
+// no-op on every existing user's machine.
+func TestIsAutostartStale_OldKeepAliveShapeIsStale(t *testing.T) {
+	path := withFakePlist(t)
+	oldShape := `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>ai.hellofriday.studio</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/open</string>
+    <string>-b</string>
+    <string>` + launcherBundleID + `</string>
+    <string>--args</string>
+    <string>--no-browser</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><false/>
+</dict>
+</plist>`
+	if err := os.WriteFile(path, []byte(oldShape), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !isAutostartStale() {
+		t.Error("isAutostartStale() = false for old KeepAlive shape, want true (migration must fire)")
+	}
+}
+
+// TestIsAutostartStale_V008ShapeIsStale: a v0.0.8 plist (raw exe
+// path, no `/usr/bin/open -b` wrapper) has neither the right bundle
+// ID format NOR the new KeepAlive shape — must be stale. Codifies a
+// claim that was previously aspirational in the file's comments but
+// not actually asserted: the old isAutostartStale `registered != ""`
+// guard meant v0.0.8 plists were silently treated as "not stale."
+// The fix is implicit in the refactored isAutostartStale; this test
+// pins it down.
+func TestIsAutostartStale_V008ShapeIsStale(t *testing.T) {
+	path := withFakePlist(t)
+	v008Plist := `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>ai.hellofriday.studio</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/local/friday-launcher</string>
+    <string>--no-browser</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><false/>
+</dict>
+</plist>`
+	if err := os.WriteFile(path, []byte(v008Plist), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !isAutostartStale() {
+		t.Error("isAutostartStale() = false for v0.0.8 plist, want true (migration must fire)")
 	}
 }
 
