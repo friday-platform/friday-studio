@@ -1956,11 +1956,22 @@ const workspacesRoutes = daemonFactory
               ),
             );
           } else {
-            logger.error("Signal trigger SSE error", {
-              error: response.error,
-              workspaceId,
-              signalId,
-            });
+            // `skipped-duplicate` is the `concurrency: skip` policy doing
+            // its job — log at info, not error. The client still gets
+            // `job-error` over SSE so it can react.
+            const isExpectedSkip = response.error.startsWith("skipped-duplicate:");
+            if (isExpectedSkip) {
+              logger.info("Signal skipped — concurrency=skip and same-key cascade in flight", {
+                workspaceId,
+                signalId,
+              });
+            } else {
+              logger.error("Signal trigger SSE error", {
+                error: response.error,
+                workspaceId,
+                signalId,
+              });
+            }
             safeEnqueue(
               encoder.encode(
                 `data: ${JSON.stringify({
@@ -2185,6 +2196,21 @@ const workspacesRoutes = daemonFactory
         const response = await responsePromise;
 
         if (!response.ok) {
+          // `skipped-duplicate` is the documented effect of the default
+          // `concurrency: skip` policy when a same-key cascade is already
+          // running — a 409 conflict at the contract level, not a daemon
+          // failure. Surface it directly so the catch chain doesn't
+          // demote it to a 500 + `level: error` log.
+          if (response.error.startsWith("skipped-duplicate:")) {
+            logger.info("Signal skipped — concurrency=skip and same-key cascade in flight", {
+              workspaceId,
+              signalId,
+            });
+            return c.json(
+              { error: response.error, status: "skipped" as const, workspaceId, signalId },
+              409,
+            );
+          }
           throw new Error(response.error);
         }
         const result = response.result as {
