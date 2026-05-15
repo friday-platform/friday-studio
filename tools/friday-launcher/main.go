@@ -137,6 +137,13 @@ func main() {
 		return
 	}
 
+	// Raise the soft RLIMIT_NOFILE before any child is spawned, so the
+	// supervised tree inherits the higher cap via fork(). macOS default
+	// for launchd-spawned processes is 256 — friday daemon eats through
+	// that over multi-day uptime (MCP children + NATS + HTTP). See
+	// rlimit_unix.go for the incident this prevents. No-op on Windows.
+	raiseFileLimit()
+
 	// Single-instance handshake: try the flock. If it fails, signal
 	// the running launcher and exit.
 	lock, ok, err := acquirePidLock()
