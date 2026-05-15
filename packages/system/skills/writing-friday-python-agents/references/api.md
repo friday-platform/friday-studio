@@ -10,6 +10,7 @@ Complete reference for the `friday_agent_sdk` Python package.
 - [ctx.llm — Llm](#ctxllm)
 - [ctx.http — Http](#ctxhttp)
 - [ctx.tools — Tools](#ctxtools)
+- [ctx.input — AgentInput](#ctxinput)
 - [ctx.stream — StreamEmitter](#ctxstream)
 - [Response Types](#response-types)
 - [Result Types](#result-types)
@@ -22,25 +23,28 @@ Complete reference for the `friday_agent_sdk` Python package.
 
 ```python
 from friday_agent_sdk import (
-    # Decorator
+    # Decorator + entry point
     agent,
-
-    # Entry point
     run,
 
     # Parsing
     parse_input,
     parse_operation,
 
-    # Result constructors
-    ok,
-    err,
+    # Result constructors + types
+    ok, err,
+    OkResult, ErrResult, AgentResult, AgentExtras,
+    ArtifactRef, OutlineRef,
 
-    # Result types
-    OkResult, ErrResult, AgentResult,
-
-    # Context
+    # Context + structured input
     AgentContext,
+    AgentInput, InputArtifactRef,
+    SessionData,
+    SkillDefinition,
+
+    # Capability classes (rarely constructed by user code; useful for typing)
+    Llm, Http, Tools, StreamEmitter,
+    ToolDefinition,
 
     # Response types
     LlmResponse, HttpResponse,
@@ -48,8 +52,8 @@ from friday_agent_sdk import (
     # Exceptions
     LlmError, HttpError, ToolCallError,
 
-    # Streaming
-    StreamEmitter,
+    # Version
+    __version__,
 )
 ```
 
@@ -67,14 +71,24 @@ def agent(
     summary: str | None = None,                 # One-line summary
     constraints: str | None = None,             # What the agent cannot do
     examples: list[str] | None = None,          # Example prompts that invoke this agent
-    input_schema: type | None = None,           # Dataclass type — extracted as JSON Schema for docs
-    output_schema: type | None = None,          # Dataclass type — passed to ctx.output_schema at runtime
     environment: dict[str, Any] | None = None,  # Required/optional env vars
     mcp: dict[str, Any] | None = None,          # MCP server configurations
     llm: dict[str, Any] | None = None,          # Default LLM provider/model
-    use_workspace_skills: bool = False,         # Access workspace-level skills
+    use_workspace_skills: bool = False,         # When True, host populates ctx.skills with workspace skills
 ) -> Callable
 ```
+
+The decorator also accepts `input_schema: type | None` and `output_schema:
+type | None` for forward compatibility, but neither is currently serialized to
+the host — they are no-ops today. `ctx.output_schema` (below) is host-driven
+and unrelated to these kwargs.
+
+### use_workspace_skills
+
+When set to `True`, the host attaches the workspace's resolved skills to
+`ctx.skills` (a `list[SkillDefinition]` of `{name, description, instructions}`).
+Leave it `False` if your agent does not consult workspace-defined skills — the
+list is empty when this flag is off.
 
 ### environment
 
@@ -129,17 +143,19 @@ llm={
 ```python
 @dataclass
 class AgentContext:
-    env: dict[str, str]             # Environment variables (always present, may be empty)
-    config: dict                    # Agent-specific config from workspace (always present)
-    session: SessionData | None     # Session metadata
-    output_schema: dict | None      # JSON Schema from output_schema decorator param
-    tools: Tools                    # MCP tool capability (always initialized)
-    llm: Llm                        # LLM generation capability (always initialized)
-    http: Http                      # HTTP fetch capability (always initialized)
-    stream: StreamEmitter           # Progress streaming capability (always initialized)
+    env: dict[str, str]                 # Environment variables (always present, may be empty)
+    config: dict                        # Agent-specific config from workspace (always present)
+    skills: list[SkillDefinition]       # Workspace skills when use_workspace_skills=True, else []
+    session: SessionData | None         # Session metadata
+    output_schema: dict | None          # JSON Schema sent by the host on execute (e.g., from an FSM action's outputType); None when the host sends nothing
+    input: AgentInput                   # Structured action input (always initialized)
+    tools: Tools                        # MCP tool capability (always initialized)
+    llm: Llm                            # LLM generation capability (always initialized)
+    http: Http                          # HTTP fetch capability (always initialized)
+    stream: StreamEmitter               # Progress streaming capability (always initialized)
 ```
 
-`env` and `config` are guaranteed non-None. Capabilities are always initialized; they may be stubs in test contexts that raise `RuntimeError` if called without proper setup.
+`env`, `config`, `skills`, and `input` are guaranteed non-None. Capabilities are always initialized; they may be stubs in test contexts that raise `RuntimeError` if called without proper setup.
 
 ### SessionData
 
@@ -151,6 +167,18 @@ class SessionData:
     user_id: str                    # User who initiated the session
     datetime: str                   # ISO datetime string
 ```
+
+### SkillDefinition
+
+```python
+@dataclass
+class SkillDefinition:
+    name: str
+    description: str
+    instructions: str
+```
+
+Populated on `ctx.skills` when the agent is declared with `use_workspace_skills=True`.
 
 ---
 
@@ -233,6 +261,56 @@ def call(name: str, args: dict) -> dict
 ```
 
 Raises `ToolCallError` on failure.
+
+---
+
+## ctx.input
+
+Structured runtime input. `ctx.input` is the typed counterpart to the
+`prompt` string: it exposes the compact `inputFrom`/config payload without
+asking agents to scrape JSON out of markdown.
+
+`raw` is populated from the host's execute payload (the `context.input`
+section of the NATS execute message). When the host sends nothing structured,
+`raw` is `{}` and every accessor returns the same empty-state shape.
+
+```python
+class AgentInput:
+    raw: dict           # Full structured input as supplied by the host
+    config: dict        # Shortcut for raw.get("config", {}) — the inputFrom-keyed dict
+
+    def get(name: str | None = None, default: Any = None) -> Any: ...
+    def require(name: str | None = None) -> Any: ...
+    def artifact_refs(name: str | None = None) -> list[InputArtifactRef]: ...
+    def artifact_json(name: str | None = None) -> Any: ...
+```
+
+Behavior notes:
+
+- `get(name)` looks first in `raw["config"][name]` (the usual `inputFrom`
+  shape) and falls back to `raw[name]`. Returns `default` when missing.
+- `get()` with no name returns the full `raw` dict.
+- `require(name)` raises `ValueError` if missing; `require()` with no name
+  raises if `raw` is empty.
+- `artifact_refs(name)` walks the selected payload and collects any
+  `artifactRef` / `artifactRefs` entries into a deduplicated list. Useful
+  when you want to introspect refs before fetching.
+- `artifact_json(name)` resolves those refs through `get_artifact` and
+  returns the parsed JSON — a single payload if one ref, a list if many.
+  Raises `ValueError` when no refs are present and `ToolCallError` when
+  `ctx.tools` is not initialized.
+
+```python
+@dataclass(frozen=True)
+class InputArtifactRef:
+    id: str
+    type: str = "Artifact"
+    summary: str = ""
+```
+
+`ctx.input` is intended for `inputFrom` upstream-step output. Signal-payload
+fields the trigger fired with arrive in the `prompt` string — parse them with
+`parse_input(prompt, ...)` instead.
 
 ---
 
