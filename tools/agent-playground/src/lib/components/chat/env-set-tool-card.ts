@@ -10,9 +10,8 @@
  * Build the `varsOverride` payload for an env-write confirmation.
  *
  * Returns one entry per secret-looking key, preferring the user-typed value
- * and falling back to the proposed value. Values are trimmed before sending —
- * leading/trailing whitespace in secrets is almost always a paste artifact.
- * Non-secret keys are omitted (they commit with their proposed value, no
+ * and falling back to the proposed value. Values are sent exactly as typed;
+ * non-secret keys are omitted (they commit with their proposed value, no
  * override needed).
  *
  * @param entries - The proposed `[key, value]` pairs from the elicitation.
@@ -27,8 +26,7 @@ export function buildVarsOverride(
   const out: Record<string, string> = {};
   for (const [key, proposed] of entries) {
     if (!isSecretKey(key)) continue;
-    const raw = userValues[key] ?? proposed;
-    out[key] = raw.trim();
+    out[key] = userValues[key] ?? proposed;
   }
   return out;
 }

@@ -306,8 +306,15 @@ describe("POST /:id/answer", () => {
 
   // ── env-write confirmations: the write must land *before* `answer` ──────
   describe("env-write confirmations", () => {
-    function envWriteElicitation(args: Record<string, unknown>) {
-      return makeElicitation({ kind: "env-write", pendingTool: { name: "env_set", args } });
+    function envWriteElicitation(
+      args: Record<string, unknown>,
+      overrides: Record<string, unknown> = {},
+    ) {
+      return makeElicitation({
+        kind: "env-write",
+        pendingTool: { name: "env_set", args },
+        ...overrides,
+      });
     }
 
     test("global confirm commits the write before marking answered", async () => {
@@ -347,6 +354,28 @@ describe("POST /:id/answer", () => {
       expect(res.status).toBe(500);
       expect(mockElicitationStorage.answer).not.toHaveBeenCalled();
     });
+
+    test.each(["answered", "expired"] as const)(
+      "%s env-write confirm is rejected before committing",
+      async (status) => {
+        const terminal = envWriteElicitation(
+          { scope: "workspace", vars: { API_KEY: "" } },
+          { status },
+        );
+        mockElicitationStorage.get.mockResolvedValueOnce(success(terminal));
+
+        const res = await createTestApp().request("/elc_1/answer", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ value: "confirm", varsOverride: { API_KEY: "stale-secret" } }),
+        });
+
+        expect(res.status).toBe(500);
+        expect(mockSetEnvFileVar).not.toHaveBeenCalled();
+        expect(mockCommitGlobalEnvWrite).not.toHaveBeenCalled();
+        expect(mockElicitationStorage.answer).not.toHaveBeenCalled();
+      },
+    );
 
     test("workspace confirm writes through setEnvFileVar then marks answered", async () => {
       // Target workspace comes from the elicitation envelope, not the args.
@@ -445,6 +474,12 @@ describe("POST /:id/answer", () => {
       );
       // Non-overridden key keeps its proposed value.
       expect(mockSetEnvFileVar).toHaveBeenCalledWith("/tmp/ws_1/.env", "LOG_DIR", "/var/log");
+      const answerInput = mockElicitationStorage.answer.mock.calls[0]?.[0] as {
+        answer: Record<string, unknown>;
+      };
+      expect(answerInput.answer).toEqual(expect.objectContaining({ value: "confirm" }));
+      expect(answerInput.answer).not.toHaveProperty("varsOverride");
+      expect(JSON.stringify(answerInput.answer)).not.toContain("real-secret-from-card");
     });
 
     test("varsOverride cannot inject a key not in the proposal", async () => {

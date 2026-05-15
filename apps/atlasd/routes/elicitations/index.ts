@@ -338,18 +338,24 @@ elicitationApp.post(
       // For env-write confirmations the write must land *before* the
       // elicitation is marked answered — "answered" has to mean "applied".
       // A commit failure leaves the elicitation pending so the user can
-      // retry; the per-key writers are idempotent, so retry is safe.
+      // retry with the same values.
       //
       // The inverse — commit succeeds, then `answer` below fails — leaves the
       // write applied while the elicitation stays `pending`. That's the
-      // accepted asymmetry: the write IS done (idempotent, so a retry confirm
-      // is a no-op), and a stuck-`pending` elicitation is a far better failure
-      // than a silently-lost write. There is no compensating rollback.
+      // accepted asymmetry: the write IS done, and a stuck-`pending`
+      // elicitation is a far better failure than a silently-lost write. There
+      // is no compensating rollback.
       //
       // Note: `userValues` on the confirmation card is in-memory only — on
       // commit failure + page refresh, the user has to retype any secret
       // they entered. Acceptable because commit failure is rare.
       if (got.data.kind === "env-write" && body.value === "confirm") {
+        if (got.data.status !== "pending") {
+          return c.json(
+            { error: `Elicitation ${id} already in terminal state: ${got.data.status}` },
+            500,
+          );
+        }
         const commit = await commitEnvWriteElicitation(c, got.data, body.varsOverride);
         if (!commit.ok) {
           return c.json({ error: `env write failed: ${commit.error}` }, 500);

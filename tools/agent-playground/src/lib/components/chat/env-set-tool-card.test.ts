@@ -50,21 +50,21 @@ describe("buildVarsOverride", () => {
     expect(buildVarsOverride([], {}, isSecret)).toEqual({});
   });
 
-  it("trims leading/trailing whitespace on the sent value (paste artifact)", () => {
+  it("preserves leading/trailing whitespace on the sent value", () => {
     const out = buildVarsOverride(
       [["API_KEY", ""]],
-      { API_KEY: "  sk-real\n" },
+      { API_KEY: "  sk-real  " },
       isSecret,
     );
-    expect(out).toEqual({ API_KEY: "sk-real" });
+    expect(out).toEqual({ API_KEY: "  sk-real  " });
   });
 
-  it("collapses a whitespace-only user value to the empty string", () => {
+  it("preserves whitespace-only user values", () => {
     const out = buildVarsOverride(
       [["API_KEY", ""]],
       { API_KEY: "   " },
       isSecret,
     );
-    expect(out).toEqual({ API_KEY: "" });
+    expect(out).toEqual({ API_KEY: "   " });
   });
 });
