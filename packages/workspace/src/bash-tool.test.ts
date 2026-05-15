@@ -6,8 +6,9 @@ async function exec(
   bashTool: ReturnType<typeof createBashTool>,
   input: BashToolInput,
   id: string,
+  abortSignal?: AbortSignal,
 ): Promise<BashToolOutput> {
-  const result = await bashTool.execute?.(input, { toolCallId: id, messages: [] });
+  const result = await bashTool.execute?.(input, { toolCallId: id, messages: [], abortSignal });
   if (!result) throw new Error("execute returned undefined");
   // execute always returns a single object for this tool, never an async iterable
   if (!("stdout" in result)) throw new Error("unexpected stream");
@@ -75,4 +76,23 @@ describe("createBashTool", () => {
     const result = await exec(bashTool, { command: "sleep 60", timeout_ms: 100 }, "test-6");
     expect(result.exit_code).not.toBe(0);
   }, 5000);
+
+  it("kills the subprocess when abortSignal fires", async () => {
+    const ac = new AbortController();
+    const start = Date.now();
+    const resultPromise = exec(
+      bashTool,
+      { command: "sleep 30", timeout_ms: 30_000 },
+      "test-abort",
+      ac.signal,
+    );
+    setTimeout(() => ac.abort(), 50);
+    const result = await resultPromise;
+    const elapsed = Date.now() - start;
+    expect(elapsed).toBeLessThan(1000);
+    // Abort produces a sentinel exit_code distinguishable from generic failure (1)
+    // and timeout (124), plus a non-empty stderr describing the abort.
+    expect(result.exit_code).toBe(137);
+    expect(result.stderr).toMatch(/abort/i);
+  }, 2000);
 });

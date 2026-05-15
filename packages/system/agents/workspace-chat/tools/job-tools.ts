@@ -160,6 +160,7 @@ export function createJobTools(
           signalId: triggerSignal,
           input,
           streamId: parentStreamId,
+          abortSignal,
           logger,
           jobName,
           parentSessionId,
@@ -244,6 +245,7 @@ interface ExecuteJobViaJSONDeps {
   signalId: string;
   input: Record<string, unknown>;
   streamId: string | undefined;
+  abortSignal: AbortSignal | undefined;
   logger: Logger;
   jobName: string;
   parentSessionId?: string;
@@ -261,7 +263,8 @@ async function executeJobViaJSON(
   error?: string;
   statusCode?: number;
 }> {
-  const { workspaceId, signalId, input, streamId, logger, jobName, parentSessionId } = deps;
+  const { workspaceId, signalId, input, streamId, abortSignal, logger, jobName, parentSessionId } =
+    deps;
 
   // Phase 11: forward `parentSessionId` so the spawned job's
   // `SessionSummary.parentSessionId` records the parent chat session.
@@ -277,10 +280,11 @@ async function executeJobViaJSON(
 
   const headers = internalSignalBypassHeaders();
   const request = { param: { workspaceId, signalId }, json };
+  const init = { signal: abortSignal };
   const response =
     Object.keys(headers).length > 0
-      ? client.workspace[":workspaceId"].signals[":signalId"].$post(request, { headers })
-      : client.workspace[":workspaceId"].signals[":signalId"].$post(request);
+      ? client.workspace[":workspaceId"].signals[":signalId"].$post(request, { headers, init })
+      : client.workspace[":workspaceId"].signals[":signalId"].$post(request, { init });
   const result = await parseResult(response);
 
   if (!result.ok) {

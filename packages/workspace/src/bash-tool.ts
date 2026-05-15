@@ -40,7 +40,7 @@ export function createBashTool() {
       },
       required: ["command"],
     }),
-    execute: (input): Promise<BashToolOutput> => {
+    execute: (input, { abortSignal }): Promise<BashToolOutput> => {
       const timeoutMs = input.timeout_ms ?? DEFAULT_TIMEOUT_MS;
 
       // Merge agent env on top of process env (agent takes precedence)
@@ -54,10 +54,24 @@ export function createBashTool() {
             cwd: input.cwd,
             env: mergedEnv,
             timeout: timeoutMs,
+            signal: abortSignal,
             maxBuffer: 10 * 1024 * 1024, // 10 MB
           },
           (error, stdout, stderr) => {
             if (error) {
+              // AbortSignal-driven kill: error.code is "ABORT_ERR" (string) and
+              // stderr is empty — surface the abort message and a sentinel code
+              // so callers can distinguish abort (137) from timeout (124) and
+              // generic non-zero exit (1).
+              if (error.code === "ABORT_ERR") {
+                resolve({
+                  stdout: stdout ?? "",
+                  stderr: stderr || error.message,
+                  exit_code: 137,
+                });
+                return;
+              }
+
               // execFile sets error.code to the exit code on non-zero exit,
               // and error.killed / error.signal on timeout/kill
               const exitCode =

@@ -80,6 +80,7 @@ vi.mock("./chat-limits.ts", () => ({
 
 // Import the routes after mocks are set up
 import workspaceChatRoutes from "./chat.ts";
+import { ChatTurnRegistry } from "../../src/chat-turn-registry.ts";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -92,6 +93,7 @@ function createTestApp(
     streamRegistry?: Record<string, unknown>;
     workspaceExists?: boolean;
     chatSdkMissing?: boolean;
+    chatTurnRegistry?: ChatTurnRegistry;
   } = {},
 ) {
   const { workspaceExists = true, chatSdkMissing = false } = options;
@@ -138,7 +140,11 @@ function createTestApp(
     getAgentRegistry: vi.fn(),
     daemon: {},
     streamRegistry: mockStreamRegistry,
-    chatTurnRegistry: { replace: vi.fn(), abort: vi.fn(), get: vi.fn() },
+    chatTurnRegistry: options.chatTurnRegistry ?? {
+      replace: vi.fn(),
+      abort: vi.fn(),
+      get: vi.fn(),
+    },
     sessionStreamRegistry: {},
     sessionHistoryAdapter: {},
   };
@@ -263,6 +269,80 @@ describe("POST /:workspaceId/chat — create chat (Chat SDK path)", () => {
     expect(forwarded.headers.get("X-Atlas-User-Id")).toBe("test-local-user");
     const body = JSON.parse(await forwarded.text()) as Record<string, unknown>;
     expect(body.id).toBe("chat-1");
+  });
+
+  // Tab close / client disconnect during an in-flight POST turn must abort
+  // the chat turn controller — otherwise the FSM keeps running until a
+  // follow-up POST supersedes it. This is the gateway for User Story 2.
+  //
+  // Uses a real ChatTurnRegistry (not a vi.fn() stub) so we can observe the
+  // actual AbortController flipping. A stub would pass even if the route
+  // aborted the wrong controller, wired the listener wrong, or called
+  // `abort` with mismatched ids.
+  test("aborts the chat turn when c.req.raw.signal fires mid-flight", async () => {
+    const chatTurnRegistry = new ChatTurnRegistry();
+    const { app } = createTestApp({ chatTurnRegistry });
+
+    const controller = new AbortController();
+    const resPromise = Promise.resolve(
+      app.request("/ws-1/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: "chat-abort-mid",
+          message: { role: "user", parts: [{ type: "text", text: "hi" }] },
+        }),
+        signal: controller.signal,
+      }),
+    );
+
+    // Poll briefly so the route's middleware (membership check, workspace
+    // find, body clone+json) finishes and `replace()` registers the
+    // controller before we capture it. A single `await Promise.resolve()`
+    // wasn't enough — the handler has several awaited steps upstream.
+    let turnController: AbortController | undefined;
+    for (let i = 0; i < 50 && !turnController; i++) {
+      await new Promise((r) => setTimeout(r, 0));
+      turnController = chatTurnRegistry.get("ws-1", "chat-abort-mid");
+    }
+    expect(turnController).toBeDefined();
+    expect(turnController!.signal.aborted).toBe(false);
+
+    controller.abort();
+    await resPromise.catch(() => {
+      // The webhook may reject if the request signal is observed downstream —
+      // we only care that the chat-turn controller was actually aborted.
+    });
+
+    expect(turnController!.signal.aborted).toBe(true);
+  });
+
+  // Pre-aborted signal (already-disconnected client) must abort the
+  // controller immediately rather than waiting on an event that won't fire.
+  test("aborts the chat turn synchronously when c.req.raw.signal is pre-aborted", async () => {
+    const chatTurnRegistry = new ChatTurnRegistry();
+    const { app } = createTestApp({ chatTurnRegistry });
+
+    const controller = new AbortController();
+    controller.abort();
+    await Promise.resolve(
+      app.request("/ws-1/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: "chat-abort-pre",
+          message: { role: "user", parts: [{ type: "text", text: "hi" }] },
+        }),
+        signal: controller.signal,
+      }),
+    ).catch(() => {
+      // Pre-aborted fetch may reject; the assertion targets the registry.
+    });
+
+    // The pre-aborted branch calls `abort()`, which removes the entry —
+    // so `get()` returns undefined. That deletion is itself the proof the
+    // pre-abort path fired (replace() always leaves a live controller).
+    expect(chatTurnRegistry.get("ws-1", "chat-abort-pre")).toBeUndefined();
   });
 });
 

@@ -3039,7 +3039,11 @@ export class WorkspaceRuntime {
           }
 
           try {
-            const output = await tool.execute(args, { toolCallId, messages: [] });
+            const output = await tool.execute(args, {
+              toolCallId,
+              messages: [],
+              abortSignal: opts.abortSignal,
+            });
             observedToolResults.push({
               type: "tool-result",
               toolCallId,

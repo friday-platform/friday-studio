@@ -65,64 +65,65 @@ export function createFetchTool(logger?: Logger) {
         .default("markdown")
         .describe("Output format — markdown (default), plain text, or raw HTML"),
     }),
-    execute: async ({ url, format }) => {
+    execute: async ({ url, format }, opts) => {
       logger?.info(`[fetch] ${url}`);
       try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
+        // Compose the parent abortSignal with a local timeout so cancelling
+        // the chat turn aborts the in-flight fetch promptly while still
+        // honouring the DEFAULT_TIMEOUT_MS ceiling. `filter(Boolean)` keeps
+        // `AbortSignal.any` happy when no parent signal is present.
+        const signal = AbortSignal.any(
+          [opts?.abortSignal, AbortSignal.timeout(DEFAULT_TIMEOUT_MS)].filter(
+            (s): s is AbortSignal => s !== undefined,
+          ),
+        );
 
-        try {
-          const response = await fetch(url, {
-            signal: controller.signal,
-            headers: {
-              "User-Agent": USER_AGENT,
-              Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-              "Accept-Language": "en-US,en;q=0.9",
-            },
-          });
+        const response = await fetch(url, {
+          signal,
+          headers: {
+            "User-Agent": USER_AGENT,
+            Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+          },
+        });
 
-          clearTimeout(timeoutId);
+        if (!response.ok) {
+          logger?.warn(`[fetch] fail ${response.status}: ${url}`);
+          return `Fetch failed: HTTP ${response.status} ${response.statusText}`;
+        }
 
-          if (!response.ok) {
-            logger?.warn(`[fetch] fail ${response.status}: ${url}`);
-            return `Fetch failed: HTTP ${response.status} ${response.statusText}`;
-          }
+        const contentLength = response.headers.get("content-length");
+        if (contentLength && parseInt(contentLength, 10) > MAX_RESPONSE_SIZE) {
+          return "Fetch failed: response exceeds 5MB size limit";
+        }
 
-          const contentLength = response.headers.get("content-length");
-          if (contentLength && parseInt(contentLength, 10) > MAX_RESPONSE_SIZE) {
-            return "Fetch failed: response exceeds 5MB size limit";
-          }
+        const arrayBuffer = await response.arrayBuffer();
+        if (arrayBuffer.byteLength > MAX_RESPONSE_SIZE) {
+          logger?.warn(`[fetch] oversize: ${url}`);
+          return "Fetch failed: response exceeds 5MB size limit";
+        }
 
-          const arrayBuffer = await response.arrayBuffer();
-          if (arrayBuffer.byteLength > MAX_RESPONSE_SIZE) {
-            logger?.warn(`[fetch] oversize: ${url}`);
-            return "Fetch failed: response exceeds 5MB size limit";
-          }
+        const content = new TextDecoder().decode(arrayBuffer);
+        const contentType = response.headers.get("content-type") ?? "";
 
-          const content = new TextDecoder().decode(arrayBuffer);
-          const contentType = response.headers.get("content-type") ?? "";
+        logger?.info(`[fetch] ok ${arrayBuffer.byteLength}b: ${url}`);
 
-          logger?.info(`[fetch] ok ${arrayBuffer.byteLength}b: ${url}`);
+        if (format === "html") {
+          return content;
+        }
 
-          if (format === "html") {
-            return content;
-          }
-
-          if (format === "text") {
-            if (contentType.includes("text/html")) {
-              return htmlToText(content);
-            }
-            return content;
-          }
-
-          // Default: markdown
+        if (format === "text") {
           if (contentType.includes("text/html")) {
-            return htmlToMarkdown(content);
+            return htmlToText(content);
           }
           return content;
-        } finally {
-          clearTimeout(timeoutId);
         }
+
+        // Default: markdown
+        if (contentType.includes("text/html")) {
+          return htmlToMarkdown(content);
+        }
+        return content;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         logger?.warn(`[fetch] error: ${url} — ${message.slice(0, 120)}`);

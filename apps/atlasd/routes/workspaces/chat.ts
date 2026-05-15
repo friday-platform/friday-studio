@@ -122,6 +122,19 @@ const workspaceChatRoutes = daemonFactory
         : undefined;
     if (chatId) {
       ctx.chatTurnRegistry.replace(workspaceId, chatId);
+      // Tab close / client disconnect → abort the chat turn. The fire-and-forget
+      // FSM call would otherwise keep running until a follow-up POST supersedes
+      // it. Mirrors the SSE GET pattern below.
+      const requestSignal = c.req.raw.signal;
+      if (requestSignal.aborted) {
+        ctx.chatTurnRegistry.abort(workspaceId, chatId);
+      } else {
+        requestSignal.addEventListener(
+          "abort",
+          () => ctx.chatTurnRegistry.abort(workspaceId, chatId),
+          { once: true },
+        );
+      }
     }
 
     const instance = await ctx.getOrCreateChatSdkInstance(workspaceId).catch((error: unknown) => {
