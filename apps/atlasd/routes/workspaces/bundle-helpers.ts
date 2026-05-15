@@ -2,9 +2,9 @@
 // per-workspace `GET /:workspaceId/bundle` route and the full-instance
 // `GET /bundle-all` route. Factoring this prevents the two from drifting.
 
-import { mkdir, rename, stat } from "node:fs/promises";
+import { cp, mkdir, readFile, rename, rm, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { exportBundle } from "@atlas/bundle";
+import { exportBundle, type ImportResult } from "@atlas/bundle";
 import type { WorkspaceConfig } from "@atlas/config";
 import {
   type CredentialUsage,
@@ -174,6 +174,116 @@ export async function isOnDiskWorkspace(workspacePath: string): Promise<boolean>
   } catch {
     return false;
   }
+}
+
+/**
+ * Install bundled user agents into the global `<atlasHome>/agents/<id>@<version>/`
+ * location so the daemon's AgentRegistry (which only scans that one dir via
+ * `UserAdapter`) can resolve them at runtime.
+ *
+ * `importBundle` extracts each embedded agent to `<targetDir>/<primitive.path>/`
+ * (i.e. workspace-local). That location is invisible to the registry — the
+ * UserAdapter constructor in `atlas-daemon.ts` is wired only to
+ * `<atlasHome>/agents`. Without this step, an imported workspace.yml that
+ * references a `type: user` agent will fail when the daemon tries to spawn it.
+ *
+ * Non-destructive: if `<atlasHome>/agents/<id>@<version>/` already exists, we
+ * skip rather than clobber a same-version install the user may already depend
+ * on. Per-agent errors are logged and recorded but do not abort the import —
+ * one malformed metadata.json shouldn't sink the whole workspace.
+ *
+ * Mirrors the install pattern in `apps/atlasd/routes/agents/register.ts`:
+ * stage to `*.tmp`, then atomic rename into place.
+ */
+export async function installImportedAgents(opts: {
+  targetDir: string;
+  primitives: ImportResult["primitives"];
+  atlasHome: string;
+  logger: Logger;
+}): Promise<{
+  installed: { id: string; version: string; path: string }[];
+  skipped: { name: string; reason: string }[];
+}> {
+  const installed: { id: string; version: string; path: string }[] = [];
+  const skipped: { name: string; reason: string }[] = [];
+  const agents = opts.primitives.filter((p) => p.kind === "agent");
+  if (agents.length === 0) return { installed, skipped };
+
+  const agentsRoot = join(opts.atlasHome, "agents");
+  await mkdir(agentsRoot, { recursive: true });
+
+  for (const primitive of agents) {
+    const sourceDir = join(opts.targetDir, primitive.path);
+    const metadataPath = join(sourceDir, "metadata.json");
+
+    let id: string;
+    let version: string;
+    try {
+      const raw = await readFile(metadataPath, "utf-8");
+      const parsed: unknown = JSON.parse(raw);
+      if (
+        !parsed ||
+        typeof parsed !== "object" ||
+        typeof (parsed as { id?: unknown }).id !== "string" ||
+        typeof (parsed as { version?: unknown }).version !== "string"
+      ) {
+        skipped.push({ name: primitive.name, reason: "metadata.json missing id/version" });
+        continue;
+      }
+      id = (parsed as { id: string }).id;
+      version = (parsed as { version: string }).version;
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      opts.logger.warn("Skipping imported agent with unreadable metadata", {
+        name: primitive.name,
+        path: metadataPath,
+        error: reason,
+      });
+      skipped.push({ name: primitive.name, reason: `unreadable metadata.json: ${reason}` });
+      continue;
+    }
+
+    const finalDir = join(agentsRoot, `${id}@${version}`);
+    try {
+      await stat(finalDir);
+      opts.logger.info("Skipping imported agent — same version already installed", {
+        name: primitive.name,
+        id,
+        version,
+        path: finalDir,
+      });
+      skipped.push({ name: primitive.name, reason: `already installed at ${finalDir}` });
+      continue;
+    } catch {
+      // Target absent — proceed with install.
+    }
+
+    const tmpDir = `${finalDir}.import-${Date.now().toString(36)}.tmp`;
+    try {
+      await rm(tmpDir, { recursive: true, force: true });
+      await cp(sourceDir, tmpDir, { recursive: true });
+      await rename(tmpDir, finalDir);
+      installed.push({ id, version, path: finalDir });
+      opts.logger.info("Installed imported user agent", {
+        name: primitive.name,
+        id,
+        version,
+        path: finalDir,
+      });
+    } catch (error) {
+      await rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+      const reason = error instanceof Error ? error.message : String(error);
+      opts.logger.error("Failed to install imported agent", {
+        name: primitive.name,
+        id,
+        version,
+        error: reason,
+      });
+      skipped.push({ name: primitive.name, reason: `install failed: ${reason}` });
+    }
+  }
+
+  return { installed, skipped };
 }
 
 /**

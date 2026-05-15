@@ -66,7 +66,12 @@ function createApp(opts: {
   homeDir: string;
   registeredWorkspace?: { id: string; name: string; path: string };
   workspaceConfig?: unknown;
-}): { app: Hono<AppVariables>; registerSpy: ReturnType<typeof vi.fn> } {
+  agentRegistry?: { reload: ReturnType<typeof vi.fn> };
+}): {
+  app: Hono<AppVariables>;
+  registerSpy: ReturnType<typeof vi.fn>;
+  reloadSpy: ReturnType<typeof vi.fn>;
+} {
   const workspaceId = opts.workspaceId ?? "ws-demo";
   const registerSpy = vi
     .fn()
@@ -117,7 +122,7 @@ function createApp(opts: {
     sessionStreamRegistry: {} as AppContext["sessionStreamRegistry"],
     sessionHistoryAdapter: {} as AppContext["sessionHistoryAdapter"],
     sessionDispatchRegistry: {} as AppContext["sessionDispatchRegistry"],
-    getAgentRegistry: vi.fn(),
+    getAgentRegistry: vi.fn().mockReturnValue(opts.agentRegistry),
     getOrCreateChatSdkInstance: vi.fn(),
     exposeKernel: false,
     platformModels: createStubPlatformModels(),
@@ -132,7 +137,8 @@ function createApp(opts: {
     await next();
   });
   app.route("/", workspacesRoutes);
-  return { app, registerSpy };
+  const reloadSpy = (opts.agentRegistry?.reload ?? vi.fn()) as ReturnType<typeof vi.fn>;
+  return { app, registerSpy, reloadSpy };
 }
 
 describe("workspace bundle endpoints (end-to-end)", () => {
@@ -280,6 +286,183 @@ describe("workspace bundle endpoints (end-to-end)", () => {
     const body = (await response.json()) as { error: string };
     expect(body.error).toMatch(/user agent.*could not be resolved/i);
     expect(body.error).toContain("ghost");
+  });
+
+  test("POST /import-bundle installs bundled user agents globally and reloads registry", async () => {
+    // Export: source workspace.yml references a user agent that lives at
+    // <homeDir>/agents/<id>@<version>/; exportBundle embeds it under
+    // agents/<name>/ in the zip.
+    const agentSrc = join(homeDir, "agents", "spritesheet-normalizer@1.0.0");
+    await mkdir(agentSrc, { recursive: true });
+    await writeFile(
+      join(agentSrc, "metadata.json"),
+      JSON.stringify({
+        id: "spritesheet-normalizer",
+        version: "1.0.0",
+        description: "Normalizes a spritesheet",
+      }),
+    );
+    await writeFile(join(agentSrc, "agent.py"), "print('normalize')\n");
+
+    const workspaceWithAgent = {
+      atlas: null,
+      workspace: {
+        version: "1.0",
+        workspace: { name: "demo-space" },
+        agents: {
+          "spritesheet-normalizer": {
+            type: "user",
+            agent: "spritesheet-normalizer",
+            description: "Normalizes a spritesheet",
+          },
+        },
+        signals: {
+          normalize: {
+            description: "Trigger spritesheet normalization",
+            provider: "http",
+            config: { path: "/normalize" },
+          },
+        },
+        jobs: {
+          normalize: {
+            triggers: [{ signal: "normalize" }],
+            execution: { strategy: "sequential", agents: ["spritesheet-normalizer"] },
+          },
+        },
+      },
+    };
+    const { app: exportApp } = createApp({
+      workspaceDir,
+      homeDir,
+      workspaceConfig: workspaceWithAgent,
+    });
+    const exportResponse = await exportApp.request("/ws-demo/bundle");
+    expect(exportResponse.status).toBe(200);
+    const zipBytes = new Uint8Array(await exportResponse.arrayBuffer());
+
+    // Simulate "importing on a different machine": wipe the global agent
+    // install so we can prove the import path repopulates it.
+    await rm(join(homeDir, "agents"), { recursive: true, force: true });
+
+    // deno-lint-ignore require-await
+    const reload = vi.fn(async () => {});
+    const { app: importApp, reloadSpy } = createApp({
+      workspaceDir,
+      homeDir,
+      registeredWorkspace: { id: "ws-new", name: "demo-space", path: join(homeDir, "imported") },
+      agentRegistry: { reload },
+    });
+
+    const form = new FormData();
+    form.set("bundle", new File([zipBytes], "demo.zip", { type: "application/zip" }));
+    const importResponse = await importApp.request("/import-bundle", {
+      method: "POST",
+      body: form,
+    });
+
+    expect(importResponse.status).toBe(200);
+    const body = (await importResponse.json()) as {
+      workspaceId: string;
+      primitives: { kind: string; name: string }[];
+      agentsInstalled: number;
+      agentsSkipped: number;
+    };
+    expect(body.primitives).toEqual(
+      expect.arrayContaining([
+        { kind: "agent", name: "spritesheet-normalizer", path: "agents/spritesheet-normalizer" },
+      ]),
+    );
+    expect(body.agentsInstalled).toBe(1);
+    expect(body.agentsSkipped).toBe(0);
+
+    // Agent must now live at <homeDir>/agents/<id>@<version>/ where the
+    // AgentRegistry's UserAdapter scans, not just at <importedWs>/agents/<name>/.
+    await access(join(homeDir, "agents", "spritesheet-normalizer@1.0.0", "metadata.json"));
+    await access(join(homeDir, "agents", "spritesheet-normalizer@1.0.0", "agent.py"));
+
+    expect(reloadSpy).toHaveBeenCalledTimes(1);
+  });
+
+  test("POST /import-bundle skips installing user agents when same id@version already present", async () => {
+    // Seed a global install that the import must NOT clobber. The bundle's
+    // copy is still extracted to <targetDir>/agents/ for hash verification,
+    // but the global install remains untouched and we report it as skipped.
+    const agentSrc = join(homeDir, "agents", "spritesheet-normalizer@1.0.0");
+    await mkdir(agentSrc, { recursive: true });
+    await writeFile(
+      join(agentSrc, "metadata.json"),
+      JSON.stringify({
+        id: "spritesheet-normalizer",
+        version: "1.0.0",
+        description: "Normalizes a spritesheet",
+      }),
+    );
+    await writeFile(join(agentSrc, "agent.py"), "print('normalize')\n");
+
+    const workspaceWithAgent = {
+      atlas: null,
+      workspace: {
+        version: "1.0",
+        workspace: { name: "demo-space" },
+        agents: {
+          "spritesheet-normalizer": {
+            type: "user",
+            agent: "spritesheet-normalizer",
+            description: "Normalizes a spritesheet",
+          },
+        },
+        signals: {
+          normalize: {
+            description: "Trigger spritesheet normalization",
+            provider: "http",
+            config: { path: "/normalize" },
+          },
+        },
+        jobs: {
+          normalize: {
+            triggers: [{ signal: "normalize" }],
+            execution: { strategy: "sequential", agents: ["spritesheet-normalizer"] },
+          },
+        },
+      },
+    };
+    const { app: exportApp } = createApp({
+      workspaceDir,
+      homeDir,
+      workspaceConfig: workspaceWithAgent,
+    });
+    const exportResponse = await exportApp.request("/ws-demo/bundle");
+    expect(exportResponse.status).toBe(200);
+    const zipBytes = new Uint8Array(await exportResponse.arrayBuffer());
+
+    // deno-lint-ignore require-await
+    const reload = vi.fn(async () => {});
+    const { app: importApp } = createApp({
+      workspaceDir,
+      homeDir,
+      registeredWorkspace: { id: "ws-new", name: "demo-space", path: join(homeDir, "imported") },
+      agentRegistry: { reload },
+    });
+
+    const form = new FormData();
+    form.set("bundle", new File([zipBytes], "demo.zip", { type: "application/zip" }));
+    const importResponse = await importApp.request("/import-bundle", {
+      method: "POST",
+      body: form,
+    });
+
+    expect(importResponse.status).toBe(200);
+    const body = (await importResponse.json()) as {
+      agentsInstalled: number;
+      agentsSkipped: number;
+    };
+    expect(body.agentsInstalled).toBe(0);
+    expect(body.agentsSkipped).toBe(1);
+    // No reload when nothing actually changed.
+    expect(reload).not.toHaveBeenCalled();
+
+    // Pre-existing global install is untouched.
+    await access(join(homeDir, "agents", "spritesheet-normalizer@1.0.0", "metadata.json"));
   });
 
   test("POST /import-bundle rejects a tampered bundle", async () => {
