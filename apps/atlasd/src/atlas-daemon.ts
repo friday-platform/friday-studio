@@ -2015,8 +2015,11 @@ export class AtlasDaemon {
               const mgr = this.getWorkspaceManager();
               const ws = await mgr.find({ id: workspaceId });
 
-              // Mark workspace as stopped when a session finishes normally
-              await mgr.updateWorkspaceStatus(workspaceId, "stopped", {
+              // Record the last-finished session on the workspace metadata.
+              // Status stays "inactive" — workspaces don't have a long-lived
+              // running runtime to flip to since dispatch is per-call;
+              // active-dispatch counts are derived from the dispatch registry.
+              await mgr.updateWorkspaceStatus(workspaceId, "inactive", {
                 metadata: {
                   ...ws?.metadata,
                   lastFinishedSession: { id: sessionId, status, finishedAt, summary },
@@ -2066,20 +2069,20 @@ export class AtlasDaemon {
   }
 
   /**
-   * Cached per workspace; torn down when the runtime is destroyed.
+   * Build a fresh `ChatSdkInstance` per call. No daemon-level cache.
    *
-   * Cost breakdown:
-   * - getWorkspaceConfig: mtime-cached — sub-ms steady state.
-   * - resolvePlatformCredentials: HTTP to Link, ~10-100ms per workspace.
-   *   Paid once per workspace per daemon lifetime via this cache.
-   * - buildChatSdkAdapters + new Chat: ~ms of pure object construction,
-   *   no I/O.
+   * Cost: `resolvePlatformCredentials` is HTTP to Link (~10-100ms) per build;
+   * the rest is in-memory object construction. Webhook handlers pay it
+   * once per inbound message.
    *
-   * Per-signal cost is O(1) cache lookup. The single concrete future-work
-   * risk is the cross-worker per-signal model (Phase 2/3): each worker
-   * would re-resolve credentials on its first signal for a given workspace.
-   * Acceptable for typical traffic; if needed, share resolved creds via
-   * NATS KV with a TTL.
+   * Known trade-off — platform-retry dedup. The Chat SDK's `setIfNotExists`
+   * dedup state (`packages/core/src/chat/chat-sdk-state-adapter.ts`'s in-memory
+   * Map) lives on the per-call instance, so a Slack/Discord retry that arrives
+   * in a separate webhook request lands on a fresh empty cache and processes
+   * twice. Friday acks webhooks fast, so retries are rare. The proper fix is
+   * a NATS-KV-backed dedup bucket (`CHAT_DEDUPE` with TTL) using JS KV's
+   * `create()` for atomic set-if-absent — tracked as follow-up; bounded
+   * memory + multi-instance correct.
    */
   getOrCreateChatSdkInstance(workspaceId: string): Promise<ChatSdkInstance> {
     return this.buildChatSdkInstance(workspaceId);

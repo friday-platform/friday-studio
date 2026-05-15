@@ -102,12 +102,8 @@ export function createMockWorkspace(overrides: Record<string, unknown> = {}) {
 export function createTestApp(options: {
   workspace?: ReturnType<typeof createMockWorkspace> | null;
   config?: MergedConfig | null;
-  runtimeActive?: boolean;
 }) {
-  const { workspace = createMockWorkspace(), config = null, runtimeActive = false } = options;
-
-  const runtimeDestroyedSpy = vi.fn().mockResolvedValue(undefined);
-  const getRuntimeSpy = vi.fn().mockReturnValue(runtimeActive ? {} : undefined);
+  const { workspace = createMockWorkspace(), config = null } = options;
 
   // Create a partial mock that satisfies the routes' needs
   const mockWorkspaceManager = {
@@ -147,7 +143,7 @@ export function createTestApp(options: {
   // Mount config routes at /:workspaceId/config to match real mounting
   app.route("/:workspaceId/config", configRoutes);
 
-  return { app, mockContext, runtimeDestroyedSpy, getRuntimeSpy };
+  return { app, mockContext };
 }
 
 /** Type for generic JSON response body */

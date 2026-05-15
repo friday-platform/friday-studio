@@ -128,7 +128,7 @@ describe("PUT /config/agents/:agentId", () => {
     });
     await writeFile(join(testDir, "workspace.yml"), stringify(configData));
     const config = createMergedConfig(configData);
-    const { app, runtimeDestroyedSpy } = createTestApp({ workspace, config, runtimeActive: true });
+    const { app } = createTestApp({ workspace, config });
 
     const response = await app.request("/ws-test-id/config/agents/my-job:step_0", {
       method: "PUT",
@@ -144,7 +144,6 @@ describe("PUT /config/agents/:agentId", () => {
     expect(response.status).toBe(200);
     const body = (await response.json()) as JsonBody;
     expect(body.ok).toBe(true);
-    expect(runtimeDestroyedSpy).not.toHaveBeenCalled();
   });
 
   test("updates FSM bundled agent prompt successfully", async () => {

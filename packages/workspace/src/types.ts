@@ -4,7 +4,12 @@ import { ColorSchema } from "@atlas/utils";
 import { z } from "zod";
 
 // Single source of truth for workspace types
-export const WorkspaceStatusSchema = z.enum(["inactive", "running", "stopped"]);
+//
+// `inactive` is the only persisted status now: workspaces don't have a
+// "running" runtime to flip to since dispatch is per-call. Active dispatch
+// counts are derived from the dispatch registry, not stored on the entry.
+// Error state lives in `metadata.lastError` / `lastErrorAt`.
+export const WorkspaceStatusSchema = z.enum(["inactive"]);
 
 export const WorkspaceMetadataSchema = z.object({
   description: z.string().optional(),
@@ -44,10 +49,6 @@ export const WorkspaceEntrySchema = z.object({
   status: WorkspaceStatusSchema,
   createdAt: z.iso.datetime(),
   lastSeen: z.iso.datetime(),
-  startedAt: z.iso.datetime().optional(),
-  stoppedAt: z.iso.datetime().optional(),
-  pid: z.number().optional(),
-  port: z.number().optional(),
   metadata: WorkspaceMetadataSchema.optional(),
 });
 
@@ -56,11 +57,7 @@ export type WorkspaceStatus = z.infer<typeof WorkspaceStatusSchema>;
 export type WorkspaceMetadata = z.infer<typeof WorkspaceMetadataSchema>;
 
 // Export enum for convenience
-export const WorkspaceStatusEnum = {
-  INACTIVE: "inactive",
-  RUNNING: "running",
-  STOPPED: "stopped",
-} as const;
+export const WorkspaceStatusEnum = { INACTIVE: "inactive" } as const;
 
 export interface WorkspaceSignalRegistrar {
   registerWorkspace: (

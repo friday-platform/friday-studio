@@ -123,7 +123,6 @@ import type { MemoryMount } from "./config-schema.ts";
 import { compileExecutionToFsm, ExecutionCompileError } from "./execution-to-fsm.ts";
 import { assertGlobalWriteAllowed, isGlobalWriteAttempt } from "./global-scope-guard.ts";
 import { MountSourceNotFoundError } from "./mount-errors.ts";
-import { mountRegistry } from "./mount-registry.ts";
 import { MountedStoreBinding } from "./mounted-store-binding.ts";
 import { interpolateConfig, resolveWorkspaceVariables } from "./variable-interpolation.ts";
 import { loadWorkspaceEnv } from "./workspace-env.ts";
@@ -1570,9 +1569,6 @@ export class WorkspaceRuntime {
       if (isGlobalWriteAttempt(sourceWsId, mount.mode)) {
         assertGlobalWriteAllowed(this.workspace.id, this.options.kernelWorkspaceId);
       }
-
-      mountRegistry.registerSource(sourceId, () => adapter.store(sourceWsId, memoryName));
-      mountRegistry.addConsumer(sourceId, this.workspace.id);
 
       let resolvedStore: NarrativeStore;
       try {
@@ -3485,7 +3481,6 @@ export class WorkspaceRuntime {
     this.activeAbortControllers.clear();
     this.jobs.clear();
     this.mountBindings.clear();
-    mountRegistry.clear();
     this.initialized = false;
   }
 

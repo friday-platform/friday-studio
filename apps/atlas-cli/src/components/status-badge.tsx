@@ -20,8 +20,7 @@ const statusConfig: Record<string, { color: string; symbol?: string; label?: str
   error: { color: "red", symbol: "!", label: "error" },
 
   // Workspace statuses
-  running: { color: "green", symbol: "▶", label: "running" },
-  stopped: { color: "gray", symbol: "■", label: "stopped" },
+  inactive: { color: "gray", symbol: "○", label: "inactive" },
   initializing: { color: "yellow", symbol: "◐", label: "starting" },
 };
 

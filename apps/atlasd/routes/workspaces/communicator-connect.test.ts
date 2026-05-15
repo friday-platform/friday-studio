@@ -138,8 +138,6 @@ async function createTestApp() {
     deleteWorkspace: vi.fn(),
   } as unknown as WorkspaceManager;
 
-  const chatSdkEvictSpy = vi.fn().mockResolvedValue(undefined);
-
   const mockContext: AppContext = {
     startTime: Date.now(),
     sseClients: new Map(),
@@ -167,7 +165,7 @@ async function createTestApp() {
   const { workspacesRoutes } = await import("./index.ts");
   app.route("/", workspacesRoutes);
 
-  return { app, chatSdkEvictSpy };
+  return { app };
 }
 
 describe("POST /:workspaceId/connect-communicator", () => {

@@ -248,10 +248,13 @@ const sessionsRoutes = daemonFactory
     const { id } = c.req.valid("param");
     const ctx = c.get("app");
 
-    // The dispatch registry knows which workspace owns the session — use
-    // it for the authz check, then fan the cancel out over NATS so the
-    // owning daemon (which may be this process or another in a future
-    // multi-instance world) drives the abort.
+    // Local-only routing: we look up the workspaceId via the in-memory
+    // dispatch registry, which only tracks sessions on THIS daemon. A
+    // multi-instance future would resolve workspaceId from
+    // SESSION_INFLIGHT KV instead, so the cancel publish reaches the
+    // owning daemon's wildcard subscription regardless of which daemon
+    // received the DELETE. Single-instance today; not worth the extra
+    // KV read until that changes.
     const workspaceId = ctx.sessionDispatchRegistry.workspaceOf(id);
     if (!workspaceId) {
       return c.json({ error: `Session not found or not active: ${id}` }, 404);
