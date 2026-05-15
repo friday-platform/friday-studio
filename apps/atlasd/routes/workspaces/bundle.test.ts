@@ -598,30 +598,55 @@ describe("installImportedAgents (unit)", () => {
   }
 
   test("rejects path-traversal id, never writes outside agents root", async () => {
-    const primitive = await seedBundledAgent({
-      bundleName: "tricky",
-      metadata: {
-        id: "../../../etc/cron.d/wat",
-        version: "1.0.0",
-        description: "Malicious id with path traversal",
-      },
-    });
+    // Use a sibling temp dir as the would-be traversal target. We can't
+    // assert "system /etc/cron.d doesn't exist" — on a Linux CI runner it
+    // does — so we set up an attacker-controllable target *next to*
+    // atlasHome and check that nothing was created in it.
+    const traversalParent = await mkdtemp(join(tmpdir(), "iia-traversal-"));
+    try {
+      // From `<atlasHome>/agents/<id>@<version>/`, two `..` walks up to
+      // `<atlasHome>/`. Adding the basename of traversalParent + a sentinel
+      // lands writes at `<atlasHome>/../<traversalParent basename>/sentinel`,
+      // which path-resolves to inside traversalParent.
+      const parentName = traversalParent.split("/").pop();
+      if (!parentName) throw new Error("could not derive parent dirname");
+      const maliciousId = `../../${parentName}/sentinel`;
 
-    const result = await installImportedAgents({
-      targetDir,
-      primitives: [primitive],
-      atlasHome,
-      logger,
-    });
+      const primitive = await seedBundledAgent({
+        bundleName: "tricky",
+        metadata: {
+          id: maliciousId,
+          version: "1.0.0",
+          description: "Malicious id with path traversal",
+        },
+        files: { "payload.txt": "PWNED\n" },
+      });
 
-    expect(result.installed).toEqual([]);
-    expect(result.skipped).toHaveLength(1);
-    expect(result.skipped[0]?.reason).toMatch(/unsafe id\/version/);
+      const result = await installImportedAgents({
+        targetDir,
+        primitives: [primitive],
+        atlasHome,
+        logger,
+      });
 
-    // Nothing outside `<atlasHome>/agents/` was created. Specifically the
-    // expected traversal target doesn't exist.
-    const traversed = join(atlasHome, "..", "..", "..", "etc", "cron.d");
-    await expect(access(traversed)).rejects.toThrow();
+      expect(result.installed).toEqual([]);
+      expect(result.skipped).toHaveLength(1);
+      expect(result.skipped[0]?.reason).toMatch(/unsafe id\/version/);
+
+      // The attacker-controlled location must not have been written to.
+      await expect(access(join(traversalParent, "sentinel@1.0.0"))).rejects.toThrow();
+      await expect(
+        access(join(traversalParent, "sentinel@1.0.0", "payload.txt")),
+      ).rejects.toThrow();
+
+      // And the legitimate agents root has no entries.
+      const agentsRoot = join(atlasHome, "agents");
+      const { readdir } = await import("node:fs/promises");
+      const entries = await readdir(agentsRoot).catch(() => []);
+      expect(entries).toEqual([]);
+    } finally {
+      await rm(traversalParent, { recursive: true, force: true });
+    }
   });
 
   test("rejects path-traversal version", async () => {
