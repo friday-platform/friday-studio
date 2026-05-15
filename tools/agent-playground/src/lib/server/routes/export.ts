@@ -2,22 +2,22 @@ import { ArtifactSummarySchema } from "@atlas/core/artifacts";
 import { Hono } from "hono";
 import JSZip from "jszip";
 import { z } from "zod";
-import { GetChatResponseSchema } from "$lib/components/chat/types";
-import { artifactZipPath } from "$lib/export/artifact-zip-path";
+import { GetChatResponseSchema } from "../../components/chat/types.ts";
 import { DAEMON_BASE_URL } from "../../daemon-url.ts";
+import { artifactZipPath } from "../../export/artifact-zip-path.ts";
 
 /**
  * Per-artifact byte ceiling. Anything larger than this is dropped from the
  * zip with a `console.warn`: the entry is omitted, the rest of the export
  * proceeds, the recipient sees one missing download.
  */
-export const MAX_ARTIFACT_BYTES = 25 * 1024 * 1024;
+const MAX_ARTIFACT_BYTES = 25 * 1024 * 1024;
 /**
  * Aggregate byte ceiling across every artifact that survives the per-artifact
  * cap. If the running total exceeds this we abort with 413 before the zip is
  * generated rather than streaming a multi-hundred-megabyte response.
  */
-export const MAX_TOTAL_ARTIFACT_BYTES = 250 * 1024 * 1024;
+const MAX_TOTAL_ARTIFACT_BYTES = 250 * 1024 * 1024;
 
 const ArtifactsResponseSchema = z.object({ artifacts: z.array(ArtifactSummarySchema) });
 
