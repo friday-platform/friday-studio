@@ -10,6 +10,7 @@ capability pattern.
 - [Tier 3: HTTP API Integration](#tier-3-http-api-integration)
 - [Tier 4: MCP Tools](#tier-4-mcp-tools)
 - [Tier 5: Multi-Operation Dispatch](#tier-5-multi-operation-dispatch)
+- [Tier 6: Consuming Upstream Step Output (ctx.input)](#tier-6-consuming-upstream-step-output)
 - [Patterns Summary](#patterns-summary)
 
 ---
@@ -309,14 +310,95 @@ Key points:
 
 ---
 
+## Tier 6: Consuming Upstream Step Output
+
+When the action is wired into an FSM with `inputFrom: <doc-id>`, the upstream
+step's output arrives in `ctx.input`, NOT in `prompt`. Use `ctx.input.get(...)`
+for compact payloads and `ctx.input.artifact_json(...)` when the upstream
+producer compacted bulky data into artifact refs.
+
+Workspace wiring (for context — this is what makes `ctx.input` populated):
+
+```yaml
+jobs:
+  daily-brief:
+    fsm:
+      initial: idle
+      states:
+        idle:
+          on: { run-brief: { target: fetch } }
+        fetch:
+          entry:
+            - type: agent
+              agentId: gmail-fetcher
+              outputTo: emails-result
+            - type: emit
+              event: DONE
+          on: { DONE: { target: count } }
+        count:
+          entry:
+            - type: agent
+              agentId: email-counter # ← the agent below
+              inputFrom: emails-result
+          type: final
+```
+
+The downstream agent:
+
+```python
+from friday_agent_sdk import agent, ok, err, AgentContext, ToolCallError, run
+
+@agent(
+    id="email-counter",
+    version="1.0.0",
+    description="Counts emails from an upstream fetcher and returns top-line stats",
+)
+def execute(prompt: str, ctx: AgentContext):
+    # First try the compact value the producer wrote into outputTo
+    payload = ctx.input.get("emails-result")
+
+    # When the producer compacted bulky data into an artifact, hydrate it
+    if not isinstance(payload, dict) or "emails" not in payload:
+        try:
+            payload = ctx.input.artifact_json("emails-result")
+        except (ValueError, ToolCallError) as e:
+            return err(f"No upstream emails to count: {e}")
+
+    emails = payload.get("emails", []) if isinstance(payload, dict) else []
+    return ok({
+        "count": len(emails),
+        "first_subject": emails[0].get("subject") if emails else None,
+    })
+
+
+if __name__ == "__main__":
+    run()
+```
+
+Key points:
+
+- `ctx.input.get("doc-id")` returns the upstream step's compact `outputTo`
+  payload. The `doc-id` is the upstream `outputTo` value, not a guess.
+- `ctx.input.artifact_json("doc-id")` resolves artifact refs the producer
+  attached, fetching the underlying JSON through `get_artifact`. Use this
+  when the compact payload is a summary + refs rather than the full data.
+- An empty `ctx.input` means the action wasn't wired with `inputFrom` — check
+  the FSM job, or look in `prompt` if the data was passed on the signal
+  payload instead.
+- Do NOT ask upstream producers to inline large payloads to avoid `ctx.input`;
+  hydrate refs in the consumer instead.
+
+---
+
 ## Patterns Summary
 
-| Pattern            | When to use                                  | Key imports                          |
-| ------------------ | -------------------------------------------- | ------------------------------------ |
-| Echo/passthrough   | Testing, simple transforms                   | `ok, run`                            |
-| LLM generation     | Text analysis, classification, summarization | `ok, err, LlmError, run`             |
-| HTTP integration   | External API calls                           | `ok, err, HttpError, run`            |
-| MCP tools          | Pre-built service integrations               | `ok, err, ToolCallError, run`        |
-| Multi-operation    | Agents handling multiple distinct tasks      | `ok, err, parse_operation, run`      |
-| Structured output  | When you need typed JSON from LLM            | `generate_object` + JSON Schema dict |
-| Streaming progress | Long-running tasks                           | `ctx.stream.progress()`              |
+| Pattern             | When to use                                  | Key imports                          |
+| ------------------- | -------------------------------------------- | ------------------------------------ |
+| Echo/passthrough    | Testing, simple transforms                   | `ok, run`                            |
+| LLM generation      | Text analysis, classification, summarization | `ok, err, LlmError, run`             |
+| HTTP integration    | External API calls                           | `ok, err, HttpError, run`            |
+| MCP tools           | Pre-built service integrations               | `ok, err, ToolCallError, run`        |
+| Multi-operation     | Agents handling multiple distinct tasks      | `ok, err, parse_operation, run`      |
+| Upstream-step input | Agent is wired with `inputFrom: <doc-id>`    | `ctx.input.get / artifact_json`      |
+| Structured output   | When you need typed JSON from LLM            | `generate_object` + JSON Schema dict |
+| Streaming progress  | Long-running tasks                           | `ctx.stream.progress()`              |
