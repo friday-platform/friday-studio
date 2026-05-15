@@ -2,7 +2,6 @@
   import { stripMimeParams } from "@atlas/core/artifacts/file-upload";
   import { createQuery } from "@tanstack/svelte-query";
   import { artifactQueries } from "$lib/queries";
-  import { getExportContext } from "./export-context.ts";
   import { parseTabular, TABULAR_MIMES, type TableModel } from "./table-parsers.ts";
   import TableView from "./table-view.svelte";
 
@@ -12,68 +11,25 @@
 
   const { artifactId }: Props = $props();
 
-  // Pulled at script init per Svelte's getContext rule. When defined, the
-  // card renders synchronously from prefetched data and the fetch +
-  // ResizeObserver effects are skipped — the live UI path is only taken
-  // when this is undefined.
-  const exportCtx = getExportContext();
+  // Same artifactId across N cards shares one in-flight request and a
+  // process-wide cache, which is what makes the chat tree survive a heavy
+  // delegation that produces 30+ artifacts.
+  const liveQuery = createQuery(() => artifactQueries.byId(artifactId));
 
-  // svelte-ignore state_referenced_locally
-  const prefetched = exportCtx?.artifacts.get(artifactId);
-  const exportMissing = exportCtx !== undefined && prefetched === undefined;
+  const resolvedTitle = $derived(liveQuery.data?.artifact.title || "Artifact");
+  const resolvedSummary = $derived(liveQuery.data?.artifact.summary);
+  const mimeType = $derived(liveQuery.data?.artifact.data.mimeType);
+  const originalName = $derived(liveQuery.data?.artifact.data.originalName);
+  const sizeBytes = $derived(liveQuery.data?.artifact.data.size);
+  const contents = $derived(liveQuery.data?.contents);
+  const loading = $derived(liveQuery.isPending);
+  const fetchError = $derived(liveQuery.error ? liveQuery.error.message : null);
 
-  // TanStack Query for the live UI path. Same artifactId across N
-  // cards shares one in-flight request and a process-wide cache, which
-  // is what makes the chat tree survive a heavy delegation that
-  // produces 30+ artifacts. In export mode the query is skipped
-  // entirely — the export-preview layout is chromeless and does not
-  // mount a QueryClientProvider, so calling createQuery() there would
-  // throw "No QueryClient was found in Svelte context" during SSR.
-  const liveQuery =
-    exportCtx === undefined
-      ? createQuery(() => artifactQueries.byId(artifactId))
-      : undefined;
-
-  const resolvedTitle = $derived(
-    exportCtx !== undefined
-      ? prefetched?.title || "Artifact"
-      : liveQuery?.data?.artifact.title || "Artifact",
-  );
-  const resolvedSummary = $derived(
-    exportCtx !== undefined ? prefetched?.summary : liveQuery?.data?.artifact.summary,
-  );
-  const mimeType = $derived(
-    exportCtx !== undefined ? prefetched?.mimeType : liveQuery?.data?.artifact.data.mimeType,
-  );
-  const originalName = $derived(
-    exportCtx !== undefined ? prefetched?.originalName : liveQuery?.data?.artifact.data.originalName,
-  );
-  const sizeBytes = $derived(
-    exportCtx !== undefined ? prefetched?.size : liveQuery?.data?.artifact.data.size,
-  );
-  const contents = $derived(
-    exportCtx !== undefined ? undefined : liveQuery?.data?.contents,
-  );
-  const loading = $derived(exportCtx === undefined && (liveQuery?.isPending ?? false));
-  const fetchError = $derived(
-    exportMissing
-      ? `Artifact ${artifactId} missing from export context`
-      : exportCtx === undefined && liveQuery?.error
-        ? liveQuery.error.message
-        : null,
-  );
-
-  // Iframe scale — computed from container width vs assumed content width.
-  // In export mode the ResizeObserver path is skipped and we render at 1:1
-  // so iframes fill their container without runtime measurement.
   const IFRAME_CONTENT_WIDTH = 1200;
-  let iframeScale = $state(exportCtx === undefined ? 0.5 : 1);
+  let iframeScale = $state(0.5);
   let scalerEl = $state<HTMLDivElement | undefined>(undefined);
 
   $effect(() => {
-    // Skip in export mode — no JS runtime in the static HTML, and we
-    // already locked iframeScale to 1 so the iframe renders 1:1.
-    if (exportCtx !== undefined) return;
     if (!scalerEl) return;
     const observer = new ResizeObserver(([entry]) => {
       const w = entry.contentRect.width;
@@ -83,15 +39,8 @@
     return () => observer.disconnect();
   });
 
-  // Live UI hits the daemon's /:id/content endpoint; export mode rewrites
-  // the URL to a relative `assets/artifacts/<id>/<file>` path inside the
-  // zip via the context-supplied resolver.
   const serveUrl = $derived(
-    artifactId
-      ? exportCtx !== undefined
-        ? exportCtx.resolveUrl(artifactId)
-        : `/api/daemon/api/artifacts/${encodeURIComponent(artifactId)}/content`
-      : null,
+    artifactId ? `/api/daemon/api/artifacts/${encodeURIComponent(artifactId)}/content` : null,
   );
 
   // Storage adapters can round-trip text mimes with a charset parameter
@@ -166,42 +115,30 @@
   // at `/artifacts/<id>/table` — the explicit "render as table" path
   // (the bare `/artifacts/<id>` dispatcher would redirect there
   // anyway for tabular mimes, but linking directly skips the
-  // round-trip). Workspace-agnostic; export mode skips this — the
-  // static HTML has no router.
+  // round-trip).
   const tableRouteUrl = $derived(
-    isTabularMime && exportCtx === undefined
-      ? `/artifacts/${encodeURIComponent(artifactId)}/table`
-      : undefined,
+    isTabularMime ? `/artifacts/${encodeURIComponent(artifactId)}/table` : undefined,
   );
 
   // Raw text for tabular artifacts that didn't ship inline with the
   // metadata response. Disabled (skipToken) when the mime isn't
-  // tabular or the metadata already supplied contents. Skipped
-  // entirely in export mode — same reason as `liveQuery` above: no
-  // QueryClientProvider in the chromeless preview layout. Same
-  // TanStack cache as the metadata query — multiple cards for the
-  // same tabular artifact share one network request, which is what
-  // stops `ERR_INSUFFICIENT_RESOURCES` on heavy-delegation chats that
+  // tabular or the metadata already supplied contents. Same TanStack
+  // cache as the metadata query — multiple cards for the same tabular
+  // artifact share one network request, which is what stops
+  // `ERR_INSUFFICIENT_RESOURCES` on heavy-delegation chats that
   // surface 30+ artifact ids.
-  const tabularContentQuery =
-    exportCtx === undefined
-      ? createQuery(() =>
-          artifactQueries.content(isTabularMime && !contents ? artifactId : null),
-        )
-      : undefined;
-  const tabularText = $derived(contents ?? tabularContentQuery?.data);
+  const tabularContentQuery = createQuery(() =>
+    artifactQueries.content(isTabularMime && !contents ? artifactId : null),
+  );
+  const tabularText = $derived(contents ?? tabularContentQuery.data);
 
   // text/markdown routes through the bare `/artifacts/<id>` dispatcher
-  // (one redirect hop) so the same disambiguation lives in one place:
-  // table-shaped markdown (heading + one table) lands on /table, prose
-  // lands on /markdown. Linking direct to /markdown would bypass that
-  // and ship every md to the prose viewer — wrong for table-only
-  // artifacts. Without this branch, Open would fall through to
-  // `serveUrl` (the raw /content endpoint, served as a download).
+  // (one redirect hop) so the table-vs-prose disambiguation
+  // (isPureMarkdownTable) lives in one place. Without this branch,
+  // Open would fall through to `serveUrl` (the raw /content endpoint,
+  // served as a download).
   const markdownDispatchUrl = $derived(
-    baseMime === "text/markdown" && exportCtx === undefined
-      ? `/artifacts/${encodeURIComponent(artifactId)}`
-      : undefined,
+    baseMime === "text/markdown" ? `/artifacts/${encodeURIComponent(artifactId)}` : undefined,
   );
 
   const tableModel = $derived<TableModel | null>(

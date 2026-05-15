@@ -39,12 +39,9 @@ export interface ArtifactPathInput {
 
 /**
  * Compute the relative path under which an artifact's bytes live in the
- * export zip — `assets/artifacts/{id}/{slugified-derived-filename}`.
- *
- * The preview page's `ExportContext.resolveUrl` calls this so HTML
- * references resolve against the same path the orchestrator (Task #8)
- * writes to in the zip. No leading slash so the path is resolvable when
- * the file is opened directly off disk.
+ * export zip — `assets/artifacts/{id}/{slugified-derived-filename}`. No
+ * leading slash so the path is resolvable when the file is opened
+ * directly off disk.
  *
  * Both `id` and the derived basename run through `slugifyZipBasename`.
  * Artifact ids are daemon-generated today (so containing `..` or `/` is

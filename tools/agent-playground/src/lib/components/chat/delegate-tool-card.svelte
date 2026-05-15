@@ -2,7 +2,6 @@
   import { untrack, type Component } from "svelte";
   import { Icons, IconSmall, markdownToHTMLSafe } from "@atlas/ui";
   import ToolCallCard from "./tool-call-card.svelte";
-  import { getExportContext } from "./export-context";
   import { formatRawOutput } from "./format-raw-output";
   import {
     argPreview,
@@ -197,13 +196,6 @@
 
   /* ─── Copy to clipboard ──────────────────────────────────────────── */
 
-  /**
-   * Suppresses the clipboard buttons (which depend on JS) when the card
-   * is rendered inside an export. The data still renders; only the copy
-   * affordance is hidden.
-   */
-  const isExport = getExportContext() !== undefined;
-
   function copyToClipboard(value: unknown, btn: HTMLButtonElement) {
     let text: string;
     if (typeof value === "string") {
@@ -225,20 +217,16 @@
 </script>
 
 {#snippet jsonCopyBlock(label: string, data: unknown)}
-  {#if isExport}
+  <div class="json-copy-wrapper">
+    <button
+      class="json-copy-btn"
+      aria-label={`Copy ${label}`}
+      onclick={(e: MouseEvent) => copyToClipboard(data, e.currentTarget as HTMLButtonElement)}
+    >
+      Copy
+    </button>
     <pre class="json-render">{@html formatRawOutput(data)}</pre>
-  {:else}
-    <div class="json-copy-wrapper">
-      <button
-        class="json-copy-btn"
-        aria-label={`Copy ${label}`}
-        onclick={(e: MouseEvent) => copyToClipboard(data, e.currentTarget as HTMLButtonElement)}
-      >
-        Copy
-      </button>
-      <pre class="json-render">{@html formatRawOutput(data)}</pre>
-    </div>
-  {/if}
+  </div>
 {/snippet}
 
 {#snippet outputDrawer(c: ToolCallDisplay)}
@@ -275,20 +263,16 @@
             <span class="chevron-icon"><IconSmall.ChevronRight /></span>
             error
           </summary>
-          {#if isExport}
+          <div class="json-copy-wrapper">
+            <button
+              class="json-copy-btn"
+              aria-label="Copy error"
+              onclick={(e: MouseEvent) => copyToClipboard(c.errorText, e.currentTarget as HTMLButtonElement)}
+            >
+              Copy
+            </button>
             <pre class="json-render error-text">{c.errorText}</pre>
-          {:else}
-            <div class="json-copy-wrapper">
-              <button
-                class="json-copy-btn"
-                aria-label="Copy error"
-                onclick={(e: MouseEvent) => copyToClipboard(c.errorText, e.currentTarget as HTMLButtonElement)}
-              >
-                Copy
-              </button>
-              <pre class="json-render error-text">{c.errorText}</pre>
-            </div>
-          {/if}
+          </div>
         </details>
       {/if}
     </div>

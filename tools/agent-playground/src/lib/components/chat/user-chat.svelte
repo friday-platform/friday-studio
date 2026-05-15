@@ -1144,7 +1144,7 @@
     // sticky in-flight rune leaves the button permanently disabled until
     // page reload, which is worse than a stale toast.
     try {
-      const url = `/platform/${encodeURIComponent(wsId)}/chat/${encodeURIComponent(chatId)}/export`;
+      const url = `/api/export/${encodeURIComponent(wsId)}/${encodeURIComponent(chatId)}`;
 
       let res: Response;
       try {

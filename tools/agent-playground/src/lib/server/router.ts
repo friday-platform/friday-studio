@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { agentsRoute } from "./routes/agents.ts";
 import { discoverRoute } from "./routes/discover.ts";
 import { executeRoute } from "./routes/execute.ts";
+import { exportRoute } from "./routes/export.ts";
 import { mcpRoute } from "./routes/mcp.ts";
 import { shellRoute } from "./routes/shell.ts";
 import { updatesRoute } from "./routes/updates.ts";
@@ -12,6 +13,7 @@ const api = new Hono()
   .route("/agents", agentsRoute)
   .route("/discover", discoverRoute)
   .route("/execute", executeRoute)
+  .route("/export", exportRoute)
   .route("/mcp", mcpRoute)
   .route("/shell", shellRoute)
   .route("/updates", updatesRoute);
