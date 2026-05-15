@@ -33,7 +33,7 @@
   // ── Workspace context ──────────────────────────────────────────────────
   // An invocation always runs in a workspace context — the daemon route
   // requires it. Default to the first workspace once the list loads.
-  const workspacesQuery = createQuery(() => workspaceQueries.list());
+  const workspacesQuery = createQuery(() => workspaceQueries.enriched());
   const workspaces = $derived(workspacesQuery.data ?? []);
   let workspaceId = $state("");
   $effect.pre(() => {
@@ -246,7 +246,7 @@
             <option value="">No workspaces</option>
           {/if}
           {#each workspaces as ws (ws.id)}
-            <option value={ws.id}>{ws.name}</option>
+            <option value={ws.id}>{ws.displayName}</option>
           {/each}
         </select>
       </div>
