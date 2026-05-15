@@ -126,6 +126,7 @@ import { MountSourceNotFoundError } from "./mount-errors.ts";
 import { mountRegistry } from "./mount-registry.ts";
 import { MountedStoreBinding } from "./mounted-store-binding.ts";
 import { interpolateConfig, resolveWorkspaceVariables } from "./variable-interpolation.ts";
+import { loadWorkspaceEnv } from "./workspace-env.ts";
 
 /**
  * Await a promise but reject as soon as `signal` aborts, even when the
@@ -1635,6 +1636,25 @@ export class WorkspaceRuntime {
     return fsmFiles;
   }
 
+  /**
+   * This workspace's filesystem path — honors an explicit `workspacePath`
+   * option, else the conventional `<friday-home>/workspaces/:id`.
+   */
+  private get workspacePath(): string {
+    return (
+      this.options.workspacePath || path.join(getFridayHome(), "workspaces", this.workspace.id)
+    );
+  }
+
+  /**
+   * Load this workspace's `.env` overlay fresh. Never cached — the file is
+   * editable at runtime (settings UI, env tools), so a stale copy would mask
+   * edits. Read once per spawn.
+   */
+  private loadEnvOverlay(): Record<string, string> {
+    return loadWorkspaceEnv(this.workspacePath);
+  }
+
   private async createJobEngine(
     job: FSMJob,
     sessionId: string,
@@ -1681,6 +1701,9 @@ export class WorkspaceRuntime {
       }),
       agentExecutor,
       mcpServerConfigs,
+      // Workspace `.env` overlay for FSM LLM-step MCP spawns. A thunk, not a
+      // value — the file is editable at runtime, so it's read fresh per spawn.
+      getEnvOverlay: () => this.loadEnvOverlay(),
       artifactStorage: ArtifactStorage,
       broadcastNotifier: this.options.broadcastNotifier,
       // Wires the optional `delegate` tool for FSM type:llm actions.
@@ -2707,6 +2730,12 @@ export class WorkspaceRuntime {
                 onStreamEvent: signal._context?.onStreamEvent,
                 additionalContext: { documents: fsmContext.documents },
                 config: mergedConfig,
+                // Per-agent `env:` wiring — only atlas agents carry it; resolved
+                // into AgentContext.env at the agents server.
+                env: agentConfig?.type === "atlas" ? agentConfig.env : undefined,
+                // Workspace `.env` overlay — layered under per-agent wiring and
+                // environmentConfig when AgentContext.env is built.
+                envOverlay: this.loadEnvOverlay(),
                 outputSchema: options?.outputSchema,
                 // Propagate session cancellation to the agent MCP transport —
                 // the orchestrator already listens for this on line ~296 and
@@ -2906,7 +2935,13 @@ export class WorkspaceRuntime {
       }
     }
 
-    const { tools: rawMcpTools, dispose } = await createMCPTools(mcpConfigs, logger);
+    // Load the workspace `.env` overlay once for this spawn — feeds both the
+    // user agent's MCP servers and its own `env:` wiring resolution below.
+    const envOverlay = this.loadEnvOverlay();
+
+    const { tools: rawMcpTools, dispose } = await createMCPTools(mcpConfigs, logger, {
+      envOverlay,
+    });
 
     // Filter platform tools to LLM_AGENT_ALLOWED — same surface workspace LLM
     // agents see (memory, artifacts, state, fs, csv, bash, webfetch,
@@ -2956,14 +2991,14 @@ export class WorkspaceRuntime {
     const observedToolResults: ToolResult[] = [];
 
     try {
+      // The executor layers `process.env` underneath whatever we hand it, so
+      // `options.env` carries only the workspace overlay + resolved per-agent
+      // wiring. Precedence at spawn: process.env → workspace `.env` → wiring.
       const result = await executor.execute(sourceLocation, prompt, {
-        env: opts.agentEnv
-          ? await resolveEnvValues(opts.agentEnv, logger)
-          : Object.fromEntries(
-              Object.entries(process.env).filter(
-                (e): e is [string, string] => typeof e[1] === "string",
-              ),
-            ),
+        env: {
+          ...envOverlay,
+          ...(opts.agentEnv ? await resolveEnvValues(opts.agentEnv, logger, envOverlay) : {}),
+        },
         // Forward the parsed jobs.<name>.config.timeout into the executor so
         // the subprocess kill ceiling matches the value operators set in
         // workspace.yml. Without this, ProcessAgentExecutor falls back to

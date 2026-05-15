@@ -47,9 +47,22 @@
 
   // ─── Derived ─────────────────────────────────────────────────────────────────
 
+  /**
+   * Mirrors `SecretPropertySchema` from `link-provider-queries.ts`: the JSON
+   * Schema property descriptor that the Link service emits. Unknown keys pass
+   * through so older providers that ship a bare `{ type: "string" }` still
+   * parse cleanly.
+   */
+  const PropertyShape = z.looseObject({
+    type: z.literal("string"),
+    description: z.string().optional(),
+    format: z.union([z.literal("password"), z.string()]).optional(),
+    writeOnly: z.boolean().optional(),
+  });
+
   const schemaShape = $derived.by(() => {
     const shape = z.object({
-      properties: z.record(z.string(), z.object({}).passthrough()).optional(),
+      properties: z.record(z.string(), PropertyShape).optional(),
       required: z.array(z.string()).optional(),
     });
     const parsed = shape.safeParse(secretSchema);
@@ -60,10 +73,12 @@
   const secretFields = $derived.by(() => {
     if (!schemaShape?.properties) return [];
     const required = new Set(schemaShape.required ?? []);
-    return Object.keys(schemaShape.properties).map((key) => ({
+    return Object.entries(schemaShape.properties).map(([key, prop]) => ({
       key,
       label: secretKeyToLabel(key),
+      description: prop.description ?? "",
       required: required.has(key),
+      masked: prop.format === "password" || isSensitiveField(key),
     }));
   });
 
@@ -83,6 +98,11 @@
       .join(" ");
   }
 
+  /**
+   * Heuristic fallback for hardcoded providers (and pre-descriptor installs)
+   * that don't emit `format` on the JSON Schema property — keeps existing
+   * masking behavior unchanged when `format === "password"` is absent.
+   */
   function isSensitiveField(key: string): boolean {
     return /password|secret|token|key/i.test(key);
   }
@@ -145,10 +165,15 @@
 
   {#each secretFields as field (field.key)}
     <div class="field">
-      <label for="credential-{field.key}">{field.label}</label>
+      <label for="credential-{field.key}">
+        <span class="label-text">{field.label}</span>
+        {#if !field.required}
+          <span class="tag" data-tone="neutral">optional</span>
+        {/if}
+      </label>
       <input
         id="credential-{field.key}"
-        type={isSensitiveField(field.key) ? "password" : "text"}
+        type={field.masked ? "password" : "text"}
         bind:value={fieldValues[field.key]}
         placeholder={field.required
           ? `Enter ${field.label.toLowerCase()}`
@@ -156,6 +181,9 @@
         disabled={submitting}
         required={field.required}
       />
+      {#if field.description}
+        <p class="field-help">{field.description}</p>
+      {/if}
     </div>
   {/each}
 
@@ -202,6 +230,30 @@
     font-size: var(--font-size-1);
     font-weight: var(--font-weight-4);
     color: var(--color-text);
+  }
+
+  .field label {
+    align-items: baseline;
+    display: flex;
+    gap: var(--size-1-5);
+  }
+
+  .field-help {
+    color: var(--color-text-muted, var(--color-text));
+    font-size: var(--font-size-1);
+    line-height: 1.4;
+    margin: 0;
+    opacity: 0.75;
+  }
+
+  .tag {
+    background-color: var(--highlight);
+    border-radius: var(--radius-1);
+    color: var(--color-text);
+    font-size: var(--font-size-1);
+    font-weight: var(--font-weight-6);
+    padding: 1px var(--size-1-5);
+    white-space: nowrap;
   }
 
   .field input {

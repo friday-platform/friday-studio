@@ -298,6 +298,81 @@ describe("PUT /env in-memory sync (hot reload)", () => {
   });
 });
 
+describe("per-key /env/:key routes", () => {
+  async function putKey(key: string, value: string): Promise<Response> {
+    return await createApp().request(`/env/${key}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ value }),
+    });
+  }
+
+  test("PUT then GET round-trips one key", async () => {
+    expect((await putKey("MY_SETTING", "hello world")).status).toBe(200);
+    const res = await createApp().request("/env/MY_SETTING");
+    expect(res.status).toBe(200);
+    expect((await res.json()) as { value?: string }).toMatchObject({
+      success: true,
+      key: "MY_SETTING",
+      value: "hello world",
+    });
+  });
+
+  test("PUT preserves comments and unrelated keys", async () => {
+    const envPath = join(tempHome, ".env");
+    const { writeFile } = await import("node:fs/promises");
+    await writeFile(envPath, "# operator notes\nKEEP_ME=untouched\n", "utf-8");
+
+    expect((await putKey("NEW_KEY", "new-value")).status).toBe(200);
+
+    const onDisk = await readFile(envPath, "utf-8");
+    expect(onDisk).toBe("# operator notes\nKEEP_ME=untouched\nNEW_KEY=new-value\n");
+  });
+
+  test("GET on an absent key is 404", async () => {
+    const res = await createApp().request("/env/NOT_SET");
+    expect(res.status).toBe(404);
+  });
+
+  test("DELETE removes the key and reports removed", async () => {
+    await putKey("DOOMED", "x");
+    const del = await createApp().request("/env/DOOMED", { method: "DELETE" });
+    expect(del.status).toBe(200);
+    expect((await del.json()) as { removed?: boolean }).toMatchObject({ removed: true });
+    expect((await createApp().request("/env/DOOMED")).status).toBe(404);
+  });
+
+  test("DELETE on an absent key reports removed: false", async () => {
+    const del = await createApp().request("/env/NEVER_EXISTED", { method: "DELETE" });
+    expect(del.status).toBe(200);
+    expect((await del.json()) as { removed?: boolean }).toMatchObject({ removed: false });
+  });
+
+  test("PUT hot-reloads process.env and busts the caches", async () => {
+    // KEPT_KEY is in SYNC_TEST_KEYS, so afterEach restores it.
+    delete process.env.KEPT_KEY;
+    await putKey("KEPT_KEY", "live-value");
+    expect(process.env.KEPT_KEY).toBe("live-value");
+    expect(mockResetRegistry).toHaveBeenCalled();
+    expect(mockInvalidateCatalog).toHaveBeenCalled();
+  });
+
+  test("PUT on a denylist key writes to disk but does not mutate process.env", async () => {
+    const before = process.env.FRIDAY_UV_PATH;
+    await putKey("FRIDAY_UV_PATH", "/totally/different/uv");
+    const onDisk = await readFile(join(tempHome, ".env"), "utf-8");
+    expect(onDisk).toContain("FRIDAY_UV_PATH=/totally/different/uv");
+    expect(process.env.FRIDAY_UV_PATH).toBe(before);
+  });
+
+  test("per-key routes are dev-gated", async () => {
+    process.env.FRIDAY_ENV = "production";
+    expect((await createApp().request("/env/ANYTHING")).status).toBe(403);
+    expect((await putKey("ANYTHING", "x")).status).toBe(403);
+    expect((await createApp().request("/env/ANYTHING", { method: "DELETE" })).status).toBe(403);
+  });
+});
+
 describe("/env dev-only gate", () => {
   // The /env endpoints (read + write of the daemon's .env) are
   // operator-level — they expose every credential the daemon has and

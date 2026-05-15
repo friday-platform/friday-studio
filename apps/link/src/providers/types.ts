@@ -316,7 +316,20 @@ export const DynamicApiKeyProviderInputSchema = z.object({
     .max(64),
   displayName: z.string().min(1).max(100),
   description: z.string().min(1).max(200),
-  secretSchema: z.record(z.string(), z.literal("string")).default({ api_key: "string" }),
+  secretSchema: z
+    .record(
+      z.string(),
+      z.union([
+        z.literal("string"),
+        z.object({
+          type: z.literal("string"),
+          isRequired: z.boolean().optional(),
+          isSecret: z.boolean().optional(),
+          description: z.string().optional(),
+        }),
+      ]),
+    )
+    .default({ api_key: "string" }),
   setupInstructions: z.string().optional(),
 });
 

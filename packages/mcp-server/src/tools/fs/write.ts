@@ -6,6 +6,7 @@ import { getFridayHome } from "@atlas/utils/paths.server";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { createSuccessResponse } from "../utils.ts";
+import { expandUserPath } from "./path-utils.ts";
 
 export function registerWriteTool(server: McpServer) {
   server.registerTool(
@@ -52,9 +53,10 @@ Usage:
       const baseDir = params.workspaceId
         ? path.join(getFridayHome(), "workspaces", params.workspaceId)
         : process.cwd();
-      const filepath = path.isAbsolute(params.filePath)
-        ? params.filePath
-        : path.join(baseDir, params.filePath);
+      const requestedPath = expandUserPath(params.filePath);
+      const filepath = path.isAbsolute(requestedPath)
+        ? requestedPath
+        : path.join(baseDir, requestedPath);
 
       // Check if file exists
       let exists = false;

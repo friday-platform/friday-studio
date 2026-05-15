@@ -52,6 +52,7 @@ export {
   disableMCPServer,
   enableMCPServer,
   findServerReferences,
+  setMCPServerEnvWiring,
 } from "./mcp-servers.ts";
 // Signal mutations
 export {
@@ -79,3 +80,6 @@ export type {
 // Workspace-level agent extraction
 export type { WorkspaceAgent } from "./workspace-agents.ts";
 export { deriveWorkspaceAgents } from "./workspace-agents.ts";
+// Workspace identity mutation
+export type { WorkspaceIdentityPatch } from "./workspace-identity.ts";
+export { updateWorkspaceIdentity, WorkspaceIdentityPatchSchema } from "./workspace-identity.ts";

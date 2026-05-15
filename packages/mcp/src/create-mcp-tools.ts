@@ -150,6 +150,11 @@ export interface CreateMCPToolsOptions {
    * caller-agnostic / non-chat use.
    */
   scrubResult?: ScrubToolResult;
+  /**
+   * Workspace `.env` overlay. `auto`/`from_environment` entries in a server's
+   * `env` / `startup.env` resolve from here before `process.env`.
+   */
+  envOverlay?: Record<string, string>;
 }
 
 /** Internal result of attempting to connect a single server. */
@@ -180,8 +185,16 @@ export async function createMCPTools(
   const results = await Promise.allSettled(
     Object.entries(configs).map(async ([serverId, config]): Promise<ServerConnectResult> => {
       try {
-        const resolvedEnv = config.env ? await resolveEnvValues(config.env, logger) : {};
-        const connected = await connectServerWithTimeout(config, resolvedEnv, serverId, logger);
+        const resolvedEnv = config.env
+          ? await resolveEnvValues(config.env, logger, options?.envOverlay)
+          : {};
+        const connected = await connectServerWithTimeout(
+          config,
+          resolvedEnv,
+          serverId,
+          logger,
+          options?.envOverlay,
+        );
         const filtered = filterTools(connected.tools, config.tools);
         const prefixed = options?.toolPrefix
           ? prefixToolKeys(filtered, options.toolPrefix)
@@ -395,9 +408,10 @@ function connectServerWithTimeout(
   resolvedEnv: Record<string, string>,
   serverId: string,
   logger: Logger,
+  envOverlay?: Record<string, string>,
 ): Promise<ConnectedServer> {
   return withTimeout(
-    connectServer(config, resolvedEnv, serverId, logger),
+    connectServer(config, resolvedEnv, serverId, logger, envOverlay),
     LIST_TOOLS_TIMEOUT_MS,
     (actualDurationMs) =>
       new MCPTimeoutError(serverId, "list_tools", LIST_TOOLS_TIMEOUT_MS, actualDurationMs),
@@ -410,13 +424,14 @@ async function connectServer(
   resolvedEnv: Record<string, string>,
   serverId: string,
   logger: Logger,
+  envOverlay?: Record<string, string>,
 ): Promise<ConnectedServer> {
   const { transport } = config;
   switch (transport.type) {
     case "stdio":
       return await connectStdio(transport, resolvedEnv, serverId, logger);
     case "http":
-      return await connectHttp(config, resolvedEnv, serverId, logger);
+      return await connectHttp(config, resolvedEnv, serverId, logger, { envOverlay });
   }
 }
 
@@ -550,7 +565,13 @@ export async function connectHttp(
   resolvedEnv: Record<string, string>,
   serverId: string,
   logger: Logger,
-  deps: { spawn?: typeof defaultSpawn; fetch?: typeof fetch; pidFile?: PidFileWriter } = {},
+  deps: {
+    spawn?: typeof defaultSpawn;
+    fetch?: typeof fetch;
+    pidFile?: PidFileWriter;
+    /** Workspace `.env` overlay for resolving `startup.env` entries. */
+    envOverlay?: Record<string, string>;
+  } = {},
 ): Promise<ConnectedServer> {
   const { transport, auth, startup } = config;
   if (transport.type !== "http") {
@@ -583,7 +604,9 @@ export async function connectHttp(
 
   // Resolve startup.env separately from config.env — bearer tokens must never
   // leak into the child process, and startup.env must never reach HTTP headers.
-  const resolvedStartupEnv = startup.env ? await resolveEnvValues(startup.env, logger) : {};
+  const resolvedStartupEnv = startup.env
+    ? await resolveEnvValues(startup.env, logger, deps.envOverlay)
+    : {};
 
   // Merge parent env + resolved startup env (with interpolation)
   const parentEnv = Object.fromEntries(

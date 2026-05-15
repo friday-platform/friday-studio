@@ -38,6 +38,65 @@ export const MCPUpstreamProvenanceSchema = z.object({
 export type MCPUpstreamProvenance = z.infer<typeof MCPUpstreamProvenanceSchema>;
 
 /**
+ * Where a doctor-surfaced env var came from. `friday` (the doctor extracted it
+ * from the README) carries the excerpt it was read from; `registry` (declared
+ * upstream) and `user` (typed into the manual-config form) need no evidence.
+ */
+export const DoctorEnvVarProvenanceSchema = z.discriminatedUnion("source", [
+  z.object({ source: z.literal("registry") }),
+  z.object({ source: z.literal("friday"), readme_excerpt: z.string() }),
+  z.object({ source: z.literal("user") }),
+]);
+export type DoctorEnvVarProvenance = z.infer<typeof DoctorEnvVarProvenanceSchema>;
+
+/** A single env var the doctor surfaced, tagged with where it came from. */
+export const DoctorEnvVarSchema = z.object({
+  name: z.string().min(1),
+  description: z.string().optional(),
+  isRequired: z.boolean(),
+  isSecret: z.boolean(),
+  default: z.string().optional(),
+  provenance: DoctorEnvVarProvenanceSchema,
+});
+export type DoctorEnvVar = z.infer<typeof DoctorEnvVarSchema>;
+
+/** A qualitative observation from the doctor — what it saw and how serious it is. */
+export const DoctorFindingSchema = z.object({
+  severity: z.enum(["info", "warn", "error"]),
+  title: z.string().min(1),
+  detail: z.string(),
+});
+export type DoctorFinding = z.infer<typeof DoctorFindingSchema>;
+
+/**
+ * The doctor's output — a tagged union on `verdict` so impossible states are
+ * unrepresentable. `clean` carries no env var list at all; `attention` requires
+ * a non-empty one; `unknown` requires at least one finding explaining itself.
+ *
+ * Verdicts are state-coded: each names the *shape of the user's next action*
+ * (nothing / review-and-apply / investigate-manually), not the finding content.
+ */
+export const DoctorReportSchema = z.discriminatedUnion("verdict", [
+  z.object({
+    verdict: z.literal("clean"),
+    tldr: z.string(),
+    findings: z.array(DoctorFindingSchema),
+  }),
+  z.object({
+    verdict: z.literal("attention"),
+    tldr: z.string(),
+    findings: z.array(DoctorFindingSchema),
+    env_vars: z.array(DoctorEnvVarSchema).min(1),
+  }),
+  z.object({
+    verdict: z.literal("unknown"),
+    tldr: z.string(),
+    findings: z.array(DoctorFindingSchema).min(1),
+  }),
+]);
+export type DoctorReport = z.infer<typeof DoctorReportSchema>;
+
+/**
  * Enhanced MCP server metadata with required config
  * Uses the official MCPServerConfigSchema from @atlas/agent-sdk for configTemplate
  */
@@ -71,6 +130,14 @@ export const MCPServerMetadataSchema = z.object({
    */
   platformEnv: z.record(z.string(), EnvValueSchema).optional(),
   requiredConfig: z.array(RequiredConfigFieldSchema).optional(),
+
+  /**
+   * Install lifecycle state. Absent on entries created before the doctor flow
+   * landed and on static blessed servers — treat absent as `ready`.
+   */
+  status: z.enum(["setting_up", "awaiting_confirm", "ready"]).optional(),
+  /** The setup doctor's output. Present whenever the doctor ran at install. */
+  doctor_report: DoctorReportSchema.optional(),
 
   // README content fetched from the upstream repository (stored at install time)
   readme: z.string().optional(),

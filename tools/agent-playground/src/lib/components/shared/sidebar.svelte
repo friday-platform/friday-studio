@@ -170,6 +170,11 @@
                 {@const subPages = [
                   { label: "Overview", href: base, isActive: isBase },
                   {
+                    label: "Activity",
+                    href: `${base}/activity`,
+                    isActive: pathname.startsWith(`${base}/activity`),
+                  },
+                  {
                     label: "Chat",
                     href: `${base}/chat`,
                     isActive: pathname.startsWith(`${base}/chat`),
@@ -183,11 +188,6 @@
                     label: "Skills",
                     href: `${base}/skills`,
                     isActive: pathname.startsWith(`${base}/skills`),
-                  },
-                  {
-                    label: "MCP",
-                    href: `${base}/mcp`,
-                    isActive: pathname.startsWith(`${base}/mcp`),
                   },
                   {
                     label: "Jobs",
@@ -205,9 +205,9 @@
                     isActive: pathname.startsWith(`/memory/${ws.id}`),
                   },
                   {
-                    label: "Activity",
-                    href: `${base}/activity`,
-                    isActive: pathname.startsWith(`${base}/activity`),
+                    label: "Settings",
+                    href: `${base}/settings`,
+                    isActive: pathname.startsWith(`${base}/settings`),
                   },
                 ]}
                 <ul class="sub-nav">

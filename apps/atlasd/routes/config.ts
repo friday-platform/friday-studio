@@ -16,11 +16,17 @@ import {
 import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
 import { getFridayHome } from "@atlas/utils/paths.server";
+import { loadEnvFile } from "@atlas/workspace";
 import { parse } from "@std/dotenv";
 import { parse as parseYaml, stringify as stringifyYaml } from "@std/yaml";
 import { describeRoute, resolver, validator } from "hono-openapi";
 import z from "zod";
 import { devOnlyMiddleware } from "../src/dev-only.ts";
+import {
+  commitGlobalEnvDelete,
+  commitGlobalEnvWrite,
+  HOT_RELOAD_DENYLIST,
+} from "../src/env-commit.ts";
 
 /**
  * Check if a file or directory exists at the given path.
@@ -118,37 +124,25 @@ const envVarsPutRequestSchema = z.object({
 });
 
 /**
- * Keys still written to `.env` but never mutated on the running daemon's
- * `process.env`. Otherwise a Settings save could brick the daemon by
- * changing its own loader paths or FRIDAY_HOME. The next daemon spawn
- * picks up the file value via `--env-file`.
- *
- * The `FRIDAY_*` subprocess-spawn vars (uv path, agent SDK version,
- * agent python, claude path) are read per-spawn by agent-spawn.ts and
- * the claude-code provider — mutating them on the running daemon would
- * partition reality between already-spawned and future-spawned agents.
+ * Re-exported from `env-commit.ts` (the owner). Kept exported here because
+ * `config.test.ts` imports it from this module and the bulk `PUT /env`
+ * handler below references it inline.
  */
-export const HOT_RELOAD_DENYLIST: ReadonlySet<string> = new Set([
-  "PATH",
-  "HOME",
-  "USER",
-  "SHELL",
-  "NODE_OPTIONS",
-  "LD_PRELOAD",
-  "LD_LIBRARY_PATH",
-  "DYLD_INSERT_LIBRARIES",
-  "DYLD_LIBRARY_PATH",
-  "FRIDAY_HOME",
-  "FRIDAY_ENV",
-  "FRIDAY_UV_PATH",
-  "FRIDAY_AGENT_SDK_VERSION",
-  "FRIDAY_AGENT_PYTHON",
-  "FRIDAY_CLAUDE_PATH",
-]);
+export { HOT_RELOAD_DENYLIST };
 
 const envVarsPutResponseSchema = z.object({ success: z.boolean(), error: z.string().optional() });
 
 const errorResponseSchema = z.object({ success: z.boolean(), error: z.string() });
+
+/** Per-key path param — POSIX identifier, same constraint as the bulk PUT. */
+const envKeyParamSchema = z.object({
+  key: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/, "env var keys must be POSIX identifiers"),
+});
+
+/** Per-key value body — single-line, same constraint as the bulk PUT. */
+const envValueBodySchema = z.object({
+  value: z.string().regex(/^[^\r\n]*$/, "env var values must not contain newlines"),
+});
 
 // Routes
 const configRoutes = daemonFactory.createApp();
@@ -160,6 +154,7 @@ const configRoutes = daemonFactory.createApp();
 // role lands. Studio + the CLI set `FRIDAY_ENV=dev` automatically so
 // local-first usage is unaffected.
 configRoutes.use("/env", devOnlyMiddleware());
+configRoutes.use("/env/*", devOnlyMiddleware());
 
 configRoutes.get(
   "/env",
@@ -295,6 +290,116 @@ configRoutes.put(
       return c.json({ success: true });
     } catch (error) {
       logger.error("Failed to write environment variables", { error: stringifyError(error) });
+      return c.json({ success: false, error: stringifyError(error) }, 500);
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Per-key env routes — single-key CRUD over <friday-home>/.env.
+//
+// Comment-preserving (line-based editor), unlike the bulk PUT above which
+// re-stringifies the whole file. The agent-facing env tools route through
+// here so a single set/delete never eats comments or unrelated keys.
+// ---------------------------------------------------------------------------
+
+const envKeyResponseSchema = z.object({
+  success: z.boolean(),
+  key: z.string().optional(),
+  value: z.string().optional(),
+  removed: z.boolean().optional(),
+  error: z.string().optional(),
+});
+
+configRoutes.get(
+  "/env/:key",
+  describeRoute({
+    tags: ["Config"],
+    summary: "Get one environment variable from <friday-home>/.env",
+    responses: {
+      200: {
+        description: "Value retrieved",
+        content: { "application/json": { schema: resolver(envKeyResponseSchema) } },
+      },
+      404: {
+        description: "Key not set",
+        content: { "application/json": { schema: resolver(envKeyResponseSchema) } },
+      },
+    },
+  }),
+  validator("param", envKeyParamSchema),
+  (c) => {
+    const { key } = c.req.valid("param");
+    const envPath = join(getFridayHome(), ".env");
+    const value = loadEnvFile(envPath)[key];
+    if (value === undefined) {
+      return c.json({ success: false, error: `'${key}' is not set` }, 404);
+    }
+    return c.json({ success: true, key, value });
+  },
+);
+
+configRoutes.put(
+  "/env/:key",
+  describeRoute({
+    tags: ["Config"],
+    summary: "Set one environment variable in <friday-home>/.env",
+    description:
+      "Comment-preserving single-key write. Mirrors the change into the running " +
+      "daemon's process.env (except hot-reload-denylisted keys) and busts the " +
+      "model/provider caches.",
+    responses: {
+      200: {
+        description: "Value set",
+        content: { "application/json": { schema: resolver(envKeyResponseSchema) } },
+      },
+      500: {
+        description: "Internal error",
+        content: { "application/json": { schema: resolver(errorResponseSchema) } },
+      },
+    },
+  }),
+  validator("param", envKeyParamSchema),
+  validator("json", envValueBodySchema),
+  (c) => {
+    const { key } = c.req.valid("param");
+    const { value } = c.req.valid("json");
+    try {
+      commitGlobalEnvWrite(key, value);
+      logger.info("Global env var set", { key });
+      return c.json({ success: true, key });
+    } catch (error) {
+      logger.error("Failed to set global env var", { key, error: stringifyError(error) });
+      return c.json({ success: false, error: stringifyError(error) }, 500);
+    }
+  },
+);
+
+configRoutes.delete(
+  "/env/:key",
+  describeRoute({
+    tags: ["Config"],
+    summary: "Delete one environment variable from <friday-home>/.env",
+    responses: {
+      200: {
+        description: "Delete attempted",
+        content: { "application/json": { schema: resolver(envKeyResponseSchema) } },
+      },
+      500: {
+        description: "Internal error",
+        content: { "application/json": { schema: resolver(errorResponseSchema) } },
+      },
+    },
+  }),
+  validator("param", envKeyParamSchema),
+  (c) => {
+    const { key } = c.req.valid("param");
+    try {
+      const removed = commitGlobalEnvDelete(key);
+      logger.info("Global env var delete", { key, removed });
+      return c.json({ success: true, key, removed });
+    } catch (error) {
+      logger.error("Failed to delete global env var", { key, error: stringifyError(error) });
       return c.json({ success: false, error: stringifyError(error) }, 500);
     }
   },

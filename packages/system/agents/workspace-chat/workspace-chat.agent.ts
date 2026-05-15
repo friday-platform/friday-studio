@@ -69,6 +69,7 @@ import { createCreateMcpServerTool } from "./tools/create-mcp-server.ts";
 import { createDisableMcpServerTool } from "./tools/disable-mcp-server.ts";
 import { createBoundDraftTools } from "./tools/draft-tools.ts";
 import { createEnableMcpServerTool } from "./tools/enable-mcp-server.ts";
+import { createEnvTools } from "./tools/env-tools.ts";
 import { createFileIOTools, createReadAttachmentTool } from "./tools/file-io.ts";
 import { createInstallMcpServerTool } from "./tools/install-mcp-server.ts";
 import {
@@ -579,7 +580,7 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
   expertise: { examples: [] },
   useWorkspaceSkills: true,
 
-  handler: async (_, { session, logger, stream, abortSignal, platformModels }) => {
+  handler: async (_, { session, logger, stream, abortSignal, platformModels, envOverlay }) => {
     if (!session.streamId) {
       throw new Error("Stream ID is required");
     }
@@ -1001,8 +1002,12 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
             // this hook unset and the delegate just passes inherited tools
             // through verbatim.
             rebindAgentTool,
-            workspaceConfig: wsConfig,
             linkSummary: linkSummary ?? undefined,
+            // Thread the workspace `.env` overlay so a delegated sub-agent's
+            // MCP `from_environment` / `auto` wiring resolves from the
+            // workspace `.env` — not just `process.env`. Without this, the
+            // env-supply feature silently no-ops for delegated sub-agents.
+            ...(envOverlay ? { envOverlay } : {}),
           },
           () => allToolsRef,
         );
@@ -1056,6 +1061,12 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
             workspaceId,
             sessionId: adHocSessionId,
             workspacePermissions: wsConfig?.permissions,
+            logger,
+          }),
+          ...createEnvTools({
+            workspaceId,
+            sessionId: adHocSessionId,
+            daemonUrl: getAtlasDaemonUrl(),
             logger,
           }),
           ...webFetchTool,
@@ -1305,6 +1316,17 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
               ).data;
               const name = data?.displayName ?? data?.provider ?? "service";
               return { type: "text" as const, text: `Connected ${name}.` };
+            }
+            if (part.type === "data-env-applied") {
+              const data = (part as { type: string; data?: { scope?: string; keys?: string[] } })
+                .data;
+              const scope = data?.scope === "global" ? "global" : "workspace";
+              const keys = Array.isArray(data?.keys) ? data!.keys : [];
+              const keyList = keys.length > 0 ? keys.join(", ") : "(none)";
+              return {
+                type: "text" as const,
+                text: `Applied env write to ${scope} .env: ${keyList}.`,
+              };
             }
             return undefined;
           },

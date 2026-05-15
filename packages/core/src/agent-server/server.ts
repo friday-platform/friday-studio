@@ -21,7 +21,11 @@ import z from "zod";
 import { createAgentContextBuilder } from "../agent-context/index.ts";
 import { CancellationNotificationSchema } from "../streaming/stream-emitters.ts";
 import { AgentExecutionManager } from "./agent-execution-manager.ts";
-import { type AgentServerDependencies, AgentToolParamsSchema } from "./types.ts";
+import {
+  type AgentEnvWiring,
+  type AgentServerDependencies,
+  AgentToolParamsSchema,
+} from "./types.ts";
 export class AtlasAgentsMCPServer implements AgentServerAdapter {
   #logger: Logger;
   private server: McpServer;
@@ -190,6 +194,11 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
             .catch(() => undefined)
             .parse(args.config);
 
+          // Per-agent env wiring + workspace `.env` overlay from workspace.yml
+          // — already validated by AgentToolParamsSchema at the MCP boundary.
+          const agentEnv = args.env;
+          const envOverlay = args.envOverlay;
+
           // Pass requestId directly to executeAgent - no instance variable
           const result = await this.executeAgent(
             agentId,
@@ -199,6 +208,8 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
             outputSchema,
             agentConfig,
             traceparent,
+            agentEnv,
+            envOverlay,
           );
 
           this.#logger.debug("Agent execution result", {
@@ -341,6 +352,8 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
     outputSchema?: Record<string, unknown>,
     config?: Record<string, unknown>,
     traceparent?: string,
+    envWiring?: AgentEnvWiring,
+    envOverlay?: Record<string, string>,
   ): Promise<AgentResult> {
     this.#logger.debug("executeAgent called", {
       agentId,
@@ -367,6 +380,8 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
           requestId,
           outputSchema,
           config,
+          envWiring,
+          envOverlay,
         );
       },
       { "agent.id": agentId, "agent.session.id": sessionData.sessionId ?? "" },

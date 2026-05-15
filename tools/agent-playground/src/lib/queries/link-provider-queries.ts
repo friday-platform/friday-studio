@@ -13,7 +13,22 @@ import { z } from "zod";
 // SCHEMAS & TYPES
 // ==============================================================================
 
-const ProviderDetailsSchema = z.object({
+/**
+ * One property entry inside a provider's JSON `secretSchema.properties` map.
+ *
+ * The Link service emits JSON-Schema-shaped property descriptors that may
+ * include rich annotations (`description`, `format: "password"`, `writeOnly`).
+ * Older/hardcoded providers emit a bare `{ type: "string" }`, so the
+ * annotation slots are optional and unknown keys pass through.
+ */
+const SecretPropertySchema = z.looseObject({
+  type: z.literal("string"),
+  description: z.string().optional(),
+  format: z.union([z.literal("password"), z.string()]).optional(),
+  writeOnly: z.boolean().optional(),
+});
+
+export const ProviderDetailsSchema = z.object({
   id: z.string(),
   displayName: z.string(),
   type: z.enum(["oauth", "apikey", "app_install"]),
@@ -21,7 +36,7 @@ const ProviderDetailsSchema = z.object({
   setupInstructions: z.string().optional(),
   secretSchema: z
     .object({
-      properties: z.record(z.string(), z.object({}).passthrough()).optional(),
+      properties: z.record(z.string(), SecretPropertySchema).optional(),
       required: z.array(z.string()).optional(),
     })
     .optional(),

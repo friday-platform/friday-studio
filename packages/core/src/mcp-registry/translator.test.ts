@@ -173,20 +173,36 @@ describe("translate", () => {
         examples: ["https://api.example.com"],
       });
 
-      // Check configTemplate.env uses Link credential references
+      // Required vars route to Link refs; the optional non-secret becomes a
+      // plain string carrying its upstream default.
       expect(result.entry.configTemplate.env).toEqual({
         API_KEY: { from: "link", provider: "com-example-api-server", key: "API_KEY" },
-        DEBUG: { from: "link", provider: "com-example-api-server", key: "DEBUG" },
+        DEBUG: "false",
         ENDPOINT: { from: "link", provider: "com-example-api-server", key: "ENDPOINT" },
       });
 
-      // Check linkProvider is DynamicApiKeyProviderInput
+      // The Link provider's secretSchema carries one descriptor per
+      // credential var, with `isRequired` / `isSecret` / `description`
+      // propagated from the upstream env var.
       expect(result.linkProvider).toEqual({
         type: "apikey",
         id: "com-example-api-server",
         displayName: "com.example.api-server",
         description: "API server with env vars",
-        secretSchema: { API_KEY: "string", DEBUG: "string", ENDPOINT: "string" },
+        secretSchema: {
+          API_KEY: {
+            type: "string",
+            isRequired: true,
+            isSecret: false,
+            description: "API key for authentication",
+          },
+          ENDPOINT: {
+            type: "string",
+            isRequired: true,
+            isSecret: false,
+            description: "API endpoint URL",
+          },
+        },
       });
     });
 
@@ -312,7 +328,7 @@ describe("translate", () => {
               registryType: "pypi",
               identifier: "http-env-server",
               version: "1.0.0",
-              transport: { type: "stdio" },
+              transport: { type: "streamable-http" },
               environmentVariables: [
                 { name: "API_KEY", description: "API key for authentication", isRequired: true },
                 { name: "ENDPOINT", description: "Custom endpoint", isRequired: false },
@@ -337,28 +353,37 @@ describe("translate", () => {
       expect(result.success).toBe(true);
       if (!isSuccess(result)) return;
 
-      // HTTP transport wins (pypi stdio is rejected later, but http branch runs first)
+      // The package isn't a locally-runnable stdio package, so the http remote wins.
       expect(result.entry.configTemplate.transport).toEqual({
         type: "http",
         url: "https://http-env.example.com/mcp",
       });
 
-      // Env vars from packages become Link refs
+      // Required vars become Link refs; the optional non-secret with no
+      // upstream default becomes an empty plain string.
       expect(result.entry.configTemplate.env).toEqual({
         API_KEY: { from: "link", provider: "io-example-http-with-env", key: "API_KEY" },
-        ENDPOINT: { from: "link", provider: "io-example-http-with-env", key: "ENDPOINT" },
+        ENDPOINT: "",
       });
       expect(result.entry.requiredConfig).toEqual([
         { key: "API_KEY", description: "API key for authentication", type: "string" },
       ]);
 
-      // Link provider is apikey because env vars exist
+      // Link provider is apikey because a credential env var exists; its
+      // secretSchema carries one descriptor for that credential.
       expect(result.linkProvider).toEqual({
         type: "apikey",
         id: "io-example-http-with-env",
         displayName: "io.example.http-with-env",
         description: "HTTP server with env vars from packages",
-        secretSchema: { API_KEY: "string", ENDPOINT: "string" },
+        secretSchema: {
+          API_KEY: {
+            type: "string",
+            isRequired: true,
+            isSecret: false,
+            description: "API key for authentication",
+          },
+        },
       });
     });
 
@@ -413,14 +438,6 @@ describe("translate", () => {
           name: "io.example.http-only",
           description: "HTTP-only MCP server",
           version: "1.0.0",
-          packages: [
-            {
-              registryType: "pypi",
-              identifier: "http-only-server",
-              version: "1.0.0",
-              transport: { type: "stdio" },
-            },
-          ],
           remotes: [{ type: "streamable-http", url: "https://http-only.example.com/mcp" }],
         },
         _meta: {
@@ -439,7 +456,7 @@ describe("translate", () => {
       expect(result.success).toBe(true);
       if (!isSuccess(result)) return;
 
-      // Should pick http (since pypi stdio is rejected, but streamable-http is available)
+      // No packages at all — the streamable-http remote is the only transport.
       expect(result.entry.configTemplate.transport).toEqual({
         type: "http",
         url: "https://http-only.example.com/mcp",
@@ -583,7 +600,14 @@ describe("translate", () => {
         id: "io-example-simple-env",
         displayName: "io.example.simple-env",
         description: "Simple env vars",
-        secretSchema: { SIMPLE_VAR: "string" },
+        secretSchema: {
+          SIMPLE_VAR: {
+            type: "string",
+            isRequired: true,
+            isSecret: false,
+            description: "A simple variable",
+          },
+        },
       });
     });
 
@@ -639,7 +663,14 @@ describe("translate", () => {
         id: "io-example-placeholder-env",
         displayName: "io.example.placeholder-env",
         description: "Placeholder test",
-        secretSchema: { TOKEN: "string" },
+        secretSchema: {
+          TOKEN: {
+            type: "string",
+            isRequired: true,
+            isSecret: false,
+            description: "Authentication token",
+          },
+        },
       });
     });
   });
@@ -711,19 +742,58 @@ describe("translate", () => {
       expect(result.reason).toContain("not yet supported");
     });
 
-    it("rejects PyPI-only packages", ({ expect }) => {
+    it("pypi + stdio → uvx command", ({ expect }) => {
       const fixture: UpstreamServerEntry = {
         server: {
           $schema: "https://example.com/schema.json",
-          name: "io.example.pypi-only",
-          description: "PyPI-only server",
+          name: "io.example.pypi-stdio",
+          description: "PyPI stdio server",
+          version: "5.0.5",
+          packages: [
+            {
+              registryType: "pypi",
+              identifier: "example-mcp",
+              version: "5.0.5",
+              transport: { type: "stdio" },
+            },
+          ],
+        },
+        _meta: {
+          "io.modelcontextprotocol.registry/official": {
+            status: "active",
+            statusChangedAt: "2025-01-01T00:00:00.000000Z",
+            publishedAt: "2025-01-01T00:00:00.000000Z",
+            updatedAt: "2025-01-01T00:00:00.000000Z",
+            isLatest: true,
+          },
+        },
+      };
+
+      const result = translate(fixture);
+
+      expect(result.success).toBe(true);
+      if (!isSuccess(result)) return;
+      // PyPI stdio packages run via uvx with a `==` version pin.
+      expect(result.entry.configTemplate.transport).toEqual({
+        type: "stdio",
+        command: "uvx",
+        args: ["example-mcp==5.0.5"],
+      });
+    });
+
+    it("rejects pypi packages with a non-stdio transport", ({ expect }) => {
+      const fixture: UpstreamServerEntry = {
+        server: {
+          $schema: "https://example.com/schema.json",
+          name: "io.example.pypi-nonstdio",
+          description: "PyPI non-stdio server",
           version: "1.0.0",
           packages: [
             {
               registryType: "pypi",
-              identifier: "pypi-only-server",
+              identifier: "pypi-nonstdio-server",
               version: "1.0.0",
-              transport: { type: "stdio" },
+              transport: { type: "sse" },
             },
           ],
         },
@@ -743,7 +813,6 @@ describe("translate", () => {
       expect(result.success).toBe(false);
       if (!isFailure(result)) return;
       expect(result.reason).toContain("PyPI");
-      expect(result.reason).toContain("not yet supported");
     });
 
     it("rejects Docker/OCI-only packages", ({ expect }) => {
@@ -1188,18 +1257,22 @@ describe("translate", () => {
       if (!isSuccess(result)) return;
 
       expect(result.entry.requiredConfig).toHaveLength(2);
+      // Required vars route to Link; optional non-secrets become plain strings.
       expect(result.entry.configTemplate.env).toEqual({
         REQ1: { from: "link", provider: "io-example-mixed-env", key: "REQ1" },
-        OPT1: { from: "link", provider: "io-example-mixed-env", key: "OPT1" },
+        OPT1: "",
         REQ2: { from: "link", provider: "io-example-mixed-env", key: "REQ2" },
-        OPT2: { from: "link", provider: "io-example-mixed-env", key: "OPT2" },
+        OPT2: "",
       });
       expect(result.linkProvider).toEqual({
         type: "apikey",
         id: "io-example-mixed-env",
         displayName: "io.example.mixed-env",
         description: "Mixed env vars",
-        secretSchema: { REQ1: "string", OPT1: "string", REQ2: "string", OPT2: "string" },
+        secretSchema: {
+          REQ1: { type: "string", isRequired: true, isSecret: false, description: "Required 1" },
+          REQ2: { type: "string", isRequired: true, isSecret: false, description: "Required 2" },
+        },
       });
     });
 
@@ -1329,11 +1402,15 @@ describe("translate", () => {
         id: "io-example-choices",
         displayName: "io.example.choices",
         description: "With choices",
-        secretSchema: { REGION: "string" },
+        secretSchema: {
+          REGION: { type: "string", isRequired: true, isSecret: false, description: "AWS Region" },
+        },
       });
     });
 
-    it("handles environment variable with isSecret (ignored in v1)", ({ expect }) => {
+    it("routes an optional secret env var to Link (secret alone earns credential handling)", ({
+      expect,
+    }) => {
       const fixture: UpstreamServerEntry = {
         server: {
           $schema: "https://example.com/schema.json",
@@ -1348,9 +1425,9 @@ describe("translate", () => {
               transport: { type: "stdio" },
               environmentVariables: [
                 {
-                  name: "SECRET_KEY",
-                  description: "Secret API key",
-                  isRequired: true,
+                  name: "OPTIONAL_TOKEN",
+                  description: "Optional API token",
+                  isRequired: false,
                   isSecret: true,
                 },
               ],
@@ -1373,19 +1450,159 @@ describe("translate", () => {
       expect(result.success).toBe(true);
       if (!isSuccess(result)) return;
 
-      // isSecret is not mapped in v1 per design doc
-      expect(result.entry.requiredConfig?.[0]).not.toHaveProperty("isSecret");
-
+      // Optional + secret → Link ref, even though the var isn't required.
       expect(result.entry.configTemplate.env).toEqual({
-        SECRET_KEY: { from: "link", provider: "io-example-secret", key: "SECRET_KEY" },
+        OPTIONAL_TOKEN: { from: "link", provider: "io-example-secret", key: "OPTIONAL_TOKEN" },
       });
+      // Not required → no requiredConfig entry.
+      expect(result.entry.requiredConfig).toBeUndefined();
+      // Still carried in the Link provider's secretSchema.
       expect(result.linkProvider).toEqual({
         type: "apikey",
         id: "io-example-secret",
         displayName: "io.example.secret",
         description: "With secret",
-        secretSchema: { SECRET_KEY: "string" },
+        secretSchema: {
+          OPTIONAL_TOKEN: {
+            type: "string",
+            isRequired: false,
+            isSecret: true,
+            description: "Optional API token",
+          },
+        },
       });
+    });
+
+    it("emits per-field metadata for the bitbucket-shaped mix of required creds and an optional secret", ({
+      expect,
+    }) => {
+      const fixture: UpstreamServerEntry = {
+        server: {
+          $schema: "https://example.com/schema.json",
+          name: "io.example.bitbucket-mcp",
+          description: "Bitbucket MCP",
+          version: "1.0.0",
+          packages: [
+            {
+              registryType: "npm",
+              identifier: "@example/bitbucket-mcp",
+              version: "1.0.0",
+              transport: { type: "stdio" },
+              environmentVariables: [
+                {
+                  name: "BITBUCKET_USERNAME",
+                  description: "Bitbucket account username",
+                  isRequired: true,
+                },
+                {
+                  name: "BITBUCKET_APP_PASSWORD",
+                  description: "App password for Bitbucket API",
+                  isRequired: true,
+                  isSecret: true,
+                },
+                {
+                  name: "BITBUCKET_TOKEN",
+                  description: "Optional bearer token, alternative to app password",
+                  isRequired: false,
+                  isSecret: true,
+                },
+                {
+                  name: "BITBUCKET_LOG_LEVEL",
+                  description: "Log level",
+                  isRequired: false,
+                  default: "info",
+                },
+              ],
+            },
+          ],
+        },
+        _meta: {
+          "io.modelcontextprotocol.registry/official": {
+            status: "active",
+            statusChangedAt: "2025-01-01T00:00:00.000000Z",
+            publishedAt: "2025-01-01T00:00:00.000000Z",
+            updatedAt: "2025-01-01T00:00:00.000000Z",
+            isLatest: true,
+          },
+        },
+      };
+
+      const result = translate(fixture);
+
+      expect(result.success).toBe(true);
+      if (!isSuccess(result)) return;
+
+      // The optional non-secret stays out of secretSchema entirely (plain
+      // string in env). The three credentials each carry their own metadata
+      // — including the optional secret with isRequired: false, isSecret: true.
+      expect(result.linkProvider).toEqual({
+        type: "apikey",
+        id: "io-example-bitbucket-mcp",
+        displayName: "io.example.bitbucket-mcp",
+        description: "Bitbucket MCP",
+        secretSchema: {
+          BITBUCKET_USERNAME: {
+            type: "string",
+            isRequired: true,
+            isSecret: false,
+            description: "Bitbucket account username",
+          },
+          BITBUCKET_APP_PASSWORD: {
+            type: "string",
+            isRequired: true,
+            isSecret: true,
+            description: "App password for Bitbucket API",
+          },
+          BITBUCKET_TOKEN: {
+            type: "string",
+            isRequired: false,
+            isSecret: true,
+            description: "Optional bearer token, alternative to app password",
+          },
+        },
+      });
+    });
+
+    it("creates no Link provider when every env var is an optional non-secret", ({ expect }) => {
+      const fixture: UpstreamServerEntry = {
+        server: {
+          $schema: "https://example.com/schema.json",
+          name: "io.example.settings-only",
+          description: "Settings-only server",
+          version: "1.0.0",
+          packages: [
+            {
+              registryType: "npm",
+              identifier: "@example/settings-only",
+              version: "1.0.0",
+              transport: { type: "stdio" },
+              environmentVariables: [
+                { name: "LOG_LEVEL", description: "Log level", isRequired: false, default: "info" },
+                { name: "CACHE_DIR", description: "Cache directory", isRequired: false },
+              ],
+            },
+          ],
+        },
+        _meta: {
+          "io.modelcontextprotocol.registry/official": {
+            status: "active",
+            statusChangedAt: "2025-01-01T00:00:00.000000Z",
+            publishedAt: "2025-01-01T00:00:00.000000Z",
+            updatedAt: "2025-01-01T00:00:00.000000Z",
+            isLatest: true,
+          },
+        },
+      };
+
+      const result = translate(fixture);
+
+      expect(result.success).toBe(true);
+      if (!isSuccess(result)) return;
+
+      // All optional non-secrets → plain strings; no credential vault involved.
+      expect(result.entry.configTemplate.env).toEqual({ LOG_LEVEL: "info", CACHE_DIR: "" });
+      expect(result.entry.requiredConfig).toBeUndefined();
+      expect(result.linkProvider).toBeUndefined();
     });
 
     it("handles environment variable with format (ignored in v1)", ({ expect }) => {
@@ -1434,8 +1651,99 @@ describe("translate", () => {
         id: "io-example-format",
         displayName: "io.example.format",
         description: "With format",
-        secretSchema: { EMAIL: "string" },
+        secretSchema: {
+          EMAIL: {
+            type: "string",
+            isRequired: true,
+            isSecret: false,
+            description: "Email address",
+          },
+        },
       });
+    });
+  });
+});
+
+describe("translate — extraEnvVars (doctor path)", () => {
+  const META = {
+    "io.modelcontextprotocol.registry/official": {
+      status: "active",
+      statusChangedAt: "2025-01-01T00:00:00.000000Z",
+      publishedAt: "2025-01-01T00:00:00.000000Z",
+      updatedAt: "2025-01-01T00:00:00.000000Z",
+      isLatest: true,
+    },
+  } as const;
+
+  function bareStdioEntry(name: string): UpstreamServerEntry {
+    return {
+      server: {
+        $schema: "https://example.com/schema.json",
+        name,
+        description: "Server with no declared env vars",
+        version: "1.0.0",
+        packages: [
+          {
+            registryType: "npm",
+            identifier: "@example/bare",
+            version: "1.0.0",
+            transport: { type: "stdio" },
+          },
+        ],
+      },
+      _meta: META,
+    };
+  }
+
+  it("routes extraEnvVars when the registry declares none", ({ expect }) => {
+    const result = translate(bareStdioEntry("io.example.doctor-extracted"), {
+      extraEnvVars: [
+        { name: "API_TOKEN", isRequired: true, isSecret: true },
+        { name: "LOG_LEVEL", isRequired: false, isSecret: false, default: "info" },
+      ],
+    });
+
+    expect(result.success).toBe(true);
+    if (!isSuccess(result)) return;
+
+    // Required/secret → Link ref; optional non-secret → plain string with default.
+    expect(result.entry.configTemplate.env).toEqual({
+      API_TOKEN: { from: "link", provider: "io-example-doctor-extracted", key: "API_TOKEN" },
+      LOG_LEVEL: "info",
+    });
+    expect(result.linkProvider).toEqual({
+      type: "apikey",
+      id: "io-example-doctor-extracted",
+      displayName: "io.example.doctor-extracted",
+      description: "Server with no declared env vars",
+      // No upstream description on the doctor-extracted var, so the
+      // descriptor omits `description` entirely.
+      secretSchema: { API_TOKEN: { type: "string", isRequired: true, isSecret: true } },
+    });
+  });
+
+  it("registry-declared env vars win over extraEnvVars when both are present", ({ expect }) => {
+    const entry = bareStdioEntry("io.example.both");
+    entry.server.packages = [
+      {
+        registryType: "npm",
+        identifier: "@example/bare",
+        version: "1.0.0",
+        transport: { type: "stdio" },
+        environmentVariables: [{ name: "REGISTRY_KEY", isRequired: true }],
+      },
+    ];
+
+    const result = translate(entry, {
+      extraEnvVars: [{ name: "DOCTOR_KEY", isRequired: true, isSecret: true }],
+    });
+
+    expect(result.success).toBe(true);
+    if (!isSuccess(result)) return;
+
+    // The registry-declared var is used; the doctor's is ignored.
+    expect(result.entry.configTemplate.env).toEqual({
+      REGISTRY_KEY: { from: "link", provider: "io-example-both", key: "REGISTRY_KEY" },
     });
   });
 });

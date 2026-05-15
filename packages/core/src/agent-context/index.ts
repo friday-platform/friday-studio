@@ -23,6 +23,8 @@ import {
 import { stringifyError } from "@atlas/utils";
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { wrapPlatformToolsWithScope } from "../agent-conversion/agent-tool-filters.ts";
+import type { AgentEnvWiring } from "../agent-server/types.ts";
+import { resolveEnvValues } from "../mcp-registry/credential-resolver.ts";
 import { discoverMCPServers, type LinkSummary } from "../mcp-registry/discovery.ts";
 import { takeMountContext } from "../mount-context-registry.ts";
 import { MCPStreamEmitter } from "../streaming/stream-emitters.ts";
@@ -45,6 +47,8 @@ export function createAgentContextBuilder(deps: AgentContextBuilderDeps) {
     sessionData: AgentSessionData & { streamId?: string },
     prompt: string,
     overrides?: Partial<AgentContext>,
+    envWiring?: AgentEnvWiring,
+    envOverlay?: Record<string, string>,
   ): Promise<{
     context: AgentContext;
     enrichedPrompt: string;
@@ -78,6 +82,7 @@ export function createAgentContextBuilder(deps: AgentContextBuilderDeps) {
           actionId: sessionData.actionId,
           jobTimeoutMs: sessionData.jobTimeoutMs,
         },
+        envOverlay,
       );
       allTools = fetched.tools;
       releaseMCPTools = fetched.release;
@@ -100,7 +105,17 @@ export function createAgentContextBuilder(deps: AgentContextBuilderDeps) {
         sessionData.workspaceId,
         agent.metadata.id,
         agent.environmentConfig,
+        envOverlay,
       );
+
+      // Per-agent `env:` wiring from workspace.yml resolves through the one
+      // shared resolver and layers over the environmentConfig-derived vars.
+      // Precedence: ambient process.env → workspace `.env` overlay →
+      // environmentConfig → per-agent wiring, most specific wins.
+      const resolvedEnvWiring = envWiring
+        ? await resolveEnvValues(envWiring, agentLogger, envOverlay)
+        : {};
+      const env = { ...envContext, ...resolvedEnvWiring };
 
       let enrichedPrompt = prompt;
       let cleanupSkills: (() => Promise<void>) | undefined;
@@ -210,7 +225,10 @@ export function createAgentContextBuilder(deps: AgentContextBuilderDeps) {
       }
 
       const context: AgentContext = {
-        env: envContext,
+        env,
+        // Carry the raw overlay so an agent that spawns sub-tools (delegate)
+        // can layer it into those spawns' env resolution.
+        ...(envOverlay ? { envOverlay } : {}),
         session: sessionData,
         stream: streamEmitter,
         skills: resolvedSkills,
@@ -263,6 +281,7 @@ async function fetchAllTools(
   logger: Logger,
   signal?: AbortSignal,
   scope?: { sessionId?: string; actionId?: string; jobTimeoutMs?: number },
+  envOverlay?: Record<string, string>,
 ): Promise<{
   tools: Record<string, AtlasTool>;
   release: () => Promise<void>;
@@ -324,6 +343,7 @@ async function fetchAllTools(
 
   const { tools, dispose, disconnected } = await createMCPTools(allServerConfigs, logger, {
     signal,
+    envOverlay,
   });
   const wrapped = wrapPlatformToolsWithScope(tools, {
     workspaceId,

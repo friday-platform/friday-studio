@@ -19,9 +19,15 @@ export function hydrateDynamicProvider(
   input: DynamicProviderInput,
 ): OAuthProvider | ApiKeyProvider {
   if (input.type === "apikey") {
-    const schemaFields: Record<string, z.ZodString> = {};
-    for (const key of Object.keys(input.secretSchema)) {
-      schemaFields[key] = z.string();
+    const schemaFields: Record<string, z.ZodTypeAny> = {};
+    for (const [key, value] of Object.entries(input.secretSchema)) {
+      let field: z.ZodTypeAny = z.string();
+      if (typeof value !== "string") {
+        if (value.description) field = field.describe(value.description);
+        if (value.isSecret) field = field.meta({ format: "password", writeOnly: true });
+        if (!value.isRequired) field = field.optional();
+      }
+      schemaFields[key] = field;
     }
 
     return defineApiKeyProvider({

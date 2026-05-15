@@ -5,6 +5,7 @@ import fg from "fast-glob";
 import { minimatch } from "minimatch";
 import { z } from "zod";
 import { createSuccessResponse } from "../utils.ts";
+import { expandUserPath } from "./path-utils.ts";
 
 const IGNORE_PATTERNS = ["node_modules/", ".git/", "dist/", "build/"];
 
@@ -25,7 +26,10 @@ export function registerLsTool(server: McpServer) {
       },
     },
     async (params) => {
-      const searchPath = path.resolve(process.cwd(), params.path || ".");
+      const searchPath = path.resolve(
+        process.cwd(),
+        params.path ? expandUserPath(params.path) : ".",
+      );
 
       const files = [];
 

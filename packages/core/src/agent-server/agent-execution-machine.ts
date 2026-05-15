@@ -20,6 +20,7 @@ import type { AgentContext, AgentPayload, AgentSessionData, AtlasAgent } from "@
 import type { Logger } from "@atlas/logger";
 import type { DisconnectedIntegration } from "@atlas/mcp";
 import { type ActorRefFrom, assign, fromPromise, setup } from "xstate";
+import type { AgentEnvWiring } from "./types.ts";
 
 // === Input/Output Types for State Machine Actors ===
 
@@ -33,6 +34,8 @@ type PrepareContextInput = {
   abortSignal?: AbortSignal;
   outputSchema?: Record<string, unknown>;
   config?: Record<string, unknown>;
+  envWiring?: AgentEnvWiring;
+  envOverlay?: Record<string, string>;
 };
 
 export type PrepareContextOutput = {
@@ -56,6 +59,8 @@ type BuildAgentContext = (
   sessionData: AgentSessionData,
   prompt: string,
   overrides?: Partial<AgentContext>,
+  envWiring?: AgentEnvWiring,
+  envOverlay?: Record<string, string>,
 ) => Promise<PrepareContextOutput>;
 
 /** Execution context tracked by the state machine */
@@ -68,6 +73,8 @@ interface AgentExecutionContext {
   abortSignal?: AbortSignal;
   outputSchema?: Record<string, unknown>;
   config?: Record<string, unknown>;
+  envWiring?: AgentEnvWiring;
+  envOverlay?: Record<string, string>;
   preparedContext?: AgentContext;
   releaseMCPTools?: () => Promise<void>;
   disconnectedIntegrations?: DisconnectedIntegration[];
@@ -88,6 +95,8 @@ type AgentExecutionEvents =
       abortSignal?: AbortSignal;
       outputSchema?: Record<string, unknown>;
       config?: Record<string, unknown>;
+      envWiring?: AgentEnvWiring;
+      envOverlay?: Record<string, string>;
     }
   | { type: "CANCEL" }
   | { type: "TIMEOUT" }
@@ -139,7 +148,8 @@ export function createAgentExecutionMachine(
       }),
 
       prepareContext: fromPromise<PrepareContextOutput, PrepareContextInput>(async ({ input }) => {
-        // Pass abortSignal, outputSchema, and config as overrides if present
+        // Pass abortSignal, outputSchema, and config as overrides if present.
+        // Per-agent env wiring is a separate arg — the builder resolves it.
         const overrides: Partial<AgentContext> = {};
         if (input.abortSignal) overrides.abortSignal = input.abortSignal;
         if (input.outputSchema) overrides.outputSchema = input.outputSchema;
@@ -149,6 +159,8 @@ export function createAgentExecutionMachine(
           input.sessionData,
           input.prompt,
           Object.keys(overrides).length > 0 ? overrides : undefined,
+          input.envWiring,
+          input.envOverlay,
         );
       }),
 
@@ -207,6 +219,18 @@ export function createAgentExecutionMachine(
             return undefined;
           }
           return event.config;
+        },
+        envWiring: ({ event }) => {
+          if (event.type !== "EXECUTE") {
+            return undefined;
+          }
+          return event.envWiring;
+        },
+        envOverlay: ({ event }) => {
+          if (event.type !== "EXECUTE") {
+            return undefined;
+          }
+          return event.envOverlay;
         },
         startTime: () => Date.now(),
       }),
@@ -384,6 +408,8 @@ export function createAgentExecutionMachine(
               abortSignal: context.abortSignal,
               outputSchema: context.outputSchema,
               config: context.config,
+              envWiring: context.envWiring,
+              envOverlay: context.envOverlay,
             };
           },
           onDone: { target: "executing", actions: "assignPreparedContext" },

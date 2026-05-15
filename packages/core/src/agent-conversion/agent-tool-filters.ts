@@ -30,6 +30,13 @@ export const SCOPE_INJECTED_PLATFORM_TOOLS = new Set([
   // workspace working directory (`<friday-home>/workspaces/<workspaceId>/`)
   // instead of the daemon's launch directory.
   "fs_write_file",
+  // Env writes are workspace-local: `workspaceId` is injected so an agent
+  // can only touch its *own* workspace's `.env`, never a foreign one.
+  // `env_set` also reads sessionId/actionId for the confirmation elicitation.
+  // (`env_list` / `env_get` are NOT here — reads take an explicit
+  // workspaceId so an agent can read across workspaces.)
+  "env_set",
+  "env_delete",
   // HITL tools read sessionId/actionId from the wrapper so Activity can
   // correlate the pending item and the blocked run can resume on answer.
   "request_tool_access",
@@ -170,6 +177,12 @@ export const LLM_AGENT_ALLOWED_PLATFORM_TOOLS = new Set([
   "save_memory_entry",
   "list_memory_entries",
   "delete_memory_entry",
+  // Env — workspace / global `.env` CRUD (writes are workspace-local +
+  // human-confirmed; reads mask secret-looking keys)
+  "env_list",
+  "env_get",
+  "env_set",
+  "env_delete",
   // State — workspace-scoped ephemeral storage (same security profile as memory)
   "state_append",
   "state_filter",

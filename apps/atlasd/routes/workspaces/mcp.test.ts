@@ -10,7 +10,7 @@ import { join } from "node:path";
 import type { MCPServerConfig, WorkspaceConfig } from "@atlas/config";
 import { createStubPlatformModels } from "@atlas/llm";
 import { stringify } from "@std/yaml";
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
   createMergedConfig,
   createMockWorkspace,
@@ -47,8 +47,9 @@ vi.mock("@atlas/core/workspace-members/storage", () => ({
 }));
 
 // Import AFTER mock setup (vi.mock is hoisted)
-const { mcpRoutes } = await import("./mcp.ts");
+const { mcpRoutes, dropUnresolvableWiring } = await import("./mcp.ts");
 
+import process from "node:process";
 import type { WorkspaceManager } from "@atlas/workspace";
 import { Hono } from "hono";
 import type { AppContext, AppVariables } from "../../src/factory.ts";
@@ -275,6 +276,41 @@ describe("PUT /mcp/:serverId", () => {
     });
   });
 
+  test("returns 409 needs_manual_config when the entry's doctor verdict is unknown", async () => {
+    const stdioConfig: MCPServerConfig = { transport: { type: "stdio", command: "echo" } };
+    mockDiscoverMCPServers.mockResolvedValue([
+      {
+        metadata: {
+          id: "needs-config",
+          name: "Needs Config",
+          source: "registry" as const,
+          securityRating: "unverified" as const,
+          configTemplate: stdioConfig,
+          status: "ready" as const,
+          doctor_report: {
+            verdict: "unknown",
+            tldr: "Could not enumerate config.",
+            findings: [{ severity: "warn", title: "Sparse README", detail: "No env vars listed." }],
+          },
+        },
+        mergedConfig: stdioConfig,
+        configured: true,
+      },
+    ]);
+
+    const testDir = getTestDir();
+    const workspace = createMockWorkspace({ path: testDir });
+    const config = makeWorkspaceConfig({});
+    await writeFile(join(testDir, "workspace.yml"), stringify(config));
+    const { app } = createTestApp({ workspace, config: createMergedConfig(config) });
+
+    const res = await app.request("/ws-test-id/mcp/needs-config", { method: "PUT" });
+
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as JsonBody;
+    expect(body).toMatchObject({ error: "needs_manual_config", serverId: "needs-config" });
+  });
+
   test("returns 200 idempotently when server already enabled", async () => {
     mockDiscoverMCPServers.mockResolvedValue([makeCandidate("github", "GitHub", "static")]);
 
@@ -298,7 +334,7 @@ describe("PUT /mcp/:serverId", () => {
     expect(destroyWorkspaceRuntime).not.toHaveBeenCalled();
   });
 
-  test("enables a server and destroys runtime", async () => {
+  test("enables a server without tearing down the active runtime", async () => {
     mockDiscoverMCPServers.mockResolvedValue([makeCandidate("github", "GitHub", "static")]);
 
     const testDir = getTestDir();
@@ -316,7 +352,85 @@ describe("PUT /mcp/:serverId", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as JsonBody;
     expect(body.server).toMatchObject({ id: "github", name: "GitHub" });
+    // The route doesn't restart the runtime — the config write is enough; the
+    // next spawn picks up the change.
     expect(destroyWorkspaceRuntime).not.toHaveBeenCalled();
+  });
+
+  test("enable lifts literal env values into the workspace .env, leaving from_environment wiring", async () => {
+    mockDiscoverMCPServers.mockResolvedValue([
+      {
+        metadata: {
+          id: "github",
+          name: "GitHub",
+          source: "static" as const,
+          securityRating: "high" as const,
+          configTemplate: {
+            transport: { type: "stdio", command: "echo" },
+            env: {
+              LOG_LEVEL: "info",
+              API_TOKEN: { from: "link", provider: "github", key: "API_TOKEN" },
+            },
+          },
+        },
+        mergedConfig: { transport: { type: "stdio", command: "echo" } },
+        configured: true,
+      },
+    ]);
+
+    const testDir = getTestDir();
+    const workspace = createMockWorkspace({ path: testDir });
+    const config = makeWorkspaceConfig({});
+    await writeFile(join(testDir, "workspace.yml"), stringify(config));
+    const { app } = createTestApp({ workspace, config: createMergedConfig(config) });
+
+    const res = await app.request("/ws-test-id/mcp/github", { method: "PUT" });
+    expect(res.status).toBe(200);
+
+    // The literal setting value lands in the workspace `.env`.
+    const envContent = await readFile(join(testDir, ".env"), "utf-8");
+    expect(envContent).toContain("LOG_LEVEL=info");
+
+    // The config copy holds `from_environment` wiring — not the literal — and
+    // the Link ref passes through untouched.
+    const ymlContent = await readFile(join(testDir, "workspace.yml"), "utf-8");
+    expect(ymlContent).toContain("LOG_LEVEL: from_environment");
+    expect(ymlContent).not.toContain("LOG_LEVEL: info");
+    expect(ymlContent).toContain("API_TOKEN");
+  });
+
+  test("enable never clobbers an existing workspace .env value", async () => {
+    mockDiscoverMCPServers.mockResolvedValue([
+      {
+        metadata: {
+          id: "github",
+          name: "GitHub",
+          source: "static" as const,
+          securityRating: "high" as const,
+          configTemplate: {
+            transport: { type: "stdio", command: "echo" },
+            env: { LOG_LEVEL: "info" },
+          },
+        },
+        mergedConfig: { transport: { type: "stdio", command: "echo" } },
+        configured: true,
+      },
+    ]);
+
+    const testDir = getTestDir();
+    const workspace = createMockWorkspace({ path: testDir });
+    const config = makeWorkspaceConfig({});
+    await writeFile(join(testDir, "workspace.yml"), stringify(config));
+    // A value already supplied for this key — must win over the template default.
+    await writeFile(join(testDir, ".env"), "LOG_LEVEL=debug\n");
+    const { app } = createTestApp({ workspace, config: createMergedConfig(config) });
+
+    const res = await app.request("/ws-test-id/mcp/github", { method: "PUT" });
+    expect(res.status).toBe(200);
+
+    const envContent = await readFile(join(testDir, ".env"), "utf-8");
+    expect(envContent).toContain("LOG_LEVEL=debug");
+    expect(envContent).not.toContain("LOG_LEVEL=info");
   });
 
   test("writes to draft when draft exists, leaving live unchanged and deferring runtime startup", async () => {
@@ -379,6 +493,84 @@ describe("PUT /mcp/:serverId", () => {
 });
 
 // =============================================================================
+// PUT /api/workspaces/:workspaceId/mcp/:serverId/env/:key
+// =============================================================================
+
+describe("PUT /mcp/:serverId/env/:key", () => {
+  const getTestDir = useTempDir();
+
+  function envReq(
+    app: ReturnType<typeof createTestApp>["app"],
+    serverId: string,
+    key: string,
+    value: string,
+  ) {
+    return app.request(`/ws-test-id/mcp/${serverId}/env/${key}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ value }),
+    });
+  }
+
+  test("returns 404 when workspace not found", async () => {
+    const { app } = createTestApp({ workspace: null, config: null });
+    const res = await envReq(app, "github", "BITBUCKET_WORKSPACE", "insanelygreatteam");
+    expect(res.status).toBe(404);
+  });
+
+  test("returns 403 for a system workspace", async () => {
+    const workspace = createMockWorkspace({ metadata: { canonical: "system" } });
+    const { app } = createTestApp({ workspace });
+    const res = await envReq(app, "github", "BITBUCKET_WORKSPACE", "insanelygreatteam");
+    expect(res.status).toBe(403);
+  });
+
+  test("rejects a non-POSIX env key with 400", async () => {
+    const { app } = createTestApp({ workspace: createMockWorkspace() });
+    const res = await envReq(app, "github", "bad-key", "v");
+    expect(res.status).toBe(400);
+  });
+
+  test("rejects a value containing a newline with 400", async () => {
+    const { app } = createTestApp({ workspace: createMockWorkspace() });
+    const res = await envReq(app, "github", "GOOD_KEY", "line1\nline2");
+    expect(res.status).toBe(400);
+  });
+
+  test("happy path: writes the value to .env and points config wiring at it", async () => {
+    const testDir = getTestDir();
+    const workspace = createMockWorkspace({ path: testDir });
+    const config = makeWorkspaceConfig({
+      github: { transport: { type: "stdio", command: "echo" } },
+    });
+    await writeFile(join(testDir, "workspace.yml"), stringify(config));
+    const { app } = createTestApp({ workspace, config: createMergedConfig(config) });
+
+    const res = await envReq(app, "github", "BITBUCKET_WORKSPACE", "insanelygreatteam");
+    expect(res.status).toBe(200);
+
+    // The value lands in the workspace `.env`.
+    const envContent = await readFile(join(testDir, ".env"), "utf-8");
+    expect(envContent).toContain("BITBUCKET_WORKSPACE=insanelygreatteam");
+
+    // The config copy points the entry at `.env` via `from_environment` wiring.
+    const ymlContent = await readFile(join(testDir, "workspace.yml"), "utf-8");
+    expect(ymlContent).toContain("BITBUCKET_WORKSPACE: from_environment");
+  });
+
+  test("returns 404 when the server is not in the workspace config", async () => {
+    const testDir = getTestDir();
+    const workspace = createMockWorkspace({ path: testDir });
+    const config = makeWorkspaceConfig({}); // no servers wired
+    await writeFile(join(testDir, "workspace.yml"), stringify(config));
+    const { app } = createTestApp({ workspace, config: createMergedConfig(config) });
+
+    const res = await envReq(app, "github", "BITBUCKET_WORKSPACE", "insanelygreatteam");
+    expect(res.status).toBe(404);
+  });
+});
+
+// =============================================================================
 // DELETE /api/workspaces/:workspaceId/mcp/:serverId
 // =============================================================================
 
@@ -428,7 +620,7 @@ describe("DELETE /mcp/:serverId", () => {
     });
   });
 
-  test("disables a server and destroys runtime", async () => {
+  test("disables a server without tearing down the active runtime", async () => {
     const testDir = getTestDir();
     const workspace = createMockWorkspace({ path: testDir });
     const config = makeWorkspaceConfig({
@@ -575,5 +767,92 @@ describe("DELETE /mcp/:serverId", () => {
 
     const liveContent = await readFile(join(testDir, "workspace.yml"), "utf-8");
     expect(liveContent).toContain("github");
+  });
+});
+
+// =============================================================================
+// dropUnresolvableWiring — keep/drop matrix for magic-string env wiring
+// =============================================================================
+
+describe("dropUnresolvableWiring", () => {
+  const ENV_KEY = "MCP_TEST_PROCESS_ENV_VAR";
+  let prevEnv: string | undefined;
+
+  beforeEach(() => {
+    prevEnv = process.env[ENV_KEY];
+    delete process.env[ENV_KEY];
+  });
+
+  afterEach(() => {
+    if (prevEnv === undefined) delete process.env[ENV_KEY];
+    else process.env[ENV_KEY] = prevEnv;
+  });
+
+  test("keeps Link refs untouched regardless of resolution", () => {
+    const linkRef = { from: "link" as const, provider: "github", key: "GITHUB_TOKEN" };
+    const result = dropUnresolvableWiring({ GITHUB_TOKEN: linkRef }, {}, {});
+    expect(result).toEqual({ GITHUB_TOKEN: linkRef });
+  });
+
+  test("keeps literal string values untouched", () => {
+    const result = dropUnresolvableWiring({ BASE_URL: "https://api.example.com" }, {}, {});
+    expect(result).toEqual({ BASE_URL: "https://api.example.com" });
+  });
+
+  test("keeps from_environment when the key is about to be written (pendingValues)", () => {
+    const result = dropUnresolvableWiring(
+      { LOG_DIR: "from_environment" },
+      { LOG_DIR: "/var/log" },
+      {},
+    );
+    expect(result).toEqual({ LOG_DIR: "from_environment" });
+  });
+
+  test("keeps from_environment when the key is in the workspace .env overlay", () => {
+    const result = dropUnresolvableWiring(
+      { BASE_URL: "from_environment" },
+      {},
+      { BASE_URL: "https://api.example.com" },
+    );
+    expect(result).toEqual({ BASE_URL: "from_environment" });
+  });
+
+  test("keeps from_environment when the key is set in process.env", () => {
+    process.env[ENV_KEY] = "present";
+    const result = dropUnresolvableWiring({ [ENV_KEY]: "from_environment" }, {}, {});
+    expect(result).toEqual({ [ENV_KEY]: "from_environment" });
+  });
+
+  test("drops from_environment when the key resolves nowhere", () => {
+    const result = dropUnresolvableWiring({ NEVER_SET: "from_environment" }, {}, {});
+    expect(result).toEqual({});
+  });
+
+  test("drops auto when the key resolves nowhere, keeps it when in overlay", () => {
+    expect(dropUnresolvableWiring({ AUTO_VAR: "auto" }, {}, {})).toEqual({});
+    expect(dropUnresolvableWiring({ AUTO_VAR: "auto" }, {}, { AUTO_VAR: "x" })).toEqual({
+      AUTO_VAR: "auto",
+    });
+  });
+
+  test("mixed block: drops only the unresolvable magic-string entries", () => {
+    const linkRef = { from: "link" as const, provider: "p", key: "TOKEN" };
+    const result = dropUnresolvableWiring(
+      {
+        TOKEN: linkRef,
+        BASE_URL: "https://literal.example.com",
+        LOG_DIR: "from_environment", // in pendingValues → kept
+        REGION: "from_environment", // in overlay → kept
+        ORPHAN: "from_environment", // nowhere → dropped
+      },
+      { LOG_DIR: "/var/log" },
+      { REGION: "us-east-1" },
+    );
+    expect(result).toEqual({
+      TOKEN: linkRef,
+      BASE_URL: "https://literal.example.com",
+      LOG_DIR: "from_environment",
+      REGION: "from_environment",
+    });
   });
 });

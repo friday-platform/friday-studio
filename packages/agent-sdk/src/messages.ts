@@ -89,6 +89,7 @@ export const AtlasDataEventSchemas = {
     artifactLabel: z.string().optional(),
   }),
   "credential-linked": z.object({ provider: z.string(), displayName: z.string() }),
+  "env-applied": z.object({ scope: z.enum(["workspace", "global"]), keys: z.array(z.string()) }),
   "integration-disconnected": z.object({
     integrations: z.array(
       z.object({
@@ -281,6 +282,7 @@ export type AtlasDataEvents = {
   "fsm-state-transition": z.infer<(typeof AtlasDataEventSchemas)["fsm-state-transition"]>;
   "fsm-action-execution": z.infer<(typeof AtlasDataEventSchemas)["fsm-action-execution"]>;
   "credential-linked": z.infer<(typeof AtlasDataEventSchemas)["credential-linked"]>;
+  "env-applied": z.infer<(typeof AtlasDataEventSchemas)["env-applied"]>;
   "integration-disconnected": z.infer<(typeof AtlasDataEventSchemas)["integration-disconnected"]>;
   intent: z.infer<(typeof AtlasDataEventSchemas)["intent"]>;
   "artifact-attached": z.infer<(typeof AtlasDataEventSchemas)["artifact-attached"]>;

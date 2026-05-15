@@ -118,6 +118,8 @@
     messages: ChatMessage[];
     /** Called when the user successfully connects a credential via an inline connect_service card. */
     onCredentialConnected?: (provider: string) => void;
+    /** Called when the user confirms an env_set elicitation via the inline card. */
+    onEnvApplied?: (info: { scope: "workspace" | "global"; keys: string[] }) => void;
     /**
      * When true, renders a placeholder assistant bubble with animated
      * dots at the bottom of the list — for the "submitted, no response
@@ -152,6 +154,7 @@
   const {
     messages,
     onCredentialConnected,
+    onEnvApplied,
     thinking = false,
     workspaceId,
     chatId,
@@ -707,12 +710,13 @@
                   calls={regularCalls}
                   reasoning={segment.reasoning}
                   {onCredentialConnected}
+                  {onEnvApplied}
                 />
               {/if}
               {#if actionCalls.length > 0}
                 <div class="tool-call-list">
                   {#each actionCalls as call (call.toolCallId || call.toolName)}
-                    <ToolCallCard {call} {onCredentialConnected} />
+                    <ToolCallCard {call} {onCredentialConnected} {onEnvApplied} />
                   {/each}
                 </div>
               {/if}

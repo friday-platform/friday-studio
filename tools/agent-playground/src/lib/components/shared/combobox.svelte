@@ -24,9 +24,10 @@
     options: ComboboxOption[];
     placeholder?: string;
     disabled?: boolean;
+    ariaLabel?: string;
   }
 
-  let { value = $bindable(""), options, placeholder = "", disabled = false }: Props = $props();
+  let { value = $bindable(""), options, placeholder = "", disabled = false, ariaLabel }: Props = $props();
 
   // Generic is `string` (the value type), not the option object:
   // melt's `selected` store holds `ListboxOption<T> = {value: T, label?: string}`,
@@ -44,8 +45,13 @@
   });
 
   // Sync the externally-bound `value` -> selected/inputValue on first
-  // render (and again when an async load supplies a value later).
+  // render (and again when an async load supplies a value later). Guarded
+  // on `!$touchedInput`: once the user is typing, the free-form effect
+  // below owns the sync. Without the guard, mid-typing `value` lags
+  // `$inputValue` within a flush, so `$inputValue !== value` fires and
+  // resets the input back a character (you could only type one char).
   $effect(() => {
+    if ($touchedInput) return;
     const match = options.find((o) => o.value === value);
     if (match && $selected?.value !== match.value) {
       selected.set({ value: match.value, label: match.label });
@@ -95,6 +101,7 @@
     class="trigger"
     {placeholder}
     {disabled}
+    aria-label={ariaLabel ?? undefined}
     onkeydown={onKeydown}
   />
   <svg

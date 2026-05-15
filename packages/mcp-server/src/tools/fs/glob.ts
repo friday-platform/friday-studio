@@ -5,6 +5,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import fg from "fast-glob";
 import { z } from "zod";
 import { createSuccessResponse } from "../utils.ts";
+import { expandUserPath } from "./path-utils.ts";
 
 export function registerGlobTool(server: McpServer) {
   server.registerTool(
@@ -24,7 +25,7 @@ export function registerGlobTool(server: McpServer) {
       },
     },
     async (params) => {
-      let searchPath = params.path ?? process.cwd();
+      let searchPath = params.path ? expandUserPath(params.path) : process.cwd();
       searchPath = path.isAbsolute(searchPath)
         ? searchPath
         : path.resolve(process.cwd(), searchPath);

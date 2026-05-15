@@ -62,6 +62,12 @@ export async function discoverMCPServers(
 
   // Registry-imported servers
   for (const metadata of registryServers) {
+    // In-progress installs (doctor still running, or awaiting the user's
+    // review) are not user-visible products yet — keep them out of the catalog.
+    if (metadata.status === "setting_up" || metadata.status === "awaiting_confirm") {
+      continue;
+    }
+
     const workspaceOverride = workspaceServers[metadata.id];
     const mergedConfig = applyPlatformEnv(
       workspaceOverride
@@ -138,8 +144,8 @@ function mergeEnv(
 
 function isConfigured(config: MCPServerConfig): boolean {
   if (config.env) {
-    for (const [key, value] of Object.entries(config.env)) {
-      if (!isEnvValueResolved(key, value)) {
+    for (const value of Object.values(config.env)) {
+      if (!isEnvValueResolved(value)) {
         return false;
       }
     }
@@ -156,9 +162,9 @@ function isConfigured(config: MCPServerConfig): boolean {
   return true;
 }
 
-function isEnvValueResolved(key: string, value: string | LinkCredentialRef): boolean {
+function isEnvValueResolved(value: string | LinkCredentialRef): boolean {
   if (typeof value === "string") {
-    return isResolvedStringEnvValue(key, value);
+    return isResolvedStringEnvValue(value);
   }
   if (value.from === "link") {
     // `configured` is a workspace-config completeness check — does the env
@@ -179,10 +185,19 @@ function isEnvValueResolved(key: string, value: string | LinkCredentialRef): boo
   return false;
 }
 
-function isResolvedStringEnvValue(key: string, value: string): boolean {
+function isResolvedStringEnvValue(value: string): boolean {
+  // `auto` / `from_environment` explicitly declare the value's source — the
+  // process environment or the workspace `.env` overlay — the same way a
+  // `from: link` ref declares Link. That makes the *wiring* complete, which
+  // is all `configured` is meant to report. Whether the value is actually
+  // present is a runtime concern: enforced overlay-aware by
+  // `validateMCPEnvironmentForWorkspace` at spawn, and surfaced via tool I/O
+  // errors. Resolving it here against `process.env` alone produced false
+  // negatives — a server whose `from_environment` value lived in the
+  // workspace `.env` (not `process.env`) showed `configured: false` and was
+  // wrongly rejected by `delegate`, even though it ran fine at runtime.
   if (value === "auto" || value === "from_environment") {
-    const envValue = process.env[key];
-    return envValue !== undefined && !isPlaceholderValue(envValue);
+    return true;
   }
   return !isPlaceholderValue(value);
 }
