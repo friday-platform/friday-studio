@@ -467,6 +467,7 @@ describe("POST /:id/answer", () => {
         "SMUGGLED_KEY",
         expect.anything(),
       );
+      expect(mockSetEnvFileVar).toHaveBeenCalledTimes(1);
     });
 
     test("rejects a varsOverride value containing a newline", async () => {
@@ -477,6 +478,75 @@ describe("POST /:id/answer", () => {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ value: "confirm", varsOverride: { API_KEY: "line1\nline2" } }),
+      });
+
+      expect(res.status).toBe(400);
+      expect(mockElicitationStorage.get).not.toHaveBeenCalled();
+      expect(mockSetEnvFileVar).not.toHaveBeenCalled();
+      expect(mockElicitationStorage.answer).not.toHaveBeenCalled();
+    });
+
+    test("mixed override: secret-looking key takes the override, non-secret keeps proposed", async () => {
+      // SECRET_TOKEN matches `isSecretKey`, LOG_DIR does not. Only the
+      // secret-looking key picks up the user-typed value; the non-secret
+      // key keeps its proposed value (and the times count bounds it).
+      const pending = envWriteElicitation({
+        scope: "workspace",
+        vars: { SECRET_TOKEN: "", LOG_DIR: "/var/log" },
+      });
+      mockElicitationStorage.get.mockResolvedValueOnce(success(pending));
+      mockElicitationStorage.answer.mockResolvedValueOnce(
+        success(makeElicitation({ kind: "env-write", status: "answered" })),
+      );
+
+      const res = await createTestApp().request("/elc_1/answer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          value: "confirm",
+          varsOverride: { SECRET_TOKEN: "real-secret" },
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      expect(mockSetEnvFileVar).toHaveBeenCalledWith(
+        "/tmp/ws_1/.env",
+        "SECRET_TOKEN",
+        "real-secret",
+      );
+      expect(mockSetEnvFileVar).toHaveBeenCalledWith("/tmp/ws_1/.env", "LOG_DIR", "/var/log");
+      expect(mockSetEnvFileVar).toHaveBeenCalledTimes(2);
+    });
+
+    test("varsOverride for a non-secret-looking key is ignored", async () => {
+      // Even when LOG_DIR is in the proposal, the server-side gate refuses
+      // to apply a non-secret override — the card never sends one, and we
+      // don't want a buggy/malicious client to silently rewrite proposed
+      // non-secret values via this channel.
+      const pending = envWriteElicitation({ scope: "workspace", vars: { LOG_DIR: "/var/log" } });
+      mockElicitationStorage.get.mockResolvedValueOnce(success(pending));
+      mockElicitationStorage.answer.mockResolvedValueOnce(
+        success(makeElicitation({ kind: "env-write", status: "answered" })),
+      );
+
+      const res = await createTestApp().request("/elc_1/answer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ value: "confirm", varsOverride: { LOG_DIR: "/etc/log" } }),
+      });
+
+      expect(res.status).toBe(200);
+      expect(mockSetEnvFileVar).toHaveBeenCalledWith("/tmp/ws_1/.env", "LOG_DIR", "/var/log");
+      expect(mockSetEnvFileVar).toHaveBeenCalledTimes(1);
+    });
+
+    test("rejects a varsOverride key that is not a POSIX identifier", async () => {
+      // Schema-layer test — mirrors the newline-value test above. Leading
+      // digit fails the key regex; the handler never runs.
+      const res = await createTestApp().request("/elc_1/answer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ value: "confirm", varsOverride: { "1bad": "v" } }),
       });
 
       expect(res.status).toBe(400);

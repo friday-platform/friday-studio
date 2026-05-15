@@ -7,6 +7,7 @@
     elicitationQueries,
     useAnswerElicitation,
   } from "$lib/queries/elicitation-queries.ts";
+  import { buildVarsOverride } from "./env-set-tool-card.ts";
   import { readElicitationIdFromToolOutput } from "./human-input-matcher.ts";
   import { isInProgress } from "./tool-call-utils.ts";
   import type { ToolCallDisplay } from "./types.ts";
@@ -89,6 +90,9 @@
   // for secret keys (see env_set tool description); the user types the real
   // value here and we send it as `varsOverride` so it never enters chat. If
   // the agent did propose a value, we pre-fill it once so the user can edit.
+  // Note: component-state only. If the commit fails server-side and the user
+  // refreshes, they retype the secret — failure rate is low enough that we
+  // accept the tradeoff over persisting plaintext to sessionStorage.
   let userValues = $state<Record<string, string>>({});
   $effect(() => {
     for (const [key, value] of entries) {
@@ -98,9 +102,9 @@
     }
   });
 
-  /** Confirm is blocked while any secret-looking key is empty. */
+  /** Confirm is blocked while any secret-looking key is empty (or whitespace-only). */
   const missingSecretValue = $derived(
-    entries.some(([k]) => isSecretKey(k) && !(userValues[k] ?? "").length),
+    entries.some(([k]) => isSecretKey(k) && !(userValues[k] ?? "").trim().length),
   );
 
   const answerMutation = useAnswerElicitation();
@@ -112,10 +116,7 @@
     // For each secret-looking key, send the user-typed value as override —
     // this is what keeps real secrets out of chat history. Non-secret keys
     // commit with their proposed value (no override needed).
-    const varsOverride: Record<string, string> = {};
-    for (const [key, proposed] of entries) {
-      if (isSecretKey(key)) varsOverride[key] = userValues[key] ?? proposed;
-    }
+    const varsOverride = buildVarsOverride(entries, userValues, isSecretKey);
     const hasOverride = value === "confirm" && Object.keys(varsOverride).length > 0;
     answerMutation.mutate(
       hasOverride ? { id: matched.id, value, varsOverride } : { id: matched.id, value },

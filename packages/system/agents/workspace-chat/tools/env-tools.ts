@@ -74,6 +74,10 @@ export function createEnvTools(opts: CreateEnvToolsOpts): AtlasTools {
           ),
       }),
       execute: async ({ scope, vars }) => {
+        // Load-bearing assumption: "secret never enters chat history" relies on
+        // the LLM following the tool description and passing `""` for secret-
+        // looking keys. The server does not enforce it — if the model passes
+        // a real secret here it ends up in `pendingTool.args` (chat history).
         const keys = Object.keys(vars);
         logger.info("env_set (chat) called", { scope, workspaceId, keys });
 

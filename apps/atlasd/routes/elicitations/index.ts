@@ -23,6 +23,7 @@ import {
   ElicitationStorage,
   ToolAccessGrants,
 } from "@atlas/core";
+import { isSecretKey } from "@atlas/core/mcp-registry/env-secret-mask";
 import { createLogger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
 import { setEnvFileVar } from "@atlas/workspace";
@@ -56,8 +57,10 @@ const EnvWriteArgsSchema = z.object({
  * `varsOverride` carries user-typed values from the confirmation card (e.g.
  * the real value of a secret-looking key the agent proposed as `""`). It
  * only overrides keys already present in the proposal — the override can't
- * smuggle in a new key — and each value is validated by `AnswerBodySchema`
- * before this is called, so we don't re-validate here.
+ * smuggle in a new key — and only for secret-looking keys (matches
+ * `isSecretKey`) — the card never sends non-secret overrides. Each value
+ * is validated by `AnswerBodySchema` before this is called, so we don't
+ * re-validate here.
  *
  * Called *before* the elicitation is marked answered: the write must succeed
  * for "answered" to be honest. A failure returns `{ ok: false }` so the
@@ -82,15 +85,26 @@ async function commitEnvWriteElicitation(
   if (varsOverride) {
     for (const [key, value] of Object.entries(varsOverride)) {
       // Override can only set values for keys the agent already proposed —
-      // never inject a new key. Unknown override keys are ignored (logged).
-      if (key in vars) {
-        vars[key] = value;
-      } else {
+      // never inject a new key. `Object.hasOwn` (not `key in vars`) skips
+      // inherited `Object.prototype` keys like `toString`. Additionally
+      // gated to secret-looking keys so the server contract matches the
+      // card (which only sends overrides for `isSecretKey` entries).
+      // Unknown / non-secret override keys are ignored (logged, no value).
+      if (!Object.hasOwn(vars, key)) {
         logger.warn("env-write override referenced unknown key — ignored", {
           id: elicitation.id,
           key,
         });
+        continue;
       }
+      if (!isSecretKey(key)) {
+        logger.warn("env-write override referenced non-secret key — ignored", {
+          id: elicitation.id,
+          key,
+        });
+        continue;
+      }
+      vars[key] = value;
     }
   }
   const keys = Object.keys(vars);
@@ -331,6 +345,10 @@ elicitationApp.post(
       // accepted asymmetry: the write IS done (idempotent, so a retry confirm
       // is a no-op), and a stuck-`pending` elicitation is a far better failure
       // than a silently-lost write. There is no compensating rollback.
+      //
+      // Note: `userValues` on the confirmation card is in-memory only — on
+      // commit failure + page refresh, the user has to retype any secret
+      // they entered. Acceptable because commit failure is rare.
       if (got.data.kind === "env-write" && body.value === "confirm") {
         const commit = await commitEnvWriteElicitation(c, got.data, body.varsOverride);
         if (!commit.ok) {
