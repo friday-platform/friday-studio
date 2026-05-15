@@ -29,10 +29,7 @@ export function createOpenRouterWithOptions(opts: OpenRouterOptions = {}): OpenA
   const openrouterOptions: OpenAIProviderSettings = {
     apiKey: opts.apiKey || process.env[PROVIDER_ENV_VARS.openrouter],
     baseURL: "https://openrouter.ai/api/v1",
-    headers: {
-      "HTTP-Referer": "https://hellofriday.ai/",
-      "X-OpenRouter-Title": "Friday",
-    },
+    headers: { "HTTP-Referer": "https://hellofriday.ai/", "X-OpenRouter-Title": "Friday" },
   };
   if (httpProxy) {
     openrouterOptions.fetch = createProxyFetch(httpProxy);
