@@ -46,7 +46,10 @@ describe("mcpQueries.toolsProbe", () => {
 
     const result = await fetchToolsProbe("github");
 
-    expect(mockToolsGet).toHaveBeenCalledWith({ param: { id: "github" } });
+    expect(mockToolsGet).toHaveBeenCalledWith(
+      { param: { id: "github" } },
+      { init: { signal: undefined } },
+    );
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.tools).toHaveLength(2);

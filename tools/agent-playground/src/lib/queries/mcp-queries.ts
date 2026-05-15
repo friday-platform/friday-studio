@@ -174,9 +174,12 @@ export interface AddCustomMCPInput {
  * can call it directly without going through TanStack's QueryFunction wrapper
  * (which requires a QueryFunctionContext arg this test doesn't need to mock).
  */
-export async function fetchToolsProbe(id: string): Promise<ToolsProbeResponse> {
+export async function fetchToolsProbe(
+  id: string,
+  signal?: AbortSignal,
+): Promise<ToolsProbeResponse> {
   const client = getDaemonClient();
-  const res = await client.mcp[":id"].tools.$get({ param: { id } });
+  const res = await client.mcp[":id"].tools.$get({ param: { id } }, { init: { signal } });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(`Failed to probe MCP tools: ${res.status} ${JSON.stringify(body)}`);
@@ -248,7 +251,7 @@ export const mcpQueries = {
   toolsProbe: (id: string) =>
     queryOptions({
       queryKey: ["daemon", "mcp", "tools", id] as const,
-      queryFn: () => fetchToolsProbe(id),
+      queryFn: ({ signal }) => fetchToolsProbe(id, signal),
       staleTime: 0,
     }),
 };
