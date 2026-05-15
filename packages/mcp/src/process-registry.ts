@@ -385,10 +385,30 @@ class ProcessRegistry {
     // Capture stderr for error messages only — never pattern-matched. uvicorn
     // fails silently on bind errors so the buffer is unreliable for control
     // flow.
+    //
+    // Three constraints driving the shape below:
+    //   1. We need stderr text for the "spawn exited before ready" error
+    //      thrown at line 411 — only useful BEFORE readiness, never after.
+    //   2. We must keep consuming stderr forever, even post-readiness, or
+    //      the kernel pipe buffer (~64 KiB on macOS) fills and the child
+    //      blocks on its next stderr write — a chatty uvicorn child would
+    //      then hang permanently a few seconds after first request.
+    //   3. The accumulator must not grow unbounded. Before this fix, a
+    //      handler that appended every byte stayed attached for the
+    //      daemon's lifetime; on multi-day uptime it ran to hundreds of
+    //      MiB (29 MiB observed in a 5 s synthetic burst).
+    //
+    // Solution: a switchable handler. During readiness it appends; once
+    // ready we swap it for a drain-and-discard sink. The pre-ready bytes
+    // stay around — they're load-bearing for failure diagnosis — but the
+    // accumulator stops growing.
     let stderrAccumulator = "";
-    child.stderr?.on("data", (data: Uint8Array) => {
-      stderrAccumulator += new TextDecoder().decode(data);
-    });
+    let accumulating = true;
+    const drainStderr = (data: Uint8Array) => {
+      if (accumulating) stderrAccumulator += new TextDecoder().decode(data);
+      // else: bytes are consumed (so the pipe doesn't fill) and discarded.
+    };
+    child.stderr?.on("data", drainStderr);
 
     let childExited = false;
     let exitCode: number | null = null;
@@ -443,6 +463,10 @@ class ProcessRegistry {
             status: response.status,
             elapsedMs: Date.now() - startTime,
           });
+          // Stop accumulating once we're past the failure-diagnostic window.
+          // The handler stays attached (kernel pipe buffer would otherwise
+          // back-pressure a chatty child) but now drops bytes on the floor.
+          accumulating = false;
           return { child };
         }
       } catch {

@@ -19,7 +19,7 @@
 import type { AtlasTools } from "@atlas/agent-sdk";
 import type { Logger } from "@atlas/logger";
 import { getAtlasDaemonUrl } from "@atlas/oapi-client";
-import { stringifyError } from "@atlas/utils";
+import { discardBody, stringifyError } from "@atlas/utils";
 import { tool } from "ai";
 import { z } from "zod";
 
@@ -225,6 +225,7 @@ export function createListMemoryEntriesTool(
           return { ok: false as const, error: "list_memory_entries failed: network error" };
         }
         if (!res.ok) {
+          await discardBody(res);
           return { ok: false as const, error: `list_memory_entries failed: HTTP ${res.status}` };
         }
         const raw = (await res.json()) as unknown;
@@ -288,6 +289,7 @@ export function createDescribeMemoryEntryTool(
           return { ok: false as const, error: "describe_memory_entry failed: network error" };
         }
         if (!res.ok) {
+          await discardBody(res);
           return { ok: false as const, error: `describe_memory_entry failed: HTTP ${res.status}` };
         }
         const raw = (await res.json()) as unknown;

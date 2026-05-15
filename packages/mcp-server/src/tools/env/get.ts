@@ -1,4 +1,4 @@
-import { stringifyError } from "@atlas/utils";
+import { discardBody, stringifyError } from "@atlas/utils";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
@@ -36,6 +36,7 @@ export function registerEnvGetTool(server: McpServer, ctx: ToolContext): void {
       try {
         const res = await fetch(`${route.base}/${encodeURIComponent(key)}`);
         if (res.status === 404) {
+          await discardBody(res);
           return createSuccessResponse({ scope, key, found: false });
         }
         if (!res.ok) {

@@ -1,4 +1,5 @@
 import type { NarrativeEntry } from "@atlas/agent-sdk";
+import { discardBody } from "@atlas/utils";
 import { z } from "zod";
 
 export const DiscoverySchema = z.object({
@@ -102,6 +103,7 @@ export async function appendDiscoveryAsTask(
   });
 
   if (!res.ok) {
+    await discardBody(res);
     throw new Error(`POST ${storeBaseUrl} failed: HTTP ${res.status}`);
   }
 

@@ -355,23 +355,40 @@ export function createHttpFetchHandler(options: {
 
       clearTimeout(timer);
 
-      // Read body with size limit (5MB, matches platform webfetch)
+      // Read body with size limit (5MB, matches platform webfetch).
+      //
+      // The reader is acquired with `getReader()` which LOCKS the underlying
+      // ReadableStream — until `releaseLock()` or `cancel()` is called the
+      // stream stays held and hyper can't return the socket to its pool.
+      // The try/finally below guarantees release on every exit path: clean
+      // EOF, size-overflow throw, and — the leak path this defends against
+      // — `reader.read()` itself rejecting on a server-side mid-body abort.
+      // Without the finally, a rare network blip during a user-agent fetch
+      // pins one socket per failed read for the rest of the daemon's life.
       const reader = response.body?.getReader();
       const chunks: Uint8Array[] = [];
       let totalBytes = 0;
 
       if (reader) {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          totalBytes += value.byteLength;
-          if (totalBytes > MAX_RESPONSE_BYTES) {
-            reader.cancel();
-            throw new ComponentError(
-              `HTTP response body exceeds ${MAX_RESPONSE_BYTES} bytes (5MB limit)`,
-            );
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            totalBytes += value.byteLength;
+            if (totalBytes > MAX_RESPONSE_BYTES) {
+              throw new ComponentError(
+                `HTTP response body exceeds ${MAX_RESPONSE_BYTES} bytes (5MB limit)`,
+              );
+            }
+            chunks.push(value);
           }
-          chunks.push(value);
+        } finally {
+          // `cancel()` releases the lock AND signals hyper "drop whatever's
+          // left, recycle the socket." releaseLock() alone would leave any
+          // unread bytes (the size-overflow path is the canonical case)
+          // pinned to the socket and prevent reuse. `.catch` swallows the
+          // "stream already cancelled" no-op on the clean-EOF path.
+          await reader.cancel().catch(() => {});
         }
       }
 

@@ -15,6 +15,7 @@ import type { AtlasTools } from "@atlas/agent-sdk";
 import { client } from "@atlas/client/v2";
 import { mcpServersRegistry } from "@atlas/core/mcp-registry/registry-consolidated";
 import type { Logger } from "@atlas/logger";
+import { discardBody } from "@atlas/utils";
 import { tool } from "ai";
 import { z } from "zod";
 
@@ -65,6 +66,7 @@ export function createListMcpServersTool(workspaceId: string, logger: Logger): A
 
         const wsRes = await client.workspaceMcp(workspaceId).index.$get();
         if (!wsRes.ok) {
+          await discardBody(wsRes);
           logger.warn("list_mcp_servers: workspace fetch failed", {
             workspaceId,
             status: wsRes.status,
@@ -140,6 +142,7 @@ export function createDescribeMcpServerTool(workspaceId: string, logger: Logger)
 
         const wsRes = await client.workspaceMcp(workspaceId).index.$get();
         if (!wsRes.ok) {
+          await discardBody(wsRes);
           return { ok: false as const, error: `describe_mcp_server failed: HTTP ${wsRes.status}` };
         }
         const body = (await wsRes.json()) as {
@@ -188,9 +191,11 @@ export function createDescribeMcpToolTool(logger: Logger): AtlasTools {
       execute: async ({ serverId, toolName }) => {
         const res = await client.mcpRegistry[":id"].tools.$get({ param: { id: serverId } });
         if (res.status === 404) {
+          await discardBody(res);
           return { ok: false as const, error: `MCP server "${serverId}" not found in catalog.` };
         }
         if (!res.ok) {
+          await discardBody(res);
           return { ok: false as const, error: `describe_mcp_tool failed: HTTP ${res.status}` };
         }
         const body = (await res.json()) as unknown;

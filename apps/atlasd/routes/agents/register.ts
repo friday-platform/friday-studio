@@ -94,14 +94,29 @@ registerAgentRoute.post("/register", async (c) => {
   await nc.flush();
 
   const [cmd, args] = buildAgentSpawnArgs(entrypointPath);
+  // stdio shape: stdout is "ignore" because the validate handshake travels
+  // over NATS, never over stdout — leaving stdout piped would (a) consume an
+  // FD per spawn for no reason and (b) let an agent that prints to stdout
+  // (sdk debug output, accidental print) block on `write()` once the 64 KiB
+  // pipe buffer fills, since nobody on the parent side is reading it.
+  // stderr stays piped so we can attribute crash output to the agent.
   const proc = spawn(cmd, args, {
     env: { ...process.env, FRIDAY_VALIDATE_ID: registerId, NATS_URL: natsUrl },
-    stdio: "pipe",
+    stdio: ["ignore", "ignore", "pipe"],
   });
 
   const stderrLines: string[] = [];
   proc.stderr?.on("data", (chunk: Uint8Array) => {
     stderrLines.push(...chunk.toString().split("\n").filter(Boolean));
+  });
+
+  // Resolves when the child exits — used in `finally` to wait for the
+  // SIGTERM'd child to actually terminate before we release the pid file
+  // listener. Without this, the ChildProcess (and its stderr pipe FD) stays
+  // in Node's table until GC visits it, which under daemon-level memory
+  // pressure can be minutes after the route handler returns.
+  const exited = new Promise<void>((resolve) => {
+    proc.once("exit", () => resolve());
   });
 
   let metadata: z.infer<typeof AgentValidateResponseSchema>;
@@ -136,7 +151,20 @@ registerAgentRoute.post("/register", async (c) => {
     );
   } finally {
     sub.unsubscribe();
+    // Send TERM, wait up to 2s for graceful exit, then escalate to KILL —
+    // a hung user agent (deadlock, ignored SIGTERM) must not leak its
+    // stderr pipe + ChildProcess ref for the rest of the daemon's life.
+    // Mirrors the SIGTERM-then-SIGKILL grace pattern in ProcessAgentExecutor.
     proc.kill("SIGTERM");
+    await Promise.race([exited, new Promise<void>((resolve) => setTimeout(resolve, 2_000))]);
+    if (proc.exitCode === null && proc.signalCode === null) {
+      try {
+        proc.kill("SIGKILL");
+      } catch {
+        // Already dead — ignore.
+      }
+      await exited;
+    }
   }
 
   // Install: copy source files + write metadata.json

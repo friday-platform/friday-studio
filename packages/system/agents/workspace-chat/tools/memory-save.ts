@@ -1,6 +1,7 @@
 import type { AtlasTools } from "@atlas/agent-sdk";
 import type { Logger } from "@atlas/logger";
 import { getAtlasDaemonUrl } from "@atlas/oapi-client";
+import { discardBody } from "@atlas/utils";
 import { tool } from "ai";
 import { z } from "zod";
 
@@ -70,7 +71,10 @@ export function createMemorySaveTool(workspaceId: string, logger: Logger): Atlas
         const url = `${daemonUrl}/api/memory/${encodeURIComponent(workspaceId)}/narrative/${encodeURIComponent(memoryName)}/${encodeURIComponent(entryId)}`;
         try {
           const res = await fetch(url, { method: "DELETE" });
-          if (!res.ok) return { error: `Failed to remove: HTTP ${res.status}` };
+          if (!res.ok) {
+            await discardBody(res);
+            return { error: `Failed to remove: HTTP ${res.status}` };
+          }
           logger.info("delete_memory_entry succeeded", { workspaceId, memoryName, entryId });
           return { removed: true };
         } catch (err) {
