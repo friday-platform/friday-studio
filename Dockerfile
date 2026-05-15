@@ -143,7 +143,7 @@ RUN apt-get update && \
 # When bumping, keep both in sync — same constant, two places.
 # To bump: see UPDATING-AGENT-SDK.md at the repo root (three pin sites
 # must agree; CI enforces via scripts/check-sdk-pin-sync.ts).
-ENV FRIDAY_AGENT_SDK_VERSION=0.1.8 \
+ENV FRIDAY_AGENT_SDK_VERSION=0.1.9 \
     UV_PYTHON_INSTALL_DIR=/data/atlas/uv/python \
     UV_CACHE_DIR=/data/atlas/uv/cache \
     FRIDAY_UV_PATH=/usr/local/bin/uv
