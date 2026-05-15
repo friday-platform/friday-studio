@@ -115,13 +115,16 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      - name: Pin PATH to fresh Rust toolchain (macos-latest-large)
-        # The macos-latest-large image ships a pre-installed /usr/local/bin/cargo
-        # that is actually rustup-init and dies on `cargo metadata` with
+      - name: Pin PATH to fresh Rust toolchain (macOS)
+        # Both macos-latest-large (intel) and macos-latest-xlarge (arm)
+        # runner images ship a pre-installed cargo shim that is actually
+        # rustup-init and dies on `cargo metadata` with
         # "unexpected argument 'metadata' found". The dtolnay step above
-        # installs a working toolchain at ~/.cargo/bin but its PATH entry gets
-        # shadowed by the runner image shim. Force it to the front of PATH.
-        if: matrix.platform == 'macos-intel'
+        # installs a working toolchain at ~/.cargo/bin but its PATH entry
+        # is shadowed by the runner image shim. Force it to the front.
+        # arm was unaffected until image 20260511.0048 — regressed there,
+        # so the fix now covers both legs.
+        if: startsWith(matrix.platform, 'macos')
         shell: bash
         run: |
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
@@ -133,6 +136,16 @@ jobs:
         with:
           workspaces: apps/studio-installer/src-tauri
           cache-on-failure: true
+          # cache-bin:true corrupts ~/.cargo/bin on macOS — it can replace
+          # the cargo proxy with rustup-init, so the next build fails with
+          # `cargo metadata: error: unexpected argument 'metadata' found`
+          # (the bare rustup-init installer rejecting the subcommand).
+          # See Swatinem/rust-cache#16.
+          cache-bin: false
+          # Prefix bumped to invalidate caches saved while cache-bin:true
+          # was active — those caches carry the rustup-init-as-cargo
+          # corruption and would re-poison the bin dir on restore.
+          prefix-key: v1-rust
 
       - name: Import Apple Developer ID certificate (macOS)
         if: matrix.bundle_ext == 'dmg'
