@@ -49,7 +49,7 @@ export function createEnvTools(opts: CreateEnvToolsOpts): AtlasTools {
         "or denies, and the daemon applies the write on confirm. `workspace` scope (default) " +
         "writes the current workspace's `.env`; `global` writes the daemon's `.env`. " +
         "For secret-bearing keys (anything matching token/key/secret/password/credential) pass " +
-        "an empty string `\"\"` as the value — the confirmation card lets the user type the real " +
+        'an empty string `""` as the value — the confirmation card lets the user type the real ' +
         "secret directly, so the value never enters chat history. Exception: if the user already " +
         "typed the literal value in chat, pass it through so they don't have to retype it (the " +
         "value is already in the transcript, so passing it gains no further privacy). For " +
@@ -68,7 +68,7 @@ export function createEnvTools(opts: CreateEnvToolsOpts): AtlasTools {
           )
           .refine((v) => Object.keys(v).length > 0, "provide at least one env var to set")
           .describe(
-            "Environment variables as a { KEY: value } map. Pass `\"\"` for secret-bearing " +
+            'Environment variables as a { KEY: value } map. Pass `""` for secret-bearing ' +
               "keys so the user can fill in the real value via the confirmation card — unless " +
               "they already typed the literal value in chat, in which case pass it through.",
           ),

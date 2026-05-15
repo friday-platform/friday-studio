@@ -448,10 +448,7 @@ describe("POST /:id/answer", () => {
     });
 
     test("varsOverride cannot inject a key not in the proposal", async () => {
-      const pending = envWriteElicitation({
-        scope: "workspace",
-        vars: { LOG_DIR: "/var/log" },
-      });
+      const pending = envWriteElicitation({ scope: "workspace", vars: { LOG_DIR: "/var/log" } });
       mockElicitationStorage.get.mockResolvedValueOnce(success(pending));
       mockElicitationStorage.answer.mockResolvedValueOnce(
         success(makeElicitation({ kind: "env-write", status: "answered" })),
@@ -460,10 +457,7 @@ describe("POST /:id/answer", () => {
       const res = await createTestApp().request("/elc_1/answer", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          value: "confirm",
-          varsOverride: { SMUGGLED_KEY: "x" },
-        }),
+        body: JSON.stringify({ value: "confirm", varsOverride: { SMUGGLED_KEY: "x" } }),
       });
 
       expect(res.status).toBe(200);
@@ -482,10 +476,7 @@ describe("POST /:id/answer", () => {
       const res = await createTestApp().request("/elc_1/answer", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          value: "confirm",
-          varsOverride: { API_KEY: "line1\nline2" },
-        }),
+        body: JSON.stringify({ value: "confirm", varsOverride: { API_KEY: "line1\nline2" } }),
       });
 
       expect(res.status).toBe(400);
