@@ -21,6 +21,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
 import type { Logger } from "@atlas/logger";
+import { discardBody } from "@atlas/utils";
 import { MCPStartupError } from "./errors.ts";
 
 export interface SharedProcessSpec {
@@ -388,7 +389,8 @@ class ProcessRegistry {
     //
     // Three constraints driving the shape below:
     //   1. We need stderr text for the "spawn exited before ready" error
-    //      thrown at line 411 — only useful BEFORE readiness, never after.
+    //      thrown in the readiness loop below — only useful BEFORE
+    //      readiness, never after.
     //   2. We must keep consuming stderr forever, even post-readiness, or
     //      the kernel pipe buffer (~64 KiB on macOS) fills and the child
     //      blocks on its next stderr write — a chatty uvicorn child would
@@ -438,6 +440,14 @@ class ProcessRegistry {
 
       try {
         const response = await deps.fetch(readyUrl, { method: "GET" });
+        // Drain the probe body immediately on every poll iteration. The
+        // body content is irrelevant — we only care about the status code
+        // — but a slow-to-bind child (workspace-mcp during OAuth bootstrap
+        // emits multi-line 5xx pages) can otherwise leak one socket per
+        // poll across N iterations of the readiness loop. Single drain
+        // here covers both the 5xx-not-ready branch and the success
+        // branch, so neither has to remember.
+        await discardBody(response);
         // Reject 5xx as still-starting. Servers that bind their port
         // before completing init (workspace-mcp during OAuth bootstrap is
         // the canonical example) answer GETs with 5xx until they're

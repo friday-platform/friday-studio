@@ -1,5 +1,5 @@
 /**
- * Bench: Leak #5 — Shared MCP child stderr accumulator never freed.
+ * Bench: Leak #4 — Shared MCP child stderr accumulator never freed.
  *
  * Mirrors process-registry.ts:388-391:
  *
@@ -17,7 +17,7 @@
  * The bench spawns a child that streams stderr at a fixed rate for N seconds
  * and reports parent RSS before vs after.
  *
- * Run with:  deno run -A tools/bench-fd-leaks/leak5-stderr-accumulator.ts <broken|fixed>
+ * Run with:  deno run -A tools/bench-fd-leaks/leak4-stderr-accumulator.ts <broken|fixed>
  */
 
 import { spawn } from "node:child_process";
