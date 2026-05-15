@@ -436,6 +436,60 @@ describe("validateWorkspace reference integrity", () => {
     expect(err!.path).toBe("jobs.my_job.fsm.states.step1.entry[0].agentId");
   });
 
+  it("errors on unknown agent ID in execution.agents (string form)", () => {
+    const result = validateWorkspace({
+      version: "1.0",
+      workspace: { name: "Test" },
+      agents: {
+        known: {
+          type: "llm",
+          description: "Known",
+          config: { provider: "anthropic", model: "claude-sonnet-4-5", prompt: "Hi" },
+        },
+      },
+      jobs: { my_job: { triggers: [{ signal: "s1" }], execution: { agents: ["unknown-agent"] } } },
+      signals: { s1: { provider: "http", description: "S1", config: { path: "/s1" } } },
+    });
+    expect(result.status).toBe("error");
+    const err = result.errors.find((e) => e.code === "unknown_agent_id");
+    expect(err).toBeDefined();
+    expect(err!.path).toBe("jobs.my_job.execution.agents[0]");
+  });
+
+  it("errors on unknown agent ID in execution.agents (object form)", () => {
+    const result = validateWorkspace({
+      version: "1.0",
+      workspace: { name: "Test" },
+      agents: {},
+      jobs: { my_job: { triggers: [{ signal: "s1" }], execution: { agents: [{ id: "ghost" }] } } },
+      signals: { s1: { provider: "http", description: "S1", config: { path: "/s1" } } },
+    });
+    expect(result.status).toBe("error");
+    const err = result.errors.find((e) => e.code === "unknown_agent_id");
+    expect(err).toBeDefined();
+    expect(err!.path).toBe("jobs.my_job.execution.agents[0].id");
+  });
+
+  it("errors on trigger referencing undefined signal", () => {
+    const result = validateWorkspace({
+      version: "1.0",
+      workspace: { name: "Test" },
+      agents: {
+        a1: {
+          type: "llm",
+          description: "x",
+          config: { provider: "anthropic", model: "claude-sonnet-4-5", prompt: "hi" },
+        },
+      },
+      signals: { s1: { provider: "http", description: "S1", config: { path: "/s1" } } },
+      jobs: { my_job: { triggers: [{ signal: "nonexistent" }], execution: { agents: ["a1"] } } },
+    });
+    expect(result.status).toBe("error");
+    const err = result.errors.find((e) => e.code === "unknown_signal");
+    expect(err).toBeDefined();
+    expect(err!.path).toBe("jobs.my_job.triggers[0].signal");
+  });
+
   it("errors on unknown tool in agent config.tools", () => {
     const result = validateWorkspace({
       version: "1.0",
@@ -531,8 +585,13 @@ describe("validateWorkspace semantic warnings", () => {
           description: "Orphan",
           config: { provider: "anthropic", model: "claude-sonnet-4-5", prompt: "Hi" },
         },
+        used: {
+          type: "llm",
+          description: "Used",
+          config: { provider: "anthropic", model: "claude-sonnet-4-5", prompt: "Hi" },
+        },
       },
-      jobs: { my_job: { triggers: [{ signal: "s1" }], execution: { agents: ["other"] } } },
+      jobs: { my_job: { triggers: [{ signal: "s1" }], execution: { agents: ["used"] } } },
       signals: { s1: { provider: "http", description: "S1", config: { path: "/s1" } } },
     });
     expect(result.status).toBe("warning");

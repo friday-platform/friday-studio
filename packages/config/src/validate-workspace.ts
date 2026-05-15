@@ -89,6 +89,7 @@ export function validateWorkspace(
   checkAgentReferences(config, errors);
   checkToolReferences(config, registry, errors);
   checkMemoryReferences(config, errors);
+  checkUnknownSignal(config, errors);
 
   // ── Semantic warnings ──────────────────────────────────────────────────────
   checkMissingToolsArray(config, warnings);
@@ -126,6 +127,44 @@ function checkAgentReferences(config: WorkspaceConfig, issues: Issue[]): void {
         `Job '${response.jobId}' FSM state '${response.stateId}' references agent '${agentId}', ` +
         `but no such agent is defined under agents.*.`,
     });
+  }
+
+  // Execution-style job references (mirror of checkOrphanAgents' execution walk).
+  for (const [jobId, job] of Object.entries(config.jobs ?? {})) {
+    const specs = job.execution?.agents ?? [];
+    for (let i = 0; i < specs.length; i++) {
+      const spec = specs[i];
+      const agentId = agentIdFromSpec(spec);
+      if (!agentId) continue;
+      if (definedAgents.has(agentId)) continue;
+      const suffix = typeof spec === "string" ? "" : ".id";
+      issues.push({
+        code: "unknown_agent_id",
+        path: `jobs.${jobId}.execution.agents[${i}]${suffix}`,
+        message:
+          `Job '${jobId}' execution references agent '${agentId}', ` +
+          `but no such agent is defined under agents.*.`,
+      });
+    }
+  }
+}
+
+function checkUnknownSignal(config: WorkspaceConfig, issues: Issue[]): void {
+  const definedSignals = new Set(Object.keys(config.signals ?? {}));
+  for (const [jobId, job] of Object.entries(config.jobs ?? {})) {
+    const triggers = job.triggers ?? [];
+    for (let i = 0; i < triggers.length; i++) {
+      const signal = triggers[i]?.signal;
+      if (!signal) continue;
+      if (definedSignals.has(signal)) continue;
+      issues.push({
+        code: "unknown_signal",
+        path: `jobs.${jobId}.triggers[${i}].signal`,
+        message:
+          `Job '${jobId}' trigger references signal '${signal}', ` +
+          `but no such signal is defined under signals.*.`,
+      });
+    }
   }
 }
 
