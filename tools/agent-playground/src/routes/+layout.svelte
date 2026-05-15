@@ -21,18 +21,16 @@
   const { children } = $props();
 
   // Routes that opt out of the playground app shell (sidebar, palette, etc.)
-  // and render their children directly. Three consumers today:
+  // and render their children directly. Two consumers today:
   //   - `/welcome` — first-run onboarding wizard; lives outside the
   //     shell so the user can land identity fields before the rest of
   //     the UI tries to render.
-  //   - `/export/preview` — packaged into standalone HTML, no live UI.
   //   - `/artifacts/[id]` and subpaths — dedicated artifact viewers
   //     opened in a new tab. The dispatcher + per-renderer subpaths
   //     (`./table` today, `./raw` / `./diff` etc. later) all opt out
   //     of the workspace chrome so the artifact gets the full viewport.
   const isChromeless = $derived(
     page.route.id === "/welcome" ||
-      page.route.id?.endsWith("/export/preview") === true ||
       page.route.id?.startsWith("/artifacts/") === true,
   );
 

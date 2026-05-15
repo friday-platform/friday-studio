@@ -6,7 +6,6 @@
   import ConnectService from "./connect-service.svelte";
   import DelegateToolCard from "./delegate-tool-card.svelte";
   import EnvSetToolCard from "./env-set-tool-card.svelte";
-  import { getExportContext } from "./export-context";
   import { formatRawOutput } from "./format-raw-output";
   import HumanInputToolCard from "./human-input-tool-card.svelte";
   import { extractLiftedArtifactIds } from "./lifted-markers";
@@ -180,13 +179,6 @@
 
   /* ─── Copy to clipboard ──────────────────────────────────────────── */
 
-  /**
-   * Suppresses the clipboard buttons (which depend on JS) when the card
-   * is rendered inside an export. The data still renders; only the copy
-   * affordance is hidden.
-   */
-  const isExport = getExportContext() !== undefined;
-
   function copyToClipboard(value: unknown, btn: HTMLButtonElement) {
     let text: string;
     if (typeof value === "string") {
@@ -290,20 +282,16 @@
 </script>
 
 {#snippet jsonCopyBlock(label: string, data: unknown)}
-  {#if isExport}
+  <div class="json-copy-wrapper">
+    <button
+      class="json-copy-btn"
+      aria-label={`Copy ${label}`}
+      onclick={(e: MouseEvent) => copyToClipboard(data, e.currentTarget as HTMLButtonElement)}
+    >
+      Copy
+    </button>
     <pre class="json-render">{@html formatRawOutput(data)}</pre>
-  {:else}
-    <div class="json-copy-wrapper">
-      <button
-        class="json-copy-btn"
-        aria-label={`Copy ${label}`}
-        onclick={(e: MouseEvent) => copyToClipboard(data, e.currentTarget as HTMLButtonElement)}
-      >
-        Copy
-      </button>
-      <pre class="json-render">{@html formatRawOutput(data)}</pre>
-    </div>
-  {/if}
+  </div>
 {/snippet}
 
 {#snippet outputDrawer(c: ToolCallDisplay)}
@@ -317,15 +305,14 @@
   {#if hasInput || hasOutput || hasError}
     <div class="tool-card-drawer">
       {#if hasInput}
-        <!-- Export mode renders eagerly so the static HTML carries the full
-             input payload; the live UI lazy-renders behind `bind:open` and
-             skips the JSON highlighter entirely while collapsed. -->
+        <!-- Lazy-renders behind `bind:open` so the JSON highlighter
+             stays unloaded while the drawer is collapsed. -->
         <details class="tool-card-details" bind:open={inputOpen}>
           <summary>
             <span class="chevron-icon"><IconSmall.ChevronRight /></span>
             input
           </summary>
-          {#if inputOpen || isExport}
+          {#if inputOpen}
             {@render jsonCopyBlock("input", c.input)}
           {/if}
         </details>
@@ -336,7 +323,7 @@
             <span class="chevron-icon"><IconSmall.ChevronRight /></span>
             output
           </summary>
-          {#if outputOpen || isExport}
+          {#if outputOpen}
             {@render jsonCopyBlock("output", c.output)}
           {/if}
         </details>
@@ -347,21 +334,17 @@
             <span class="chevron-icon"><IconSmall.ChevronRight /></span>
             error
           </summary>
-          {#if errorOpen || isExport}
-            {#if isExport}
+          {#if errorOpen}
+            <div class="json-copy-wrapper">
+              <button
+                class="json-copy-btn"
+                aria-label="Copy error"
+                onclick={(e: MouseEvent) => copyToClipboard(c.errorText, e.currentTarget as HTMLButtonElement)}
+              >
+                Copy
+              </button>
               <pre class="json-render error-text">{c.errorText}</pre>
-            {:else}
-              <div class="json-copy-wrapper">
-                <button
-                  class="json-copy-btn"
-                  aria-label="Copy error"
-                  onclick={(e: MouseEvent) => copyToClipboard(c.errorText, e.currentTarget as HTMLButtonElement)}
-                >
-                  Copy
-                </button>
-                <pre class="json-render error-text">{c.errorText}</pre>
-              </div>
-            {/if}
+            </div>
           {/if}
         </details>
       {/if}
