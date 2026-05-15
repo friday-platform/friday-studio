@@ -344,8 +344,7 @@ describe("workspace bundle endpoints (end-to-end)", () => {
     // install so we can prove the import path repopulates it.
     await rm(join(homeDir, "agents"), { recursive: true, force: true });
 
-    // deno-lint-ignore require-await
-    const reload = vi.fn(async () => {});
+    const reload = vi.fn(() => Promise.resolve());
     const { app: importApp, reloadSpy } = createApp({
       workspaceDir,
       homeDir,
@@ -435,8 +434,7 @@ describe("workspace bundle endpoints (end-to-end)", () => {
     expect(exportResponse.status).toBe(200);
     const zipBytes = new Uint8Array(await exportResponse.arrayBuffer());
 
-    // deno-lint-ignore require-await
-    const reload = vi.fn(async () => {});
+    const reload = vi.fn(() => Promise.resolve());
     const { app: importApp } = createApp({
       workspaceDir,
       homeDir,
