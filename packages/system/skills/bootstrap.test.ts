@@ -17,9 +17,12 @@
  * (no churn writes).
  */
 
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import type { Skill, SkillStorageAdapter, SkillSummary } from "@atlas/skills";
-import { _setSkillStorageForTest } from "@atlas/skills";
+import { _setSkillStorageForTest, extractArchiveContents, packSkillArchive } from "@atlas/skills";
 import type { Result } from "@atlas/utils";
+import { makeTempDir } from "@atlas/utils/temp.server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Mock `computeSkillHash` so the resurrection test can pin a stored
@@ -34,7 +37,7 @@ vi.mock("@atlas/skills", async () => {
   return { ...actual, computeSkillHash: mockComputeSkillHash };
 });
 
-import { ensureSystemSkills } from "./bootstrap.ts";
+import { copySkillDirToReal, ensureSystemSkills } from "./bootstrap.ts";
 
 interface StoredSkill {
   skillId: string;
@@ -256,5 +259,69 @@ describe("ensureSystemSkills — orphan tombstone pass", () => {
     // publish ran (which writes disabled:false) or because setDisabled
     // was called explicitly.
     expect(store.get("agent-action-handshake")?.disabled).toBe(false);
+  });
+});
+
+describe("copySkillDirToReal", () => {
+  // Each test gets a fresh source dir and cleans up both src + dest.
+  let srcDir: string;
+  let destDir: string | undefined;
+
+  beforeEach(() => {
+    srcDir = makeTempDir({ prefix: "atlas-skill-src-" });
+    destDir = undefined;
+  });
+
+  afterEach(async () => {
+    await rm(srcDir, { recursive: true, force: true });
+    if (destDir) await rm(destDir, { recursive: true, force: true });
+  });
+
+  it("copies flat files verbatim", async () => {
+    await writeFile(join(srcDir, "SKILL.md"), "# Skill\n");
+    await writeFile(join(srcDir, "extra.txt"), "hello");
+
+    destDir = await copySkillDirToReal(srcDir);
+
+    expect(await readFile(join(destDir, "SKILL.md"), "utf-8")).toBe("# Skill\n");
+    expect(await readFile(join(destDir, "extra.txt"), "utf-8")).toBe("hello");
+  });
+
+  it("recursively copies nested subdirectories", async () => {
+    await mkdir(join(srcDir, "references"), { recursive: true });
+    await writeFile(join(srcDir, "SKILL.md"), "# Skill\n");
+    await writeFile(join(srcDir, "references", "api.md"), "# API ref\n");
+    await mkdir(join(srcDir, "references", "deep"), { recursive: true });
+    await writeFile(join(srcDir, "references", "deep", "nested.md"), "nested");
+
+    destDir = await copySkillDirToReal(srcDir);
+
+    expect(await readFile(join(destDir, "references", "api.md"), "utf-8")).toBe("# API ref\n");
+    expect(await readFile(join(destDir, "references", "deep", "nested.md"), "utf-8")).toBe(
+      "nested",
+    );
+  });
+
+  it("produces a dest tree that packSkillArchive can tar without error", async () => {
+    await mkdir(join(srcDir, "references"), { recursive: true });
+    await writeFile(join(srcDir, "SKILL.md"), "# Skill\n");
+    await writeFile(join(srcDir, "references", "ref.md"), "# Reference\n");
+
+    destDir = await copySkillDirToReal(srcDir);
+
+    // packSkillArchive must not throw and the archive must contain both files.
+    const archive = await packSkillArchive(destDir);
+    const contents = await extractArchiveContents(archive);
+    expect(Object.keys(contents)).toContain("SKILL.md");
+    expect(Object.keys(contents)).toContain("references/ref.md");
+  });
+
+  it("returns an independent copy — mutations to src do not affect dest", async () => {
+    await writeFile(join(srcDir, "SKILL.md"), "original");
+
+    destDir = await copySkillDirToReal(srcDir);
+
+    await writeFile(join(srcDir, "SKILL.md"), "mutated");
+    expect(await readFile(join(destDir, "SKILL.md"), "utf-8")).toBe("original");
   });
 });

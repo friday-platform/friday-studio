@@ -18,12 +18,13 @@
  */
 
 import type { Dirent } from "node:fs";
-import { readdir, readFile, stat } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createLogger } from "@atlas/logger";
 import { computeSkillHash, packSkillArchive, parseSkillMd, SkillStorage } from "@atlas/skills";
 import { SYSTEM_USER_ID } from "@atlas/skills/constants";
+import { makeTempDir } from "@atlas/utils/temp.server";
 
 const logger = createLogger({ name: "system-skill-bootstrap" });
 
@@ -194,8 +195,22 @@ async function publishOne(dir: string): Promise<string | null> {
   }
 
   // Pack archive if the directory has anything besides SKILL.md.
+  // `tar.create()` requests OS-level file descriptors from each source
+  // file. Inside a Deno-compiled binary the skill dirs live in an
+  // embedded virtual filesystem that cannot provide real OS fds, so
+  // `create()` throws "Failed to get OS file descriptor from file".
+  // Copying to a real temp dir first (readFile/writeFile work on VFS
+  // paths) gives tar the real fds it needs.
   const hasBundle = await hasSupportFiles(dir);
-  const archive = hasBundle ? new Uint8Array(await packSkillArchive(dir)) : undefined;
+  let archive: Uint8Array<ArrayBuffer> | undefined;
+  if (hasBundle) {
+    const realDir = await copySkillDirToReal(dir);
+    try {
+      archive = new Uint8Array(await packSkillArchive(realDir));
+    } finally {
+      await rm(realDir, { recursive: true, force: true }).catch(() => {});
+    }
+  }
 
   const result = await SkillStorage.publish(SYSTEM_SKILL_NAMESPACE, name, SYSTEM_USER_ID, {
     description,
@@ -223,4 +238,34 @@ async function hasSupportFiles(dir: string): Promise<boolean> {
     if (entry.isFile() || entry.isDirectory()) return true;
   }
   return false;
+}
+
+/**
+ * Recursively copies a skill directory tree to a fresh OS temp directory
+ * using only `readdir` / `readFile` / `writeFile`, which work on VFS
+ * paths inside a Deno-compiled binary. The result is a real on-disk tree
+ * with genuine OS file descriptors that `packSkillArchive` (via tar) can
+ * open without error.
+ *
+ * Exported for unit testing. Callers are responsible for removing the
+ * returned directory when done.
+ */
+export async function copySkillDirToReal(srcDir: string): Promise<string> {
+  const destDir = makeTempDir({ prefix: "atlas-skill-copy-" });
+  await copyEntries(srcDir, destDir);
+  return destDir;
+}
+
+async function copyEntries(srcDir: string, destDir: string): Promise<void> {
+  const entries = await readdir(srcDir, { withFileTypes: true });
+  for (const entry of entries) {
+    const src = join(srcDir, entry.name);
+    const dest = join(destDir, entry.name);
+    if (entry.isDirectory()) {
+      await mkdir(dest, { recursive: true });
+      await copyEntries(src, dest);
+    } else if (entry.isFile()) {
+      await writeFile(dest, await readFile(src));
+    }
+  }
 }
