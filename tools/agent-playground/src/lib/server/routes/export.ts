@@ -3,8 +3,8 @@ import { Hono } from "hono";
 import JSZip from "jszip";
 import { z } from "zod";
 import { GetChatResponseSchema } from "../../components/chat/types.ts";
-import { DAEMON_BASE_URL } from "../../daemon-url.ts";
 import { artifactZipPath } from "../../export/artifact-zip-path.ts";
+import { effectiveDaemonUrl } from "../daemon-url.ts";
 
 /**
  * Per-artifact byte ceiling. Anything larger than this is dropped from the
@@ -20,6 +20,99 @@ const MAX_ARTIFACT_BYTES = 25 * 1024 * 1024;
 const MAX_TOTAL_ARTIFACT_BYTES = 250 * 1024 * 1024;
 
 const ArtifactsResponseSchema = z.object({ artifacts: z.array(ArtifactSummarySchema) });
+type ArtifactSummary = z.infer<typeof ArtifactSummarySchema>;
+
+/** Return true when an artifact id cannot safely be embedded as one URL path segment. */
+function unsafeArtifactIdPathSegment(id: string): boolean {
+  return /^\.+$/.test(id) || id.includes("/") || id.includes("\\");
+}
+
+/** Read a response body while enforcing a byte ceiling before full allocation. */
+async function readResponseBytesWithLimit(res: Response, limit: number): Promise<Uint8Array> {
+  if (!res.body) {
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    if (bytes.byteLength > limit) {
+      throw new Error(
+        `artifact exceeds per-artifact byte ceiling (${bytes.byteLength} > ${limit})`,
+      );
+    }
+    return bytes;
+  }
+
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > limit) {
+        await reader.cancel().catch(() => {});
+        throw new Error(`artifact exceeds per-artifact byte ceiling (${total} > ${limit})`);
+      }
+      chunks.push(value);
+    }
+  } finally {
+    try {
+      reader.releaseLock();
+    } catch {
+      // Reader may already be released after cancellation.
+    }
+  }
+
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
+}
+
+/** Fetch artifact summaries, degrading non-abort failures to an empty artifact list. */
+async function fetchArtifactSummaries(
+  artifactsUrl: string,
+  signal: AbortSignal,
+): Promise<ArtifactSummary[]> {
+  let artifactsRes: Response;
+  try {
+    artifactsRes = await fetch(artifactsUrl, { signal });
+  } catch (err) {
+    if (signal.aborted) throw err;
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn(`[chat-export] artifact list fetch failed (${message}); exporting without bytes`);
+    return [];
+  }
+
+  if (!artifactsRes.ok) {
+    console.warn(
+      `[chat-export] artifact list fetch failed (${artifactsRes.status}); exporting without bytes`,
+    );
+    return [];
+  }
+
+  let artifactsJson: unknown;
+  try {
+    artifactsJson = await artifactsRes.json();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn(
+      `[chat-export] artifact list JSON parse failed (${message}); exporting without bytes`,
+    );
+    return [];
+  }
+
+  const artifactsParsed = ArtifactsResponseSchema.safeParse(artifactsJson);
+  if (!artifactsParsed.success) {
+    console.warn(
+      "[chat-export] artifact list response did not match schema; exporting without bytes",
+      artifactsParsed.error.message,
+    );
+    return [];
+  }
+  return artifactsParsed.data.artifacts;
+}
 
 /**
  * Replace absolute home-directory prefixes with `~` so shared exports do
@@ -63,20 +156,14 @@ export const exportRoute = new Hono().get("/:workspaceId/:chatId", async (c) => 
 
   const wsPath = encodeURIComponent(workspaceId);
   const chatPath = encodeURIComponent(chatId);
+  const daemonBaseUrl = effectiveDaemonUrl().replace(/\/+$/, "");
 
-  const chatUrl = `${DAEMON_BASE_URL}/api/workspaces/${wsPath}/chat/${chatPath}?full=true`;
-  const artifactsUrl = `${DAEMON_BASE_URL}/api/artifacts?chatId=${chatPath}`;
+  const chatUrl = `${daemonBaseUrl}/api/workspaces/${wsPath}/chat/${chatPath}?full=true`;
+  const artifactsUrl = `${daemonBaseUrl}/api/artifacts?chatId=${chatPath}`;
 
-  // Chat JSON and artifact list run in parallel — neither depends on the
-  // other and we want the wall-clock pipeline to be max(chat, artifacts,
-  // max(artifact-bytes…)) rather than a serial sum.
   let chatRes: Response;
-  let artifactsRes: Response;
   try {
-    [chatRes, artifactsRes] = await Promise.all([
-      fetch(chatUrl, { signal }),
-      fetch(artifactsUrl, { signal }),
-    ]);
+    chatRes = await fetch(chatUrl, { signal });
   } catch (err) {
     if (signal.aborted) return new Response(null, { status: 499 });
     const message = err instanceof Error ? err.message : String(err);
@@ -90,80 +177,101 @@ export const exportRoute = new Hono().get("/:workspaceId/:chatId", async (c) => 
     return c.json({ error: `daemon chat fetch failed: ${chatRes.status}` }, 502);
   }
 
-  const chatJsonRaw: unknown = await chatRes.json();
+  let chatJsonRaw: unknown;
+  try {
+    chatJsonRaw = await chatRes.json();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return c.json({ error: `daemon chat JSON parse failed: ${message}` }, 502);
+  }
   const chatParsed = GetChatResponseSchema.safeParse(chatJsonRaw);
   if (!chatParsed.success) {
-    return c.json(
-      { error: `daemon chat schema mismatch: ${chatParsed.error.message}` },
-      502,
-    );
+    return c.json({ error: `daemon chat schema mismatch: ${chatParsed.error.message}` }, 502);
   }
 
   // Artifact list failures are non-fatal — an export with missing artifact
   // entries is more useful than no export at all.
-  let artifacts: z.infer<typeof ArtifactSummarySchema>[] = [];
-  if (artifactsRes.ok) {
-    const artifactsJson: unknown = await artifactsRes.json();
-    const artifactsParsed = ArtifactsResponseSchema.safeParse(artifactsJson);
-    if (artifactsParsed.success) {
-      artifacts = artifactsParsed.data.artifacts;
-    } else {
-      console.warn(
-        "[chat-export] artifact list response did not match schema; exporting without bytes",
-        artifactsParsed.error.message,
-      );
-    }
-  } else {
-    console.warn(
-      `[chat-export] artifact list fetch failed (${artifactsRes.status}); exporting without bytes`,
-    );
+  let artifacts: ArtifactSummary[];
+  try {
+    artifacts = await fetchArtifactSummaries(artifactsUrl, signal);
+  } catch (err) {
+    if (signal.aborted) return new Response(null, { status: 499 });
+    throw err;
   }
-
-  // Fan out artifact byte reads in parallel via `Promise.allSettled` so a
-  // single 404 / network blip can't poison the whole export. Each entry
-  // either resolves with `{ path, bytes }` or rejects; we drop rejections
-  // and keep building the zip.
-  const byteResults = await Promise.allSettled(
-    artifacts.map(async (summary) => {
-      const res = await fetch(
-        `${DAEMON_BASE_URL}/api/artifacts/${encodeURIComponent(summary.id)}/content`,
-        { signal },
-      );
-      if (!res.ok) throw new Error(`status ${res.status}`);
-      const buf = new Uint8Array(await res.arrayBuffer());
-      if (buf.byteLength > MAX_ARTIFACT_BYTES) {
-        throw new Error(
-          `artifact ${summary.id} exceeds per-artifact byte ceiling (${buf.byteLength} > ${MAX_ARTIFACT_BYTES})`,
-        );
-      }
-      return {
-        path: artifactZipPath({
-          id: summary.id,
-          mimeType: summary.mimeType,
-          originalName: summary.originalName,
-          title: summary.title,
-        }),
-        bytes: buf,
-      };
-    }),
-  );
 
   if (signal.aborted) return new Response(null, { status: 499 });
 
-  let totalBytes = 0;
-  for (const result of byteResults) {
-    if (result.status === "fulfilled") totalBytes += result.value.bytes.byteLength;
+  const fetchableArtifacts: ArtifactSummary[] = [];
+  let plannedBytes = 0;
+  for (const summary of artifacts) {
+    if (unsafeArtifactIdPathSegment(summary.id)) {
+      console.warn(`[chat-export] skipping artifact with unsafe id path segment: ${summary.id}`);
+      continue;
+    }
+    if (summary.size > MAX_ARTIFACT_BYTES) {
+      console.warn(
+        `[chat-export] skipping artifact ${summary.id}: declared size exceeds per-artifact byte ceiling (${summary.size} > ${MAX_ARTIFACT_BYTES})`,
+      );
+      continue;
+    }
+    plannedBytes += summary.size;
+    if (plannedBytes > MAX_TOTAL_ARTIFACT_BYTES) {
+      return c.json(
+        {
+          error: "Export exceeds size limit",
+          totalBytes: plannedBytes,
+          limit: MAX_TOTAL_ARTIFACT_BYTES,
+        },
+        413,
+      );
+    }
+    fetchableArtifacts.push(summary);
   }
-  if (totalBytes > MAX_TOTAL_ARTIFACT_BYTES) {
-    return c.json(
-      {
-        error: "Export exceeds size limit",
-        totalBytes,
-        limit: MAX_TOTAL_ARTIFACT_BYTES,
-      },
-      413,
-    );
+
+  // Read artifact bytes one at a time so the byte ceilings are real memory
+  // bounds, not post-hoc checks after a parallel fan-out has already
+  // allocated every response body.
+  const byteResults: PromiseSettledResult<{ path: string; bytes: Uint8Array }>[] = [];
+  let downloadedBytes = 0;
+  for (const summary of fetchableArtifacts) {
+    if (signal.aborted) return new Response(null, { status: 499 });
+    try {
+      const res = await fetch(
+        `${daemonBaseUrl}/api/artifacts/${encodeURIComponent(summary.id)}/content`,
+        { signal },
+      );
+      if (!res.ok) throw new Error(`status ${res.status}`);
+      const buf = await readResponseBytesWithLimit(res, MAX_ARTIFACT_BYTES);
+      downloadedBytes += buf.byteLength;
+      if (downloadedBytes > MAX_TOTAL_ARTIFACT_BYTES) {
+        return c.json(
+          {
+            error: "Export exceeds size limit",
+            totalBytes: downloadedBytes,
+            limit: MAX_TOTAL_ARTIFACT_BYTES,
+          },
+          413,
+        );
+      }
+      byteResults.push({
+        status: "fulfilled",
+        value: {
+          path: artifactZipPath({
+            id: summary.id,
+            mimeType: summary.mimeType,
+            originalName: summary.originalName,
+            title: summary.title,
+          }),
+          bytes: buf,
+        },
+      });
+    } catch (err) {
+      if (signal.aborted) return new Response(null, { status: 499 });
+      byteResults.push({ status: "rejected", reason: err });
+    }
   }
+
+  if (signal.aborted) return new Response(null, { status: 499 });
 
   const zip = new JSZip();
   // Strip the account-ownership id. Transcript, system prompt context, and
@@ -184,9 +292,8 @@ export const exportRoute = new Hono().get("/:workspaceId/:chatId", async (c) => 
     if (result.status === "fulfilled") {
       zip.file(result.value.path, result.value.bytes);
     } else {
-      const summary = artifacts[idx];
-      const reason =
-        result.reason instanceof Error ? result.reason.message : String(result.reason);
+      const summary = fetchableArtifacts[idx];
+      const reason = result.reason instanceof Error ? result.reason.message : String(result.reason);
       console.warn(
         `[chat-export] artifact byte fetch failed for ${summary?.id ?? "<unknown>"}: ${reason}`,
       );
