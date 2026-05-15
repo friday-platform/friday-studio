@@ -56,7 +56,7 @@
     <span class="error">Failed to load credentials</span>
   {:else if credentials.length === 0}
     <span class="muted">No <code>{providerId}</code> credentials connected.</span>
-    <a class="add-link" href="/mcp/{serverId}">Add credential →</a>
+    <a class="add-link" href="/mcp/{serverId}/connections">Add credential →</a>
   {:else}
     <select
       class="cred-select"
