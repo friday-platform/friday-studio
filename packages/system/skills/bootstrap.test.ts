@@ -146,7 +146,7 @@ function makeStorageStub(initial: StoredSkill[]) {
     // just for test value the bootstrap pass doesn't read.
     listJobOnlySkillIds: vi.fn(),
   } as unknown as SkillStorageAdapter;
-  return { adapter, store, setDisabled, list };
+  return { adapter, store, setDisabled, list, publish };
 }
 
 describe("ensureSystemSkills — orphan tombstone pass", () => {
@@ -229,35 +229,35 @@ describe("ensureSystemSkills — orphan tombstone pass", () => {
     expect(calls).toHaveLength(0);
   });
 
-  it("re-enables a previously-tombstoned skill when its source dir is restored (hash-match path)", async () => {
-    // Resurrection scenario: skill X was published, then deleted and
-    // tombstoned, then the source dir came back (git revert, backup
-    // restore, etc.) with byte-identical content. Naive content-hash
-    // shortcut would skip publish entirely, leave `disabled: true`
-    // sticky, and the resurrected skill stays invisible forever
-    // despite being on disk.
-    //
-    // We force the bug's path by mocking `computeSkillHash` to return
-    // a fixed value AND seeding the registry with the exact same hash —
-    // the shortcut at `publishOne:163-171` then fires for sure. The
-    // resurrection fix must intercept this case and call setDisabled
-    // (or fall through to publish) regardless of hash match.
+  it("re-publishes (not just re-enables) a disabled skill even when hash matches", async () => {
+    // Resurrection via re-publish: a skill may have been tombstoned after
+    // a failed archive pack (e.g. the VFS fd bug), leaving archive=null
+    // in the DB with an otherwise-correct source-hash. A naive re-enable
+    // via setDisabled would restore visibility without healing the null
+    // archive. The fix is to fall through to publish for any disabled row,
+    // regardless of hash match — publish atomically re-enables and heals.
     mockComputeSkillHash.mockResolvedValue("identical-content-hash");
-    const { adapter, store } = makeStorageStub([
+    const { adapter, store, setDisabled, publish } = makeStorageStub([
       {
         skillId: "sk_resurrected",
         name: "agent-action-handshake",
-        disabled: true, // was tombstoned in a prior boot
-        sourceHash: "identical-content-hash", // matches what computeSkillHash returns now
+        disabled: true,
+        sourceHash: "identical-content-hash",
       },
     ]);
     _setSkillStorageForTest(adapter);
 
     await ensureSystemSkills();
 
-    // After bootstrap, the skill must be enabled — either because
-    // publish ran (which writes disabled:false) or because setDisabled
-    // was called explicitly.
+    // publish must have run (not just setDisabled) so the archive is healed.
+    expect(publish).toHaveBeenCalledWith(
+      "friday",
+      "agent-action-handshake",
+      expect.any(String),
+      expect.any(Object),
+    );
+    // setDisabled must NOT have been called — publish handles re-enabling.
+    expect(setDisabled).not.toHaveBeenCalledWith("sk_resurrected", false);
     expect(store.get("agent-action-handshake")?.disabled).toBe(false);
   });
 });
@@ -283,6 +283,7 @@ describe("copySkillDirToReal", () => {
 
     destDir = await copySkillDirToReal(srcDir);
 
+    expect(destDir).not.toBe(srcDir);
     expect(await readFile(join(destDir, "SKILL.md"), "utf-8")).toBe("# Skill\n");
     expect(await readFile(join(destDir, "extra.txt"), "utf-8")).toBe("hello");
   });
@@ -309,11 +310,14 @@ describe("copySkillDirToReal", () => {
 
     destDir = await copySkillDirToReal(srcDir);
 
-    // packSkillArchive must not throw and the archive must contain both files.
+    // packSkillArchive must not throw and the archive must contain both files
+    // with their original content intact.
     const archive = await packSkillArchive(destDir);
     const contents = await extractArchiveContents(archive);
     expect(Object.keys(contents)).toContain("SKILL.md");
     expect(Object.keys(contents)).toContain("references/ref.md");
+    expect(contents["SKILL.md"]).toBe("# Skill\n");
+    expect(contents["references/ref.md"]).toBe("# Reference\n");
   });
 
   it("returns an independent copy — mutations to src do not affect dest", async () => {

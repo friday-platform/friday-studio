@@ -163,33 +163,16 @@ async function publishOne(dir: string): Promise<string | null> {
 
   const sourceHash = await computeSkillHash(dir);
 
-  // Shortcut: if the stored version already has this hash, don't touch.
-  // EXCEPT: if the stored row is disabled (a previous boot tombstoned
-  // it as an orphan), the source dir has clearly come back since the
-  // tombstone — re-enable it before short-circuiting. Without this,
-  // a deleted-then-restored skill stays invisible to
-  // `resolveVisibleSkills` despite being on disk.
+  // Shortcut: if the stored version already has this hash and is enabled,
+  // don't touch. Disabled rows fall through to re-publish even on a hash
+  // match: a prior boot may have tombstoned the skill after a failed archive
+  // pack (e.g. the VFS fd bug), leaving archive=null in the DB. Re-publishing
+  // heals the null archive and re-enables the skill atomically.
   const existing = await SkillStorage.get(SYSTEM_SKILL_NAMESPACE, name);
   if (existing.ok && existing.data) {
     const storedHash = existing.data.frontmatter["source-hash"];
-    if (typeof storedHash === "string" && storedHash === sourceHash) {
-      if (existing.data.disabled) {
-        const reEnable = await SkillStorage.setDisabled(existing.data.skillId, false);
-        if (!reEnable.ok) {
-          logger.warn("resurrection re-enable failed", {
-            name,
-            skillId: existing.data.skillId,
-            error: reEnable.error,
-          });
-        } else {
-          logger.info("re-enabled previously-tombstoned skill", {
-            name: `@${SYSTEM_SKILL_NAMESPACE}/${name}`,
-            skillId: existing.data.skillId,
-          });
-        }
-      } else {
-        logger.debug("bundled skill up to date", { name, hash: sourceHash.slice(0, 12) });
-      }
+    if (typeof storedHash === "string" && storedHash === sourceHash && !existing.data.disabled) {
+      logger.debug("bundled skill up to date", { name, hash: sourceHash.slice(0, 12) });
       return name;
     }
   }
@@ -208,7 +191,9 @@ async function publishOne(dir: string): Promise<string | null> {
     try {
       archive = new Uint8Array(await packSkillArchive(realDir));
     } finally {
-      await rm(realDir, { recursive: true, force: true }).catch(() => {});
+      await rm(realDir, { recursive: true, force: true }).catch((e) =>
+        logger.debug("cleanup failed", { error: e instanceof Error ? e.message : String(e) }),
+      );
     }
   }
 
