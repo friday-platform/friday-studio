@@ -16,7 +16,6 @@ export const DaemonStatusSchema = z.object({
     external: z.number(),
   }),
   workspaces: z.array(z.string()),
-  configuration: z.object({ maxConcurrentWorkspaces: z.number(), idleTimeoutMs: z.number() }),
 });
 
 // Workspace schemas

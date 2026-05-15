@@ -26,8 +26,6 @@ export {
   isCanonical,
   isCanonicalEntry,
 } from "./src/canonical.ts";
-export type { RuntimeInvalidateCallback } from "./src/manager.ts";
-// Export WorkspaceManagerOptions interface
 // Export main components
 export { validateMCPEnvironmentForWorkspace, WorkspaceManager } from "./src/manager.ts";
 // Runtime

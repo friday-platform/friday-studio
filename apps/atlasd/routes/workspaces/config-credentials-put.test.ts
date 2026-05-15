@@ -319,7 +319,7 @@ describe("PUT /config/credentials/:path", () => {
         }),
       );
       await writeFile(join(testDir, "workspace.yml"), stringify(config.workspace));
-      const { app, destroyWorkspaceRuntime } = createTestApp({
+      const { app, runtimeDestroyedSpy } = createTestApp({
         workspace,
         config,
         runtimeActive: true,
@@ -344,7 +344,7 @@ describe("PUT /config/credentials/:path", () => {
       expect(body).toMatchObject({ ok: true });
 
       // Runtime is not eagerly destroyed; file watcher handles deferred reload
-      expect(destroyWorkspaceRuntime).not.toHaveBeenCalled();
+      expect(runtimeDestroyedSpy).not.toHaveBeenCalled();
     });
 
     test("stores both id and provider in the written credential ref", async () => {

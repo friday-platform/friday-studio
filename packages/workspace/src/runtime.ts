@@ -391,6 +391,23 @@ interface WorkspaceRuntimeOptions {
    * wraps `ChatSdkNotifier` + `broadcastDestinations` and supplies it here.
    */
   broadcastNotifier?: FSMBroadcastNotifier;
+  /**
+   * Daemon-level routing for session-cancel commands published over NATS.
+   * The runtime hands the session's AbortController to the registry as soon
+   * as it's created (so an external cancel can abort mid-execution) and
+   * deregisters when the session settles. The registry is daemon-owned;
+   * the runtime knows nothing about NATS subjects.
+   */
+  sessionAbortRegistry?: SessionAbortRegistry;
+}
+
+export interface SessionAbortRegistry {
+  register(
+    sessionId: string,
+    controller: AbortController,
+    ctx: { workspaceId: string; signalId: string },
+  ): void;
+  deregister(sessionId: string): void;
 }
 
 /**
@@ -1927,6 +1944,10 @@ export class WorkspaceRuntime {
       }
     }
     this.activeAbortControllers.set(sessionId, sessionAbortController);
+    this.options.sessionAbortRegistry?.register(sessionId, sessionAbortController, {
+      workspaceId: this.workspace.id,
+      signalId: signal.id,
+    });
     const effectiveAbortSignal = sessionAbortController.signal;
 
     return withOtelSpan(
@@ -1983,6 +2004,7 @@ export class WorkspaceRuntime {
           type: "session:start",
           sessionId,
           workspaceId: this.workspace.id,
+          signalId: signal.id,
           jobName: job.name,
           task: typeof signal.data?.task === "string" ? signal.data.task : job.name,
           plannedSteps,
@@ -2464,6 +2486,7 @@ export class WorkspaceRuntime {
           session.finalState = engine.state;
           this.midSessionArtifactRefs.delete(session.id);
           this.activeAbortControllers.delete(sessionId);
+          this.options.sessionAbortRegistry?.deregister(sessionId);
           this.sessionEngines.delete(sessionId);
         }
 
@@ -3449,8 +3472,9 @@ export class WorkspaceRuntime {
     // Engines are per-signal — running ones receive the abort via
     // activeAbortControllers; the engines themselves get GC'd when their
     // signal completes. Nothing to stop here at the job level.
-    for (const controller of this.activeAbortControllers.values()) {
+    for (const [sessionId, controller] of this.activeAbortControllers.entries()) {
       controller.abort("workspace runtime shutting down");
+      this.options.sessionAbortRegistry?.deregister(sessionId);
     }
 
     await this.orchestrator.shutdown();

@@ -71,6 +71,17 @@ function sanitize(s: string): string {
   return s.replace(SAFE_TOKEN_RE, "_");
 }
 
+/**
+ * Value stored in `SESSION_INFLIGHT[sessionId]`. workspaceId and signalId
+ * were added later — historical markers may have only `startedAt`, which
+ * is why both are optional on read.
+ */
+interface InflightMarker {
+  startedAt: string;
+  workspaceId?: string;
+  signalId?: string;
+}
+
 export class JetStreamSessionHistoryAdapter implements SessionHistoryAdapter {
   private metadataKV: KVStorage | null = null;
   private inflightKV: KVStorage | null = null;
@@ -142,11 +153,22 @@ export class JetStreamSessionHistoryAdapter implements SessionHistoryAdapter {
 
   async appendEvent(sessionId: string, event: SessionStreamEvent): Promise<void> {
     await this.ensureStream();
-    const inflight = await this.getInflightKV();
-    // First-event marker so markInterruptedSessions() can find sessions
-    // whose daemon died before save(). Cheap re-write — JS KV de-dups
-    // identical values via per-key revision history.
-    await inflight.set([sessionId], { startedAt: new Date().toISOString() });
+    // The inflight marker exists so markInterruptedSessions() can find
+    // sessions whose daemon died before save(). Only the start event
+    // produces it: it's the first event by construction, and the marker is
+    // immutable for a session's lifetime so re-writing on subsequent events
+    // only burns KV revisions. Marker carries workspaceId + signalId so
+    // external listers can filter without joining against another bucket;
+    // signalId is derived from the start event itself when present.
+    if (event.type === "session:start") {
+      const inflight = await this.getInflightKV();
+      const marker: InflightMarker = {
+        startedAt: new Date().toISOString(),
+        workspaceId: event.workspaceId,
+        ...(event.signalId ? { signalId: event.signalId } : {}),
+      };
+      await inflight.set([sessionId], marker);
+    }
     const js = this.nc.jetstream();
     await js.publish(this.subject(sessionId), enc.encode(JSON.stringify(event)), {
       msgID: eventMsgId(sessionId, event),
@@ -285,6 +307,33 @@ export class JetStreamSessionHistoryAdapter implements SessionHistoryAdapter {
     }
     summaries.sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());
     return summaries;
+  }
+
+  async listInflight(
+    workspaceId?: string,
+  ): Promise<
+    Array<{ sessionId: string; startedAt: string; workspaceId?: string; signalId?: string }>
+  > {
+    const inflight = await this.getInflightKV();
+    const out: Array<{
+      sessionId: string;
+      startedAt: string;
+      workspaceId?: string;
+      signalId?: string;
+    }> = [];
+    for await (const e of inflight.list<InflightMarker>([])) {
+      const last = e.key[e.key.length - 1];
+      if (typeof last !== "string") continue;
+      const marker = e.value;
+      if (workspaceId !== undefined && marker.workspaceId !== workspaceId) continue;
+      out.push({
+        sessionId: last,
+        startedAt: marker.startedAt,
+        ...(marker.workspaceId ? { workspaceId: marker.workspaceId } : {}),
+        ...(marker.signalId ? { signalId: marker.signalId } : {}),
+      });
+    }
+    return out;
   }
 
   async markInterruptedSessions(): Promise<number> {

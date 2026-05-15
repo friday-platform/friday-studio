@@ -64,6 +64,7 @@ import {
   setCommunicatorMutation,
   wireCommunicator,
 } from "../../src/services/communicator-wiring.ts";
+import { publishSessionCancel } from "../../src/session-dispatch-registry.ts";
 import { awaitSignalCompletion, publishSignalCancellation } from "../../src/signal-stream.ts";
 import {
   getAccessibleWorkspaceIds,
@@ -1319,34 +1320,17 @@ const workspacesRoutes = daemonFactory
         // workspace.yml while a session is running, runtime tears down,
         // session dies with "MCP error -32000: Connection closed".
         if (!force) {
-          const currentRuntime = ctx.getWorkspaceRuntime(workspaceId);
-          if (currentRuntime) {
-            const sessions = currentRuntime.getSessions();
-            const activeSessions = sessions.filter(
-              (s: { session: { status: string; id: string } }) => s.session.status === "active",
+          const inflight = await ctx.sessionHistoryAdapter.listInflight(workspaceId);
+          if (inflight.length > 0) {
+            return c.json(
+              {
+                success: false,
+                error: "Workspace has active sessions or executions. Pass force=true to override.",
+                activeSessionIds: inflight.map((s) => s.sessionId),
+                hasActiveExecutions: false,
+              },
+              409,
             );
-            let hasActiveExecutions = false;
-            if (
-              "getOrchestrator" in currentRuntime &&
-              typeof currentRuntime.getOrchestrator === "function"
-            ) {
-              const orchestrator = currentRuntime.getOrchestrator();
-              hasActiveExecutions = orchestrator.hasActiveExecutions();
-            }
-            if (activeSessions.length > 0 || hasActiveExecutions) {
-              return c.json(
-                {
-                  success: false,
-                  error:
-                    "Workspace has active sessions or executions. Pass force=true to override.",
-                  activeSessionIds: activeSessions.map(
-                    (s: { session: { id: string } }) => s.session.id,
-                  ),
-                  hasActiveExecutions,
-                },
-                409,
-              );
-            }
           }
         }
 
@@ -1398,19 +1382,16 @@ const workspacesRoutes = daemonFactory
             await manager.updateWorkspaceStatus(workspace.id, workspace.status, { name: ymlName });
           }
 
-          // We do NOT call destroyWorkspaceRuntime here, even on success. The
-          // file watcher detects the workspace.yml write and routes the change
-          // through WorkspaceManager.handleWatcherChange, which defers the
-          // runtime swap until any active session or in-flight execution
-          // finishes (handleWorkspaceConfigChange → stopRuntimeIfActive). When
-          // the chat agent itself triggers the update, that deferral is what
-          // keeps the chat alive — the prior implementation tore down the
-          // runtime synchronously and killed the conversation mid-stream.
+          // Per-dispatch runtimes mean the next signal already reads the new
+          // config — there's no long-lived runtime to reload. The file
+          // watcher still fires for external-system reconciliation (cron
+          // schedules, fs-watch sources) when their workspace.yml entry
+          // changes.
           return c.json({
             success: true,
             workspace,
-            runtimeReloaded: ctx.getWorkspaceRuntime(workspace.id) !== undefined,
-            message: "Config written; runtime reload deferred to file-watcher path",
+            runtimeReloaded: false,
+            message: "Config written; next dispatch reads the new config",
           });
         } catch (updateError) {
           return c.json(
@@ -1601,8 +1582,6 @@ const workspacesRoutes = daemonFactory
           return mapMutationError(c, mutationResult.error, "Communicator mutation conflicted");
         }
 
-        await ctx.evictChatSdkInstance(workspaceId);
-
         // connectionId is intentionally omitted — for telegram it's the
         // post-colon half of the bot token, which is semi-sensitive (full
         // token = bot takeover). Log existence only.
@@ -1668,8 +1647,6 @@ const workspacesRoutes = daemonFactory
         }
 
         const { credentialId } = await disconnectCommunicator(workspaceId, kind, callbackBaseUrl);
-
-        await ctx.evictChatSdkInstance(workspaceId);
 
         logger.info("communicator_disconnected_from_workspace", {
           workspaceId,
@@ -1855,17 +1832,15 @@ const workspacesRoutes = daemonFactory
     let spawnedSessionId: string | undefined;
     const cancelSpawnedSession = () => {
       if (!spawnedSessionId) return;
-      try {
-        const runtime = ctx.getWorkspaceRuntime(workspaceId);
-        runtime?.cancelSession(spawnedSessionId);
-      } catch (err) {
+      const sid = spawnedSessionId;
+      void publishSessionCancel(nc, sid, "Client disconnected").catch((err) => {
         logger.warn("Failed to cancel spawned session on client disconnect", {
           workspaceId,
           signalId,
-          sessionId: spawnedSessionId,
+          sessionId: sid,
           error: stringifyError(err),
         });
-      }
+      });
     };
     // The Hono request's underlying AbortSignal fires when the client
     // disconnects (browser navigates away, fetch is aborted, etc.).
@@ -2157,17 +2132,15 @@ const workspacesRoutes = daemonFactory
       const clientAbort = c.req.raw.signal;
       const cancelSpawnedSession = () => {
         if (!spawnedSessionId) return;
-        try {
-          const runtime = ctx.getWorkspaceRuntime(workspaceId);
-          runtime?.cancelSession(spawnedSessionId);
-        } catch (err) {
+        const sid = spawnedSessionId;
+        void publishSessionCancel(nc, sid, "Client disconnected").catch((err) => {
           logger.warn("Failed to cancel spawned session on client disconnect", {
             workspaceId,
             signalId,
-            sessionId: spawnedSessionId,
+            sessionId: sid,
             error: stringifyError(err),
           });
-        }
+        });
       };
       const onClientAbort = () => {
         cancelCorrelatedSignal();
@@ -2323,12 +2296,13 @@ const workspacesRoutes = daemonFactory
         return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
       }
 
-      const runtime = ctx.daemon.runtimes.get(workspace.id);
-      if (!runtime) {
-        return c.json([]); // No runtime = no sessions
-      }
-
-      const sessions = runtime.listSessions();
+      const inflight = await ctx.sessionHistoryAdapter.listInflight(workspace.id);
+      const sessions = inflight.map((s) => ({
+        id: s.sessionId,
+        jobName: "",
+        status: "active",
+        startedAt: s.startedAt,
+      }));
       return c.json(sessions);
     } catch (error) {
       logger.error("Failed to list workspace sessions", { error, workspaceId });
@@ -2342,40 +2316,25 @@ const workspacesRoutes = daemonFactory
     const ctx = c.get("app");
 
     try {
-      const runtime = await ctx.daemon.getOrCreateWorkspaceRuntime(workspaceId);
-      const signals = runtime.listSignals();
-      return c.json({ signals: signals.map((signal) => ({ name: signal.id, signal })) }, 200);
-    } catch (error) {
-      if (error instanceof WorkspaceNotFoundError) {
+      const manager = ctx.getWorkspaceManager();
+      const workspace = await manager.find({ id: workspaceId });
+      if (!workspace) {
         return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
       }
-      if (error instanceof MissingEnvironmentError) {
-        logger.warn("Workspace has missing required environment variables", { error, workspaceId });
-        return c.json({ error: "Workspace has missing required environment variables" }, 422);
-      }
-      const errorMessage = stringifyError(error);
-      // When workspace path doesn't exist (stopped/deleted workspace), fall back to config
-      if (errorMessage.includes("Workspace path does not exist")) {
-        logger.debug("Workspace path unavailable, reading signals from config", { workspaceId });
-        const manager = ctx.getWorkspaceManager();
-        const config = await manager.getWorkspaceConfig(workspaceId);
-        const signals = config?.workspace?.signals || {};
-        return c.json(
-          {
-            signals: Object.entries(signals).map(([id, signalConfig]) => ({
-              name: id,
-              signal: {
-                id,
-                description: signalConfig.description,
-                provider: signalConfig.provider,
-              },
-            })),
-          },
-          200,
-        );
-      }
+      const config = await manager.getWorkspaceConfig(workspaceId);
+      const signals = config?.workspace?.signals || {};
+      return c.json(
+        {
+          signals: Object.entries(signals).map(([id, signalConfig]) => ({
+            name: id,
+            signal: { id, description: signalConfig.description, provider: signalConfig.provider },
+          })),
+        },
+        200,
+      );
+    } catch (error) {
       logger.error("Failed to list signals", { error, workspaceId });
-      return c.json({ error: `Failed to list signals: ${errorMessage}` }, 500);
+      return c.json({ error: `Failed to list signals: ${stringifyError(error)}` }, 500);
     }
   })
   // Describe specific agent in a workspace
@@ -2386,17 +2345,22 @@ const workspacesRoutes = daemonFactory
     const ctx = c.get("app");
 
     try {
-      const runtime = await ctx.daemon.getOrCreateWorkspaceRuntime(workspaceId);
-      const agent = runtime.describeAgent(agentId);
-      return c.json(agent, 200);
+      const manager = ctx.getWorkspaceManager();
+      const config = await manager.getWorkspaceConfig(workspaceId);
+      const agentConfig = config?.workspace?.agents?.[agentId];
+      if (!agentConfig) {
+        return c.json({ error: `Agent not found: ${agentId}` }, 404);
+      }
+      return c.json(
+        {
+          id: agentId,
+          type: agentConfig.type,
+          description: agentConfig.description,
+          config: agentConfig,
+        },
+        200,
+      );
     } catch (error) {
-      if (error instanceof WorkspaceNotFoundError) {
-        return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
-      }
-      if (error instanceof MissingEnvironmentError) {
-        logger.warn("Workspace has missing required environment variables", { error, workspaceId });
-        return c.json({ error: "Workspace has missing required environment variables" }, 422);
-      }
       logger.error("Failed to describe agent", { error, workspaceId, agentId });
       return c.json({ error: `Failed to describe agent: ${stringifyError(error)}` }, 500);
     }
@@ -2408,17 +2372,17 @@ const workspacesRoutes = daemonFactory
     const ctx = c.get("app");
 
     try {
-      const runtime = await ctx.daemon.getOrCreateWorkspaceRuntime(workspaceId);
-      const agents = runtime.listAgents();
-      return c.json(agents);
+      const manager = ctx.getWorkspaceManager();
+      const config = await manager.getWorkspaceConfig(workspaceId);
+      const agents = config?.workspace?.agents || {};
+      return c.json(
+        Object.entries(agents).map(([id, agentConfig]) => ({
+          id,
+          type: agentConfig.type,
+          description: agentConfig.description,
+        })),
+      );
     } catch (error) {
-      if (error instanceof WorkspaceNotFoundError) {
-        return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
-      }
-      if (error instanceof MissingEnvironmentError) {
-        logger.warn("Workspace has missing required environment variables", { error, workspaceId });
-        return c.json({ error: "Workspace has missing required environment variables" }, 422);
-      }
       logger.error("Failed to list agents", { error, workspaceId });
       return c.json({ error: `Failed to list agents: ${stringifyError(error)}` }, 500);
     }

@@ -116,6 +116,14 @@ class InMemorySessionHistoryAdapter implements SessionHistoryAdapter {
     }
     return Promise.resolve(marked);
   }
+
+  listInflight(
+    _workspaceId?: string,
+  ): Promise<
+    Array<{ sessionId: string; startedAt: string; workspaceId?: string; signalId?: string }>
+  > {
+    return Promise.resolve([]);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -238,23 +246,18 @@ function createTestApp(options: {
   const { adapter, registry } = options;
 
   const mockContext: AppContext = {
-    runtimes: new Map(),
     startTime: Date.now(),
     sseClients: new Map(),
     sseStreams: new Map(),
     getWorkspaceManager: vi.fn() as unknown as AppContext["getWorkspaceManager"],
-    getOrCreateWorkspaceRuntime: vi.fn() as unknown as AppContext["getOrCreateWorkspaceRuntime"],
-    resetIdleTimeout: vi.fn(),
-    getWorkspaceRuntime: vi.fn() as unknown as AppContext["getWorkspaceRuntime"],
-    destroyWorkspaceRuntime: vi.fn() as unknown as AppContext["destroyWorkspaceRuntime"],
     daemon: {} as AppContext["daemon"],
     streamRegistry: {} as AppContext["streamRegistry"],
     chatTurnRegistry: {} as AppContext["chatTurnRegistry"],
     sessionStreamRegistry: registry,
     sessionHistoryAdapter: adapter,
+    sessionDispatchRegistry: {} as AppContext["sessionDispatchRegistry"],
     getAgentRegistry: vi.fn() as unknown as AppContext["getAgentRegistry"],
     getOrCreateChatSdkInstance: vi.fn() as unknown as AppContext["getOrCreateChatSdkInstance"],
-    evictChatSdkInstance: vi.fn() as unknown as AppContext["evictChatSdkInstance"],
     exposeKernel: false,
     platformModels: {} as AppContext["platformModels"],
   };

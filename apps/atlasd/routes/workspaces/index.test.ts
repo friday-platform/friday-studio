@@ -57,27 +57,21 @@ function createTestApp() {
     .mockResolvedValue({ sessionId: "sess-1", output: [], artifactIds: [], summary: "" });
 
   const mockContext: AppContext = {
-    runtimes: new Map(),
     startTime: Date.now(),
     sseClients: new Map(),
     sseStreams: new Map(),
     getWorkspaceManager: () => mockWorkspaceManager,
-    getOrCreateWorkspaceRuntime: vi.fn(),
-    resetIdleTimeout: vi.fn(),
-    getWorkspaceRuntime: vi.fn(),
-    destroyWorkspaceRuntime: vi.fn(),
     getAgentRegistry: vi.fn(),
     getOrCreateChatSdkInstance: vi.fn(),
-    evictChatSdkInstance: vi.fn(),
     daemon: {
       getWorkspaceManager: () => mockWorkspaceManager,
       triggerWorkspaceSignal,
-      runtimes: new Map(),
     } as unknown as AppContext["daemon"],
     streamRegistry: {} as AppContext["streamRegistry"],
     chatTurnRegistry: {} as AppContext["chatTurnRegistry"],
     sessionStreamRegistry: {} as AppContext["sessionStreamRegistry"],
     sessionHistoryAdapter: {} as AppContext["sessionHistoryAdapter"],
+    sessionDispatchRegistry: {} as AppContext["sessionDispatchRegistry"],
     exposeKernel: false,
     platformModels: createStubPlatformModels(),
   };
@@ -302,25 +296,8 @@ function makeSession(id: string, status: string) {
   return { id, jobName: "test", signalId: "sig", startedAt: new Date(), session: { id, status } };
 }
 
-function createTestAppWithRuntime(options: {
-  sessions?: ReturnType<typeof makeSession>[];
-  orchestratorActiveExecutions?: boolean;
-  includeOrchestrator?: boolean;
-}) {
-  const {
-    sessions = [],
-    orchestratorActiveExecutions = false,
-    includeOrchestrator = false,
-  } = options;
-
-  const mockRuntime: Record<string, unknown> = { getSessions: vi.fn().mockReturnValue(sessions) };
-  if (includeOrchestrator) {
-    mockRuntime.getOrchestrator = vi
-      .fn()
-      .mockReturnValue({
-        hasActiveExecutions: vi.fn().mockReturnValue(orchestratorActiveExecutions),
-      });
-  }
+function createTestAppWithRuntime(options: { sessions?: ReturnType<typeof makeSession>[] }) {
+  const { sessions = [] } = options;
 
   const mockWorkspace = {
     id: "ws-test",
@@ -338,27 +315,31 @@ function createTestAppWithRuntime(options: {
     deleteWorkspace: vi.fn(),
   } as unknown as WorkspaceManager;
 
+  const inflight = sessions
+    .filter((s) => s.session.status === "active")
+    .map((s) => ({
+      sessionId: s.id,
+      startedAt: s.startedAt.toISOString(),
+      workspaceId: "ws-test",
+      signalId: s.signalId,
+    }));
+  const mockSessionHistoryAdapter = {
+    listInflight: vi.fn().mockResolvedValue(inflight),
+  } as unknown as AppContext["sessionHistoryAdapter"];
+
   const mockContext: AppContext = {
-    runtimes: new Map(),
     startTime: Date.now(),
     sseClients: new Map(),
     sseStreams: new Map(),
     getWorkspaceManager: () => mockWorkspaceManager,
-    getOrCreateWorkspaceRuntime: vi.fn(),
-    resetIdleTimeout: vi.fn(),
-    getWorkspaceRuntime: vi.fn().mockReturnValue(mockRuntime),
-    destroyWorkspaceRuntime: vi.fn(),
     getAgentRegistry: vi.fn(),
     getOrCreateChatSdkInstance: vi.fn(),
-    evictChatSdkInstance: vi.fn(),
-    daemon: {
-      getWorkspaceManager: () => mockWorkspaceManager,
-      runtimes: new Map(),
-    } as unknown as AppContext["daemon"],
+    daemon: { getWorkspaceManager: () => mockWorkspaceManager } as unknown as AppContext["daemon"],
     streamRegistry: {} as AppContext["streamRegistry"],
     chatTurnRegistry: {} as AppContext["chatTurnRegistry"],
     sessionStreamRegistry: {} as AppContext["sessionStreamRegistry"],
-    sessionHistoryAdapter: {} as AppContext["sessionHistoryAdapter"],
+    sessionHistoryAdapter: mockSessionHistoryAdapter,
+    sessionDispatchRegistry: {} as AppContext["sessionDispatchRegistry"],
     exposeKernel: false,
     platformModels: createStubPlatformModels(),
   };
@@ -387,16 +368,6 @@ describe("POST /workspaces/:workspaceId/update — session guard", () => {
     expect(res.status).toBe(409);
   });
 
-  test("returns 409 when orchestrator.hasActiveExecutions() is true and force is absent", async () => {
-    const { app } = createTestAppWithRuntime({
-      sessions: [],
-      includeOrchestrator: true,
-      orchestratorActiveExecutions: true,
-    });
-    const res = await post(app, "/workspaces/ws-test/update", { config: {} });
-    expect(res.status).toBe(409);
-  });
-
   test("409 response body contains expected fields", async () => {
     const { app } = createTestAppWithRuntime({
       sessions: [makeSession("sess-xyz", "active"), makeSession("sess-def", "active")],
@@ -418,18 +389,14 @@ describe("POST /workspaces/:workspaceId/update — session guard", () => {
     expect(res.status).not.toBe(409);
   });
 
-  test("proceeds normally when no active sessions and hasActiveExecutions=false", async () => {
-    const { app } = createTestAppWithRuntime({
-      sessions: [makeSession("sess-abc", "completed")],
-      includeOrchestrator: true,
-      orchestratorActiveExecutions: false,
-    });
+  test("proceeds normally when no active sessions are inflight", async () => {
+    const { app } = createTestAppWithRuntime({ sessions: [makeSession("sess-abc", "completed")] });
     const res = await post(app, "/workspaces/ws-test/update", { config: {} });
     expect(res.status).not.toBe(409);
   });
 
-  test("proceeds normally when orchestrator is not available and no active sessions", async () => {
-    const { app } = createTestAppWithRuntime({ sessions: [], includeOrchestrator: false });
+  test("proceeds normally when no inflight sessions are present", async () => {
+    const { app } = createTestAppWithRuntime({ sessions: [] });
     const res = await post(app, "/workspaces/ws-test/update", { config: {} });
     expect(res.status).not.toBe(409);
   });
@@ -619,23 +586,18 @@ describe("GET /workspaces/:workspaceId/jobs", () => {
     const mockDaemon = { getWorkspaceManager: () => mockWorkspaceManager, runtimes: new Map() };
 
     const mockContext: AppContext = {
-      runtimes: new Map(),
       startTime: Date.now(),
       sseClients: new Map(),
       sseStreams: new Map(),
       getWorkspaceManager: () => mockWorkspaceManager,
-      getOrCreateWorkspaceRuntime: vi.fn(),
-      resetIdleTimeout: vi.fn(),
-      getWorkspaceRuntime: vi.fn(),
-      destroyWorkspaceRuntime: vi.fn(),
       getAgentRegistry: vi.fn(),
       getOrCreateChatSdkInstance: vi.fn(),
-      evictChatSdkInstance: vi.fn(),
       daemon: mockDaemon as unknown as AppContext["daemon"],
       streamRegistry: {} as AppContext["streamRegistry"],
       chatTurnRegistry: {} as AppContext["chatTurnRegistry"],
       sessionStreamRegistry: {} as AppContext["sessionStreamRegistry"],
       sessionHistoryAdapter: {} as AppContext["sessionHistoryAdapter"],
+      sessionDispatchRegistry: {} as AppContext["sessionDispatchRegistry"],
       exposeKernel: false,
       platformModels: createStubPlatformModels(),
     };
@@ -940,29 +902,23 @@ describe("POST /workspaces/:workspaceId/signals/:signalId — client-abort cance
     } as unknown as WorkspaceManager;
 
     const mockContext: AppContext = {
-      runtimes: new Map(),
       startTime: Date.now(),
       sseClients: new Map(),
       sseStreams: new Map(),
       getWorkspaceManager: () => mockWorkspaceManager,
-      getOrCreateWorkspaceRuntime: vi.fn(),
-      resetIdleTimeout: vi.fn(),
-      getWorkspaceRuntime: vi.fn(),
-      destroyWorkspaceRuntime: vi.fn(),
       getAgentRegistry: vi.fn(),
       getOrCreateChatSdkInstance: vi.fn(),
-      evictChatSdkInstance: vi.fn(),
       daemon: {
         getWorkspaceManager: () => mockWorkspaceManager,
         getNatsConnection: () => daemonNc,
         publishSignalToJetStream,
         triggerWorkspaceSignal: vi.fn(),
-        runtimes: new Map(),
       } as unknown as AppContext["daemon"],
       streamRegistry: {} as AppContext["streamRegistry"],
       chatTurnRegistry: {} as AppContext["chatTurnRegistry"],
       sessionStreamRegistry: {} as AppContext["sessionStreamRegistry"],
       sessionHistoryAdapter: {} as AppContext["sessionHistoryAdapter"],
+      sessionDispatchRegistry: {} as AppContext["sessionDispatchRegistry"],
       exposeKernel: false,
       platformModels: createStubPlatformModels(),
     };

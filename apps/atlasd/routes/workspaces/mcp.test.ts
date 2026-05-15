@@ -63,8 +63,8 @@ function createTestApp(options: {
 }) {
   const { workspace = createMockWorkspace(), config = null, runtimeActive = false } = options;
 
-  const destroyWorkspaceRuntime = vi.fn().mockResolvedValue(undefined);
-  const getWorkspaceRuntime = vi.fn().mockReturnValue(runtimeActive ? {} : undefined);
+  const runtimeDestroyedSpy = vi.fn().mockResolvedValue(undefined);
+  const getRuntimeSpy = vi.fn().mockReturnValue(runtimeActive ? {} : undefined);
 
   const mockWorkspaceManager = {
     find: vi.fn().mockResolvedValue(workspace),
@@ -75,23 +75,18 @@ function createTestApp(options: {
   } as unknown as WorkspaceManager;
 
   const mockContext: AppContext = {
-    runtimes: new Map(),
     startTime: Date.now(),
     sseClients: new Map(),
     sseStreams: new Map(),
     getWorkspaceManager: () => mockWorkspaceManager,
-    getOrCreateWorkspaceRuntime: vi.fn(),
-    resetIdleTimeout: vi.fn(),
-    getWorkspaceRuntime,
-    destroyWorkspaceRuntime,
     getAgentRegistry: vi.fn(),
     getOrCreateChatSdkInstance: vi.fn(),
-    evictChatSdkInstance: vi.fn(),
     daemon: {} as AppContext["daemon"],
     streamRegistry: {} as AppContext["streamRegistry"],
     chatTurnRegistry: {} as AppContext["chatTurnRegistry"],
     sessionStreamRegistry: {} as AppContext["sessionStreamRegistry"],
     sessionHistoryAdapter: {} as AppContext["sessionHistoryAdapter"],
+    sessionDispatchRegistry: {} as AppContext["sessionDispatchRegistry"],
     exposeKernel: false,
     platformModels: createStubPlatformModels(),
   };
@@ -104,7 +99,7 @@ function createTestApp(options: {
   });
   app.route("/:workspaceId/mcp", mcpRoutes);
 
-  return { app, mockContext, destroyWorkspaceRuntime, getWorkspaceRuntime };
+  return { app, mockContext, runtimeDestroyedSpy, getRuntimeSpy };
 }
 
 function makeWorkspaceConfig(servers: Record<string, MCPServerConfig>): WorkspaceConfig {
@@ -320,7 +315,7 @@ describe("PUT /mcp/:serverId", () => {
       github: { transport: { type: "stdio", command: "echo" } },
     });
     await writeFile(join(testDir, "workspace.yml"), stringify(config));
-    const { app, destroyWorkspaceRuntime } = createTestApp({
+    const { app, runtimeDestroyedSpy } = createTestApp({
       workspace,
       config: createMergedConfig(config),
     });
@@ -331,7 +326,7 @@ describe("PUT /mcp/:serverId", () => {
     const body = (await res.json()) as JsonBody;
     expect(body.server).toMatchObject({ id: "github", name: "GitHub" });
     // Idempotent success should not destroy runtime or rewrite config
-    expect(destroyWorkspaceRuntime).not.toHaveBeenCalled();
+    expect(runtimeDestroyedSpy).not.toHaveBeenCalled();
   });
 
   test("enables a server without tearing down the active runtime", async () => {
@@ -341,7 +336,7 @@ describe("PUT /mcp/:serverId", () => {
     const workspace = createMockWorkspace({ path: testDir });
     const config = makeWorkspaceConfig({});
     await writeFile(join(testDir, "workspace.yml"), stringify(config));
-    const { app, destroyWorkspaceRuntime } = createTestApp({
+    const { app, runtimeDestroyedSpy } = createTestApp({
       workspace,
       config: createMergedConfig(config),
       runtimeActive: true,
@@ -354,7 +349,7 @@ describe("PUT /mcp/:serverId", () => {
     expect(body.server).toMatchObject({ id: "github", name: "GitHub" });
     // The route doesn't restart the runtime — the config write is enough; the
     // next spawn picks up the change.
-    expect(destroyWorkspaceRuntime).not.toHaveBeenCalled();
+    expect(runtimeDestroyedSpy).not.toHaveBeenCalled();
   });
 
   test("enable lifts literal env values into the workspace .env, leaving from_environment wiring", async () => {
@@ -441,7 +436,7 @@ describe("PUT /mcp/:serverId", () => {
     const liveConfig = makeWorkspaceConfig({});
     await writeFile(join(testDir, "workspace.yml"), stringify(liveConfig));
     await writeFile(join(testDir, "workspace.yml.draft"), stringify(liveConfig));
-    const { app, destroyWorkspaceRuntime } = createTestApp({
+    const { app, runtimeDestroyedSpy } = createTestApp({
       workspace,
       config: createMergedConfig(liveConfig),
       runtimeActive: true,
@@ -453,7 +448,7 @@ describe("PUT /mcp/:serverId", () => {
     const body = (await res.json()) as JsonBody;
     expect(body.server).toMatchObject({ id: "github", name: "GitHub" });
     // Draft mode must not destroy runtime — startup is deferred until publish
-    expect(destroyWorkspaceRuntime).not.toHaveBeenCalled();
+    expect(runtimeDestroyedSpy).not.toHaveBeenCalled();
 
     const draftContent = await readFile(join(testDir, "workspace.yml.draft"), "utf-8");
     expect(draftContent).toContain("github");
@@ -477,7 +472,7 @@ describe("PUT /mcp/:serverId", () => {
     });
     await writeFile(join(testDir, "workspace.yml"), stringify(liveConfig));
     await writeFile(join(testDir, "workspace.yml.draft"), stringify(draftConfig));
-    const { app, destroyWorkspaceRuntime } = createTestApp({
+    const { app, runtimeDestroyedSpy } = createTestApp({
       workspace,
       config: createMergedConfig(draftConfig),
       runtimeActive: true,
@@ -488,7 +483,7 @@ describe("PUT /mcp/:serverId", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as JsonBody;
     expect(body.server).toMatchObject({ id: "github", name: "GitHub" });
-    expect(destroyWorkspaceRuntime).not.toHaveBeenCalled();
+    expect(runtimeDestroyedSpy).not.toHaveBeenCalled();
   });
 });
 
@@ -627,7 +622,7 @@ describe("DELETE /mcp/:serverId", () => {
       github: { transport: { type: "stdio", command: "echo" } },
     });
     await writeFile(join(testDir, "workspace.yml"), stringify(config));
-    const { app, destroyWorkspaceRuntime } = createTestApp({
+    const { app, runtimeDestroyedSpy } = createTestApp({
       workspace,
       config: createMergedConfig(config),
       runtimeActive: true,
@@ -638,7 +633,7 @@ describe("DELETE /mcp/:serverId", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as JsonBody;
     expect(body.removed).toBe("github");
-    expect(destroyWorkspaceRuntime).not.toHaveBeenCalled();
+    expect(runtimeDestroyedSpy).not.toHaveBeenCalled();
   });
 
   test("returns 409 when server referenced by agent without force", async () => {
@@ -661,7 +656,7 @@ describe("DELETE /mcp/:serverId", () => {
       },
     } as unknown as WorkspaceConfig;
     await writeFile(join(testDir, "workspace.yml"), stringify(config));
-    const { app, destroyWorkspaceRuntime } = createTestApp({
+    const { app, runtimeDestroyedSpy } = createTestApp({
       workspace,
       config: createMergedConfig(config),
       runtimeActive: true,
@@ -673,7 +668,7 @@ describe("DELETE /mcp/:serverId", () => {
     const body = (await res.json()) as JsonBody;
     expect(body.error).toBe("conflict");
     expect(body.willUnlinkFrom).toEqual([{ type: "agent", agentId: "a1" }]);
-    expect(destroyWorkspaceRuntime).not.toHaveBeenCalled();
+    expect(runtimeDestroyedSpy).not.toHaveBeenCalled();
   });
 
   test("cascades delete with force=true", async () => {
@@ -696,7 +691,7 @@ describe("DELETE /mcp/:serverId", () => {
       },
     } as unknown as WorkspaceConfig;
     await writeFile(join(testDir, "workspace.yml"), stringify(config));
-    const { app, destroyWorkspaceRuntime } = createTestApp({
+    const { app, runtimeDestroyedSpy } = createTestApp({
       workspace,
       config: createMergedConfig(config),
       runtimeActive: true,
@@ -707,7 +702,7 @@ describe("DELETE /mcp/:serverId", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as JsonBody;
     expect(body.removed).toBe("github");
-    expect(destroyWorkspaceRuntime).not.toHaveBeenCalled();
+    expect(runtimeDestroyedSpy).not.toHaveBeenCalled();
   });
 
   test("writes to draft when draft exists, leaving live unchanged and deferring runtime teardown", async () => {
@@ -746,7 +741,7 @@ describe("DELETE /mcp/:serverId", () => {
     } as unknown as WorkspaceConfig;
     await writeFile(join(testDir, "workspace.yml"), stringify(liveConfig));
     await writeFile(join(testDir, "workspace.yml.draft"), stringify(draftConfig));
-    const { app, destroyWorkspaceRuntime } = createTestApp({
+    const { app, runtimeDestroyedSpy } = createTestApp({
       workspace,
       config: createMergedConfig(draftConfig),
       runtimeActive: true,
@@ -758,7 +753,7 @@ describe("DELETE /mcp/:serverId", () => {
     const body = (await res.json()) as JsonBody;
     expect(body.removed).toBe("github");
     // Draft mode must not destroy runtime — teardown is deferred until publish
-    expect(destroyWorkspaceRuntime).not.toHaveBeenCalled();
+    expect(runtimeDestroyedSpy).not.toHaveBeenCalled();
 
     const draftContent = await readFile(join(testDir, "workspace.yml.draft"), "utf-8");
     expect(draftContent).not.toContain("github");

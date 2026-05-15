@@ -106,8 +106,8 @@ export function createTestApp(options: {
 }) {
   const { workspace = createMockWorkspace(), config = null, runtimeActive = false } = options;
 
-  const destroyWorkspaceRuntime = vi.fn().mockResolvedValue(undefined);
-  const getWorkspaceRuntime = vi.fn().mockReturnValue(runtimeActive ? {} : undefined);
+  const runtimeDestroyedSpy = vi.fn().mockResolvedValue(undefined);
+  const getRuntimeSpy = vi.fn().mockReturnValue(runtimeActive ? {} : undefined);
 
   // Create a partial mock that satisfies the routes' needs
   const mockWorkspaceManager = {
@@ -119,23 +119,18 @@ export function createTestApp(options: {
   } as unknown as WorkspaceManager;
 
   const mockContext: AppContext = {
-    runtimes: new Map(),
     startTime: Date.now(),
     sseClients: new Map(),
     sseStreams: new Map(),
     getWorkspaceManager: () => mockWorkspaceManager,
-    getOrCreateWorkspaceRuntime: vi.fn(),
-    resetIdleTimeout: vi.fn(),
-    getWorkspaceRuntime,
-    destroyWorkspaceRuntime,
     getAgentRegistry: vi.fn(),
     getOrCreateChatSdkInstance: vi.fn(),
-    evictChatSdkInstance: vi.fn(),
     daemon: {} as AppContext["daemon"],
     streamRegistry: {} as AppContext["streamRegistry"],
     chatTurnRegistry: {} as AppContext["chatTurnRegistry"],
     sessionStreamRegistry: {} as AppContext["sessionStreamRegistry"],
     sessionHistoryAdapter: {} as AppContext["sessionHistoryAdapter"],
+    sessionDispatchRegistry: {} as AppContext["sessionDispatchRegistry"],
     exposeKernel: false,
     platformModels: createStubPlatformModels(),
   };
@@ -152,7 +147,7 @@ export function createTestApp(options: {
   // Mount config routes at /:workspaceId/config to match real mounting
   app.route("/:workspaceId/config", configRoutes);
 
-  return { app, mockContext, destroyWorkspaceRuntime, getWorkspaceRuntime };
+  return { app, mockContext, runtimeDestroyedSpy, getRuntimeSpy };
 }
 
 /** Type for generic JSON response body */
