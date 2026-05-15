@@ -1,12 +1,15 @@
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { exportAll } from "@atlas/bundle";
 import { createStubPlatformModels } from "@atlas/llm";
+import { createLogger } from "@atlas/logger";
 import type { WorkspaceManager } from "@atlas/workspace";
 import { Hono } from "hono";
 import JSZip from "jszip";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { AppContext, AppVariables } from "../../src/factory.ts";
+import { installImportedAgents } from "./bundle-helpers.ts";
 import { workspacesRoutes } from "./index.ts";
 
 vi.mock("@atlas/storage", () => ({ FilesystemWorkspaceCreationAdapter: vi.fn() }));
@@ -463,6 +466,80 @@ describe("workspace bundle endpoints (end-to-end)", () => {
     await access(join(homeDir, "agents", "spritesheet-normalizer@1.0.0", "metadata.json"));
   });
 
+  test("POST /import-bundle-all installs bundled user agents from each inner workspace", async () => {
+    // Build a workspace with a user agent, export it as a bundle, then wrap
+    // it in a manifest-style outer archive so we can import via
+    // /import-bundle-all. Asserts the install + reload path fires from the
+    // multi-workspace route, not just /import-bundle.
+    const agentSrc = join(homeDir, "agents", "writer@1.0.0");
+    await mkdir(agentSrc, { recursive: true });
+    await writeFile(
+      join(agentSrc, "metadata.json"),
+      JSON.stringify({ id: "writer", version: "1.0.0", description: "Writes" }),
+    );
+    await writeFile(join(agentSrc, "agent.py"), "print('write')\n");
+
+    const wsConfig = {
+      atlas: null,
+      workspace: {
+        version: "1.0",
+        workspace: { name: "demo-space" },
+        agents: { writer: { type: "user", agent: "writer", description: "Writes" } },
+        signals: { write: { description: "Write", provider: "http", config: { path: "/write" } } },
+        jobs: {
+          write: {
+            triggers: [{ signal: "write" }],
+            execution: { strategy: "sequential", agents: ["writer"] },
+          },
+        },
+      },
+    };
+
+    const { app: exportApp } = createApp({ workspaceDir, homeDir, workspaceConfig: wsConfig });
+    const innerResp = await exportApp.request("/ws-demo/bundle");
+    expect(innerResp.status).toBe(200);
+    const innerBytes = new Uint8Array(await innerResp.arrayBuffer());
+
+    // Wrap the inner bundle in a real outer envelope so the manifest matches
+    // FullManifestSchema. Importing a hand-rolled YAML manifest would tightly
+    // couple this test to the schema's evolution.
+    const outerBytes = new Uint8Array(
+      await exportAll({
+        mode: "definition",
+        workspaces: [{ id: "ws-demo", name: "demo-space", bundleBytes: innerBytes }],
+      }),
+    );
+
+    // Clean the global agent install so we can prove import-bundle-all
+    // repopulates it on a fresh machine.
+    await rm(join(homeDir, "agents"), { recursive: true, force: true });
+
+    const reload = vi.fn(() => Promise.resolve());
+    const { app: importApp } = createApp({
+      workspaceDir,
+      homeDir,
+      registeredWorkspace: { id: "ws-new", name: "demo-space", path: join(homeDir, "imported") },
+      agentRegistry: { reload },
+    });
+
+    const form = new FormData();
+    form.set("bundle", new File([outerBytes], "all.zip", { type: "application/zip" }));
+    const resp = await importApp.request("/import-bundle-all", { method: "POST", body: form });
+
+    expect(resp.status).toBe(200);
+    const body = (await resp.json()) as {
+      imported: Array<{ name: string; agentsInstalled?: number; agentsSkipped?: number }>;
+      errors: Array<{ name: string; error: string }>;
+    };
+    expect(body.errors).toEqual([]);
+    expect(body.imported).toHaveLength(1);
+    expect(body.imported[0]?.agentsInstalled).toBe(1);
+    expect(body.imported[0]?.agentsSkipped).toBe(0);
+
+    await access(join(homeDir, "agents", "writer@1.0.0", "metadata.json"));
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
   test("POST /import-bundle rejects a tampered bundle", async () => {
     const { app: exportApp } = createApp({ workspaceDir, homeDir });
     const exportResponse = await exportApp.request("/ws-demo/bundle");
@@ -480,5 +557,183 @@ describe("workspace bundle endpoints (end-to-end)", () => {
     expect(response.status).toBe(500);
     const body = (await response.json()) as { error: string };
     expect(body.error).toMatch(/integrity check failed/);
+  });
+});
+
+// Unit tests for installImportedAgents — constructed inputs are cheaper here
+// than synthesizing bundles that round-trip integrity checks. The HTTP-level
+// tests above already cover the happy path through the route.
+describe("installImportedAgents (unit)", () => {
+  let targetDir: string;
+  let atlasHome: string;
+  const logger = createLogger({ component: "installImportedAgents-test" });
+
+  beforeEach(async () => {
+    targetDir = await mkdtemp(join(tmpdir(), "iia-target-"));
+    atlasHome = await mkdtemp(join(tmpdir(), "iia-home-"));
+  });
+
+  afterEach(async () => {
+    await rm(targetDir, { recursive: true, force: true });
+    await rm(atlasHome, { recursive: true, force: true });
+  });
+
+  async function seedBundledAgent(opts: {
+    /** Directory name inside `<targetDir>/agents/`. Mirrors `primitive.name`. */
+    bundleName: string;
+    /** Contents of `metadata.json`. Pass an unparseable string to simulate corruption. */
+    metadata: Record<string, unknown> | string;
+    /** Extra files to drop alongside `metadata.json`. Defaults to a stub agent.py. */
+    files?: Record<string, string>;
+  }): Promise<{ kind: "agent"; name: string; path: string }> {
+    const dir = join(targetDir, "agents", opts.bundleName);
+    await mkdir(dir, { recursive: true });
+    const md = typeof opts.metadata === "string" ? opts.metadata : JSON.stringify(opts.metadata);
+    await writeFile(join(dir, "metadata.json"), md);
+    const extras = opts.files ?? { "agent.py": "print('x')\n" };
+    for (const [rel, body] of Object.entries(extras)) {
+      await writeFile(join(dir, rel), body);
+    }
+    return { kind: "agent", name: opts.bundleName, path: `agents/${opts.bundleName}` };
+  }
+
+  test("rejects path-traversal id, never writes outside agents root", async () => {
+    const primitive = await seedBundledAgent({
+      bundleName: "tricky",
+      metadata: {
+        id: "../../../etc/cron.d/wat",
+        version: "1.0.0",
+        description: "Malicious id with path traversal",
+      },
+    });
+
+    const result = await installImportedAgents({
+      targetDir,
+      primitives: [primitive],
+      atlasHome,
+      logger,
+    });
+
+    expect(result.installed).toEqual([]);
+    expect(result.skipped).toHaveLength(1);
+    expect(result.skipped[0]?.reason).toMatch(/unsafe id\/version/);
+
+    // Nothing outside `<atlasHome>/agents/` was created. Specifically the
+    // expected traversal target doesn't exist.
+    const traversed = join(atlasHome, "..", "..", "..", "etc", "cron.d");
+    await expect(access(traversed)).rejects.toThrow();
+  });
+
+  test("rejects path-traversal version", async () => {
+    const primitive = await seedBundledAgent({
+      bundleName: "tricky2",
+      metadata: { id: "agent", version: "../1.0.0", description: "Bad version" },
+    });
+
+    const result = await installImportedAgents({
+      targetDir,
+      primitives: [primitive],
+      atlasHome,
+      logger,
+    });
+
+    expect(result.installed).toEqual([]);
+    expect(result.skipped[0]?.reason).toMatch(/unsafe id\/version/);
+  });
+
+  test("rejects metadata.json that doesn't match the schema (missing description)", async () => {
+    const primitive = await seedBundledAgent({
+      bundleName: "incomplete",
+      metadata: { id: "incomplete", version: "1.0.0" }, // description missing
+    });
+
+    const result = await installImportedAgents({
+      targetDir,
+      primitives: [primitive],
+      atlasHome,
+      logger,
+    });
+
+    expect(result.installed).toEqual([]);
+    expect(result.skipped[0]?.reason).toMatch(/invalid metadata\.json/);
+  });
+
+  test("rejects unparseable metadata.json without aborting other agents in the batch", async () => {
+    const bad = await seedBundledAgent({ bundleName: "bad", metadata: "{ not json" });
+    const good = await seedBundledAgent({
+      bundleName: "good",
+      metadata: { id: "good", version: "1.0.0", description: "ok" },
+    });
+
+    const result = await installImportedAgents({
+      targetDir,
+      primitives: [bad, good],
+      atlasHome,
+      logger,
+    });
+
+    expect(result.installed.map((a) => a.id)).toEqual(["good"]);
+    expect(result.skipped.map((s) => s.name)).toEqual(["bad"]);
+    await access(join(atlasHome, "agents", "good@1.0.0", "metadata.json"));
+  });
+
+  test("flags content divergence when same id@version is already installed with different bytes", async () => {
+    // Seed the global install with one body...
+    const installedDir = join(atlasHome, "agents", "shared@1.0.0");
+    await mkdir(installedDir, { recursive: true });
+    await writeFile(
+      join(installedDir, "metadata.json"),
+      JSON.stringify({ id: "shared", version: "1.0.0", description: "v1 globally installed" }),
+    );
+    await writeFile(join(installedDir, "agent.py"), "print('GLOBAL VERSION')\n");
+
+    // ...and the bundle ships a different body under the same id@version.
+    const primitive = await seedBundledAgent({
+      bundleName: "shared",
+      metadata: { id: "shared", version: "1.0.0", description: "v1 from bundle" },
+      files: { "agent.py": "print('BUNDLE VERSION')\n" },
+    });
+
+    const result = await installImportedAgents({
+      targetDir,
+      primitives: [primitive],
+      atlasHome,
+      logger,
+    });
+
+    expect(result.installed).toEqual([]);
+    expect(result.skipped).toHaveLength(1);
+    expect(result.skipped[0]?.reason).toMatch(/content diverges from bundle/);
+
+    // Global install untouched (still has the GLOBAL VERSION body).
+    const installedBody = await readFile(join(installedDir, "agent.py"), "utf-8");
+    expect(installedBody).toContain("GLOBAL VERSION");
+  });
+
+  test("clean skip (no divergence warning) when same id@version is byte-identical", async () => {
+    const metadata = { id: "shared", version: "1.0.0", description: "same on both sides" };
+    const agentBody = "print('same')\n";
+
+    const installedDir = join(atlasHome, "agents", "shared@1.0.0");
+    await mkdir(installedDir, { recursive: true });
+    await writeFile(join(installedDir, "metadata.json"), JSON.stringify(metadata));
+    await writeFile(join(installedDir, "agent.py"), agentBody);
+
+    const primitive = await seedBundledAgent({
+      bundleName: "shared",
+      metadata,
+      files: { "agent.py": agentBody },
+    });
+
+    const result = await installImportedAgents({
+      targetDir,
+      primitives: [primitive],
+      atlasHome,
+      logger,
+    });
+
+    expect(result.installed).toEqual([]);
+    expect(result.skipped[0]?.reason).not.toMatch(/diverges/);
+    expect(result.skipped[0]?.reason).toMatch(/already installed/);
   });
 });
