@@ -29,7 +29,7 @@ import { stat } from "node:fs/promises";
 import { logger } from "@atlas/logger";
 import type { KVStorage } from "@atlas/storage/kv";
 import type { WorkspaceStatus } from "./types.ts";
-import { type WorkspaceEntry, WorkspaceEntrySchema, WorkspaceStatusEnum } from "./types.ts";
+import { type WorkspaceEntry, WorkspaceEntrySchema } from "./types.ts";
 
 export class RegistryStorageAdapter {
   constructor(private storage: KVStorage) {}
@@ -133,14 +133,6 @@ export class RegistryStorageAdapter {
       status,
       lastSeen: new Date().toISOString(),
     };
-
-    if (status === WorkspaceStatusEnum.RUNNING) {
-      next.startedAt = new Date().toISOString();
-    } else if (status === WorkspaceStatusEnum.STOPPED || status === WorkspaceStatusEnum.INACTIVE) {
-      next.stoppedAt = new Date().toISOString();
-      next.pid = undefined;
-      next.port = undefined;
-    }
 
     const validated = WorkspaceEntrySchema.parse(next);
     await this.storage.set(["workspaces", id], validated);

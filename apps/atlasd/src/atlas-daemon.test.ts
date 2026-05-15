@@ -5,7 +5,6 @@
  */
 
 import process from "node:process";
-import type { WorkspaceRuntime } from "@atlas/workspace";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@atlas/core/users/storage", () => ({
@@ -179,39 +178,6 @@ describe("AtlasDaemon.maybeStartDiscordGateway", () => {
 });
 
 describe("AtlasDaemon idle/session cleanup", () => {
-  it("does not idle-destroy a runtime that still has in-flight sessions", async () => {
-    const daemon = new AtlasDaemon({ port: 0, idleTimeoutMs: 60_000 });
-    const shutdown = vi.fn().mockResolvedValue(undefined);
-    const resetIdleTimeout = vi.spyOn(daemon, "resetIdleTimeout").mockImplementation(() => {});
-
-    daemon.runtimes.set("ws-1", {
-      getSessions: () => [],
-      hasInFlightSessions: () => true,
-      listInFlightSessionIds: () => ["sess-1"],
-      getOrchestrator: () => ({ hasActiveExecutions: () => false, getActiveExecutions: () => [] }),
-      shutdown,
-    } as unknown as WorkspaceRuntime);
-    (
-      daemon as unknown as {
-        workspaceManager: {
-          unregisterRuntime: (id: string) => Promise<void>;
-          updateWorkspaceStatus: (id: string, status: string) => Promise<void>;
-        };
-      }
-    ).workspaceManager = {
-      unregisterRuntime: vi.fn().mockResolvedValue(undefined),
-      updateWorkspaceStatus: vi.fn().mockResolvedValue(undefined),
-    };
-
-    await (
-      daemon as unknown as { checkAndDestroyIdleWorkspace: (id: string) => Promise<void> }
-    ).checkAndDestroyIdleWorkspace("ws-1");
-
-    expect(shutdown).not.toHaveBeenCalled();
-    expect(daemon.runtimes.has("ws-1")).toBe(true);
-    expect(resetIdleTimeout).toHaveBeenCalledWith("ws-1");
-  });
-
   it("does not clean up stale platform MCP sessions while a request is in flight", async () => {
     const daemon = new AtlasDaemon({ port: 0 });
     const now = Date.now();
@@ -481,48 +447,6 @@ describe("AtlasDaemon idle/session cleanup", () => {
     expect(platformClose).toHaveBeenCalledOnce();
     expect(agentSessions.has("agent-session")).toBe(false);
     expect(platformSessions.has("platform-session")).toBe(false);
-  });
-});
-
-describe("AtlasDaemon.destroyWorkspaceRuntime", () => {
-  it("evicts the cached chat SDK instance even when no runtime is live", async () => {
-    // Regression guard: before the fix, destroyWorkspaceRuntime returned early
-    // when this.runtimes.get(workspaceId) was undefined — meaning a workspace
-    // whose runtime had idle-reaped but still had a cached ChatSdkInstance
-    // (built by an inbound Slack/Teams event) kept serving with stale
-    // credentials forever. The config-file watcher routes through this method
-    // on every workspace.yml save, so editing bot_token / signing_secret had
-    // no effect until a full daemon restart. The fix moves the eviction out
-    // of the early-return branch.
-    const daemon = new AtlasDaemon({ port: 0 });
-    const teardown = vi.fn().mockResolvedValue(undefined);
-
-    // Seed a cached chat SDK without a live runtime — matches post-idle-reap state
-    (
-      daemon as unknown as {
-        chatSdkInstances: Map<string, Promise<{ teardown: () => Promise<void> }>>;
-      }
-    ).chatSdkInstances.set("ws-1", Promise.resolve({ teardown }));
-    // Stub the manager so unregisterRuntime / updateWorkspaceStatus don't hit real code
-    (
-      daemon as unknown as {
-        workspaceManager: {
-          unregisterRuntime: (id: string) => Promise<void>;
-          updateWorkspaceStatus: (id: string, status: string) => Promise<void>;
-        };
-      }
-    ).workspaceManager = {
-      unregisterRuntime: vi.fn().mockResolvedValue(undefined),
-      updateWorkspaceStatus: vi.fn().mockResolvedValue(undefined),
-    };
-
-    await daemon.destroyWorkspaceRuntime("ws-1");
-
-    expect(teardown).toHaveBeenCalledOnce();
-    const remaining = (
-      daemon as unknown as { chatSdkInstances: Map<string, unknown> }
-    ).chatSdkInstances.get("ws-1");
-    expect(remaining).toBeUndefined();
   });
 });
 

@@ -116,6 +116,14 @@ class InMemorySessionHistoryAdapter implements SessionHistoryAdapter {
     }
     return Promise.resolve(marked);
   }
+
+  listInflight(
+    _workspaceId?: string,
+  ): Promise<
+    Array<{ sessionId: string; startedAt: string; workspaceId?: string; signalId?: string }>
+  > {
+    return Promise.resolve([]);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -234,27 +242,32 @@ function makeEvents(): SessionStreamEvent[] {
 function createTestApp(options: {
   adapter: SessionHistoryAdapter;
   registry: SessionStreamRegistry;
+  /** Maps sessionId → workspaceId. DELETE /:id reads via workspaceOf. */
+  dispatchRegistry?: { workspaceOf: (sessionId: string) => string | undefined };
+  /** Spy invoked when the cancel route publishes — proves the NATS path fires. */
+  natsPublish?: (subject: string, data: Uint8Array) => void;
 }) {
-  const { adapter, registry } = options;
+  const { adapter, registry, dispatchRegistry, natsPublish } = options;
 
   const mockContext: AppContext = {
-    runtimes: new Map(),
     startTime: Date.now(),
     sseClients: new Map(),
     sseStreams: new Map(),
     getWorkspaceManager: vi.fn() as unknown as AppContext["getWorkspaceManager"],
-    getOrCreateWorkspaceRuntime: vi.fn() as unknown as AppContext["getOrCreateWorkspaceRuntime"],
-    resetIdleTimeout: vi.fn(),
-    getWorkspaceRuntime: vi.fn() as unknown as AppContext["getWorkspaceRuntime"],
-    destroyWorkspaceRuntime: vi.fn() as unknown as AppContext["destroyWorkspaceRuntime"],
-    daemon: {} as AppContext["daemon"],
+    daemon: {
+      getNatsConnection: () => ({
+        publish: (subject: string, data: Uint8Array) => natsPublish?.(subject, data),
+        flush: () => Promise.resolve(),
+      }),
+    } as unknown as AppContext["daemon"],
     streamRegistry: {} as AppContext["streamRegistry"],
     chatTurnRegistry: {} as AppContext["chatTurnRegistry"],
     sessionStreamRegistry: registry,
     sessionHistoryAdapter: adapter,
+    sessionDispatchRegistry: (dispatchRegistry ??
+      ({ workspaceOf: () => undefined } as unknown)) as AppContext["sessionDispatchRegistry"],
     getAgentRegistry: vi.fn() as unknown as AppContext["getAgentRegistry"],
     getOrCreateChatSdkInstance: vi.fn() as unknown as AppContext["getOrCreateChatSdkInstance"],
-    evictChatSdkInstance: vi.fn() as unknown as AppContext["evictChatSdkInstance"],
     exposeKernel: false,
     platformModels: {} as AppContext["platformModels"],
   };
@@ -522,6 +535,70 @@ describe("Session History v2 Routes", () => {
       expect(res.status).toBe(200);
       const body = (await res.json()) as { sessions: SessionSummary[] };
       expect(body.sessions).toHaveLength(2);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // DELETE /:id — cancel via NATS
+  // -------------------------------------------------------------------------
+  describe("DELETE /:id", () => {
+    test("returns 404 when no in-flight session matches the id", async () => {
+      const { app } = createTestApp({
+        adapter,
+        registry,
+        dispatchRegistry: { workspaceOf: () => undefined },
+      });
+
+      const res = await app.request("/unknown-session", { method: "DELETE" });
+      expect(res.status).toBe(404);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toContain("Session not found or not active");
+    });
+
+    test("publishes a cancel on daemon.cancel.sessions.<sid> for an active session", async () => {
+      const captured: { subject?: string; payload?: string } = {};
+      const { app } = createTestApp({
+        adapter,
+        registry,
+        dispatchRegistry: { workspaceOf: (id) => (id === "sess-active" ? "ws-1" : undefined) },
+        natsPublish: (subject, data) => {
+          captured.subject = subject;
+          captured.payload = new TextDecoder().decode(data);
+        },
+      });
+
+      const res = await app.request("/sess-active", { method: "DELETE" });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { message: string; workspaceId: string };
+      expect(body.workspaceId).toBe("ws-1");
+      expect(body.message).toContain("sess-active");
+
+      expect(captured.subject).toBe("daemon.cancel.sessions.sess-active");
+      // Payload carries the human-readable reason that lands on the AbortError.
+      const payload = JSON.parse(captured.payload ?? "{}") as { reason?: string };
+      expect(payload.reason).toBe("Session cancelled by user");
+    });
+
+    test("authz: returns 403 when caller is not a workspace member", async () => {
+      // Override the membership stub to refuse access on this specific call.
+      const { WorkspaceMemberStorage } = await import("@atlas/core/workspace-members/storage");
+      const stub = vi
+        .spyOn(WorkspaceMemberStorage, "get")
+        .mockResolvedValueOnce({ ok: true, data: null });
+
+      const { app } = createTestApp({
+        adapter,
+        registry,
+        dispatchRegistry: { workspaceOf: () => "ws-restricted" },
+      });
+
+      const res = await app.request("/sess-restricted", { method: "DELETE" });
+      // requireWorkspaceMember surfaces authz failures as HTTPException — Hono
+      // turns those into 4xx responses; we just need to confirm we're not
+      // 200/404 (which would mean we slipped past the guard).
+      expect([401, 403]).toContain(res.status);
+
+      stub.mockRestore();
     });
   });
 });

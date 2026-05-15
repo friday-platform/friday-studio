@@ -54,6 +54,12 @@ export const SessionStartEventSchema = z.object({
   workspaceId: z.string(),
   jobName: z.string(),
   task: z.string(),
+  /**
+   * The signal id that started this session. Optional for back-compat with
+   * historical events whose start event predates the field. Sourced by the
+   * inflight-marker writer to let listers filter without a join.
+   */
+  signalId: z.string().optional(),
   plannedSteps: z
     .array(
       z.object({

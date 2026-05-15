@@ -184,9 +184,9 @@ export function createJobTools(
     description:
       "Fire a workspace signal by id with an arbitrary payload, and block until the " +
       "spawned job completes. Use this to run a job you created earlier in THIS chat " +
-      "session — a newly-created job is not bound as its own callable tool until the " +
-      "next session, so `trigger_signal` is the in-session path to invoke it. For jobs " +
-      "that already existed when this chat started, prefer their dedicated bound tool " +
+      "turn — a newly-created job is not bound as its own callable tool until the " +
+      "next chat turn, so `trigger_signal` is the in-turn path to invoke it. For jobs " +
+      "that already existed when this turn started, prefer their dedicated bound tool " +
       "(named after the job). `payload` is sent as the signal's input — its fields are " +
       "reachable as `{{inputs.<field>}}` in the job's FSM action prompts.",
     inputSchema: z.object({

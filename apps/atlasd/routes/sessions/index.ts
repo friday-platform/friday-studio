@@ -8,6 +8,7 @@ import { zValidator } from "@hono/zod-validator";
 import { consumerOpts } from "nats";
 import { z } from "zod";
 import { daemonFactory } from "../../src/factory.ts";
+import { publishSessionCancel } from "../../src/session-dispatch-registry.ts";
 import { getAccessibleWorkspaceIds, requireWorkspaceMember } from "../../src/workspace-authz.ts";
 
 const ListQuery = z.object({ workspaceId: z.string().optional() });
@@ -247,22 +248,25 @@ const sessionsRoutes = daemonFactory
     const { id } = c.req.valid("param");
     const ctx = c.get("app");
 
-    // `getSessions()` returns only *finalized* sessions on the runtime; an
-    // in-flight execution lives in `activeAbortControllers` until its finally
-    // block. Check that explicitly so DELETE can hit currently-running work.
-    for (const [workspaceId, runtime] of ctx.daemon.runtimes) {
-      if (!runtime.hasActiveSession(id)) continue;
-      await requireWorkspaceMember(c, workspaceId);
-      try {
-        runtime.cancelSession(id);
-        return c.json({ message: `Session ${id} cancelled`, workspaceId }, 200);
-      } catch (error) {
-        logger.error("Failed to cancel session", { error, sessionId: id, workspaceId });
-        return c.json({ error: stringifyError(error) }, 500);
-      }
+    // Local-only routing: we look up the workspaceId via the in-memory
+    // dispatch registry, which only tracks sessions on THIS daemon. A
+    // multi-instance future would resolve workspaceId from
+    // SESSION_INFLIGHT KV instead, so the cancel publish reaches the
+    // owning daemon's wildcard subscription regardless of which daemon
+    // received the DELETE. Single-instance today; not worth the extra
+    // KV read until that changes.
+    const workspaceId = ctx.sessionDispatchRegistry.workspaceOf(id);
+    if (!workspaceId) {
+      return c.json({ error: `Session not found or not active: ${id}` }, 404);
     }
-
-    return c.json({ error: `Session not found or not active: ${id}` }, 404);
+    await requireWorkspaceMember(c, workspaceId);
+    try {
+      await publishSessionCancel(ctx.daemon.getNatsConnection(), id, "Session cancelled by user");
+      return c.json({ message: `Session ${id} cancelled`, workspaceId }, 200);
+    } catch (error) {
+      logger.error("Failed to cancel session", { error, sessionId: id, workspaceId });
+      return c.json({ error: stringifyError(error) }, 500);
+    }
   });
 
 export { sessionsRoutes };

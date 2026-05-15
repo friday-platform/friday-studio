@@ -120,6 +120,7 @@ import { ensureInstanceEventsStream } from "./instance-events.ts";
 import { getAllMigrations } from "./migrations/index.ts";
 import { NatsManager } from "./nats-manager.ts";
 import { ProcessAgentExecutor } from "./process-agent-executor.ts";
+import { SessionDispatchRegistry } from "./session-dispatch-registry.ts";
 import { SessionStreamRegistry } from "./session-stream-registry.ts";
 import { CronSignalRegistrar } from "./signal-registrars/cron-registrar.ts";
 import { FsWatchSignalRegistrar } from "./signal-registrars/fs-watch-registrar.ts";
@@ -150,8 +151,6 @@ export interface AtlasDaemonOptions {
   port?: number;
   hostname?: string;
   cors?: string | string[];
-  maxConcurrentWorkspaces?: number;
-  idleTimeoutMs?: number;
   sseHeartbeatIntervalMs?: number;
   sseConnectionTimeoutMs?: number;
   // PEM-encoded cert + key. When both are set, `Deno.serve` listens with
@@ -269,7 +268,6 @@ export class AtlasDaemon {
   private app: ReturnType<typeof createApp>;
   private options: AtlasDaemonOptions;
   // Public properties for AppContext interface
-  public runtimes: Map<string, WorkspaceRuntime> = new Map();
   public startTime = Date.now();
   public sseClients: Map<
     string,
@@ -284,7 +282,6 @@ export class AtlasDaemon {
   public sseStreams: Map<string, { createdAt: number; lastActivity: number; lastEmit: number }> =
     new Map();
   // Private properties
-  private idleTimeouts: Map<string, ReturnType<typeof setTimeout>> = new Map();
   private shutdownPromise: Promise<void> | null = null;
   public currentShutdownPhase: ShutdownPhase = "idle";
   private server: Deno.HttpServer | null = null;
@@ -319,7 +316,7 @@ export class AtlasDaemon {
   public chatTurnRegistry!: ChatTurnRegistry;
   public sessionStreamRegistry!: SessionStreamRegistry;
   public sessionHistoryAdapter!: JetStreamSessionHistoryAdapter;
-  private chatSdkInstances = new Map<string, Promise<ChatSdkInstance>>();
+  public sessionDispatchRegistry!: SessionDispatchRegistry;
   private sseHealthCheckInterval: ReturnType<typeof setInterval> | null = null;
   private agentSessionCleanupInterval: ReturnType<typeof setInterval> | null = null;
   // Store per-session MCP servers and transports
@@ -384,8 +381,6 @@ export class AtlasDaemon {
     const corsOrigins = envCorsOrigins ?? options.cors;
 
     this.options = {
-      maxConcurrentWorkspaces: 10,
-      idleTimeoutMs: 5 * 60 * 1000, // 5 minutes
       sseHeartbeatIntervalMs: 30 * 1000, // 30 seconds
       sseConnectionTimeoutMs: 5 * 60 * 1000, // 5 minutes
       ...options,
@@ -394,18 +389,12 @@ export class AtlasDaemon {
     const exposeKernel = process.env.FRIDAY_EXPOSE_KERNEL === "1";
     const context = {
       exposeKernel,
-      runtimes: this.runtimes,
       startTime: this.startTime,
       sseClients: this.sseClients,
       sseStreams: this.sseStreams,
       getWorkspaceManager: this.getWorkspaceManager.bind(this),
-      getOrCreateWorkspaceRuntime: this.getOrCreateWorkspaceRuntime.bind(this),
-      resetIdleTimeout: this.resetIdleTimeout.bind(this),
-      getWorkspaceRuntime: this.getWorkspaceRuntime.bind(this),
-      destroyWorkspaceRuntime: this.destroyWorkspaceRuntime.bind(this),
       getAgentRegistry: this.getAgentRegistry.bind(this),
       getOrCreateChatSdkInstance: this.getOrCreateChatSdkInstance.bind(this),
-      evictChatSdkInstance: this.evictChatSdkInstance.bind(this),
       daemon: this,
       get streamRegistry() {
         return this.daemon.streamRegistry;
@@ -418,6 +407,9 @@ export class AtlasDaemon {
       },
       get sessionHistoryAdapter() {
         return this.daemon.sessionHistoryAdapter;
+      },
+      get sessionDispatchRegistry() {
+        return this.daemon.sessionDispatchRegistry;
       },
       get platformModels() {
         // Lazy getter: platformModels is constructed later in initialize(),
@@ -638,9 +630,6 @@ export class AtlasDaemon {
         },
       }),
     );
-
-    // Wire up runtime invalidation callback so file watcher changes clear both maps
-    this.workspaceManager.setRuntimeInvalidateCallback(this.destroyWorkspaceRuntime.bind(this));
 
     // Stamp an `owner` membership row on every workspace registration.
     // The manager doesn't import @atlas/core directly — the writer is
@@ -947,6 +936,14 @@ export class AtlasDaemon {
     this.sessionStreamRegistry = new SessionStreamRegistry(nc);
     this.sessionStreamRegistry.start();
 
+    // Daemon-level session-cancel routing. Subscribes once on
+    // `daemon.cancel.sessions.>` and dispatches via an in-memory
+    // `sessionId → AbortController` table. Subscribed sibling-of-
+    // `sessions.>` so cancel commands don't get captured into the
+    // SESSION_EVENTS stream.
+    this.sessionDispatchRegistry = new SessionDispatchRegistry(nc);
+    await this.sessionDispatchRegistry.start();
+
     // Start SSE health check interval
     this.startSSEHealthCheck();
 
@@ -960,7 +957,11 @@ export class AtlasDaemon {
     await AtlasMetrics.init();
     if (AtlasMetrics.enabled) {
       // Register observable gauge providers
-      AtlasMetrics.registerActiveWorkspacesProvider(() => this.runtimes.size);
+      // No persistent per-workspace runtimes — emit the count of in-flight
+      // dispatches instead. The dispatch registry is the new authority.
+      AtlasMetrics.registerActiveWorkspacesProvider(
+        () => this.sessionDispatchRegistry.list().length,
+      );
       AtlasMetrics.registerSSEConnectionsProvider(() => {
         let count = 0;
         for (const clients of this.sseClients.values()) {
@@ -982,10 +983,10 @@ export class AtlasDaemon {
     // the sweeper can resolve a per-workspace scan context against
     // `this.runtimes`.
     this.artifactsSweeper = startArtifactsSweeper({
-      getScanContext: (workspaceId) => {
-        const runtime = this.runtimes.get(workspaceId);
-        if (!runtime) return Promise.resolve(undefined);
-        return Promise.resolve(runtime.getPromotionScanContext());
+      getScanContext: async (workspaceId) => {
+        const config = await this.getWorkspaceManager().getWorkspaceConfig(workspaceId);
+        if (!config) return undefined;
+        return { memoryStoreNames: (config.workspace.memory?.own ?? []).map((m) => m.name) };
       },
       aiSummaryFallback: async (workspaceId) => {
         const summaries = await this.sessionHistoryAdapter.listByWorkspace(workspaceId);
@@ -1644,28 +1645,31 @@ export class AtlasDaemon {
   }
 
   /**
-   * Get or create a workspace runtime on-demand
+   * Build a fresh `WorkspaceRuntime` for a single dispatch. Construction
+   * is intentionally per-call: each dispatch gets its own snapshot of
+   * `workspace.yml` (via the manager's mtime-cached `getWorkspaceConfig`)
+   * and runs to terminal state against that snapshot. Cross-dispatch
+   * lookups (cancel, list, sessions) go through SESSION_INFLIGHT and the
+   * dispatch registry — never through a shared runtime.
+   *
+   * Callers must `runtime.shutdown()` after the dispatch settles. The
+   * `triggerWorkspaceSignal` wrapper handles this for direct dispatches;
+   * routes that need a runtime for *introspection* should read from
+   * `getWorkspaceConfig` instead.
    */
   async getOrCreateWorkspaceRuntime(workspaceId: string): Promise<WorkspaceRuntime> {
     try {
       logger.debug("getOrCreateWorkspaceRuntime called", { workspaceId });
 
-      // Ensure daemon is properly initialized before creating runtimes
       if (!this.isInitialized) {
         throw new Error("Atlas daemon not fully initialized - cannot create workspace runtime");
       }
 
-      // Check if runtime already exists
-      let runtime = this.runtimes.get(workspaceId);
-      if (runtime) {
-        logger.debug("Found existing runtime", { workspaceId });
-        return runtime;
-      }
-
-      // Get workspace manager
       const manager = this.getWorkspaceManager();
 
-      // Check if workspace is inactive due to prior error and clear error fields on recovery
+      // Recover inactive workspaces by clearing their error fields once we're
+      // about to dispatch against them. Same idempotent reset as before; just
+      // no longer guarded behind a cache miss.
       let workspace = await manager.find({ id: workspaceId });
       if (workspace?.status === "inactive") {
         logger.info("Recovering inactive workspace, clearing error fields", {
@@ -1674,7 +1678,6 @@ export class AtlasDaemon {
           failureCount: workspace.metadata?.failureCount,
         });
 
-        // Clear error fields since we're attempting recovery
         await manager.updateWorkspaceStatus(workspaceId, "inactive", {
           metadata: {
             ...workspace.metadata,
@@ -1685,24 +1688,6 @@ export class AtlasDaemon {
         });
       }
 
-      // Check concurrent workspace limit
-      if (this.runtimes.size >= (this.options.maxConcurrentWorkspaces ?? 10)) {
-        logger.warn("Maximum concurrent workspaces reached, attempting eviction", {
-          maxConcurrentWorkspaces: this.options.maxConcurrentWorkspaces,
-        });
-        // Find the oldest idle workspace to evict
-        const oldestWorkspace = this.findOldestIdleWorkspace();
-        if (oldestWorkspace) {
-          logger.info("Evicting oldest idle workspace", { workspaceId: oldestWorkspace });
-          await this.destroyWorkspaceRuntime(oldestWorkspace);
-        } else {
-          const error = "Maximum concurrent workspaces reached";
-          logger.error(error, { maxConcurrentWorkspaces: this.options.maxConcurrentWorkspaces });
-          throw new Error(`${error} (${this.options.maxConcurrentWorkspaces})`);
-        }
-      }
-
-      // Find workspace in registry (if not already found)
       logger.debug("Looking up workspace in registry", { workspaceId });
       if (!workspace) {
         workspace =
@@ -1908,7 +1893,7 @@ export class AtlasDaemon {
         workspacePath = workspace.path;
       }
 
-      runtime = new WorkspaceRuntime(
+      const runtime: WorkspaceRuntime = new WorkspaceRuntime(
         {
           id: workspace.id,
           name: workspace.name,
@@ -1929,6 +1914,7 @@ export class AtlasDaemon {
             workspaceId: workspace.id,
             getInstance: (id) => this.getOrCreateChatSdkInstance(id),
           }),
+          sessionAbortRegistry: this.sessionDispatchRegistry,
           createSessionStream: (sessionId) =>
             this.sessionStreamRegistry.create(sessionId, this.sessionHistoryAdapter),
           onSessionComplete: async ({
@@ -2029,59 +2015,16 @@ export class AtlasDaemon {
               const mgr = this.getWorkspaceManager();
               const ws = await mgr.find({ id: workspaceId });
 
-              // Mark workspace as stopped when a session finishes normally
-              await mgr.updateWorkspaceStatus(workspaceId, "stopped", {
+              // Record the last-finished session on the workspace metadata.
+              // Status stays "inactive" — workspaces don't have a long-lived
+              // running runtime to flip to since dispatch is per-call;
+              // active-dispatch counts are derived from the dispatch registry.
+              await mgr.updateWorkspaceStatus(workspaceId, "inactive", {
                 metadata: {
                   ...ws?.metadata,
                   lastFinishedSession: { id: sessionId, status, finishedAt, summary },
                 },
               });
-
-              // If there are no active sessions or agent executions left, destroy the runtime
-              // so status won't be overridden to "running".
-              // Must check BOTH session status AND orchestrator active executions to avoid
-              // killing MCP transports while callTool requests are still in flight.
-              const currentRuntime = this.runtimes.get(workspaceId);
-              if (currentRuntime) {
-                const sessions = currentRuntime.getSessions();
-                const hasActiveSessions = sessions.some(
-                  (s) => s.session.status === WorkspaceSessionStatus.ACTIVE,
-                );
-
-                // Check orchestrator for in-flight agent executions (matches checkAndDestroyIdleWorkspace)
-                let hasActiveExecutions = false;
-                if (
-                  "getOrchestrator" in currentRuntime &&
-                  typeof currentRuntime.getOrchestrator === "function"
-                ) {
-                  const orchestrator = currentRuntime.getOrchestrator();
-                  hasActiveExecutions = orchestrator.hasActiveExecutions();
-                }
-
-                if (!hasActiveSessions && !hasActiveExecutions) {
-                  // Apply any deferred workspace.yml changes. If a deferred
-                  // change exists, processPendingWatcherChange routes through
-                  // handleWorkspaceConfigChange → stopRuntimeIfActive →
-                  // destroyWorkspaceRuntime, so the runtime gets rebuilt from
-                  // the new config on the next signal. If no deferred change
-                  // exists, we DO NOT tear down the runtime — keep MCP
-                  // connections warm; idle timeout handles eventual cleanup.
-                  // The prior unconditional destroy here was the source of
-                  // per-chat-turn create/destroy churn.
-                  try {
-                    await mgr.processPendingWatcherChange(workspaceId);
-                  } catch (err) {
-                    logger.warn("Failed to process pending watcher change", {
-                      workspaceId,
-                      error: err,
-                    });
-                  }
-                  this.resetIdleTimeout(workspaceId);
-                } else {
-                  // Still active sessions or agent executions; let idle timeout handle cleanup
-                  this.resetIdleTimeout(workspaceId);
-                }
-              }
             } catch (error) {
               logger.warn("Failed to persist lastFinishedSession or update status", {
                 workspaceId,
@@ -2093,63 +2036,11 @@ export class AtlasDaemon {
         },
       );
       logger.debug("WorkspaceRuntime created", { workspaceId: workspace.id });
-
-      this.runtimes.set(workspace.id, runtime);
-      logger.debug("Runtime stored in daemon registry", { workspaceId: workspace.id });
-
-      // Register runtime with WorkspaceManager
-      await manager.registerRuntime(workspace.id, runtime);
-      logger.debug("Runtime registered with WorkspaceManager", { workspaceId: workspace.id });
-
-      // Signal routing: SIGNALS → SignalConsumer (forwarder) → CASCADES →
-      // CascadeConsumer (applies per-signal concurrency policy and dispatches
-      // via triggerWorkspaceSignal, which handles the runtime wakeup). No
-      // per-workspace NATS subscription needed.
-
-      // Watcher is managed centrally by WorkspaceManager.initialize()
-
-      // Set idle timeout
-      this.resetIdleTimeout(workspace.id);
-      logger.debug("Idle timeout set", { workspaceId: workspace.id });
-
       logger.info("Runtime created", { workspaceId: workspace.id, workspaceName: workspace.name });
 
       return runtime;
     } catch (error) {
       logger.error("Failed to create workspace runtime", { error, workspaceId });
-
-      // Clean up on failure to prevent inconsistent state
-      try {
-        // Remove runtime from local registry if it was added
-        if (this.runtimes.has(workspaceId)) {
-          this.runtimes.delete(workspaceId);
-          logger.debug("Removed failed runtime from daemon registry", { workspaceId });
-        }
-
-        // Unregister from WorkspaceManager and revert status to stopped
-        try {
-          const mgr = this.getWorkspaceManager();
-          await mgr.unregisterRuntime(workspaceId);
-          logger.debug("Unregistered failed runtime from WorkspaceManager", { workspaceId });
-        } catch (unregisterError) {
-          // Runtime might not have been registered yet
-          logger.debug("Could not unregister runtime (may not have been registered)", {
-            workspaceId,
-            error: unregisterError,
-          });
-        }
-
-        // Clear idle timeout if it was set
-        const timeoutId = this.idleTimeouts.get(workspaceId);
-        if (timeoutId) {
-          clearTimeout(timeoutId);
-          this.idleTimeouts.delete(workspaceId);
-          logger.debug("Cleared idle timeout for failed workspace", { workspaceId });
-        }
-      } catch (cleanupError) {
-        logger.error("Error during failed workspace cleanup", { workspaceId, cleanupError });
-      }
-
       throw error;
     }
   }
@@ -2178,34 +2069,23 @@ export class AtlasDaemon {
   }
 
   /**
-   * Cached per workspace; torn down when the runtime is destroyed.
+   * Build a fresh `ChatSdkInstance` per call. No daemon-level cache.
    *
-   * Cost breakdown:
-   * - getWorkspaceConfig: mtime-cached — sub-ms steady state.
-   * - resolvePlatformCredentials: HTTP to Link, ~10-100ms per workspace.
-   *   Paid once per workspace per daemon lifetime via this cache.
-   * - buildChatSdkAdapters + new Chat: ~ms of pure object construction,
-   *   no I/O.
+   * Cost: `resolvePlatformCredentials` is HTTP to Link (~10-100ms) per build;
+   * the rest is in-memory object construction. Webhook handlers pay it
+   * once per inbound message.
    *
-   * Per-signal cost is O(1) cache lookup. The single concrete future-work
-   * risk is the cross-worker per-signal model (Phase 2/3): each worker
-   * would re-resolve credentials on its first signal for a given workspace.
-   * Acceptable for typical traffic; if needed, share resolved creds via
-   * NATS KV with a TTL.
+   * Known trade-off — platform-retry dedup. The Chat SDK's `setIfNotExists`
+   * dedup state (`packages/core/src/chat/chat-sdk-state-adapter.ts`'s in-memory
+   * Map) lives on the per-call instance, so a Slack/Discord retry that arrives
+   * in a separate webhook request lands on a fresh empty cache and processes
+   * twice. Friday acks webhooks fast, so retries are rare. The proper fix is
+   * a NATS-KV-backed dedup bucket (`CHAT_DEDUPE` with TTL) using JS KV's
+   * `create()` for atomic set-if-absent — tracked as follow-up; bounded
+   * memory + multi-instance correct.
    */
   getOrCreateChatSdkInstance(workspaceId: string): Promise<ChatSdkInstance> {
-    const existing = this.chatSdkInstances.get(workspaceId);
-    if (existing) return existing;
-
-    const promise = this.buildChatSdkInstance(workspaceId);
-    this.chatSdkInstances.set(workspaceId, promise);
-    promise.catch(() => {
-      // Let the next caller retry on failure.
-      if (this.chatSdkInstances.get(workspaceId) === promise) {
-        this.chatSdkInstances.delete(workspaceId);
-      }
-    });
-    return promise;
+    return this.buildChatSdkInstance(workspaceId);
   }
 
   private async buildChatSdkInstance(workspaceId: string): Promise<ChatSdkInstance> {
@@ -2254,37 +2134,28 @@ export class AtlasDaemon {
       exposeKernel: process.env.FRIDAY_EXPOSE_KERNEL === "1",
       triggerFn: async (signalId, signalData, streamId, onStreamEvent, abortSignal) => {
         const runtime = await this.getOrCreateWorkspaceRuntime(workspaceId);
-        const session = await runtime.triggerSignalWithSession(
-          signalId,
-          signalData,
-          streamId,
-          onStreamEvent,
-          undefined,
-          abortSignal,
-        );
-        return { sessionId: session.id };
+        try {
+          const session = await runtime.triggerSignalWithSession(
+            signalId,
+            signalData,
+            streamId,
+            onStreamEvent,
+            undefined,
+            abortSignal,
+          );
+          return { sessionId: session.id };
+        } finally {
+          runtime.shutdown().catch((err) => {
+            logger.warn("Failed to shut down per-dispatch workspace runtime", {
+              workspaceId,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          });
+        }
       },
     };
 
     return initializeChatSdkInstance(instanceConfig, credentials);
-  }
-
-  /**
-   * Drop the cached Chat SDK instance so the next get rebuilds it with fresh
-   * config. Does NOT disable Slack event subscriptions — those stay active
-   * so incoming Slack messages can wake an idle workspace. Use
-   * `disconnectSlack()` for explicit Slack removal.
-   */
-  async evictChatSdkInstance(workspaceId: string): Promise<void> {
-    const pending = this.chatSdkInstances.get(workspaceId);
-    if (!pending) return;
-    this.chatSdkInstances.delete(workspaceId);
-    try {
-      const instance = await pending;
-      await instance.teardown();
-    } catch (error) {
-      logger.error("Error evicting Chat SDK instance", { error, workspaceId });
-    }
   }
 
   /**
@@ -2338,51 +2209,60 @@ export class AtlasDaemon {
     summary: string;
   }> {
     const runtime = await this.getOrCreateWorkspaceRuntime(workspaceId);
-
-    const result = await runtime.triggerSignalWithResult(
-      signalId,
-      payload || {},
-      streamId,
-      onStreamEvent,
-      skipStates,
-      abortSignal,
-      parentSessionId,
-    );
-    const session = result.session;
-
-    // Record signal trigger metric by provider type (http, schedule, slack, etc.)
-    const signalProvider = runtime.getSignalProvider(signalId) ?? "unknown";
-    AtlasMetrics.recordSignalTrigger(signalProvider);
-
     try {
-      const manager = this.getWorkspaceManager();
-      await manager.updateWorkspaceLastSeen(runtime.workspaceId);
-    } catch (error) {
-      logger.warn("Failed to update lastSeen for workspace", {
-        workspaceId: runtime.workspaceId,
-        error,
+      const result = await runtime.triggerSignalWithResult(
+        signalId,
+        payload || {},
+        streamId,
+        onStreamEvent,
+        skipStates,
+        abortSignal,
+        parentSessionId,
+      );
+      const session = result.session;
+
+      // Record signal trigger metric by provider type (http, schedule, slack, etc.)
+      const signalProvider = runtime.getSignalProvider(signalId) ?? "unknown";
+      AtlasMetrics.recordSignalTrigger(signalProvider);
+
+      try {
+        const manager = this.getWorkspaceManager();
+        await manager.updateWorkspaceLastSeen(runtime.workspaceId);
+      } catch (error) {
+        logger.warn("Failed to update lastSeen for workspace", {
+          workspaceId: runtime.workspaceId,
+          error,
+        });
+      }
+
+      // Propagate session failures so callers (MCP tools, HTTP clients) see the error.
+      // SessionFailedError lets the cron wakeup callback distinguish session-level failures
+      // (transient, don't destroy workspace) from infrastructure errors (workspace missing, etc.)
+      if (
+        session.status === "failed" ||
+        session.status === "skipped" ||
+        session.status === "cancelled"
+      ) {
+        throw new SessionFailedError(signalId, session.status, session.error);
+      }
+
+      return {
+        sessionId: session.id,
+        output: result.output,
+        artifactIds: result.artifactIds,
+        summary: result.summary,
+      };
+    } finally {
+      // Per-dispatch runtime — tear down so MCP transports, FSM engines, and
+      // memory bindings don't outlive the dispatch. Tear-down failures are
+      // logged but never block the dispatch result.
+      runtime.shutdown().catch((err) => {
+        logger.warn("Failed to shut down per-dispatch workspace runtime", {
+          workspaceId,
+          error: err instanceof Error ? err.message : String(err),
+        });
       });
     }
-
-    this.resetIdleTimeout(runtime.workspaceId);
-
-    // Propagate session failures so callers (MCP tools, HTTP clients) see the error.
-    // SessionFailedError lets the cron wakeup callback distinguish session-level failures
-    // (transient, don't destroy workspace) from infrastructure errors (workspace missing, etc.)
-    if (
-      session.status === "failed" ||
-      session.status === "skipped" ||
-      session.status === "cancelled"
-    ) {
-      throw new SessionFailedError(signalId, session.status, session.error);
-    }
-
-    return {
-      sessionId: session.id,
-      output: result.output,
-      artifactIds: result.artifactIds,
-      summary: result.summary,
-    };
   }
 
   /**
@@ -2392,212 +2272,6 @@ export class AtlasDaemon {
    *
    * @returns true if session completed successfully, false if timeout/error/not found
    */
-  public async waitForSignalCompletion(
-    workspaceId: string,
-    sessionId: string,
-    timeoutMs = 30_000,
-  ): Promise<boolean> {
-    const runtime = this.getWorkspaceRuntime(workspaceId);
-    if (!runtime) {
-      logger.error("Workspace runtime not found", { workspaceId, sessionId });
-      return false;
-    }
-
-    const sessions = runtime.getSessions();
-    const session = sessions.find((s) => s.id === sessionId);
-
-    if (!session) {
-      // Session not found - might have been cleaned up already
-      logger.debug("Session not found (may have been cleaned up)", { workspaceId, sessionId });
-      return false;
-    }
-
-    // Create timeout promise that rejects after specified duration
-    const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error("timeout")), timeoutMs),
-    );
-
-    // Wait for session to reach terminal state (completed, failed, cancelled) or timeout
-    try {
-      await Promise.race([session.waitForCompletion(), timeoutPromise]);
-      return true;
-    } catch (error) {
-      const isTimeout = error instanceof Error && error.message === "timeout";
-      logger.error(isTimeout ? "Session timed out" : "Session failed", {
-        error,
-        sessionId,
-        workspaceId,
-        timeoutMs: isTimeout ? timeoutMs : undefined,
-        sessionError: session.session.error,
-      });
-      return false;
-    }
-  }
-
-  /**
-   * Find the oldest idle workspace for eviction
-   */
-  private findOldestIdleWorkspace(): string | null {
-    let oldestTime = Date.now();
-    let oldestWorkspace: string | null = null;
-
-    for (const [workspaceId, runtime] of this.runtimes) {
-      const sessions = runtime.getSessions();
-      const hasActiveSessions = sessions.some(
-        (s) => s.session.status === WorkspaceSessionStatus.ACTIVE,
-      );
-
-      if (!hasActiveSessions) {
-        // Check when this workspace was last active
-        const lastActivityTime = this.getLastActivityTime(workspaceId);
-        if (lastActivityTime < oldestTime) {
-          oldestTime = lastActivityTime;
-          oldestWorkspace = workspaceId;
-        }
-      }
-    }
-
-    return oldestWorkspace;
-  }
-
-  /**
-   * Get last activity time for a workspace
-   */
-  private getLastActivityTime(workspaceId: string): number {
-    const runtime = this.runtimes.get(workspaceId);
-    if (!runtime) return 0;
-
-    const sessions = runtime.getSessions();
-    if (sessions.length === 0) return 0;
-
-    // Find the most recent session activity
-    // Since _startTime is private, we can't access it directly
-    // Return current time as approximation (sessions are active)
-    return Date.now();
-  }
-
-  /**
-   * Reset idle timeout for a workspace
-   */
-  resetIdleTimeout(workspaceId: string) {
-    // Clear existing timeout
-    const existingTimeout = this.idleTimeouts.get(workspaceId);
-    if (existingTimeout) {
-      clearTimeout(existingTimeout);
-    }
-
-    // Set new timeout
-    const timeoutId = setTimeout(
-      () => {
-        this.checkAndDestroyIdleWorkspace(workspaceId);
-      },
-      this.options.idleTimeoutMs ?? 5 * 60 * 1000,
-    );
-
-    this.idleTimeouts.set(workspaceId, timeoutId);
-  }
-
-  /**
-   * Check if workspace is idle and destroy it
-   */
-  private async checkAndDestroyIdleWorkspace(workspaceId: string) {
-    const runtime = this.runtimes.get(workspaceId);
-    if (!runtime) return;
-
-    const sessions = runtime.getSessions();
-    const hasActiveSessions = sessions.some(
-      (s) => s.session.status === WorkspaceSessionStatus.ACTIVE,
-    );
-    const hasInFlightSessions = runtime.hasInFlightSessions();
-    const inFlightSessionIds = runtime.listInFlightSessionIds();
-
-    // Check for active agent executions in the orchestrator
-    let hasActiveExecutions = false;
-    let activeExecutions: Array<{ agentId: string; sessionId: string; durationMs: number }> = [];
-
-    // WorkspaceRuntimeFSM has getOrchestrator() method
-    if ("getOrchestrator" in runtime && typeof runtime.getOrchestrator === "function") {
-      const orchestrator = runtime.getOrchestrator();
-      hasActiveExecutions = orchestrator.hasActiveExecutions();
-      if (hasActiveExecutions) {
-        activeExecutions = orchestrator.getActiveExecutions();
-      }
-    }
-
-    // Log detailed info for debugging
-    logger.debug("Checking idle workspace", {
-      workspaceId,
-      sessionsCount: sessions.length,
-      sessionStatuses: sessions.map((s) => s.session.status),
-      hasActiveSessions,
-      hasInFlightSessions,
-      inFlightSessionIds,
-      hasActiveExecutions,
-      activeExecutionsCount: activeExecutions.length,
-      activeExecutions: activeExecutions.map((e) => ({
-        agentId: e.agentId,
-        sessionId: e.sessionId,
-        durationSec: Math.round(e.durationMs / 1000),
-      })),
-    });
-
-    if (!hasActiveSessions && !hasInFlightSessions && !hasActiveExecutions) {
-      logger.info("Destroying idle workspace runtime", { workspaceId });
-      await this.destroyWorkspaceRuntime(workspaceId);
-    } else {
-      // Still has active sessions or executions, reset timeout
-      if (hasInFlightSessions || hasActiveExecutions) {
-        logger.debug("Workspace has active work, resetting idle timeout", {
-          workspaceId,
-          inFlightSessionCount: inFlightSessionIds.length,
-          activeExecutionsCount: activeExecutions.length,
-        });
-      }
-      this.resetIdleTimeout(workspaceId);
-    }
-  }
-
-  /**
-   * Destroy a workspace runtime. The chat SDK cache is evicted regardless of
-   * whether a live runtime exists — a workspace can have a cached chat SDK
-   * (built by an inbound Slack/Teams/etc. event) while its runtime has been
-   * idle-reaped. The config-change path must still flush those creds so the
-   * next message rebuilds the adapter from the current workspace.yml.
-   */
-  async destroyWorkspaceRuntime(workspaceId: string) {
-    const runtime = this.runtimes.get(workspaceId);
-    if (runtime) {
-      try {
-        await runtime.shutdown();
-      } catch (error) {
-        logger.error("Error shutting down workspace runtime", { error, workspaceId });
-      }
-      this.runtimes.delete(workspaceId);
-    }
-
-    await this.evictChatSdkInstance(workspaceId);
-
-    // Unregister runtime from WorkspaceManager
-    const manager = this.getWorkspaceManager();
-    await manager.unregisterRuntime(workspaceId);
-
-    // Ensure final status reflects stopped after teardown
-    try {
-      await manager.updateWorkspaceStatus(workspaceId, "stopped");
-    } catch (error) {
-      logger.warn("Failed to set workspace stopped after destroy", { workspaceId, error });
-    }
-
-    // Clear idle timeout
-    const timeoutId = this.idleTimeouts.get(workspaceId);
-    if (timeoutId) {
-      clearTimeout(timeoutId);
-      this.idleTimeouts.delete(workspaceId);
-    }
-
-    logger.info("Workspace runtime destroyed", { workspaceId });
-  }
-
   private setupSignalHandlers() {
     const daemonId = crypto.randomUUID().slice(0, 8);
 
@@ -2690,13 +2364,7 @@ export class AtlasDaemon {
         : null;
     const scheme = tls ? "https" : "http";
 
-    logger.info("Starting Atlas daemon", {
-      hostname,
-      port,
-      scheme,
-      maxConcurrentWorkspaces: this.options.maxConcurrentWorkspaces,
-      idleTimeoutMs: this.options.idleTimeoutMs,
-    });
+    logger.info("Starting Atlas daemon", { hostname, port, scheme });
 
     this.server = Deno.serve(
       {
@@ -2733,13 +2401,7 @@ export class AtlasDaemon {
         : null;
     const scheme = tls ? "https" : "http";
 
-    logger.info("Starting Atlas daemon", {
-      hostname,
-      port,
-      scheme,
-      maxConcurrentWorkspaces: this.options.maxConcurrentWorkspaces,
-      idleTimeoutMs: this.options.idleTimeoutMs,
-    });
+    logger.info("Starting Atlas daemon", { hostname, port, scheme });
 
     let serverReady: () => void;
     const readyPromise = new Promise<void>((resolve) => {
@@ -2968,18 +2630,14 @@ export class AtlasDaemon {
     // small buffer; real persistence completes in low ms once abort fires.
     await withShutdownTimeout("chat turn drain", this.chatTurnRegistry?.drainShutdown(8000), 9000);
 
-    // Phase 2 — tear down domain layer in parallel. destroyWorkspaceRuntime
-    // calls workspaceManager.updateWorkspaceStatus (which goes through NATS)
-    // so NATS + WorkspaceManager must remain alive until this phase ends.
+    // Phase 2 — tear down domain layer in parallel. Per-dispatch runtimes
+    // self-destruct at dispatch end; the dispatch registry's stop() is
+    // what aborts any still-in-flight dispatches.
     this.currentShutdownPhase = "phase-2";
     await Promise.allSettled([
-      withShutdownTimeout(
-        "workspace runtimes",
-        Promise.all(Array.from(this.runtimes.keys()).map((id) => this.destroyWorkspaceRuntime(id))),
-        5000,
-      ),
       withShutdownTimeout("shared MCP", sharedMCPProcesses.shutdown(), 2000),
       withShutdownTimeout("session stream registry", this.sessionStreamRegistry?.shutdown(), 2000),
+      withShutdownTimeout("session dispatch registry", this.sessionDispatchRegistry?.stop(), 1500),
       withShutdownTimeout(
         "agent sessions",
         Promise.all(
@@ -2997,8 +2655,6 @@ export class AtlasDaemon {
     // signals consumer is already stopped).
     this.streamRegistry?.shutdown();
     this.chatTurnRegistry?.shutdown();
-    for (const timeoutId of this.idleTimeouts.values()) clearTimeout(timeoutId);
-    this.idleTimeouts.clear();
     if (this.sseHealthCheckInterval) {
       clearInterval(this.sseHealthCheckInterval);
       this.sseHealthCheckInterval = null;
@@ -3068,11 +2724,13 @@ export class AtlasDaemon {
 
   // Status getters
   getActiveWorkspaces(): string[] {
-    return Array.from(this.runtimes.keys());
-  }
-
-  getWorkspaceRuntime(workspaceId: string): WorkspaceRuntime | undefined {
-    return this.runtimes.get(workspaceId);
+    // Successor to the runtime-cache enumeration: workspaces with at least
+    // one in-flight dispatch, derived from the dispatch registry.
+    const ids = new Set<string>();
+    for (const entry of this.sessionDispatchRegistry?.list() ?? []) {
+      ids.add(entry.workspaceId);
+    }
+    return Array.from(ids);
   }
 
   getStatus() {
@@ -3080,17 +2738,13 @@ export class AtlasDaemon {
     const cascadeStats = this.cascadeConsumer?.getStats();
 
     return {
-      activeWorkspaces: this.runtimes.size,
+      activeWorkspaces: this.getActiveWorkspaces().length,
       uptime: Date.now() - this.startTime,
       cronManager: cronStats
         ? { isActive: this.cronManager?.isRunning || false, ...cronStats }
         : null,
       cascadeConsumer: cascadeStats ?? null,
       migrations: this.migrationStatus,
-      configuration: {
-        maxConcurrentWorkspaces: this.options.maxConcurrentWorkspaces,
-        idleTimeoutMs: this.options.idleTimeoutMs ?? 0,
-      },
     };
   }
 

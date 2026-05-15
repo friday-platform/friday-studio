@@ -83,26 +83,18 @@ function createApp(opts: { workspaceDir: string; workspaceId: string }) {
   } as unknown as WorkspaceManager;
 
   const mockContext: AppContext = {
-    runtimes: new Map(),
     startTime: Date.now(),
     sseClients: new Map(),
     sseStreams: new Map(),
     getWorkspaceManager: () => mockManager,
-    getOrCreateWorkspaceRuntime: vi.fn(),
-    resetIdleTimeout: vi.fn(),
-    getWorkspaceRuntime: vi.fn(),
-    destroyWorkspaceRuntime: vi.fn().mockResolvedValue(undefined),
-    daemon: {
-      getWorkspaceManager: () => mockManager,
-      runtimes: new Map(),
-    } as unknown as AppContext["daemon"],
+    daemon: { getWorkspaceManager: () => mockManager } as unknown as AppContext["daemon"],
     streamRegistry: {} as AppContext["streamRegistry"],
     chatTurnRegistry: {} as AppContext["chatTurnRegistry"],
     sessionStreamRegistry: {} as AppContext["sessionStreamRegistry"],
     sessionHistoryAdapter: {} as AppContext["sessionHistoryAdapter"],
+    sessionDispatchRegistry: {} as AppContext["sessionDispatchRegistry"],
     getAgentRegistry: vi.fn(),
     getOrCreateChatSdkInstance: vi.fn(),
-    evictChatSdkInstance: vi.fn().mockResolvedValue(undefined),
     exposeKernel: false,
     platformModels: { get: vi.fn() },
   };
@@ -286,26 +278,18 @@ describe("Draft file flow", () => {
     const destroySpy = vi.fn().mockResolvedValue(undefined);
     const createRuntimeSpy = vi.fn().mockResolvedValue(undefined);
     const mockContext: AppContext = {
-      runtimes: new Map(),
       startTime: Date.now(),
       sseClients: new Map(),
       sseStreams: new Map(),
       getWorkspaceManager: () => mockManager,
-      getOrCreateWorkspaceRuntime: createRuntimeSpy,
-      resetIdleTimeout: vi.fn(),
-      getWorkspaceRuntime: vi.fn().mockReturnValue({ id: "runtime-1" }),
-      destroyWorkspaceRuntime: destroySpy,
-      daemon: {
-        getWorkspaceManager: () => mockManager,
-        runtimes: new Map(),
-      } as unknown as AppContext["daemon"],
+      daemon: { getWorkspaceManager: () => mockManager } as unknown as AppContext["daemon"],
       streamRegistry: {} as AppContext["streamRegistry"],
       chatTurnRegistry: {} as AppContext["chatTurnRegistry"],
       sessionStreamRegistry: {} as AppContext["sessionStreamRegistry"],
       sessionHistoryAdapter: {} as AppContext["sessionHistoryAdapter"],
+      sessionDispatchRegistry: {} as AppContext["sessionDispatchRegistry"],
       getAgentRegistry: vi.fn(),
       getOrCreateChatSdkInstance: vi.fn(),
-      evictChatSdkInstance: vi.fn().mockResolvedValue(undefined),
       exposeKernel: false,
       platformModels: { get: vi.fn() },
     };
@@ -348,26 +332,18 @@ describe("Draft file flow", () => {
     const destroySpy = vi.fn().mockResolvedValue(undefined);
     const createRuntimeSpy = vi.fn().mockResolvedValue(undefined);
     const mockContext: AppContext = {
-      runtimes: new Map(),
       startTime: Date.now(),
       sseClients: new Map(),
       sseStreams: new Map(),
       getWorkspaceManager: () => mockManager,
-      getOrCreateWorkspaceRuntime: createRuntimeSpy,
-      resetIdleTimeout: vi.fn(),
-      getWorkspaceRuntime: vi.fn().mockReturnValue(undefined),
-      destroyWorkspaceRuntime: destroySpy,
-      daemon: {
-        getWorkspaceManager: () => mockManager,
-        runtimes: new Map(),
-      } as unknown as AppContext["daemon"],
+      daemon: { getWorkspaceManager: () => mockManager } as unknown as AppContext["daemon"],
       streamRegistry: {} as AppContext["streamRegistry"],
       chatTurnRegistry: {} as AppContext["chatTurnRegistry"],
       sessionStreamRegistry: {} as AppContext["sessionStreamRegistry"],
       sessionHistoryAdapter: {} as AppContext["sessionHistoryAdapter"],
+      sessionDispatchRegistry: {} as AppContext["sessionDispatchRegistry"],
       getAgentRegistry: vi.fn(),
       getOrCreateChatSdkInstance: vi.fn(),
-      evictChatSdkInstance: vi.fn().mockResolvedValue(undefined),
       exposeKernel: false,
       platformModels: { get: vi.fn() },
     };
@@ -878,26 +854,18 @@ describe("Draft file flow", () => {
     } as unknown as WorkspaceManager;
 
     const mockContext: AppContext = {
-      runtimes: new Map(),
       startTime: Date.now(),
       sseClients: new Map(),
       sseStreams: new Map(),
       getWorkspaceManager: () => mockManager,
-      getOrCreateWorkspaceRuntime: vi.fn(),
-      resetIdleTimeout: vi.fn(),
-      getWorkspaceRuntime: vi.fn(),
-      destroyWorkspaceRuntime: vi.fn().mockResolvedValue(undefined),
-      daemon: {
-        getWorkspaceManager: () => mockManager,
-        runtimes: new Map(),
-      } as unknown as AppContext["daemon"],
+      daemon: { getWorkspaceManager: () => mockManager } as unknown as AppContext["daemon"],
       streamRegistry: {} as AppContext["streamRegistry"],
       chatTurnRegistry: {} as AppContext["chatTurnRegistry"],
       sessionStreamRegistry: {} as AppContext["sessionStreamRegistry"],
       sessionHistoryAdapter: {} as AppContext["sessionHistoryAdapter"],
+      sessionDispatchRegistry: {} as AppContext["sessionDispatchRegistry"],
       getAgentRegistry: vi.fn(),
       getOrCreateChatSdkInstance: vi.fn(),
-      evictChatSdkInstance: vi.fn().mockResolvedValue(undefined),
       exposeKernel: false,
       platformModels: { get: vi.fn() },
     };

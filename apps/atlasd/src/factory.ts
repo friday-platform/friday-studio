@@ -2,11 +2,12 @@ import type { AgentRegistry } from "@atlas/agent-sdk";
 import type { AtlasDaemon } from "@atlas/atlasd";
 import type { SessionHistoryAdapter } from "@atlas/core";
 import type { PlatformModels } from "@atlas/llm";
-import type { WorkspaceManager, WorkspaceRuntime } from "@atlas/workspace";
+import type { WorkspaceManager } from "@atlas/workspace";
 import { cors } from "hono/cors";
 import { createFactory } from "hono/factory";
 import type { ChatSdkInstance } from "./chat-sdk/chat-sdk-instance.ts";
 import type { ChatTurnRegistry } from "./chat-turn-registry.ts";
+import type { SessionDispatchRegistry } from "./session-dispatch-registry.ts";
 import { createSessionMiddleware } from "./session-middleware.ts";
 import type { SessionStreamRegistry } from "./session-stream-registry.ts";
 import type { StreamRegistry } from "./stream-registry.ts";
@@ -24,26 +25,19 @@ type SSEStreamMetadata = { createdAt: number; lastActivity: number; lastEmit: nu
 
 // Define app context that will be available to all routes
 export interface AppContext {
-  runtimes: Map<string, WorkspaceRuntime>;
   startTime: number;
   sseClients: Map<string, SSEClient[]>;
   sseStreams: Map<string, SSEStreamMetadata>;
   getWorkspaceManager(): WorkspaceManager;
 
-  // Signal route methods
-  getOrCreateWorkspaceRuntime(workspaceId: string): Promise<WorkspaceRuntime>;
-  resetIdleTimeout(workspaceId: string): void;
-
-  // Runtime management methods
-  getWorkspaceRuntime(workspaceId: string): WorkspaceRuntime | undefined;
-  destroyWorkspaceRuntime(workspaceId: string): Promise<void>;
-
   // Agent registry
   getAgentRegistry(): AgentRegistry;
 
-  // Chat SDK instance per workspace
+  // Build a fresh chat-SDK instance for the workspace. Per-call construction;
+  // callers receive a self-contained instance and must `teardown()` if they
+  // need to release platform resources (most webhook handlers don't, since
+  // adapters are HTTP-only and have no persistent listeners).
   getOrCreateChatSdkInstance(workspaceId: string): Promise<ChatSdkInstance>;
-  evictChatSdkInstance(workspaceId: string): Promise<void>;
 
   // Core daemon access
   daemon: AtlasDaemon;
@@ -60,6 +54,12 @@ export interface AppContext {
 
   // Session history adapter for reading completed sessions (v2)
   sessionHistoryAdapter: SessionHistoryAdapter;
+
+  // Daemon-level routing for session-cancel commands (NATS subscription
+  // on `daemon.cancel.sessions.>`). Routes are added by the runtime as it
+  // creates AbortControllers; cancel callers publish via
+  // `publishSessionCancel`.
+  sessionDispatchRegistry: SessionDispatchRegistry;
 
   // When true, the kernel workspace is visible in user-facing lists
   exposeKernel: boolean;

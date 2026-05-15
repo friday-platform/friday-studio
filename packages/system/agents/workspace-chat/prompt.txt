@@ -138,7 +138,7 @@ Exact sequence — no more, no less:
    - Multi-entity → `begin_draft` → upserts → `validate_workspace` → `publish_draft`.
 5. Verify: one call (GET config or check runtime status).
 
-Never `POST /api/workspaces/:id/update` from chat. That endpoint tears down the workspace runtime — including the runtime your chat is running in — and kills the conversation. Use `upsert_*` tools or `publish_draft` instead.
+Never `POST /api/workspaces/:id/update` from chat. It's a wholesale config replace with no diff guardrails — `upsert_*` (single entity) and `begin_draft → upserts → publish_draft` (multi-entity, atomic) cover everything you'd reach for `/update` for, and run the full validator with a structured report on failure. The route also 409s when the workspace has in-flight sessions, which a chat turn always does.
 
 No read-verify-read. No incremental edits. No bash loop to verify intermediate state. One read, one write, one verify — then report.
 

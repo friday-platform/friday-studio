@@ -75,11 +75,7 @@ describe("PUT /config/signals/:signalId", () => {
     const configData = createTestConfig({ signals: { webhook: httpSignal({ path: "/old" }) } });
     await writeFile(join(testDir, "workspace.yml"), stringify(configData));
     const config = createMergedConfig(configData);
-    const { app, destroyWorkspaceRuntime } = createTestApp({
-      workspace,
-      config,
-      runtimeActive: true,
-    });
+    const { app } = createTestApp({ workspace, config });
 
     const response = await app.request("/ws-test-id/config/signals/webhook", {
       method: "PUT",
@@ -94,7 +90,6 @@ describe("PUT /config/signals/:signalId", () => {
     expect(response.status).toBe(200);
     const body = (await response.json()) as JsonBody;
     expect(body.ok).toBe(true);
-    expect(destroyWorkspaceRuntime).not.toHaveBeenCalled();
   });
 });
 
@@ -239,11 +234,7 @@ describe("POST /config/signals", () => {
     const workspace = createMockWorkspace({ path: testDir });
     await writeFile(join(testDir, "workspace.yml"), stringify(createTestConfig()));
     const config = createMergedConfig(createTestConfig());
-    const { app, destroyWorkspaceRuntime } = createTestApp({
-      workspace,
-      config,
-      runtimeActive: true,
-    });
+    const { app } = createTestApp({ workspace, config });
 
     const response = await app.request("/ws-test-id/config/signals", {
       method: "POST",
@@ -257,6 +248,5 @@ describe("POST /config/signals", () => {
     expect(response.status).toBe(201);
     const body = (await response.json()) as JsonBody;
     expect(body.ok).toBe(true);
-    expect(destroyWorkspaceRuntime).not.toHaveBeenCalled();
   });
 });

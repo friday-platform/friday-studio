@@ -67,7 +67,7 @@ Create and manage Friday workspaces. This skill is where LLM judgment lives: whe
 7. If draft: `publish_draft` after user confirms. If direct: done.
 
 **Direct vs draft.**
-- Direct: upserts write live `workspace.yml`, full validation runs immediately, runtime reloads. Best for one change.
+- Direct: upserts write live `workspace.yml`, full validation runs immediately, the next dispatch reads the new config. Best for one change.
 - Draft: upserts stage to `workspace.yml.draft`, permissive per-entity validation, cross-entity checks at `validate_workspace` + `publish_draft`. Best for new workspaces or pipelines.
 
 **Tool selection.**
@@ -198,7 +198,7 @@ Call `validate_workspace`. It returns a report:
 
 ### 7. Publish (draft only)
 
-If you used draft mode, propose the changes to the user: "I've drafted X, Y, Z — want me to publish?" On confirmation, call `publish_draft`. It runs the full validator atomically; if any error exists, the draft is left untouched and you get the report to fix. If it succeeds, the draft renames over `workspace.yml` and the runtime reloads.
+If you used draft mode, propose the changes to the user: "I've drafted X, Y, Z — want me to publish?" On confirmation, call `publish_draft`. It runs the full validator atomically; if any error exists, the draft is left untouched and you get the report to fix. If it succeeds, the draft renames over `workspace.yml` and the next dispatch reads the new config.
 
 To abandon a draft: `discard_draft`.
 
