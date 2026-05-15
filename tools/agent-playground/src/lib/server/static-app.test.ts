@@ -1,21 +1,16 @@
-import { env } from "node:process";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { buildStaticApp } from "./static-app.ts";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 const DAEMON_URL = "https://daemon.example:9443";
 
-const originalEnv = {
-  FRIDAYD_URL: env.FRIDAYD_URL,
-  FRIDAY_TLS_CERT: env.FRIDAY_TLS_CERT,
-  FRIDAY_TLS_KEY: env.FRIDAY_TLS_KEY,
-};
+// Pin the daemon URL the export route sees. `effectiveDaemonUrl` is
+// short-circuited by Vite's `__FRIDAY_DAEMON_BASE_URL__` define when these
+// tests run via `npx vitest` inside the package directory, so the env-based
+// stub used previously is not enough. Same mock as `routes/export.test.ts`.
+vi.mock("./daemon-url.ts", () => ({
+  effectiveDaemonUrl: () => DAEMON_URL,
+}));
 
-function restoreEnv(): void {
-  for (const [key, value] of Object.entries(originalEnv)) {
-    if (value === undefined) delete env[key];
-    else env[key] = value;
-  }
-}
+const { buildStaticApp } = await import("./static-app.ts");
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -25,15 +20,8 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 describe("production static app route ordering", () => {
-  beforeEach(() => {
-    env.FRIDAYD_URL = DAEMON_URL;
-    delete env.FRIDAY_TLS_CERT;
-    delete env.FRIDAY_TLS_KEY;
-  });
-
   afterEach(() => {
     vi.unstubAllGlobals();
-    restoreEnv();
   });
 
   it("routes /api/export through the API before the SPA fallback", async () => {

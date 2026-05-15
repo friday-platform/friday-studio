@@ -1,5 +1,6 @@
 import { ArtifactSummarySchema } from "@atlas/core/artifacts";
 import { Hono } from "hono";
+import type { Context } from "hono";
 import JSZip from "jszip";
 import { z } from "zod";
 import { GetChatResponseSchema } from "../../components/chat/types.ts";
@@ -19,12 +20,43 @@ const MAX_ARTIFACT_BYTES = 25 * 1024 * 1024;
  */
 const MAX_TOTAL_ARTIFACT_BYTES = 250 * 1024 * 1024;
 
+/**
+ * Overall export budget. Caps the whole pipeline (chat fetch + artifact list +
+ * sequential byte reads + zip pack) rather than relying on Node's default
+ * per-fetch 300s ceiling, which would allow N × 300s with N stuck artifact
+ * fetches.
+ */
+const EXPORT_BUDGET_MS = 60_000;
+
 const ArtifactsResponseSchema = z.object({ artifacts: z.array(ArtifactSummarySchema) });
 type ArtifactSummary = z.infer<typeof ArtifactSummarySchema>;
 
-/** Return true when an artifact id cannot safely be embedded as one URL path segment. */
+/**
+ * Reject artifact ids whose unencoded value would survive `encodeURIComponent`
+ * (dots are unreserved per RFC 3986) and then be collapsed by URL parsing
+ * into a different daemon endpoint. `new URL("…/artifacts/../content")`
+ * normalises to `…/content` — a real path traversal at the URL level, not
+ * just a zip-entry concern. `/` and `\` are caught here too even though
+ * encodeURIComponent neutralises them: skip the daemon round-trip when the
+ * id is obviously bogus.
+ */
 function unsafeArtifactIdPathSegment(id: string): boolean {
   return /^\.+$/.test(id) || id.includes("/") || id.includes("\\");
+}
+
+/** Pull caller credentials off the inbound request so the daemon's session
+ * middleware sees the same headers the browser sent. The old SvelteKit route
+ * went through the `/api/daemon/*` proxy (`proxy.ts:executeProxyFetch`) which
+ * forwarded the full Headers set; this route calls the daemon directly, so we
+ * have to thread cookie + authorization explicitly or the daemon 401s any
+ * non-dev-mode caller. */
+function forwardAuthHeaders(req: Request): HeadersInit {
+  const headers: Record<string, string> = {};
+  const cookie = req.headers.get("cookie");
+  if (cookie) headers.cookie = cookie;
+  const authorization = req.headers.get("authorization");
+  if (authorization) headers.authorization = authorization;
+  return headers;
 }
 
 /** Read a response body while enforcing a byte ceiling before full allocation. */
@@ -74,10 +106,11 @@ async function readResponseBytesWithLimit(res: Response, limit: number): Promise
 async function fetchArtifactSummaries(
   artifactsUrl: string,
   signal: AbortSignal,
+  headers: HeadersInit,
 ): Promise<ArtifactSummary[]> {
   let artifactsRes: Response;
   try {
-    artifactsRes = await fetch(artifactsUrl, { signal });
+    artifactsRes = await fetch(artifactsUrl, { signal, headers });
   } catch (err) {
     if (signal.aborted) throw err;
     const message = err instanceof Error ? err.message : String(err);
@@ -152,20 +185,51 @@ function scrubHomePaths(input: string): string {
 export const exportRoute = new Hono().get("/:workspaceId/:chatId", async (c) => {
   const workspaceId = c.req.param("workspaceId");
   const chatId = c.req.param("chatId");
-  const signal = c.req.raw.signal;
+  const incomingSignal = c.req.raw.signal;
+  // Race the whole pipeline against an aggregate budget. Done via a plain
+  // setTimeout + AbortController (not AbortSignal.timeout) so Vitest's fake
+  // timers can drive it; AbortSignal.timeout's internal timer is not part
+  // of the mocked surface. The two-signal split lets us tell a
+  // client-closed-tab abort (499) from a server-side budget overrun (504);
+  // `signal.aborted` alone cannot distinguish them.
+  const timeoutController = new AbortController();
+  const timeoutHandle = setTimeout(() => timeoutController.abort(), EXPORT_BUDGET_MS);
+  const timeoutSignal = timeoutController.signal;
+  const signal = AbortSignal.any([incomingSignal, timeoutSignal]);
+  const abortResponse = (): Response => {
+    if (timeoutSignal.aborted) {
+      return c.json({ error: "Export timed out", limitMs: EXPORT_BUDGET_MS }, 504);
+    }
+    return new Response(null, { status: 499 });
+  };
 
+  try {
+    return await runExport(c, chatId, workspaceId, signal, abortResponse);
+  } finally {
+    clearTimeout(timeoutHandle);
+  }
+});
+
+async function runExport(
+  c: Context,
+  chatId: string,
+  workspaceId: string,
+  signal: AbortSignal,
+  abortResponse: () => Response,
+): Promise<Response> {
   const wsPath = encodeURIComponent(workspaceId);
   const chatPath = encodeURIComponent(chatId);
   const daemonBaseUrl = effectiveDaemonUrl().replace(/\/+$/, "");
+  const authHeaders = forwardAuthHeaders(c.req.raw);
 
   const chatUrl = `${daemonBaseUrl}/api/workspaces/${wsPath}/chat/${chatPath}?full=true`;
   const artifactsUrl = `${daemonBaseUrl}/api/artifacts?chatId=${chatPath}`;
 
   let chatRes: Response;
   try {
-    chatRes = await fetch(chatUrl, { signal });
+    chatRes = await fetch(chatUrl, { signal, headers: authHeaders });
   } catch (err) {
-    if (signal.aborted) return new Response(null, { status: 499 });
+    if (signal.aborted) return abortResponse();
     const message = err instanceof Error ? err.message : String(err);
     return c.json({ error: `daemon fetch failed: ${message}` }, 502);
   }
@@ -193,13 +257,13 @@ export const exportRoute = new Hono().get("/:workspaceId/:chatId", async (c) => 
   // entries is more useful than no export at all.
   let artifacts: ArtifactSummary[];
   try {
-    artifacts = await fetchArtifactSummaries(artifactsUrl, signal);
+    artifacts = await fetchArtifactSummaries(artifactsUrl, signal, authHeaders);
   } catch (err) {
-    if (signal.aborted) return new Response(null, { status: 499 });
+    if (signal.aborted) return abortResponse();
     throw err;
   }
 
-  if (signal.aborted) return new Response(null, { status: 499 });
+  if (signal.aborted) return abortResponse();
 
   const fetchableArtifacts: ArtifactSummary[] = [];
   let plannedBytes = 0;
@@ -234,11 +298,11 @@ export const exportRoute = new Hono().get("/:workspaceId/:chatId", async (c) => 
   const byteResults: PromiseSettledResult<{ path: string; bytes: Uint8Array }>[] = [];
   let downloadedBytes = 0;
   for (const summary of fetchableArtifacts) {
-    if (signal.aborted) return new Response(null, { status: 499 });
+    if (signal.aborted) return abortResponse();
     try {
       const res = await fetch(
         `${daemonBaseUrl}/api/artifacts/${encodeURIComponent(summary.id)}/content`,
-        { signal },
+        { signal, headers: authHeaders },
       );
       if (!res.ok) throw new Error(`status ${res.status}`);
       const buf = await readResponseBytesWithLimit(res, MAX_ARTIFACT_BYTES);
@@ -266,12 +330,12 @@ export const exportRoute = new Hono().get("/:workspaceId/:chatId", async (c) => 
         },
       });
     } catch (err) {
-      if (signal.aborted) return new Response(null, { status: 499 });
+      if (signal.aborted) return abortResponse();
       byteResults.push({ status: "rejected", reason: err });
     }
   }
 
-  if (signal.aborted) return new Response(null, { status: 499 });
+  if (signal.aborted) return abortResponse();
 
   const zip = new JSZip();
   // Strip the account-ownership id. Transcript, system prompt context, and
@@ -309,4 +373,4 @@ export const exportRoute = new Hono().get("/:workspaceId/:chatId", async (c) => 
       "content-disposition": `attachment; filename="friday-chat-${chatId.slice(0, 8)}.zip"`,
     },
   });
-});
+}

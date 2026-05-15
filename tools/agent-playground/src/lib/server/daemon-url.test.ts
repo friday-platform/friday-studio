@@ -2,6 +2,22 @@ import { env } from "node:process";
 import { afterEach, describe, expect, it } from "vitest";
 import { effectiveDaemonUrl } from "./daemon-url.ts";
 
+// Mirrors the declaration in `daemon-url.ts`. Vite's `define` substitutes
+// this at transform time when the SvelteKit Vite plugin loads the package
+// config; otherwise it stays `undefined`.
+declare const __FRIDAY_DAEMON_BASE_URL__: string | undefined;
+
+// `effectiveDaemonUrl` has two branches: Vite's compile-time `define` of
+// `__FRIDAY_DAEMON_BASE_URL__` (taken in dev when the SvelteKit Vite plugin
+// is loaded) and the runtime-env fallback (taken in the compiled binary).
+// When these tests run via `npx vitest` inside the package, the package's
+// `vite.config.ts` is the resolved config, so the define is set and the
+// env branch is unreachable. Skip the env-branch assertions in that case;
+// `deno task test` from the repo root uses the root vitest config which
+// does NOT load the package's Vite define, so the suite is meaningful
+// there.
+const HAS_VITE_DEFINE = typeof __FRIDAY_DAEMON_BASE_URL__ !== "undefined";
+
 const originalEnv = {
   FRIDAYD_URL: env.FRIDAYD_URL,
   FRIDAY_TLS_CERT: env.FRIDAY_TLS_CERT,
@@ -15,7 +31,7 @@ function restoreEnv(): void {
   }
 }
 
-describe("effectiveDaemonUrl", () => {
+describe.skipIf(HAS_VITE_DEFINE)("effectiveDaemonUrl", () => {
   afterEach(() => {
     restoreEnv();
   });
