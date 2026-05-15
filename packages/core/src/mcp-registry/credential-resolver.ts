@@ -1,5 +1,6 @@
 import process from "node:process";
 import type { LinkCredentialRef } from "@atlas/agent-sdk";
+import { bundledAgentsRegistry } from "@atlas/bundled-agents/registry";
 import { client, DetailedError, parseResult } from "@atlas/client/v2";
 import type { MCPServerConfig } from "@atlas/config";
 import type { Logger } from "@atlas/logger";
@@ -115,6 +116,42 @@ export function getLinkAuthHeaders(): Record<string, string> {
   return { Authorization: `Bearer ${atlasKey}` };
 }
 
+/** Find the env-var name a bundled atlas agent uses to receive a Link
+ * credential for the given provider. Returns the first match across all
+ * bundled agents — the registry is keyed by agent id, but for any one
+ * provider all agents declare the same env var (e.g. every bundled agent
+ * that uses HubSpot reads `HUBSPOT_ACCESS_TOKEN`). Returns undefined when
+ * no bundled agent declares this provider — in that case the env-var
+ * fallback below has no var name to check, and the call falls through to
+ * the original error path. */
+function findEnvKeyForProvider(provider: string): string | undefined {
+  for (const entry of Object.values(bundledAgentsRegistry)) {
+    for (const field of entry.requiredConfig) {
+      if (field.from === "link" && field.provider === provider) {
+        return field.envKey;
+      }
+    }
+  }
+  return undefined;
+}
+
+/** Build a synthetic CredentialSummary for a credential supplied via
+ * environment variable rather than a Link credential record. The
+ * `id: "env:..."` prefix is intentional so any caller that downstream
+ * fetches by id (e.g. to refresh an OAuth token) can short-circuit on
+ * the prefix and skip the Link round-trip. */
+function envCredentialSummary(provider: string, envKey: string): CredentialSummary {
+  return {
+    id: `env:${envKey}`,
+    provider,
+    label: `${provider} (from env: ${envKey})`,
+    type: "env",
+    displayName: null,
+    userIdentifier: null,
+    isDefault: true,
+  };
+}
+
 export async function resolveCredentialsByProvider(provider: string): Promise<CredentialSummary[]> {
   const result = await parseResult(
     client.link.v1.summary.$get({ query: { provider } }, { headers: getLinkAuthHeaders() }),
@@ -125,6 +162,18 @@ export async function resolveCredentialsByProvider(provider: string): Promise<Cr
 
   const { credentials, providers } = result.data;
   if (credentials.length === 0) {
+    // Env-var fallback: many users configure secrets via
+    // `~/.friday/local/.env` rather than Settings → Connections. For
+    // bundled atlas agents that declare a Link credential
+    // requirement (e.g. hubspot's `HUBSPOT_ACCESS_TOKEN`), check the
+    // daemon's process.env for the corresponding env var first and
+    // accept it as a configured credential. The bundled agent runtime
+    // already reads from env, so this only changes the validator's
+    // verdict — no runtime change.
+    const envKey = findEnvKeyForProvider(provider);
+    if (envKey && process.env[envKey]) {
+      return [envCredentialSummary(provider, envKey)];
+    }
     const isKnownProvider = providers.some((p) => p.id === provider);
     if (!isKnownProvider) throw new InvalidProviderError(provider);
     throw new CredentialNotFoundError(provider);

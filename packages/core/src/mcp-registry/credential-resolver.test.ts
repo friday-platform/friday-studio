@@ -219,6 +219,85 @@ describe("resolveCredentialsByProvider", () => {
     expect((error as Error).message).toContain("not a registered provider");
   });
 
+  // Env-var fallback: a bundled atlas agent declares a Link credential
+  // requirement (e.g. hubspot's HUBSPOT_ACCESS_TOKEN), the user has set
+  // that env var in `~/.friday/local/.env` instead of configuring a Link
+  // credential via Settings → Connections, the runtime works because the
+  // bundled agent reads from env directly. The validator path used to
+  // reject the workspace upload with `missing_providers: ["hubspot"]`
+  // even though everything works at runtime — the fallback below makes
+  // resolveCredentialsByProvider accept the env var as a configured
+  // credential and synthesize a CredentialSummary for it.
+  describe("env-var fallback (~/.friday/local/.env)", () => {
+    const ENV_KEY = "HUBSPOT_ACCESS_TOKEN";
+    let originalValue: string | undefined;
+
+    beforeEach(() => {
+      originalValue = process.env[ENV_KEY];
+    });
+
+    afterEach(() => {
+      if (originalValue === undefined) delete process.env[ENV_KEY];
+      else process.env[ENV_KEY] = originalValue;
+    });
+
+    it("returns a synthetic 'env:' credential when InvalidProviderError would have fired but env is set", async () => {
+      // Link service has no record of hubspot AND no credentials —
+      // would normally throw InvalidProviderError ("not a registered
+      // provider"). With env-var fallback + HUBSPOT_ACCESS_TOKEN set,
+      // we synthesize a CredentialSummary instead.
+      globalThis.fetch = mockSummaryFetch("hubspot", [], []);
+      process.env[ENV_KEY] = "pat-na2-fake-test-token";
+
+      const credentials = await resolveCredentialsByProvider("hubspot");
+      expect(credentials.length).toEqual(1);
+      // biome-ignore lint/style/noNonNullAssertion: length asserted above
+      expect(credentials[0]!.id).toEqual(`env:${ENV_KEY}`);
+      // biome-ignore lint/style/noNonNullAssertion: length asserted above
+      expect(credentials[0]!.provider).toEqual("hubspot");
+      // biome-ignore lint/style/noNonNullAssertion: length asserted above
+      expect(credentials[0]!.type).toEqual("env");
+      // biome-ignore lint/style/noNonNullAssertion: length asserted above
+      expect(credentials[0]!.isDefault).toEqual(true);
+    });
+
+    it("returns a synthetic 'env:' credential when CredentialNotFoundError would have fired but env is set", async () => {
+      // Link service knows about hubspot but has zero credentials —
+      // would normally throw CredentialNotFoundError. Env-var fallback
+      // takes priority over throwing.
+      globalThis.fetch = mockSummaryFetch("hubspot", [], [{ id: "hubspot" }]);
+      process.env[ENV_KEY] = "pat-na2-fake-test-token";
+
+      const credentials = await resolveCredentialsByProvider("hubspot");
+      expect(credentials.length).toEqual(1);
+      // biome-ignore lint/style/noNonNullAssertion: length asserted above
+      expect(credentials[0]!.id).toEqual(`env:${ENV_KEY}`);
+    });
+
+    it("does NOT fall back to env when env var is unset", async () => {
+      delete process.env[ENV_KEY];
+      globalThis.fetch = mockSummaryFetch("hubspot", [], []);
+
+      const error = await resolveCredentialsByProvider("hubspot").catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(InvalidProviderError);
+    });
+
+    it("does NOT fall back for providers with no bundled-agent declaration (no envKey to map)", async () => {
+      // Set an env var to prove that env-presence alone isn't enough —
+      // we need a known mapping from provider → envKey via the bundled
+      // agents registry. Random env vars don't get treated as
+      // credentials.
+      process.env.SOMETHING_RANDOM = "x";
+      globalThis.fetch = mockSummaryFetch("nonexistent-provider-xyz", [], []);
+
+      const error = await resolveCredentialsByProvider("nonexistent-provider-xyz").catch(
+        (e: unknown) => e,
+      );
+      expect(error).toBeInstanceOf(InvalidProviderError);
+      delete process.env.SOMETHING_RANDOM;
+    });
+  });
+
   it("returns all credentials when multiple exist", async () => {
     globalThis.fetch = mockSummaryFetch("slack", [
       {
