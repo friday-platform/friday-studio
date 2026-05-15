@@ -706,8 +706,10 @@ describe("MCP Registry Routes", () => {
       });
 
       expect(res.status).toBe(201);
+      // PreflightSettingUpSchema.parse validates status:"setting_up" in the HTTP response
+      // body. A separate testAdapter.get check here is a race — all mocks resolve
+      // immediately, so the doctor task completes during the res.json() await.
       const body = PreflightSettingUpSchema.parse(await res.json());
-      expect((await testAdapter.get(body.server_id))?.status).toBe("setting_up");
 
       await _flushDoctorTasksForTest();
       const persisted = await testAdapter.get(body.server_id);
