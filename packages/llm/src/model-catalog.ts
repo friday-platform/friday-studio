@@ -12,6 +12,9 @@
  * - **Groq `/openai/v1/models`** (authenticated with `GROQ_API_KEY`):
  *   the gateway surfaces only 1 Groq model, so when the user has a
  *   Groq key we hit Groq directly for the full catalog.
+ * - **OpenRouter `/api/v1/models`** (public, unauthenticated): the gateway
+ *   doesn't proxy OpenRouter, so we hit it directly. Filtered server-side
+ *   to tool-capable chat models via `?supported_parameters=tools`.
  *
  * Everything is cached in memory for {@link CACHE_TTL_MS} (1h by
  * default) and prewarmed at daemon startup via {@link prewarmCatalog}
@@ -33,17 +36,15 @@ import { PROVIDER_ENV_VARS, type ValidProvider } from "./util.ts";
  * picker. When we add a dedicated "Claude Code" role (wiring the
  * claude-code agent's hardcoded `selectModel` to user config), we'll
  * expose it again behind that role's scoped picker.
- *
- * `openrouter` is also excluded — it's opt-in via `friday.yml` and
- * intentionally absent from the Settings picker UI.
  */
-export type CatalogProvider = Exclude<ValidProvider, "openrouter">;
+export type CatalogProvider = ValidProvider;
 
 const CATALOG_PROVIDERS: readonly CatalogProvider[] = [
   "anthropic",
   "openai",
   "google",
   "groq",
+  "openrouter",
 ] as const;
 
 export interface ModelInfo {
@@ -101,6 +102,9 @@ export interface Catalog {
 const GATEWAY_URL = "https://ai-gateway.vercel.sh/v4/ai/config";
 const GATEWAY_HEADERS = { "ai-gateway-protocol-version": "0.0.1" };
 const GROQ_URL = "https://api.groq.com/openai/v1/models";
+// Server-side filter to tool-capable chat models — OpenRouter publishes 500+
+// model slugs and the unfiltered list dwarfs every other provider's picker.
+const OPENROUTER_URL = "https://openrouter.ai/api/v1/models?supported_parameters=tools";
 
 const FETCH_TIMEOUT_MS = 3_000;
 /** One hour — models don't change intra-session. Prewarm covers first paint. */
@@ -111,6 +115,7 @@ const ENV_VAR_BY_CATALOG_PROVIDER: Record<CatalogProvider, string> = {
   openai: PROVIDER_ENV_VARS.openai,
   google: PROVIDER_ENV_VARS.google,
   groq: PROVIDER_ENV_VARS.groq,
+  openrouter: PROVIDER_ENV_VARS.openrouter,
 };
 
 /**
@@ -133,6 +138,12 @@ export const PROVIDER_META: Record<CatalogProvider, ProviderMeta> = {
   },
   google: { name: "Google", letter: "G", keyPrefix: "AIza", helpUrl: "aistudio.google.com/apikey" },
   groq: { name: "Groq", letter: "Q", keyPrefix: "gsk_", helpUrl: "console.groq.com/keys" },
+  openrouter: {
+    name: "OpenRouter",
+    letter: "R",
+    keyPrefix: "sk-or-v1-",
+    helpUrl: "openrouter.ai/keys",
+  },
 };
 
 // ─── Schemas ───────────────────────────────────────────────────────────────
@@ -147,6 +158,10 @@ const gatewayModelSchema = z.object({
 const gatewayResponseSchema = z.object({ models: z.array(gatewayModelSchema) });
 
 const groqResponseSchema = z.object({ data: z.array(z.object({ id: z.string() })) });
+
+const openrouterModelSchema = z.object({ id: z.string(), name: z.string() });
+const openrouterResponseSchema = z.object({ data: z.array(openrouterModelSchema) });
+type OpenRouterModel = z.infer<typeof openrouterModelSchema>;
 
 // ─── Fetchers ──────────────────────────────────────────────────────────────
 
@@ -178,6 +193,16 @@ async function fetchGroq(apiKey: string): Promise<string[]> {
   return parsed.data.map((m) => m.id);
 }
 
+async function fetchOpenRouter(): Promise<OpenRouterModel[]> {
+  const res = await fetch(OPENROUTER_URL, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+  if (!res.ok) {
+    await discardBody(res);
+    throw new Error(`openrouter returned HTTP ${res.status}`);
+  }
+  const parsed = openrouterResponseSchema.parse(await res.json());
+  return parsed.data;
+}
+
 // ─── Filters / normalization ───────────────────────────────────────────────
 
 /**
@@ -202,6 +227,8 @@ function groupGatewayModels(models: GatewayModel[]): Record<CatalogProvider, Mod
     openai: [],
     google: [],
     groq: [],
+    // OpenRouter is fetched directly from openrouter.ai, not the gateway.
+    openrouter: [],
   };
   for (const m of models) {
     // Gateway uses `modelType: null` for most language models; explicit
@@ -331,11 +358,12 @@ function resolveCredential(provider: CatalogProvider): {
 async function fetchCatalog(): Promise<Catalog> {
   const groqKey = process.env.GROQ_API_KEY;
 
-  // Fire gateway and (optionally) groq in parallel. allSettled so one
-  // provider timing out doesn't take the whole catalog with it.
-  const [gatewayResult, groqResult] = await Promise.allSettled([
+  // Fire gateway, openrouter, and (optionally) groq in parallel. allSettled
+  // so one provider timing out doesn't take the whole catalog with it.
+  const [gatewayResult, groqResult, openrouterResult] = await Promise.allSettled([
     fetchGateway(),
     groqKey ? fetchGroq(groqKey) : Promise.reject(new Error("no GROQ_API_KEY")),
+    fetchOpenRouter(),
   ]);
 
   const gatewayBuckets =
@@ -358,6 +386,19 @@ async function fetchCatalog(): Promise<Catalog> {
       ? String(groqResult.reason instanceof Error ? groqResult.reason.message : groqResult.reason)
       : null;
 
+  const openrouterModels =
+    openrouterResult.status === "fulfilled"
+      ? openrouterResult.value.map((m) => ({ id: m.id, displayName: m.name }))
+      : null;
+  const openrouterError =
+    openrouterResult.status === "rejected"
+      ? String(
+          openrouterResult.reason instanceof Error
+            ? openrouterResult.reason.message
+            : openrouterResult.reason,
+        )
+      : null;
+
   const entries: CatalogEntry[] = CATALOG_PROVIDERS.map((provider) => {
     const cred = resolveCredential(provider);
     let models: ModelInfo[] = [];
@@ -370,6 +411,12 @@ async function fetchCatalog(): Promise<Catalog> {
         error = groqError;
       }
       // else: no key, no models, no error — UI shows the `envVar` hint.
+    } else if (provider === "openrouter") {
+      if (openrouterModels) {
+        models = openrouterModels;
+      } else if (openrouterError) {
+        error = openrouterError;
+      }
     } else if (gatewayBuckets) {
       models = gatewayBuckets[provider];
     } else if (gatewayError) {
