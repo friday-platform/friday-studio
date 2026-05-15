@@ -5,11 +5,18 @@ import { z } from "zod";
 
 // Single source of truth for workspace types
 //
-// `inactive` is the only persisted status now: workspaces don't have a
-// "running" runtime to flip to since dispatch is per-call. Active dispatch
-// counts are derived from the dispatch registry, not stored on the entry.
+// `inactive` is the only status now: workspaces don't have a "running"
+// runtime to flip to since dispatch is per-call. Active dispatch counts
+// are derived from the dispatch registry, not stored on the entry.
 // Error state lives in `metadata.lastError` / `lastErrorAt`.
-export const WorkspaceStatusSchema = z.enum(["inactive"]);
+//
+// The schema accepts legacy `"running"` / `"stopped"` values from
+// pre-upgrade persisted entries and coerces them to `"inactive"` on
+// read — entries get rewritten with the canonical value the next time
+// `updateWorkspaceStatus` fires for that workspace.
+export const WorkspaceStatusSchema = z
+  .enum(["inactive", "running", "stopped"])
+  .transform(() => "inactive" as const);
 
 export const WorkspaceMetadataSchema = z.object({
   description: z.string().optional(),
