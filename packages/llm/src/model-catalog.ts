@@ -33,8 +33,11 @@ import { PROVIDER_ENV_VARS, type ValidProvider } from "./util.ts";
  * picker. When we add a dedicated "Claude Code" role (wiring the
  * claude-code agent's hardcoded `selectModel` to user config), we'll
  * expose it again behind that role's scoped picker.
+ *
+ * `openrouter` is also excluded — it's opt-in via `friday.yml` and
+ * intentionally absent from the Settings picker UI.
  */
-export type CatalogProvider = ValidProvider;
+export type CatalogProvider = Exclude<ValidProvider, "openrouter">;
 
 const CATALOG_PROVIDERS: readonly CatalogProvider[] = [
   "anthropic",

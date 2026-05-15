@@ -9,6 +9,7 @@ import { createAnthropicWithOptions } from "./anthropic.ts";
 import { createGoogleWithOptions } from "./google.ts";
 import { createGroqWithOptions } from "./groq.ts";
 import { createOpenAIWithOptions } from "./openai.ts";
+import { createOpenRouterWithOptions } from "./openrouter.ts";
 
 /**
  * Strips the CLAUDECODE env var to prevent infinite nesting when
@@ -104,6 +105,7 @@ function createRegistry() {
       google: googleViaLitellm,
       groq: groqViaLitellm,
       openai: litellmChatProvider,
+      openrouter: createChatCompletionsProvider(createOpenRouterWithOptions()),
     });
   }
 
@@ -114,6 +116,7 @@ function createRegistry() {
     google: createGoogleWithOptions(),
     groq: createGroqWithOptions(),
     openai: createOpenAIWithOptions(),
+    openrouter: createChatCompletionsProvider(createOpenRouterWithOptions()),
   });
 }
 
