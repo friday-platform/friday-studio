@@ -53,6 +53,12 @@ const EnvWriteArgsSchema = z.object({
  * Apply a confirmed `env-write` elicitation. A chat turn can't block on the
  * user, so `env_set` only proposes — the actual write lands here.
  *
+ * `varsOverride` carries user-typed values from the confirmation card (e.g.
+ * the real value of a secret-looking key the agent proposed as `""`). It
+ * only overrides keys already present in the proposal — the override can't
+ * smuggle in a new key — and each value is validated by `AnswerBodySchema`
+ * before this is called, so we don't re-validate here.
+ *
  * Called *before* the elicitation is marked answered: the write must succeed
  * for "answered" to be honest. A failure returns `{ ok: false }` so the
  * caller can 500 and leave the elicitation `pending` for the user to retry
@@ -61,6 +67,7 @@ const EnvWriteArgsSchema = z.object({
 async function commitEnvWriteElicitation(
   c: Context<AppVariables>,
   elicitation: Elicitation,
+  varsOverride: Record<string, string> | undefined,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const parsed = EnvWriteArgsSchema.safeParse(elicitation.pendingTool?.args);
   if (!parsed.success) {
@@ -70,7 +77,22 @@ async function commitEnvWriteElicitation(
     });
     return { ok: false, error: `malformed env-write args: ${parsed.error.message}` };
   }
-  const { scope, vars } = parsed.data;
+  const { scope, vars: proposed } = parsed.data;
+  const vars: Record<string, string> = { ...proposed };
+  if (varsOverride) {
+    for (const [key, value] of Object.entries(varsOverride)) {
+      // Override can only set values for keys the agent already proposed —
+      // never inject a new key. Unknown override keys are ignored (logged).
+      if (key in vars) {
+        vars[key] = value;
+      } else {
+        logger.warn("env-write override referenced unknown key — ignored", {
+          id: elicitation.id,
+          key,
+        });
+      }
+    }
+  }
   const keys = Object.keys(vars);
 
   try {
@@ -237,6 +259,19 @@ const AnswerBodySchema = z.object({
   value: z.string(),
   note: z.string().optional(),
   answeredBy: z.string().optional(),
+  /**
+   * Only meaningful for `env-write` confirmations. Lets the confirmation card
+   * supply user-typed values (e.g. the real secret for a key the agent
+   * proposed as `""`) without those values ever passing through chat history.
+   * Keys must be POSIX identifiers; values must not contain newlines, matching
+   * the constraints `env_set` enforces on its own input.
+   */
+  varsOverride: z
+    .record(
+      z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/, "env var keys must be POSIX identifiers"),
+      z.string().regex(/^[^\r\n]*$/, "env var values must not contain newlines"),
+    )
+    .optional(),
 });
 
 elicitationApp.post(
@@ -297,7 +332,7 @@ elicitationApp.post(
       // is a no-op), and a stuck-`pending` elicitation is a far better failure
       // than a silently-lost write. There is no compensating rollback.
       if (got.data.kind === "env-write" && body.value === "confirm") {
-        const commit = await commitEnvWriteElicitation(c, got.data);
+        const commit = await commitEnvWriteElicitation(c, got.data, body.varsOverride);
         if (!commit.ok) {
           return c.json({ error: `env write failed: ${commit.error}` }, 500);
         }

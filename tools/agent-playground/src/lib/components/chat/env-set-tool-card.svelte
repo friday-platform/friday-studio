@@ -1,8 +1,7 @@
 <script lang="ts">
   import type { Elicitation } from "@atlas/core/elicitations/model";
-  import { Button, Icons } from "@atlas/ui";
+  import { Button, Icons, Tooltip } from "@atlas/ui";
   import { createQuery } from "@tanstack/svelte-query";
-  import { resolve } from "$app/paths";
   import { page } from "$app/state";
   import {
     elicitationQueries,
@@ -86,20 +85,40 @@
   // Reveal state for secret-looking values, keyed by env var name.
   let revealed = $state<Record<string, boolean>>({});
 
+  // User-typed values for secret-looking keys. The agent should propose `""`
+  // for secret keys (see env_set tool description); the user types the real
+  // value here and we send it as `varsOverride` so it never enters chat. If
+  // the agent did propose a value, we pre-fill it once so the user can edit.
+  let userValues = $state<Record<string, string>>({});
+  $effect(() => {
+    for (const [key, value] of entries) {
+      if (isSecretKey(key) && !(key in userValues)) {
+        userValues = { ...userValues, [key]: value };
+      }
+    }
+  });
+
+  /** Confirm is blocked while any secret-looking key is empty. */
+  const missingSecretValue = $derived(
+    entries.some(([k]) => isSecretKey(k) && !(userValues[k] ?? "").length),
+  );
+
   const answerMutation = useAnswerElicitation();
   const inFlight = $derived(answerMutation.isPending);
 
-  const activityHref = $derived.by(() => {
-    const base = routeWorkspaceId
-      ? resolve("/platform/[workspaceId]/activity", { workspaceId: routeWorkspaceId })
-      : resolve("/activity", {});
-    return matched?.id ? `${base}?elicitationId=${encodeURIComponent(matched.id)}` : base;
-  });
-
   function answer(value: "confirm" | "deny"): void {
     if (!matched || !isPending || inFlight) return;
+    if (value === "confirm" && missingSecretValue) return;
+    // For each secret-looking key, send the user-typed value as override —
+    // this is what keeps real secrets out of chat history. Non-secret keys
+    // commit with their proposed value (no override needed).
+    const varsOverride: Record<string, string> = {};
+    for (const [key, proposed] of entries) {
+      if (isSecretKey(key)) varsOverride[key] = userValues[key] ?? proposed;
+    }
+    const hasOverride = value === "confirm" && Object.keys(varsOverride).length > 0;
     answerMutation.mutate(
-      { id: matched.id, value },
+      hasOverride ? { id: matched.id, value, varsOverride } : { id: matched.id, value },
       {
         onSuccess: () => {
           // Tickle the chat only on confirm — deny shouldn't wake the agent.
@@ -128,8 +147,25 @@
 -->
 <div class="env-set-card" class:pending={isPending}>
   <div class="card-header">
-    <span class="eyebrow">Environment write</span>
-    <span class="status" class:status-pending={statusLabel === "pending"}>{statusLabel}</span>
+    <span class="eyebrow">
+      <span class="eyebrow-icon" aria-hidden="true"><Icons.BellAlert /></span>
+      Environment write
+    </span>
+    <Tooltip
+      as="span"
+      label={statusLabel === "expired"
+        ? "Confirmations expire after 30 minutes. Ask the agent to set this again."
+        : undefined}
+    >
+      <span
+        class="status"
+        class:status-pending={statusLabel === "pending"}
+        class:status-applied={statusLabel === "applied"}
+        class:status-denied={statusLabel === "denied"}
+      >
+        {statusLabel}
+      </span>
+    </Tooltip>
   </div>
 
   {#if isInProgress(call.state)}
@@ -153,8 +189,14 @@
             <input
               class="var-value"
               type={revealed[key] ? "text" : "password"}
-              value={value}
-              readonly
+              value={userValues[key] ?? value}
+              placeholder="Enter value"
+              autocomplete="off"
+              spellcheck="false"
+              disabled={!isPending || inFlight}
+              oninput={(e) => {
+                userValues = { ...userValues, [key]: e.currentTarget.value };
+              }}
             />
             <button
               type="button"
@@ -176,34 +218,32 @@
     {#if hasSecretLooking}
       <p class="hint secret-hint">
         Some keys look credential-bearing. The workspace <code>.env</code> is for
-        non-secret values — consider connecting an integration (Link) for real
-        credentials.
+        non-secret values.
       </p>
     {/if}
 
     {#if isPending}
       <div class="actions">
-        <Button onclick={() => answer("confirm")} disabled={!matched || inFlight}>
-          {answerMutation.isPending ? "Applying…" : "Confirm"}
-        </Button>
         <Button variant="destructive" onclick={() => answer("deny")} disabled={!matched || inFlight}>
           Deny
         </Button>
-        <Button href={activityHref} variant="none">Open Activity</Button>
+        <Tooltip
+          as="span"
+          label={missingSecretValue
+            ? "Enter a value for each secret-looking key to confirm."
+            : undefined}
+        >
+          <Button
+            onclick={() => answer("confirm")}
+            disabled={!matched || inFlight || missingSecretValue}
+          >
+            {answerMutation.isPending ? "Applying…" : "Confirm"}
+          </Button>
+        </Tooltip>
       </div>
-    {:else if status}
-      <p class="hint terminal">
-        {#if applied}
-          Applied — {entries.length} variable{entries.length === 1 ? "" : "s"} written.
-        {:else if status === "answered"}
-          Denied — nothing was written.
-        {:else if status === "declined"}
-          Declined — nothing was written.
-        {:else}
-          Expired — nothing was written.
-        {/if}
-      </p>
-    {:else}
+    {:else if status === "declined"}
+      <p class="hint terminal">Declined — nothing was written.</p>
+    {:else if !status}
       <p class="hint">Syncing with Activity…</p>
     {/if}
 
@@ -215,45 +255,98 @@
 
 <style>
   .env-set-card {
-    background-color: color-mix(in srgb, var(--blue-primary), transparent 92%);
-    border: 1px solid color-mix(in srgb, var(--blue-primary), transparent 60%);
+    background-color: var(--surface-dark);
+    border: 1px solid transparent;
     border-radius: var(--radius-3);
     display: flex;
     flex-direction: column;
     gap: var(--size-2);
+    margin-block-end: var(--size-4);
     padding: var(--size-3);
   }
 
+  /* Pending: a soft inset ring in --color-info — the codebase's
+     "this element is active/selected" convention (pipeline-diagram,
+     job-selector, model-chain). Half-transparent so the dot + pending
+     pill stay the loudest signals in the card. */
   .env-set-card.pending {
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--blue-primary), transparent 75%);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-info), transparent 50%);
   }
 
   .card-header {
     align-items: center;
     display: flex;
     gap: var(--size-2);
+    justify-content: space-between;
+    margin-block-end: var(--size-2);
   }
 
+  /* Monospace + uppercase reads as a system action label — fits the
+     "tool action" semantic (env-write, run-code, etc.) the brand uses
+     for terminal-style operations. */
   .eyebrow {
-    color: color-mix(in srgb, var(--text), transparent 35%);
-    font-size: var(--font-size-0, 11px);
-    font-weight: var(--font-weight-7);
+    align-items: center;
+    color: var(--text-faded);
+    display: inline-flex;
+    font-family: var(--font-family-monospace);
+    font-size: var(--font-size-1);
+    font-weight: var(--font-weight-5);
+    gap: var(--size-1-5);
     letter-spacing: 0.06em;
+    line-height: 1;
     text-transform: uppercase;
   }
 
+  /* Status icon — neutral by default, --color-info when pending. Carries
+     the "needs your attention" semantic; the BellAlert glyph reads at a
+     glance where a colored dot didn't. */
+  .eyebrow-icon {
+    align-items: center;
+    block-size: 14px;
+    color: var(--text-faded);
+    display: inline-flex;
+    flex-shrink: 0;
+    inline-size: 14px;
+  }
+
+  .eyebrow-icon :global(svg) {
+    block-size: 100%;
+    color: currentColor;
+    inline-size: 100%;
+  }
+
+  .env-set-card.pending .eyebrow-icon {
+    color: var(--color-info);
+  }
+
+  /* Status badge — matches the project's .badge convention in
+     MemoryEntryTable.svelte: small radius, sentence case, regular
+     weight, no letter-spacing. The uppercase + letter-spaced "small
+     caps" template is template chrome, not this codebase's voice. */
   .status {
-    background-color: color-mix(in srgb, var(--text), transparent 88%);
-    border-radius: var(--radius-round);
-    color: color-mix(in srgb, var(--text), transparent 30%);
-    font-size: var(--font-size-0, 11px);
-    font-weight: var(--font-weight-6);
-    padding: 1px var(--size-2);
+    background-color: color-mix(in srgb, var(--color-text), transparent 88%);
+    border-radius: var(--radius-1);
+    color: var(--text-faded);
+    display: inline-block;
+    font-size: var(--font-size-1);
+    font-weight: var(--font-weight-5);
+    padding: 1px var(--size-1-5);
+    text-transform: capitalize;
   }
 
   .status-pending {
-    background-color: color-mix(in srgb, var(--blue-primary), transparent 75%);
-    color: color-mix(in srgb, var(--blue-primary), black 35%);
+    background-color: color-mix(in srgb, var(--color-info), transparent 85%);
+    color: var(--color-info);
+  }
+
+  .status-applied {
+    background-color: color-mix(in srgb, var(--green-primary), transparent 85%);
+    color: var(--green-primary);
+  }
+
+  .status-denied {
+    background-color: color-mix(in srgb, var(--red-primary), transparent 85%);
+    color: var(--red-primary);
   }
 
   .scope-line {
@@ -273,6 +366,8 @@
     gap: var(--size-1-5);
   }
 
+  /* Recessed against --surface-bright card so the keys/values read as a
+     contained block, not floating chips. */
   .var-row {
     align-items: center;
     background-color: var(--surface);
@@ -289,17 +384,29 @@
     font-size: var(--font-size-1);
   }
 
+  /* Input — matches the project input pattern in signal-input-form.svelte:
+     --color-surface-2 fill, --color-border-1 border, focus darkens the
+     border to --color-text instead of the browser's blue ring. */
   .var-value {
-    background-color: var(--surface-dark);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-1);
-    color: var(--text);
+    background-color: var(--color-surface-2);
+    border: 1px solid var(--color-border-1);
+    border-radius: var(--radius-2);
+    color: var(--color-text);
     flex: 1;
-    font: inherit;
-    font-family: var(--font-family-mono, ui-monospace, monospace);
-    font-size: var(--font-size-1);
+    font-family: var(--font-family-monospace);
+    font-size: var(--font-size-2);
     min-inline-size: 0;
-    padding: var(--size-1) var(--size-1-5);
+    padding: var(--size-1-5) var(--size-2);
+    transition: border-color 150ms ease;
+  }
+
+  .var-value:focus {
+    border-color: color-mix(in oklch, var(--color-text), transparent 60%);
+    outline: none;
+  }
+
+  .var-value::placeholder {
+    color: color-mix(in oklch, var(--color-text), transparent 50%);
   }
 
   .var-value.plain {
@@ -331,6 +438,7 @@
     display: flex;
     flex-wrap: wrap;
     gap: var(--size-2);
+    justify-content: flex-end;
   }
 
   .hint,
@@ -340,15 +448,30 @@
   }
 
   .hint {
-    color: color-mix(in srgb, var(--text), transparent 45%);
+    color: var(--text-faded);
   }
 
   .hint code {
     font-size: var(--font-size-0, 11px);
   }
 
+  /* Advisory, not alarming. A small yellow marker carries the warning
+     semantics; the text itself stays muted so it doesn't fight the CTAs. */
   .secret-hint {
-    color: color-mix(in srgb, var(--yellow-primary), black 25%);
+    align-items: baseline;
+    color: var(--text-faded);
+    display: flex;
+    gap: var(--size-1-5);
+  }
+
+  .secret-hint::before {
+    background-color: var(--yellow-primary);
+    block-size: 6px;
+    border-radius: var(--radius-round);
+    content: "";
+    flex-shrink: 0;
+    inline-size: 6px;
+    transform: translateY(-1px);
   }
 
   .terminal {

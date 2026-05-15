@@ -414,6 +414,86 @@ describe("POST /:id/answer", () => {
       expect(mockElicitationStorage.answer).not.toHaveBeenCalled();
     });
 
+    test("varsOverride replaces the proposed value for matching keys", async () => {
+      // Agent proposed an empty placeholder for a secret-looking key; the
+      // confirmation card sends the user-typed real value via varsOverride.
+      // The real secret never appears in pendingTool.args (chat history),
+      // only in the answer payload and the on-disk .env write.
+      const pending = envWriteElicitation({
+        scope: "workspace",
+        vars: { BITBUCKET_WEBHOOK_SECRET: "", LOG_DIR: "/var/log" },
+      });
+      mockElicitationStorage.get.mockResolvedValueOnce(success(pending));
+      mockElicitationStorage.answer.mockResolvedValueOnce(
+        success(makeElicitation({ kind: "env-write", status: "answered" })),
+      );
+
+      const res = await createTestApp().request("/elc_1/answer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          value: "confirm",
+          varsOverride: { BITBUCKET_WEBHOOK_SECRET: "real-secret-from-card" },
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      expect(mockSetEnvFileVar).toHaveBeenCalledWith(
+        "/tmp/ws_1/.env",
+        "BITBUCKET_WEBHOOK_SECRET",
+        "real-secret-from-card",
+      );
+      // Non-overridden key keeps its proposed value.
+      expect(mockSetEnvFileVar).toHaveBeenCalledWith("/tmp/ws_1/.env", "LOG_DIR", "/var/log");
+    });
+
+    test("varsOverride cannot inject a key not in the proposal", async () => {
+      const pending = envWriteElicitation({
+        scope: "workspace",
+        vars: { LOG_DIR: "/var/log" },
+      });
+      mockElicitationStorage.get.mockResolvedValueOnce(success(pending));
+      mockElicitationStorage.answer.mockResolvedValueOnce(
+        success(makeElicitation({ kind: "env-write", status: "answered" })),
+      );
+
+      const res = await createTestApp().request("/elc_1/answer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          value: "confirm",
+          varsOverride: { SMUGGLED_KEY: "x" },
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      expect(mockSetEnvFileVar).toHaveBeenCalledWith("/tmp/ws_1/.env", "LOG_DIR", "/var/log");
+      expect(mockSetEnvFileVar).not.toHaveBeenCalledWith(
+        "/tmp/ws_1/.env",
+        "SMUGGLED_KEY",
+        expect.anything(),
+      );
+    });
+
+    test("rejects a varsOverride value containing a newline", async () => {
+      // Validator runs before the handler — no need to queue a `get` mock,
+      // and queuing one would leak into the next test (mockResolvedValueOnce
+      // queues survive `vi.clearAllMocks()`).
+      const res = await createTestApp().request("/elc_1/answer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          value: "confirm",
+          varsOverride: { API_KEY: "line1\nline2" },
+        }),
+      });
+
+      expect(res.status).toBe(400);
+      expect(mockElicitationStorage.get).not.toHaveBeenCalled();
+      expect(mockSetEnvFileVar).not.toHaveBeenCalled();
+      expect(mockElicitationStorage.answer).not.toHaveBeenCalled();
+    });
+
     test("deny does not commit any write", async () => {
       const pending = envWriteElicitation({ scope: "global", vars: { LOG_LEVEL: "info" } });
       mockElicitationStorage.get.mockResolvedValueOnce(success(pending));
