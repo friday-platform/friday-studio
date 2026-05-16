@@ -43,3 +43,7 @@
 - description: user wants to test the webhook — agent offers real test (curl through tunnel, Bitbucket Test connectivity, atlas signal trigger) without recommending sidecar/bypass/hallucinated event names
   vars:
     scenarioId: test-webhook-no-bypass
+
+- description: user wants to fire a signal without waiting — agent recommends ?nowait=true + 202/correlationId pattern (NOT raise timeout, NOT long poll, NOT sidecar)
+  vars:
+    scenarioId: recommends-nowait-pattern

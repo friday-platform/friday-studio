@@ -294,7 +294,27 @@ async function executeJobViaJSON(
     return { success: false, statusCode: failure.statusCode, error: failure.message };
   }
 
-  const { sessionId, status, output, artifactIds, summary } = result.data;
+  // The signal-trigger endpoint can return one of two shapes:
+  //   - { status: "completed", sessionId, output, artifactIds, summary }  (default sync)
+  //   - { status: "accepted",  correlationId, streamUrl }                 (?nowait=true)
+  // Job tools always use the sync path (they don't pass nowait), so we
+  // expect "completed" here. The "accepted" branch is a safety guard in
+  // case the route default is ever flipped — we surface it as an error
+  // rather than silently dropping the caller into "no sessionId".
+  const data = result.data;
+  if (data.status !== "completed") {
+    logger.error("Job tool received non-completed status (likely nowait response)", {
+      jobName,
+      workspaceId,
+      status: data.status,
+    });
+    return {
+      success: false,
+      status: data.status,
+      error: `Job '${jobName}' returned status: ${data.status}. Job tools require the synchronous trigger response (do not pass ?nowait=true).`,
+    };
+  }
+  const { sessionId, status, output, artifactIds, summary } = data;
 
   if (status === "completed") {
     logger.info("Job tool completed", {

@@ -99,6 +99,15 @@ const USER_QUESTION_LOOP_TRAP =
 const USER_QUESTION_DEBUG_NO_FIRE =
   "I configured a Bitbucket webhook to hit my Friday workspace but nothing's happening when I push commits. Where do I start debugging?";
 
+// Scenario 7: user is writing their own forwarder/script that publishes a
+// signal but doesn't want to hold its HTTP connection open while the
+// cascade runs. Agent should recommend ?nowait=true and the 202 + SSE
+// stream-by-correlationId pattern — that's exactly what the bus was
+// designed for. Agent must NOT recommend long polling, raising the
+// caller's HTTP timeout, or building a sidecar.
+const USER_QUESTION_NOWAIT =
+  "I'm writing a Python script that triggers a Friday signal. The signal kicks off a long job and my script doesn't need to wait for the result — it just needs to know the signal was accepted. What's the right way to do this without my script hanging on the HTTP call?";
+
 interface DriveResult {
   text: string;
   durationMs: number;
@@ -844,6 +853,107 @@ async function runTestWebhookNegativeCheck(): Promise<EvalResult> {
   return { id: "test-webhook-no-bypass", pass: false, notes, metrics };
 }
 
+// ───── Scenario 7: fire-and-forget signal trigger (?nowait=true) ─────────
+
+async function runNowaitRecommendation(): Promise<EvalResult> {
+  const notes: string[] = [];
+  const metrics: Record<string, unknown> = {};
+
+  console.log("  → drive (nowait-recommendation)");
+  const system = await buildSystem("with-skill");
+  const result = await drive(system, USER_QUESTION_NOWAIT);
+  metrics.durationMs = result.durationMs;
+  metrics.responseLen = result.text.length;
+  metrics.responseFull = result.text;
+
+  const checks: ContractCheck[] = [
+    // Positive — must surface the right knob
+    {
+      id: "recommends-nowait-query-param",
+      description: "Recommends ?nowait=true (or wait=false) as the fire-and-forget knob",
+      pass: /\?nowait=true\b|\?wait=false\b|\bnowait[:= ]true\b/i.test(result.text),
+      evidence: result.text.match(/\?nowait=true\b|\?wait=false\b|\bnowait[:= ]true\b/i)?.[0],
+    },
+    {
+      id: "explains-202-response-shape",
+      description:
+        "Explains that the response is 202 / 'accepted' with a correlationId — not 200 with output",
+      pass:
+        /\b202\b/.test(result.text) ||
+        /\baccepted\b[^.\n]{0,80}\b(?:correlationId|correlation id|stream url)/i.test(
+          result.text,
+        ) ||
+        /\bcorrelationId\b/i.test(result.text),
+      evidence: result.text
+        .match(/\b202\b|\baccepted\b[^.\n]{0,80}|\bcorrelationId\b/i)?.[0]
+        ?.slice(0, 120),
+    },
+    // Negative — must NOT recommend the wrong workarounds
+    {
+      id: "no-raise-timeout-recommendation",
+      description:
+        "Does NOT recommend raising the caller's HTTP timeout as the fix (that doesn't make it fire-and-forget; it just defers the problem)",
+      pass:
+        !/\b(?:raise|increase|bump|extend|lengthen|set)\b[^.\n]{0,40}\b(?:timeout|deadline)\b[^.\n]{0,40}\b(?:client|request|requests|http|connection)/i.test(
+          result.text,
+        ) &&
+        !/\b(?:client|request|http)\s+timeout\b[^.\n]{0,40}\b(?:longer|higher|increase|raise|bump)/i.test(
+          result.text,
+        ),
+      evidence: result.text
+        .match(
+          /\b(?:raise|increase|bump|extend|lengthen)\b[^.\n]{0,80}\b(?:timeout|deadline)\b[^.\n]{0,80}/i,
+        )?.[0]
+        ?.slice(0, 160),
+    },
+    {
+      id: "no-long-polling-recommendation",
+      description: "Does NOT recommend long-polling or repeatedly hitting the sync endpoint",
+      pass:
+        !/\blong[\s-]?poll(?:ing)?\b/i.test(result.text) &&
+        !/\b(?:retry|poll|repeat)\b[^.\n]{0,40}\b(?:request|the call|the trigger|POST)\b[^.\n]{0,40}\b(?:until|while)\b/i.test(
+          result.text,
+        ),
+      evidence: result.text
+        .match(/\blong[\s-]?poll(?:ing)?\b|(?:retry|poll|repeat)[^.\n]{0,80}(?:until|while)/i)?.[0]
+        ?.slice(0, 160),
+    },
+    {
+      id: "no-sidecar-recommendation",
+      description: "Does NOT recommend a Python/Node sidecar / threading / subprocess workaround",
+      pass:
+        !/(?:thread|subprocess|fork|background)\s+(?:the|your)\s+(?:request|call|trigger|HTTP|POST)/i.test(
+          result.text,
+        ) &&
+        !/(?:write|build|run|spin up|create)\s+(?:a |an |your own )?[^.\n]{0,40}(?:sidecar|forwarder|wrapper script)/i.test(
+          result.text,
+        ),
+      evidence: result.text
+        .match(
+          /(?:thread|subprocess|fork|background)[^.\n]{0,80}(?:request|call|trigger|HTTP|POST)|(?:sidecar|forwarder|wrapper script)/i,
+        )?.[0]
+        ?.slice(0, 160),
+    },
+  ];
+
+  metrics.checks = checks;
+  const failed = checks.filter((c) => !c.pass);
+
+  if (failed.length === 0) {
+    notes.push(`Positive: all ${checks.length} checks passed.`);
+    for (const c of checks)
+      notes.push(`  ✓ ${c.id}: ${c.description}${c.evidence ? ` [${c.evidence}]` : ""}`);
+    return { id: "recommends-nowait-pattern", pass: true, notes, metrics };
+  }
+  notes.push(`Negative: ${failed.length}/${checks.length} failed.`);
+  for (const c of checks)
+    notes.push(
+      `  ${c.pass ? "✓" : "✗"} ${c.id}: ${c.description}${c.evidence ? ` [${c.evidence}]` : ""}`,
+    );
+  notes.push(`Reply head: "${result.text.slice(0, 400)}"`);
+  return { id: "recommends-nowait-pattern", pass: false, notes, metrics };
+}
+
 // ────────────────────────────────────────────────────────────────────────
 // Entrypoint
 // ────────────────────────────────────────────────────────────────────────
@@ -871,6 +981,7 @@ async function main() {
     { id: "diagnoses-loop-trap", fn: () => runDiagnoseLoopTrap() },
     { id: "points-at-status-first", fn: () => runPointsAtStatusFirst() },
     { id: "test-webhook-no-bypass", fn: () => runTestWebhookNegativeCheck() },
+    { id: "recommends-nowait-pattern", fn: () => runNowaitRecommendation() },
   ];
 
   for (const { id, fn } of runners) {

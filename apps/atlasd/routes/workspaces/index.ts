@@ -2136,6 +2136,63 @@ const workspacesRoutes = daemonFactory
       }
 
       const correlationId = crypto.randomUUID();
+
+      // ?nowait=true (fire-and-forget): publish to SIGNALS stream and return 202
+      // immediately with a correlationId the caller can follow via
+      // GET /api/signals/stream/:correlationId. The cascade runs async on
+      // CASCADES regardless — we just choose not to hold the HTTP response
+      // open for it. Matches the architecture the bus was already built
+      // for (publish-ack, decoupled consumer) without the synchronous shim.
+      //
+      // bypassConcurrency above is the legacy sync path for interactive chat;
+      // nowait is the opposite — fire and return for callers like the
+      // webhook-tunnel that don't need cascade output to respond to upstream.
+      const nowait =
+        c.req.query("nowait") === "true" ||
+        c.req.query("nowait") === "1" ||
+        c.req.query("wait") === "false" ||
+        c.req.query("wait") === "0";
+      if (nowait) {
+        try {
+          await ctx.daemon.publishSignalToJetStream({
+            workspaceId,
+            signalId,
+            payload,
+            streamId,
+            sourceSessionId: parentSessionId,
+            correlationId,
+          });
+          return c.json(
+            {
+              message: "Signal accepted",
+              status: "accepted" as const,
+              workspaceId,
+              signalId,
+              correlationId,
+              streamUrl: `/api/workspaces/${workspaceId}/signals/stream/${correlationId}`,
+            },
+            202,
+          );
+        } catch (error) {
+          const errorMessage = stringifyError(error);
+          logger.error("Failed to publish signal (nowait)", {
+            error,
+            workspaceId,
+            signalId,
+            correlationId,
+          });
+          return c.json(
+            {
+              error: `Failed to publish signal to JetStream: ${errorMessage}`,
+              workspaceId,
+              signalId,
+            },
+            500,
+          );
+        }
+      }
+
+      // Default (synchronous) path follows.
       const nc = ctx.daemon.getNatsConnection();
 
       // Same client-disconnect-cancels-spawned-session protection as the SSE
@@ -2330,6 +2387,140 @@ const workspacesRoutes = daemonFactory
       }
     },
   )
+  // SSE follow for a signal that was published with ?nowait=true.
+  //
+  // The trigger endpoint above (with ?nowait=true) returns 202 with a
+  // correlationId. Callers that want to watch cascade progress hit this
+  // endpoint with the correlationId and get the same SSE stream the
+  // synchronous-SSE trigger would have produced — without holding the
+  // publish HTTP request open.
+  //
+  // Bus side this is just `nc.subscribe('signals.stream.<id>')` +
+  // `awaitSignalCompletion(<id>)` — identical to what the synchronous
+  // SSE trigger does internally after publishing.
+  .get("/:workspaceId/signals/stream/:correlationId", async (c) => {
+    const workspaceId = c.req.param("workspaceId");
+    const correlationId = c.req.param("correlationId");
+    await requireWorkspaceMember(c, workspaceId);
+    const ctx = c.get("app");
+    const nc = ctx.daemon.getNatsConnection();
+
+    const encoder = new TextEncoder();
+    const clientAbort = c.req.raw.signal;
+    const signalStreamAbort = new AbortController();
+
+    const streamSub = nc.subscribe(`signals.stream.${correlationId}`);
+    const responsePromise = awaitSignalCompletion(
+      nc,
+      correlationId,
+      600_000,
+      signalStreamAbort.signal,
+    );
+    void responsePromise.catch(() => undefined);
+
+    let subscriptionsClosed = false;
+    const closeSubs = () => {
+      if (subscriptionsClosed) return;
+      subscriptionsClosed = true;
+      signalStreamAbort.abort();
+      streamSub.unsubscribe();
+    };
+
+    const onAbort = () => {
+      closeSubs();
+    };
+    if (clientAbort.aborted) {
+      onAbort();
+    } else {
+      clientAbort.addEventListener("abort", onAbort, { once: true });
+    }
+
+    const sseStream = new ReadableStream({
+      async start(controller) {
+        const safeEnqueue = (bytes: Uint8Array) => {
+          try {
+            controller.enqueue(bytes);
+            return true;
+          } catch {
+            return false;
+          }
+        };
+
+        const forwardChunks = (async () => {
+          for await (const msg of streamSub) {
+            if (signalStreamAbort.signal.aborted) break;
+            const ok = safeEnqueue(
+              encoder.encode(`data: ${new TextDecoder().decode(msg.data)}\n\n`),
+            );
+            if (!ok) break;
+          }
+        })();
+        forwardChunks.catch(() => undefined);
+
+        try {
+          const response = await responsePromise;
+          if (response.ok) {
+            const r = response.result as {
+              sessionId?: string;
+              output?: unknown;
+              artifactIds?: string[];
+              summary?: string;
+            };
+            safeEnqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({
+                  type: "job-complete",
+                  data: {
+                    success: true,
+                    sessionId: r.sessionId,
+                    status: "completed",
+                    output: r.output,
+                    artifactIds: r.artifactIds ?? [],
+                    summary: r.summary ?? "",
+                  },
+                })}\n\n`,
+              ),
+            );
+          } else {
+            safeEnqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({
+                  type: "job-error",
+                  data: { error: response.error },
+                })}\n\n`,
+              ),
+            );
+          }
+        } catch (error) {
+          safeEnqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({
+                type: "job-error",
+                data: { error: stringifyError(error) },
+              })}\n\n`,
+            ),
+          );
+        } finally {
+          safeEnqueue(encoder.encode("data: [DONE]\n\n"));
+          closeSubs();
+          clientAbort.removeEventListener("abort", onAbort);
+          try {
+            controller.close();
+          } catch {
+            /* already closed */
+          }
+        }
+      },
+    });
+
+    return new Response(sseStream, {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      },
+    });
+  })
   // List jobs in a workspace
   .get("/:workspaceId/jobs", async (c) => {
     const workspaceId = c.req.param("workspaceId");

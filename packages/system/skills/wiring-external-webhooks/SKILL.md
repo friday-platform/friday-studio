@@ -33,6 +33,32 @@ anything else go through `raw`. The raw provider:
 **Do NOT** point the external service at `/api/workspaces/.../signals/...` —
 that's atlasd's internal direct path, not reachable through the tunnel.
 
+## Fire-and-forget by default — `?nowait=true`
+
+The webhook-tunnel posts to atlasd with `?nowait=true` so atlasd
+publishes to JetStream and returns 202 immediately. The cascade runs
+async on the CASCADES consumer; the tunnel doesn't hold the HTTP
+connection open waiting for it.
+
+This is the right shape for ANY caller that publishes a signal but
+doesn't need the cascade's `output` to compose its own response —
+webhooks, cron, fire-and-forget RPC. Avoids the failure mode where the
+upstream (Bitbucket's 30s deadline, etc.) times out before a long
+cascade finishes, even though the cascade itself runs to completion in
+the background.
+
+If you ARE building a custom forwarder or RPC client that needs to
+follow the cascade, two options:
+
+- Add `Accept: text/event-stream` to the POST — same publish, streams
+  cascade events on the same response.
+- Or use `?nowait=true` and then `GET
+  /api/workspaces/<wsId>/signals/stream/<correlationId>` (SSE) with the
+  correlationId returned from the 202.
+
+See `friday-cli` skill section 3 for the full three-mode breakdown
+(nowait / sync JSON / SSE).
+
 ## Env var that controls the secret
 
 The webhook-tunnel reads exactly **one** env var for HMAC secrets:

@@ -84,25 +84,41 @@ func buildTransport(caCertPath string) (http.RoundTripper, error) {
 }
 
 // SignalResponse is the parsed atlasd signal response. We only care
-// about sessionId — everything else is opaque.
+// about sessionId / correlationId — everything else is opaque.
+// (correlationId is returned by the ?nowait=true path; sessionId by
+// the default sync path.)
 type SignalResponse struct {
-	SessionID string `json:"sessionId,omitempty"`
+	SessionID     string `json:"sessionId,omitempty"`
+	CorrelationID string `json:"correlationId,omitempty"`
+	Status        string `json:"status,omitempty"`
 }
 
-// Forward POSTs the payload to atlasd's signal endpoint:
+// Forward POSTs the payload to atlasd's signal endpoint with
+// `?nowait=true` so atlasd returns 202 the moment the message lands on
+// the SIGNALS JetStream subject — the cascade runs async on the
+// CASCADES consumer regardless. We never need the cascade's output to
+// respond to the upstream webhook (Bitbucket / GitHub / etc), so
+// holding the HTTP connection open while the cascade runs would just
+// re-couple two systems the bus already decoupled.
 //
-//	POST {atlasdURL}/api/workspaces/{workspaceID}/signals/{signalID}
+//	POST {atlasdURL}/api/workspaces/{workspaceID}/signals/{signalID}?nowait=true
 //	body: {"payload": <payload>}
 //
-// Returns sessionId from atlasd's response (empty if missing) and any
-// error (non-2xx status, network failure, JSON parse error).
+// Returns sessionId (when atlasd is in sync mode) or correlationId
+// (the nowait shape) — empty when atlasd returned neither.
+//
+// The 30-second client timeout covers PUBLISH ACK only. Atlasd's
+// publishSignalToJetStream typically completes in <100ms; if it
+// stretches past 30s, the JetStream broker or NATS connection is
+// genuinely sick and a clearer error than `context deadline exceeded`
+// is what callers want.
 func (f *Forwarder) Forward(workspaceID, signalID string, payload map[string]any) (string, error) {
 	body := map[string]any{"payload": payload}
 	encoded, err := json.Marshal(body)
 	if err != nil {
 		return "", fmt.Errorf("marshal: %w", err)
 	}
-	endpoint := fmt.Sprintf("%s/api/workspaces/%s/signals/%s",
+	endpoint := fmt.Sprintf("%s/api/workspaces/%s/signals/%s?nowait=true",
 		f.atlasdURL, workspaceID, signalID)
 	req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(encoded))
 	if err != nil {
@@ -111,7 +127,22 @@ func (f *Forwarder) Forward(workspaceID, signalID string, payload map[string]any
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := f.client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("post atlasd: %w", err)
+		// Surface what specifically failed — the bare `context deadline
+		// exceeded` Go default tells the operator nothing about which
+		// hop in the chain timed out. We expect this hop (tunnel →
+		// atlasd JetStream publish) to take <100ms; a 30s timeout here
+		// means atlasd or its broker is stuck before even accepting
+		// the message.
+		var ue *url.Error
+		if errors.As(err, &ue) && ue.Timeout() {
+			return "", fmt.Errorf(
+				"timeout waiting for atlasd to ACK the signal publish (30s) — "+
+					"the bus normally returns in <100ms. Check atlasd /health, the NATS "+
+					"connection, and JetStream stream health. Endpoint: %s",
+				endpoint,
+			)
+		}
+		return "", fmt.Errorf("post atlasd: %w (endpoint: %s)", err, endpoint)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
@@ -120,8 +151,11 @@ func (f *Forwarder) Forward(workspaceID, signalID string, payload map[string]any
 	}
 	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	var sr SignalResponse
-	_ = json.Unmarshal(respBody, &sr) // session ID is optional
-	return sr.SessionID, nil
+	_ = json.Unmarshal(respBody, &sr) // both id fields are optional
+	if sr.SessionID != "" {
+		return sr.SessionID, nil
+	}
+	return sr.CorrelationID, nil
 }
 
 // ProxyHandler returns an http.Handler that reverse-proxies any

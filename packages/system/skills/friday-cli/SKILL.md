@@ -129,21 +129,68 @@ curl -k -sf \
 The signal's `schema` is a JSON Schema — your payload must match it or the
 trigger returns 400.
 
-### 3. Fire a signal and stream the session
+### 3. Fire a signal — three modes
+
+The HTTP signal-trigger endpoint has three response modes. Pick the one that
+matches what the caller actually needs:
+
+**(a) Fire-and-forget — `?nowait=true`** (RECOMMENDED for any caller that
+doesn't need cascade output to compose its response):
 
 ```bash
-deno task atlas signal trigger -n <signal-name> -w <workspace> \
-  --data '{"some":"payload"}' --stream
+curl -k -sf -X POST \
+  "$FRIDAYD_URL/api/workspaces/<id>/signals/<signal-id>?nowait=true" \
+  -H 'Content-Type: application/json' \
+  -d '{"payload":{"some":"value"}}'
+# → 202 {"status":"accepted","correlationId":"...","streamUrl":"/api/workspaces/<id>/signals/stream/<correlationId>"}
 ```
 
-Or via HTTP with SSE:
+Atlasd publishes to the SIGNALS JetStream subject and returns immediately
+(<100ms). The cascade runs async on the CASCADES consumer. Use this for
+webhooks, cron, fire-and-forget RPC, anything where the HTTP caller is just
+the publisher. The webhook-tunnel uses this internally.
+
+**(b) Synchronous JSON** (legacy default — caller waits for cascade
+completion, up to 10 minutes):
 
 ```bash
+curl -k -sf -X POST \
+  "$FRIDAYD_URL/api/workspaces/<id>/signals/<signal-id>" \
+  -H 'Content-Type: application/json' \
+  -d '{"payload":{"some":"value"}}'
+# → 200 {"status":"completed","sessionId":"...","output":[...],"summary":"..."}
+```
+
+Use this only when the calling code needs `output` / `summary` to build its
+own response. The CLI's `signal trigger` defaults to this mode. Holds an
+HTTP connection open for the full cascade duration — be aware of timeouts on
+your side (e.g. webhook upstreams typically cap at 30s).
+
+**(c) Streaming SSE** — same publish, but stream cascade events as they happen:
+
+```bash
+# trigger + stream in one request
 curl -k -N -X POST \
   "$FRIDAYD_URL/api/workspaces/<id>/signals/<signal-id>" \
   -H 'Content-Type: application/json' \
   -H 'Accept: text/event-stream' \
   -d '{"payload":{"some":"value"}}'
+
+# OR: publish nowait, then follow by correlationId
+curl -k -N \
+  "$FRIDAYD_URL/api/workspaces/<id>/signals/stream/<correlationId>" \
+  -H 'Accept: text/event-stream'
+```
+
+The second form is useful when the publisher and the watcher are different
+processes — publish with `?nowait=true`, hand the correlationId to whatever
+needs to watch.
+
+The CLI wrapper:
+
+```bash
+deno task atlas signal trigger -n <signal-name> -w <workspace> \
+  --data '{"some":"payload"}' --stream
 ```
 
 The payload MUST be wrapped in `{"payload": {...}}` for HTTP. The CLI unwraps

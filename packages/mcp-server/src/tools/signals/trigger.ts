@@ -149,6 +149,23 @@ export function registerSignalTriggerTool(server: McpServer, ctx: ToolContext) {
 
         const response = result.data;
 
+        // The route can return a 202 "accepted" envelope (?nowait=true)
+        // or the default "completed" envelope. This MCP tool only triggers
+        // synchronously, so we expect "completed" — but narrow defensively
+        // so a future default flip doesn't crash here.
+        if (response.status !== "completed") {
+          ctx.logger.warn("Signal trigger returned non-completed status", {
+            workspaceId,
+            signalId,
+            status: response.status,
+          });
+          return createSuccessResponse({
+            workspaceId,
+            signalId,
+            status: response.status,
+            message: `Signal '${signalId}' accepted on workspace '${workspaceId}' (async).`,
+          });
+        }
         ctx.logger.info("Signal triggered successfully", {
           workspaceId,
           signalId,
