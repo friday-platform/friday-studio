@@ -112,6 +112,7 @@ import {
 import { createMemorySaveTool } from "./tools/memory-save.ts";
 import { createPublishSkillTool } from "./tools/publish-skill.ts";
 import { createRequestToolAccessTool } from "./tools/request-tool-access.ts";
+import { createRequestWorkspaceSetupTool } from "./tools/request-workspace-setup.ts";
 import { createSearchMcpServersTool } from "./tools/search-mcp-servers.ts";
 import { createDescribeSessionTool, createListSessionsTool } from "./tools/session-tools.ts";
 import { createSetUserIdentityTool } from "./tools/set-user-identity.ts";
@@ -1069,6 +1070,7 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
             daemonUrl: getAtlasDaemonUrl(),
             logger,
           }),
+          ...createRequestWorkspaceSetupTool({ workspaceId, sessionId: adHocSessionId, logger }),
           ...webFetchTool,
           ...webSearchTool,
           ...runCodeTool,

@@ -7,8 +7,13 @@
   import { page } from "$app/state";
   import { browser } from "$app/environment";
   import { workspaceQueries } from "$lib/queries";
-  import { mergeElicitationIntoCache } from "$lib/queries/elicitation-queries.ts";
+  import {
+    elicitationQueries,
+    mergeElicitationIntoCache,
+  } from "$lib/queries/elicitation-queries.ts";
   import { subscribeToWorkspaceElicitations } from "$lib/shared-worker/client.ts";
+  import type { Elicitation } from "@atlas/core/elicitations/model";
+  import WorkspaceSetupCard from "./workspace-setup-card.svelte";
   import { DefaultChatTransport } from "ai";
   import ChatInput from "./chat-input.svelte";
   import {
@@ -228,6 +233,23 @@
       unrecoverableStream = true;
     },
   });
+
+  /**
+   * Pending `workspace-setup` elicitation for the current session, if any.
+   * The pre-seeded import-time elicitation has no associated tool call so it
+   * can't ride the `tool-call-card.svelte` dispatch path the other inline
+   * cards use — we read directly from the elicitation list cache here. The
+   * `subscribeToWorkspaceElicitations` effect below keeps that cache live.
+   */
+  const setupElicitationQuery = createQuery(() => elicitationQueries.list(wsId));
+  const pendingSetupElicitation = $derived<Elicitation | null>(
+    (setupElicitationQuery.data ?? []).find(
+      (e) =>
+        e.kind === "workspace-setup" &&
+        e.status === "pending" &&
+        e.sessionId === chatId,
+    ) ?? null,
+  );
 
   /**
    * Keep the inline HITL cards in sync with Activity.  The card itself
@@ -1471,6 +1493,12 @@
         {unsettledMessageId}
       />
 
+      {#if pendingSetupElicitation}
+        <div class="setup-card-slot">
+          <WorkspaceSetupCard elicitation={pendingSetupElicitation} workspaceId={wsId} />
+        </div>
+      {/if}
+
       {#if wasInterrupted}
         <div class="interrupted-banner" role="status">
           Response was interrupted.
@@ -1578,6 +1606,12 @@
     font-size: var(--font-size-2);
     margin-inline: var(--size-4);
     padding: var(--size-2) var(--size-3);
+  }
+
+  .setup-card-slot {
+    flex: 0 0 auto;
+    padding-block-end: var(--size-3);
+    padding-inline: var(--size-4);
   }
 
   .chat-header {

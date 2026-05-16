@@ -109,7 +109,7 @@ import {
   createWorkspaceFromConfigSchema,
   updateWorkspaceConfigSchema,
 } from "./schemas.ts";
-import { spawnBootstrapSessionIfNeeded } from "./setup-spawn.ts";
+import { recoverBootstrapSessionIfDeleted, spawnBootstrapSessionIfNeeded } from "./setup-spawn.ts";
 
 /**
  * Daemon-backed validation context for `validateWorkspaceConfig`.
@@ -462,7 +462,29 @@ const workspacesRoutes = daemonFactory
       const setupResults = await Promise.all(
         workspaces.map((w) => deriveSetupRequirements(c, manager, w.id, w.path)),
       );
-      const response = workspaces
+      const recovered = await Promise.all(
+        workspaces.map((w, i) => {
+          const setup = setupResults[i];
+          if (!setup?.requires_setup) return Promise.resolve(w);
+          return recoverBootstrapSessionIfDeleted({
+            manager,
+            workspace: w,
+            setupRequirements: setup.setup_requirements,
+            userId,
+          }).then((result) =>
+            result.recovered
+              ? {
+                  ...w,
+                  metadata: {
+                    ...(w.metadata ?? {}),
+                    active_setup_session_id: result.bootstrap_session_id,
+                  },
+                }
+              : w,
+          );
+        }),
+      );
+      const response = recovered
         .map((w, i) => {
           const setup = setupResults[i] ?? { requires_setup: false, setup_requirements: [] };
           return {
@@ -1147,6 +1169,8 @@ const workspacesRoutes = daemonFactory
     try {
       const ctx = c.get("app");
       const manager = ctx.getWorkspaceManager();
+      const userId = c.get("userId");
+      if (!userId) return c.json({ error: "Unauthorized" }, 401);
       const workspace =
         (await manager.find({ id: workspaceId })) || (await manager.find({ name: workspaceId }));
       if (!workspace) {
@@ -1157,11 +1181,30 @@ const workspacesRoutes = daemonFactory
       const config = await manager.getWorkspaceConfig(workspace.id);
       const setup = await deriveSetupRequirements(c, manager, workspace.id, workspace.path);
 
+      let effectiveWorkspace = workspace;
+      if (setup.requires_setup) {
+        const recovery = await recoverBootstrapSessionIfDeleted({
+          manager,
+          workspace,
+          setupRequirements: setup.setup_requirements,
+          userId,
+        });
+        if (recovery.recovered) {
+          effectiveWorkspace = {
+            ...workspace,
+            metadata: {
+              ...(workspace.metadata ?? {}),
+              active_setup_session_id: recovery.bootstrap_session_id,
+            },
+          };
+        }
+      }
+
       return c.json(
         {
-          ...workspace,
-          description: workspace.metadata?.description,
-          type: workspace.metadata?.ephemeral ? "ephemeral" : "persistent",
+          ...effectiveWorkspace,
+          description: effectiveWorkspace.metadata?.description,
+          type: effectiveWorkspace.metadata?.ephemeral ? "ephemeral" : "persistent",
           config: config?.workspace || null,
           requires_setup: setup.requires_setup,
           setup_requirements: setup.setup_requirements,

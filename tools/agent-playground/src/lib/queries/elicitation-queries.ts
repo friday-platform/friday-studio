@@ -17,7 +17,11 @@
 // which transitively pulls `@atlas/logger` → `node:path` into client bundles
 // and 500s the playground at `paths.ts`. The model module only depends on zod,
 // so it bundles cleanly for browser code.
-import { ElicitationSchema, type Elicitation } from "@atlas/core/elicitations/model";
+import {
+  ElicitationSchema,
+  type Elicitation,
+  type WorkspaceSetupAnswerValue,
+} from "@atlas/core/elicitations/model";
 import {
   createMutation,
   queryOptions,
@@ -106,7 +110,7 @@ export function useAnswerElicitation() {
   return createMutation(() => ({
     mutationFn: async (input: {
       id: string;
-      value: string;
+      value: string | WorkspaceSetupAnswerValue;
       note?: string;
       answeredBy?: string;
     }): Promise<Elicitation> => {

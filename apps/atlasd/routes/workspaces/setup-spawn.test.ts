@@ -20,7 +20,7 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 
 const { mockChatStorage, mockElicitationStorage, mockAssembleLinkState, mockLoadEnv } = vi.hoisted(
   () => ({
-    mockChatStorage: { createChat: vi.fn() },
+    mockChatStorage: { createChat: vi.fn(), getChat: vi.fn() },
     mockElicitationStorage: { create: vi.fn() },
     mockAssembleLinkState: vi.fn(),
     mockLoadEnv: vi.fn(),
@@ -37,7 +37,7 @@ vi.mock("@atlas/workspace", async (importOriginal) => {
   return { ...original, loadWorkspaceEnv: mockLoadEnv };
 });
 
-import { spawnBootstrapSessionIfNeeded } from "./setup-spawn.ts";
+import { recoverBootstrapSessionIfDeleted, spawnBootstrapSessionIfNeeded } from "./setup-spawn.ts";
 
 function makeWorkspaceEntry(overrides: Partial<WorkspaceEntry> = {}): WorkspaceEntry {
   return {
@@ -283,5 +283,130 @@ describe("spawnBootstrapSessionIfNeeded", () => {
       description: "an existing workspace",
     });
     expect(writtenMetadata?.active_setup_session_id).toMatch(/^[0-9a-f-]{36}$/);
+  });
+});
+
+describe("recoverBootstrapSessionIfDeleted", () => {
+  const setupRequirements = [
+    {
+      kind: "variable" as const,
+      name: "region",
+      description: "AWS region",
+      schema: { type: "string" as const },
+    },
+  ];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockChatStorage.createChat.mockResolvedValue({ ok: true, data: {} });
+    mockElicitationStorage.create.mockResolvedValue({ ok: true, data: {} });
+  });
+
+  test("session deleted → re-creates chat, re-seeds elicitation, updates pointer atomically", async () => {
+    const previousSessionId = "11111111-1111-1111-1111-111111111111";
+    const entry = makeWorkspaceEntry({
+      metadata: { createdBy: "user-1", active_setup_session_id: previousSessionId },
+    });
+    const { manager, updateWorkspaceStatus } = makeManager(entry);
+    mockChatStorage.getChat.mockResolvedValueOnce({ ok: true, data: null });
+
+    const result = await recoverBootstrapSessionIfDeleted({
+      manager,
+      workspace: entry,
+      setupRequirements,
+      userId: "user-1",
+    });
+
+    expect(result.recovered).toBe(true);
+    expect(result.bootstrap_session_id).toMatch(/^[0-9a-f-]{36}$/);
+    expect(result.bootstrap_session_id).not.toBe(previousSessionId);
+
+    expect(mockChatStorage.getChat).toHaveBeenCalledWith(previousSessionId, entry.id);
+    expect(mockChatStorage.createChat).toHaveBeenCalledTimes(1);
+    expect(mockChatStorage.createChat).toHaveBeenCalledWith({
+      chatId: result.bootstrap_session_id,
+      userId: "user-1",
+      workspaceId: entry.id,
+      source: "atlas",
+    });
+    expect(mockElicitationStorage.create).toHaveBeenCalledTimes(1);
+    expect(mockElicitationStorage.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId: entry.id,
+        sessionId: result.bootstrap_session_id,
+        kind: "workspace-setup",
+        setupRequirements,
+      }),
+    );
+
+    // Pointer write happens after both creates succeed and preserves other metadata.
+    expect(updateWorkspaceStatus).toHaveBeenCalledTimes(1);
+    expect(updateWorkspaceStatus).toHaveBeenCalledWith(entry.id, entry.status, {
+      metadata: { createdBy: "user-1", active_setup_session_id: result.bootstrap_session_id },
+    });
+    const createOrder = mockChatStorage.createChat.mock.invocationCallOrder[0] ?? 0;
+    const elicitationOrder = mockElicitationStorage.create.mock.invocationCallOrder[0] ?? 0;
+    const updateOrder = updateWorkspaceStatus.mock.invocationCallOrder[0] ?? 0;
+    expect(updateOrder).toBeGreaterThan(createOrder);
+    expect(updateOrder).toBeGreaterThan(elicitationOrder);
+  });
+
+  test("pointer still valid → no re-spawn, no metadata write", async () => {
+    const sessionId = "22222222-2222-2222-2222-222222222222";
+    const entry = makeWorkspaceEntry({ metadata: { active_setup_session_id: sessionId } });
+    const { manager, updateWorkspaceStatus } = makeManager(entry);
+    mockChatStorage.getChat.mockResolvedValueOnce({
+      ok: true,
+      data: { id: sessionId, workspaceId: entry.id },
+    });
+
+    const result = await recoverBootstrapSessionIfDeleted({
+      manager,
+      workspace: entry,
+      setupRequirements,
+      userId: "user-1",
+    });
+
+    expect(result).toEqual({ recovered: false, bootstrap_session_id: sessionId });
+    expect(mockChatStorage.createChat).not.toHaveBeenCalled();
+    expect(mockElicitationStorage.create).not.toHaveBeenCalled();
+    expect(updateWorkspaceStatus).not.toHaveBeenCalled();
+  });
+
+  test("no pointer set (re-setup case) → no-op", async () => {
+    const entry = makeWorkspaceEntry({ metadata: { createdBy: "user-1" } });
+    const { manager, updateWorkspaceStatus } = makeManager(entry);
+
+    const result = await recoverBootstrapSessionIfDeleted({
+      manager,
+      workspace: entry,
+      setupRequirements,
+      userId: "user-1",
+    });
+
+    expect(result).toEqual({ recovered: false, bootstrap_session_id: null });
+    expect(mockChatStorage.getChat).not.toHaveBeenCalled();
+    expect(mockChatStorage.createChat).not.toHaveBeenCalled();
+    expect(mockElicitationStorage.create).not.toHaveBeenCalled();
+    expect(updateWorkspaceStatus).not.toHaveBeenCalled();
+  });
+
+  test("elicitation re-seed failure → pointer left stale for next-read retry", async () => {
+    const previousSessionId = "33333333-3333-3333-3333-333333333333";
+    const entry = makeWorkspaceEntry({ metadata: { active_setup_session_id: previousSessionId } });
+    const { manager, updateWorkspaceStatus } = makeManager(entry);
+    mockChatStorage.getChat.mockResolvedValueOnce({ ok: true, data: null });
+    mockElicitationStorage.create.mockResolvedValueOnce({ ok: false, error: "kv down" });
+
+    await expect(
+      recoverBootstrapSessionIfDeleted({
+        manager,
+        workspace: entry,
+        setupRequirements,
+        userId: "user-1",
+      }),
+    ).rejects.toThrow(/Failed to re-seed bootstrap elicitation: kv down/);
+
+    expect(updateWorkspaceStatus).not.toHaveBeenCalled();
   });
 });

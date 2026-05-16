@@ -30,6 +30,7 @@ import {
   loadWorkspaceEnv,
   resolveWorkspaceSetupRequirements,
   type SetupRequirement,
+  type WorkspaceEntry,
   type WorkspaceManager,
   type WorkspaceMetadata,
 } from "@atlas/workspace";
@@ -139,4 +140,82 @@ export async function spawnBootstrapSessionIfNeeded(
     bootstrap_session_id: bootstrapSessionId,
     setup_requirements: derived.setup_requirements,
   };
+}
+
+export interface RecoverBootstrapArgs {
+  manager: WorkspaceManager;
+  workspace: WorkspaceEntry;
+  setupRequirements: SetupRequirement[];
+  userId: string;
+}
+
+export interface RecoverBootstrapResult {
+  recovered: boolean;
+  bootstrap_session_id: string | null;
+}
+
+/**
+ * Re-spawn the bootstrap chat session if the pointer on
+ * `WorkspaceMetadata.active_setup_session_id` references a chat the user has
+ * since deleted (Decision 1, deletion-recovery paragraph).
+ *
+ * Called by workspace GET endpoints after they have already derived
+ * `requires_setup === true`. Skips work when the pointer is null (re-setup,
+ * not initial — agent-driven) or when the chat still exists. The pointer
+ * write is the final step so a failed re-spawn leaves the stale pointer in
+ * place for the next read to retry, rather than half-committing a fresh id
+ * with no session behind it.
+ */
+export async function recoverBootstrapSessionIfDeleted(
+  args: RecoverBootstrapArgs,
+): Promise<RecoverBootstrapResult> {
+  const { manager, workspace, setupRequirements, userId } = args;
+  const pointer = workspace.metadata?.active_setup_session_id;
+  if (!pointer) {
+    return { recovered: false, bootstrap_session_id: null };
+  }
+
+  const existing = await ChatStorage.getChat(pointer, workspace.id);
+  if (existing.ok && existing.data) {
+    return { recovered: false, bootstrap_session_id: pointer };
+  }
+
+  const newSessionId = crypto.randomUUID();
+
+  const chatResult = await ChatStorage.createChat({
+    chatId: newSessionId,
+    userId,
+    workspaceId: workspace.id,
+    source: "atlas",
+  });
+  if (!chatResult.ok) {
+    throw new Error(`Failed to recreate bootstrap chat session: ${chatResult.error}`);
+  }
+
+  const now = new Date();
+  const elicitationResult = await ElicitationStorage.create({
+    workspaceId: workspace.id,
+    sessionId: newSessionId,
+    kind: "workspace-setup",
+    question: "Finish setting up this workspace",
+    setupRequirements,
+    expiresAt: new Date(now.getTime() + FAR_FUTURE_EXPIRES_AT_MS).toISOString(),
+  });
+  if (!elicitationResult.ok) {
+    throw new Error(`Failed to re-seed bootstrap elicitation: ${elicitationResult.error}`);
+  }
+
+  const newMetadata: WorkspaceMetadata = {
+    ...(workspace.metadata ?? {}),
+    active_setup_session_id: newSessionId,
+  };
+  await manager.updateWorkspaceStatus(workspace.id, workspace.status, { metadata: newMetadata });
+
+  spawnLogger.info("Recovered deleted bootstrap setup session", {
+    workspaceId: workspace.id,
+    previousSessionId: pointer,
+    newSessionId,
+  });
+
+  return { recovered: true, bootstrap_session_id: newSessionId };
 }
