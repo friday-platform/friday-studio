@@ -11,14 +11,27 @@ something fire it you register the URL with the upstream system
 point — it forwards the request body to atlasd's signal endpoint, then
 your workspace agent parses it.
 
-## URL pattern — always `/hook/raw/`
+## URL pattern — always `/hook/raw/` on the PUBLIC tunnel host
 
 ```
 https://<public-tunnel-url>/hook/raw/<workspaceId>/<signalId>
 ```
 
+- `<public-tunnel-url>` is the cloudflared trycloudflare URL — fetch it
+  live from `/status` (see next section). It rotates on tunnel restart.
 - `<workspaceId>` is the runtime id (e.g. `light_papaya`, not the friendly name).
 - `<signalId>` is the signal's key in `workspace.yml`.
+
+**Never** give an external service a URL of the form
+`<friday-host>/api/workspaces/<wsId>/signals/<signalId>` — that path is
+atlasd's internal direct route. It is not exposed through cloudflared,
+the upstream (Bitbucket/Jira/etc.) cannot reach it from the public
+internet, and recommending it is the foot-gun that triggered this
+skill's existence. If you cannot reach `/status` from your environment
+to fetch the real tunnel URL (run_code does not always have network
+access to localhost:9090), **STOP and ask the user to run the
+`/status` curl themselves and paste the URL back** — do not synthesize
+a host or fall back to the `/api/workspaces/...` path.
 
 **Only `github` and `raw` providers ship built-in.** Bitbucket, Jira, and
 anything else go through `raw`. The raw provider:
@@ -30,8 +43,59 @@ anything else go through `raw`. The raw provider:
 - **Does not transform the payload.** The agent reads the full raw body
   via `ctx.input.config or ctx.input.raw`.
 
-**Do NOT** point the external service at `/api/workspaces/.../signals/...` —
-that's atlasd's internal direct path, not reachable through the tunnel.
+## Signal schema for raw webhooks — `additionalProperties: true` or you lose the body
+
+The signal's JSON Schema is enforced by the runtime through Zod, which
+STRIPS any fields not declared in `properties`. If you declare nested
+objects without `additionalProperties: true`, every nested field
+arrives as an empty `{}` and the agent sees nothing useful.
+
+**Wrong** (what looks documentative but silently destroys the payload):
+
+```yaml
+signals:
+  bb-pr-comment:
+    provider: http
+    config: { path: /bb-pr-comment }
+    schema:
+      type: object
+      properties:
+        actor:        { type: object, description: "Commenter" }
+        comment:      { type: object, description: "Comment object" }
+        pullrequest:  { type: object, description: "PR object" }
+        repository:   { type: object, description: "Repo object" }
+```
+The agent's `inputs.actor`, `inputs.comment`, etc. all become `{}` —
+LLM templates render as empty, Python agents see empty dicts.
+
+**Right** — let the body through, let the agent inspect it:
+
+```yaml
+signals:
+  bb-pr-comment:
+    provider: http
+    config: { path: /bb-pr-comment }
+    schema:
+      type: object
+      additionalProperties: true
+```
+
+Or, if you want to document the expected shape without strip:
+
+```yaml
+schema:
+  type: object
+  additionalProperties: true
+  properties:
+    actor:        { type: object, additionalProperties: true }
+    comment:      { type: object, additionalProperties: true }
+    pullrequest:  { type: object, additionalProperties: true }
+    repository:   { type: object, additionalProperties: true }
+```
+
+Rule of thumb for HTTP webhook signals: every `type: object` you write
+must be paired with `additionalProperties: true`, or it strips
+silently. The validator does not warn — the agent just sees `{}`.
 
 ## Fire-and-forget by default — `?nowait=true`
 
@@ -48,15 +112,14 @@ cascade finishes, even though the cascade itself runs to completion in
 the background.
 
 If you ARE building a custom forwarder or RPC client that needs to
-follow the cascade, two options:
+follow the cascade, add `Accept: text/event-stream` to the POST — same
+publish, streams cascade events on the same response. (There is no
+follow-by-correlationId endpoint: the response is published on
+core NATS without replay, so a follow-up GET arriving after the
+response was published would silently miss it. Subscribe-then-publish
+in a single handler is the only race-free shape.)
 
-- Add `Accept: text/event-stream` to the POST — same publish, streams
-  cascade events on the same response.
-- Or use `?nowait=true` and then `GET
-  /api/workspaces/<wsId>/signals/stream/<correlationId>` (SSE) with the
-  correlationId returned from the 202.
-
-See `friday-cli` skill section 3 for the full three-mode breakdown
+See `friday-cli` skill section 3 for the full mode breakdown
 (nowait / sync JSON / SSE).
 
 ## Env var that controls the secret
@@ -162,9 +225,11 @@ guard is the load-bearing one.
 
 `WEBHOOK_MAPPINGS_PATH` is a YAML override for the **github** provider's
 event list. It is NOT a way to register bitbucket/jira/etc. — those
-providers do not exist anymore, and pointing the env at a YAML with a
-`bitbucket:` block at the top level silently leaves the registry with
-just `[github, raw]`. Schema for the github override:
+providers do not exist anymore. Worse: a malformed file (e.g. a
+top-level `bitbucket:` block instead of the `providers:` wrapper) parses
+to an empty `MappingsConfig` and silently REPLACES the built-in
+providers — the registry ends up as `[raw]` only, with `github` gone
+too. Schema for the github override:
 
 ```yaml
 providers:                            # ← top-level key MUST be `providers:`

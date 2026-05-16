@@ -3,24 +3,24 @@
 description: |
   Friday workspace-chat webhook-setup eval — locks the contract that
   workspace-chat produces correct Bitbucket wiring instructions when the
-  wiring-external-webhooks skill is loaded. Two variants:
+  wiring-external-webhooks skill is loaded. 11 scenarios cover the
+  setup walkthrough, env-var correction, loop-trap diagnosis, /status as
+  first debug step, no-bypass on test-webhook, the three signal modes
+  (nowait / sync / SSE-on-trigger), current provider list, and agent-side
+  HMAC for Bitbucket. Two control variants on the setup walkthrough:
 
-    - with-skill: skill content in system prompt; must pass all 8 checks
-      (URL pattern, env var, signature header, event allowlist, /status
-      shortcut, no BITBUCKET_WEBHOOK_SECRET, no malformed mappings.json,
-      no deprecated /hook/bitbucket/ URL).
+    - with-skill: skill content in system prompt; must pass every check.
     - without-skill: control. Must fail at least one check; proves the
       skill is the knowledge carrier, not the base model.
 
   Direct-Anthropic-call shape (no daemon), same as secret-input-guard.ts
-  and connect-service-on-auth-error.ts. ~15s per run.
+  and connect-service-on-auth-error.ts. ~15s per scenario; ~3 min full.
 
-  Negative case observed in 2026-05-15 chat dump vVf "Webhook URL Format"
-  (50 msgs): the chat agent invented BITBUCKET_WEBHOOK_SECRET (correct
-  var is WEBHOOK_SECRET), wrote a webhook-mappings.json with the wrong
-  schema, then suggested /hook/raw/ as a bypass — sidestepping both
-  signature verification and event mapping. ~3 hours of user pain that
-  the wiring-external-webhooks skill prevents.
+  Foot-guns the skill prevents (and that this eval keeps locked):
+  inventing BITBUCKET_WEBHOOK_SECRET (correct var is WEBHOOK_SECRET),
+  writing a webhook-mappings.json with the wrong shape, suggesting
+  /hook/raw/ as a sig-verification bypass, recommending a Python sidecar
+  receiver, and pushing the broken nowait-then-follow SSE pattern.
 
 prompts:
   - '{{scenarioId}}'

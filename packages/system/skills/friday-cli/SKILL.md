@@ -179,16 +179,15 @@ curl -k -N -X POST \
   -H 'Content-Type: application/json' \
   -H 'Accept: text/event-stream' \
   -d '{"payload":{"some":"value"}}'
-
-# OR: publish nowait, then follow by correlationId
-curl -k -N \
-  "$FRIDAYD_URL/api/workspaces/<id>/signals/stream/<correlationId>" \
-  -H 'Accept: text/event-stream'
 ```
 
-The second form is useful when the publisher and the watcher are different
-processes — publish with `?nowait=true`, hand the correlationId to whatever
-needs to watch.
+Subscribe-then-publish must happen in one handler — the cascade response
+is published to a core-NATS subject (no JetStream replay), so any path
+that publishes first and tries to attach a follower later races against
+fast cascades and silently misses the response. That's why there's no
+`GET /signals/stream/<correlationId>` endpoint: pass `Accept:
+text/event-stream` on the trigger POST instead, and the publisher and
+the SSE forwarder are the same handler.
 
 The CLI wrapper:
 

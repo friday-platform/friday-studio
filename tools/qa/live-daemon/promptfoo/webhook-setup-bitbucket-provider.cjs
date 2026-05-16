@@ -15,8 +15,14 @@ async function readReport(reportPath) {
 }
 
 async function runWebhookSetupBitbucket() {
-  if (process.env.WEBHOOK_SETUP_BITBUCKET_PROMPTFOO_REPORT) {
-    return await readReport(process.env.WEBHOOK_SETUP_BITBUCKET_PROMPTFOO_REPORT);
+  const cachedReportPath = process.env.WEBHOOK_SETUP_BITBUCKET_PROMPTFOO_REPORT;
+  if (cachedReportPath) {
+    // Loud-by-default: a "promptfoo eval green" PR check that's actually
+    // replaying a stale report would otherwise look identical to a fresh run.
+    process.stderr.write(
+      `[webhook-setup-bitbucket-provider] REPLAYING cached report from ${cachedReportPath} (set via WEBHOOK_SETUP_BITBUCKET_PROMPTFOO_REPORT). The eval was NOT re-run for this invocation.\n`,
+    );
+    return await readReport(cachedReportPath);
   }
 
   const outDir = await mkdtemp(path.join(tmpdir(), "friday-promptfoo-webhook-setup-bitbucket-"));

@@ -63,3 +63,11 @@
 - description: user wants HMAC verification for a Bitbucket webhook — agent explains raw provider doesn't verify, recommends agent-side HMAC with a custom (non-colliding) env var name, does NOT push WEBHOOK_SECRET for bitbucket, does NOT recommend the deprecated /hook/bitbucket/ URL
   vars:
     scenarioId: bitbucket-hmac-in-agent
+
+- description: user reports /status is unreachable from run_code and asks for the webhook URL — agent must NOT synthesize /api/workspaces/.../signals/ as the public URL; instead emit /hook/raw/ pattern with a tunnel-host placeholder OR ask the user to fetch the tunnel URL via /status themselves
+  vars:
+    scenarioId: no-atlasd-url-fallback
+
+- description: user asks for the workspace.yml signal block for a raw webhook — agent must include `additionalProperties: true` (or use the bare top-level schema) so Zod doesn't silently strip nested webhook fields; must NOT declare nested `actor`/`comment`/`pullrequest`/`repository` as `type: object` without additionalProperties
+  vars:
+    scenarioId: webhook-signal-schema-passes-body

@@ -16,11 +16,14 @@
  *
  *   - WITH-SKILL (positive): the skill content is appended to the
  *     system prompt as if `load_skill` had been called and surfaced.
- *     Must pass all 8 contract checks.
+ *     Must pass every contract check.
  *   - WITHOUT-SKILL (negative / control): just the bare workspace-chat
  *     prompt.txt. Must FAIL at least one of the "knows the URL pattern
  *     and env var" checks — proves the model doesn't already have this
  *     domain knowledge from training and that the skill is the carrier.
+ *
+ * The full scenario list (11 total) is wired in `main()` near the bottom
+ * of this file — keep that list as the source of truth for count.
  *
  * Same direct-Anthropic-call shape as `secret-input-guard.ts` and
  * `connect-service-on-auth-error.ts` — no daemon spawn, no workspace
@@ -120,12 +123,14 @@ const USER_QUESTION_SYNC_OUTPUT =
 
 // Scenario 9: user wants real-time progress visibility for a long-
 // running cascade (debugging UI, log tail, watching steps as they happen).
-// Agent should recommend SSE — either Accept: text/event-stream on the
-// trigger (one POST, streams), OR ?nowait=true then GET /signals/stream/
-// {correlationId} (two requests, publisher and watcher can be different
-// processes). Agent must NOT recommend polling, must NOT recommend the
-// sync JSON mode and then "parse the output for progress" (output is
-// only available at completion).
+// Agent should recommend the in-handler SSE path — Accept: text/event-stream
+// on the trigger POST. There is no GET-follow-by-correlationId endpoint:
+// the cascade response is published to a core-NATS subject without replay,
+// so any path that publishes first and tries to attach a follower later
+// races against fast cascades and silently misses the response. Agent must
+// NOT recommend polling, must NOT recommend the sync JSON mode and then
+// "parse the output for progress" (output is only available at completion),
+// and must NOT recommend a /signals/stream/{correlationId} GET-follow.
 const USER_QUESTION_PROGRESS_STREAM =
   "I'm building a debugging UI that fires a Friday signal and shows the agent's progress as it runs — step by step, tool calls as they happen, not just the final output. What endpoint should I hit?";
 
@@ -149,6 +154,35 @@ const USER_QUESTION_PROVIDER_LIST =
 // to get signature verification.
 const USER_QUESTION_BITBUCKET_HMAC =
   "I need HMAC signature verification on my Bitbucket webhook to my Friday workspace — I don't want random people POSTing to the public tunnel URL. How do I set it up?";
+
+// Scenario 12: regression — user asks for the webhook URL right after the
+// workspace is built. Observed live-QA failure mode (2026-05-15): when
+// run_code can't reach https://localhost:9090/status from its sandbox,
+// the model synthesized "https://<your-friday-host>/api/workspaces/<wsId>/signals/<signalId>"
+// — the atlasd-direct path, exactly the Marc-class foot-gun. The skill
+// teaches /hook/raw/ on the cloudflared tunnel host; if /status is
+// unreachable, the right move is to ASK the user to run the /status
+// curl themselves, NOT to synthesize a host or fall back to /api/
+// workspaces/. This scenario asserts the model either gives the
+// /hook/raw/ pattern with a placeholder for the tunnel host (and
+// instructs the user to fetch it from /status) OR asks the user
+// directly for the tunnel URL — and must NEVER emit /api/workspaces/
+// or "<friday-host>"/"<daemon-host>" pointing at the daemon.
+const USER_QUESTION_WEBHOOK_URL_NO_STATUS =
+  "I just published the workspace. What's the exact webhook URL to paste into Bitbucket's webhook form? My run_code calls to https://localhost:9090/status are failing with connection refused — I think the tunnel binds localhost but run_code is in a sandbox without host networking. Just give me the URL so I can copy-paste it.";
+
+// Scenario 13: regression — when authoring a workspace.yml for a raw
+// webhook signal, the JSON Schema must declare `additionalProperties: true`
+// on every `type: object` (or just use the bare top-level form). Observed
+// live-QA failure mode (2026-05-15): chat authored the signal schema with
+// nested `actor: { type: object, description: "..." }` (no
+// `additionalProperties: true`); the runtime's Zod validator silently
+// stripped every nested webhook field; the LLM agent saw
+// `inputs.actor = {}` etc. and called failStep with "Empty webhook payload
+// received — all config fields are empty objects". Assert the chat
+// authoring of webhook signal schemas does the right thing.
+const USER_QUESTION_WEBHOOK_SCHEMA =
+  "Draft the YAML for a `provider: http` signal in workspace.yml that receives raw Bitbucket pullrequest:comment_created webhooks at path /bb-pr-comment. The agent needs to read actor, comment, pullrequest, and repository fields from the payload. Show me the full signal block exactly as it should appear in workspace.yml.";
 
 interface DriveResult {
   text: string;
@@ -207,9 +241,11 @@ async function buildSystem(variant: "with-skill" | "without-skill"): Promise<str
 }
 
 /**
- * Eight contract checks on the assistant's response text. Same checks as the
- * 2026-05-15 design — if any of these flip in the WITH-SKILL variant, the
- * skill stopped doing its job and Marc-class bugs are back.
+ * Contract checks on the assistant's response text for the setup-walkthrough
+ * scenario — if any of these flip in the WITH-SKILL variant, the skill stopped
+ * doing its job and the Bitbucket-class wiring bugs are back. The actual count
+ * is whatever this function returns at call time; the runtime printout uses
+ * `checks.length`, so don't hard-code numbers here.
  */
 function runContractChecks(text: string): ContractCheck[] {
   const haystack = text.toLowerCase();
@@ -614,13 +650,24 @@ async function runDiagnoseLoopTrap(): Promise<EvalResult> {
     {
       id: "mentions-loop-mechanism",
       description:
-        "Explains the mechanism: your comment fires the webhook → agent runs → posts again",
-      pass: /\b(?:fires?|trigger|re-?fire|re-?trigger|loops? back|cycle|infinit|cascade)\b/i.test(
-        result.text,
-      ),
+        "Explains the cycle mechanism: a comment posted by the agent fires the webhook → agent runs → posts again",
+      // Bare "trigger" matches reflexively (the user question + workspace
+      // context already use it). Require a directional verb pointed at a
+      // signal/webhook/agent OR an explicit walk-through phrasing that names
+      // the cycle's two ends (comment/post + trigger).
+      pass:
+        /\b(?:fires?|triggers?|invokes?|re-?fires?|re-?triggers?)\s+(?:the\s+|your\s+|another\s+|a new\s+|a\s+)?(?:webhook|signal|agent)/i.test(
+          result.text,
+        ) ||
+        /\b(?:your|the agent'?s|the bot'?s|its own)\s+(?:comment|post|reply)\b[^.\n]{0,80}\b(?:fires?|triggers?|invokes?|re-?fires?|re-?triggers?|causes?)/i.test(
+          result.text,
+        ) ||
+        /\bcomment\b[^.\n]{0,40}\b(?:fires?|triggers?|invokes?)\b[^.\n]{0,40}\b(?:webhook|signal|agent)/i.test(
+          result.text,
+        ),
       evidence: result.text
         .match(
-          /[^.\n]{0,80}\b(?:fires?|trigger|re-?fire|re-?trigger|loops? back|cycle|infinit|cascade)\b[^.\n]{0,80}/i,
+          /[^.\n]{0,80}\b(?:fires?|triggers?|invokes?|re-?fires?|re-?triggers?)\s+(?:the |your |another |a new |a )?(?:webhook|signal|agent)[^.\n]{0,80}/i,
         )?.[0]
         ?.slice(0, 200),
     },
@@ -1044,15 +1091,29 @@ async function runRecommendsSyncForOutput(): Promise<EvalResult> {
           /\bwithout\s+\??nowait/i.test(plain) ||
           /\bno\s+\??nowait\b/i.test(plain) ||
           /\bomit\s+\??nowait\b/i.test(plain);
-        // And evidence the response will contain the cascade fields
+        // And evidence the response will contain the cascade fields.
+        // Accept any of: prose ("response has output"), member access
+        // (`result.output`), bracket access (`result["output"]`), inline
+        // code comments listing keys (`# result has: { "output": ... }`),
+        // or just naming 2+ of the four canonical fields near "result"/
+        // "response"/"json".
         const explainsShape =
           /\b(?:output|summary|sessionId|artifactIds|result)\b[^.\n]{0,80}\b(?:back|in (?:the )?response|return[s]?|response includes|response has|response contains|has )/i.test(
             plain,
           ) ||
-          /\b(?:response|envelope|json|payload)\b[^.\n]{0,80}\b(?:has|includes|contains)\b[^.\n]{0,80}\b(?:output|summary|sessionId|artifactIds)/i.test(
+          /\b(?:response|envelope|json|payload|result)\b[^.\n]{0,120}\b(?:has|includes|contains|with|holding|carrying|like|:)\b[^.\n]{0,120}\b(?:output|summary|sessionId|artifactIds)/i.test(
             plain,
           ) ||
-          /\bresult\.(?:output|summary|sessionId|artifactIds)/i.test(plain);
+          /\bresult(?:\.(?:output|summary|sessionId|artifactIds)|\[\s*['"](?:output|summary|sessionId|artifactIds)['"]\s*\])/i.test(
+            plain,
+          ) ||
+          // 2+ of the canonical field names present within a short window
+          // — strong signal the model laid out the envelope shape.
+          (() => {
+            const fields = ["output", "summary", "sessionId", "artifactIds"];
+            const hits = fields.filter((f) => new RegExp(`\\b${f}\\b`).test(plain));
+            return hits.length >= 2;
+          })();
         return recommendsSync && explainsShape;
       })(),
       evidence: result.text
@@ -1139,31 +1200,50 @@ async function runRecommendsSseForProgress(): Promise<EvalResult> {
   metrics.responseFull = result.text;
 
   const checks: ContractCheck[] = [
-    // Positive — SSE is the right answer
+    // Positive — SSE on the trigger POST is the right answer
     {
       id: "recommends-sse-or-event-stream",
-      description:
-        "Recommends SSE — Accept: text/event-stream on the trigger OR GET /signals/stream/{correlationId}",
+      description: "Recommends SSE — Accept: text/event-stream on the trigger POST",
       pass:
         /\btext\/event-stream\b/i.test(result.text) ||
         /\bSSE\b/.test(result.text) ||
-        /\bserver[-\s]?sent\s+events\b/i.test(result.text) ||
-        /\/signals\/stream\//i.test(result.text),
+        /\bserver[-\s]?sent\s+events\b/i.test(result.text),
       evidence: result.text.match(
-        /\btext\/event-stream\b|\bSSE\b|\bserver[-\s]?sent\s+events\b|\/signals\/stream\/[^\s)`]+/i,
+        /\btext\/event-stream\b|\bSSE\b|\bserver[-\s]?sent\s+events\b/i,
       )?.[0],
+    },
+    // Negative — the broken follow-by-correlationId endpoint must NOT be recommended
+    {
+      id: "no-sse-follow-by-correlation",
+      description:
+        "Does NOT recommend a GET /signals/stream/{correlationId} follow — that endpoint was removed because subscribing AFTER publish races the response on core NATS",
+      pass: !/\/signals\/stream\/(?:\{?correlationId\}?|<correlationId>|[a-z0-9-]+)/i.test(
+        result.text,
+      ),
+      evidence: result.text.match(/[^\s]*\/signals\/stream\/[^\s)`]+/i)?.[0]?.slice(0, 160),
     },
     {
       id: "explains-streaming-mechanism",
       description:
         "Explains the streaming mechanism (chunks/data:/events arriving as the cascade runs)",
+      // \bdata:\b is buggy — `:` is non-word, so the trailing \b fails to
+      // anchor. Use \bdata\s*: instead, and broaden the SSE-event detection
+      // to recognize concrete event names the model lists (cascade.*, etc.).
       pass:
-        /\b(?:chunk|data:|event[s]?\s+(?:as|arriv|stream))\b/i.test(result.text) ||
+        /\bchunk[s]?\b/i.test(result.text) ||
+        /\bdata\s*:\s*[<`{[]/i.test(result.text) ||
+        /\bevent\s*:\s*[a-z]/i.test(result.text) ||
+        /\b(?:cascade|agent|tool|session)\.(?:started|completed|block|error|chunk|done)\b/i.test(
+          result.text,
+        ) ||
+        /\bevent[s]?\b[^.\n]{0,40}\b(?:as|arriv|stream|happen|fire|emit)/i.test(result.text) ||
         /\bstream(?:s|ing|ed)?\b[^.\n]{0,80}\b(?:as|while|during|in real[\s-]?time|live)\b/i.test(
           result.text,
         ),
       evidence: result.text
-        .match(/\b(?:chunk|data:|stream(?:s|ing)?\b[^.\n]{0,80})/i)?.[0]
+        .match(
+          /\b(?:chunk[s]?|data\s*:|event\s*:|stream(?:s|ing)?|(?:cascade|agent|tool|session)\.(?:started|completed|block|error|chunk|done))\b[^.\n]{0,80}/i,
+        )?.[0]
         ?.slice(0, 160),
     },
     // Negative
@@ -1465,6 +1545,204 @@ async function runBitbucketHmacInAgent(): Promise<EvalResult> {
   return { id: "bitbucket-hmac-in-agent", pass: false, notes, metrics };
 }
 
+// ───── Scenario 12: no atlasd-URL fallback when /status is unreachable ───
+
+async function runNoAtlasdUrlFallback(): Promise<EvalResult> {
+  const notes: string[] = [];
+  const metrics: Record<string, unknown> = {};
+
+  console.log("  → drive (no-atlasd-url-fallback)");
+  const system = await buildSystem("with-skill");
+  const result = await drive(system, USER_QUESTION_WEBHOOK_URL_NO_STATUS);
+  metrics.durationMs = result.durationMs;
+  metrics.responseLen = result.text.length;
+  metrics.responseFull = result.text;
+
+  const text = result.text;
+
+  const checks: ContractCheck[] = [
+    {
+      id: "no-atlasd-direct-path-recommendation",
+      description:
+        "Does NOT emit /api/workspaces/<wsId>/signals/<signalId> as the webhook URL — that's atlasd's internal path, not the public tunnel",
+      // The exact failure observed in live QA. Tolerate the path appearing
+      // only inside a "do NOT use this" explanation; fail if it's emitted
+      // as a recommended URL.
+      pass: (() => {
+        const matches = [
+          ...text.matchAll(/(.{0,80}\/api\/workspaces\/[^/\s]+\/signals\/[^\s)`]+.{0,80})/g),
+        ];
+        if (matches.length === 0) return true;
+        const negativeMarker =
+          /\b(?:do not|don'?t use|wrong|incorrect|atlasd|internal|NOT (?:use|reach)|404|not reachable|don'?t (?:point|hit)|never|do NOT)\b/i;
+        return matches.every((m) => negativeMarker.test(m[1] ?? m[0]));
+      })(),
+      evidence: text.match(/[^\s]*\/api\/workspaces\/[^/\s]+\/signals\/[^\s)`]*/)?.[0],
+    },
+    {
+      id: "no-synthesized-friday-host",
+      description:
+        "Does NOT pair a synthesized host placeholder like <your-friday-host>/<friday-daemon>/<daemon-host> with /api/workspaces/ or any signal-trigger path",
+      pass: !/<(?:your-)?(?:friday|daemon|atlas)[a-z-]*(?:-host|-url|-public-host)?>[\s\S]{0,80}(?:\/api\/workspaces\/|\/signals\/)/i.test(
+        text,
+      ),
+      evidence: text
+        .match(
+          /<(?:your-)?(?:friday|daemon|atlas)[a-z-]*(?:-host|-url|-public-host)?>[^\n]{0,120}/i,
+        )?.[0]
+        ?.slice(0, 160),
+    },
+    {
+      id: "recommends-hook-raw-or-asks-for-tunnel-url",
+      description:
+        "Either emits the /hook/raw/ pattern (with a tunnel-host placeholder) OR explicitly asks the user to fetch the tunnel URL themselves",
+      pass:
+        /\/hook\/raw\/[^\s)`]+/i.test(text) ||
+        /\b(?:please\s+)?(?:run|paste|share|provide|tell me|give me|copy)\b[^.\n]{0,80}(?:\/status|tunnel\s+URL|tunnel-url|public\s+(?:tunnel\s+)?(?:URL|hostname))/i.test(
+          text,
+        ) ||
+        /\bcurl\b[^.\n]{0,60}localhost:9090\/status/i.test(text),
+      evidence: text
+        .match(
+          /\/hook\/raw\/[^\s)`]+|\b(?:run|paste|share|provide|tell me|give me|copy)[^.\n]{0,80}(?:\/status|tunnel\s+URL|public\s+(?:tunnel\s+)?(?:URL|hostname))[^.\n]{0,40}|\bcurl\b[^.\n]{0,60}\/status/i,
+        )?.[0]
+        ?.slice(0, 200),
+    },
+    {
+      id: "mentions-trycloudflare-or-public-tunnel",
+      description:
+        "Names the cloudflared tunnel / trycloudflare / public tunnel URL as the host source — not localhost, not a daemon port",
+      pass:
+        /\btrycloudflare\b/i.test(text) ||
+        /\b(?:cloudflared|public\s+tunnel|tunnel\s+host|tunnel\s+URL)\b/i.test(text),
+      evidence: text.match(
+        /\btrycloudflare\b|\b(?:cloudflared|public\s+tunnel|tunnel\s+host|tunnel\s+URL)\b/i,
+      )?.[0],
+    },
+  ];
+
+  metrics.checks = checks;
+  const failed = checks.filter((c) => !c.pass);
+
+  if (failed.length === 0) {
+    notes.push(`Positive: all ${checks.length} checks passed.`);
+    for (const c of checks)
+      notes.push(`  ✓ ${c.id}: ${c.description}${c.evidence ? ` [${c.evidence}]` : ""}`);
+    return { id: "no-atlasd-url-fallback", pass: true, notes, metrics };
+  }
+  notes.push(`Negative: ${failed.length}/${checks.length} failed.`);
+  for (const c of checks)
+    notes.push(
+      `  ${c.pass ? "✓" : "✗"} ${c.id}: ${c.description}${c.evidence ? ` [${c.evidence}]` : ""}`,
+    );
+  notes.push(`Reply head: "${result.text.slice(0, 400)}"`);
+  return { id: "no-atlasd-url-fallback", pass: false, notes, metrics };
+}
+
+// ───── Scenario 13: webhook signal schema must let the body through ─────
+
+async function runWebhookSignalSchema(): Promise<EvalResult> {
+  const notes: string[] = [];
+  const metrics: Record<string, unknown> = {};
+
+  console.log("  → drive (webhook-signal-schema-passes-body)");
+  const system = await buildSystem("with-skill");
+  const result = await drive(system, USER_QUESTION_WEBHOOK_SCHEMA);
+  metrics.durationMs = result.durationMs;
+  metrics.responseLen = result.text.length;
+  metrics.responseFull = result.text;
+
+  const text = result.text;
+
+  const checks: ContractCheck[] = [
+    {
+      id: "declares-additional-properties-true",
+      description:
+        "Declares `additionalProperties: true` somewhere in the signal schema — without it Zod strips nested webhook fields",
+      pass: /\badditionalProperties\s*:\s*true\b/i.test(text),
+      evidence: text
+        .match(/[^\n]{0,40}additionalProperties\s*:\s*true[^\n]{0,40}/i)?.[0]
+        ?.slice(0, 160),
+    },
+    {
+      id: "no-strict-nested-object-properties",
+      description:
+        "Does NOT declare `actor:`/`comment:`/`pullrequest:`/`repository:` as `type: object` without `additionalProperties: true`",
+      // Fail if any of the four named nested fields appears with `type:
+      // object` but no `additionalProperties: true` within ~120 chars of
+      // the same block.
+      pass: (() => {
+        const violators = ["actor", "comment", "pullrequest", "repository"];
+        for (const name of violators) {
+          // Match a YAML-style block: `<name>: { type: object, ... }` OR
+          //                          `<name>:\n  type: object\n  ...`
+          // and check that within ~200 chars there's no additionalProperties: true.
+          const re = new RegExp(
+            `\\b${name}\\s*:[\\s\\S]{0,30}type\\s*:\\s*object([\\s\\S]{0,200})`,
+            "gi",
+          );
+          for (const m of text.matchAll(re)) {
+            const tail = m[1] ?? "";
+            // If tail before the next top-level key doesn't contain
+            // additionalProperties: true, it's a violator.
+            if (!/additionalProperties\s*:\s*true/i.test(tail)) return false;
+          }
+        }
+        return true;
+      })(),
+      evidence: (() => {
+        const violators = ["actor", "comment", "pullrequest", "repository"];
+        for (const name of violators) {
+          const m = text.match(
+            new RegExp(`\\b${name}\\s*:[^\\n]{0,80}type\\s*:\\s*object[^\\n]{0,80}`, "i"),
+          );
+          if (m) return m[0].slice(0, 160);
+        }
+        return undefined;
+      })(),
+    },
+    {
+      id: "warns-about-strip-or-recommends-bare-schema",
+      description:
+        "Either warns explicitly that Zod/the runtime strips undeclared fields, or recommends the bare `{ type: object, additionalProperties: true }` shape",
+      pass:
+        /\bstrip(?:s|ped|ping)?\b/i.test(text) ||
+        /\b(?:Zod|validator|schema)\b[^.\n]{0,60}\b(?:strip|drop|remove)/i.test(text) ||
+        /type\s*:\s*object[\s\S]{0,40}additionalProperties\s*:\s*true(?![\s\S]{0,60}properties\s*:)/i.test(
+          text,
+        ),
+      evidence: text
+        .match(
+          /\b(?:strip|Zod|validator)\b[^.\n]{0,140}|type\s*:\s*object[\s\S]{0,40}additionalProperties\s*:\s*true/i,
+        )?.[0]
+        ?.slice(0, 180),
+    },
+    {
+      id: "names-provider-http",
+      description: "Names `provider: http` (the right provider key for HTTP-trigger signals)",
+      pass: /\bprovider\s*:\s*http\b/i.test(text),
+      evidence: text.match(/provider\s*:\s*http/i)?.[0],
+    },
+  ];
+
+  metrics.checks = checks;
+  const failed = checks.filter((c) => !c.pass);
+
+  if (failed.length === 0) {
+    notes.push(`Positive: all ${checks.length} checks passed.`);
+    for (const c of checks)
+      notes.push(`  ✓ ${c.id}: ${c.description}${c.evidence ? ` [${c.evidence}]` : ""}`);
+    return { id: "webhook-signal-schema-passes-body", pass: true, notes, metrics };
+  }
+  notes.push(`Negative: ${failed.length}/${checks.length} failed.`);
+  for (const c of checks)
+    notes.push(
+      `  ${c.pass ? "✓" : "✗"} ${c.id}: ${c.description}${c.evidence ? ` [${c.evidence}]` : ""}`,
+    );
+  notes.push(`Reply head: "${result.text.slice(0, 400)}"`);
+  return { id: "webhook-signal-schema-passes-body", pass: false, notes, metrics };
+}
+
 // ────────────────────────────────────────────────────────────────────────
 // Entrypoint
 // ────────────────────────────────────────────────────────────────────────
@@ -1497,6 +1775,8 @@ async function main() {
     { id: "recommends-sse-for-progress", fn: () => runRecommendsSseForProgress() },
     { id: "lists-current-providers", fn: () => runProviderList() },
     { id: "bitbucket-hmac-in-agent", fn: () => runBitbucketHmacInAgent() },
+    { id: "no-atlasd-url-fallback", fn: () => runNoAtlasdUrlFallback() },
+    { id: "webhook-signal-schema-passes-body", fn: () => runWebhookSignalSchema() },
   ];
 
   for (const { id, fn } of runners) {
