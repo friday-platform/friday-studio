@@ -186,6 +186,31 @@ async function commitWorkspaceSetupElicitation(
     };
   }
 
+  // Initial-setup bootstrap pointer cleanup (Decision 1 / design doc
+  // § Module — Answer handler dispatch, step 6). Once the pre-seeded
+  // elicitation is answered, clear `active_setup_session_id` so the T21
+  // chat-no-session redirect stops routing back to the bootstrap chat. The
+  // pointer is set ONLY for the initial-setup elicitation (never for
+  // re-setup), so the comparison against `elicitation.sessionId` correctly
+  // scopes this write to the initial-setup flow.
+  if (workspace.metadata?.active_setup_session_id === elicitation.sessionId) {
+    const { active_setup_session_id: _cleared, ...remainingMetadata } = workspace.metadata ?? {};
+    try {
+      await manager.updateWorkspaceStatus(workspace.id, workspace.status, {
+        metadata: remainingMetadata,
+      });
+    } catch (err) {
+      // Best-effort: the elicitation flip is the source of truth for
+      // "setup completed"; a stale pointer is annoying (extra redirect)
+      // but not load-bearing. Surface in logs so it's visible.
+      logger.warn("workspace-setup post-commit pointer clear failed", {
+        id: elicitation.id,
+        workspaceId: elicitation.workspaceId,
+        error: stringifyError(err),
+      });
+    }
+  }
+
   // Post-commit: re-derive the setup gate and (re-)register schedule +
   // fs-watch signals. `handleWorkspaceConfigChange` is the public entrypoint
   // that routes through the same `restartSignalsForWorkspace` path the
