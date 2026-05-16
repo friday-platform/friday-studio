@@ -90,8 +90,8 @@
     "npm:@sveltejs/vite-plugin-svelte@~6.2.4": "6.2.4_svelte@5.55.7_vite@7.3.3__@types+node@25.6.2__yaml@2.8.4",
     "npm:@tanstack/query-core@^5.100.10": "5.100.10",
     "npm:@tanstack/svelte-query@^6.1.28": "6.1.28_svelte@5.55.7",
-    "npm:@tanstack/svelte-table@9.0.0-alpha.41": "9.0.0-alpha.41_svelte@5.55.7",
-    "npm:@tanstack/svelte-table@^9.0.0-alpha.41": "9.0.0-alpha.41_svelte@5.55.7",
+    "npm:@tanstack/svelte-table@9.0.0-alpha.46": "9.0.0-alpha.46_svelte@5.55.7",
+    "npm:@tanstack/svelte-table@^9.0.0-alpha.46": "9.0.0-alpha.46_svelte@5.55.7",
     "npm:@tanstack/svelte-virtual@~3.13.24": "3.13.24_svelte@5.55.7",
     "npm:@tauri-apps/api@2.11.0": "2.11.0",
     "npm:@tauri-apps/cli@2.11.0": "2.11.0",
@@ -2196,8 +2196,8 @@
         "svelte"
       ]
     },
-    "@tanstack/svelte-table@9.0.0-alpha.41_svelte@5.55.7": {
-      "integrity": "sha512-NaFG5kfGdmp3zFR4xLaQID9GD2rTo9FlXwvJJ30q7S68BaO4XaUUvMAPIsDHardQo9ImFD4Lbi1y8q8Bvghe3g==",
+    "@tanstack/svelte-table@9.0.0-alpha.46_svelte@5.55.7": {
+      "integrity": "sha512-EbxAy2jxRPdV8rKv09dLWtVQRHLUr8b53VGp0iMc3+Mwp/KhFCnyPBLxf0AfxpnSf52P10og9xtPT2rOd0cBPQ==",
       "dependencies": [
         "@tanstack/svelte-store",
         "@tanstack/table-core",
@@ -2211,8 +2211,8 @@
         "svelte"
       ]
     },
-    "@tanstack/table-core@9.0.0-alpha.41": {
-      "integrity": "sha512-Tcxf7A8Z+X333axHB87gk63wR2awDruhQFCiswnZD/NW0dIv82gP/Lb5b4a6bU2BvEdIpOsNTWjvwPO33hPhRQ==",
+    "@tanstack/table-core@9.0.0-alpha.46": {
+      "integrity": "sha512-6eat46JP20mgC2s0GlQkt/Eim5RscJmsOdT2GZMBGlqil6RwbIzndeQtzsaKMs7T/gQzmzGOfvQwSt+qOc7kgQ==",
       "dependencies": [
         "@tanstack/store"
       ]
@@ -6578,7 +6578,7 @@
             "npm:@sveltejs/kit@^2.60.1",
             "npm:@sveltejs/package@^2.5.7",
             "npm:@sveltejs/vite-plugin-svelte@^6.2.4",
-            "npm:@tanstack/svelte-table@^9.0.0-alpha.41",
+            "npm:@tanstack/svelte-table@^9.0.0-alpha.46",
             "npm:@types/node@25",
             "npm:eslint-config-prettier@^10.1.8",
             "npm:eslint-plugin-svelte@^3.17.1",
@@ -6647,7 +6647,7 @@
             "npm:@sveltejs/vite-plugin-svelte@~6.2.4",
             "npm:@tanstack/query-core@^5.100.10",
             "npm:@tanstack/svelte-query@^6.1.28",
-            "npm:@tanstack/svelte-table@9.0.0-alpha.41",
+            "npm:@tanstack/svelte-table@9.0.0-alpha.46",
             "npm:@tanstack/svelte-virtual@~3.13.24",
             "npm:@types/deno@2.5.0",
             "npm:ai@^6.0.177",
