@@ -71,3 +71,19 @@
 - description: user asks for the workspace.yml signal block for a raw webhook — agent must include `additionalProperties: true` (or use the bare top-level schema) so Zod doesn't silently strip nested webhook fields; must NOT declare nested `actor`/`comment`/`pullrequest`/`repository` as `type: object` without additionalProperties
   vars:
     scenarioId: webhook-signal-schema-passes-body
+
+- description: GitHub setup walkthrough — agent gives /hook/raw/ URL, application/json content type, names github events (issue_comment / pull_request / push / etc.), points at /status, no atlasd-direct URL recommendation, no hand-rolled tunnel install
+  vars:
+    scenarioId: github-setup-walkthrough
+
+- description: GitHub issue-comment loop trap — agent identifies issue_comment subscription as the cycle root, prescribes a content or author guard, explains the cycle mechanism (post → webhook → agent → post), does NOT prescribe sleep/rate-limit as the fix
+  vars:
+    scenarioId: github-loop-trap
+
+- description: GitHub HMAC in agent — agent explains the tunnel drops headers so X-Hub-Signature-256 can't be matched, recommends trusting the tunnel URL boundary OR a custom secret-in-body/URL scheme; does NOT claim tunnel verifies HMAC, does NOT claim WEBHOOK_SECRET is a Friday-level var
+  vars:
+    scenarioId: github-hmac-in-agent
+
+- description: When the agent prompt invokes an external command (`gh api`, `bash`, `curl`, MCP tool), the chat MUST declare a matching tool in the agent's `tools:` array — otherwise the LLM has no callable and fakes success via `complete` (phantom-ACK failure). Caught live in QA; new regression check.
+  vars:
+    scenarioId: agent-tools-must-be-declared

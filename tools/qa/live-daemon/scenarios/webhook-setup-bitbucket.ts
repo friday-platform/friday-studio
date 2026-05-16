@@ -184,6 +184,34 @@ const USER_QUESTION_WEBHOOK_URL_NO_STATUS =
 const USER_QUESTION_WEBHOOK_SCHEMA =
   "Draft the YAML for a `provider: http` signal in workspace.yml that receives raw Bitbucket pullrequest:comment_created webhooks at path /bb-pr-comment. The agent needs to read actor, comment, pullrequest, and repository fields from the payload. Show me the full signal block exactly as it should appear in workspace.yml.";
 
+// ────────────────────────────────────────────────────────────────────────
+// GitHub parallel scenarios
+// ────────────────────────────────────────────────────────────────────────
+//
+// The webhook-tunnel is upstream-agnostic — github is just another
+// service POSTing to /hook/raw/. These scenarios mirror their bitbucket
+// counterparts and use github vocabulary (issue_comment, pull_request,
+// X-Hub-Signature-256, tempestteam/atlas) to catch any github-specific
+// drift in the skill's guidance.
+
+const USER_QUESTION_SETUP_GITHUB =
+  "I added a `gh-issue-comment` HTTP signal to this workspace. How do I configure GitHub to send issue-comment events to it? Walk me through the URL to paste in GitHub's webhook form, what content-type/secret to set, which events to subscribe to, and how to debug if it doesn't fire.";
+
+const USER_QUESTION_LOOP_TRAP_GITHUB =
+  "I built an agent that auto-replies to GitHub issue comments. It worked for the first comment but now it's posting to its own replies in a loop — there are 18 replies on the issue already. What did I do wrong and how do I fix it?";
+
+const USER_QUESTION_GITHUB_HMAC =
+  "I want HMAC signature verification on my GitHub webhook to my Friday workspace — I don't want random people POSTing to the public tunnel URL. GitHub sends `X-Hub-Signature-256`. How do I set up verification?";
+
+// Scenario: chat asked to author an agent that uses gh CLI to reply.
+// The skill teaches: if the prompt invokes bash/gh/curl/MCP-tool, the
+// agent's tools array MUST include the matching tool. Otherwise the
+// LLM has no callable tool and fakes success via `complete`. Caught
+// live during QA — chat authored `tools: []` with a prompt that said
+// "Run: gh api ...", session completed in 1.2s with phantom-ACK.
+const USER_QUESTION_AGENT_TOOLS_REQUIRED =
+  "Draft the YAML for an `llm` agent named `ack-commenter` in workspace.yml. Its job: read a GitHub `issue_comment` webhook payload, then post an 'ACK' reply on the same issue using the `gh` CLI (e.g. `gh api repos/<owner>/<repo>/issues/<N>/comments -X POST -f body='ACK'`). Show me the complete agent block exactly as it should appear in workspace.yml — provider, model, prompt, tools, all of it.";
+
 interface DriveResult {
   text: string;
   durationMs: number;
@@ -375,9 +403,17 @@ function runContractChecks(text: string): ContractCheck[] {
         const negativeMarker =
           /\b(?:do not|don'?t use|wrong|incorrect|atlasd'?s|internal|NOT (?:use|reach)|404|not reachable|don'?t (?:point|hit))\b/i;
         const tunnelIntrospection = /\/(?:history|status)(?:\?|$|\s|\))/;
-        return matches.every(
-          (m) => negativeMarker.test(m[1] ?? m[0]) || tunnelIntrospection.test(m[1] ?? m[0]),
-        );
+        // Tolerate log-filtering / debug references — the model often shows
+        // the internal path as something to grep for in atlasd logs, which
+        // is correct usage, not a webhook-URL recommendation.
+        const logOrDebugContext =
+          /\b(?:look\s+for|search\s+for|grep\s+for|find|filter\s+(?:by|on)|entries?|log\s+line|in\s+(?:the\s+)?logs?|debug|inspect)\b/i;
+        return matches.every((m) => {
+          const ctx = m[1] ?? m[0];
+          return (
+            negativeMarker.test(ctx) || tunnelIntrospection.test(ctx) || logOrDebugContext.test(ctx)
+          );
+        });
       })(),
       evidence: text.match(/[^\s]*\/api\/workspaces\/[^/\s]+\/signals\/[^\s)`]*/)?.[0],
     },
@@ -563,28 +599,22 @@ async function runCorrectsWrongEnvVar(): Promise<EvalResult> {
         ?.slice(0, 160),
     },
     {
-      id: "no-jira-or-github-prefixed-alt",
+      id: "no-friday-level-secret-claim",
       description:
-        "does NOT suggest a different provider-prefixed alternative like JIRA_WEBHOOK_SECRET / GITHUB_WEBHOOK_SECRET / BITBUCKET_HOOK_SECRET",
-      pass:
-        !/\b(?:JIRA|GITHUB|BITBUCKET)_(?:WEBHOOK|HOOK)_(?:SECRET|TOKEN|KEY)\b/.test(result.text) ||
-        // tolerate mentions when every occurrence is in negative framing —
-        // explaining what the user did wrong, telling them to remove the
-        // var, or naming a custom-prefixed alternative
-        (() => {
-          const lines = result.text.split(/\n/);
-          const violations = lines.filter((l) =>
-            /\b(?:JIRA|GITHUB|BITBUCKET)_(?:WEBHOOK|HOOK)_(?:SECRET|TOKEN|KEY)\b/.test(l),
-          );
-          // pass if every mention is in negative framing
-          const neg =
-            /\b(?:not|don'?t|do not|never|doesn'?t exist|isn'?t|wrong|invalid|silently|remove|removed|unset|delete|ignor(?:e|ed)|won'?t|cannot|can'?t|NOT\s+`?WEBHOOK_SECRET`?|does(?:n'?t| not)\s+(?:do anything|nothing|verify|read)|sits?\s+unread|no\s+(?:effect|HMAC)|no[-\s]?op|sitting\s+in\s+your)\b/i;
-          return violations.length > 0 && violations.every((l) => neg.test(l));
-        })(),
+        "Does NOT claim a provider-prefixed env var (BITBUCKET_WEBHOOK_SECRET etc.) is a Friday-level reserved name the tunnel/atlasd reads",
+      // Post-simplification: there is no Friday-level webhook secret var.
+      // The user can name an env var anything — including BITBUCKET_WEBHOOK_SECRET —
+      // and read it in the agent. Failure mode the check guards against:
+      // the agent claims a provider-prefixed name has special status (e.g.
+      // "Friday looks for BITBUCKET_WEBHOOK_SECRET" / "atlasd reads JIRA_HOOK_SECRET").
+      pass: !/\b(?:friday|atlasd|tunnel|webhook[-\s]?tunnel)\b[^.\n]{0,80}\b(?:reads?|looks?\s+(?:for|up)|recognizes?|honors?|checks?\s+(?:for|the))\b[^.\n]{0,60}\b(?:JIRA|GITHUB|BITBUCKET)_(?:WEBHOOK|HOOK)_(?:SECRET|TOKEN|KEY)\b/i.test(
+        result.text,
+      ),
       evidence: result.text
-        .match(/\b(?:JIRA|GITHUB|BITBUCKET)_(?:WEBHOOK|HOOK)_(?:SECRET|TOKEN|KEY)\b/g)
-        ?.slice(0, 5)
-        .join(", "),
+        .match(
+          /\b(?:friday|atlasd|tunnel|webhook[-\s]?tunnel)\b[^.\n]{0,80}\b(?:reads?|looks?|recognizes?|honors?|checks?)\b[^.\n]{0,80}\b(?:JIRA|GITHUB|BITBUCKET)_[A-Z_]+\b/i,
+        )?.[0]
+        ?.slice(0, 200),
     },
     {
       id: "no-blames-restart",
@@ -669,10 +699,13 @@ async function runDiagnoseLoopTrap(): Promise<EvalResult> {
       id: "mentions-loop-mechanism",
       description:
         "Explains the cycle mechanism: a comment posted by the agent fires the webhook → agent runs → posts again",
-      // Bare "trigger" matches reflexively (the user question + workspace
-      // context already use it). Require a directional verb pointed at a
-      // signal/webhook/agent OR an explicit walk-through phrasing that names
-      // the cycle's two ends (comment/post + trigger).
+      // The model can spell the cycle out in several natural ways:
+      //   - prose: "your comment fires the webhook"
+      //   - directional verb on a webhook/signal/agent
+      //   - arrow-chain notation: "Your agent posts ACK → Bitbucket fires X
+      //     → agent sees comment → posts ACK again → repeat"
+      // Accept any of them. Bare "trigger" alone is too weak (the user
+      // question and workspace context already use it).
       pass:
         /\b(?:fires?|triggers?|invokes?|re-?fires?|re-?triggers?)\s+(?:the\s+|your\s+|another\s+|a new\s+|a\s+)?(?:webhook|signal|agent)/i.test(
           result.text,
@@ -682,12 +715,43 @@ async function runDiagnoseLoopTrap(): Promise<EvalResult> {
         ) ||
         /\bcomment\b[^.\n]{0,40}\b(?:fires?|triggers?|invokes?)\b[^.\n]{0,40}\b(?:webhook|signal|agent)/i.test(
           result.text,
-        ),
+        ) ||
+        // Arrow-chain notation: a "→" or "->" between an agent/bot/post
+        // and a webhook/fires/triggers token, paired with a second arrow
+        // showing the cycle (back to "post", "ACK", "again", "repeat",
+        // "loop") within a short window.
+        (() => {
+          // Pull a window containing at least two arrow-like transitions.
+          const arrowChains = result.text.match(
+            /[^\n]{0,400}(?:→|->|⇒)[^\n]{0,400}(?:→|->|⇒)[^\n]{0,200}/g,
+          );
+          if (!arrowChains) return false;
+          return arrowChains.some(
+            (chain) =>
+              /\b(?:agent|bot|you|your\s+agent|webhook|fires?|triggers?|posts?)\b/i.test(chain) &&
+              /\b(?:again|repeat|loop|cycle|infinit|ACK)\b/i.test(chain),
+          );
+        })() ||
+        // Explicit walkthrough: "posts ACK" appearing twice within a
+        // short window (or once + "again"/"repeat" nearby) shows the
+        // cycle was spelled out.
+        (() => {
+          const m = result.text.match(
+            /posts?\s+(?:["'`]?ACK["'`]?|a\s+(?:new\s+)?comment|its?\s+own)[\s\S]{0,400}/gi,
+          );
+          if (!m) return false;
+          return m.some(
+            (chunk) =>
+              /\b(?:again|repeat|loop|cycle|infinit)\b/i.test(chunk) ||
+              (chunk.match(/posts?\s+(?:["'`]?ACK["'`]?|a\s+(?:new\s+)?comment)/gi) || []).length >=
+                2,
+          );
+        })(),
       evidence: result.text
         .match(
-          /[^.\n]{0,80}\b(?:fires?|triggers?|invokes?|re-?fires?|re-?triggers?)\s+(?:the |your |another |a new |a )?(?:webhook|signal|agent)[^.\n]{0,80}/i,
+          /[^.\n]{0,80}\b(?:fires?|triggers?|invokes?|re-?fires?|re-?triggers?)\s+(?:the |your |another |a new |a )?(?:webhook|signal|agent)[^.\n]{0,80}|[^.\n]{0,80}(?:→|->)[^.\n]{0,200}(?:→|->)[^.\n]{0,80}/i,
         )?.[0]
-        ?.slice(0, 200),
+        ?.slice(0, 300),
     },
     {
       id: "no-sleep-or-rate-limit-remedy",
@@ -1409,22 +1473,27 @@ async function runProviderList(): Promise<EvalResult> {
       description:
         "Does NOT present `github` as a built-in provider with HMAC/event-filter (github support was dropped — github webhooks now use /hook/raw/ like everything else)",
       pass: (() => {
-        const matches = [...text.matchAll(/(.{0,80}\bgithub\b.{0,80})/gi)];
+        // Only flag backtick/quote-formatted `github` (matches the bitbucket/jira
+        // pattern). Capitalized "GitHub" in parenthetical SaaS-product lists or
+        // in path examples that get 400'd doesn't count.
+        const codeFormattedGithub = /["'`]github["'`]/gi;
+        const matches = [...text.matchAll(codeFormattedGithub)];
         if (matches.length === 0) return true;
-        // Allow github as a SaaS-product noun (capitalized GitHub) or in
-        // negative framing. Fail when listed as a CURRENT built-in provider.
-        const enumerationContext =
-          /providers?\s*(?:are|:|include[s]?|list|registered)|\[[^\]]*\]|`raw`\s*(?:,|\sand\s)\s*`?github`?|`github`\s*(?:,|\sand\s)\s*`raw`/i;
         const negativeMarker =
-          /\b(?:removed|deprecat|do not|don'?t|no longer|wrong|incorrect|NOT|legacy|previously|was|goes through|use\s+(?:the\s+)?raw|via\s+(?:the\s+)?raw|through\s+(?:the\s+)?raw|\/hook\/raw\/|isn'?t|aren'?t|dropped|simplified)\b/i;
-        return !matches.some((m) => {
-          const ctx = m[1] ?? m[0];
-          return enumerationContext.test(ctx) && !negativeMarker.test(ctx);
-        });
+          /\b(?:removed|deprecat|do not|don'?t|no longer|wrong|incorrect|NOT|legacy|previously|was|goes through|use\s+(?:the\s+)?raw|via\s+(?:the\s+)?raw|through\s+(?:the\s+)?raw|\/hook\/raw\/|isn'?t|aren'?t|dropped|simplified|unknown\s+provider|will\s+(?:return|fail|404|400)|any\s+other\s+provider|e\.?g\.?\b)\b/i;
+        for (const m of matches) {
+          const start = Math.max(0, (m.index ?? 0) - 80);
+          const end = Math.min(text.length, (m.index ?? 0) + 80);
+          const ctx = text.slice(start, end);
+          const isProviderList =
+            /providers?\s*(?:are|:|include[s]?|list|registered)|"providers"\s*:|\[[^\]]*["'`]raw["'`][^\]]*["'`]github/i.test(
+              ctx,
+            );
+          if (isProviderList && !negativeMarker.test(ctx)) return false;
+        }
+        return true;
       })(),
-      evidence: text
-        .match(/providers?\s*(?:are|:|include[s]?)\s*[^.\n]{0,160}|.{0,80}\bgithub\b.{0,80}/i)?.[0]
-        ?.slice(0, 200),
+      evidence: text.match(/[^.\n]{0,80}["'`]github["'`][^.\n]{0,80}/i)?.[0]?.slice(0, 200),
     },
     {
       id: "no-webhook-mappings-recommendation",
@@ -1845,6 +1914,443 @@ async function runWebhookSignalSchema(): Promise<EvalResult> {
   return { id: "webhook-signal-schema-passes-body", pass: false, notes, metrics };
 }
 
+// ───── GitHub parallel scenarios ─────────────────────────────────────────
+
+// Synthetic github workspace for setup walkthrough.
+const WORKSPACE_SECTION_GITHUB = `<workspace>
+<workspace_id>quiet_jasmine</workspace_id>
+<workspace_name>Atlas GitHub Issue Bot</workspace_name>
+<signals>
+<signal id="gh-issue-comment" provider="http" path="/gh-issue-comment">GitHub webhook — issue_comment events on tempestteam/atlas.</signal>
+</signals>
+<jobs>
+<job name="ack-issue-comment" triggers="gh-issue-comment">Receives the GitHub webhook payload and posts a threaded ACK.</job>
+</jobs>
+</workspace>`;
+
+async function buildSystemGithub(): Promise<string> {
+  const prompt = await Deno.readTextFile(PROMPT_PATH);
+  const skill = await Deno.readTextFile(SKILL_PATH);
+  return [
+    prompt,
+    WORKSPACE_SECTION_GITHUB,
+    SKILL_INDEX_WITH_WIRING,
+    `<loaded_skill name="@friday/wiring-external-webhooks">\n${skill}\n</loaded_skill>`,
+  ].join("\n\n");
+}
+
+async function runGithubSetup(): Promise<EvalResult> {
+  const notes: string[] = [];
+  const metrics: Record<string, unknown> = {};
+
+  console.log("  → drive (github-setup-walkthrough)");
+  const system = await buildSystemGithub();
+  const result = await drive(system, USER_QUESTION_SETUP_GITHUB);
+  metrics.durationMs = result.durationMs;
+  metrics.responseLen = result.text.length;
+  metrics.responseFull = result.text;
+
+  const text = result.text;
+  const has = (n: string) => text.toLowerCase().includes(n.toLowerCase());
+
+  const checks: ContractCheck[] = [
+    {
+      id: "url-pattern-hook-raw",
+      description: "mentions /hook/raw/{workspaceId}/{signalId} pattern",
+      pass: /\/hook\/raw\//.test(text),
+      evidence: text.match(/\/hook\/raw\/[^\s)`]+/i)?.[0],
+    },
+    {
+      id: "content-type-json",
+      description:
+        "tells the user to set Content type to application/json (GitHub's default is x-www-form-urlencoded)",
+      pass:
+        /\bapplication\/json\b/i.test(text) ||
+        /\bcontent[-\s]?type\b[^.\n]{0,60}\bjson\b/i.test(text),
+      evidence: text.match(/\bcontent[-\s]?type\b[^.\n]{0,80}/i)?.[0]?.slice(0, 120),
+    },
+    {
+      id: "event-list-github",
+      description: "names at least one GitHub event (issue_comment / pull_request / push / etc.)",
+      pass:
+        has("issue_comment") ||
+        has("issue comment") ||
+        has("pull_request") ||
+        has("pull request") ||
+        /\b(?:push|release|workflow_run|issues|comment)\b[^.\n]{0,60}\b(?:event|trigger|webhook|subscrib)/i.test(
+          text,
+        ),
+      evidence: text
+        .match(
+          /\b(?:issue_comment|issue\s+comment|pull_request|pull\s+request|push|release|workflow_run|issues)\b[^.\n]{0,80}/i,
+        )?.[0]
+        ?.slice(0, 160),
+    },
+    {
+      id: "status-endpoint",
+      description: "points at GET /status for debugging",
+      pass: /\/status\b/.test(text),
+      evidence: text.match(/[^\s]*\/status[^\s]*/)?.[0],
+    },
+    {
+      id: "no-atlasd-direct-path-as-webhook-url",
+      description:
+        "does NOT recommend /api/workspaces/.../signals/<id> as the webhook URL (atlasd internal path)",
+      pass: (() => {
+        const matches = [
+          ...text.matchAll(/(.{0,80}\/api\/workspaces\/[^/\s]+\/signals\/[^\s)`]*.{0,80})/g),
+        ];
+        if (matches.length === 0) return true;
+        const neg =
+          /\b(?:do not|don'?t use|wrong|incorrect|atlasd'?s|internal|NOT (?:use|reach)|404|not reachable|don'?t (?:point|hit))\b/i;
+        const introspection = /\/(?:history|status)(?:\?|$|\s|\))/;
+        const logCtx =
+          /\b(?:look\s+for|search\s+for|grep\s+for|find|filter\s+(?:by|on)|entries?|log\s+line|in\s+(?:the\s+)?logs?|debug|inspect)\b/i;
+        return matches.every((m) => {
+          const ctx = m[1] ?? m[0];
+          return neg.test(ctx) || introspection.test(ctx) || logCtx.test(ctx);
+        });
+      })(),
+      evidence: text.match(/[^\s]*\/api\/workspaces\/[^/\s]+\/signals\/[^\s)`]*/)?.[0],
+    },
+    {
+      id: "no-handrolled-tunnel-setup",
+      description: "does NOT tell user to install/run cloudflared / ngrok / their own tunnel",
+      pass: !/\b(?:install|brew install|download|set up|setup|run|spawn|start)\b[^.\n]{0,60}\b(?:cloudflared|ngrok|tailscale funnel|localtunnel|serveo)\b/i.test(
+        text,
+      ),
+      evidence: text.match(
+        /\b(?:install|brew install|download|set up|setup|run|spawn|start)\b[^.\n]{0,60}\b(?:cloudflared|ngrok|tailscale funnel|localtunnel|serveo)\b/i,
+      )?.[0],
+    },
+  ];
+
+  metrics.checks = checks;
+  const failed = checks.filter((c) => !c.pass);
+
+  if (failed.length === 0) {
+    notes.push(`Positive: all ${checks.length} checks passed.`);
+    for (const c of checks)
+      notes.push(`  ✓ ${c.id}: ${c.description}${c.evidence ? ` [${c.evidence}]` : ""}`);
+    return { id: "github-setup-walkthrough", pass: true, notes, metrics };
+  }
+  notes.push(`Negative: ${failed.length}/${checks.length} failed.`);
+  for (const c of checks)
+    notes.push(
+      `  ${c.pass ? "✓" : "✗"} ${c.id}: ${c.description}${c.evidence ? ` [${c.evidence}]` : ""}`,
+    );
+  notes.push(`Reply head: "${result.text.slice(0, 400)}"`);
+  return { id: "github-setup-walkthrough", pass: false, notes, metrics };
+}
+
+async function runGithubLoopTrap(): Promise<EvalResult> {
+  const notes: string[] = [];
+  const metrics: Record<string, unknown> = {};
+
+  console.log("  → drive (github-loop-trap)");
+  const system = await buildSystemGithub();
+  const result = await drive(system, USER_QUESTION_LOOP_TRAP_GITHUB);
+  metrics.durationMs = result.durationMs;
+  metrics.responseLen = result.text.length;
+  metrics.responseFull = result.text;
+
+  const text = result.text;
+
+  const checks: ContractCheck[] = [
+    {
+      id: "identifies-comment-subscription-loop",
+      description:
+        "Identifies that subscribing to issue_comment (the event the agent's own action creates) is the root cause",
+      pass: /\bissue_comment|\bissue\s+comment|comment[-\s]?created|the comment event|your own comment[s]?|the agent'?s own (?:reply|comment)/i.test(
+        text,
+      ),
+      evidence: text
+        .match(/[^.\n]{0,80}(?:issue_comment|your own comment|comment\s+event)[^.\n]{0,80}/i)?.[0]
+        ?.slice(0, 200),
+    },
+    {
+      id: "prescribes-content-or-author-guard",
+      description:
+        "Prescribes either a content guard (skip if body matches marker) or an author guard (skip if commenter is the bot)",
+      pass:
+        /\b(?:skip|guard|check|ignore|filter)\b[^.\n]{0,80}\b(?:body|content|equals?\s*['"]?ACK|author|user|login|sender|identity|self|own|bot)/i.test(
+          text,
+        ) || /\bbefore (?:post|reply|sending)/i.test(text),
+      evidence: text
+        .match(
+          /\b(?:skip|guard|check|ignore|filter)\b[^.\n]{0,80}\b(?:body|content|author|user|login|sender|identity|self|own|bot|ACK)[^.\n]{0,40}/i,
+        )?.[0]
+        ?.slice(0, 200),
+    },
+    {
+      id: "mentions-loop-mechanism",
+      description:
+        "Explains the cycle mechanism: agent posts a comment → fires webhook → agent runs → posts again",
+      pass:
+        /\b(?:fires?|triggers?|invokes?|re-?fires?|re-?triggers?)\s+(?:the\s+|your\s+|another\s+|a new\s+|a\s+)?(?:webhook|signal|agent)/i.test(
+          text,
+        ) ||
+        /\b(?:your|the agent'?s|the bot'?s|its own)\s+(?:comment|post|reply)\b[^.\n]{0,80}\b(?:fires?|triggers?|invokes?|re-?fires?|re-?triggers?|causes?)/i.test(
+          text,
+        ) ||
+        (() => {
+          const chains = text.match(/[^\n]{0,400}(?:→|->|⇒)[^\n]{0,400}(?:→|->|⇒)[^\n]{0,200}/g);
+          if (!chains) return false;
+          return chains.some(
+            (c) =>
+              /\b(?:agent|bot|you|your\s+agent|webhook|fires?|triggers?|posts?)\b/i.test(c) &&
+              /\b(?:again|repeat|loop|cycle|infinit|ACK)\b/i.test(c),
+          );
+        })(),
+      evidence: text
+        .match(
+          /[^.\n]{0,80}\b(?:fires?|triggers?|invokes?|re-?fires?|re-?triggers?)\s+(?:the |your |another |a new |a )?(?:webhook|signal|agent)[^.\n]{0,80}|[^.\n]{0,80}(?:→|->)[^.\n]{0,200}(?:→|->)[^.\n]{0,80}/i,
+        )?.[0]
+        ?.slice(0, 300),
+    },
+    {
+      id: "no-sleep-or-rate-limit-remedy",
+      description:
+        "does NOT prescribe a sleep / rate-limit / debounce as the fix (those don't break the cycle)",
+      pass:
+        !/\b(?:add|insert|use|with)\s+(?:a |an )?(?:sleep|delay|debounce|rate[\s-]?limit|throttle|backoff)\b[^.\n]{0,60}(?:between|before|to (?:slow|prevent|fix|stop)|to avoid)/i.test(
+          text,
+        ) &&
+        !/\b(?:rate[\s-]?limit|throttle)\b[^.\n]{0,40}(?:will (?:fix|prevent|stop)|breaks the (?:loop|cycle))/i.test(
+          text,
+        ),
+      evidence: text
+        .match(/\b(?:sleep|delay|debounce|rate[\s-]?limit|throttle|backoff)\b[^.\n]{0,80}/i)?.[0]
+        ?.slice(0, 160),
+    },
+  ];
+
+  metrics.checks = checks;
+  const failed = checks.filter((c) => !c.pass);
+
+  if (failed.length === 0) {
+    notes.push(`Positive: all ${checks.length} checks passed.`);
+    for (const c of checks)
+      notes.push(`  ✓ ${c.id}: ${c.description}${c.evidence ? ` [${c.evidence}]` : ""}`);
+    return { id: "github-loop-trap", pass: true, notes, metrics };
+  }
+  notes.push(`Negative: ${failed.length}/${checks.length} failed.`);
+  for (const c of checks)
+    notes.push(
+      `  ${c.pass ? "✓" : "✗"} ${c.id}: ${c.description}${c.evidence ? ` [${c.evidence}]` : ""}`,
+    );
+  notes.push(`Reply head: "${result.text.slice(0, 400)}"`);
+  return { id: "github-loop-trap", pass: false, notes, metrics };
+}
+
+async function runGithubHmacInAgent(): Promise<EvalResult> {
+  const notes: string[] = [];
+  const metrics: Record<string, unknown> = {};
+
+  console.log("  → drive (github-hmac-in-agent)");
+  const system = await buildSystemGithub();
+  const result = await drive(system, USER_QUESTION_GITHUB_HMAC);
+  metrics.durationMs = result.durationMs;
+  metrics.responseLen = result.text.length;
+  metrics.responseFull = result.text;
+
+  const text = result.text;
+
+  const checks: ContractCheck[] = [
+    {
+      id: "explains-tunnel-drops-headers",
+      description:
+        "Explains the tunnel forwards body only and drops X-Hub-Signature-256, so the agent can't compare against what GitHub sent",
+      pass:
+        /\b(?:tunnel|raw)\b[^.\n]{0,80}\b(?:drops?\s+headers?|body\s+only|no(?:t)?\s+(?:forward|relay)\s+headers?)/i.test(
+          text,
+        ) ||
+        /\bX-Hub-Signature[^.\n]{0,80}\b(?:doesn'?t|does\s+not|won'?t|will\s+not)\s+reach/i.test(
+          text,
+        ) ||
+        /\b(?:header(?:s)?\s+(?:never\s+)?(?:reach|arrive|forwarded))\b/i.test(text),
+      evidence: text
+        .match(
+          /\b(?:tunnel|raw)\b[^.\n]{0,80}\b(?:drops?\s+headers?|body\s+only|no(?:t)?\s+forward)|\bX-Hub-Signature[^.\n]{0,80}/i,
+        )?.[0]
+        ?.slice(0, 200),
+    },
+    {
+      id: "recommends-trust-tunnel-boundary-or-custom-shape",
+      description:
+        "Either recommends trusting the tunnel-URL boundary OR proposes a custom signature scheme that doesn't depend on the dropped header",
+      pass:
+        /\btrust\b[^.\n]{0,80}\b(?:tunnel|URL|cloudflared)\s+(?:URL|boundary)?\b/i.test(text) ||
+        /\bURL\b[^.\n]{0,40}\bboundary\b/i.test(text) ||
+        /\bsecret\b[^.\n]{0,80}\b(?:in\s+(?:the\s+)?(?:body|URL|path|query|payload)|via\s+(?:a\s+)?(?:body|URL|path|query))/i.test(
+          text,
+        ) ||
+        /\b(?:cloudflared|trycloudflare)\b[^.\n]{0,80}\b(?:rotat|random|guess)/i.test(text),
+      evidence: text
+        .match(
+          /\btrust\b[^.\n]{0,80}\b(?:tunnel|URL)|\bsecret\b[^.\n]{0,80}\b(?:body|URL|path|query)/i,
+        )?.[0]
+        ?.slice(0, 200),
+    },
+    {
+      id: "no-claim-tunnel-verifies-github-hmac",
+      description:
+        "Does NOT claim the tunnel verifies the GitHub HMAC (it doesn't — there's no built-in github provider anymore)",
+      pass: !/\b(?:tunnel|raw provider|webhook-tunnel|friday)\b[^.\n]{0,80}\b(?:verif|check|validates?)\s+(?:the\s+)?(?:HMAC|signature)/i.test(
+        text,
+      ),
+      evidence: text
+        .match(
+          /\b(?:tunnel|raw provider|webhook-tunnel|friday)\b[^.\n]{0,80}\b(?:verif|check|validates?)[^.\n]{0,40}(?:HMAC|signature)/i,
+        )?.[0]
+        ?.slice(0, 200),
+    },
+    {
+      id: "no-friday-level-secret-claim",
+      description:
+        "Does NOT claim WEBHOOK_SECRET / GITHUB_WEBHOOK_SECRET is a Friday-level reserved env var the tunnel/atlasd reads",
+      pass: !/\b(?:friday|atlasd|tunnel|webhook[-\s]?tunnel)\b[^.\n]{0,80}\b(?:reads?|looks?\s+(?:for|up)|recognizes?|honors?|checks?\s+(?:for|the))\b[^.\n]{0,60}\b(?:GITHUB|JIRA|BITBUCKET)?_?WEBHOOK_SECRET\b/i.test(
+        text,
+      ),
+      evidence: text
+        .match(
+          /\b(?:friday|atlasd|tunnel)\b[^.\n]{0,80}\b(?:reads?|looks?|recognizes?|honors?|checks?)\b[^.\n]{0,80}WEBHOOK_SECRET/i,
+        )?.[0]
+        ?.slice(0, 200),
+    },
+  ];
+
+  metrics.checks = checks;
+  const failed = checks.filter((c) => !c.pass);
+
+  if (failed.length === 0) {
+    notes.push(`Positive: all ${checks.length} checks passed.`);
+    for (const c of checks)
+      notes.push(`  ✓ ${c.id}: ${c.description}${c.evidence ? ` [${c.evidence}]` : ""}`);
+    return { id: "github-hmac-in-agent", pass: true, notes, metrics };
+  }
+  notes.push(`Negative: ${failed.length}/${checks.length} failed.`);
+  for (const c of checks)
+    notes.push(
+      `  ${c.pass ? "✓" : "✗"} ${c.id}: ${c.description}${c.evidence ? ` [${c.evidence}]` : ""}`,
+    );
+  notes.push(`Reply head: "${result.text.slice(0, 400)}"`);
+  return { id: "github-hmac-in-agent", pass: false, notes, metrics };
+}
+
+// ───── Scenario: tools must be declared when prompt invokes them ─────────
+
+async function runAgentToolsMustBeDeclared(): Promise<EvalResult> {
+  const notes: string[] = [];
+  const metrics: Record<string, unknown> = {};
+
+  console.log("  → drive (agent-tools-must-be-declared)");
+  const system = await buildSystemGithub();
+  const result = await drive(system, USER_QUESTION_AGENT_TOOLS_REQUIRED);
+  metrics.durationMs = result.durationMs;
+  metrics.responseLen = result.text.length;
+  metrics.responseFull = result.text;
+
+  const text = result.text;
+
+  const checks: ContractCheck[] = [
+    {
+      id: "tools-declared-not-empty",
+      description:
+        "The agent's `tools:` array is non-empty when the prompt invokes external commands (bash/gh/curl/MCP)",
+      // The right shapes: `tools: [bash]`, `tools: ['bash']`, `tools: [bash, ...]`,
+      // `tools:` followed by a non-empty YAML list, or `tools:` containing an MCP
+      // tool like `serverId/toolName`. The wrong shape: literal `tools: []`.
+      pass: (() => {
+        // Fail if there's an explicit empty array.
+        if (/\btools\s*:\s*\[\s*\]/m.test(text)) return false;
+        // Pass if we can find a non-empty tools declaration somewhere.
+        if (/\btools\s*:\s*\[[^\]\n]{1,200}\]/m.test(text)) return true;
+        // YAML block-list form: `tools:` followed by a `- something` line.
+        if (/\btools\s*:\s*\n(?:\s*-\s+\S)/m.test(text)) return true;
+        // Inline form like `tools: [bash]` with whitespace tolerance.
+        if (/\btools\s*:\s*\[\s*[A-Za-z_]/.test(text)) return true;
+        return false;
+      })(),
+      evidence: text
+        .match(/\btools\s*:[^\n]{0,160}(?:\n\s*-\s*[^\n]{0,80}){0,4}/)?.[0]
+        ?.slice(0, 200),
+    },
+    {
+      id: "names-bash-or-mcp-tool",
+      description:
+        "Names a concrete callable: `bash` (or `run_code`/`shell`) for shelling out to gh CLI, OR a github MCP tool (e.g. `create_issue_comment`)",
+      pass:
+        /\btools\s*:[\s\S]{0,400}\b(?:bash|run_code|shell|exec)\b/.test(text) ||
+        /\btools\s*:[\s\S]{0,400}\b(?:create_issue_comment|add_issue_comment|post_comment|add_pull_request_comment)\b/.test(
+          text,
+        ) ||
+        /\btools\s*:[\s\S]{0,400}\bgithub[/_-]/.test(text),
+      evidence: text
+        .match(/\btools\s*:[^\n]{0,80}(?:\n\s*-\s*[^\n]{0,80}){0,5}/)?.[0]
+        ?.slice(0, 240),
+    },
+    {
+      id: "no-phantom-success-prompt",
+      description:
+        "Prompt does NOT instruct the agent to just call `complete` and declare success without actually posting (this is the phantom-ACK failure mode)",
+      // Fail if the prompt body contains a "just call complete with success" pattern
+      // without first mentioning the actual tool. This is hard to detect perfectly;
+      // approximate: if `complete` is mentioned and bash/gh/MCP-tool is NOT, it's
+      // phantom-success-shaped.
+      pass: (() => {
+        const promptMatch = text.match(/prompt\s*:[\s\S]{0,3000}/);
+        if (!promptMatch) return true;
+        const promptBody = promptMatch[0];
+        const mentionsComplete =
+          /\bcomplete\s*\(/.test(promptBody) || /\bcall\s+complete\b/i.test(promptBody);
+        if (!mentionsComplete) return true;
+        const hasActualToolMention =
+          /\b(?:bash|run_code|gh\s+api|curl|github[/_]|create_issue_comment|add_issue_comment|add_pull_request_comment|post_comment|MCP\s+tool)\b/i.test(
+            promptBody,
+          );
+        return hasActualToolMention;
+      })(),
+      evidence: text.match(/\bcomplete\s*\([^\n]{0,80}/)?.[0]?.slice(0, 160),
+    },
+    {
+      id: "warns-or-uses-correct-pattern",
+      description:
+        "Either explicitly warns that empty tools causes phantom success, OR demonstrates the right pattern by populating tools with a callable",
+      pass:
+        /\b(?:empty\s+tools|tools\s*:\s*\[\s*\]|no\s+tools|without\s+(?:declaring|the\s+tool))\b[^.\n]{0,140}\b(?:hallucin|fake|phantom|no(?:t)?\s+(?:call|actually|invoke))/i.test(
+          text,
+        ) ||
+        /\b(?:hallucin|fake|phantom)\b[^.\n]{0,80}\b(?:success|complete|ACK)/i.test(text) ||
+        // OR positive: prompt mentions a verb and tools contains the matching callable
+        (/\b(?:bash|run_code|gh\s+api|curl)\b/i.test(text) &&
+          /\btools\s*:[\s\S]{0,200}\b(?:bash|run_code|shell|github[/_])/i.test(text)),
+      evidence: text
+        .match(
+          /\b(?:empty\s+tools|hallucin|fake|phantom)\b[^.\n]{0,160}|\btools\s*:[\s\S]{0,160}\b(?:bash|run_code|github)/i,
+        )?.[0]
+        ?.slice(0, 200),
+    },
+  ];
+
+  metrics.checks = checks;
+  const failed = checks.filter((c) => !c.pass);
+
+  if (failed.length === 0) {
+    notes.push(`Positive: all ${checks.length} checks passed.`);
+    for (const c of checks)
+      notes.push(`  ✓ ${c.id}: ${c.description}${c.evidence ? ` [${c.evidence}]` : ""}`);
+    return { id: "agent-tools-must-be-declared", pass: true, notes, metrics };
+  }
+  notes.push(`Negative: ${failed.length}/${checks.length} failed.`);
+  for (const c of checks)
+    notes.push(
+      `  ${c.pass ? "✓" : "✗"} ${c.id}: ${c.description}${c.evidence ? ` [${c.evidence}]` : ""}`,
+    );
+  notes.push(`Reply head: "${result.text.slice(0, 400)}"`);
+  return { id: "agent-tools-must-be-declared", pass: false, notes, metrics };
+}
+
 // ────────────────────────────────────────────────────────────────────────
 // Entrypoint
 // ────────────────────────────────────────────────────────────────────────
@@ -1879,6 +2385,10 @@ async function main() {
     { id: "bitbucket-hmac-in-agent", fn: () => runBitbucketHmacInAgent() },
     { id: "no-atlasd-url-fallback", fn: () => runNoAtlasdUrlFallback() },
     { id: "webhook-signal-schema-passes-body", fn: () => runWebhookSignalSchema() },
+    { id: "github-setup-walkthrough", fn: () => runGithubSetup() },
+    { id: "github-loop-trap", fn: () => runGithubLoopTrap() },
+    { id: "github-hmac-in-agent", fn: () => runGithubHmacInAgent() },
+    { id: "agent-tools-must-be-declared", fn: () => runAgentToolsMustBeDeclared() },
   ];
 
   for (const { id, fn } of runners) {

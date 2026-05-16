@@ -225,6 +225,55 @@ GitHub's payload top-level keys:
 | `release`          | Release events                    |
 | `workflow_run`     | GHA workflow                      |
 
+## LLM agent prompts that invoke external tools MUST declare those tools
+
+An `llm` agent whose prompt says "Run `gh api ...`" or "Use bash to ..."
+or "Call the X MCP tool" needs the corresponding tool in its
+`config.tools` array. Otherwise the LLM has no way to actually invoke
+anything — it sees the instruction, sees no matching tool, and
+hallucinates success by calling `complete({response: "Done"})`. The
+session reports OK; nothing was actually posted/run.
+
+**Wrong** — prompt promises bash, tools is empty:
+
+```yaml
+agents:
+  ack-commenter:
+    type: llm
+    config:
+      prompt: |
+        ...
+        Run: `gh api repos/.../issues/<N>/comments -X POST -f body='ACK'`
+        ...
+      tools: []   # ← the LLM cannot call gh; it fakes success
+```
+
+Symptom: session completes in <2s, `complete` is the only tool call,
+no side effect lands in the upstream system. The error catalog below
+calls this the "phantom-ACK" failure mode.
+
+**Right** — declare what the prompt invokes:
+
+```yaml
+agents:
+  ack-commenter:
+    type: llm
+    config:
+      prompt: |
+        ...
+        Use the bash tool to run:
+          gh api repos/.../issues/<N>/comments -X POST -f body='ACK'
+      tools:
+        - bash              # for shelling out to gh CLI / curl
+        # OR use the github MCP tools directly:
+        # - github/create_issue_comment
+```
+
+Rule of thumb: every imperative verb in the prompt that names an
+external command, MCP tool, or HTTP call must have a corresponding
+entry in `tools:`. If `tools` is empty, the agent can ONLY call
+`complete` — make sure that's actually what you want.
+
 ## Loop trap — do NOT subscribe to events your own agent creates
 
 If your agent posts a PR comment in response to a webhook, **do not
@@ -257,3 +306,4 @@ prompt/code guard is the load-bearing one.
 | `400 empty body`                                      | Upstream is posting with no body (or a test ping). | Make sure the upstream is sending the actual event payload, not just a ping. |
 | `413 body exceeds N bytes`                            | Webhook body bigger than the tunnel's max. | Split the work upstream, or trim the body before it leaves the upstream. |
 | `502 Cannot reach atlasd: context deadline exceeded`  | Cascade hadn't completed and atlasd is hanging — but `?nowait=true` should be in play; if this fires, something has changed in the tunnel forwarder. | Check `/health` on atlasd and the JetStream stream. |
+| **Phantom-ACK** (session completes in <2s, only tool call is `complete`, nothing posted upstream) | Agent prompt instructs an external action (`gh api …`, `curl …`, MCP tool) but `tools:` is empty — LLM has no way to act, fakes success. | Add the matching tool to `agents.<id>.config.tools` (e.g. `bash` for shell commands, or the specific MCP tool name). See "LLM agent prompts that invoke external tools" above. |
