@@ -1,6 +1,6 @@
 ---
 name: wiring-external-webhooks
-description: "Wires Bitbucket / Jira / custom webhooks to a workspace's HTTP signal via /hook/raw/. Use when a user asks how to configure Bitbucket/Jira to call a Friday signal, how to set the webhook URL, why their webhook isn't firing, or how an agent should parse the raw webhook body and verify the signature. Also use when authoring an agent that consumes a webhook payload, when avoiding webhook reply-loops, or when migrating from the old /hook/bitbucket/ URL."
+description: "Wires Bitbucket / Jira / custom webhooks to a workspace's HTTP signal via /hook/raw/. Use when a user asks how to configure Bitbucket/Jira to call a Friday signal, how to set the webhook URL, why their webhook isn't firing, or how an agent should parse the raw webhook body and verify the signature. Also use when authoring an agent that consumes a webhook payload or when avoiding webhook reply-loops."
 ---
 
 # Wiring external webhooks to HTTP signals
@@ -33,6 +33,22 @@ anything else go through `raw`. The raw provider:
 **Do NOT** point the external service at `/api/workspaces/.../signals/...` —
 that's atlasd's internal direct path, not reachable through the tunnel.
 
+## Env var that controls the secret
+
+The webhook-tunnel reads exactly **one** env var for HMAC secrets:
+
+```
+WEBHOOK_SECRET
+```
+
+That's the literal name. It is set in `~/.atlas/.env` and applies to all
+webhook providers that do signature verification (today: github).
+
+There is no provider-prefixed variant. Do not invent one — if a user or
+agent mentions `BITBUCKET_WEBHOOK_SECRET`, `GITHUB_WEBHOOK_SECRET`, or
+`JIRA_WEBHOOK_SECRET`, those names do not exist in Friday's code and
+will silently not be read. Correct them to `WEBHOOK_SECRET`.
+
 ## Get the tunnel URL in one call
 
 ```bash
@@ -51,44 +67,33 @@ Run it FIRST when something's wrong before guessing.
 1. Repo settings → **Webhooks** → **Add webhook**
 2. **Title**: anything (e.g. `Friday`)
 3. **URL**: paste `https://<tunnel-url>/hook/raw/<workspaceId>/<signalId>`
-4. **Secret**: leave blank, OR set it and verify in the agent (see below)
+4. **Secret**: leave blank (the raw provider doesn't verify); set only if
+   the agent will verify itself (see below)
 5. **Status**: Active
-6. **Triggers**: pick the events you want — Bitbucket sends a different
-   payload shape per event:
-   - `pullrequest:created/updated/approved/comment_created` → body has
-     `pullrequest` (+ `approval` / `comment` / `changes_requested` for
-     subtype)
-   - `repo:push` → body has `push.changes[]`
-   - `repo:commit_status_created/updated` → body has `commit_status`
-   - Bitbucket retries 3× on non-2xx. The event type itself only travels
-     in the `x-event-key` header — and the raw provider does NOT forward
-     headers, so the agent infers from payload shape.
+6. **Triggers**: pick the events you want. Bitbucket's "Choose from a
+   full list..." panel exposes ~23 trigger types; the ones most often
+   useful for agents:
+   - `repo:push` (body has `push.changes[]`)
+   - `repo:commit_status_created` / `repo:commit_status_updated` (body
+     has `commit_status` — failed builds, etc.)
+   - `pullrequest:created` / `pullrequest:updated` / `pullrequest:approved`
+     / `pullrequest:fulfilled` (body has `pullrequest`)
+   - `pullrequest:comment_created` (body has `pullrequest` + `comment`)
+
+   Bitbucket retries 3× on non-2xx. The event type itself only travels
+   in the `x-event-key` header — and the raw provider does NOT forward
+   headers, so the agent infers from payload shape.
 
 ## Verifying signatures in the agent
 
-If you set a Secret in Bitbucket and want the agent to verify, do it in
-Python before processing:
-
-```python
-import hmac, hashlib, json, os
-from friday_agent_sdk import agent, ok, err, AgentContext, run
-
-WEBHOOK_SECRET = os.environ["BITBUCKET_WEBHOOK_SECRET"]  # set in workspace .env
-
-@agent(id="bitbucket-webhook", version="1.0.0", description="…")
-def execute(prompt: str, ctx: AgentContext):
-    payload = ctx.input.config or ctx.input.raw
-    # The raw provider doesn't forward headers. If you need HMAC, switch
-    # the tunnel to /hook/github/ (which does verify) and require a
-    # GitHub-shaped Secret — or accept the trade-off of unverified
-    # webhooks behind cloudflared's transport security.
-    return ok({…})
-```
-
-The raw provider drops request headers — Bitbucket's `x-hub-signature`
-header doesn't reach the agent today. Treat the cloudflared tunnel +
-secret-in-URL-path as the trust boundary unless you change the
-forwarder.
+The raw provider drops request headers (no `x-hub-signature` reaches
+the agent). If you need verification for a Bitbucket webhook today,
+treat the cloudflared tunnel URL + workspace-id-in-path as the trust
+boundary, OR set a Bitbucket secret you also store in the workspace
+`.env` and compute the HMAC yourself on the body (the agent reads the
+secret via `os.environ[...]` and the raw body via `ctx.input.config or
+ctx.input.raw`). Pick an env var name that does NOT collide with
+`WEBHOOK_SECRET` — e.g. `MY_WORKSPACE_BB_SECRET`.
 
 ## Reading the payload in the agent
 
@@ -124,13 +129,20 @@ If you must process comment events:
   marker (`"ACK"`, `"/friday processed"`).
 
 Observed in 2026-05-15 development: 18 spam comments before the agent
-guard was patched in. The skill takes precedence over your intuition —
-write the guard before the first send.
+guard was patched in. Write the guard before the first send.
+
+Friday's signal-level `concurrency: skip` default also blocks the
+"agent acts → webhook fires → agent re-runs" cascade for the duration
+of the first run, but it's a race-dependent backstop; the prompt/code
+guard is the load-bearing one.
 
 ## Custom event mapping (advanced, rarely needed)
 
-`WEBHOOK_MAPPINGS_PATH` still works as a YAML override for the github
-provider's event list. Schema:
+`WEBHOOK_MAPPINGS_PATH` is a YAML override for the **github** provider's
+event list. It is NOT a way to register bitbucket/jira/etc. — those
+providers were removed on 2026-05-15 and pointing the env at a YAML
+with a `bitbucket:` block at the top level silently leaves the registry
+with just `[raw]`. Schema for the github override:
 
 ```yaml
 providers:                            # ← top-level key MUST be `providers:`
@@ -144,22 +156,24 @@ providers:                            # ← top-level key MUST be `providers:`
           url: "release.html_url"
 ```
 
+Common mistakes that produce `400 Unknown provider`:
+
+- Top-level key is the provider name (`{"bitbucket": {...}}`) instead of
+  wrapped in `providers:`.
+- Each event uses `extract:` instead of `mapping:`.
+- Field paths use JSONPath syntax (`$.repository.full_name`) instead of
+  dot paths (`repository.full_name`).
+
 Validate by hitting `/status` — `providers` should include any custom
-provider you added.
+provider you added (default is `[github, raw]`).
 
 ## Error catalog
 
 | Tunnel response                                           | Cause | Fix |
 |-----------------------------------------------------------|---|---|
-| `400 {"error":"Unknown provider: bitbucket. Available: github, raw"}` | You're still using the old `/hook/bitbucket/` URL. | Switch to `/hook/raw/<wsId>/<signalId>`. |
-| `400 {"error":"Unknown provider: X. Available: Y"}`       | `WEBHOOK_MAPPINGS_PATH` is set to a file with the wrong shape. | `unset WEBHOOK_MAPPINGS_PATH` or fix the file (top-level `providers:` key, per-event `mapping:`). |
+| `400 Unknown provider: bitbucket. Available: github, raw` | Webhook URL points at the removed bitbucket provider. | Change the URL in the upstream system to `/hook/raw/<wsId>/<signalId>` (note: `raw`, NOT `bitbucket`). |
+| `400 Unknown provider: X. Available: Y`                   | `WEBHOOK_MAPPINGS_PATH` is set to a file with the wrong shape — schema-incompatible YAML silently leaves the registry with only `raw`. | `unset WEBHOOK_MAPPINGS_PATH` or fix the file (top-level `providers:` key, per-event `mapping:`). |
 | `401 missing x-hub-signature header` (github only)        | Friday has `WEBHOOK_SECRET` set but the GitHub webhook has no Secret. | Paste the secret into the GitHub form. |
 | `401 invalid signature` (github only)                     | Secrets don't match. | Verify byte-for-byte; restart daemon after `.env` change. |
-| `502 Cannot reach atlasd: context deadline exceeded`      | Signal handler ran longer than the tunnel forwarder's 30s deadline. | Split the work: fast signal handler that fires an internal signal; do the slow part async. |
-
-## Migrating off `/hook/bitbucket/` and `/hook/jira/`
-
-These provider names were removed on 2026-05-15. Any webhook still
-pointing at them returns 400. Update the URL in the upstream system to
-`/hook/raw/<wsId>/<signalId>` and rely on the workspace agent to do
-event filtering + payload parsing.
+| `200 {"status":"skipped","reason":"irrelevant event"}` (github only) | github provider received an event not in its mapping. | Subscribe to a mapped event OR add a `WEBHOOK_MAPPINGS_PATH` override. For bitbucket/jira this response can no longer occur — they go through `raw` which forwards everything. |
+| `502 Cannot reach atlasd: context deadline exceeded`      | Signal handler ran longer than the tunnel forwarder's 30s deadline. | Split the work: fast signal handler fires an internal signal; the slow part runs async. |

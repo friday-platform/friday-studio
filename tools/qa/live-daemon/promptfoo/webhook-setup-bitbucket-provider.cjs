@@ -29,53 +29,69 @@ async function runWebhookSetupBitbucket() {
     "--unstable-worker-options",
     "--unstable-kv",
     "--unstable-raw-imports",
-    "--env-file",
     script,
     "--json-output",
     reportPath,
   ];
 
-  await new Promise((resolve, reject) => {
-    const proc = spawn("deno", args, {
-      cwd: root,
-      stdio: ["ignore", "inherit", "inherit"],
-      env: process.env,
-    });
-    proc.on("error", reject);
-    proc.on("exit", (code) => {
-      // The scenario exits non-zero when any case fails — that's still a
-      // valid report. Treat spawn errors as fatal, exit code as data.
-      resolve(code ?? 0);
-    });
+  const child = spawn("deno", args, {
+    cwd: root,
+    env: process.env,
+    stdio: ["ignore", "pipe", "pipe"],
   });
 
-  return await readReport(reportPath);
+  let stdout = "";
+  let stderr = "";
+  child.stdout.on("data", (chunk) => {
+    const text = chunk.toString();
+    stdout += text;
+    process.stdout.write(text);
+  });
+  child.stderr.on("data", (chunk) => {
+    const text = chunk.toString();
+    stderr += text;
+    process.stderr.write(text);
+  });
+
+  const exitCode = await new Promise((resolve, reject) => {
+    child.on("error", reject);
+    child.on("close", resolve);
+  });
+
+  let report;
+  try {
+    report = await readReport(reportPath);
+  } catch {
+    throw new Error(
+      `webhook-setup-bitbucket runner did not produce ${reportPath}; exit=${exitCode}; stderr=${stderr}`,
+    );
+  }
+
+  return { ...report, runnerExitCode: exitCode, runnerStdout: stdout, runnerStderr: stderr };
 }
 
-function ensureReport() {
-  if (!reportPromise) {
-    reportPromise = runWebhookSetupBitbucket();
-  }
+function reportOnce() {
+  if (!reportPromise) reportPromise = runWebhookSetupBitbucket();
   return reportPromise;
 }
 
-module.exports = {
-  async callApi(prompt) {
-    const report = await ensureReport();
-    const scenarioId = String(prompt).trim();
-    const result = report.results.find((r) => r.id === scenarioId);
-    if (!result) {
-      return {
-        output: JSON.stringify({
-          id: scenarioId,
-          pass: false,
-          notes: [
-            `scenario id not found in report; available: ${report.results.map((r) => r.id).join(", ")}`,
-          ],
-          metrics: {},
-        }),
-      };
-    }
-    return { output: JSON.stringify(result) };
-  },
-};
+class WebhookSetupBitbucketProvider {
+  id() {
+    return "friday-webhook-setup-bitbucket";
+  }
+
+  async callApi(prompt, context) {
+    const scenarioId = context?.vars?.scenarioId || String(prompt).trim();
+    const report = await reportOnce();
+    const result = report.results.find((item) => item.id === scenarioId);
+    const output = result ?? {
+      id: scenarioId,
+      pass: false,
+      notes: [`scenario not found in webhook-setup-bitbucket report: ${scenarioId}`],
+      metrics: { availableIds: report.results.map((item) => item.id) },
+    };
+    return { output: JSON.stringify(output) };
+  }
+}
+
+module.exports = WebhookSetupBitbucketProvider;

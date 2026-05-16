@@ -1,11 +1,42 @@
 # yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
 
-# Workspace exposes a `bitbucket-pipeline-failed` HTTP signal. User asks
-# "How do I configure Bitbucket to send my pipeline events here?". The
-# agent MUST answer with the correct URL pattern, env var, signature
-# header, embedded event allowlist, and debugging endpoint — and must
-# NOT invent BITBUCKET_WEBHOOK_SECRET, a JSON mappings file, or a
-# /hook/raw/ bypass. See the 2026-05-15 chat dump (vVf) for the
-# pre-fix failure mode this locks against.
-- vars:
-    scenarioId: explains-bitbucket-webhook-wiring
+# Five variants exercise the wiring-external-webhooks skill across the
+# 2026-05-15 chat-dump failure modes:
+#
+#   with-skill (positive baseline): user asks "how do I configure Bitbucket
+#     to call my signal?". Skill content is injected. Must pass all 8
+#     setup-guidance checks.
+#
+#   without-skill (negative control): same question, bare prompt only.
+#     Must fail at least one check — proves the skill is the carrier.
+#
+#   corrects-wrong-env-var: user has BITBUCKET_WEBHOOK_SECRET set and
+#     asks why their webhook doesn't work. Agent must not double down
+#     on the wrong var; must name WEBHOOK_SECRET or explain the secret
+#     isn't needed for /hook/raw/.
+#
+#   diagnoses-loop-trap: user describes the 18-comment loop. Agent must
+#     identify the comment-subscription cause + prescribe a guard.
+#
+#   points-at-status-first: webhook isn't firing — agent must surface
+#     /status in the first half of the response with what it returns.
+
+- description: workspace-chat gives correct Bitbucket setup guidance WITH wiring-external-webhooks skill loaded
+  vars:
+    scenarioId: with-skill
+
+- description: control — bare prompt without the skill must fail at least one setup-guidance check
+  vars:
+    scenarioId: without-skill
+
+- description: user mentions BITBUCKET_WEBHOOK_SECRET — agent corrects, doesn't double down on the wrong var
+  vars:
+    scenarioId: corrects-wrong-env-var
+
+- description: user describes the comment reply-loop — agent diagnoses subscription trap + prescribes guard
+  vars:
+    scenarioId: diagnoses-loop-trap
+
+- description: webhook isn't firing — agent surfaces /status as the first debugging step
+  vars:
+    scenarioId: points-at-status-first
