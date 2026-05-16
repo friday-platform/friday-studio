@@ -1,11 +1,17 @@
 <!--
   Workspace-setup form rendered inline in the chat thread when a
-  `workspace-setup` elicitation is pending for the active session. One row
-  per variable requirement: name as label, optional description above a
-  plain text input, blur-and-submit validation against the declared schema.
+  `workspace-setup` elicitation is pending for the active session.
 
-  v1 ships variables only — credential picker rows follow in #16
-  (`credentialChoices` stays `{}` here).
+  Renders:
+  - One text input per variable requirement (name as label, optional
+    description, blur-and-submit validation against the declared schema).
+  - One credential picker per distinct provider in the credential
+    requirements (`<SetupCredentialRow>`), which queries Link directly for
+    the available credentials and exposes a "Connect another" affordance
+    that runs the standard OAuth popup flow.
+
+  Submit ships `{ variableValues, credentialChoices }` keyed by variable
+  name and provider id respectively.
 
   @component
 -->
@@ -14,9 +20,11 @@
   import { Button } from "@atlas/ui";
   import { resolve } from "$app/paths";
   import { useAnswerElicitation } from "$lib/queries/elicitation-queries.ts";
+  import SetupCredentialRow from "./setup-credential-row.svelte";
   import {
     allFieldsValid,
     buildSetupAnswerValue,
+    credentialProviders,
     validateField,
     variableRequirements,
   } from "./workspace-setup-card.ts";
@@ -29,12 +37,14 @@
   const { elicitation, workspaceId }: Props = $props();
 
   const variables = $derived(variableRequirements(elicitation.setupRequirements ?? []));
+  const providers = $derived(credentialProviders(elicitation.setupRequirements ?? []));
 
   let values = $state<Record<string, string>>({});
   let touched = $state<Record<string, boolean>>({});
+  let credentialChoices = $state<Record<string, string>>({});
   let submitAttempted = $state(false);
 
-  const submittable = $derived(allFieldsValid(variables, values));
+  const submittable = $derived(allFieldsValid(variables, values, providers, credentialChoices));
   const isPending = $derived(elicitation.status === "pending");
 
   const answerMutation = useAnswerElicitation();
@@ -55,13 +65,26 @@
     return result.ok ? null : result.message;
   }
 
+  function onCredentialChange(provider: string, credentialId: string) {
+    credentialChoices = { ...credentialChoices, [provider]: credentialId };
+  }
+
+  function summaryLede(variableCount: number, providerCount: number): string {
+    const parts: string[] = [];
+    if (variableCount > 0) parts.push(`${variableCount} variable${variableCount === 1 ? "" : "s"}`);
+    if (providerCount > 0) {
+      parts.push(`${providerCount} credential${providerCount === 1 ? "" : "s"}`);
+    }
+    return `Fill in ${parts.join(" and ")} to finish setting up this workspace.`;
+  }
+
   function onSubmit(event: SubmitEvent) {
     event.preventDefault();
     submitAttempted = true;
     if (!isPending || inFlight || !submittable) return;
     answerMutation.mutate({
       id: elicitation.id,
-      value: buildSetupAnswerValue(variables, values),
+      value: buildSetupAnswerValue(variables, values, providers, credentialChoices),
     });
   }
 </script>
@@ -85,44 +108,60 @@
     </span>
   </div>
 
-  {#if variables.length === 0}
-    <p class="hint">No variable inputs requested.</p>
+  {#if variables.length === 0 && providers.length === 0}
+    <p class="hint">No setup inputs requested.</p>
   {:else}
-    <p class="lede">
-      Fill in {variables.length} variable{variables.length === 1 ? "" : "s"} to finish setting up this
-      workspace.
-    </p>
+    <p class="lede">{summaryLede(variables.length, providers.length)}</p>
 
-    <div class="var-list">
-      {#each variables as req (req.name)}
-        {@const error = fieldError(req.name)}
-        {@const inputId = `setup-${elicitation.id}-${req.name}`}
-        <div class="var-group" class:invalid={error !== null}>
-          <label class="var-label" for={inputId}>{req.name}</label>
-          {#if req.description}
-            <p class="var-description">{req.description}</p>
-          {/if}
-          <input
-            id={inputId}
-            class="var-input"
-            type="text"
-            autocomplete="off"
-            spellcheck="false"
-            disabled={!isPending || inFlight}
-            value={values[req.name] ?? ""}
-            oninput={(e) => {
-              values = { ...values, [req.name]: e.currentTarget.value };
-            }}
-            onblur={() => {
-              touched = { ...touched, [req.name]: true };
-            }}
-          />
-          {#if error !== null}
-            <p class="validation-error" role="alert">{error}</p>
-          {/if}
-        </div>
-      {/each}
-    </div>
+    {#if variables.length > 0}
+      <div class="var-list">
+        {#each variables as req (req.name)}
+          {@const error = fieldError(req.name)}
+          {@const inputId = `setup-${elicitation.id}-${req.name}`}
+          <div class="var-group" class:invalid={error !== null}>
+            <label class="var-label" for={inputId}>{req.name}</label>
+            {#if req.description}
+              <p class="var-description">{req.description}</p>
+            {/if}
+            <input
+              id={inputId}
+              class="var-input"
+              type="text"
+              autocomplete="off"
+              spellcheck="false"
+              disabled={!isPending || inFlight}
+              value={values[req.name] ?? ""}
+              oninput={(e) => {
+                values = { ...values, [req.name]: e.currentTarget.value };
+              }}
+              onblur={() => {
+                touched = { ...touched, [req.name]: true };
+              }}
+            />
+            {#if error !== null}
+              <p class="validation-error" role="alert">{error}</p>
+            {/if}
+          </div>
+        {/each}
+      </div>
+    {/if}
+
+    {#if providers.length > 0}
+      <div class="cred-list" data-testid="setup-credential-list">
+        {#each providers as provider (provider)}
+          <div class="cred-group">
+            <span class="var-label">{provider}</span>
+            <p class="var-description">Pick a credential for this provider.</p>
+            <SetupCredentialRow
+              {provider}
+              selectedCredentialId={credentialChoices[provider]}
+              disabled={!isPending || inFlight}
+              onChange={(credentialId) => onCredentialChange(provider, credentialId)}
+            />
+          </div>
+        {/each}
+      </div>
+    {/if}
 
     {#if isPending}
       <div class="actions">
@@ -199,13 +238,15 @@
     margin: 0;
   }
 
-  .var-list {
+  .var-list,
+  .cred-list {
     display: flex;
     flex-direction: column;
     gap: var(--size-3);
   }
 
-  .var-group {
+  .var-group,
+  .cred-group {
     display: flex;
     flex-direction: column;
     gap: var(--size-1);

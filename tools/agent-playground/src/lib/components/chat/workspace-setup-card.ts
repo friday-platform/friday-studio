@@ -8,25 +8,46 @@
  * pipeline used by the env-write card (#17), so a value the user types here
  * passes the same gate it would as an `env_set` proposal.
  */
-import type {
-  SetupRequirement,
-  WorkspaceSetupAnswerValue,
-} from "@atlas/core/elicitations/model";
 import type { VariableDeclaration } from "@atlas/config";
+import type { SetupRequirement, WorkspaceSetupAnswerValue } from "@atlas/core/elicitations/model";
 import {
   validateProposedValue,
   type VariableValidationResult,
 } from "./env-write-variable-awareness.ts";
 
-/** Only variable requirements are handled in v1 — credentials land in #16. */
 export type VariableRequirement = Extract<SetupRequirement, { kind: "variable" }>;
+export type CredentialRequirement = Extract<SetupRequirement, { kind: "credential" }>;
 
 export function isVariableRequirement(req: SetupRequirement): req is VariableRequirement {
   return req.kind === "variable";
 }
 
+export function isCredentialRequirement(req: SetupRequirement): req is CredentialRequirement {
+  return req.kind === "credential";
+}
+
 export function variableRequirements(reqs: readonly SetupRequirement[]): VariableRequirement[] {
   return reqs.filter(isVariableRequirement);
+}
+
+export function credentialRequirements(reqs: readonly SetupRequirement[]): CredentialRequirement[] {
+  return reqs.filter(isCredentialRequirement);
+}
+
+/**
+ * Distinct providers across all credential requirements. The form renders one
+ * picker per provider — multiple requirements pointing at the same provider
+ * share a single choice.
+ */
+export function credentialProviders(reqs: readonly SetupRequirement[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const req of credentialRequirements(reqs)) {
+    if (seen.has(req.provider)) continue;
+    seen.add(req.provider);
+    out.push(req.provider);
+  }
+  return out;
 }
 
 /**
@@ -78,39 +99,55 @@ function coerceForPayload(req: VariableRequirement, raw: string): CoercedPrimiti
 }
 
 /**
- * Build the answer payload for `POST /api/elicitations/:id/answer`. `values`
- * is keyed by requirement name; missing keys → empty string (caller's
- * disabled-submit guard prevents that, but we tolerate it cleanly).
- *
- * Credential choices are left empty in v1 — #16 fills them in.
+ * Build the answer payload for `POST /api/elicitations/:id/answer`. Variable
+ * `values` are keyed by requirement name; credential `choices` are keyed by
+ * provider id and map to a Link credential id. Missing variable keys → empty
+ * string (caller's disabled-submit guard prevents that, but we tolerate it
+ * cleanly). Credential providers without a choice are omitted — the
+ * submit-disabled gate guards against that.
  */
 export function buildSetupAnswerValue(
-  requirements: readonly VariableRequirement[],
+  variables: readonly VariableRequirement[],
   values: Readonly<Record<string, string>>,
+  credentialProviderIds: readonly string[],
+  choices: Readonly<Record<string, string>>,
 ): WorkspaceSetupAnswerValue {
   const variableValues: Record<string, CoercedPrimitive> = {};
-  for (const req of requirements) {
+  for (const req of variables) {
     const raw = values[req.name] ?? "";
     const coerced = coerceForPayload(req, raw);
     if (coerced !== undefined) variableValues[req.name] = coerced;
   }
-  return { variableValues, credentialChoices: {} };
+  const credentialChoices: Record<string, string> = {};
+  for (const provider of credentialProviderIds) {
+    const credentialId = choices[provider];
+    if (credentialId !== undefined && credentialId.length > 0) {
+      credentialChoices[provider] = credentialId;
+    }
+  }
+  return { variableValues, credentialChoices };
 }
 
 /**
- * True when every variable requirement has a non-empty value AND every
- * value passes its declared schema. Drives the Submit button's disabled
- * state.
+ * True when every variable requirement has a non-empty value that passes its
+ * declared schema AND every credential provider has a selected credential id.
+ * Drives the Submit button's disabled state.
  */
 export function allFieldsValid(
-  requirements: readonly VariableRequirement[],
+  variables: readonly VariableRequirement[],
   values: Readonly<Record<string, string>>,
+  credentialProviderIds: readonly string[],
+  choices: Readonly<Record<string, string>>,
 ): boolean {
-  for (const req of requirements) {
+  for (const req of variables) {
     const raw = values[req.name] ?? "";
     if (raw.length === 0) return false;
     const result = validateField(req, raw);
     if (!result.ok) return false;
+  }
+  for (const provider of credentialProviderIds) {
+    const credentialId = choices[provider];
+    if (!credentialId || credentialId.length === 0) return false;
   }
   return true;
 }

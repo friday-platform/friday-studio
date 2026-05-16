@@ -51,6 +51,7 @@ import {
 } from "./compose-context.ts";
 import { buildOnboardingClause, buildUserProfileClause } from "./onboarding.ts";
 import SYSTEM_PROMPT from "./prompt.txt" with { type: "text" };
+import { fetchWorkspaceSetupStatus, formatSetupStatusBlock } from "./setup-status-section.ts";
 import { connectCommunicatorSucceeded, connectServiceSucceeded } from "./stop-conditions.ts";
 import {
   createDeleteAgentFromRegistryTool,
@@ -462,6 +463,16 @@ export function getSystemBlocks(
      * when the workspace has never bumped — no behavior change then.
      */
     cacheSaltTag?: string;
+    /**
+     * Re-setup status block (Decision 4). Rides at the start of block 4
+     * because it shares the same volatility profile as the workspace
+     * inventory — env writes / credential disconnects mid-conversation
+     * shift the bytes, so co-locating with the 5m-TTL tier keeps the
+     * 1h-TTL identity prefix cached when the setup state changes.
+     * Empty string when the workspace is fully configured or in the
+     * initial-setup (pointer non-null) state.
+     */
+    setupStatus?: string;
   },
 ): SystemBlocks {
   // The salt leads block 2 so a "force fresh" bump cascades: changing
@@ -475,7 +486,9 @@ export function getSystemBlocks(
   if (options?.onboarding) block3Parts.push(options.onboarding);
   if (options?.userProfile) block3Parts.push(options.userProfile);
 
-  const block4Parts: string[] = [workspaceSection];
+  const block4Parts: string[] = [];
+  if (options?.setupStatus) block4Parts.push(options.setupStatus);
+  block4Parts.push(workspaceSection);
 
   return {
     block1: SYSTEM_PROMPT,
@@ -781,7 +794,7 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           workspaceId,
           foregroundCount: foregroundIds.length,
         });
-        const [block2, linkSummary, userIdentitySection, foregrounds, profileState] =
+        const [block2, linkSummary, userIdentitySection, foregrounds, profileState, setupStatus] =
           await Promise.all([
             getBlock2Inputs(workspaceId, logger),
             fetchLinkSummary(logger),
@@ -790,6 +803,7 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
               ? fetchForegroundContexts(foregroundIds, logger)
               : Promise.resolve([]),
             fetchUserProfileState(userId, logger),
+            fetchWorkspaceSetupStatus(workspaceId, logger),
           ]);
 
         const workspaceDetails = block2.details;
@@ -1216,12 +1230,17 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           });
         }
 
+        const setupStatusBlock = setupStatus.shouldInject
+          ? formatSetupStatusBlock(setupStatus.setupRequirements)
+          : "";
+
         const systemBlocks = getSystemBlocks(workspaceSection, {
           skills: skillsSection,
           userIdentity: userIdentitySection,
           onboarding: onboardingClause,
           userProfile: userProfileClause,
           cacheSaltTag,
+          setupStatus: setupStatusBlock,
         });
         const systemPrompt = flattenSystemBlocks(systemBlocks);
 
