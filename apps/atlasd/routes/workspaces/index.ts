@@ -49,11 +49,14 @@ import { resolveVisibleSkills, SkillStorage } from "@atlas/skills";
 import { FilesystemWorkspaceCreationAdapter } from "@atlas/storage";
 import { ColorSchema, isErrnoException, stringifyError } from "@atlas/utils";
 import { getFridayHome } from "@atlas/utils/paths.server";
+import { loadWorkspaceEnv, type SetupRequirementsResult } from "@atlas/workspace";
 import { zValidator } from "@hono/zod-validator";
 import { parse, stringify } from "@std/yaml";
+import type { Context } from "hono";
 import { z } from "zod";
+import { assembleLinkCredentialState } from "../../src/assemble-link-credential-state.ts";
 import { requireDevEnv } from "../../src/dev-only.ts";
-import type { AppContext } from "../../src/factory.ts";
+import type { AppContext, AppVariables } from "../../src/factory.ts";
 import { daemonFactory, KERNEL_WORKSPACE_ID } from "../../src/factory.ts";
 import {
   CommunicatorKindSchema,
@@ -65,6 +68,7 @@ import {
   wireCommunicator,
 } from "../../src/services/communicator-wiring.ts";
 import { publishSessionCancel } from "../../src/session-dispatch-registry.ts";
+import { getOrComputeSetupRequirements } from "../../src/setup-requirements-cache.ts";
 import { awaitSignalCompletion, publishSignalCancellation } from "../../src/signal-stream.ts";
 import {
   getAccessibleWorkspaceIds,
@@ -383,6 +387,55 @@ export function extractJobIntegrations(
  */
 export { injectBundledAgentRefs } from "./inject-bundled-agents.ts";
 
+/**
+ * Per-request setup-requirements derivation for one workspace.
+ *
+ * GET endpoints surface `requires_setup` + `setup_requirements` so the
+ * sidebar badge, re-setup banner, and chat-redirect logic can branch
+ * without re-deriving on the client. Memoized on the Hono context so
+ * multiple consults in one request (list endpoint already iterates;
+ * future callers like the system-prompt builder may pile on) cost a
+ * single derivation per workspace.
+ *
+ * `allowStaleIdRecovery: true` — GET endpoints run post-import, so a
+ * pinned credential id that no longer resolves is a recoverable form
+ * requirement, not a hard error.
+ */
+async function deriveSetupRequirements(
+  c: Context<AppVariables>,
+  manager: ReturnType<AppContext["getWorkspaceManager"]>,
+  workspaceId: string,
+  workspacePath: string,
+): Promise<SetupRequirementsResult> {
+  return await getOrComputeSetupRequirements(c, workspaceId, async () => {
+    const merged = await manager.getWorkspaceConfig(workspaceId);
+    if (!merged) {
+      // No config on disk (cross-home masked, deleted, or system workspace
+      // with no config). Derivation on an empty config returns no
+      // requirements — bypass `assembleLinkCredentialState` since there's
+      // nothing to look up.
+      return {
+        parsedConfig: { version: "1.0", workspace: { name: workspaceId } },
+        envSnapshot: {},
+        linkCredentials: {
+          defaultByProvider: {},
+          resolvedIds: new Set(),
+          providerErrors: new Set(),
+        },
+        options: { allowStaleIdRecovery: true },
+      };
+    }
+    const envSnapshot = loadWorkspaceEnv(workspacePath);
+    const linkCredentials = await assembleLinkCredentialState(merged.workspace);
+    return {
+      parsedConfig: merged.workspace,
+      envSnapshot,
+      linkCredentials,
+      options: { allowStaleIdRecovery: true },
+    };
+  });
+}
+
 // Create and mount routes
 const workspacesRoutes = daemonFactory
   .createApp()
@@ -400,13 +453,21 @@ const workspacesRoutes = daemonFactory
       const workspaces = ctx.exposeKernel
         ? visible
         : visible.filter((w) => w.id !== KERNEL_WORKSPACE_ID);
+      const setupResults = await Promise.all(
+        workspaces.map((w) => deriveSetupRequirements(c, manager, w.id, w.path)),
+      );
       const response = workspaces
-        .map((w) => ({
-          ...w,
-          description: w.metadata?.description,
-          type: w.metadata?.ephemeral ? "ephemeral" : "persistent",
-          canonical: w.metadata?.canonical,
-        }))
+        .map((w, i) => {
+          const setup = setupResults[i] ?? { requires_setup: false, setup_requirements: [] };
+          return {
+            ...w,
+            description: w.metadata?.description,
+            type: w.metadata?.ephemeral ? "ephemeral" : "persistent",
+            canonical: w.metadata?.canonical,
+            requires_setup: setup.requires_setup,
+            setup_requirements: setup.setup_requirements,
+          };
+        })
         .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
       return c.json(response);
     } catch (error) {
@@ -1032,6 +1093,7 @@ const workspacesRoutes = daemonFactory
 
       // Load workspace configuration
       const config = await manager.getWorkspaceConfig(workspace.id);
+      const setup = await deriveSetupRequirements(c, manager, workspace.id, workspace.path);
 
       return c.json(
         {
@@ -1039,6 +1101,8 @@ const workspacesRoutes = daemonFactory
           description: workspace.metadata?.description,
           type: workspace.metadata?.ephemeral ? "ephemeral" : "persistent",
           config: config?.workspace || null,
+          requires_setup: setup.requires_setup,
+          setup_requirements: setup.setup_requirements,
         },
         200,
       );
