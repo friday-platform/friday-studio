@@ -2,12 +2,15 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
+import type { VariableDeclaration } from "@atlas/config";
 import { getAtlasDaemonUrl } from "@atlas/oapi-client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   findRepoRoot,
   interpolateConfig,
+  resolveDeclaredVariables,
   resolveWorkspaceVariables,
+  variableEnvKey,
   type WorkspaceVariables,
   WorkspaceVariablesSchema,
 } from "../variable-interpolation.ts";
@@ -303,5 +306,176 @@ describe("resolveWorkspaceVariables", () => {
     expect(result.agents.coder.config.bootstrap).toContain(
       'fetch("http://example.test:9999/signal")',
     );
+  });
+});
+
+describe("variableEnvKey", () => {
+  it("uppercases the variable name", () => {
+    expect(variableEnvKey("email_recipient")).toBe("EMAIL_RECIPIENT");
+    expect(variableEnvKey("threshold")).toBe("THRESHOLD");
+  });
+});
+
+describe("resolveDeclaredVariables", () => {
+  it("returns an empty namespace when there are no declarations", () => {
+    expect(resolveDeclaredVariables(undefined, {})).toEqual({});
+    expect(resolveDeclaredVariables({}, { FOO: "bar" })).toEqual({});
+  });
+
+  it("resolves a string variable whose env value passes schema", () => {
+    const decls: Record<string, VariableDeclaration> = {
+      email_recipient: { schema: { type: "string", format: "email", minLength: 1 } },
+    };
+    const out = resolveDeclaredVariables(decls, { EMAIL_RECIPIENT: "a@b.com" });
+    expect(out.email_recipient).toBe("a@b.com");
+  });
+
+  it("falls back to schema.default when env is absent", () => {
+    const decls: Record<string, VariableDeclaration> = {
+      email_recipient: { schema: { type: "string", default: "fallback@x.com" } },
+    };
+    const out = resolveDeclaredVariables(decls, {});
+    expect(out.email_recipient).toBe("fallback@x.com");
+  });
+
+  it("falls back to schema.default when env value fails the schema", () => {
+    const decls: Record<string, VariableDeclaration> = {
+      email_recipient: { schema: { type: "string", minLength: 5, default: "ok@x.io" } },
+    };
+    const out = resolveDeclaredVariables(decls, { EMAIL_RECIPIENT: "no" });
+    expect(out.email_recipient).toBe("ok@x.io");
+  });
+
+  it("omits the variable when no default and env is absent", () => {
+    const decls: Record<string, VariableDeclaration> = {
+      email_recipient: { schema: { type: "string", minLength: 1 } },
+    };
+    const out = resolveDeclaredVariables(decls, {});
+    expect(out.email_recipient).toBeUndefined();
+  });
+
+  it("omits the variable when both env and default fail the schema", () => {
+    const decls: Record<string, VariableDeclaration> = {
+      threshold: { schema: { type: "number", minimum: 0, maximum: 1, default: 5 } },
+    };
+    const out = resolveDeclaredVariables(decls, { THRESHOLD: "9.9" });
+    expect(out.threshold).toBeUndefined();
+  });
+
+  it("coerces and stringifies numbers from env", () => {
+    const decls: Record<string, VariableDeclaration> = {
+      retries: { schema: { type: "integer", minimum: 0, maximum: 10 } },
+    };
+    const out = resolveDeclaredVariables(decls, { RETRIES: "3" });
+    expect(out.retries).toBe("3");
+  });
+
+  it("rejects non-integer strings for integer type", () => {
+    const decls: Record<string, VariableDeclaration> = {
+      retries: { schema: { type: "integer", default: 1 } },
+    };
+    const out = resolveDeclaredVariables(decls, { RETRIES: "1.5" });
+    expect(out.retries).toBe("1");
+  });
+
+  it("coerces and stringifies booleans from env", () => {
+    const decls: Record<string, VariableDeclaration> = { notify: { schema: { type: "boolean" } } };
+    expect(resolveDeclaredVariables(decls, { NOTIFY: "true" }).notify).toBe("true");
+    expect(resolveDeclaredVariables(decls, { NOTIFY: "false" }).notify).toBe("false");
+  });
+
+  it("rejects 1/yes/no for boolean type and falls back to default", () => {
+    const decls: Record<string, VariableDeclaration> = {
+      notify: { schema: { type: "boolean", default: true } },
+    };
+    expect(resolveDeclaredVariables(decls, { NOTIFY: "1" }).notify).toBe("true");
+    expect(resolveDeclaredVariables(decls, { NOTIFY: "yes" }).notify).toBe("true");
+  });
+
+  it("rejects 1/yes/no for boolean type and omits when no default", () => {
+    const decls: Record<string, VariableDeclaration> = { notify: { schema: { type: "boolean" } } };
+    expect(resolveDeclaredVariables(decls, { NOTIFY: "1" }).notify).toBeUndefined();
+  });
+
+  it("passes empty string when the schema allows it", () => {
+    const decls: Record<string, VariableDeclaration> = { note: { schema: { type: "string" } } };
+    const out = resolveDeclaredVariables(decls, { NOTE: "" });
+    expect(out.note).toBe("");
+  });
+
+  it("rejects empty string when minLength: 1 and falls back to default if any", () => {
+    const decls: Record<string, VariableDeclaration> = {
+      note: { schema: { type: "string", minLength: 1, default: "fb" } },
+    };
+    const out = resolveDeclaredVariables(decls, { NOTE: "" });
+    expect(out.note).toBe("fb");
+  });
+
+  it("rejects empty string when minLength: 1 and omits when no default", () => {
+    const decls: Record<string, VariableDeclaration> = {
+      note: { schema: { type: "string", minLength: 1 } },
+    };
+    const out = resolveDeclaredVariables(decls, { NOTE: "" });
+    expect(out.note).toBeUndefined();
+  });
+});
+
+describe("interpolateConfig with declared variables", () => {
+  const VARS: WorkspaceVariables = {
+    repo_root: "/r",
+    workspace_path: "/r/ws",
+    workspace_id: "ws",
+    platform_url: "http://x",
+  };
+
+  it("replaces {{variables.X}} when X is declared and resolved", () => {
+    const out = interpolateConfig("send to {{variables.email_recipient}}", VARS, {
+      email_recipient: "a@b.com",
+    });
+    expect(out).toBe("send to a@b.com");
+  });
+
+  it("leaves {{variables.X}} literal when X is undeclared (strict namespace)", () => {
+    const out = interpolateConfig("{{variables.something_else}}", VARS, {
+      email_recipient: "a@b.com",
+    });
+    expect(out).toBe("{{variables.something_else}}");
+  });
+
+  it("leaves {{variables.X}} literal when X is declared but unresolved", () => {
+    const out = interpolateConfig("{{variables.email_recipient}}", VARS, {});
+    expect(out).toBe("{{variables.email_recipient}}");
+  });
+
+  it("does not match unknown top-level namespaces", () => {
+    const out = interpolateConfig("{{config.x}} {{signal.payload.x}}", VARS, {});
+    expect(out).toBe("{{config.x}} {{signal.payload.x}}");
+  });
+
+  it("interleaves flat keys and variable keys in one string", () => {
+    const out = interpolateConfig("root={{repo_root}} email={{variables.email_recipient}}", VARS, {
+      email_recipient: "a@b.com",
+    });
+    expect(out).toBe("root=/r email=a@b.com");
+  });
+
+  it("preserves the existing two-arg signature (back-compat)", () => {
+    expect(interpolateConfig("{{repo_root}}", VARS)).toBe("/r");
+  });
+
+  it("end-to-end: declarations + env produce interpolated config", () => {
+    const decls: Record<string, VariableDeclaration> = {
+      email_recipient: { schema: { type: "string", format: "email", default: "fb@x.io" } },
+      max_retries: { schema: { type: "integer", minimum: 0, maximum: 10, default: 3 } },
+    };
+    const env = { EMAIL_RECIPIENT: "live@x.com" }; // MAX_RETRIES absent → default
+    const namespace = resolveDeclaredVariables(decls, env);
+    const config = {
+      agents: {
+        emailer: { prompt: "to {{variables.email_recipient}}, retries={{variables.max_retries}}" },
+      },
+    };
+    const out = interpolateConfig(config, VARS, namespace);
+    expect(out.agents.emailer.prompt).toBe("to live@x.com, retries=3");
   });
 });

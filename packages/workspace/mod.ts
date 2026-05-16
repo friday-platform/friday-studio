@@ -56,7 +56,9 @@ export type { WorkspaceVariables } from "./src/variable-interpolation.ts";
 export {
   findRepoRoot,
   interpolateConfig,
+  resolveDeclaredVariables,
   resolveWorkspaceVariables,
+  variableEnvKey,
   WorkspaceVariablesSchema,
 } from "./src/variable-interpolation.ts";
 // Re-export watchers module for convenience
