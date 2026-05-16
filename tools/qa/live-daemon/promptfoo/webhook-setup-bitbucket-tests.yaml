@@ -87,3 +87,19 @@
 - description: When the agent prompt invokes an external command (`gh api`, `bash`, `curl`, MCP tool), the chat MUST declare a matching tool in the agent's `tools:` array — otherwise the LLM has no callable and fakes success via `complete` (phantom-ACK failure). Caught live in QA; new regression check.
   vars:
     scenarioId: agent-tools-must-be-declared
+
+- description: Loop guards in LLM-prompt agents must use a UNIQUE deterministic marker (e.g. `[fri-bot-v1]` embedded in the reply body) — not a naive `startsWith('ACK')`. Caught live in QA: 3-comment loop because the LLM ignored its content guard at runtime.
+  vars:
+    scenarioId: loop-guard-deterministic-not-llm-only
+
+- description: Dynamic webhook identifiers (issue_number, PR id, comment id) MUST flow through the bash/gh CLI command STRING, NOT through MCP tool args where the LLM hallucinates them. Caught live in QA: LLM agent passed `issue_number: 1` to github MCP `add_issue_comment` despite webhook supplying `3091`.
+  vars:
+    scenarioId: reply-via-bash-not-mcp-args
+
+- description: Agent code MUST tolerate upstream ping/setup-test events (github sends `ping` on hook creation with hook/sender/zen but no issue or comment). Without a guard, naive `payload['issue']['number']` crashes with KeyError. Caught live in QA.
+  vars:
+    scenarioId: agent-tolerates-ping-events
+
+- description: When a Python user agent reads ctx.env.get(KEY), workspace.yml MUST declare `agents.<id>.env: { KEY: from_environment }`. The agent.py's `environment.required` block is documentation only — it does NOT wire vars through to ctx.env. Caught live in QA (BB iter 5/5, 2026-05-16) — chat omitted the workspace.yml env block, ctx.env was empty, agent failed.
+  vars:
+    scenarioId: ctx-env-vars-need-workspace-yml-wiring

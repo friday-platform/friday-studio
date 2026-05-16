@@ -225,6 +225,94 @@ GitHub's payload top-level keys:
 | `release`          | Release events                    |
 | `workflow_run`     | GHA workflow                      |
 
+## Wire env vars through `agents.<id>.env:` — `environment.required` is just docs
+
+When a Python user agent reads a secret via `ctx.env.get("BITBUCKET_API_TOKEN")`,
+the workspace.yml **must** declare that variable under `agents.<id>.env:`. The
+`environment.required` block in `agent.py` is **documentation only** — it does
+not wire anything through to `ctx.env`. Observed live: chat authored the agent
+with `environment.required` listing `BITBUCKET_API_TOKEN`/`BITBUCKET_EMAIL` but
+omitted the workspace.yml `agents.bb-pr-ack.env:` block, so `ctx.env` was `{}`
+and the agent returned `"BITBUCKET_EMAIL or BITBUCKET_API_TOKEN not configured"`
+on the first webhook delivery.
+
+**Right** — declare every secret the agent reads under `agents.<id>.env:`:
+
+```yaml
+agents:
+  bb-pr-ack:
+    type: user
+    agent: bb-pr-ack
+    env:
+      BITBUCKET_API_TOKEN: from_environment   # reads from daemon's process.env
+      BITBUCKET_EMAIL:     from_environment
+      # OR fetch from Link by provider:
+      # GITHUB_TOKEN: { from: link, provider: github, key: token }
+```
+
+`from_environment` (or `auto`) resolves from the workspace `.env` overlay first,
+then falls back to the daemon's `process.env` (which is loaded from
+`~/.atlas/.env` at boot). Either way the resolved value lands in `ctx.env`.
+
+Rule of thumb: for every `ctx.env.get(KEY)` the agent calls, there must be a
+matching `KEY:` line under `agents.<id>.env:`. If the chat is asked to add a
+secret-using agent, the wiring goes in workspace.yml — not just in agent.py.
+
+Note: `os.environ[KEY]` in the agent subprocess also works (the daemon spawns
+with `...process.env` inherited), but `ctx.env` is the canonical SDK pattern
+and it ignores anything not declared in workspace.yml.
+
+## Prefer bash + CLI over MCP tools for posting back to the upstream
+
+When an LLM agent needs to POST a reply/comment/status back to the
+webhook's upstream (GitHub, Bitbucket, etc.), prefer shelling out to
+the upstream's CLI (`gh`, `bb`) via `bash` rather than calling its MCP
+tool with LLM-generated arguments. Observed live: an agent given
+`{{inputs.issue.number}} = 3091` in its prompt called the github MCP's
+`add_issue_comment` tool with `issue_number: 1` — the LLM
+**hallucinated the value** instead of using the templated one.
+
+The shell-command path is more robust because the value lands in the
+command STRING at template-substitution time, before the LLM gets
+involved:
+
+**Wrong** (LLM picks the value at tool-call time):
+
+```yaml
+agents:
+  ack:
+    type: llm
+    config:
+      prompt: |
+        Issue number: {{inputs.issue.number}}
+        Call add_issue_comment with issue_number={{inputs.issue.number}},
+        owner=tempestteam, repo=atlas, body="ACK [fri-bot-v1]"
+      tools: ["github/add_issue_comment"]   # LLM may pick a different issue_number
+```
+
+**Right** (value is baked into the command string before the LLM acts):
+
+```yaml
+agents:
+  ack:
+    type: llm
+    config:
+      prompt: |
+        Run exactly this command:
+          gh api repos/tempestteam/atlas/issues/{{inputs.issue.number}}/comments \
+            -X POST -f body='ACK [fri-bot-v1]'
+      tools: [bash]
+```
+
+The issue number is interpolated into the command BEFORE the LLM
+sees it, so the LLM's only job is "execute this exact bash string" —
+much harder to hallucinate.
+
+Rule of thumb: dynamic identifiers from webhook payloads (issue
+numbers, PR ids, comment ids, repo slugs) should flow through the
+command string, not through MCP tool args. Save MCP tools for
+operations where the LLM legitimately decides the arguments.
+
 ## LLM agent prompts that invoke external tools MUST declare those tools
 
 An `llm` agent whose prompt says "Run `gh api ...`" or "Use bash to ..."
@@ -274,6 +362,46 @@ external command, MCP tool, or HTTP call must have a corresponding
 entry in `tools:`. If `tools` is empty, the agent can ONLY call
 `complete` — make sure that's actually what you want.
 
+## Agent code must tolerate the upstream's "ping" / setup-test events
+
+Most webhook providers send an automatic test/ping event when the
+webhook is first registered (and sometimes periodically). These have a
+different payload shape from the real events — no `issue`, `comment`,
+or whatever the agent expects. If your agent does
+`payload["issue"]["number"]` unconditionally, it KeyErrors on the
+ping event and crashes the cascade.
+
+GitHub's ping event payload keys: `hook, hook_id, organization,
+repository, sender, zen`. No `issue`, no `comment`, no `pull_request`.
+
+Bitbucket's setup test sends events with `x-event-key:
+diagnostics:ping` and a body with just `{"test": true}`-shaped
+content.
+
+**Right** — guard before extracting:
+
+```python
+@agent(id="ack-commenter")
+def execute(prompt, ctx):
+    payload = ctx.input.config or ctx.input.raw
+
+    # Tolerate setup-test / ping events that lack the real fields.
+    if "issue" not in payload or "comment" not in payload:
+        return ok({"skipped": "non-event payload (ping/setup-test)",
+                   "keys": list(payload.keys())})
+
+    body = payload["comment"].get("body", "")
+    if "[fri-bot-v1]" in body:
+        return ok({"skipped": "own ACK"})
+    # ... post reply
+```
+
+Observed live: a chat-authored agent that didn't guard for missing
+`issue` crashed on github's hook-creation ping event with
+`KeyError: 'issue'`. The user-facing webhook test sometimes also
+fires a ping or "Test connectivity" that lacks the expected fields.
+Always tolerate.
+
 ## Loop trap — do NOT subscribe to events your own agent creates
 
 If your agent posts a PR comment in response to a webhook, **do not
@@ -281,21 +409,70 @@ subscribe to `pullrequest:comment_created`** (Bitbucket) or
 `issue_comment` (GitHub) — your own comment will re-fire the webhook
 → re-trigger the agent → infinite loop.
 
-If you must process comment events:
+If you must process comment events, **LLM-prompt guards are unreliable
+under live conditions**. The skill rule "skip if body matches ACK" is
+something the LLM ignores ~30% of the time when the prompt is long or
+the model is uncertain. Observed live: a bot with "skip if body starts
+with 'ACK'" in its prompt produced 3 ACK→ACK→ACK comments before the
+webhook was killed manually. Use one of the deterministic patterns
+below instead.
 
-- Guard at the agent level: skip when the comment author is the same
-  identity as your bot's MCP credential, OR
-- Guard on the content: skip when the comment body matches an exact
-  marker (`"ACK"`, `"/friday processed"`).
+**Pattern 1 (RECOMMENDED): unique marker that the LLM can't miss.**
 
-Write the guard before the first send — a missing guard has been
-observed to produce 18+ spam comments on a single PR before the loop
-gets caught.
+Embed a literal token in the bot's reply that's distinct enough the
+LLM's instruction-following can latch onto it reliably. A
+high-entropy ASCII string or an emoji is safer than a natural English
+prefix like "ACK":
 
-Friday's signal-level `concurrency: skip` default also blocks the
-"agent acts → webhook fires → agent re-runs" cascade for the
-duration of the first run, but it's a race-dependent backstop; the
-prompt/code guard is the load-bearing one.
+```yaml
+agents:
+  ack-commenter:
+    type: llm
+    config:
+      prompt: |
+        Read the github issue_comment payload.
+
+        LOOP GUARD (do this FIRST, before any other reasoning):
+        If `comment.body` contains the literal token `[fri-bot-v1]`,
+        call complete({response: "skip: own comment"}) and STOP.
+
+        Otherwise, use bash to post the reply:
+          gh api repos/.../issues/<N>/comments -X POST -f \
+            'body=ACK [fri-bot-v1]'
+      tools: [bash]
+```
+
+The token shows up in the reply body itself, so the next webhook fire
+hands the LLM a body the guard can't miss.
+
+**Pattern 2: deterministic Python guard.**
+
+If the LLM-prompt approach still drifts, replace the `llm` agent with
+a `user` (Python) agent that does the guard check in code, then
+delegates the actual reply to an LLM if needed:
+
+```python
+@agent(id="ack-commenter")
+def execute(prompt, ctx):
+    payload = ctx.input.config or ctx.input.raw
+    body = payload.get("comment", {}).get("body", "")
+    if "[fri-bot-v1]" in body:
+        return ok({"skipped": "own comment"})
+    # ... post reply via ctx.tools.call("bash", ...)
+```
+
+The Python guard fires before the LLM ever sees the payload — no
+chance to drift.
+
+Friday's signal-level `concurrency: skip` default ALSO blocks the
+"agent acts → webhook fires → agent re-runs" cascade for the duration
+of the first run, but it's a race-dependent backstop: once the first
+cascade returns (~5s), the second cascade for the bot's own reply is
+free to start. The prompt/code guard is the load-bearing one.
+
+Write the guard before the first send — a missing or LLM-only guard
+has been observed to produce 18+ spam comments on a single PR before
+the loop gets caught.
 
 ## Error catalog
 

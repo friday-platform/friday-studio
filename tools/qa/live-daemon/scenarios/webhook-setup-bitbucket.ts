@@ -212,6 +212,44 @@ const USER_QUESTION_GITHUB_HMAC =
 const USER_QUESTION_AGENT_TOOLS_REQUIRED =
   "Draft the YAML for an `llm` agent named `ack-commenter` in workspace.yml. Its job: read a GitHub `issue_comment` webhook payload, then post an 'ACK' reply on the same issue using the `gh` CLI (e.g. `gh api repos/<owner>/<repo>/issues/<N>/comments -X POST -f body='ACK'`). Show me the complete agent block exactly as it should appear in workspace.yml — provider, model, prompt, tools, all of it.";
 
+// Live QA observed: chat authored an LLM agent with the natural prompt
+// "skip if body starts with 'ACK'". The LLM ignored the guard at
+// runtime — 3 ACK→ACK→ACK comments before the webhook was killed
+// manually. The skill now teaches: use a unique marker (e.g.
+// `[fri-bot-v1]`) embedded in the bot reply that the guard checks
+// for, OR move to a deterministic Python guard.
+const USER_QUESTION_LOOP_GUARD_RELIABILITY =
+  "Help me wire an auto-ACK bot for GitHub issue comments on tempestteam/atlas. Loop containment is CRITICAL — last time we got 18 spam comments before catching the loop. Draft the agent's prompt section (the `prompt:` field) showing exactly how the loop guard should work. The agent is `type: llm` with `tools: [bash]` and uses `gh api ... comments -X POST` to post the reply.";
+
+// Live QA observed: chat authored an agent that called the github
+// MCP tool `add_issue_comment` with LLM-generated args. The LLM
+// hallucinated `issue_number: 1` despite the webhook payload (and
+// the template substitution) supplying `issue_number: 3091`. The
+// skill now teaches: route dynamic identifiers through the command
+// STRING (bash + gh CLI), not through MCP tool args (which the LLM
+// picks).
+const USER_QUESTION_REPLY_VIA_BASH_NOT_MCP =
+  "I'm building an LLM agent that auto-replies to a GitHub issue_comment webhook on tempestteam/atlas. The agent needs to read the webhook's issue_number from the payload and post an ACK reply on that same issue. Should I (a) call the github MCP tool `add_issue_comment` with the issue_number as a tool arg, or (b) shell out to `gh api repos/.../issues/<N>/comments -X POST -f body=...` via bash? What's the right pattern for the dynamic-identifier flow?";
+
+// Live QA observed: chat-authored Python agent did
+// `payload['issue']['number']` unconditionally and crashed with
+// KeyError when github sent its automatic `ping` event at hook
+// creation (payload has hook/sender/zen but no issue). The skill
+// now teaches: guard for missing fields before extracting.
+const USER_QUESTION_PING_EVENT_TOLERANCE =
+  "Draft a Python `user` agent for a webhook signal that handles GitHub `issue_comment` events on tempestteam/atlas — it should auto-reply 'ACK' to new issue comments. CRITICAL: GitHub sends an automatic `ping` event when the webhook is first registered (and sometimes periodically) — that payload has no `issue` or `comment` field. The agent MUST tolerate that without crashing. Show me the agent code.";
+
+// Live QA observed (BB iter 5/5, 2026-05-16): chat authored a Python user
+// agent reading `ctx.env.get("BITBUCKET_API_TOKEN")` + `ctx.env.get("BITBUCKET_EMAIL")`.
+// The agent.py had `environment={"required":[...]}` listing both vars — but
+// the chat OMITTED the workspace.yml `agents.bb-pr-ack.env:` block. Result:
+// ctx.env was {} at runtime, agent errored "BITBUCKET_EMAIL or BITBUCKET_API_TOKEN
+// not configured" on first delivery. The skill now teaches: for every
+// ctx.env.get(KEY) the agent calls, workspace.yml MUST declare
+// `agents.<id>.env: { KEY: from_environment }`.
+const USER_QUESTION_CTX_ENV_WIRING =
+  "Draft the complete workspace.yml + Python user agent for a Bitbucket PR-comment webhook handler. The agent posts an ACK comment back to Bitbucket using Basic auth — it needs BITBUCKET_API_TOKEN and BITBUCKET_EMAIL (which I've put in ~/.atlas/.env). Show me BOTH the workspace.yml `agents:` block AND the Python agent.py — the secrets must reach `ctx.env` at runtime so `ctx.env.get('BITBUCKET_API_TOKEN')` returns the actual token, not empty.";
+
 interface DriveResult {
   text: string;
   durationMs: number;
@@ -2351,6 +2389,431 @@ async function runAgentToolsMustBeDeclared(): Promise<EvalResult> {
   return { id: "agent-tools-must-be-declared", pass: false, notes, metrics };
 }
 
+// ───── Scenario: loop guard must be deterministic (not LLM-only) ────────
+
+async function runLoopGuardDeterministic(): Promise<EvalResult> {
+  const notes: string[] = [];
+  const metrics: Record<string, unknown> = {};
+
+  console.log("  → drive (loop-guard-deterministic-not-llm-only)");
+  const system = await buildSystemGithub();
+  const result = await drive(system, USER_QUESTION_LOOP_GUARD_RELIABILITY);
+  metrics.durationMs = result.durationMs;
+  metrics.responseLen = result.text.length;
+  metrics.responseFull = result.text;
+
+  const text = result.text;
+
+  const checks: ContractCheck[] = [
+    {
+      id: "uses-unique-marker-pattern",
+      description:
+        "Recommends embedding a unique high-entropy token (e.g. [fri-bot-v1], an emoji prefix, or a UUID-like marker) in the bot reply that the guard checks for — NOT just 'skip if starts with ACK'",
+      pass:
+        /\[[a-z][a-z0-9_-]{2,}-bot[a-z0-9_-]*\]|\[fri-bot[^\]]*\]/i.test(text) ||
+        /\b(?:unique|distinct|high[-\s]?entropy|literal\s+token|marker\s+token)\b[^.\n]{0,80}\b(?:reply|body|comment)/i.test(
+          text,
+        ) ||
+        /[\u{1F300}-\u{1F9FF}]/u.test(text) ||
+        /\bcontains?\s*\(\s*['"`]\[[^\]]+\]['"`]\s*\)/i.test(text) ||
+        /\bbody\s*\.?\s*(?:contains?|indexOf|includes?)\b[^.\n]{0,40}\[[^\]]+\]/i.test(text),
+      evidence: text
+        .match(
+          /\[[a-z][a-z0-9_-]{2,}[-_]?bot[^\]]*\]|\b(?:unique|distinct|high[-\s]?entropy|literal\s+token|marker)\b[^.\n]{0,80}/i,
+        )?.[0]
+        ?.slice(0, 200),
+    },
+    {
+      id: "warns-llm-content-guard-unreliable-or-uses-deterministic",
+      description:
+        "Either explicitly warns that LLM-prompt content guards are unreliable, OR shifts to a deterministic guard (Python user agent / signal-level filter)",
+      pass:
+        /\b(?:unreliable|drift|ignore[ds]?|miss|skip[s]?\s+the\s+(?:guard|check))\b[^.\n]{0,80}\b(?:LLM|prompt|model|instruction)/i.test(
+          text,
+        ) ||
+        /\b(?:LLM|prompt|model)\b[^.\n]{0,80}\b(?:unreliable|drift|ignore|miss|not\s+reliable|fail\s+to)/i.test(
+          text,
+        ) ||
+        /\btype\s*:\s*user\b[\s\S]{0,400}\b(?:guard|loop|skip|deterministic)/i.test(text) ||
+        /\bdeterministic\s+(?:guard|check|loop[-\s]?guard)/i.test(text) ||
+        /\b(?:Python|@agent|ctx\.input)\b[\s\S]{0,300}\b(?:guard|loop|skip)/i.test(text),
+      evidence: text
+        .match(
+          /\b(?:unreliable|drift|ignore[ds]?|deterministic|Python|@agent)\b[^.\n]{0,200}/i,
+        )?.[0]
+        ?.slice(0, 240),
+    },
+    {
+      id: "guard-checked-first-in-prompt",
+      description:
+        "If using an LLM agent, the loop guard is positioned FIRST in the prompt (before any other reasoning), not buried at the end",
+      pass:
+        /\b(?:loop\s+guard|LOOP\s+GUARD)\b[^.\n]{0,80}\b(?:do\s+this\s+first|check\s+(?:this\s+)?first|before\s+any|step\s+1|first\s+step)/i.test(
+          text,
+        ) ||
+        /\b(?:first|step\s+1|before)\b[^.\n]{0,80}\b(?:guard|skip|check\s+(?:the\s+)?body)/i.test(
+          text,
+        ),
+      evidence: text.match(/\b(?:loop\s+guard|first|step\s+1)\b[^.\n]{0,200}/i)?.[0]?.slice(0, 240),
+    },
+    {
+      id: "no-naive-starts-with-ack-only",
+      description:
+        "Does NOT recommend ONLY a naive `body.startsWith('ACK')` check — that's the failure mode we just hit live",
+      pass: (() => {
+        const naive =
+          /\b(?:startsWith|starts\s+with|begins\s+with|contains)\s*\(?[\s'"`]*ACK['"`]?\)?/i.test(
+            text,
+          );
+        if (!naive) return true;
+        const stronger =
+          /\[[a-z][a-z0-9_-]{2,}[-_]?bot[^\]]*\]/i.test(text) ||
+          /\bunique\s+(?:marker|token)/i.test(text) ||
+          /\btype\s*:\s*user\b/i.test(text) ||
+          /\bdeterministic\b/i.test(text) ||
+          /\bemoji\b[^.\n]{0,80}\b(?:marker|prefix|guard)/i.test(text);
+        return stronger;
+      })(),
+      evidence: text
+        .match(
+          /\b(?:startsWith|starts\s+with|begins\s+with|contains)\s*\(?[\s'"`]*ACK['"`]?\)?[^.\n]{0,80}/i,
+        )?.[0]
+        ?.slice(0, 200),
+    },
+  ];
+
+  metrics.checks = checks;
+  const failed = checks.filter((c) => !c.pass);
+
+  if (failed.length === 0) {
+    notes.push(`Positive: all ${checks.length} checks passed.`);
+    for (const c of checks)
+      notes.push(`  ✓ ${c.id}: ${c.description}${c.evidence ? ` [${c.evidence}]` : ""}`);
+    return { id: "loop-guard-deterministic-not-llm-only", pass: true, notes, metrics };
+  }
+  notes.push(`Negative: ${failed.length}/${checks.length} failed.`);
+  for (const c of checks)
+    notes.push(
+      `  ${c.pass ? "✓" : "✗"} ${c.id}: ${c.description}${c.evidence ? ` [${c.evidence}]` : ""}`,
+    );
+  notes.push(`Reply head: "${result.text.slice(0, 400)}"`);
+  return { id: "loop-guard-deterministic-not-llm-only", pass: false, notes, metrics };
+}
+
+// ───── Scenario: dynamic identifiers via bash, not MCP tool args ────────
+
+async function runReplyViaBashNotMcp(): Promise<EvalResult> {
+  const notes: string[] = [];
+  const metrics: Record<string, unknown> = {};
+
+  console.log("  → drive (reply-via-bash-not-mcp-args)");
+  const system = await buildSystemGithub();
+  const result = await drive(system, USER_QUESTION_REPLY_VIA_BASH_NOT_MCP);
+  metrics.durationMs = result.durationMs;
+  metrics.responseLen = result.text.length;
+  metrics.responseFull = result.text;
+
+  const text = result.text;
+
+  const checks: ContractCheck[] = [
+    {
+      id: "recommends-bash-cli-not-mcp",
+      description:
+        "Recommends option (b) — bash + gh CLI — as the right pattern for dynamic identifiers like issue_number",
+      pass:
+        /\b(?:option\s+)?[([]?b[)\]]?\b[^.\n]{0,200}\b(?:bash|gh\s+api|gh\s+CLI|shell|command\s+string)/i.test(
+          text,
+        ) ||
+        /\b(?:bash|gh\s+CLI|gh\s+api)\b[^.\n]{0,200}\b(?:recommend|right|preferred|correct|better|use\s+this|reliable|safer|robust)/i.test(
+          text,
+        ) ||
+        /\b(?:recommend|prefer|use)\b[^.\n]{0,80}\b(?:bash|gh\s+CLI|gh\s+api|shell)/i.test(text),
+      evidence: text.match(/\b(?:bash|gh\s+(?:CLI|api))[^.\n]{0,200}/i)?.[0]?.slice(0, 240),
+    },
+    {
+      id: "warns-mcp-args-hallucinated",
+      description:
+        "Warns that LLM-generated MCP tool args can be hallucinated when carrying dynamic webhook fields",
+      pass:
+        /\b(?:hallucin|wrong\s+value|made[-\s]?up|invent|drift|ignore[ds]?|guess)\b[^.\n]{0,160}\b(?:arg|argument|tool|value|number|id)/i.test(
+          text,
+        ) ||
+        /\bMCP\s+tool[^.\n]{0,160}\b(?:hallucin|wrong|unreliable|drift|ignore|guess)/i.test(text) ||
+        /\bLLM\b[^.\n]{0,120}\b(?:picks?|chooses?|generates?|invents?)\b[^.\n]{0,80}\b(?:arg|value)/i.test(
+          text,
+        ),
+      evidence: text
+        .match(/\b(?:hallucin|wrong\s+value|made[-\s]?up|invent|drift|ignored)[^.\n]{0,200}/i)?.[0]
+        ?.slice(0, 240),
+    },
+    {
+      id: "command-string-substitution-rationale",
+      description:
+        "Explains the rationale: with bash, the dynamic identifier lands in the command STRING at template-substitution time, before the LLM gets involved",
+      pass:
+        /\b(?:command\s+string|baked\s+into|interpolat|substitut|template[-\s]?substitut|render|hard[-\s]?coded\s+into)/i.test(
+          text,
+        ) ||
+        /\b(?:before|prior to)\b[^.\n]{0,60}\b(?:LLM|model)\b[^.\n]{0,60}\b(?:sees|acts|picks|generates|invokes)/i.test(
+          text,
+        ) ||
+        /\b(?:value|number|id)\b[^.\n]{0,120}\b(?:in|inside|part\s+of)\s+(?:the\s+)?command\b/i.test(
+          text,
+        ),
+      evidence: text
+        .match(
+          /\b(?:command\s+string|baked|interpolat|substitut|before\s+the\s+LLM)[^.\n]{0,200}/i,
+        )?.[0]
+        ?.slice(0, 240),
+    },
+    {
+      id: "no-recommend-mcp-args-for-dynamic-ids",
+      description:
+        "Does NOT recommend (a) — passing dynamic webhook identifiers as MCP tool args — as the right answer",
+      // Fail if option (a) is presented as recommended / preferred / OK.
+      pass: !/\b(?:option\s+)?[([]?a[)\]]?\b[^.\n]{0,160}\b(?:recommend|right|preferred|correct|better|use\s+this|reliable|safer|the\s+(?:right|cleanest|preferred))/i.test(
+        text,
+      ),
+      evidence: text.match(/\b(?:option\s+)?[([]?a[)\]]?\b[^.\n]{0,200}/i)?.[0]?.slice(0, 240),
+    },
+  ];
+
+  metrics.checks = checks;
+  const failed = checks.filter((c) => !c.pass);
+
+  if (failed.length === 0) {
+    notes.push(`Positive: all ${checks.length} checks passed.`);
+    for (const c of checks)
+      notes.push(`  ✓ ${c.id}: ${c.description}${c.evidence ? ` [${c.evidence}]` : ""}`);
+    return { id: "reply-via-bash-not-mcp-args", pass: true, notes, metrics };
+  }
+  notes.push(`Negative: ${failed.length}/${checks.length} failed.`);
+  for (const c of checks)
+    notes.push(
+      `  ${c.pass ? "✓" : "✗"} ${c.id}: ${c.description}${c.evidence ? ` [${c.evidence}]` : ""}`,
+    );
+  notes.push(`Reply head: "${result.text.slice(0, 400)}"`);
+  return { id: "reply-via-bash-not-mcp-args", pass: false, notes, metrics };
+}
+
+// ───── Scenario: agent must tolerate upstream's ping/test events ─────
+
+async function runAgentTolerancesPing(): Promise<EvalResult> {
+  const notes: string[] = [];
+  const metrics: Record<string, unknown> = {};
+
+  console.log("  → drive (agent-tolerates-ping-events)");
+  const system = await buildSystemGithub();
+  const result = await drive(system, USER_QUESTION_PING_EVENT_TOLERANCE);
+  metrics.durationMs = result.durationMs;
+  metrics.responseLen = result.text.length;
+  metrics.responseFull = result.text;
+
+  const text = result.text;
+
+  const checks: ContractCheck[] = [
+    {
+      id: "guards-missing-issue-key",
+      description:
+        "Agent code guards against missing `issue` or `comment` key in payload (e.g. `if 'issue' not in payload`, `payload.get('issue')`, `try/except KeyError`)",
+      pass:
+        /\bif\b[^.\n]{0,40}\b(?:not\s+in|"issue"\s+not\s+in|'issue'\s+not\s+in|not\s+(?:payload|p)\.get\(|missing)\b/i.test(
+          text,
+        ) ||
+        /\.get\(\s*["']issue["']\s*[,)]/.test(text) ||
+        /\.get\(\s*["']comment["']\s*[,)]/.test(text) ||
+        /\btry\s*:[\s\S]{0,300}\bexcept\s+(?:KeyError|Exception)/i.test(text) ||
+        /\bif\b[^.\n]{0,80}\b(?:issue|comment)\b[^.\n]{0,40}\b(?:in\s+payload|present|exists?)/i.test(
+          text,
+        ),
+      evidence: text
+        .match(
+          /\b(?:if\s+["']?issue["']?\s+not\s+in|\.get\(\s*["'](?:issue|comment)["']|try\s*:[\s\S]{0,200}except\s+KeyError|if\s+(?:not\s+)?payload\.get)[^\n]{0,200}/i,
+        )?.[0]
+        ?.slice(0, 240),
+    },
+    {
+      id: "names-ping-or-setup-event",
+      description:
+        "Explicitly mentions GitHub's ping event (or 'setup test', 'hook-creation event', 'zen' field) as the failure mode being guarded",
+      pass:
+        /\b(?:ping\s+event|ping\s+payload|hook[-\s]?creation|setup[-\s]?test|test\s+event)\b/i.test(
+          text,
+        ) ||
+        /\bzen\b[^.\n]{0,80}\b(?:field|key|payload)/i.test(text) ||
+        /\bGitHub\b[^.\n]{0,80}\bping\b/i.test(text),
+      evidence: text
+        .match(
+          /\b(?:ping|hook[-\s]?creation|setup[-\s]?test|test\s+event|zen)\b[^.\n]{0,160}/i,
+        )?.[0]
+        ?.slice(0, 200),
+    },
+    {
+      id: "returns-skip-not-crash",
+      description:
+        "Returns gracefully (ok({skipped: ...}) / early return / log+return) on missing fields, does NOT raise / re-raise unconditionally",
+      pass:
+        /\breturn\s+ok\s*\(\s*\{\s*["']?skipped/i.test(text) ||
+        /\breturn\s+ok\s*\(/i.test(text) ||
+        /\breturn\s+(?:None|early|gracefully)/i.test(text) ||
+        /\bcontinue\b|\bpass\b\s*(?:#|$)/m.test(text),
+      evidence: text
+        .match(/\breturn\s+ok\([^.\n]{0,200}|\breturn\s+(?:None|gracefully)/i)?.[0]
+        ?.slice(0, 200),
+    },
+    {
+      id: "no-naive-bracket-extraction",
+      description:
+        "Does NOT do naive `payload['issue']['number']` extraction WITHOUT a guard above it",
+      pass: (() => {
+        const naive = /payload\s*\[\s*["']issue["']\s*\]\s*\[\s*["']number["']\s*\]/i.test(text);
+        if (!naive) return true;
+        // Tolerate if there's also a guard/try/get/in-check nearby.
+        const guarded =
+          /\b(?:if|try|except|\.get\()/i.test(text) &&
+          /\b(?:issue|comment)\b[^.\n]{0,40}\b(?:in\s+payload|not\s+in|present|exists?|missing)/i.test(
+            text,
+          );
+        return guarded;
+      })(),
+      evidence: text
+        .match(/payload\s*\[\s*["']issue["']\s*\]\s*\[\s*["']number["']\s*\]/i)?.[0]
+        ?.slice(0, 160),
+    },
+  ];
+
+  metrics.checks = checks;
+  const failed = checks.filter((c) => !c.pass);
+
+  if (failed.length === 0) {
+    notes.push(`Positive: all ${checks.length} checks passed.`);
+    for (const c of checks)
+      notes.push(`  ✓ ${c.id}: ${c.description}${c.evidence ? ` [${c.evidence}]` : ""}`);
+    return { id: "agent-tolerates-ping-events", pass: true, notes, metrics };
+  }
+  notes.push(`Negative: ${failed.length}/${checks.length} failed.`);
+  for (const c of checks)
+    notes.push(
+      `  ${c.pass ? "✓" : "✗"} ${c.id}: ${c.description}${c.evidence ? ` [${c.evidence}]` : ""}`,
+    );
+  notes.push(`Reply head: "${result.text.slice(0, 400)}"`);
+  return { id: "agent-tolerates-ping-events", pass: false, notes, metrics };
+}
+
+// ───── Scenario: ctx.env requires workspace.yml `agents.<id>.env:` wiring ─
+
+async function runCtxEnvWiring(): Promise<EvalResult> {
+  const notes: string[] = [];
+  const metrics: Record<string, unknown> = {};
+
+  console.log("  → drive (ctx-env-vars-need-workspace-yml-wiring)");
+  const system = await buildSystemGithub();
+  const result = await drive(system, USER_QUESTION_CTX_ENV_WIRING);
+  metrics.durationMs = result.durationMs;
+  metrics.responseLen = result.text.length;
+  metrics.responseFull = result.text;
+
+  const text = result.text;
+
+  // Locate the workspace.yml `agents.<id>.env:` block (the wiring under an
+  // agent declaration, NOT the agent.py `environment={...}` block which is
+  // documentation only).
+  // Shape we want:
+  //   agents:
+  //     bb-pr-ack:
+  //       type: user
+  //       agent: bb-pr-ack
+  //       env:
+  //         BITBUCKET_API_TOKEN: from_environment
+  //         BITBUCKET_EMAIL:     from_environment
+  const yamlEnvBlock = text.match(
+    /\b(?:type\s*:\s*user|agent\s*:\s*[\w-]+)[\s\S]{0,400}?\benv\s*:\s*\n(?:\s+[A-Z][A-Z0-9_]*\s*:[^\n]*\n){1,12}/,
+  )?.[0];
+
+  const checks: ContractCheck[] = [
+    {
+      id: "wires-ctx-env-in-workspace-yml",
+      description:
+        "workspace.yml `agents.<id>.env:` block declares the secret vars (so ctx.env receives them) — NOT just agent.py's `environment.required` block",
+      pass:
+        // Must find `env:` under an agent declaration with at least one of
+        // the bitbucket vars listed as a key.
+        /(?:type\s*:\s*user|agent\s*:\s*[\w-]+)[\s\S]{0,400}?\benv\s*:\s*\n\s+BITBUCKET_(?:API_TOKEN|EMAIL)\s*:/i.test(
+          text,
+        ),
+      evidence: yamlEnvBlock?.slice(0, 240),
+    },
+    {
+      id: "uses-from-environment-or-link-ref",
+      description:
+        "Each declared var resolves via `from_environment` / `auto` / a Link credential ref (`{ from: link, ... }`) — not a literal string",
+      pass: (() => {
+        if (!yamlEnvBlock) return false;
+        // Pass if every BITBUCKET_* line in the block uses from_environment, auto, or Link ref.
+        const lines = yamlEnvBlock.split("\n").filter((l) => /^\s+BITBUCKET_[A-Z_]+\s*:/.test(l));
+        if (lines.length === 0) return false;
+        return lines.every((l) =>
+          /:\s*(?:from_environment|auto|\{\s*from\s*:\s*link\b[^}]*\})/i.test(l),
+        );
+      })(),
+      evidence: yamlEnvBlock?.slice(0, 240),
+    },
+    {
+      id: "does-not-claim-environment-required-is-sufficient",
+      description:
+        "Does NOT falsely claim that agent.py's `environment={'required':[...]}` block alone is enough to populate ctx.env (would be the trap that caused the live failure).",
+      // Fail only on the dangerous positive claim ("the environment block
+      // makes ctx.env get the vars" / "required field wires them in"). We
+      // don't require the model to volunteer a why-essay — the behavioral
+      // signal is the correct workspace.yml wiring (covered by the other
+      // checks). This guard catches the case where it explains incorrectly.
+      pass: (() => {
+        const falseClaim =
+          /\benvironment\s*=?\s*\{?[^}]*required\b[^.\n]{0,200}\b(?:populate|wires?|inject|provide(?:s)?|supplies?|loads?|reads?)\b[^.\n]{0,80}\bctx\.env\b/i.test(
+            text,
+          ) ||
+          /\brequired\s+(?:field|list|block)\b[^.\n]{0,160}\b(?:populate|wires?|inject|provide(?:s)?|loads?)\b[^.\n]{0,80}\b(?:env(?:ironment)?|ctx)/i.test(
+            text,
+          );
+        return !falseClaim;
+      })(),
+      evidence: text
+        .match(
+          /\benvironment\s*=?\s*\{[^}]*required[^.\n]{0,200}|\brequired\s+(?:field|list|block)[^.\n]{0,200}/i,
+        )?.[0]
+        ?.slice(0, 240),
+    },
+    {
+      id: "agent-actually-reads-via-ctx-env",
+      description:
+        "Agent code reads via `ctx.env.get(...)` (or `ctx.env[...]`) — confirms the wiring it's setting up matches the read path",
+      pass:
+        /\bctx\.env\s*\.\s*get\s*\(\s*["']BITBUCKET_(?:API_TOKEN|EMAIL)["']/.test(text) ||
+        /\bctx\.env\s*\[\s*["']BITBUCKET_(?:API_TOKEN|EMAIL)["']\s*\]/.test(text),
+      evidence: text
+        .match(/\bctx\.env(?:\.get\(|\[)\s*["']BITBUCKET_[A-Z_]+["']\s*[,)\]]/)?.[0]
+        ?.slice(0, 160),
+    },
+  ];
+
+  metrics.checks = checks;
+  const failed = checks.filter((c) => !c.pass);
+
+  if (failed.length === 0) {
+    notes.push(`Positive: all ${checks.length} checks passed.`);
+    for (const c of checks)
+      notes.push(`  ✓ ${c.id}: ${c.description}${c.evidence ? ` [${c.evidence}]` : ""}`);
+    return { id: "ctx-env-vars-need-workspace-yml-wiring", pass: true, notes, metrics };
+  }
+  notes.push(`Negative: ${failed.length}/${checks.length} failed.`);
+  for (const c of checks)
+    notes.push(
+      `  ${c.pass ? "✓" : "✗"} ${c.id}: ${c.description}${c.evidence ? ` [${c.evidence}]` : ""}`,
+    );
+  notes.push(`Reply head: "${result.text.slice(0, 400)}"`);
+  return { id: "ctx-env-vars-need-workspace-yml-wiring", pass: false, notes, metrics };
+}
+
 // ────────────────────────────────────────────────────────────────────────
 // Entrypoint
 // ────────────────────────────────────────────────────────────────────────
@@ -2389,6 +2852,10 @@ async function main() {
     { id: "github-loop-trap", fn: () => runGithubLoopTrap() },
     { id: "github-hmac-in-agent", fn: () => runGithubHmacInAgent() },
     { id: "agent-tools-must-be-declared", fn: () => runAgentToolsMustBeDeclared() },
+    { id: "loop-guard-deterministic-not-llm-only", fn: () => runLoopGuardDeterministic() },
+    { id: "reply-via-bash-not-mcp-args", fn: () => runReplyViaBashNotMcp() },
+    { id: "agent-tolerates-ping-events", fn: () => runAgentTolerancesPing() },
+    { id: "ctx-env-vars-need-workspace-yml-wiring", fn: () => runCtxEnvWiring() },
   ];
 
   for (const { id, fn } of runners) {
