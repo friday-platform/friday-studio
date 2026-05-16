@@ -2746,12 +2746,16 @@ async function runCtxEnvWiring(): Promise<EvalResult> {
     {
       id: "uses-from-environment-or-link-ref",
       description:
-        "Each declared var resolves via `from_environment` / `auto` / a Link credential ref (`{ from: link, ... }`) — not a literal string",
+        "Each declared var resolves via `from_environment` / `auto` / a Link credential ref (`{ from: link, ... }`) — NOT a template string like `'{{env.X}}'`, `'${X}'`, or `'$X'` (resolveEnvValues does not interpolate; templates land as literal strings and cause 401s)",
       pass: (() => {
         if (!yamlEnvBlock) return false;
-        // Pass if every BITBUCKET_* line in the block uses from_environment, auto, or Link ref.
         const lines = yamlEnvBlock.split("\n").filter((l) => /^\s+BITBUCKET_[A-Z_]+\s*:/.test(l));
         if (lines.length === 0) return false;
+        // Reject any template-style RHS — the resolver doesn't interpolate.
+        const hasTemplateString = lines.some((l) =>
+          /:\s*['"]?\s*(?:\{\{\s*env\.|\$\{|\$[A-Z_])/i.test(l),
+        );
+        if (hasTemplateString) return false;
         return lines.every((l) =>
           /:\s*(?:from_environment|auto|\{\s*from\s*:\s*link\b[^}]*\})/i.test(l),
         );

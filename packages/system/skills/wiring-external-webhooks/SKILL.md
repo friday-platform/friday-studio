@@ -258,6 +258,36 @@ Rule of thumb: for every `ctx.env.get(KEY)` the agent calls, there must be a
 matching `KEY:` line under `agents.<id>.env:`. If the chat is asked to add a
 secret-using agent, the wiring goes in workspace.yml — not just in agent.py.
 
+### The ONLY valid right-hand-side values
+
+`resolveEnvValues` is NOT a template engine. It only understands three shapes:
+
+```yaml
+# 1. The literal sentinel `from_environment` (or `auto`) — resolves from envOverlay → process.env
+BITBUCKET_API_TOKEN: from_environment
+
+# 2. A Link credential reference (object form)
+GITHUB_TOKEN: { from: link, provider: github, key: token }
+
+# 3. A literal string value (rarely correct for secrets — this is what gets passed verbatim)
+LOG_LEVEL: info
+```
+
+**WRONG** — these are NOT interpolated and silently land in `ctx.env` as
+literal strings. The agent then base64-encodes a placeholder string into
+the auth header and gets `401 Unauthorized`:
+
+```yaml
+env:
+  BITBUCKET_API_TOKEN: '{{env.BITBUCKET_API_TOKEN}}'   # literal "{{env.X}}" string
+  GITHUB_TOKEN:        '${GITHUB_TOKEN}'               # literal "${X}" string
+  SECRET:              '$SECRET'                       # literal "$X" string
+```
+
+There is no template engine for `env:` values. If you write `{{...}}` /
+`${...}` / `$VAR`, that exact string is what `ctx.env.get(KEY)` returns.
+Use `from_environment` (the sentinel) — the resolver does the lookup.
+
 Note: `os.environ[KEY]` in the agent subprocess also works (the daemon spawns
 with `...process.env` inherited), but `ctx.env` is the canonical SDK pattern
 and it ignores anything not declared in workspace.yml.
