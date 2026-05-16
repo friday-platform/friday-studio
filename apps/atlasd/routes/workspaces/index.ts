@@ -68,6 +68,7 @@ import {
   wireCommunicator,
 } from "../../src/services/communicator-wiring.ts";
 import { publishSessionCancel } from "../../src/session-dispatch-registry.ts";
+import { buildSetupRequired409Body } from "../../src/setup-required-gate.ts";
 import { getOrComputeSetupRequirements } from "../../src/setup-requirements-cache.ts";
 import { awaitSignalCompletion, publishSignalCancellation } from "../../src/signal-stream.ts";
 import {
@@ -1712,6 +1713,18 @@ const workspacesRoutes = daemonFactory
       return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
     }
 
+    // Decision 7 — setup gate. Webhook clients (the audience for HTTP
+    // triggers) treat 409 as non-retryable, so this is preferred over the
+    // queue-then-error path. Internal bypass callers are not exempt: chat
+    // goes through `triggerSignalWithSession` directly and never hits this
+    // route, so a `bypassConcurrency` POST here is still an HTTP audience.
+    {
+      const setup = await deriveSetupRequirements(c, manager, workspaceId, workspace.path);
+      if (setup.requires_setup) {
+        return c.json(buildSetupRequired409Body(workspaceId), 409);
+      }
+    }
+
     const encoder = new TextEncoder();
 
     if (body.bypassConcurrency) {
@@ -2070,6 +2083,21 @@ const workspacesRoutes = daemonFactory
         if (envelopeError) return c.json({ error: envelopeError }, 400);
       }
       const ctx = c.get("app");
+
+      // Decision 7 — setup gate. Returns 409 (non-retryable) so webhook
+      // clients don't keep hammering a setup-required workspace. Skipped
+      // when the workspace doesn't exist; the existing publish path
+      // surfaces "unknown workspace" via the cascade dispatcher.
+      {
+        const manager = ctx.daemon.getWorkspaceManager();
+        const workspace = await manager.find({ id: workspaceId });
+        if (workspace) {
+          const setup = await deriveSetupRequirements(c, manager, workspaceId, workspace.path);
+          if (setup?.requires_setup) {
+            return c.json(buildSetupRequired409Body(workspaceId), 409);
+          }
+        }
+      }
 
       if (bypassConcurrency) {
         if (!isInternalSignalBypassAuthorized(c)) {

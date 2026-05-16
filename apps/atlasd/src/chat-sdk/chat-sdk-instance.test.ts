@@ -1664,3 +1664,106 @@ describe("initializeChatSdkInstance — notifier wiring", () => {
     }
   });
 });
+
+describe("createMessageHandler — Decision 7 setup gate", () => {
+  beforeEach(() => {
+    mockAppendMessage.mockReset();
+    mockAppendMessage.mockResolvedValue({ ok: true });
+  });
+
+  it("replies to the workspace owner with the setup URL and does not fire the chat signal", async () => {
+    const registry = new StreamRegistry();
+    const triggerFn = makeTriggerFn([{ type: "text-delta", delta: "should not fire" }]);
+    const setupGate = vi
+      .fn()
+      .mockResolvedValue({ requires_setup: true, setupUrl: "http://daemon/workspaces/ws-1/chat" });
+
+    const handler = createMessageHandler("ws-1", triggerFn, registry, undefined, {
+      ownerUserId: "owner-1",
+      setupGate,
+    });
+
+    const thread = makeThread("chat-owner");
+    const post = vi.fn().mockResolvedValue({ id: "sent-1", threadId: "chat-owner", raw: {} });
+    (thread as unknown as { post: typeof post }).post = post;
+    const subscribe = thread.subscribe;
+
+    await handler(
+      thread,
+      makeMessage({
+        threadId: "chat-owner",
+        author: {
+          userId: "owner-1",
+          userName: "owner",
+          fullName: "Owner",
+          isBot: false,
+          isMe: false,
+        },
+      }),
+    );
+
+    expect(setupGate).toHaveBeenCalledOnce();
+    expect(post).toHaveBeenCalledOnce();
+    expect(String(post.mock.calls[0]?.[0])).toContain("http://daemon/workspaces/ws-1/chat");
+    expect(triggerFn).not.toHaveBeenCalled();
+    expect(subscribe).not.toHaveBeenCalled();
+    expect(mockAppendMessage).not.toHaveBeenCalled();
+  });
+
+  it("drops non-owner inbound silently — no reply, no signal", async () => {
+    const registry = new StreamRegistry();
+    const triggerFn = makeTriggerFn([{ type: "text-delta", delta: "should not fire" }]);
+    const setupGate = vi
+      .fn()
+      .mockResolvedValue({ requires_setup: true, setupUrl: "http://daemon/workspaces/ws-1/chat" });
+
+    const handler = createMessageHandler("ws-1", triggerFn, registry, undefined, {
+      ownerUserId: "owner-1",
+      setupGate,
+    });
+
+    const thread = makeThread("chat-stranger");
+    const post = vi.fn();
+    (thread as unknown as { post: typeof post }).post = post;
+
+    await handler(
+      thread,
+      makeMessage({
+        threadId: "chat-stranger",
+        author: {
+          userId: "stranger-9",
+          userName: "stranger",
+          fullName: "Stranger",
+          isBot: false,
+          isMe: false,
+        },
+      }),
+    );
+
+    expect(setupGate).toHaveBeenCalledOnce();
+    expect(post).not.toHaveBeenCalled();
+    expect(triggerFn).not.toHaveBeenCalled();
+    expect(thread.subscribe).not.toHaveBeenCalled();
+  });
+
+  it("proceeds normally when the gate clears", async () => {
+    const registry = new StreamRegistry();
+    const chunks = [{ type: "text-delta", delta: "hi" }];
+    const triggerFn = makeTriggerFn(chunks);
+    const setupGate = vi.fn().mockResolvedValue({ requires_setup: false });
+
+    const handler = createMessageHandler("ws-1", triggerFn, registry, undefined, {
+      ownerUserId: "owner-1",
+      setupGate,
+    });
+
+    const thread = makeThread("chat-clear");
+    const turnBuffer = registry.createStream("ws-1", "chat-clear");
+
+    await handler(thread, makeMessage({ threadId: "chat-clear", raw: { turnBuffer } }));
+
+    expect(setupGate).toHaveBeenCalledOnce();
+    expect(triggerFn).toHaveBeenCalledOnce();
+    expect(thread.subscribe).toHaveBeenCalled();
+  });
+});

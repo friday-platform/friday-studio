@@ -125,6 +125,7 @@ import { NatsManager } from "./nats-manager.ts";
 import { ProcessAgentExecutor } from "./process-agent-executor.ts";
 import { SessionDispatchRegistry } from "./session-dispatch-registry.ts";
 import { SessionStreamRegistry } from "./session-stream-registry.ts";
+import { evaluateWorkspaceSetupGate, WorkspaceSetupRequiredError } from "./setup-required-gate.ts";
 import { CronSignalRegistrar } from "./signal-registrars/cron-registrar.ts";
 import { FsWatchSignalRegistrar } from "./signal-registrars/fs-watch-registrar.ts";
 import {
@@ -841,6 +842,15 @@ export class AtlasDaemon {
             envelope.sourceSessionId,
           );
         } catch (err) {
+          if (err instanceof WorkspaceSetupRequiredError) {
+            // Setup-required short-circuit. The trigger gate already logged
+            // the structured info line; surface it to the correlated-response
+            // subscriber (HTTP webhook path) so the route can return 409
+            // instead of swallowing the skip silently. Schedule + fs-watch
+            // have no subscriber and the throw is the natural no-session
+            // outcome.
+            throw err;
+          }
           if (err instanceof SessionFailedError) {
             logger.warn("Cascade session failed", {
               workspaceId: envelope.workspaceId,
@@ -2156,6 +2166,10 @@ export class AtlasDaemon {
       streamRegistry: this.streamRegistry,
       chatTurnRegistry: this.chatTurnRegistry,
       exposeKernel: process.env.FRIDAY_EXPOSE_KERNEL === "1",
+      // Decision 7 — communicator inbound gate. Evaluated lazily so a freshly
+      // edited workspace.yml / .env is picked up on the next inbound message
+      // without rebuilding the SDK instance.
+      setupGate: () => evaluateWorkspaceSetupGate(this.getWorkspaceManager(), workspaceId),
       triggerFn: async (signalId, signalData, streamId, onStreamEvent, abortSignal) => {
         const runtime = await this.getOrCreateWorkspaceRuntime(workspaceId);
         try {
@@ -2180,6 +2194,24 @@ export class AtlasDaemon {
     };
 
     return initializeChatSdkInstance(instanceConfig, credentials);
+  }
+
+  /**
+   * Look up a signal's provider type from the workspace config without spinning
+   * up a runtime. Used by the setup gate to label the structured log line so
+   * operators can tell which signal class was skipped without grepping
+   * `workspace.yml`.
+   */
+  private async lookupSignalProvider(
+    workspaceId: string,
+    signalId: string,
+  ): Promise<string | undefined> {
+    try {
+      const merged = await this.getWorkspaceManager().getWorkspaceConfig(workspaceId);
+      return merged?.workspace?.signals?.[signalId]?.provider;
+    } catch {
+      return undefined;
+    }
   }
 
   /**
@@ -2232,6 +2264,29 @@ export class AtlasDaemon {
      */
     summary: string;
   }> {
+    // Decision 7 — setup gate. Schedule, fs-watch, and the queued HTTP path
+    // all converge on this method via the CascadeConsumer. Chat does NOT
+    // (chat-sdk-instance's `triggerFn` calls `triggerSignalWithSession`
+    // directly), so this short-circuit is correctly scoped to non-chat
+    // audiences. Communicator inbound enforces its own gate in
+    // `createMessageHandler` since it also bypasses this method.
+    const gate = await evaluateWorkspaceSetupGate(this.getWorkspaceManager(), workspaceId);
+    if (gate?.requires_setup) {
+      const signalProvider = await this.lookupSignalProvider(workspaceId, signalId);
+      logger.info("workspace_setup_required_signal_skipped", {
+        workspaceId,
+        signalId,
+        signalProvider: signalProvider ?? "unknown",
+        setupUrl: gate.setupUrl,
+      });
+      AtlasMetrics.recordSignalTrigger(`${signalProvider ?? "unknown"}.setup_required`);
+      throw new WorkspaceSetupRequiredError({
+        workspaceId,
+        setupUrl: gate.setupUrl,
+        signalProvider,
+      });
+    }
+
     const runtime = await this.getOrCreateWorkspaceRuntime(workspaceId);
     try {
       const result = await runtime.triggerSignalWithResult(
