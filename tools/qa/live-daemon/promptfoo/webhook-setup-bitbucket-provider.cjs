@@ -69,7 +69,9 @@ module.exports = {
         output: JSON.stringify({
           id: scenarioId,
           pass: false,
-          notes: [`scenario id not found in report; available: ${report.results.map((r) => r.id).join(", ")}`],
+          notes: [
+            `scenario id not found in report; available: ${report.results.map((r) => r.id).join(", ")}`,
+          ],
           metrics: {},
         }),
       };
