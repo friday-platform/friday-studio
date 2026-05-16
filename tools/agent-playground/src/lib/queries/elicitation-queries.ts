@@ -25,6 +25,7 @@ import {
   type QueryClient,
 } from "@tanstack/svelte-query";
 import { z } from "zod";
+import { workspaceQueries } from "./workspace-queries.ts";
 
 // ==============================================================================
 // SCHEMAS
@@ -174,4 +175,7 @@ export function mergeElicitationIntoCache(queryClient: QueryClient, next: Elicit
 function mergeAndInvalidate(queryClient: QueryClient, next: Elicitation): void {
   mergeElicitationIntoCache(queryClient, next);
   void queryClient.invalidateQueries({ queryKey: elicitationQueries.all() });
+  if (next.kind === "workspace-setup") {
+    void queryClient.invalidateQueries({ queryKey: workspaceQueries.all() });
+  }
 }

@@ -25,6 +25,7 @@ const WorkspaceSummarySchema = z.object({
       color: z.string().optional(),
     })
     .optional(),
+  requires_setup: z.boolean().default(false),
 });
 
 /** Workspace summary as returned by `GET /api/daemon/api/workspaces`. */

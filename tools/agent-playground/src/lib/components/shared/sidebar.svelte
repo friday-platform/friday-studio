@@ -162,6 +162,15 @@
                 <span class="text">
                   {ws.displayName}
                 </span>
+                {#if ws.requires_setup}
+                  <span
+                    class="setup-badge"
+                    data-testid="workspace-setup-needed-badge"
+                    aria-label="Setup needed"
+                  >
+                    Setup
+                  </span>
+                {/if}
               </a>
 
               {#if active}
@@ -468,6 +477,23 @@
       min-inline-size: var(--size-4-5);
       padding-block: var(--size-0-5);
       padding-inline: var(--size-1);
+    }
+
+    .setup-badge {
+      align-items: center;
+      background-color: color-mix(in srgb, var(--yellow-primary), transparent 88%);
+      border-radius: var(--radius-2);
+      color: var(--yellow-primary);
+      display: inline-flex;
+      flex-shrink: 0;
+      font-size: var(--font-size-1);
+      font-weight: var(--font-weight-6);
+      justify-content: center;
+      letter-spacing: 0.02em;
+      line-height: 1;
+      padding-block: var(--size-0-5);
+      padding-inline: var(--size-1-5);
+      text-transform: uppercase;
     }
 
     &.active {
