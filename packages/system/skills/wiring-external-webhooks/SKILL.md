@@ -20,7 +20,7 @@ https://<public-tunnel-url>/hook/raw/<workspaceId>/<signalId>
 - `<workspaceId>` is the runtime id (e.g. `light_papaya`, not the friendly name).
 - `<signalId>` is the signal's key in `workspace.yml`.
 
-**Only `github` and `raw` providers ship built-in.** Bitbucket / Jira /
+**Only `github` and `raw` providers ship built-in.** Bitbucket, Jira, and
 anything else go through `raw`. The raw provider:
 
 - **Does not verify signatures.** If you need HMAC, do it in the agent
@@ -61,19 +61,14 @@ See `friday-cli` skill section 3 for the full three-mode breakdown
 
 ## Env var that controls the secret
 
-The webhook-tunnel reads exactly **one** env var for HMAC secrets:
+The only env var the webhook-tunnel reads for HMAC verification is
+`WEBHOOK_SECRET`. It lives in `~/.atlas/.env` and applies to all webhook
+providers that verify signatures (today: github).
 
-```
-WEBHOOK_SECRET
-```
-
-That's the literal name. It is set in `~/.atlas/.env` and applies to all
-webhook providers that do signature verification (today: github).
-
-There is no provider-prefixed variant. Do not invent one — if a user or
-agent mentions `BITBUCKET_WEBHOOK_SECRET`, `GITHUB_WEBHOOK_SECRET`, or
-`JIRA_WEBHOOK_SECRET`, those names do not exist in Friday's code and
-will silently not be read. Correct them to `WEBHOOK_SECRET`.
+Provider-prefixed variants (`BITBUCKET_WEBHOOK_SECRET`,
+`GITHUB_WEBHOOK_SECRET`, `JIRA_WEBHOOK_SECRET`) are silently ignored —
+nothing reads them. If a user or agent mentions one, redirect them to
+`WEBHOOK_SECRET`.
 
 ## Get the tunnel URL in one call
 
@@ -154,8 +149,9 @@ If you must process comment events:
 - Guard on the content: skip when the comment body matches an exact
   marker (`"ACK"`, `"/friday processed"`).
 
-Observed in 2026-05-15 development: 18 spam comments before the agent
-guard was patched in. Write the guard before the first send.
+Write the guard before the first send — a missing guard has been
+observed to produce 18+ spam comments on a single PR before the loop
+gets caught.
 
 Friday's signal-level `concurrency: skip` default also blocks the
 "agent acts → webhook fires → agent re-runs" cascade for the duration
@@ -166,9 +162,9 @@ guard is the load-bearing one.
 
 `WEBHOOK_MAPPINGS_PATH` is a YAML override for the **github** provider's
 event list. It is NOT a way to register bitbucket/jira/etc. — those
-providers were removed on 2026-05-15 and pointing the env at a YAML
-with a `bitbucket:` block at the top level silently leaves the registry
-with just `[raw]`. Schema for the github override:
+providers do not exist anymore, and pointing the env at a YAML with a
+`bitbucket:` block at the top level silently leaves the registry with
+just `[github, raw]`. Schema for the github override:
 
 ```yaml
 providers:                            # ← top-level key MUST be `providers:`

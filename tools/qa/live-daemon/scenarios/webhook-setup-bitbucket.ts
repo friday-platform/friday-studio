@@ -129,6 +129,27 @@ const USER_QUESTION_SYNC_OUTPUT =
 const USER_QUESTION_PROGRESS_STREAM =
   "I'm building a debugging UI that fires a Friday signal and shows the agent's progress as it runs — step by step, tool calls as they happen, not just the final output. What endpoint should I hit?";
 
+// Scenario 10: user asks which webhook providers Friday supports. The
+// skill teaches the current truth: [github, raw]. Negative-polarity:
+// the response must NOT (a) list bitbucket / jira as built-in
+// providers, (b) cite a specific removal date (skill content was
+// audited to remove dated 2026-05-15 references — if any leaks in,
+// fail), (c) recommend WEBHOOK_MAPPINGS_PATH as a way to register
+// bitbucket/jira (it's a github-only override).
+const USER_QUESTION_PROVIDER_LIST =
+  "Which webhook providers does Friday's webhook-tunnel support out of the box? I'm trying to figure out what URLs are valid for /hook/<provider>/...";
+
+// Scenario 11: user wants HMAC signature verification for a Bitbucket
+// webhook. The skill teaches: WEBHOOK_SECRET is github-only; for
+// bitbucket you do the HMAC in the agent code using a different env
+// var name (must NOT collide with WEBHOOK_SECRET). Negative-polarity:
+// agent must not (a) tell the user to set WEBHOOK_SECRET for
+// bitbucket, (b) claim Friday verifies the signature for them via
+// /hook/raw/, (c) recommend the deprecated /hook/bitbucket/ as a way
+// to get signature verification.
+const USER_QUESTION_BITBUCKET_HMAC =
+  "I need HMAC signature verification on my Bitbucket webhook to my Friday workspace — I don't want random people POSTing to the public tunnel URL. How do I set it up?";
+
 interface DriveResult {
   text: string;
   durationMs: number;
@@ -303,10 +324,25 @@ function runContractChecks(text: string): ContractCheck[] {
     {
       id: "no-atlasd-direct-path",
       description:
-        "does NOT recommend /api/workspaces/.../signals/... as the webhook URL (atlasd's internal direct path; not reachable through cloudflared)",
+        "does NOT recommend /api/workspaces/.../signals/<id> as the webhook URL (atlasd's internal direct path)",
       // Marc's chat dump message #0: first URL he was given was atlasd's
       // direct signal endpoint. Tunnel returns 404 for non-/hook/ paths.
-      pass: !/\/api\/workspaces\/[^/\s]+\/signals\//i.test(text),
+      // Pass when the only `/api/workspaces/.../signals/...` URLs are:
+      //   - on the tunnel (port 9090) and end in /history or /status
+      //     (read-only introspection endpoints — harmless to mention)
+      //   - in a "do not use" / "wrong" / "atlasd's internal" framing
+      pass: (() => {
+        const matches = [
+          ...text.matchAll(/(.{0,80}\/api\/workspaces\/[^/\s]+\/signals\/[^\s)`]*.{0,80})/g),
+        ];
+        if (matches.length === 0) return true;
+        const negativeMarker =
+          /\b(?:do not|don'?t use|wrong|incorrect|atlasd'?s|internal|NOT (?:use|reach)|404|not reachable|don'?t (?:point|hit))\b/i;
+        const tunnelIntrospection = /\/(?:history|status)(?:\?|$|\s|\))/;
+        return matches.every(
+          (m) => negativeMarker.test(m[1] ?? m[0]) || tunnelIntrospection.test(m[1] ?? m[0]),
+        );
+      })(),
       evidence: text.match(/[^\s]*\/api\/workspaces\/[^/\s]+\/signals\/[^\s)`]*/)?.[0],
     },
     {
@@ -478,7 +514,9 @@ async function runCorrectsWrongEnvVar(): Promise<EvalResult> {
         "does NOT suggest a different provider-prefixed alternative like JIRA_WEBHOOK_SECRET / GITHUB_WEBHOOK_SECRET / BITBUCKET_HOOK_SECRET",
       pass:
         !/\b(?:JIRA|GITHUB|BITBUCKET)_(?:WEBHOOK|HOOK)_(?:SECRET|TOKEN|KEY)\b/.test(result.text) ||
-        // tolerate a single "do not use" mention of BITBUCKET_WEBHOOK_SECRET in the correction
+        // tolerate mentions when every occurrence is in negative framing —
+        // explaining what the user did wrong, telling them to remove the
+        // var, or naming a custom-prefixed alternative
         (() => {
           const lines = result.text.split(/\n/);
           const violations = lines.filter((l) =>
@@ -486,7 +524,7 @@ async function runCorrectsWrongEnvVar(): Promise<EvalResult> {
           );
           // pass if every mention is in negative framing
           const neg =
-            /\b(?:not|don'?t|do not|never|doesn'?t exist|isn'?t|wrong|invalid|silently)\b/i;
+            /\b(?:not|don'?t|do not|never|doesn'?t exist|isn'?t|wrong|invalid|silently|remove|removed|unset|delete|ignor(?:e|ed)|won'?t|cannot|can'?t|NOT\s+`?WEBHOOK_SECRET`?)\b/i;
           return violations.length > 0 && violations.every((l) => neg.test(l));
         })(),
       evidence: result.text
@@ -1041,15 +1079,18 @@ async function runRecommendsSyncForOutput(): Promise<EvalResult> {
       description:
         "Does NOT push ?nowait=true as the primary path (the user wants the response, not a correlationId)",
       pass: (() => {
-        // Pass if nowait isn't mentioned, OR if every nowait mention is in a
-        // negative / contrast context ("without nowait", "don't use nowait",
-        // "skip nowait here", "since you DO need output, no nowait").
-        if (!/\?nowait=true|\bnowait\b/i.test(result.text)) return true;
-        const lines = result.text.split(/\n/);
-        const nowaitLines = lines.filter((l) => /\?nowait=true|\bnowait\b/i.test(l));
-        const neg =
-          /\b(?:don'?t|do not|avoid|not|no\b|without|omit|wrong|isn'?t|won'?t|instead|rather than|but|skip|unlike|whereas|vs\.?\b)\b/i;
-        return nowaitLines.every((l) => neg.test(l));
+        // Fail only when nowait appears as an active recommendation —
+        // imperative verb pointed at nowait ("use ?nowait=true", "POST with
+        // ?nowait=true", "add ?nowait=true to your URL"). Tolerate
+        // mentions in contrast / description / "or use nowait if X" /
+        // mode-enumeration contexts.
+        const recommendationPatterns = [
+          /\b(?:use|set|add|append|pass|send|include|post with|fire with|trigger with|append to (?:the )?url|recommend(?:ed)? (?:using )?)\s+`?\??nowait(?:=true)?\b/i,
+          /\b(?:should|need to|must|have to)\s+(?:use|set|add|pass|include|append)\b[^.\n]{0,40}\?nowait/i,
+          /\bI(?:'?d|\s+would)?\s+recommend\b[^.\n]{0,40}\?nowait/i,
+          /\bthe\s+(?:right|correct|best|simplest|cleanest)\s+(?:way|approach|endpoint|mode)\b[^.\n]{0,60}\?nowait/i,
+        ];
+        return !recommendationPatterns.some((p) => p.test(result.text));
       })(),
       evidence: result.text.match(/[^.\n]{0,40}\bnowait[^.\n]{0,80}/i)?.[0]?.slice(0, 160),
     },
@@ -1170,6 +1211,260 @@ async function runRecommendsSseForProgress(): Promise<EvalResult> {
   return { id: "recommends-sse-for-progress", pass: false, notes, metrics };
 }
 
+// ───── Scenario 10: provider-list correctness ────────────────────────────
+
+async function runProviderList(): Promise<EvalResult> {
+  const notes: string[] = [];
+  const metrics: Record<string, unknown> = {};
+
+  console.log("  → drive (lists-current-providers)");
+  const system = await buildSystem("with-skill");
+  const result = await drive(system, USER_QUESTION_PROVIDER_LIST);
+  metrics.durationMs = result.durationMs;
+  metrics.responseLen = result.text.length;
+  metrics.responseFull = result.text;
+
+  const text = result.text;
+
+  const checks: ContractCheck[] = [
+    {
+      id: "names-github-and-raw",
+      description: "Names both `github` and `raw` as the available providers",
+      pass: /\bgithub\b/i.test(text) && /\braw\b/i.test(text),
+      evidence: text.match(/\bgithub\b[^\n.]{0,40}\braw\b|\braw\b[^\n.]{0,40}\bgithub\b/i)?.[0],
+    },
+    {
+      id: "does-not-list-bitbucket-as-builtin",
+      description:
+        "Does NOT present `bitbucket` as a built-in provider — must route Bitbucket through /hook/raw/",
+      // Fail only when bitbucket is enumerated as a CURRENT built-in
+      // (e.g. "providers: github, bitbucket, raw" or `["github","bitbucket","raw"]`).
+      // Pass when bitbucket appears in negative framing ("removed",
+      // "deprecated"), in "use raw for bitbucket" instructions, or as a
+      // capitalized noun referring to the SaaS product.
+      pass: (() => {
+        // Walk every snippet around a bitbucket mention; fail only when at
+        // least one is in a built-in-enumeration context with no negative
+        // marker on the same line.
+        const matches = [...text.matchAll(/(.{0,80}\bbitbucket\b.{0,80})/gi)];
+        if (matches.length === 0) return true;
+        const enumerationContext =
+          /providers?\s*(?:are|:|include[s]?|list|registered)|\[[^\]]*\]|`(?:github|raw)`\s*(?:,|\sand\s)\s*`?bitbucket`?|`bitbucket`\s*(?:,|\sand\s)\s*`(?:github|raw)`/i;
+        const negativeMarker =
+          /\b(?:removed|deprecat|do not|don'?t|no longer|wrong|incorrect|NOT|legacy|previously|was|goes through|use\s+(?:the\s+)?raw|via\s+(?:the\s+)?raw|through\s+(?:the\s+)?raw|\/hook\/raw\/|isn'?t|aren'?t|dedicated\s+bitbucket\b)\b/i;
+        // bitbucket-as-builtin requires enumeration AND no negative marker
+        return !matches.some((m) => {
+          const ctx = m[1] ?? m[0];
+          return enumerationContext.test(ctx) && !negativeMarker.test(ctx);
+        });
+      })(),
+      evidence: text
+        .match(
+          /providers?\s*(?:are|:|include[s]?)\s*[^.\n]{0,160}|.{0,80}\bbitbucket\b.{0,80}/i,
+        )?.[0]
+        ?.slice(0, 200),
+    },
+    {
+      id: "does-not-list-jira-as-builtin",
+      description: "Does NOT present `jira` as a built-in provider",
+      pass: (() => {
+        const matches = [...text.matchAll(/(.{0,80}\bjira\b.{0,80})/gi)];
+        if (matches.length === 0) return true;
+        const enumerationContext =
+          /providers?\s*(?:are|:|include[s]?|list|registered)|\[[^\]]*\]|`(?:github|raw)`\s*(?:,|\sand\s)\s*`?jira`?|`jira`\s*(?:,|\sand\s)\s*`(?:github|raw)`/i;
+        const negativeMarker =
+          /\b(?:removed|deprecat|do not|don'?t|no longer|wrong|incorrect|NOT|legacy|previously|was|goes through|use\s+(?:the\s+)?raw|via\s+(?:the\s+)?raw|through\s+(?:the\s+)?raw|\/hook\/raw\/|isn'?t|aren'?t|dedicated\s+jira\b)\b/i;
+        return !matches.some((m) => {
+          const ctx = m[1] ?? m[0];
+          return enumerationContext.test(ctx) && !negativeMarker.test(ctx);
+        });
+      })(),
+      evidence: text
+        .match(/providers?\s*(?:are|:|include[s]?)\s*[^.\n]{0,160}|.{0,80}\bjira\b.{0,80}/i)?.[0]
+        ?.slice(0, 200),
+    },
+    {
+      id: "no-dated-removal-claim",
+      description:
+        "Does NOT cite a specific date for bitbucket/jira removal (the skill was audited to drop dated refs)",
+      // Fail if the response contains "removed on YYYY-MM-DD" or "removed in
+      // <month> <year>" or "as of <date>". The skill content shouldn't be
+      // sneaking dates back into the answer.
+      pass:
+        !/removed\s+(?:on|in)\s+\d{4}-\d{2}-\d{2}/i.test(text) &&
+        !/removed\s+(?:on|in)\s+\w+\s+\d{4}/i.test(text) &&
+        !/as of\s+\d{4}-\d{2}-\d{2}/i.test(text),
+      evidence: text.match(
+        /removed\s+(?:on|in)\s+(?:\d{4}-\d{2}-\d{2}|\w+\s+\d{4})|as of\s+\d{4}-\d{2}-\d{2}/i,
+      )?.[0],
+    },
+    {
+      id: "no-webhook-mappings-for-bitbucket",
+      description:
+        "Does NOT recommend WEBHOOK_MAPPINGS_PATH as a way to register bitbucket/jira (it's a github-only override)",
+      // Fail if the answer pairs WEBHOOK_MAPPINGS_PATH with bitbucket or jira
+      // in a "use this to add support" context.
+      pass: !(
+        /WEBHOOK_MAPPINGS_PATH/.test(text) &&
+        /\b(?:bitbucket|jira)\b/i.test(text) &&
+        /\b(?:add|register|enable|support|provider for)\b/i.test(text) &&
+        // tolerate negative framing ("WEBHOOK_MAPPINGS_PATH is NOT a way to register bitbucket")
+        !/\bNOT\s+(?:a\s+way|how|the way|for|to register|to enable)\b/i.test(text)
+      ),
+      evidence: text
+        .match(
+          /WEBHOOK_MAPPINGS_PATH[^\n.]{0,120}\b(?:bitbucket|jira)\b|[^.\n]{0,80}WEBHOOK_MAPPINGS_PATH[^.\n]{0,80}/i,
+        )?.[0]
+        ?.slice(0, 200),
+    },
+    {
+      id: "mentions-hook-raw-for-bitbucket",
+      description: "Explains bitbucket / other providers use /hook/raw/",
+      pass:
+        /\/hook\/raw\b/.test(text) ||
+        /\braw\b[^.\n]{0,60}\b(?:bitbucket|jira|custom|other)/i.test(text) ||
+        /\bbitbucket\b[^.\n]{0,60}\b(?:goes through|use[s]?|via|through)\b[^.\n]{0,30}\braw\b/i.test(
+          text,
+        ),
+      evidence: text
+        .match(/\/hook\/raw\/[^\s)`]*|\b(?:bitbucket|jira)[^.\n]{0,80}\braw\b[^.\n]{0,40}/i)?.[0]
+        ?.slice(0, 200),
+    },
+  ];
+
+  metrics.checks = checks;
+  const failed = checks.filter((c) => !c.pass);
+
+  if (failed.length === 0) {
+    notes.push(`Positive: all ${checks.length} checks passed.`);
+    for (const c of checks)
+      notes.push(`  ✓ ${c.id}: ${c.description}${c.evidence ? ` [${c.evidence}]` : ""}`);
+    return { id: "lists-current-providers", pass: true, notes, metrics };
+  }
+  notes.push(`Negative: ${failed.length}/${checks.length} failed.`);
+  for (const c of checks)
+    notes.push(
+      `  ${c.pass ? "✓" : "✗"} ${c.id}: ${c.description}${c.evidence ? ` [${c.evidence}]` : ""}`,
+    );
+  notes.push(`Reply head: "${result.text.slice(0, 400)}"`);
+  return { id: "lists-current-providers", pass: false, notes, metrics };
+}
+
+// ───── Scenario 11: bitbucket HMAC must be agent-side ─────────────────────
+
+async function runBitbucketHmacInAgent(): Promise<EvalResult> {
+  const notes: string[] = [];
+  const metrics: Record<string, unknown> = {};
+
+  console.log("  → drive (bitbucket-hmac-in-agent)");
+  const system = await buildSystem("with-skill");
+  const result = await drive(system, USER_QUESTION_BITBUCKET_HMAC);
+  metrics.durationMs = result.durationMs;
+  metrics.responseLen = result.text.length;
+  metrics.responseFull = result.text;
+
+  const text = result.text;
+
+  const checks: ContractCheck[] = [
+    {
+      id: "explains-raw-does-not-verify",
+      description:
+        "Explains that the raw provider doesn't verify the signature (so the agent must)",
+      pass:
+        /\b(?:raw|tunnel)\b[^.]*(?:no(?:t)?\s+verif|doesn'?t\s+verif|drops? headers|skip[s]?\s+verif)/i.test(
+          text,
+        ) ||
+        /\bverify(?:ing)?\s+(?:the\s+)?(?:hmac|signature)\b[^.\n]*\b(?:agent|in (?:your|the) agent|yourself)\b/i.test(
+          text,
+        ),
+      evidence: text
+        .match(
+          /\b(?:raw|tunnel)\b[^.]*?(?:verif|drops? headers|skip)[^.]*|\bverify\b[^.\n]*\bagent\b[^.\n]{0,80}/i,
+        )?.[0]
+        ?.slice(0, 200),
+    },
+    {
+      id: "does-not-claim-webhook-secret-for-bitbucket",
+      description:
+        "Does NOT tell the user to set WEBHOOK_SECRET for bitbucket — that's the github-only HMAC var",
+      // Fail when the answer recommends WEBHOOK_SECRET as the bitbucket
+      // secret. Tolerate mentioning WEBHOOK_SECRET in the negative ("don't
+      // use WEBHOOK_SECRET, that's for github").
+      pass: (() => {
+        const matches = [...text.matchAll(/[^.\n]{0,80}WEBHOOK_SECRET[^.\n]{0,80}/g)];
+        if (matches.length === 0) return true;
+        // Fail only when the answer actively pushes WEBHOOK_SECRET as the
+        // bitbucket HMAC variable. Any other mention (explaining it's
+        // github-only, telling the user not to use it for bitbucket) is fine.
+        const recommendsForBb =
+          /\b(?:set|use|configure|put|paste)\s+(?:the\s+)?WEBHOOK_SECRET\b[^.\n]{0,80}\b(?:bitbucket|for\s+(?:your\s+)?bitbucket)\b/i;
+        return !recommendsForBb.test(text);
+      })(),
+      evidence: text.match(/[^.\n]{0,80}WEBHOOK_SECRET[^.\n]{0,80}/)?.[0]?.slice(0, 200),
+    },
+    {
+      id: "recommends-custom-env-var-name",
+      description:
+        "Recommends a DIFFERENT (non-colliding) env var name for the bitbucket HMAC secret in the agent",
+      // The skill suggests something like MY_WORKSPACE_BB_SECRET — anything
+      // that isn't WEBHOOK_SECRET and isn't a provider-prefixed lookalike.
+      // Pass if the answer either (a) shows a code snippet reading a custom
+      // env var via os.environ / process.env, or (b) explicitly says to pick
+      // a different var name from WEBHOOK_SECRET.
+      pass:
+        /os\.environ\[['"][A-Z][A-Z0-9_]*['"]\]/.test(text) ||
+        /process\.env\.[A-Z][A-Z0-9_]+/.test(text) ||
+        /\b(?:different|distinct|separate|your own|custom|new)\b[^.\n]{0,60}\b(?:env(?:ironment)?\s+(?:var|variable)|name)\b/i.test(
+          text,
+        ) ||
+        /\bdoes(?:n'?t| not)\s+collide\b/i.test(text),
+      evidence: text
+        .match(
+          /os\.environ\[['"][A-Z][A-Z0-9_]*['"]\]|process\.env\.[A-Z][A-Z0-9_]+|\b(?:different|distinct|separate|custom|new)\b[^.\n]{0,80}\b(?:env|var|name)\b[^.\n]{0,40}/i,
+        )?.[0]
+        ?.slice(0, 200),
+    },
+    {
+      id: "no-deprecated-hook-bitbucket-url",
+      description: "Does NOT recommend /hook/bitbucket/ as a way to get signature verification",
+      pass: (() => {
+        const matches = [...text.matchAll(/(.{0,80}\/hook\/bitbucket\/[^\s)`]*.{0,80})/g)];
+        if (matches.length === 0) return true;
+        const negativeMarker =
+          /\b(?:removed|deprecat|do not|don'?t use|no longer|wrong|incorrect|instead of|NOT use|legacy|previously|was)\b/i;
+        return matches.every((m) => negativeMarker.test(m[1] ?? m[0]));
+      })(),
+      evidence: text.match(/.{0,40}\/hook\/bitbucket\/[^\s)`]*.{0,40}/)?.[0]?.slice(0, 200),
+    },
+    {
+      id: "reads-payload-from-ctx",
+      description:
+        "References reading the raw body for HMAC computation via ctx.input.config / ctx.input.raw",
+      pass: /\bctx\.input\.(?:config|raw)\b/.test(text) || /\b(?:raw|request)\s+body\b/i.test(text),
+      evidence: text
+        .match(/\bctx\.input\.(?:config|raw)\b|\b(?:raw|request)\s+body\b[^.\n]{0,60}/i)?.[0]
+        ?.slice(0, 160),
+    },
+  ];
+
+  metrics.checks = checks;
+  const failed = checks.filter((c) => !c.pass);
+
+  if (failed.length === 0) {
+    notes.push(`Positive: all ${checks.length} checks passed.`);
+    for (const c of checks)
+      notes.push(`  ✓ ${c.id}: ${c.description}${c.evidence ? ` [${c.evidence}]` : ""}`);
+    return { id: "bitbucket-hmac-in-agent", pass: true, notes, metrics };
+  }
+  notes.push(`Negative: ${failed.length}/${checks.length} failed.`);
+  for (const c of checks)
+    notes.push(
+      `  ${c.pass ? "✓" : "✗"} ${c.id}: ${c.description}${c.evidence ? ` [${c.evidence}]` : ""}`,
+    );
+  notes.push(`Reply head: "${result.text.slice(0, 400)}"`);
+  return { id: "bitbucket-hmac-in-agent", pass: false, notes, metrics };
+}
+
 // ────────────────────────────────────────────────────────────────────────
 // Entrypoint
 // ────────────────────────────────────────────────────────────────────────
@@ -1200,6 +1495,8 @@ async function main() {
     { id: "recommends-nowait-pattern", fn: () => runNowaitRecommendation() },
     { id: "recommends-sync-for-output", fn: () => runRecommendsSyncForOutput() },
     { id: "recommends-sse-for-progress", fn: () => runRecommendsSseForProgress() },
+    { id: "lists-current-providers", fn: () => runProviderList() },
+    { id: "bitbucket-hmac-in-agent", fn: () => runBitbucketHmacInAgent() },
   ];
 
   for (const { id, fn } of runners) {

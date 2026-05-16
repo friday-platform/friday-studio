@@ -55,3 +55,11 @@
 - description: user is building a UI that watches cascade progress live — agent recommends SSE (Accept: text/event-stream OR /signals/stream/{correlationId}), NOT polling, NOT parsing the sync output
   vars:
     scenarioId: recommends-sse-for-progress
+
+- description: user asks which webhook providers Friday's tunnel supports — agent names github + raw, does NOT list bitbucket/jira as built-ins, does NOT cite removal dates, does NOT recommend WEBHOOK_MAPPINGS_PATH as a way to register bitbucket/jira
+  vars:
+    scenarioId: lists-current-providers
+
+- description: user wants HMAC verification for a Bitbucket webhook — agent explains raw provider doesn't verify, recommends agent-side HMAC with a custom (non-colliding) env var name, does NOT push WEBHOOK_SECRET for bitbucket, does NOT recommend the deprecated /hook/bitbucket/ URL
+  vars:
+    scenarioId: bitbucket-hmac-in-agent
