@@ -108,6 +108,27 @@ const USER_QUESTION_DEBUG_NO_FIRE =
 const USER_QUESTION_NOWAIT =
   "I'm writing a Python script that triggers a Friday signal. The signal kicks off a long job and my script doesn't need to wait for the result — it just needs to know the signal was accepted. What's the right way to do this without my script hanging on the HTTP call?";
 
+// Scenario 8: user is calling the signal trigger PROGRAMMATICALLY in a
+// loop and consuming the cascade's `output` + `summary` as input to the
+// next iteration. Sync mode is the cleanest fit: one POST, one
+// JSON envelope back, deterministic shape, no SSE parsing, no polling.
+// Agent should recommend the default sync mode and NOT push SSE
+// (overkill — streaming is for live progress, not programmatic
+// consumption) and NOT push nowait + poll (overhead).
+const USER_QUESTION_SYNC_OUTPUT =
+  "I'm writing a Python script that triggers a Friday signal in a loop — 100 different payloads, sequentially, and my script parses each cascade's `output` and `summary` to drive the next iteration. The cascade usually completes in 5-10 seconds. What's the simplest endpoint to call so each iteration just blocks until done and returns the JSON?";
+
+// Scenario 9: user wants real-time progress visibility for a long-
+// running cascade (debugging UI, log tail, watching steps as they happen).
+// Agent should recommend SSE — either Accept: text/event-stream on the
+// trigger (one POST, streams), OR ?nowait=true then GET /signals/stream/
+// {correlationId} (two requests, publisher and watcher can be different
+// processes). Agent must NOT recommend polling, must NOT recommend the
+// sync JSON mode and then "parse the output for progress" (output is
+// only available at completion).
+const USER_QUESTION_PROGRESS_STREAM =
+  "I'm building a debugging UI that fires a Friday signal and shows the agent's progress as it runs — step by step, tool calls as they happen, not just the final output. What endpoint should I hit?";
+
 interface DriveResult {
   text: string;
   durationMs: number;
@@ -212,20 +233,21 @@ function runContractChecks(text: string): ContractCheck[] {
       description:
         "mentions at least one bitbucket trigger the user can subscribe to (snake_case OR UI label)",
       // Accept either the wire-format event names (repo:push, pullrequest:created, etc.)
-      // or Bitbucket's UI labels ("Build status created", "Push", "Pull request created").
-      // Real responses tend to use the UI labels when walking through the trigger picker.
+      // or Bitbucket's UI labels. The UI shows synonyms — "Build status created" /
+      // "Commit status created" both refer to repo:commit_status_created in different
+      // panes of Bitbucket Cloud. Real responses use whatever label the model has seen.
       pass:
         has("repo:push") ||
         has("pullrequest:created") ||
         has("pullrequest:comment") ||
         has("repo:commit_status") ||
         has("pullrequest:updated") ||
-        /\bbuild status (?:created|updated)\b/i.test(text) ||
+        /\b(?:build|commit) status (?:created|updated)\b/i.test(text) ||
         /\bpull request (?:created|updated|approved|comment)/i.test(text) ||
         /\bpush\b.*(?:trigger|event|subscrib)/i.test(text),
       evidence: text
         .match(
-          /(?:repo:|pullrequest:)[a-z_]+|Build status (?:created|updated)|Pull request (?:created|updated|approved|comment[\w_]+)/gi,
+          /(?:repo:|pullrequest:)[a-z_]+|(?:Build|Commit) status (?:created|updated)|Pull request (?:created|updated|approved|comment[\w_]+)/gi,
         )
         ?.slice(0, 4)
         .join(", "),
@@ -954,6 +976,200 @@ async function runNowaitRecommendation(): Promise<EvalResult> {
   return { id: "recommends-nowait-pattern", pass: false, notes, metrics };
 }
 
+// ───── Scenario 8: sync JSON when caller needs cascade output ────────────
+
+async function runRecommendsSyncForOutput(): Promise<EvalResult> {
+  const notes: string[] = [];
+  const metrics: Record<string, unknown> = {};
+
+  console.log("  → drive (recommends-sync-for-output)");
+  const system = await buildSystem("with-skill");
+  const result = await drive(system, USER_QUESTION_SYNC_OUTPUT);
+  metrics.durationMs = result.durationMs;
+  metrics.responseLen = result.text.length;
+  metrics.responseFull = result.text;
+
+  const checks: ContractCheck[] = [
+    // Positive — sync mode is the right answer here
+    {
+      id: "recommends-sync-default",
+      description:
+        "Recommends the default sync mode — POST without ?nowait, response includes the cascade output",
+      pass: (() => {
+        // Markdown asterisks/backticks shouldn't break the "without nowait" detection.
+        // Strip them before pattern-matching.
+        const plain = result.text.replace(/[*_`]/g, "");
+        const recommendsSync =
+          /\b(?:default|sync(?:hronous|hronous mode|hronous response)?|just POST|simple POST)\b/i.test(
+            plain,
+          ) ||
+          /\bwithout\s+\??nowait/i.test(plain) ||
+          /\bno\s+\??nowait\b/i.test(plain) ||
+          /\bomit\s+\??nowait\b/i.test(plain);
+        // And evidence the response will contain the cascade fields
+        const explainsShape =
+          /\b(?:output|summary|sessionId|artifactIds|result)\b[^.\n]{0,80}\b(?:back|in (?:the )?response|return[s]?|response includes|response has|response contains|has )/i.test(
+            plain,
+          ) ||
+          /\b(?:response|envelope|json|payload)\b[^.\n]{0,80}\b(?:has|includes|contains)\b[^.\n]{0,80}\b(?:output|summary|sessionId|artifactIds)/i.test(
+            plain,
+          ) ||
+          /\bresult\.(?:output|summary|sessionId|artifactIds)/i.test(plain);
+        return recommendsSync && explainsShape;
+      })(),
+      evidence: result.text
+        .match(/\b(?:default|sync(?:hronous)?|without|no|omit)\b[^.\n]{0,160}/i)?.[0]
+        ?.slice(0, 200),
+    },
+    {
+      id: "explains-response-shape",
+      description:
+        "Explains the response shape (200 / completed / output / summary / sessionId fields)",
+      pass:
+        /\b200\b/.test(result.text) ||
+        /\bcompleted\b/i.test(result.text) ||
+        /\boutput\b/i.test(result.text) ||
+        /\bsummary\b/i.test(result.text) ||
+        /\bsessionId\b/i.test(result.text),
+      evidence: result.text
+        .match(/\b(?:200|completed|output|summary|sessionId)[^.\n]{0,80}/i)?.[0]
+        ?.slice(0, 120),
+    },
+    // Negative — don't push nowait+poll for a use case that just needs the synchronous response
+    {
+      id: "no-nowait-as-primary-recommendation",
+      description:
+        "Does NOT push ?nowait=true as the primary path (the user wants the response, not a correlationId)",
+      pass: (() => {
+        // Pass if nowait isn't mentioned, OR if every nowait mention is in a
+        // negative / contrast context ("without nowait", "don't use nowait",
+        // "skip nowait here", "since you DO need output, no nowait").
+        if (!/\?nowait=true|\bnowait\b/i.test(result.text)) return true;
+        const lines = result.text.split(/\n/);
+        const nowaitLines = lines.filter((l) => /\?nowait=true|\bnowait\b/i.test(l));
+        const neg =
+          /\b(?:don'?t|do not|avoid|not|no\b|without|omit|wrong|isn'?t|won'?t|instead|rather than|but|skip|unlike|whereas|vs\.?\b)\b/i;
+        return nowaitLines.every((l) => neg.test(l));
+      })(),
+      evidence: result.text.match(/[^.\n]{0,40}\bnowait[^.\n]{0,80}/i)?.[0]?.slice(0, 160),
+    },
+    {
+      id: "no-poll-after-trigger",
+      description:
+        "Does NOT recommend trigger-then-poll (the sync default already blocks; polling is redundant)",
+      pass: !/\b(?:trigger|fire|publish|POST)\b[^.\n]{0,40}\b(?:then|after|and)\b[^.\n]{0,40}\bpoll(?:ing)?\b/i.test(
+        result.text,
+      ),
+      evidence: result.text.match(
+        /\b(?:trigger|fire|publish|POST)\b[^.\n]{0,60}\b(?:then|after|and)\b[^.\n]{0,40}\bpoll(?:ing)?\b[^.\n]{0,60}/i,
+      )?.[0],
+    },
+  ];
+
+  metrics.checks = checks;
+  const failed = checks.filter((c) => !c.pass);
+
+  if (failed.length === 0) {
+    notes.push(`Positive: all ${checks.length} checks passed.`);
+    for (const c of checks)
+      notes.push(`  ✓ ${c.id}: ${c.description}${c.evidence ? ` [${c.evidence}]` : ""}`);
+    return { id: "recommends-sync-for-output", pass: true, notes, metrics };
+  }
+  notes.push(`Negative: ${failed.length}/${checks.length} failed.`);
+  for (const c of checks)
+    notes.push(
+      `  ${c.pass ? "✓" : "✗"} ${c.id}: ${c.description}${c.evidence ? ` [${c.evidence}]` : ""}`,
+    );
+  notes.push(`Reply head: "${result.text.slice(0, 400)}"`);
+  return { id: "recommends-sync-for-output", pass: false, notes, metrics };
+}
+
+// ───── Scenario 9: SSE for live progress ─────────────────────────────────
+
+async function runRecommendsSseForProgress(): Promise<EvalResult> {
+  const notes: string[] = [];
+  const metrics: Record<string, unknown> = {};
+
+  console.log("  → drive (recommends-sse-for-progress)");
+  const system = await buildSystem("with-skill");
+  const result = await drive(system, USER_QUESTION_PROGRESS_STREAM);
+  metrics.durationMs = result.durationMs;
+  metrics.responseLen = result.text.length;
+  metrics.responseFull = result.text;
+
+  const checks: ContractCheck[] = [
+    // Positive — SSE is the right answer
+    {
+      id: "recommends-sse-or-event-stream",
+      description:
+        "Recommends SSE — Accept: text/event-stream on the trigger OR GET /signals/stream/{correlationId}",
+      pass:
+        /\btext\/event-stream\b/i.test(result.text) ||
+        /\bSSE\b/.test(result.text) ||
+        /\bserver[-\s]?sent\s+events\b/i.test(result.text) ||
+        /\/signals\/stream\//i.test(result.text),
+      evidence: result.text.match(
+        /\btext\/event-stream\b|\bSSE\b|\bserver[-\s]?sent\s+events\b|\/signals\/stream\/[^\s)`]+/i,
+      )?.[0],
+    },
+    {
+      id: "explains-streaming-mechanism",
+      description:
+        "Explains the streaming mechanism (chunks/data:/events arriving as the cascade runs)",
+      pass:
+        /\b(?:chunk|data:|event[s]?\s+(?:as|arriv|stream))\b/i.test(result.text) ||
+        /\bstream(?:s|ing|ed)?\b[^.\n]{0,80}\b(?:as|while|during|in real[\s-]?time|live)\b/i.test(
+          result.text,
+        ),
+      evidence: result.text
+        .match(/\b(?:chunk|data:|stream(?:s|ing)?\b[^.\n]{0,80})/i)?.[0]
+        ?.slice(0, 160),
+    },
+    // Negative
+    {
+      id: "no-polling-recommendation",
+      description: "Does NOT recommend polling (SSE replaces the need to poll)",
+      pass:
+        !/\bpoll(?:ing)?\b[^.\n]{0,80}\b(?:every|each|interval|second|loop|fetch)/i.test(
+          result.text,
+        ) && !/\b(?:loop|repeat)\b[^.\n]{0,40}\b(?:fetch|GET|request)\b/i.test(result.text),
+      evidence: result.text.match(
+        /\bpoll(?:ing)?\b[^.\n]{0,80}(?:every|each|interval|second|loop|fetch)/i,
+      )?.[0],
+    },
+    {
+      id: "no-sync-then-parse-for-progress",
+      description:
+        "Does NOT recommend calling the sync JSON endpoint and parsing its output for progress (output is only available at completion)",
+      pass: !/\b(?:sync(?:hronous)?|default|JSON)\b[^.\n]{0,80}\b(?:parse|extract|read|inspect)\b[^.\n]{0,40}\b(?:output|response|result)\b[^.\n]{0,40}\b(?:for|to (?:get|see|watch))\b[^.\n]{0,40}\bprogress\b/i.test(
+        result.text,
+      ),
+      evidence: result.text
+        .match(
+          /\b(?:sync|default|JSON)\b[^.\n]{0,80}\b(?:parse|extract|read)\b[^.\n]{0,80}\bprogress\b/i,
+        )?.[0]
+        ?.slice(0, 200),
+    },
+  ];
+
+  metrics.checks = checks;
+  const failed = checks.filter((c) => !c.pass);
+
+  if (failed.length === 0) {
+    notes.push(`Positive: all ${checks.length} checks passed.`);
+    for (const c of checks)
+      notes.push(`  ✓ ${c.id}: ${c.description}${c.evidence ? ` [${c.evidence}]` : ""}`);
+    return { id: "recommends-sse-for-progress", pass: true, notes, metrics };
+  }
+  notes.push(`Negative: ${failed.length}/${checks.length} failed.`);
+  for (const c of checks)
+    notes.push(
+      `  ${c.pass ? "✓" : "✗"} ${c.id}: ${c.description}${c.evidence ? ` [${c.evidence}]` : ""}`,
+    );
+  notes.push(`Reply head: "${result.text.slice(0, 400)}"`);
+  return { id: "recommends-sse-for-progress", pass: false, notes, metrics };
+}
+
 // ────────────────────────────────────────────────────────────────────────
 // Entrypoint
 // ────────────────────────────────────────────────────────────────────────
@@ -982,6 +1198,8 @@ async function main() {
     { id: "points-at-status-first", fn: () => runPointsAtStatusFirst() },
     { id: "test-webhook-no-bypass", fn: () => runTestWebhookNegativeCheck() },
     { id: "recommends-nowait-pattern", fn: () => runNowaitRecommendation() },
+    { id: "recommends-sync-for-output", fn: () => runRecommendsSyncForOutput() },
+    { id: "recommends-sse-for-progress", fn: () => runRecommendsSseForProgress() },
   ];
 
   for (const { id, fn } of runners) {

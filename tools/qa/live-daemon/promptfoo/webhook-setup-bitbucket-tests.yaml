@@ -47,3 +47,11 @@
 - description: user wants to fire a signal without waiting — agent recommends ?nowait=true + 202/correlationId pattern (NOT raise timeout, NOT long poll, NOT sidecar)
   vars:
     scenarioId: recommends-nowait-pattern
+
+- description: user's CLI tool needs the cascade output — agent recommends the default sync mode (200 + completed), NOT nowait, NOT polling
+  vars:
+    scenarioId: recommends-sync-for-output
+
+- description: user is building a UI that watches cascade progress live — agent recommends SSE (Accept: text/event-stream OR /signals/stream/{correlationId}), NOT polling, NOT parsing the sync output
+  vars:
+    scenarioId: recommends-sse-for-progress

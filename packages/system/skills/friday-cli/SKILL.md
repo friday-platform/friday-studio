@@ -150,8 +150,9 @@ Atlasd publishes to the SIGNALS JetStream subject and returns immediately
 webhooks, cron, fire-and-forget RPC, anything where the HTTP caller is just
 the publisher. The webhook-tunnel uses this internally.
 
-**(b) Synchronous JSON** (legacy default — caller waits for cascade
-completion, up to 10 minutes):
+**(b) Synchronous JSON** — caller waits for the cascade to finish;
+response includes `output` + `summary` + `sessionId`. The default mode
+when no `?nowait` is passed:
 
 ```bash
 curl -k -sf -X POST \
@@ -161,10 +162,13 @@ curl -k -sf -X POST \
 # → 200 {"status":"completed","sessionId":"...","output":[...],"summary":"..."}
 ```
 
-Use this only when the calling code needs `output` / `summary` to build its
-own response. The CLI's `signal trigger` defaults to this mode. Holds an
-HTTP connection open for the full cascade duration — be aware of timeouts on
-your side (e.g. webhook upstreams typically cap at 30s).
+The right mode whenever the calling code consumes the cascade's result
+— CLI tools that print the agent's output, RPC handlers that build a
+response from the cascade's data, scripts that need `sessionId` to log
+or branch on. The CLI's `signal trigger` defaults to this mode.
+Connection stays open for the cascade duration (up to 10 minutes); be
+aware of upstream timeouts on your side (e.g. browsers, webhook
+platforms typically cap at 30s — for those, prefer (a) nowait).
 
 **(c) Streaming SSE** — same publish, but stream cascade events as they happen:
 
