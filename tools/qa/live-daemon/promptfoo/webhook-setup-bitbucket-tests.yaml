@@ -1,0 +1,11 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+
+# Workspace exposes a `bitbucket-pipeline-failed` HTTP signal. User asks
+# "How do I configure Bitbucket to send my pipeline events here?". The
+# agent MUST answer with the correct URL pattern, env var, signature
+# header, embedded event allowlist, and debugging endpoint — and must
+# NOT invent BITBUCKET_WEBHOOK_SECRET, a JSON mappings file, or a
+# /hook/raw/ bypass. See the 2026-05-15 chat dump (vVf) for the
+# pre-fix failure mode this locks against.
+- vars:
+    scenarioId: explains-bitbucket-webhook-wiring

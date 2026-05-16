@@ -1,0 +1,46 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+
+description: |
+  Friday workspace-chat webhook-setup eval — locks the contract that
+  workspace-chat MUST give correct Bitbucket webhook wiring instructions
+  when the user asks how to configure Bitbucket to call a registered HTTP
+  signal.
+
+  Negative case (pre-fix): observed in 2026-05-15 chat dump (vVf
+  "Webhook URL Format", 50 msgs). The chat agent invented
+  BITBUCKET_WEBHOOK_SECRET (correct var is WEBHOOK_SECRET), wrote a
+  webhook-mappings.json with a wrong schema (no `providers:` wrapper,
+  `extract:` instead of `mapping:`), then told the user to fall back to
+  /hook/raw/... bypassing both signature verification and event filtering.
+  Marc burned ~3 hours on this.
+
+  Positive case (post-fix): the agent loads the new
+  `wiring-external-webhooks` skill, gives the correct URL pattern
+  (/hook/bitbucket/{workspaceId}/{signalId}), the correct env var
+  (WEBHOOK_SECRET), the correct signature header (x-hub-signature, not
+  the GitHub-style -256 variant), lists the embedded event allowlist,
+  and points at GET /status for debugging.
+
+  Touch packages/system/skills/wiring-external-webhooks/SKILL.md or the
+  signal-skill cross-reference in writing-workspace-signals without
+  re-running this and you'll silently regress the webhook-setup UX.
+
+prompts:
+  - '{{scenarioId}}'
+
+providers:
+  - id: file://webhook-setup-bitbucket-provider.cjs
+    label: friday-webhook-setup-bitbucket
+
+defaultTest:
+  assert:
+    - type: is-json
+    - type: javascript
+      value: |
+        const result = JSON.parse(output);
+        if (result.pass !== true) {
+          throw new Error(`${result.id} failed: ${(result.notes || []).join('; ')}`);
+        }
+        return true;
+
+tests: file://webhook-setup-bitbucket-tests.yaml

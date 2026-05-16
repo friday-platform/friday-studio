@@ -119,70 +119,17 @@ func TestGitHubProviderTransform(t *testing.T) {
 	}
 }
 
-func TestBitbucketArrayPath(t *testing.T) {
-	if err := Init(); err != nil {
-		t.Fatalf("init: %v", err)
-	}
-	h := Get("bitbucket")
-	if h == nil {
-		t.Fatalf("bitbucket not registered")
-	}
-	body := []byte(`{
-		"repository": { "full_name": "x/y" },
-		"push": { "changes": [
-			{ "new": { "name": "main", "target": { "hash": "deadbeef" } } }
-		]}
-	}`)
-	headers := http.Header{}
-	headers.Set("X-Event-Key", "repo:push")
-	payload, _, err := h.Transform(headers, body)
-	if err != nil {
-		t.Fatalf("transform: %v", err)
-	}
-	if payload["branch"] != "main" {
-		t.Errorf("branch: want main, got %v", payload["branch"])
-	}
-	if payload["sha"] != "deadbeef" {
-		t.Errorf("sha: want deadbeef, got %v", payload["sha"])
-	}
-}
-
-func TestJiraEventField(t *testing.T) {
-	if err := Init(); err != nil {
-		t.Fatalf("init: %v", err)
-	}
-	h := Get("jira")
-	if h == nil {
-		t.Fatalf("jira not registered")
-	}
-	body := []byte(`{
-		"webhookEvent": "jira:issue_created",
-		"issue": {
-			"key": "PROJ-1",
-			"fields": { "project": { "key": "PROJ" }, "summary": "thing" }
-		}
-	}`)
-	payload, _, err := h.Transform(http.Header{}, body)
-	if err != nil {
-		t.Fatalf("transform: %v", err)
-	}
-	if payload["issue_key"] != "PROJ-1" {
-		t.Errorf("issue_key: %v", payload)
-	}
-	if payload["project_key"] != "PROJ" {
-		t.Errorf("project_key: %v", payload)
-	}
-	if payload["summary"] != "thing" {
-		t.Errorf("summary: %v", payload)
-	}
-}
+// Bitbucket + Jira providers were removed from mappings.yml in 2026-05-15.
+// Workspace agents own parsing for those — users register webhooks under
+// /hook/raw/{workspaceId}/{signalId} and read the full body via ctx.input.
+// If they're ever restored, mirror the TestGitHub* tests above.
 
 func TestList(t *testing.T) {
 	if err := Init(); err != nil {
 		t.Fatalf("init: %v", err)
 	}
 	got := List()
-	want := []string{"bitbucket", "github", "jira", "raw"}
+	want := []string{"github", "raw"}
 	if len(got) != len(want) {
 		t.Fatalf("want %v, got %v", want, got)
 	}
