@@ -164,7 +164,7 @@
     "npm:prettier@^3.8.3": "3.8.3",
     "npm:proper-lockfile@^4.1.2": "4.1.2",
     "npm:publint@~0.3.18": "0.3.20",
-    "npm:react@^19.2.5": "19.2.6",
+    "npm:react@^19.2.6": "19.2.6",
     "npm:shiki@^4.0.2": "4.0.2",
     "npm:svelte-check@^4.4.7": "4.4.8_svelte@5.55.7_typescript@5.9.3",
     "npm:svelte-eslint-parser@^1.6.1": "1.6.1_svelte@5.55.7",
@@ -6190,7 +6190,7 @@
             "npm:ink@^7.0.1",
             "npm:js-levenshtein@^1.1.6",
             "npm:nanoid@^5.1.6",
-            "npm:react@^19.2.5",
+            "npm:react@^19.2.6",
             "npm:vitest@^4.1.0",
             "npm:yargs@18",
             "npm:zod@^4.4.3"
