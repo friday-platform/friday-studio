@@ -13,7 +13,8 @@
  * per-step FSM action prompt, and asserts both reach the agent.
  */
 
-import { rm } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import process from "node:process";
 import type { AgentResult } from "@atlas/agent-sdk";
 import type { MergedConfig } from "@atlas/config";
@@ -183,6 +184,97 @@ describe("runtime.executeAgent — agent prompt composition (call site)", () => 
     expect(prompt.indexOf(CONFIG_PROMPT)).toBeLessThan(
       prompt.indexOf("Generate a sprite of a robot chef."),
     );
+  });
+
+  it("substitutes `{{variables.X}}` in agent prompts from the workspace .env at initialize() time", async () => {
+    capturedPrompts.length = 0;
+
+    const testDir = makeTempDir({ prefix: "atlas_agent_prompt_vars_test_" });
+    const originalAtlasHome = process.env.FRIDAY_HOME;
+    process.env.FRIDAY_HOME = testDir;
+
+    const workspacePath = join(testDir, "ws");
+    try {
+      await mkdir(workspacePath, { recursive: true });
+      await mkdir(join(testDir, ".git"), { recursive: true });
+      await writeFile(
+        join(workspacePath, ".env"),
+        "EMAIL_RECIPIENT=alerts@tempest.team\n",
+        "utf-8",
+      );
+
+      const config: MergedConfig = {
+        atlas: null,
+        workspace: {
+          version: "1.0",
+          workspace: { name: "vars-test", description: "declared-variable interpolation" },
+          variables: { email_recipient: { schema: { type: "string" } } },
+          agents: {
+            "alerts-agent": atlasAgent({
+              agent: "image-generation",
+              description: "alerts agent",
+              prompt: "Send alerts to {{variables.email_recipient}}.",
+            }),
+          },
+          signals: {
+            "test-signal": { provider: "http", description: "Test", config: { path: "/test" } },
+          },
+          jobs: {
+            "test-job": {
+              triggers: [{ signal: "test-signal" }],
+              fsm: {
+                id: "test-fsm",
+                initial: "idle",
+                states: {
+                  idle: { on: { "test-signal": { target: "go" } } },
+                  go: {
+                    entry: [
+                      { type: "agent", agentId: "alerts-agent", prompt: "Do it." },
+                      { type: "emit", event: "DONE" },
+                    ],
+                    on: { DONE: { target: "complete" } },
+                  },
+                  complete: { type: "final" },
+                },
+              },
+            },
+          },
+        },
+      };
+
+      const runtime = new WorkspaceRuntime({ id: "test-workspace-id" }, config, {
+        workspacePath,
+        lazy: true,
+        platformModels: createStubPlatformModels(),
+      });
+      await runtime.initialize();
+      try {
+        await runtime.processSignal({
+          id: "test-signal",
+          type: "test-signal",
+          data: {},
+          timestamp: new Date(),
+        });
+      } finally {
+        await runtime.shutdown();
+      }
+
+      expect(capturedPrompts).toHaveLength(1);
+      const prompt = capturedPrompts[0] ?? "";
+      expect(prompt).toContain("Send alerts to alerts@tempest.team.");
+      expect(prompt).not.toContain("{{variables.email_recipient}}");
+    } finally {
+      if (originalAtlasHome) {
+        process.env.FRIDAY_HOME = originalAtlasHome;
+      } else {
+        delete process.env.FRIDAY_HOME;
+      }
+      try {
+        await rm(testDir, { recursive: true });
+      } catch {
+        // ignore cleanup errors
+      }
+    }
   });
 
   it("releases the orchestrator session when the workspace session completes", async () => {
