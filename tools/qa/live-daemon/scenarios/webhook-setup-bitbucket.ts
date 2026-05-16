@@ -90,7 +90,7 @@ const USER_QUESTION_SETUP =
 // workspace's settings UI, or its workspace.yml `env:` block), not a
 // fixed global path. The agent should not fixate on the path.
 const USER_QUESTION_WRONG_ENV_VAR =
-  "I set BITBUCKET_WEBHOOK_SECRET in my workspace's env vars and restarted, but my Bitbucket webhook still returns `missing x-hub-signature header`. What am I doing wrong?";
+  "I set BITBUCKET_WEBHOOK_SECRET in my workspace's env vars expecting Friday to verify the HMAC against the secret I configured in Bitbucket. But my webhook just gets accepted regardless of what signature Bitbucket sends. What am I doing wrong?";
 
 // Scenario 4: user describes the loop-trap symptom; agent should diagnose
 // the comment-subscription loop and prescribe the guard.
@@ -512,24 +512,36 @@ async function runCorrectsWrongEnvVar(): Promise<EvalResult> {
       )?.[0],
     },
     {
-      id: "names-correct-var-or-says-not-needed",
+      id: "explains-tunnel-does-no-hmac",
       description:
-        "Names WEBHOOK_SECRET (correct) OR explains the secret isn't needed for /hook/raw/",
+        "Explains the tunnel does NOT verify HMAC at all — there is no Friday-level secret env var, so the user's BITBUCKET_WEBHOOK_SECRET isn't being read by anything",
+      // Tunnel was simplified — raw is the only provider, and it doesn't
+      // verify signatures. The agent should explain that any HMAC has to
+      // happen in the agent code itself.
       pass:
-        /\bWEBHOOK_SECRET\b/.test(result.text) ||
-        /\b(?:raw|tunnel)\b[^.]*(?:no(?:t)?\s+verif|doesn'?t\s+verif|don'?t need|leave blank|not required)/i.test(
+        /\b(?:tunnel|raw|friday)\b[^.]*(?:no(?:t)?\s+verif|doesn'?t\s+verif|don'?t\s+verif|never\s+verif|does\s+no\s+(?:HMAC|verification|signature))/i.test(
+          result.text,
+        ) ||
+        /\bno\s+(?:friday[-\s]?level\s+)?(?:HMAC|signature|secret)\s+(?:verif|env(?:ironment)?\s+(?:var|variable))/i.test(
+          result.text,
+        ) ||
+        /\b(?:there\s+is\s+no|isn'?t\s+a)\s+(?:friday[-\s]?level\s+)?(?:secret|env(?:ironment)?\s+var(?:iable)?)\b/i.test(
           result.text,
         ),
       evidence: result.text
         .match(
-          /\bWEBHOOK_SECRET\b|\b(?:raw|tunnel)\b[^.]*?(?:verif|leave blank|not required|don'?t need)[^.]*/i,
+          /\b(?:tunnel|raw|friday)\b[^.]*?(?:no(?:t)?\s+verif|doesn'?t\s+verif|never\s+verif|does\s+no)\b[^.]{0,60}/i,
         )?.[0]
-        ?.slice(0, 120),
+        ?.slice(0, 160),
     },
     {
       id: "diagnoses-real-problem",
       description:
         "Explains the user's real issue (the URL/path probably isn't /hook/raw/, or BITBUCKET_WEBHOOK_SECRET is not a Friday env var)",
+      // Real issue post-simplification: the tunnel does no HMAC, so any
+      // env var the user set for that purpose just sits unread. The agent
+      // should explain either (a) the env var isn't a Friday-level secret,
+      // (b) the tunnel doesn't verify, or (c) "does nothing" / "no-op".
       pass:
         /\bnot (?:a |an )?(?:friday|valid|recognized|real|known) env(?:ironment)? var/i.test(
           result.text,
@@ -537,12 +549,18 @@ async function runCorrectsWrongEnvVar(): Promise<EvalResult> {
         /\bisn'?t (?:read|recognized|used) by\b/i.test(result.text) ||
         /\bdoesn'?t exist\b/i.test(result.text) ||
         /\bsilently (?:ignor|not read)/i.test(result.text) ||
-        /\/hook\/raw\//.test(result.text),
+        /\/hook\/raw\//.test(result.text) ||
+        /\b(?:does(?:n'?t| not)\s+(?:do anything|nothing|verify|read)|sits?\s+unread|isn'?t\s+being\s+read|no\s+(?:effect|HMAC)|no[-\s]?op|nothing\s+reads?\s+(?:that|it))\b/i.test(
+          result.text,
+        ) ||
+        /\b(?:tunnel|friday)\b[^.\n]{0,80}\b(?:doesn'?t|does\s+not|never|no longer)\s+(?:verif|check|HMAC|read)/i.test(
+          result.text,
+        ),
       evidence: result.text
         .match(
-          /(?:not (?:a |an )?(?:friday|valid|recognized|real|known) env|isn'?t (?:read|recognized|used)|doesn'?t exist|silently ignor)[^\n]{0,80}|\/hook\/raw\/[^\s)`]+/i,
+          /(?:not (?:a |an )?(?:friday|valid|recognized|real|known) env|isn'?t (?:read|recognized|used)|doesn'?t exist|silently ignor|does(?:n'?t| not)\s+(?:do anything|nothing|verify))[^\n]{0,80}|\/hook\/raw\/[^\s)`]+/i,
         )?.[0]
-        ?.slice(0, 140),
+        ?.slice(0, 160),
     },
     {
       id: "no-jira-or-github-prefixed-alt",
@@ -560,7 +578,7 @@ async function runCorrectsWrongEnvVar(): Promise<EvalResult> {
           );
           // pass if every mention is in negative framing
           const neg =
-            /\b(?:not|don'?t|do not|never|doesn'?t exist|isn'?t|wrong|invalid|silently|remove|removed|unset|delete|ignor(?:e|ed)|won'?t|cannot|can'?t|NOT\s+`?WEBHOOK_SECRET`?)\b/i;
+            /\b(?:not|don'?t|do not|never|doesn'?t exist|isn'?t|wrong|invalid|silently|remove|removed|unset|delete|ignor(?:e|ed)|won'?t|cannot|can'?t|NOT\s+`?WEBHOOK_SECRET`?|does(?:n'?t| not)\s+(?:do anything|nothing|verify|read)|sits?\s+unread|no\s+(?:effect|HMAC)|no[-\s]?op|sitting\s+in\s+your)\b/i;
           return violations.length > 0 && violations.every((l) => neg.test(l));
         })(),
       evidence: result.text
@@ -1308,60 +1326,68 @@ async function runProviderList(): Promise<EvalResult> {
 
   const checks: ContractCheck[] = [
     {
-      id: "names-github-and-raw",
-      description: "Names both `github` and `raw` as the available providers",
-      pass: /\bgithub\b/i.test(text) && /\braw\b/i.test(text),
-      evidence: text.match(/\bgithub\b[^\n.]{0,40}\braw\b|\braw\b[^\n.]{0,40}\bgithub\b/i)?.[0],
+      id: "names-raw-only",
+      description:
+        "Names `raw` as the single built-in provider — github/bitbucket/jira are NOT built-in",
+      pass:
+        /\braw\b/i.test(text) &&
+        !/(?:^|[^a-z])(?:two|both|2)\s+(?:built[-\s]?in\s+)?providers\b/i.test(text),
+      evidence: text
+        .match(/\braw\b[^\n.]{0,80}|providers?\s*[:=]\s*[^\n]{0,80}/i)?.[0]
+        ?.slice(0, 160),
     },
     {
       id: "does-not-list-bitbucket-as-builtin",
-      description:
-        "Does NOT present `bitbucket` as a built-in provider — must route Bitbucket through /hook/raw/",
-      // Fail only when bitbucket is enumerated as a CURRENT built-in
-      // (e.g. "providers: github, bitbucket, raw" or `["github","bitbucket","raw"]`).
-      // Pass when bitbucket appears in negative framing ("removed",
-      // "deprecated"), in "use raw for bitbucket" instructions, or as a
-      // capitalized noun referring to the SaaS product.
+      description: "Does NOT present `bitbucket` as a built-in provider — only `raw` ships",
+      // Fail only when bitbucket appears as a code-formatted provider
+      // name (backticks/quotes) in a "providers:" listing — e.g.
+      // `providers: [\`raw\`, \`bitbucket\`]` or `"providers": ["raw","bitbucket"]`.
+      // Capitalized "Bitbucket" in parenthetical SaaS-product lists doesn't count.
       pass: (() => {
-        // Walk every snippet around a bitbucket mention; fail only when at
-        // least one is in a built-in-enumeration context with no negative
-        // marker on the same line.
-        const matches = [...text.matchAll(/(.{0,80}\bbitbucket\b.{0,80})/gi)];
+        const codeFormattedBitbucket = /["'`]bitbucket["'`]/g;
+        const matches = [...text.matchAll(codeFormattedBitbucket)];
         if (matches.length === 0) return true;
-        const enumerationContext =
-          /providers?\s*(?:are|:|include[s]?|list|registered)|\[[^\]]*\]|`(?:github|raw)`\s*(?:,|\sand\s)\s*`?bitbucket`?|`bitbucket`\s*(?:,|\sand\s)\s*`(?:github|raw)`/i;
+        // For each backticked/quoted `bitbucket` mention, check that the
+        // surrounding 80-char window does NOT pair it with "providers:" /
+        // an array of providers WITHOUT a negative marker.
         const negativeMarker =
-          /\b(?:removed|deprecat|do not|don'?t|no longer|wrong|incorrect|NOT|legacy|previously|was|goes through|use\s+(?:the\s+)?raw|via\s+(?:the\s+)?raw|through\s+(?:the\s+)?raw|\/hook\/raw\/|isn'?t|aren'?t|dedicated\s+bitbucket\b)\b/i;
-        // bitbucket-as-builtin requires enumeration AND no negative marker
-        return !matches.some((m) => {
-          const ctx = m[1] ?? m[0];
-          return enumerationContext.test(ctx) && !negativeMarker.test(ctx);
-        });
+          /\b(?:removed|deprecat|do not|don'?t|no longer|wrong|incorrect|NOT|legacy|previously|was|goes through|use\s+(?:the\s+)?raw|via\s+(?:the\s+)?raw|through\s+(?:the\s+)?raw|\/hook\/raw\/|isn'?t|aren'?t|dedicated\s+bitbucket\b|unknown\s+provider)\b/i;
+        for (const m of matches) {
+          const start = Math.max(0, (m.index ?? 0) - 80);
+          const end = Math.min(text.length, (m.index ?? 0) + 80);
+          const ctx = text.slice(start, end);
+          const isProviderList =
+            /providers?\s*(?:are|:|include[s]?|list|registered)|"providers"\s*:|\[[^\]]*["'`]raw["'`][^\]]*["'`]bitbucket/i.test(
+              ctx,
+            );
+          if (isProviderList && !negativeMarker.test(ctx)) return false;
+        }
+        return true;
       })(),
-      evidence: text
-        .match(
-          /providers?\s*(?:are|:|include[s]?)\s*[^.\n]{0,160}|.{0,80}\bbitbucket\b.{0,80}/i,
-        )?.[0]
-        ?.slice(0, 200),
+      evidence: text.match(/[^.\n]{0,80}["'`]bitbucket["'`][^.\n]{0,80}/i)?.[0]?.slice(0, 200),
     },
     {
       id: "does-not-list-jira-as-builtin",
       description: "Does NOT present `jira` as a built-in provider",
       pass: (() => {
-        const matches = [...text.matchAll(/(.{0,80}\bjira\b.{0,80})/gi)];
+        const codeFormattedJira = /["'`]jira["'`]/gi;
+        const matches = [...text.matchAll(codeFormattedJira)];
         if (matches.length === 0) return true;
-        const enumerationContext =
-          /providers?\s*(?:are|:|include[s]?|list|registered)|\[[^\]]*\]|`(?:github|raw)`\s*(?:,|\sand\s)\s*`?jira`?|`jira`\s*(?:,|\sand\s)\s*`(?:github|raw)`/i;
         const negativeMarker =
-          /\b(?:removed|deprecat|do not|don'?t|no longer|wrong|incorrect|NOT|legacy|previously|was|goes through|use\s+(?:the\s+)?raw|via\s+(?:the\s+)?raw|through\s+(?:the\s+)?raw|\/hook\/raw\/|isn'?t|aren'?t|dedicated\s+jira\b)\b/i;
-        return !matches.some((m) => {
-          const ctx = m[1] ?? m[0];
-          return enumerationContext.test(ctx) && !negativeMarker.test(ctx);
-        });
+          /\b(?:removed|deprecat|do not|don'?t|no longer|wrong|incorrect|NOT|legacy|previously|was|goes through|use\s+(?:the\s+)?raw|via\s+(?:the\s+)?raw|through\s+(?:the\s+)?raw|\/hook\/raw\/|isn'?t|aren'?t|dedicated\s+jira\b|unknown\s+provider)\b/i;
+        for (const m of matches) {
+          const start = Math.max(0, (m.index ?? 0) - 80);
+          const end = Math.min(text.length, (m.index ?? 0) + 80);
+          const ctx = text.slice(start, end);
+          const isProviderList =
+            /providers?\s*(?:are|:|include[s]?|list|registered)|"providers"\s*:|\[[^\]]*["'`]raw["'`][^\]]*["'`]jira/i.test(
+              ctx,
+            );
+          if (isProviderList && !negativeMarker.test(ctx)) return false;
+        }
+        return true;
       })(),
-      evidence: text
-        .match(/providers?\s*(?:are|:|include[s]?)\s*[^.\n]{0,160}|.{0,80}\bjira\b.{0,80}/i)?.[0]
-        ?.slice(0, 200),
+      evidence: text.match(/[^.\n]{0,80}["'`]jira["'`][^.\n]{0,80}/i)?.[0]?.slice(0, 200),
     },
     {
       id: "no-dated-removal-claim",
@@ -1379,9 +1405,31 @@ async function runProviderList(): Promise<EvalResult> {
       )?.[0],
     },
     {
-      id: "no-webhook-mappings-for-bitbucket",
+      id: "does-not-list-github-as-builtin",
       description:
-        "Does NOT recommend WEBHOOK_MAPPINGS_PATH as a way to register bitbucket/jira (it's a github-only override)",
+        "Does NOT present `github` as a built-in provider with HMAC/event-filter (github support was dropped — github webhooks now use /hook/raw/ like everything else)",
+      pass: (() => {
+        const matches = [...text.matchAll(/(.{0,80}\bgithub\b.{0,80})/gi)];
+        if (matches.length === 0) return true;
+        // Allow github as a SaaS-product noun (capitalized GitHub) or in
+        // negative framing. Fail when listed as a CURRENT built-in provider.
+        const enumerationContext =
+          /providers?\s*(?:are|:|include[s]?|list|registered)|\[[^\]]*\]|`raw`\s*(?:,|\sand\s)\s*`?github`?|`github`\s*(?:,|\sand\s)\s*`raw`/i;
+        const negativeMarker =
+          /\b(?:removed|deprecat|do not|don'?t|no longer|wrong|incorrect|NOT|legacy|previously|was|goes through|use\s+(?:the\s+)?raw|via\s+(?:the\s+)?raw|through\s+(?:the\s+)?raw|\/hook\/raw\/|isn'?t|aren'?t|dropped|simplified)\b/i;
+        return !matches.some((m) => {
+          const ctx = m[1] ?? m[0];
+          return enumerationContext.test(ctx) && !negativeMarker.test(ctx);
+        });
+      })(),
+      evidence: text
+        .match(/providers?\s*(?:are|:|include[s]?)\s*[^.\n]{0,160}|.{0,80}\bgithub\b.{0,80}/i)?.[0]
+        ?.slice(0, 200),
+    },
+    {
+      id: "no-webhook-mappings-recommendation",
+      description:
+        "Does NOT recommend WEBHOOK_MAPPINGS_PATH (it no longer exists; tunnel was simplified to raw-only)",
       // Fail if the answer pairs WEBHOOK_MAPPINGS_PATH with bitbucket or jira
       // in a "use this to add support" context.
       pass: !(
@@ -1485,22 +1533,65 @@ async function runBitbucketHmacInAgent(): Promise<EvalResult> {
     {
       id: "recommends-custom-env-var-name",
       description:
-        "Recommends a DIFFERENT (non-colliding) env var name for the bitbucket HMAC secret in the agent",
-      // The skill suggests something like MY_WORKSPACE_BB_SECRET — anything
-      // that isn't WEBHOOK_SECRET and isn't a provider-prefixed lookalike.
-      // Pass if the answer either (a) shows a code snippet reading a custom
-      // env var via os.environ / process.env, or (b) explicitly says to pick
-      // a different var name from WEBHOOK_SECRET.
-      pass:
-        /os\.environ\[['"][A-Z][A-Z0-9_]*['"]\]/.test(text) ||
-        /process\.env\.[A-Z][A-Z0-9_]+/.test(text) ||
-        /\b(?:different|distinct|separate|your own|custom|new)\b[^.\n]{0,60}\b(?:env(?:ironment)?\s+(?:var|variable)|name)\b/i.test(
-          text,
-        ) ||
-        /\bdoes(?:n'?t| not)\s+collide\b/i.test(text),
+        "Recommends a non-`WEBHOOK_SECRET` env var name that the agent reads to verify the bitbucket HMAC secret",
+      // Pass on ANY of:
+      //   - Python env access naming a custom var: os.environ[...],
+      //     os.environ.get(...), os.getenv(...)
+      //   - Node env access: process.env.X, process.env["X"]
+      //   - `friday env set <NAME>=` setter syntax for a non-WEBHOOK_SECRET name
+      //   - Adjective phrasing (workspace-specific / dedicated / custom / etc.)
+      //     near "env var" or "name" or "secret"
+      //   - "WEBHOOK_SECRET is reserved for github" framing that pivots to
+      //     a different name
+      //   - Explicit "doesn't collide" / "non-colliding" framing
+      pass: (() => {
+        if (
+          /\bos\.environ(?:\[['"][A-Z][A-Z0-9_]*['"]\]|\.get\(\s*['"][A-Z][A-Z0-9_]*['"])/.test(
+            text,
+          )
+        )
+          return true;
+        if (/\bos\.getenv\(\s*['"][A-Z][A-Z0-9_]*['"]/.test(text)) return true;
+        if (/\bprocess\.env(?:\.[A-Z][A-Z0-9_]+|\[['"][A-Z][A-Z0-9_]*['"]\])/.test(text))
+          return true;
+        if (
+          /\bfriday\s+env\s+(?:set|add|put|update)\b[^.\n]{0,20}\b[A-Z][A-Z0-9_]{2,}\b/.test(text)
+        )
+          return true;
+        if (
+          /\b(?:workspace[-\s]?specific|project[-\s]?specific|dedicated|different|distinct|separate|custom|new|your\s+own|application[-\s]?specific|app[-\s]?specific)\b[^.\n]{0,80}\b(?:env(?:ironment)?\s+(?:var|variable)|name|secret|key)\b/i.test(
+            text,
+          )
+        )
+          return true;
+        if (
+          /\bWEBHOOK_SECRET\b[^.\n]{0,80}\b(?:reserved|github[-\s]?only|only\s+(?:for\s+)?(?:the\s+)?github|github\s+provider|doesn'?t\s+exist|no\s+longer)\b/i.test(
+            text,
+          )
+        )
+          return true;
+        if (
+          /\b(?:does(?:n'?t| not)\s+collide|non[-\s]?colliding|avoid(?:s)?\s+collision)\b/i.test(
+            text,
+          )
+        )
+          return true;
+        // JSON body in API call: {"key": "<VARNAME>", "value": "..."} —
+        // the agent is naming a custom env var via the env-set API.
+        if (/['"]key['"]\s*:\s*['"][A-Z][A-Z0-9_]{2,}['"]/.test(text)) return true;
+        // The agent put a specific custom var name in a code block / env
+        // file snippet (any UPPER_SNAKE_CASE name that isn't WEBHOOK_SECRET
+        // itself).
+        for (const m of text.matchAll(/\b([A-Z][A-Z0-9_]{4,})\b/g)) {
+          const name = m[1] ?? "";
+          if (name === "WEBHOOK_SECRET") continue;
+          if (/SECRET|TOKEN|KEY|HMAC/.test(name)) return true;
+        }
+        return false;
+      })(),
       evidence: text
         .match(
-          /os\.environ\[['"][A-Z][A-Z0-9_]*['"]\]|process\.env\.[A-Z][A-Z0-9_]+|\b(?:different|distinct|separate|custom|new)\b[^.\n]{0,80}\b(?:env|var|name)\b[^.\n]{0,40}/i,
+          /\bos\.environ(?:\[['"][A-Z][A-Z0-9_]*['"]\]|\.get\(\s*['"][A-Z][A-Z0-9_]*['"])|os\.getenv\(\s*['"][A-Z][A-Z0-9_]*['"]|process\.env(?:\.[A-Z][A-Z0-9_]+|\[['"][A-Z][A-Z0-9_]*['"]\])|friday\s+env\s+(?:set|add)[^.\n]{0,40}|(?:workspace|project|app(?:lication)?)[-\s]?specific[^.\n]{0,80}|WEBHOOK_SECRET[^.\n]{0,80}reserved/i,
         )?.[0]
         ?.slice(0, 200),
     },
@@ -1517,12 +1608,23 @@ async function runBitbucketHmacInAgent(): Promise<EvalResult> {
       evidence: text.match(/.{0,40}\/hook\/bitbucket\/[^\s)`]*.{0,40}/)?.[0]?.slice(0, 200),
     },
     {
-      id: "reads-payload-from-ctx",
+      id: "reads-payload-from-body",
       description:
-        "References reading the raw body for HMAC computation via ctx.input.config / ctx.input.raw",
-      pass: /\bctx\.input\.(?:config|raw)\b/.test(text) || /\b(?:raw|request)\s+body\b/i.test(text),
+        "References reading the raw body for HMAC computation — via ctx.input.config / ctx.input.raw OR by naming 'raw body' / 'body reaches the agent'",
+      pass:
+        /\bctx\.input\.(?:config|raw)\b/.test(text) ||
+        /\b(?:raw|request)\s+body\b/i.test(text) ||
+        /\bbody\b[^.\n]{0,40}\b(?:reaches?|arrives?|forwarded|passed)\s+(?:to\s+)?(?:your|the)\s+agent\b/i.test(
+          text,
+        ) ||
+        /\bcompute\s+(?:the\s+)?HMAC\b[^.\n]{0,40}\bon\s+(?:the\s+)?(?:raw\s+)?body\b/i.test(
+          text,
+        ) ||
+        /\b(?:only\s+the\s+body|body[-\s]?only)\b/i.test(text),
       evidence: text
-        .match(/\bctx\.input\.(?:config|raw)\b|\b(?:raw|request)\s+body\b[^.\n]{0,60}/i)?.[0]
+        .match(
+          /\bctx\.input\.(?:config|raw)\b|\b(?:raw|request)\s+body\b[^.\n]{0,60}|\bbody\b[^.\n]{0,80}/i,
+        )?.[0]
         ?.slice(0, 160),
     },
   ];

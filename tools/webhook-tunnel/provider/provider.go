@@ -1,149 +1,63 @@
-// Package provider holds the per-provider webhook signature
-// verification + payload transform logic. The mapping is data-driven
-// (webhook-mappings.yml) so adding a provider is a YAML change, not a
-// code change.
+// Package provider exposes the webhook payload handler. Every webhook
+// — from any upstream — uses the same path-through-tunnel shape:
+// the request body becomes the signal payload as-is. Workspace agents
+// own parsing and any signature verification they need.
 //
-// External callers see two functions: Get(name) → Handler and List() →
-// []string. The Handler interface takes already-buffered request body
-// bytes and headers — never an *http.Request. This pins the
-// "read body once, then HMAC + parse" contract so a future caller
-// can't accidentally re-read req.Body and silently get an empty
-// second read.
+// The Handler interface takes already-buffered request body bytes and
+// headers — never an *http.Request. This pins the "read body once,
+// then parse" contract so a future caller can't accidentally re-read
+// req.Body and silently get an empty second read.
 package provider
 
 import (
-	_ "embed"
+	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
-	"sort"
-	"sync"
-
-	"gopkg.in/yaml.v3"
 )
 
-//go:embed mappings.yml
-var defaultMappings []byte
-
-// Handler is what callers invoke per webhook request. Both Verify and
-// Transform receive the same headers + body slice — no need to
-// re-buffer at the transport layer.
-//
-// Verify returns nil on success, an error explaining the failure
-// otherwise (caller maps to HTTP 401).
-//
-// Transform returns the normalized payload + a human-readable
-// description, or (nil, "", nil) when the event should be silently
-// skipped (caller returns 200 with status:skipped). A non-nil error
-// means malformed input the caller should surface as 400.
+// Handler is what callers invoke per webhook request. Transform
+// receives the headers + body slice and returns the parsed payload
+// plus a human-readable description. A non-nil error means malformed
+// input the caller should surface as 400.
 type Handler interface {
-	Verify(headers http.Header, body, secret []byte) error
 	Transform(headers http.Header, body []byte) (payload map[string]any, description string, err error)
 }
 
-// EventMapping is one entry under provider.events in the YAML.
-type EventMapping struct {
-	Actions []string          `yaml:"actions"`
-	Mapping map[string]string `yaml:"mapping"`
-}
+// Init is a no-op kept for call-site compatibility with the old
+// YAML-loading registry. Returns nil always.
+func Init() error { return nil }
 
-// ProviderConfig is one entry under top-level providers in the YAML.
-type ProviderConfig struct {
-	EventHeader     string                  `yaml:"event_header"`
-	EventField      string                  `yaml:"event_field"`
-	SignatureHeader string                  `yaml:"signature_header"`
-	Events          map[string]EventMapping `yaml:"events"`
-}
-
-// MappingsConfig is the root of webhook-mappings.yml.
-type MappingsConfig struct {
-	Providers map[string]ProviderConfig `yaml:"providers"`
-}
-
-var (
-	loadOnce     sync.Once
-	loadErr      error
-	loadedConfig MappingsConfig
-	handlers     map[string]Handler
-)
-
-// load parses webhook-mappings.yml from the file pointed at by
-// WEBHOOK_MAPPINGS_PATH (preserves the legacy override for ops who
-// added custom providers without rebuilding); falls back to the
-// embedded copy. Validation errors at load time are fatal — webhooks
-// arriving with broken config produce confusing 500s, so fail loud
-// at startup.
-func load() {
-	loadOnce.Do(func() {
-		raw := defaultMappings
-		if path := os.Getenv("WEBHOOK_MAPPINGS_PATH"); path != "" {
-			data, err := os.ReadFile(path) //nolint:gosec // G304: env-controlled override is intentional
-			if err != nil {
-				loadErr = fmt.Errorf("read WEBHOOK_MAPPINGS_PATH=%s: %w", path, err)
-				return
-			}
-			raw = data
-		}
-		if err := yaml.Unmarshal(raw, &loadedConfig); err != nil {
-			loadErr = fmt.Errorf("parse webhook-mappings.yml: %w", err)
-			return
-		}
-		handlers = map[string]Handler{
-			"raw": &rawHandler{},
-		}
-		for name, cfg := range loadedConfig.Providers {
-			handlers[name] = &configHandler{name: name, cfg: cfg}
-		}
-	})
-}
-
-// Init forces load() to run with the current WEBHOOK_MAPPINGS_PATH
-// value. Callers should invoke this at startup so a malformed config
-// fails fast rather than on first webhook.
-func Init() error {
-	load()
-	return loadErr
-}
-
-// Get returns the handler for the named provider, or nil if unknown.
+// Get returns the handler for the named provider. Only `raw` is
+// supported — anything else returns nil so callers respond with a
+// clear "unknown provider" error.
 func Get(name string) Handler {
-	load()
-	if loadErr != nil {
-		return nil
+	if name == "raw" {
+		return &rawHandler{}
 	}
-	return handlers[name]
+	return nil
 }
 
-// List returns the configured provider names sorted alphabetically.
-// Sorted output keeps /status responses stable across restarts.
+// List returns the supported provider names. There is exactly one.
 func List() []string {
-	load()
-	if loadErr != nil {
-		return nil
-	}
-	out := make([]string, 0, len(handlers))
-	for name := range handlers {
-		out = append(out, name)
-	}
-	sort.Strings(out)
-	return out
+	return []string{"raw"}
 }
 
-// rawHandler is the always-present passthrough: no HMAC verification,
-// the entire JSON body becomes the payload. Used by clients that
-// handle their own auth (e.g. ops triggering a signal manually).
+// rawHandler forwards the full JSON body as the signal payload. No
+// HMAC, no event filtering, no transformation. Workspace agents that
+// need signature verification do it themselves on the raw body.
 type rawHandler struct{}
 
-func (h *rawHandler) Verify(http.Header, []byte, []byte) error { return nil }
-
 func (h *rawHandler) Transform(_ http.Header, body []byte) (map[string]any, string, error) {
-	parsed, err := decodeJSON(body)
-	if err != nil {
-		return nil, "", err
+	if len(body) == 0 {
+		return nil, "", fmt.Errorf("empty body")
 	}
-	m, ok := parsed.(map[string]any)
+	var v any
+	if err := json.Unmarshal(body, &v); err != nil {
+		return nil, "", fmt.Errorf("json: %w", err)
+	}
+	m, ok := v.(map[string]any)
 	if !ok {
-		return nil, "", fmt.Errorf("raw provider expects JSON object, got %T", parsed)
+		return nil, "", fmt.Errorf("raw provider expects JSON object, got %T", v)
 	}
 	return m, "Raw webhook forwarded", nil
 }

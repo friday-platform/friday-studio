@@ -1,20 +1,21 @@
 // webhook-tunnel — receives external webhooks via a Cloudflare tunnel
 // and forwards them to atlasd as workspace signal triggers.
 //
-// URL pattern: /hook/{provider}/{workspaceId}/{signalId}
+// URL pattern: /hook/raw/{workspaceId}/{signalId}
+//
+// The body of the POST becomes the signal payload as-is. No HMAC
+// verification, no event filtering, no field extraction — workspace
+// agents own all of that. There is one provider (`raw`); the URL
+// segment is retained as a stable path prefix so any future provider
+// can be added without breaking existing webhook configurations.
 //
 // Environment:
 //
 //	FRIDAYD_URL      — Daemon API URL (default http://localhost:8080)
-//	WEBHOOK_SECRET  — Shared secret for HMAC verification
-//	                  (auto-generated diceware passphrase if unset)
 //	TUNNEL_PORT     — Local listener port (default 9090)
 //	TUNNEL_TOKEN    — Cloudflare tunnel token for stable URLs (optional)
 //	NO_TUNNEL       — "true" to skip cloudflared (HTTP server only)
-//	WEBHOOK_MAPPINGS_PATH — Override the embedded webhook-mappings.yml
 //	FRIDAY_LOG_LEVEL — trace|debug|info|warn|error|fatal
-//
-// Faithful Go port of apps/webhook-tunnel (TS / Hono / Deno).
 package main
 
 import (
@@ -108,8 +109,7 @@ func main() {
 	log.Info("webhook listener starting",
 		"port", cfg.Port,
 		"scheme", scheme,
-		"atlasd_url", cfg.AtlasdURL,
-		"secret_configured", cfg.WebhookSecret != "")
+		"atlasd_url", cfg.AtlasdURL)
 
 	serverErr := make(chan error, 1)
 	go func() {
@@ -193,12 +193,11 @@ func printTunnelBanner(tunnelURL string) {
 	fmt.Println()
 	fmt.Printf("  Public URL:  %s\n", tunnelURL)
 	fmt.Println()
-	fmt.Println("  Register webhooks using:")
-	fmt.Printf("    %s/hook/{provider}/{workspaceId}/{signalId}\n", tunnelURL)
+	fmt.Println("  Register webhooks at:")
+	fmt.Printf("    %s/hook/raw/{workspaceId}/{signalId}\n", tunnelURL)
 	fmt.Println()
-	fmt.Println("  Examples:")
-	fmt.Printf("    GitHub:                       %s/hook/github/{workspaceId}/review-pr\n", tunnelURL)
-	fmt.Printf("    Raw (Bitbucket/Jira/custom):  %s/hook/raw/{workspaceId}/{signalId}\n", tunnelURL)
+	fmt.Println("  The body of the POST becomes the signal payload as-is.")
+	fmt.Println("  The workspace agent owns parsing and any HMAC verification.")
 	fmt.Println()
 	fmt.Println("  Auto-reconnect: enabled (process monitor + health probe)")
 	fmt.Println("================================================================")
@@ -290,16 +289,10 @@ func handleStatus(w http.ResponseWriter, _ *http.Request) {
 			lastProbeAt = &s
 		}
 	}
-	var secret *string
-	if cfg.WebhookSecret != "" {
-		s := cfg.WebhookSecret
-		secret = &s
-	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"url":          url,
-		"secret":       secret,
 		"providers":    provider.List(),
-		"pattern":      "/hook/{provider}/{workspaceId}/{signalId}",
+		"pattern":      "/hook/raw/{workspaceId}/{signalId}",
 		"active":       alive,
 		"tunnelAlive":  tunnelAlive,
 		"restartCount": restartCount,
@@ -317,7 +310,7 @@ func handleRoot(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"service":   "webhook-tunnel",
 		"providers": provider.List(),
-		"pattern":   "/hook/{provider}/{workspaceId}/{signalId}",
+		"pattern":   "/hook/raw/{workspaceId}/{signalId}",
 		"url":       url,
 	})
 }
@@ -348,13 +341,6 @@ func handleHook(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSONError(w, http.StatusBadRequest, "read body: "+err.Error())
-		return
-	}
-
-	if vErr := h.Verify(r.Header, body, []byte(cfg.WebhookSecret)); vErr != nil {
-		log.Error("signature verification failed",
-			"provider", providerName, "error", vErr)
-		writeJSONError(w, http.StatusUnauthorized, vErr.Error())
 		return
 	}
 
