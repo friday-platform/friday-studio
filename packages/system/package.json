@@ -26,5 +26,5 @@
     "turndown": "7.2.4",
     "zod": "^4.4.3"
   },
-  "devDependencies": { "vitest": "^4.1.0" }
+  "devDependencies": { "vitest": "^4.1.6" }
 }

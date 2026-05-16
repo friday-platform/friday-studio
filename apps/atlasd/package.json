@@ -57,6 +57,6 @@
   "devDependencies": {
     "@libpdf/core": "^0.3.4",
     "@std/path": "npm:@jsr/std__path@^1.1.4",
-    "vitest": "^4.1.0"
+    "vitest": "^4.1.6"
   }
 }

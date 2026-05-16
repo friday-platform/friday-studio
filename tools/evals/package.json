@@ -16,5 +16,5 @@
     "gunshi": "^0.29.5",
     "zod": "^4.4.3"
   },
-  "devDependencies": { "vitest": "^4.1.0" }
+  "devDependencies": { "vitest": "^4.1.6" }
 }
