@@ -45,6 +45,8 @@ import { getFridayHome } from "@atlas/utils/paths.server";
 import {
   createJetStreamKVStorage,
   createRegistryStorageJS,
+  loadWorkspaceEnv,
+  resolveWorkspaceSetupRequirements,
   validateMCPEnvironmentForWorkspace,
   WorkspaceManager,
   WorkspaceRuntime,
@@ -101,6 +103,7 @@ import { workspaceEnvRoutes } from "../routes/workspaces/env.ts";
 import { workspacesRoutes } from "../routes/workspaces/index.ts";
 import { integrationRoutes } from "../routes/workspaces/integrations.ts";
 import { mcpRoutes } from "../routes/workspaces/mcp.ts";
+import { assembleLinkCredentialState } from "./assemble-link-credential-state.ts";
 import { CapabilityHandlerRegistry } from "./capability-handlers.ts";
 import { CascadeConsumer, ensureCascadesStream, publishCascade } from "./cascade-stream.ts";
 import { CHAT_PROVIDERS, type PlatformCredentials } from "./chat-sdk/adapter-factory.ts";
@@ -643,6 +646,27 @@ export class AtlasDaemon {
           addedAt: new Date().toISOString(),
         });
         if (!result.ok) throw new Error(result.error);
+      },
+    });
+
+    // Setup gate (T13): the manager skips schedule + fs-watch
+    // registration when the workspace still requires setup. Assembling
+    // the Link snapshot + env overlay lives in the daemon to keep
+    // `@atlas/workspace` free of @atlas/core, link-client, and env-IO
+    // concerns. `allowStaleIdRecovery: true` matches the post-import
+    // read path — a stale pinned id is a recoverable requirement, not
+    // a hard error here (Decision 5).
+    this.workspaceManager.setRequiresSetupProbe({
+      async check({ workspacePath, config }) {
+        const linkCredentials = await assembleLinkCredentialState(config.workspace);
+        const envSnapshot = loadWorkspaceEnv(workspacePath);
+        const result = resolveWorkspaceSetupRequirements(
+          config.workspace,
+          envSnapshot,
+          linkCredentials,
+          { allowStaleIdRecovery: true },
+        );
+        return result.requires_setup;
       },
     });
 
