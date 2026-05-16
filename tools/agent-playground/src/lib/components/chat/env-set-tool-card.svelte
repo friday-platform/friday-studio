@@ -4,10 +4,13 @@
   import { createQuery } from "@tanstack/svelte-query";
   import { resolve } from "$app/paths";
   import { page } from "$app/state";
+  import { elicitationQueries, useAnswerElicitation } from "$lib/queries/elicitation-queries.ts";
+  import { workspaceQueries } from "$lib/queries/workspace-queries.ts";
   import {
-    elicitationQueries,
-    useAnswerElicitation,
-  } from "$lib/queries/elicitation-queries.ts";
+    findDeclaredVariableForKey,
+    validateProposedValue,
+    type VariableValidationResult,
+  } from "./env-write-variable-awareness.ts";
   import { readElicitationIdFromToolOutput } from "./human-input-matcher.ts";
   import { isInProgress } from "./tool-call-utils.ts";
   import type { ToolCallDisplay } from "./types.ts";
@@ -36,9 +39,7 @@
   /** The proposed write: { scope, vars }. Authoritative source is the matched
    *  elicitation's pendingTool.args; falls back to the tool call input while
    *  the elicitation is still syncing. */
-  function readProposal(
-    source: unknown,
-  ): { scope: string; vars: Record<string, string> } | null {
+  function readProposal(source: unknown): { scope: string; vars: Record<string, string> } | null {
     if (!isRecord(source)) return null;
     const scope = typeof source.scope === "string" ? source.scope : "workspace";
     if (!isRecord(source.vars)) return null;
@@ -71,12 +72,45 @@
     void listQuery.refetch();
   });
 
-  const proposal = $derived(
-    readProposal(matched?.pendingTool?.args) ?? readProposal(call.input),
-  );
+  const proposal = $derived(readProposal(matched?.pendingTool?.args) ?? readProposal(call.input));
   const scope = $derived(proposal?.scope ?? "workspace");
   const entries = $derived(Object.entries(proposal?.vars ?? {}));
   const hasSecretLooking = $derived(entries.some(([k]) => isSecretKey(k)));
+
+  // Variable-awareness layers on top of the existing raw rendering. Only
+  // applies when the write targets the workspace `.env` — the global `.env`
+  // has no per-workspace declarations to consult.
+  const configQuery = createQuery(() =>
+    workspaceQueries.config(scope === "workspace" ? (routeWorkspaceId ?? null) : null),
+  );
+  const declarations = $derived(configQuery.data?.config?.variables);
+
+  interface EnrichedEntry {
+    key: string;
+    value: string;
+    secret: boolean;
+    declaredName: string | null;
+    description: string | undefined;
+    validation: VariableValidationResult | null;
+  }
+
+  const enrichedEntries = $derived<EnrichedEntry[]>(
+    entries.map(([key, value]) => {
+      const match = findDeclaredVariableForKey(declarations, key);
+      return {
+        key,
+        value,
+        secret: isSecretKey(key),
+        declaredName: match?.name ?? null,
+        description: match?.declaration.description,
+        validation: match ? validateProposedValue(match.declaration, value) : null,
+      };
+    }),
+  );
+
+  const hasValidationFailure = $derived(
+    enrichedEntries.some((e) => e.validation && !e.validation.ok),
+  );
 
   const status = $derived<Elicitation["status"] | null>(matched?.status ?? null);
   const answerValue = $derived(matched?.answer?.value ?? null);
@@ -98,6 +132,7 @@
 
   function answer(value: "confirm" | "deny"): void {
     if (!matched || !isPending || inFlight) return;
+    if (value === "confirm" && hasValidationFailure) return;
     answerMutation.mutate(
       { id: matched.id, value },
       {
@@ -145,29 +180,40 @@
     </div>
 
     <div class="var-list">
-      {#each entries as [key, value] (key)}
-        {@const secret = isSecretKey(key)}
-        <div class="var-row">
-          <code class="var-key">{key}</code>
-          {#if secret}
-            <input
-              class="var-value"
-              type={revealed[key] ? "text" : "password"}
-              value={value}
-              readonly
-            />
-            <button
-              type="button"
-              class="reveal"
-              aria-label={revealed[key] ? "Hide value" : "Show value"}
-              onclick={() => {
-                revealed = { ...revealed, [key]: !revealed[key] };
-              }}
-            >
-              {#if revealed[key]}<Icons.Eye />{:else}<Icons.EyeClosed />{/if}
-            </button>
-          {:else}
-            <code class="var-value plain">{value}</code>
+      {#each enrichedEntries as entry (entry.key)}
+        <div class="var-group">
+          {#if entry.description}
+            <p class="var-description">{entry.description}</p>
+          {/if}
+          <div class="var-row" class:invalid={entry.validation?.ok === false}>
+            <code class="var-key">{entry.key}</code>
+            {#if entry.secret}
+              <input
+                class="var-value"
+                type={revealed[entry.key] ? "text" : "password"}
+                value={entry.value}
+                readonly
+              />
+              <button
+                type="button"
+                class="reveal"
+                aria-label={revealed[entry.key] ? "Hide value" : "Show value"}
+                onclick={() => {
+                  revealed = { ...revealed, [entry.key]: !revealed[entry.key] };
+                }}
+              >
+                {#if revealed[entry.key]}<Icons.Eye />{:else}<Icons.EyeClosed />{/if}
+              </button>
+            {:else}
+              <code class="var-value plain">{entry.value}</code>
+            {/if}
+          </div>
+          {#if entry.validation && !entry.validation.ok}
+            <p class="validation-error" role="alert">
+              Doesn't match the declared schema for
+              <code>{entry.declaredName}</code>
+              : {entry.validation.message}
+            </p>
           {/if}
         </div>
       {/each}
@@ -175,18 +221,24 @@
 
     {#if hasSecretLooking}
       <p class="hint secret-hint">
-        Some keys look credential-bearing. The workspace <code>.env</code> is for
-        non-secret values — consider connecting an integration (Link) for real
-        credentials.
+        Some keys look credential-bearing. The workspace <code>.env</code>
+         is for non-secret values — consider connecting an integration (Link) for real credentials.
       </p>
     {/if}
 
     {#if isPending}
       <div class="actions">
-        <Button onclick={() => answer("confirm")} disabled={!matched || inFlight}>
+        <Button
+          onclick={() => answer("confirm")}
+          disabled={!matched || inFlight || hasValidationFailure}
+        >
           {answerMutation.isPending ? "Applying…" : "Confirm"}
         </Button>
-        <Button variant="destructive" onclick={() => answer("deny")} disabled={!matched || inFlight}>
+        <Button
+          variant="destructive"
+          onclick={() => answer("deny")}
+          disabled={!matched || inFlight}
+        >
           Deny
         </Button>
         <Button href={activityHref} variant="none">Open Activity</Button>
@@ -270,7 +322,20 @@
   .var-list {
     display: flex;
     flex-direction: column;
-    gap: var(--size-1-5);
+    gap: var(--size-2);
+  }
+
+  .var-group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-1);
+  }
+
+  .var-description {
+    color: color-mix(in srgb, var(--text), transparent 25%);
+    font-size: var(--font-size-1);
+    line-height: 1.4;
+    margin: 0;
   }
 
   .var-row {
@@ -281,6 +346,21 @@
     display: flex;
     gap: var(--size-2);
     padding: var(--size-1-5) var(--size-2);
+  }
+
+  .var-row.invalid {
+    border-color: var(--red-primary);
+  }
+
+  .validation-error {
+    color: var(--red-primary);
+    font-size: var(--font-size-1);
+    line-height: 1.35;
+    margin: 0;
+  }
+
+  .validation-error code {
+    font-size: var(--font-size-0, 11px);
   }
 
   .var-key {
