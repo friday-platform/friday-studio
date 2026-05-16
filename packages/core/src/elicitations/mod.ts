@@ -16,6 +16,8 @@ export type {
   ElicitationOption,
   ElicitationPendingTool,
   ElicitationStatus,
+  SetupRequirement,
+  WorkspaceSetupAnswerValue,
 } from "./model.ts";
 export {
   CreateElicitationSchema,
@@ -25,6 +27,8 @@ export {
   ElicitationPendingToolSchema,
   ElicitationSchema,
   ElicitationStatusSchema,
+  SetupRequirementSchema,
+  WorkspaceSetupAnswerValueSchema,
 } from "./model.ts";
 // Storage facade + initializer
 export {

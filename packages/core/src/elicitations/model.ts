@@ -20,12 +20,20 @@
  *    (masked when secret-bearing) and confirms or denies before the write
  *    lands. `pendingTool` carries `{ name: "env_set", args: { scope, key,
  *    value, ... } }`.
+ *  - **`workspace-setup`** — a workspace requires setup before it can run
+ *    (unfilled declared variables and/or unresolved credential refs). The
+ *    request payload carries `options.setup_requirements` (see
+ *    `SetupRequirementSchema`). The answer `value` is the structured
+ *    object `{ variableValues, credentialChoices }` rather than a string
+ *    option. Exempt from the 30-minute expiry sweep — setup may sit
+ *    unfinished for days.
  *
  * Storage layout lives in `jetstream-adapter.ts`. This file is the shared
  * Zod schema + TypeScript type boundary used by daemon routes, MCP tools,
  * and runtime wait/resume code.
  */
 
+import { VariableSchemaSchema } from "@atlas/config";
 import { z } from "zod";
 
 /** What triggered the elicitation. Drives UI rendering + answer plumbing. */
@@ -35,6 +43,7 @@ export const ElicitationKindSchema = z.enum([
   "confirm-action",
   "open-question",
   "env-write",
+  "workspace-setup",
 ]);
 export type ElicitationKind = z.infer<typeof ElicitationKindSchema>;
 
@@ -51,12 +60,55 @@ export const ElicitationOptionSchema = z.object({ label: z.string(), value: z.st
 export type ElicitationOption = z.infer<typeof ElicitationOptionSchema>;
 
 /**
- * The user's response. `value` is the chosen option's `value` (or a
- * free-form string for `open-question`); `note` is optional context
- * (e.g. "answered from web client").
+ * One unfilled blank carried inside a `workspace-setup` elicitation's
+ * `options.setup_requirements` payload. Structurally matches
+ * `SetupRequirement` from `@atlas/workspace`; redeclared here because
+ * `@atlas/core` cannot import `@atlas/workspace` (would cycle).
+ */
+export const SetupRequirementSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("variable"),
+    name: z.string(),
+    description: z.string().optional(),
+    schema: VariableSchemaSchema,
+  }),
+  z.object({
+    kind: z.literal("credential"),
+    provider: z.string(),
+    path: z.string(),
+    key: z.string(),
+    reason: z.enum(["no_default", "stale_id"]),
+  }),
+]);
+export type SetupRequirement = z.infer<typeof SetupRequirementSchema>;
+
+/**
+ * Answer payload for `workspace-setup`. The envelope stays flat
+ * (`{ value, note? }`) — only the shape of `value` changes vs the
+ * string-valued kinds.
+ *
+ * - `variableValues`: keyed by declared variable name, value typed
+ *   against the variable's declared schema (validated at dispatch time,
+ *   not here).
+ * - `credentialChoices`: keyed by provider, value is the chosen Link
+ *   credential id.
+ */
+export const WorkspaceSetupAnswerValueSchema = z.object({
+  variableValues: z.record(z.string(), z.unknown()),
+  credentialChoices: z.record(z.string(), z.string()),
+});
+export type WorkspaceSetupAnswerValue = z.infer<typeof WorkspaceSetupAnswerValueSchema>;
+
+/**
+ * The user's response. For string-valued kinds (`tool-allowlist`,
+ * `auth-refresh`, `confirm-action`, `open-question`, `env-write`) the
+ * `value` is the chosen option's `value` or free-form text. For
+ * `workspace-setup` the `value` is the structured
+ * {@link WorkspaceSetupAnswerValueSchema} object. `note` is optional
+ * context (e.g. "answered from web client").
  */
 export const ElicitationAnswerSchema = z.object({
-  value: z.string(),
+  value: z.union([z.string(), WorkspaceSetupAnswerValueSchema]),
   note: z.string().optional(),
   answeredBy: z.string().optional(),
   answeredAt: z.iso.datetime(),
