@@ -24,6 +24,7 @@
   import { resolve } from "$app/paths";
   import { page } from "$app/state";
   import InlineBadge from "$lib/components/shared/inline-badge.svelte";
+  import SetupRequiredBanner from "$lib/components/shared/setup-required-banner.svelte";
   import PipelineDiagram from "$lib/components/workspace/pipeline-diagram.svelte";
   import RunJobDialog from "$lib/components/workspace/run-job-dialog.svelte";
   import WorkspaceBreadcrumb from "$lib/components/workspace/workspace-breadcrumb.svelte";
@@ -256,6 +257,8 @@
     }
   }
 </script>
+
+<SetupRequiredBanner {workspaceId} />
 
 <div class="jobs-page">
   {#if workspaceId}

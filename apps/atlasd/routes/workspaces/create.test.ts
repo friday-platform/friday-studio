@@ -23,6 +23,22 @@ vi.mock("@atlas/storage", () => ({
   },
 }));
 
+// Bootstrap-spawn lives in its own file with its own targeted tests; the
+// /create tests only care about the surrounding response shape, so stub the
+// helper to a no-op result and let the call-sites continue.
+const mockSpawnBootstrap = vi.hoisted(() =>
+  vi
+    .fn<
+      () => Promise<{
+        requires_setup: boolean;
+        bootstrap_session_id?: string;
+        setup_requirements: never[];
+      }>
+    >()
+    .mockResolvedValue({ requires_setup: false, setup_requirements: [] }),
+);
+vi.mock("./setup-spawn.ts", () => ({ spawnBootstrapSessionIfNeeded: mockSpawnBootstrap }));
+
 // Mock credential resolver
 const mockResolveCredentialsByProvider = vi.hoisted(() => vi.fn());
 const mockFetchLinkCredential = vi.hoisted(() => vi.fn());
@@ -224,6 +240,8 @@ describe("POST /create — credential resolution", () => {
     mockResolveCredentialsByProvider.mockReset();
     mockFetchLinkCredential.mockReset();
     mockWriteFile.mockReset().mockResolvedValue(undefined);
+    mockSpawnBootstrap.mockReset();
+    mockSpawnBootstrap.mockResolvedValue({ requires_setup: false, setup_requirements: [] });
   });
 
   test("returns unresolved credential paths when credentials cannot be resolved", {
@@ -334,5 +352,79 @@ describe("POST /create — credential resolution", () => {
       ]),
     );
     expect(body.unresolvedCredentials).toEqual(expect.arrayContaining(["mcp:serverB:TOKEN_B"]));
+  });
+});
+
+describe("POST /create — bootstrap setup spawn (T11)", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    mockResolveCredentialsByProvider.mockReset();
+    mockFetchLinkCredential.mockReset();
+    mockWriteFile.mockReset().mockResolvedValue(undefined);
+    mockSpawnBootstrap.mockReset();
+  });
+
+  test("requires_setup === true → response carries bootstrapSessionId", async () => {
+    mockSpawnBootstrap.mockResolvedValue({
+      requires_setup: true,
+      bootstrap_session_id: "bootstrap-abc",
+      setup_requirements: [],
+    });
+    const { app } = createTestApp();
+    await mountRoutes(app);
+
+    const response = await app.request("/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ config: configWithNoCredentials() }),
+    });
+
+    expect(response.status).toBe(201);
+    const body = (await response.json()) as JsonBody;
+    expect(body.success).toBe(true);
+    expect(body.bootstrapSessionId).toBe("bootstrap-abc");
+    expect(mockSpawnBootstrap).toHaveBeenCalledTimes(1);
+  });
+
+  test("requires_setup === false → response omits bootstrapSessionId", async () => {
+    mockSpawnBootstrap.mockResolvedValue({ requires_setup: false, setup_requirements: [] });
+    const { app } = createTestApp();
+    await mountRoutes(app);
+
+    const response = await app.request("/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ config: configWithNoCredentials() }),
+    });
+
+    expect(response.status).toBe(201);
+    const body = (await response.json()) as JsonBody;
+    expect(body.success).toBe(true);
+    expect(body.bootstrapSessionId).toBeUndefined();
+  });
+
+  test("StaleCredentialIdAtImportError → 400 with stale credential details", async () => {
+    const { StaleCredentialIdAtImportError } = await import("@atlas/workspace");
+    mockSpawnBootstrap.mockRejectedValue(
+      new StaleCredentialIdAtImportError({
+        credentialId: "cred_stale",
+        provider: "gmail",
+        path: "mcp_servers.gmail.credentials",
+      }),
+    );
+    const { app } = createTestApp();
+    await mountRoutes(app);
+
+    const response = await app.request("/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ config: configWithNoCredentials() }),
+    });
+
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as JsonBody;
+    expect(body.error).toBe("stale_credential_id_at_import");
+    expect(body.credentialId).toBe("cred_stale");
+    expect(body.provider).toBe("gmail");
   });
 });

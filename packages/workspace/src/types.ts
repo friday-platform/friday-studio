@@ -43,6 +43,15 @@ export const WorkspaceMetadataSchema = z.object({
       summary: z.string().optional(),
     })
     .optional(),
+  /**
+   * Bootstrap chat session id for initial-setup spawn (Decision 1).
+   * Non-null while an initial-setup `workspace-setup` elicitation is pending
+   * in the named session; cleared by the answer dispatcher (Decision 4).
+   * `/workspaces/:id/chat` no-session navigation redirects to this id while
+   * set. Re-setup (post-initial) leaves this null per Decision 4 — re-setup
+   * is agent-driven, not redirect-driven.
+   */
+  active_setup_session_id: z.string().nullable().optional(),
 });
 
 export const WorkspaceEntrySchema = z.object({

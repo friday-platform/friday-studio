@@ -44,7 +44,9 @@ export type {
   ElicitationStatus,
   ElicitationStorageAdapter,
   ExpireSweepResult,
+  SetupRequirement,
   ToolAccessGrant,
+  WorkspaceSetupAnswerValue,
 } from "./src/elicitations/mod.ts";
 export {
   CreateElicitationSchema,
@@ -56,8 +58,10 @@ export {
   ElicitationStatusSchema,
   ElicitationStorage,
   initElicitationStorage,
+  SetupRequirementSchema,
   ToolAccessGrantSchema,
   ToolAccessGrants,
+  WorkspaceSetupAnswerValueSchema,
 } from "./src/elicitations/mod.ts";
 // Error types
 export { MissingEnvironmentError } from "./src/errors/missing-environment-error.ts";

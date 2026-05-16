@@ -16,8 +16,9 @@
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
   import AgentIoSchemas from "$lib/components/agents/agent-io-schemas.svelte";
-  import WorkspaceBreadcrumb from "$lib/components/workspace/workspace-breadcrumb.svelte";
   import InlineBadge from "$lib/components/shared/inline-badge.svelte";
+  import SetupRequiredBanner from "$lib/components/shared/setup-required-banner.svelte";
+  import WorkspaceBreadcrumb from "$lib/components/workspace/workspace-breadcrumb.svelte";
   import { integrationQueries, workspaceQueries, type IntegrationStatus } from "$lib/queries";
 
   const workspaceId = $derived(page.params.workspaceId ?? null);
@@ -186,6 +187,8 @@
   }
 </script>
 
+<SetupRequiredBanner {workspaceId} />
+
 <div class="agents-page">
   {#if workspaceId}
     <WorkspaceBreadcrumb {workspaceId} />
@@ -229,7 +232,9 @@
               ></span>
             {/if}
             <h2 class="agent-name">{agent.name}</h2>
-            <InlineBadge variant={agent.type === "llm" ? "info" : "success"}>{typeBadge(agent)}</InlineBadge>
+            <InlineBadge variant={agent.type === "llm" ? "info" : "success"}>
+              {typeBadge(agent)}
+            </InlineBadge>
             <button
               class="edit-yaml-btn"
               title="Edit configuration"

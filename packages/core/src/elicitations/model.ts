@@ -22,11 +22,12 @@
  *    value, ... } }`.
  *  - **`workspace-setup`** — a workspace requires setup before it can run
  *    (unfilled declared variables and/or unresolved credential refs). The
- *    request payload carries `options.setup_requirements` (see
- *    `SetupRequirementSchema`). The answer `value` is the structured
- *    object `{ variableValues, credentialChoices }` rather than a string
- *    option. Exempt from the 30-minute expiry sweep — setup may sit
- *    unfinished for days.
+ *    request payload carries `setupRequirements: SetupRequirement[]` (see
+ *    `SetupRequirementSchema`) — a snapshot of the unfilled blanks at spawn
+ *    time, captured for the form's initial render. The answer `value` is
+ *    the structured object `{ variableValues, credentialChoices }` rather
+ *    than a string option. Exempt from the 30-minute expiry sweep — setup
+ *    may sit unfinished for days.
  *
  * Storage layout lives in `jetstream-adapter.ts`. This file is the shared
  * Zod schema + TypeScript type boundary used by daemon routes, MCP tools,
@@ -61,9 +62,9 @@ export type ElicitationOption = z.infer<typeof ElicitationOptionSchema>;
 
 /**
  * One unfilled blank carried inside a `workspace-setup` elicitation's
- * `options.setup_requirements` payload. Structurally matches
- * `SetupRequirement` from `@atlas/workspace`; redeclared here because
- * `@atlas/core` cannot import `@atlas/workspace` (would cycle).
+ * `setupRequirements` payload. Structurally matches `SetupRequirement` from
+ * `@atlas/workspace`; redeclared here because `@atlas/core` cannot import
+ * `@atlas/workspace` (would cycle).
  */
 export const SetupRequirementSchema = z.discriminatedUnion("kind", [
   z.object({
@@ -134,6 +135,13 @@ export const ElicitationSchema = z.object({
   options: z.array(ElicitationOptionSchema).optional(),
   /** Populated for `tool-allowlist`: the tool that was denied + its args. */
   pendingTool: ElicitationPendingToolSchema.optional(),
+  /**
+   * Populated for `workspace-setup`: the live-derived list of unfilled
+   * variables and unresolved credentials the form should render. Captured at
+   * spawn time; the answer dispatcher re-derives from current config for
+   * validation rather than trusting this snapshot.
+   */
+  setupRequirements: z.array(SetupRequirementSchema).optional(),
   createdAt: z.iso.datetime(),
   expiresAt: z.iso.datetime(),
   status: ElicitationStatusSchema,

@@ -2,12 +2,13 @@
   import { humanizeStepName } from "@atlas/config/pipeline-utils";
   import { Button, JsonHighlight } from "@atlas/ui";
   import { createQuery, useQueryClient } from "@tanstack/svelte-query";
-  import { z } from "zod";
   import { page } from "$app/state";
   import InlineBadge from "$lib/components/shared/inline-badge.svelte";
+  import SetupRequiredBanner from "$lib/components/shared/setup-required-banner.svelte";
   import WorkspaceBreadcrumb from "$lib/components/workspace/workspace-breadcrumb.svelte";
   import { getDaemonClient } from "$lib/daemon-client";
   import { workspaceQueries } from "$lib/queries";
+  import { z } from "zod";
 
   const client = getDaemonClient();
   const queryClient = useQueryClient();
@@ -109,10 +110,7 @@
     system: "System",
   };
 
-  const PROVIDER_VARIANTS: Record<
-    string,
-    "info" | "accent" | "success" | "neutral" | "warning"
-  > = {
+  const PROVIDER_VARIANTS: Record<string, "info" | "accent" | "success" | "neutral" | "warning"> = {
     http: "info",
     schedule: "accent",
     "fs-watch": "success",
@@ -209,6 +207,8 @@
   }
 </script>
 
+<SetupRequiredBanner {workspaceId} />
+
 <div class="signal-detail">
   <div class="main">
     <div class="top-bar">
@@ -289,12 +289,7 @@
           {triggering ? "Triggering…" : "Trigger Now"}
         </Button>
         {#if cronTimer}
-          <Button
-            size="small"
-            variant="secondary"
-            onclick={togglePause}
-            disabled={toggling}
-          >
+          <Button size="small" variant="secondary" onclick={togglePause} disabled={toggling}>
             {toggling ? "…" : cronTimer.paused ? "Resume" : "Pause"}
           </Button>
         {/if}
@@ -314,7 +309,11 @@
           <div class="field-row">
             <dt>Status</dt>
             <dd>
-              <span class="badge" class:badge-paused={cronTimer.paused} class:badge-active={!cronTimer.paused}>
+              <span
+                class="badge"
+                class:badge-paused={cronTimer.paused}
+                class:badge-active={!cronTimer.paused}
+              >
                 {cronTimer.paused ? "Paused" : "Active"}
               </span>
             </dd>

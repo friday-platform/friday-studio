@@ -49,6 +49,22 @@ vi.mock("@atlas/core/mcp-registry/credential-resolver", async (importOriginal) =
 // Mock getFridayHome
 vi.mock("@atlas/utils/paths.server", () => ({ getFridayHome: () => "/tmp/atlas-home" }));
 
+// Stub the bootstrap-spawn helper — this file exercises credential resolution
+// and the import response shape, not the setup-spawn side effect (which has
+// its own focused test in `setup-spawn.test.ts`).
+const mockSpawnBootstrap = vi.hoisted(() =>
+  vi
+    .fn<
+      () => Promise<{
+        requires_setup: boolean;
+        bootstrap_session_id?: string;
+        setup_requirements: never[];
+      }>
+    >()
+    .mockResolvedValue({ requires_setup: false, setup_requirements: [] }),
+);
+vi.mock("./setup-spawn.ts", () => ({ spawnBootstrapSessionIfNeeded: mockSpawnBootstrap }));
+
 type JsonBody = Record<string, unknown>;
 
 function createImportTestApp() {

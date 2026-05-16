@@ -49,7 +49,11 @@ import { resolveVisibleSkills, SkillStorage } from "@atlas/skills";
 import { FilesystemWorkspaceCreationAdapter } from "@atlas/storage";
 import { ColorSchema, isErrnoException, stringifyError } from "@atlas/utils";
 import { getFridayHome } from "@atlas/utils/paths.server";
-import { loadWorkspaceEnv, type SetupRequirementsResult } from "@atlas/workspace";
+import {
+  loadWorkspaceEnv,
+  type SetupRequirementsResult,
+  StaleCredentialIdAtImportError,
+} from "@atlas/workspace";
 import { zValidator } from "@hono/zod-validator";
 import { parse, stringify } from "@std/yaml";
 import type { Context } from "hono";
@@ -105,6 +109,7 @@ import {
   createWorkspaceFromConfigSchema,
   updateWorkspaceConfigSchema,
 } from "./schemas.ts";
+import { spawnBootstrapSessionIfNeeded } from "./setup-spawn.ts";
 
 /**
  * Daemon-backed validation context for `validateWorkspaceConfig`.
@@ -743,6 +748,33 @@ const workspacesRoutes = daemonFactory
         // block in the imported config is silently dropped — no-op in the new
         // world. The schema parser also strips it before we get here.
 
+        let bootstrapSpawn: Awaited<ReturnType<typeof spawnBootstrapSessionIfNeeded>>;
+        try {
+          bootstrapSpawn = await spawnBootstrapSessionIfNeeded({
+            manager,
+            workspaceId: workspace.id,
+            workspacePath,
+            parsedConfig: validatedConfig,
+            userId: userId ?? "",
+            existingMetadata: workspace.metadata,
+          });
+        } catch (spawnError) {
+          if (spawnError instanceof StaleCredentialIdAtImportError) {
+            return c.json(
+              {
+                success: false,
+                error: "stale_credential_id_at_import",
+                message: spawnError.message,
+                credentialId: spawnError.credentialId,
+                provider: spawnError.provider,
+                path: spawnError.path,
+              },
+              400,
+            );
+          }
+          throw spawnError;
+        }
+
         return c.json(
           {
             success: true,
@@ -759,6 +791,9 @@ const workspacesRoutes = daemonFactory
               : {}),
             ...(unresolvedCredentialPaths && unresolvedCredentialPaths.length > 0
               ? { unresolvedCredentials: unresolvedCredentialPaths }
+              : {}),
+            ...(bootstrapSpawn.bootstrap_session_id
+              ? { bootstrapSessionId: bootstrapSpawn.bootstrap_session_id }
               : {}),
           },
           201,
@@ -1014,6 +1049,7 @@ const workspacesRoutes = daemonFactory
         name: string;
         path: string;
         memory?: { kind: string; path?: string; reason?: string };
+        bootstrapSessionId?: string;
       }> = [];
       const errors: Array<{ name: string; error: string }> = [...result.errors];
       for (const entry of result.imported) {
@@ -1040,11 +1076,36 @@ const workspacesRoutes = daemonFactory
             atlasHome,
             newWorkspaceId: registered.workspace.id,
           });
+
+          let bootstrapSessionId: string | undefined;
+          const merged = await manager.getWorkspaceConfig(registered.workspace.id);
+          if (merged) {
+            try {
+              const spawn = await spawnBootstrapSessionIfNeeded({
+                manager,
+                workspaceId: registered.workspace.id,
+                workspacePath: registered.workspace.path,
+                parsedConfig: merged.workspace,
+                userId,
+                existingMetadata: registered.workspace.metadata,
+              });
+              bootstrapSessionId = spawn.bootstrap_session_id;
+            } catch (spawnError) {
+              if (spawnError instanceof StaleCredentialIdAtImportError) {
+                await rm(entry.path, { recursive: true, force: true });
+                errors.push({ name: entry.name, error: "stale_credential_id_at_import" });
+                continue;
+              }
+              throw spawnError;
+            }
+          }
+
           imported.push({
             workspaceId: registered.workspace.id,
             name: entry.name,
             path: entry.path,
             memory,
+            ...(bootstrapSessionId ? { bootstrapSessionId } : {}),
           });
         } catch (err) {
           errors.push({ name: entry.name, error: stringifyError(err) });
@@ -1295,12 +1356,44 @@ const workspacesRoutes = daemonFactory
         newWorkspaceId: registered.workspace.id,
       });
 
+      const merged = await manager.getWorkspaceConfig(registered.workspace.id);
+      let bootstrapSessionId: string | undefined;
+      if (merged) {
+        try {
+          const spawn = await spawnBootstrapSessionIfNeeded({
+            manager,
+            workspaceId: registered.workspace.id,
+            workspacePath: registered.workspace.path,
+            parsedConfig: merged.workspace,
+            userId,
+            existingMetadata: registered.workspace.metadata,
+          });
+          bootstrapSessionId = spawn.bootstrap_session_id;
+        } catch (spawnError) {
+          if (spawnError instanceof StaleCredentialIdAtImportError) {
+            await rm(targetDir, { recursive: true, force: true });
+            return c.json(
+              {
+                error: "stale_credential_id_at_import",
+                message: spawnError.message,
+                credentialId: spawnError.credentialId,
+                provider: spawnError.provider,
+                path: spawnError.path,
+              },
+              400,
+            );
+          }
+          throw spawnError;
+        }
+      }
+
       return c.json({
         workspaceId: registered.workspace.id,
         path: targetDir,
         name: result.lockfile.workspace.name,
         primitives: result.primitives,
         memory,
+        ...(bootstrapSessionId ? { bootstrapSessionId } : {}),
       });
     } catch (error) {
       const errorMessage = stringifyError(error);
