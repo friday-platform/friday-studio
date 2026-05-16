@@ -54,9 +54,9 @@
     "npm:@eslint/js@^10.0.1": "10.0.1_eslint@10.3.0",
     "npm:@hono/mcp@~0.2.5": "0.2.5_@modelcontextprotocol+sdk@1.28.0__zod@4.4.3_hono@4.12.18_zod@4.4.3",
     "npm:@hono/standard-validator@~0.2.2": "0.2.2_@standard-schema+spec@1.1.0_hono@4.12.18",
-    "npm:@hono/zod-validator@0.7.6": "0.7.6_hono@4.12.18_zod@4.4.3",
+    "npm:@hono/zod-validator@0.8": "0.8.0_hono@4.12.18_zod@4.4.3",
+    "npm:@hono/zod-validator@0.8.0": "0.8.0_hono@4.12.18_zod@4.4.3",
     "npm:@hono/zod-validator@~0.7.5": "0.7.6_hono@4.12.18_zod@4.4.3",
-    "npm:@hono/zod-validator@~0.7.6": "0.7.6_hono@4.12.18_zod@4.4.3",
     "npm:@hubspot/api-client@^13.4.0": "13.5.0",
     "npm:@hubspot/api-client@^13.5.0": "13.5.0",
     "npm:@ianvs/prettier-plugin-sort-imports@^4.7.1": "4.7.1_prettier@3.8.3",
@@ -1160,6 +1160,13 @@
     },
     "@hono/zod-validator@0.7.6_hono@4.12.18_zod@4.4.3": {
       "integrity": "sha512-Io1B6d011Gj1KknV4rXYz4le5+5EubcWEU/speUjuw9XMMIaP3n78yXLhjd2A3PXaXaUwEAluOiAyLqhBEJgsw==",
+      "dependencies": [
+        "hono",
+        "zod"
+      ]
+    },
+    "@hono/zod-validator@0.8.0_hono@4.12.18_zod@4.4.3": {
+      "integrity": "sha512-5uS4S1/LKtZQYvD4BtpPUFkOv8d1wNxHHrChm26buMiEYc1FrHWvDUaKVBwkiVtvSExHSpLGDvcnpI2Copyj9w==",
       "dependencies": [
         "hono",
         "zod"
@@ -6202,7 +6209,7 @@
             "npm:@chat-adapter/whatsapp@4.28.1",
             "npm:@hono/mcp@~0.2.5",
             "npm:@hono/standard-validator@~0.2.2",
-            "npm:@hono/zod-validator@~0.7.6",
+            "npm:@hono/zod-validator@0.8",
             "npm:@jsr/db__sqlite@0.12",
             "npm:@jsr/std__async@^1.0.15",
             "npm:@jsr/std__encoding@^1.0.10",
@@ -6242,7 +6249,7 @@
         ],
         "packageJson": {
           "dependencies": [
-            "npm:@hono/zod-validator@0.7.6",
+            "npm:@hono/zod-validator@0.8.0",
             "npm:@hubspot/api-client@^13.5.0",
             "npm:@jsr/db__sqlite@0.12",
             "npm:@jsr/std__async@1.0.15",
@@ -6627,7 +6634,7 @@
             "npm:@codemirror/language@^6.12.3",
             "npm:@codemirror/state@^6.6.0",
             "npm:@codemirror/view@^6.42.1",
-            "npm:@hono/zod-validator@~0.7.6",
+            "npm:@hono/zod-validator@0.8",
             "npm:@lezer/highlight@^1.2.3",
             "npm:@melt-ui/pp@~0.3.2",
             "npm:@melt-ui/svelte@~0.86.6",
