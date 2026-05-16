@@ -1,25 +1,24 @@
 # yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
 
-# Five variants exercise the wiring-external-webhooks skill across the
-# 2026-05-15 chat-dump failure modes:
+# Six variants exercise the wiring-external-webhooks skill across the
+# 2026-05-15 chat-dump failure modes. Positive variants must pass every
+# check; the without-skill control must fail at least one (proves the
+# skill is the carrier).
 #
-#   with-skill (positive baseline): user asks "how do I configure Bitbucket
-#     to call my signal?". Skill content is injected. Must pass all 8
-#     setup-guidance checks.
-#
-#   without-skill (negative control): same question, bare prompt only.
-#     Must fail at least one check — proves the skill is the carrier.
-#
-#   corrects-wrong-env-var: user has BITBUCKET_WEBHOOK_SECRET set and
-#     asks why their webhook doesn't work. Agent must not double down
-#     on the wrong var; must name WEBHOOK_SECRET or explain the secret
-#     isn't needed for /hook/raw/.
-#
-#   diagnoses-loop-trap: user describes the 18-comment loop. Agent must
-#     identify the comment-subscription cause + prescribe a guard.
-#
-#   points-at-status-first: webhook isn't firing — agent must surface
-#     /status in the first half of the response with what it returns.
+# Negative-polarity checks across the variants cover:
+#   - wrong env vars (BITBUCKET_/JIRA_/GITHUB_WEBHOOK_SECRET)
+#   - bogus mappings shape (extract: instead of mapping:, missing providers: root)
+#   - deprecated /hook/bitbucket/ URL recommendation
+#   - atlasd direct path /api/workspaces/.../signals/...
+#   - Python/Node sidecar recommendation (Marc's chat ended up here)
+#   - hand-rolled cloudflared/ngrok/tunnel install
+#   - blame-the-restart misdiagnosis
+#   - sleep/rate-limit as a loop-fix (they don't break the cycle)
+#   - "just unsubscribe" as the only loop-fix
+#   - "just delete the spam comments" as the loop-fix
+#   - "restart the daemon" as the FIRST debug step (real first step is /status)
+#   - curl-localhost-bypass tests
+#   - hallucinated Bitbucket event names (pullrequest:merged etc.)
 
 - description: workspace-chat gives correct Bitbucket setup guidance WITH wiring-external-webhooks skill loaded
   vars:
@@ -29,14 +28,18 @@
   vars:
     scenarioId: without-skill
 
-- description: user mentions BITBUCKET_WEBHOOK_SECRET — agent corrects, doesn't double down on the wrong var
+- description: user mentions BITBUCKET_WEBHOOK_SECRET — agent corrects without doubling down on wrong var or blaming the restart
   vars:
     scenarioId: corrects-wrong-env-var
 
-- description: user describes the comment reply-loop — agent diagnoses subscription trap + prescribes guard
+- description: user describes comment reply-loop — agent diagnoses + prescribes guard (NOT sleep, NOT just-delete, NOT just-unsubscribe)
   vars:
     scenarioId: diagnoses-loop-trap
 
-- description: webhook isn't firing — agent surfaces /status as the first debugging step
+- description: webhook isn't firing — agent surfaces /status as first step (NOT restart, NOT localhost bypass)
   vars:
     scenarioId: points-at-status-first
+
+- description: user wants to test the webhook — agent offers real test (curl through tunnel, Bitbucket Test connectivity, atlas signal trigger) without recommending sidecar/bypass/hallucinated event names
+  vars:
+    scenarioId: test-webhook-no-bypass

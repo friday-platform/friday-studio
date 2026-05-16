@@ -269,6 +269,47 @@ function runContractChecks(text: string): ContractCheck[] {
       })(),
       evidence: text.match(/.{0,40}\/hook\/bitbucket\/[^\s)`]+.{0,40}/)?.[0]?.slice(0, 200),
     },
+    {
+      id: "no-atlasd-direct-path",
+      description:
+        "does NOT recommend /api/workspaces/.../signals/... as the webhook URL (atlasd's internal direct path; not reachable through cloudflared)",
+      // Marc's chat dump message #0: first URL he was given was atlasd's
+      // direct signal endpoint. Tunnel returns 404 for non-/hook/ paths.
+      pass: !/\/api\/workspaces\/[^/\s]+\/signals\//i.test(text),
+      evidence: text.match(/[^\s]*\/api\/workspaces\/[^/\s]+\/signals\/[^\s)`]*/)?.[0],
+    },
+    {
+      id: "no-python-sidecar-recommendation",
+      description:
+        "does NOT recommend writing a Python/Node sidecar webhook receiver — the bundled tunnel IS the receiver",
+      // Marc's chat: the agent eventually built him a Python script to
+      // intermediate Bitbucket → Friday. Anything pointing at "write your
+      // own HTTP server" / "spin up a Flask/FastAPI/express receiver" /
+      // "run a Python script alongside" is back to that failure mode.
+      pass:
+        !/(?:flask|fastapi|express|http\.server)\b[^\n.]{0,80}(?:server|listener|sidecar|forwarder|receiver|intermediate)/i.test(
+          text,
+        ) &&
+        !/(?:write|build|run|spin up|create|set up)\s+(?:a |an |your own )?(?:python|node|flask|fastapi|express|http) (?:server|listener|sidecar|forwarder|receiver|script|app|service)\b/i.test(
+          text,
+        ),
+      evidence: text
+        .match(
+          /(?:flask|fastapi|express|http\.server)\b[^\n.]{0,60}(?:server|listener|sidecar|forwarder|receiver|intermediate)|(?:write|build|run|spin up|create|set up)\s+(?:a |an |your own )?[^.\n]{0,40}(?:server|listener|sidecar|forwarder|receiver|script|app|service)/i,
+        )?.[0]
+        ?.slice(0, 160),
+    },
+    {
+      id: "no-handrolled-tunnel-setup",
+      description:
+        "does NOT tell user to install/run cloudflared / ngrok / their own tunnel — the daemon bundles it",
+      pass: !/\b(?:install|brew install|download|set up|setup|run|spawn|start)\b[^.\n]{0,60}\b(?:cloudflared|ngrok|tailscale funnel|localtunnel|serveo)\b/i.test(
+        text,
+      ),
+      evidence: text.match(
+        /\b(?:install|brew install|download|set up|setup|run|spawn|start)\b[^.\n]{0,60}\b(?:cloudflared|ngrok|tailscale funnel|localtunnel|serveo)\b/i,
+      )?.[0],
+    },
   ];
 }
 
@@ -400,6 +441,46 @@ async function runCorrectsWrongEnvVar(): Promise<EvalResult> {
         )?.[0]
         ?.slice(0, 140),
     },
+    {
+      id: "no-jira-or-github-prefixed-alt",
+      description:
+        "does NOT suggest a different provider-prefixed alternative like JIRA_WEBHOOK_SECRET / GITHUB_WEBHOOK_SECRET / BITBUCKET_HOOK_SECRET",
+      pass:
+        !/\b(?:JIRA|GITHUB|BITBUCKET)_(?:WEBHOOK|HOOK)_(?:SECRET|TOKEN|KEY)\b/.test(result.text) ||
+        // tolerate a single "do not use" mention of BITBUCKET_WEBHOOK_SECRET in the correction
+        (() => {
+          const lines = result.text.split(/\n/);
+          const violations = lines.filter((l) =>
+            /\b(?:JIRA|GITHUB|BITBUCKET)_(?:WEBHOOK|HOOK)_(?:SECRET|TOKEN|KEY)\b/.test(l),
+          );
+          // pass if every mention is in negative framing
+          const neg =
+            /\b(?:not|don'?t|do not|never|doesn'?t exist|isn'?t|wrong|invalid|silently)\b/i;
+          return violations.length > 0 && violations.every((l) => neg.test(l));
+        })(),
+      evidence: result.text
+        .match(/\b(?:JIRA|GITHUB|BITBUCKET)_(?:WEBHOOK|HOOK)_(?:SECRET|TOKEN|KEY)\b/g)
+        ?.slice(0, 5)
+        .join(", "),
+    },
+    {
+      id: "no-blames-restart",
+      description:
+        "does NOT pin the bug on user's restart sequence (the real bug is the wrong env var name, not how they restarted)",
+      // Some models try to blame restart timing ("you need to restart the
+      // tunnel separately", "the daemon caches env vars in memory"). For
+      // the wrong-env-var case the restart isn't the bug — the var doesn't
+      // exist at all.
+      pass:
+        !/\b(?:restart|reload|reboot)\b[^.\n]{0,80}(?:in (?:the )?wrong order|sequence|first|both|tunnel separately|incorrectly|properly)/i.test(
+          result.text,
+        ) && !/\b(?:tunnel|daemon)\b[^.\n]{0,30}(?:caches|cached|stale)\s+env/i.test(result.text),
+      evidence: result.text
+        .match(
+          /\b(?:restart|reload|reboot)\b[^.\n]{0,80}(?:wrong|sequence|first|both|separately|incorrectly|properly)|\b(?:tunnel|daemon)\b[^.\n]{0,30}(?:caches|cached|stale)\s+env/i,
+        )?.[0]
+        ?.slice(0, 140),
+    },
   ];
 
   metrics.checks = checks;
@@ -474,6 +555,64 @@ async function runDiagnoseLoopTrap(): Promise<EvalResult> {
         )?.[0]
         ?.slice(0, 200),
     },
+    {
+      id: "no-sleep-or-rate-limit-remedy",
+      description:
+        "does NOT prescribe a sleep / rate-limit / debounce as the fix (those don't break the cycle, they just slow it)",
+      // Wrong remedies seen in prior drafts: "add a 5-second sleep before
+      // posting", "rate-limit to 1 comment per minute", "debounce".
+      // None of these stop the loop — they just delay it.
+      pass:
+        !/\b(?:add|insert|use|with)\s+(?:a |an )?(?:sleep|delay|debounce|rate[\s-]?limit|throttle|backoff)\b[^.\n]{0,60}(?:between|before|to (?:slow|prevent|fix|stop)|to avoid)/i.test(
+          result.text,
+        ) &&
+        !/\b(?:rate[\s-]?limit|throttle|debounce)\b[^.\n]{0,40}\b(?:to (?:fix|stop|prevent|avoid|break)|will (?:fix|stop|prevent|avoid|break))\b/i.test(
+          result.text,
+        ),
+      evidence: result.text
+        .match(
+          /\b(?:add|insert|use|with)\s+(?:a |an )?(?:sleep|delay|debounce|rate[\s-]?limit|throttle|backoff)\b[^.\n]{0,80}/i,
+        )?.[0]
+        ?.slice(0, 160),
+    },
+    {
+      id: "no-just-unsubscribe-as-only-fix",
+      description:
+        "does NOT make 'just unsubscribe from comment events entirely' the ONLY fix without acknowledging that's giving up on the use case",
+      // Telling the user to drop comment-event handling is a regression of
+      // capability, not a fix. A correct answer offers the guard pattern;
+      // dropping the subscription can be mentioned as a fallback but not
+      // as the only option.
+      pass: (() => {
+        const dropMatch =
+          /\b(?:unsubscribe|remove|drop|don'?t subscribe|stop subscribing|skip subscribing)\b[^.\n]{0,80}\bpullrequest:?comment/i.test(
+            result.text,
+          );
+        if (!dropMatch) return true;
+        // Pass if the response ALSO prescribes a guard pattern (means it's offering both).
+        return /\b(?:guard|skip|check|filter|ignore)\b[^.\n]{0,80}\b(?:body|content|author|user|identity|self|own|ACK)/i.test(
+          result.text,
+        );
+      })(),
+      evidence: result.text
+        .match(
+          /\b(?:unsubscribe|remove|drop|don'?t subscribe|stop subscribing)\b[^.\n]{0,80}/i,
+        )?.[0]
+        ?.slice(0, 160),
+    },
+    {
+      id: "no-just-delete-spam-as-fix",
+      description:
+        "does NOT make 'delete the spam comments' a remedy (cleanup ≠ fix; root cause must be addressed first)",
+      pass: !/\b(?:delete|remove|clean up|cleanup)\b[^.\n]{0,40}(?:the )?(?:spam|loop|18|extra|duplicate|repeated) (?:comments?)\b[^.\n]{0,80}(?:to (?:fix|stop|prevent)|will (?:fix|stop|prevent)|solves?|resolves?)/i.test(
+        result.text,
+      ),
+      evidence: result.text
+        .match(
+          /\b(?:delete|remove|clean up|cleanup)\b[^.\n]{0,40}(?:the )?(?:spam|loop|18|extra|duplicate|repeated) comment[^.\n]{0,80}/i,
+        )?.[0]
+        ?.slice(0, 160),
+    },
   ];
 
   metrics.checks = checks;
@@ -547,6 +686,52 @@ async function runPointsAtStatusFirst(): Promise<EvalResult> {
         )?.[0]
         ?.slice(0, 200),
     },
+    {
+      id: "no-restart-as-first-step",
+      description:
+        "does NOT suggest restarting the daemon as the first debug step (real first step is /status)",
+      // Pin the negative: a restart instruction in the first 25% of the
+      // response means the agent went to "did you try turning it off and
+      // on" before looking at /status. Restart later in the response is
+      // fine (it's the right fix for stale env vars).
+      pass: (() => {
+        const restartIdx = result.text
+          .toLowerCase()
+          .search(
+            /\b(?:restart|reboot|kill (?:and )?start)\s+(?:the )?(?:daemon|tunnel|atlasd|friday|server)\b/,
+          );
+        if (restartIdx < 0) return true;
+        return restartIdx > result.text.length * 0.25;
+      })(),
+      evidence: (() => {
+        const idx = result.text
+          .toLowerCase()
+          .search(
+            /\b(?:restart|reboot|kill (?:and )?start)\s+(?:the )?(?:daemon|tunnel|atlasd|friday|server)\b/,
+          );
+        return idx >= 0
+          ? `restart at position ${idx} of ${result.text.length} (${Math.round((100 * idx) / result.text.length)}%)`
+          : "(no restart suggested)";
+      })(),
+    },
+    {
+      id: "no-curl-localhost-as-test",
+      description:
+        "does NOT recommend curl-ing localhost:9090/hook/ directly as the way to test (that bypasses cloudflared, doesn't test the real wire)",
+      // Hitting the local port directly skips the cloudflared edge — so
+      // the test passes even when the public webhook URL is broken. The
+      // useful test goes through the public trycloudflare URL.
+      pass:
+        !/\b(?:curl|wget|http)\b[^.\n]{0,40}(?:localhost|127\.0\.0\.1)(?::9090|:8080)\/hook\//i.test(
+          result.text,
+        ) &&
+        !/\b(?:test|verify|check)\b[^.\n]{0,40}(?:by )?\b(?:curl|wget)ing\s+(?:localhost|127\.0\.0\.1)/i.test(
+          result.text,
+        ),
+      evidence: result.text.match(
+        /\b(?:curl|wget|http)\b[^.\n]{0,60}(?:localhost|127\.0\.0\.1)(?::\d+)?\/hook\/[^\s)`]+/i,
+      )?.[0],
+    },
   ];
 
   metrics.checks = checks;
@@ -565,6 +750,98 @@ async function runPointsAtStatusFirst(): Promise<EvalResult> {
     );
   notes.push(`Reply head: "${result.text.slice(0, 400)}"`);
   return { id: "points-at-status-first", pass: false, notes, metrics };
+}
+
+// ───── Scenario 6: test-the-webhook negative-leaning ─────────────────────
+
+const USER_QUESTION_TEST_WEBHOOK =
+  "How do I test that my Bitbucket webhook is wired up correctly without waiting for a real PR comment?";
+
+async function runTestWebhookNegativeCheck(): Promise<EvalResult> {
+  const notes: string[] = [];
+  const metrics: Record<string, unknown> = {};
+
+  console.log("  → drive (test-webhook-no-bypass)");
+  const system = await buildSystem("with-skill");
+  const result = await drive(system, USER_QUESTION_TEST_WEBHOOK);
+  metrics.durationMs = result.durationMs;
+  metrics.responseLen = result.text.length;
+  metrics.responseFull = result.text;
+
+  const checks: ContractCheck[] = [
+    // Positive — must offer SOME way to test
+    {
+      id: "offers-test-mechanism",
+      description:
+        "Offers some concrete way to test (curl through tunnel, Bitbucket Test connectivity, signal trigger via CLI)",
+      pass:
+        /\bcurl\b/i.test(result.text) ||
+        /\btrigger\b/i.test(result.text) ||
+        /\btest connectivity\b/i.test(result.text) ||
+        /\bresend\b/i.test(result.text) ||
+        /\battlas signal/i.test(result.text) ||
+        /\bview requests\b/i.test(result.text),
+      evidence: result.text
+        .match(
+          /\bcurl\b[^.\n]{0,80}|\btrigger\b[^.\n]{0,60}|\bTest connectivity\b|\bResend\b|\bView requests\b/i,
+        )?.[0]
+        ?.slice(0, 160),
+    },
+    // Negative — must NOT recommend the wrong bypass / sidecar shapes
+    {
+      id: "no-localhost-bypass",
+      description:
+        "does NOT recommend curl-ing localhost:9090/hook/ (bypasses cloudflared, doesn't test the real public path)",
+      pass: !/\b(?:curl|wget)\b[^.\n]{0,40}(?:https?:\/\/)?(?:localhost|127\.0\.0\.1)(?::\d+)?\/hook\//i.test(
+        result.text,
+      ),
+      evidence: result.text.match(
+        /\b(?:curl|wget)\b[^.\n]{0,60}(?:https?:\/\/)?(?:localhost|127\.0\.0\.1)(?::\d+)?\/hook\/[^\s)`]+/i,
+      )?.[0],
+    },
+    {
+      id: "no-sidecar-recommendation",
+      description: "does NOT suggest standing up a Python/Node script as a stand-in receiver",
+      pass: !/(?:write|build|run|spin up|create|set up)\s+(?:a |an |your own )?(?:python|node|flask|fastapi|express|http) (?:server|listener|sidecar|forwarder|receiver|script|app|service)\b/i.test(
+        result.text,
+      ),
+      evidence: result.text
+        .match(
+          /(?:write|build|run|spin up|create|set up)\s+(?:a |an |your own )?[^.\n]{0,50}(?:server|listener|sidecar|forwarder|receiver|script|service)/i,
+        )?.[0]
+        ?.slice(0, 160),
+    },
+    {
+      id: "no-fake-event-name",
+      description:
+        "does NOT invent Bitbucket event names that don't exist (e.g. pullrequest:merged is fake — real name is pullrequest:fulfilled)",
+      // Real Bitbucket Cloud event names per `pullrequest:` prefix. Anything
+      // outside this set is hallucinated. Limit to common-hallucination forms.
+      pass:
+        !/pullrequest:merged\b/i.test(result.text) &&
+        !/pullrequest:closed\b/i.test(result.text) &&
+        !/pullrequest:opened\b/i.test(result.text) &&
+        !/repo:commit\b(?![:_])/i.test(result.text),
+      evidence: result.text.match(/pullrequest:(?:merged|closed|opened)|repo:commit\b/i)?.[0],
+    },
+  ];
+
+  metrics.checks = checks;
+  const failed = checks.filter((c) => !c.pass);
+
+  if (failed.length === 0) {
+    notes.push(`Positive: all ${checks.length} checks passed.`);
+    for (const c of checks)
+      notes.push(`  ✓ ${c.id}: ${c.description}${c.evidence ? ` [${c.evidence}]` : ""}`);
+    return { id: "test-webhook-no-bypass", pass: true, notes, metrics };
+  }
+  notes.push(`Negative: ${failed.length}/${checks.length} failed.`);
+  for (const c of checks)
+    notes.push(
+      `  ${c.pass ? "✓" : "✗"} ${c.id}: ${c.description}${c.evidence ? ` [${c.evidence}]` : ""}`,
+    );
+  notes.push(`Reply head: "${result.text.slice(0, 400)}"`);
+  return { id: "test-webhook-no-bypass", pass: false, notes, metrics };
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -593,6 +870,7 @@ async function main() {
     { id: "corrects-wrong-env-var", fn: () => runCorrectsWrongEnvVar() },
     { id: "diagnoses-loop-trap", fn: () => runDiagnoseLoopTrap() },
     { id: "points-at-status-first", fn: () => runPointsAtStatusFirst() },
+    { id: "test-webhook-no-bypass", fn: () => runTestWebhookNegativeCheck() },
   ];
 
   for (const { id, fn } of runners) {
