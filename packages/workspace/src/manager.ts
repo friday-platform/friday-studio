@@ -293,8 +293,8 @@ export class WorkspaceManager {
     }
 
     // Validate that all "auto" env vars are available before allowing registration.
-    // Skip during import when credentials are unresolved — the route sets
-    // requires_setup so the user is prompted to connect them post-creation.
+    // Skip during import when credentials are unresolved — the user is prompted
+    // to connect them via Workspace Setup, which derives the gap on read.
     if (!options?.skipEnvValidation) {
       validateMCPEnvironmentForWorkspace(config, absolutePath);
     }

@@ -642,7 +642,7 @@ describe("POST /create — credential resolution", () => {
     });
   });
 
-  test("creates workspace with requires_setup when all providers are unconfigured", async () => {
+  test("surfaces unresolved credential paths when all providers are unconfigured", async () => {
     const { app, mockRegisterWorkspace, mockUpdateWorkspaceStatus } = createImportTestApp();
     await mountRoutes(app);
 
@@ -680,11 +680,8 @@ describe("POST /create — credential resolution", () => {
       expect.any(String),
       expect.objectContaining({ skipEnvValidation: true }),
     );
-    expect(mockUpdateWorkspaceStatus).toHaveBeenCalledWith(
-      "ws-new",
-      "inactive",
-      expect.objectContaining({ metadata: expect.objectContaining({ requires_setup: true }) }),
-    );
+    // `requires_setup` is live-derived from config + env + Link, never stored.
+    expect(mockUpdateWorkspaceStatus).not.toHaveBeenCalled();
 
     // Provider-only refs are preserved in the written config (not stripped)
     const githubRef = getWrittenRef("github", "GITHUB_TOKEN");
@@ -770,14 +767,12 @@ describe("POST /create — credential resolution", () => {
       ],
     });
 
-    // Workspace should be created with requires_setup
+    // Workspace is created with env validation skipped; ambiguousProviders
+    // surfaces in the response so the importer can route into setup.
     expect(mockRegisterWorkspace).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({ skipEnvValidation: true }),
     );
-    const workspace = body.workspace as Record<string, unknown>;
-    const metadata = workspace.metadata as Record<string, unknown>;
-    expect(metadata.requires_setup).toBe(true);
 
     // The written config should have provider-only refs (no credential IDs pinned)
     expect(mockWriteWorkspaceFiles).toHaveBeenCalledOnce();
@@ -886,14 +881,12 @@ describe("POST /create — credential resolution", () => {
       ],
     });
 
-    // Workspace should require setup due to ambiguous slack
+    // Slack stays unresolved (ambiguous); the importer surfaces it in the
+    // response body, but the platform doesn't write a stored setup flag.
     expect(mockRegisterWorkspace).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({ skipEnvValidation: true }),
     );
-    const workspace = body.workspace as Record<string, unknown>;
-    const metadata = workspace.metadata as Record<string, unknown>;
-    expect(metadata.requires_setup).toBe(true);
   });
 
   test("resolves multiple providers in parallel", async () => {
@@ -1367,7 +1360,7 @@ describe("POST /create — credential resolution", () => {
     expect(mockFetchLinkCredential).not.toHaveBeenCalledWith("cred_foreign", expect.anything());
   });
 
-  test("creates workspace with requires_setup when some providers are unconfigured", async () => {
+  test("surfaces unresolved paths when some providers are unconfigured", async () => {
     const { app, mockRegisterWorkspace, mockUpdateWorkspaceStatus } = createImportTestApp();
     await mountRoutes(app);
 
@@ -1418,11 +1411,7 @@ describe("POST /create — credential resolution", () => {
       expect.any(String),
       expect.objectContaining({ skipEnvValidation: true }),
     );
-    expect(mockUpdateWorkspaceStatus).toHaveBeenCalledWith(
-      "ws-new",
-      "inactive",
-      expect.objectContaining({ metadata: expect.objectContaining({ requires_setup: true }) }),
-    );
+    expect(mockUpdateWorkspaceStatus).not.toHaveBeenCalled();
 
     // Resolved provider gets id+provider ref, unresolved keeps provider-only ref
     const githubRef = getWrittenRef("github", "GITHUB_TOKEN");
@@ -1435,7 +1424,7 @@ describe("POST /create — credential resolution", () => {
     expect(body.unresolvedCredentials).toEqual(["mcp:slack:SLACK_TOKEN"]);
   });
 
-  test("creates workspace with requires_setup when bundled agent provider is unconfigured", async () => {
+  test("bundled-agent provider with no credential: env validation skipped, no stored setup flag", async () => {
     const { app, mockRegisterWorkspace, mockUpdateWorkspaceStatus } = createImportTestApp();
     await mountRoutes(app);
 
@@ -1464,14 +1453,10 @@ describe("POST /create — credential resolution", () => {
     const body = (await response.json()) as JsonBody;
     expect(body.success).toBe(true);
     expect(mockRegisterWorkspace).toHaveBeenCalled();
-    expect(mockUpdateWorkspaceStatus).toHaveBeenCalledWith(
-      "ws-new",
-      "inactive",
-      expect.objectContaining({ metadata: expect.objectContaining({ requires_setup: true }) }),
-    );
+    expect(mockUpdateWorkspaceStatus).not.toHaveBeenCalled();
   });
 
-  test("imports bundled agent with slack provider → requires_setup when no credential", async () => {
+  test("imports bundled agent with slack provider → env validation skipped when no credential", async () => {
     const { app, mockRegisterWorkspace } = createImportTestApp();
     await mountRoutes(app);
 
@@ -1587,14 +1572,11 @@ describe("POST /create — credential resolution", () => {
       ],
     });
 
-    // Workspace should require setup
+    // Importer skips env validation; ambiguous slot surfaces via response body.
     expect(mockRegisterWorkspace).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({ skipEnvValidation: true }),
     );
-    const workspace = body.workspace as Record<string, unknown>;
-    const metadata = workspace.metadata as Record<string, unknown>;
-    expect(metadata.requires_setup).toBe(true);
 
     // Written config should have provider-only ref (no ID pinned)
     expect(mockWriteWorkspaceFiles).toHaveBeenCalledOnce();
@@ -1725,14 +1707,11 @@ describe("POST /create — credential resolution", () => {
       ],
     });
 
-    // Workspace should require setup due to ambiguous slack
+    // Slack stays ambiguous; importer surfaces it via ambiguousProviders.
     expect(mockRegisterWorkspace).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({ skipEnvValidation: true }),
     );
-    const workspace = body.workspace as Record<string, unknown>;
-    const metadata = workspace.metadata as Record<string, unknown>;
-    expect(metadata.requires_setup).toBe(true);
 
     // GitHub should be bound in written config, slack should be provider-only
     expect(mockWriteWorkspaceFiles).toHaveBeenCalledOnce();

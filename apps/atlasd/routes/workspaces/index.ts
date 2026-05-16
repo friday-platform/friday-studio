@@ -596,9 +596,10 @@ const workspacesRoutes = daemonFactory
           );
         }
 
-        // Track unresolved provider refs for requires_setup flag, but keep them
-        // in the config — they're declarative requirements the setup page needs
-        // to show Connect buttons for MCP server credentials.
+        // Track unresolved provider refs so the importer can surface them in
+        // the response. Provider-only refs stay in the written YAML — they're
+        // declarative requirements that live-derivation picks up on subsequent
+        // reads via `resolveWorkspaceSetupRequirements`.
         if (unresolvedProviders.length > 0) {
           unresolvedCredentialPaths = providerOnlyRefs
             .filter((ref) => unresolvedProviders.includes(ref.provider))
@@ -670,13 +671,11 @@ const workspacesRoutes = daemonFactory
           skipEnvValidation: hasUnresolvedCredentials,
         });
 
-        // Set requires_setup flag if any credentials are missing or were stripped
-        if (hasUnresolvedCredentials && created) {
-          await manager.updateWorkspaceStatus(workspace.id, workspace.status, {
-            metadata: { ...workspace.metadata, requires_setup: true },
-          });
-          workspace.metadata = { ...workspace.metadata, requires_setup: true };
-        }
+        // `requires_setup` is no longer stored on workspace metadata — it's
+        // live-derived per request from parsed config + env + Link state via
+        // `resolveWorkspaceSetupRequirements`. The importer still tells the
+        // caller which credential paths are unresolved (below) so the UI can
+        // route into the setup form without re-deriving.
 
         // Resources subsystem was deleted (Ledger). Any incoming `resources:`
         // block in the imported config is silently dropped — no-op in the new
@@ -1475,57 +1474,6 @@ const workspacesRoutes = daemonFactory
         return c.json(updated, 200);
       } catch (error) {
         return c.json({ error: `Failed to update metadata: ${stringifyError(error)}` }, 500);
-      }
-    },
-  )
-  // Complete workspace setup (verify all credentials are connected)
-  .post(
-    "/:workspaceId/setup/complete",
-    zValidator("param", z.object({ workspaceId: z.string() })),
-    async (c) => {
-      const { workspaceId } = c.req.valid("param");
-      await requireWorkspaceAdmin(c, workspaceId);
-      const ctx = c.get("app");
-
-      try {
-        const manager = ctx.getWorkspaceManager();
-        const workspace = await manager.find({ id: workspaceId });
-        if (!workspace) {
-          return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
-        }
-
-        const config = await manager.getWorkspaceConfig(workspace.id);
-        if (!config) {
-          return c.json({ error: "Failed to load workspace configuration" }, 500);
-        }
-
-        const credentials = extractCredentials(config.workspace);
-
-        // Group by provider and check each has a credentialId
-        const byProvider = new Map<string, boolean>();
-        for (const cred of credentials) {
-          if (!cred.provider) continue;
-          const currentlyConnected = byProvider.get(cred.provider) ?? true;
-          byProvider.set(cred.provider, currentlyConnected && !!cred.credentialId);
-        }
-
-        const missingProviders = [...byProvider.entries()]
-          .filter(([, connected]) => !connected)
-          .map(([provider]) => provider);
-
-        if (missingProviders.length > 0) {
-          return c.json({ error: "incomplete_setup", missingProviders }, 422);
-        }
-
-        // All credentials connected — clear requires_setup
-        const newMetadata = { ...workspace.metadata, requires_setup: false };
-        await manager.updateWorkspaceStatus(workspaceId, workspace.status, {
-          metadata: newMetadata,
-        });
-
-        return c.json({ ok: true }, 200);
-      } catch (error) {
-        return c.json({ error: `Failed to complete setup: ${stringifyError(error)}` }, 500);
       }
     },
   )

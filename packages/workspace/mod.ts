@@ -30,6 +30,17 @@ export {
 export { validateMCPEnvironmentForWorkspace, WorkspaceManager } from "./src/manager.ts";
 // Runtime
 export { classifySessionError, WorkspaceRuntime } from "./src/runtime.ts";
+// Live setup-requirements derivation (Decision 3 — `requires_setup` is not stored).
+export type {
+  LinkCredentialState,
+  ResolveSetupRequirementsOptions,
+  SetupRequirement,
+  SetupRequirementsResult,
+} from "./src/setup-requirements.ts";
+export {
+  resolveWorkspaceSetupRequirements,
+  StaleCredentialIdAtImportError,
+} from "./src/setup-requirements.ts";
 // Storage factories and registry adapter
 export {
   createJetStreamKVStorage,
