@@ -30,7 +30,7 @@
     "@codemirror/language": "^6.12.3",
     "@codemirror/state": "^6.6.0",
     "@codemirror/view": "^6.42.1",
-    "@hono/zod-validator": "~0.7.6",
+    "@hono/zod-validator": "~0.8.0",
     "@lezer/highlight": "^1.2.3",
     "@melt-ui/svelte": "~0.86.6",
     "@opentelemetry/api": "^1.9.1",

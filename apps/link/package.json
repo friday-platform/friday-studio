@@ -12,7 +12,7 @@
     "@atlas/logger": "workspace:*",
     "@atlas/utils": "workspace:*",
     "@db/sqlite": "npm:@jsr/db__sqlite@^0.12.0",
-    "@hono/zod-validator": "0.7.6",
+    "@hono/zod-validator": "0.8.0",
     "@modelcontextprotocol/sdk": "~1.28.0",
     "@std/async": "npm:@jsr/std__async@1.0.15",
     "hono": "4.12.18",
