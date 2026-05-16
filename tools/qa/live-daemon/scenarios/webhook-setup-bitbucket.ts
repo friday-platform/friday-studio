@@ -265,7 +265,7 @@ function runContractChecks(text: string): ContractCheck[] {
         const negativeMarker =
           /\b(?:removed|deprecat|do not|don'?t use|no longer|wrong|incorrect|instead of|NOT use|migrat(?:ion|ing|e from)|old|legacy|previously|was)\b/i;
         // Pass only if EVERY occurrence is in a negative-framing context.
-        return matches.every((m) => negativeMarker.test(m[1]));
+        return matches.every((m) => negativeMarker.test(m[1] ?? m[0]));
       })(),
       evidence: text.match(/.{0,40}\/hook\/bitbucket\/[^\s)`]+.{0,40}/)?.[0]?.slice(0, 200),
     },
