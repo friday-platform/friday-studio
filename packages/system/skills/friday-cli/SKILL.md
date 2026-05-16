@@ -142,7 +142,7 @@ curl -k -sf -X POST \
   "$FRIDAYD_URL/api/workspaces/<id>/signals/<signal-id>?nowait=true" \
   -H 'Content-Type: application/json' \
   -d '{"payload":{"some":"value"}}'
-# → 202 {"status":"accepted","correlationId":"...","streamUrl":"/api/workspaces/<id>/signals/stream/<correlationId>"}
+# → 202 {"message":"Signal accepted","status":"accepted","workspaceId":"<id>","signalId":"<signal-id>","correlationId":"..."}
 ```
 
 Atlasd publishes to the SIGNALS JetStream subject and returns immediately

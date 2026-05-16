@@ -669,15 +669,6 @@ describe("createJobTools execute (SSE streaming)", () => {
       merge: vi.fn(),
       onError: vi.fn(),
     };
-    createJobTools(
-      "ws-test",
-      { "deploy-app": makeJob({ triggers: [{ signal: "deploy-signal" }] }) },
-      {},
-      logger,
-      "parent-stream-123",
-      writer,
-    );
-
     globalThis.fetch = vi.fn(() =>
       makeMockFetchResponse([
         `data: ${JSON.stringify({
