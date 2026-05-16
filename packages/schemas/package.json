@@ -4,5 +4,5 @@
   "type": "module",
   "exports": { "./json-schema": "./src/json-schema.ts" },
   "dependencies": { "zod": "^4.4.3" },
-  "devDependencies": { "vitest": "^4.1.0" }
+  "devDependencies": { "vitest": "^4.1.6" }
 }

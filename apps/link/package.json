@@ -22,5 +22,5 @@
     "@hubspot/api-client": "^13.5.0",
     "zod": "4.4.3"
   },
-  "devDependencies": { "jose": "6.2.3", "vitest": "^4.1.5" }
+  "devDependencies": { "jose": "6.2.3", "vitest": "^4.1.6" }
 }

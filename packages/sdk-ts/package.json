@@ -5,5 +5,5 @@
   "exports": { ".": "./mod.ts" },
   "main": "./mod.ts",
   "dependencies": { "nats": "^2.29.3" },
-  "devDependencies": { "vitest": "^4.1.0" }
+  "devDependencies": { "vitest": "^4.1.6" }
 }
