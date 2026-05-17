@@ -2845,16 +2845,38 @@ export class AtlasDaemon {
       }
     }
 
-    // Enforce session limit (LRU eviction)
+    // Enforce session limit (LRU eviction).
+    //
+    // Two-pass strategy:
+    //   1. Prefer evicting sessions with no active requests (clean tear-down).
+    //   2. If we're still over the limit, force-evict the LRU sessions even
+    //      if they have in-flight requests — otherwise long-lived SSE/MCP
+    //      streams (whose `activeRequests` never drops to zero until the
+    //      client disconnects) pin the map forever, the warning fires every
+    //      60s with `evictionCount: 0`, and new sessions get crowded out.
     if (this.agentSessions.size > this.MAX_AGENT_SESSIONS) {
-      const sortedSessions = Array.from(this.agentSessions.entries())
-        .filter(([, session]) => session.activeRequests === 0)
-        .sort((a, b) => a[1].lastUsed - b[1].lastUsed);
+      const overage = this.agentSessions.size - this.MAX_AGENT_SESSIONS;
 
-      const toEvict = sortedSessions.slice(0, this.agentSessions.size - this.MAX_AGENT_SESSIONS);
+      const sortedByLastUsed = Array.from(this.agentSessions.entries()).sort(
+        (a, b) => a[1].lastUsed - b[1].lastUsed,
+      );
+
+      const idleFirst = sortedByLastUsed.filter(([, s]) => s.activeRequests === 0);
+      const toEvictIdle = idleFirst.slice(0, overage);
+
+      const remainingOverage = overage - toEvictIdle.length;
+      const evictedIdleIds = new Set(toEvictIdle.map(([id]) => id));
+      const toEvictActive =
+        remainingOverage > 0
+          ? sortedByLastUsed.filter(([id]) => !evictedIdleIds.has(id)).slice(0, remainingOverage)
+          : [];
+
+      const toEvict = [...toEvictIdle, ...toEvictActive];
 
       logger.warn("Evicting LRU agent sessions due to limit", {
         evictionCount: toEvict.length,
+        idleEvicted: toEvictIdle.length,
+        activeEvicted: toEvictActive.length,
         totalSessions: this.agentSessions.size,
         maxSessions: this.MAX_AGENT_SESSIONS,
       });
@@ -2914,19 +2936,33 @@ export class AtlasDaemon {
       }
     }
 
-    // Enforce session limit (LRU eviction)
+    // Enforce session limit (LRU eviction). See `performAgentSessionCleanup`
+    // for the two-pass rationale — long-lived SSE streams keep
+    // `activeRequests > 0` and would otherwise pin the map indefinitely,
+    // causing the eviction warning to fire every 60s with no progress.
     if (this.platformMcpSessions.size > this.MAX_PLATFORM_SESSIONS) {
-      const sortedSessions = Array.from(this.platformMcpSessions.entries())
-        .filter(([, session]) => session.activeRequests === 0)
-        .sort((a, b) => a[1].lastUsed - b[1].lastUsed);
+      const overage = this.platformMcpSessions.size - this.MAX_PLATFORM_SESSIONS;
 
-      const toEvict = sortedSessions.slice(
-        0,
-        this.platformMcpSessions.size - this.MAX_PLATFORM_SESSIONS,
+      const sortedByLastUsed = Array.from(this.platformMcpSessions.entries()).sort(
+        (a, b) => a[1].lastUsed - b[1].lastUsed,
       );
+
+      const idleFirst = sortedByLastUsed.filter(([, s]) => s.activeRequests === 0);
+      const toEvictIdle = idleFirst.slice(0, overage);
+
+      const remainingOverage = overage - toEvictIdle.length;
+      const evictedIdleIds = new Set(toEvictIdle.map(([id]) => id));
+      const toEvictActive =
+        remainingOverage > 0
+          ? sortedByLastUsed.filter(([id]) => !evictedIdleIds.has(id)).slice(0, remainingOverage)
+          : [];
+
+      const toEvict = [...toEvictIdle, ...toEvictActive];
 
       logger.warn("Evicting LRU platform sessions due to limit", {
         evictionCount: toEvict.length,
+        idleEvicted: toEvictIdle.length,
+        activeEvicted: toEvictActive.length,
         totalSessions: this.platformMcpSessions.size,
         maxSessions: this.MAX_PLATFORM_SESSIONS,
       });
