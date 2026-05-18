@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { DropdownMenu } from "@atlas/ui";
+  import { DropdownMenu, Icons, Tooltip } from "@atlas/ui";
   import MarkdownBody from "./markdown-body.svelte";
   import { createVirtualizer } from "@tanstack/svelte-virtual";
   import { tick, untrack } from "svelte";
@@ -14,14 +14,14 @@
   import { tableToSafeHTML } from "./table-to-html";
   import { snapshotTableToArtifact } from "./snapshot-table";
 
-  // Per-message timestamp formatters. Default is HH:MM:SS in the user's
-  // locale; the alt-pressed view swaps in full date + time so the
-  // operator can confirm a turn happened on the day they think it did
-  // without leaving the row.
+  // Per-message timestamp formatters. The inline view shows hour+minute
+  // ("2:44 PM"); the Tooltip on hover swaps in full date + time +
+  // seconds, and holding Alt swaps the inline view itself to the full
+  // format so the operator can scan many timestamps at once without
+  // hovering each one individually.
   const TIME_FMT = new Intl.DateTimeFormat(undefined, {
     hour: "numeric",
     minute: "2-digit",
-    second: "2-digit",
   });
   const DATETIME_FMT = new Intl.DateTimeFormat(undefined, {
     year: "numeric",
@@ -59,11 +59,11 @@
     return seconds === 0 ? `${minutes}m` : `${minutes}m ${seconds}s`;
   }
 
-  // Global alt-key state. Held → time elements display the full
-  // date + time format; released → back to compact HH:MM:SS. Single
-  // listener pair on window keeps every message reactive to one
-  // source. Hover tooltip (title="...") is also set so the same info
-  // is reachable without a keyboard chord.
+  // Global alt-key state. Held → time elements switch to the full
+  // date + time inline so the operator can scan many timestamps at
+  // once without hovering each tooltip individually. Released → back
+  // to compact "2:44 PM". Single listener pair on window keeps every
+  // message reactive to one source.
   let altPressed = $state(false);
   $effect(() => {
     function onDown(e: KeyboardEvent) {
@@ -663,7 +663,63 @@
 
 
 
+{#snippet actionsRow(message: ChatMessage)}
+  {@const fullTime = formatDateTimeFull(message.timestamp)}
+  {@const compactTime = formatTimeShort(message.timestamp)}
+  {@const duration = message.role === "assistant" ? turnDurationMs(message) : null}
+  <div class="message-actions" class:assistant={message.role === "assistant"} class:user={message.role === "user"}>
+      <Tooltip as="span" label={fullTime}>
+        <span class="message-time">{altPressed ? fullTime : compactTime}</span>
+      </Tooltip>
+      {#if duration !== null}
+        <span class="turn-duration" title="turn duration">{formatDuration(duration)}</span>
+      {/if}
+      {#if message.role === "assistant" && message.metadata?.usage}
+        <UsageBadge
+          usage={message.metadata.usage}
+          provider={message.metadata.provider}
+          startTimestamp={message.metadata.startTimestamp}
+          endTimestamp={message.metadata.endTimestamp}
+        />
+      {/if}
+      <DropdownMenu.Root positioning={{ placement: message.role === "user" ? "bottom-end" : "bottom-start" }}>
+        {#snippet children()}
+          <DropdownMenu.Trigger class="message-menu-trigger" aria-label="Message options">
+            <Icons.TripleDots />
+          </DropdownMenu.Trigger>
+          <DropdownMenu.Content>
+            <DropdownMenu.Item onclick={() => void copyMessageText(message)}>
+              {#snippet prepend()}
+                <svg
+                  class="menu-icon"
+                  width="14"
+                  height="14"
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.4"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <rect x="5" y="5" width="9" height="9" rx="1.5" />
+                  <path d="M11 5V3.5A1.5 1.5 0 0 0 9.5 2h-6A1.5 1.5 0 0 0 2 3.5v6A1.5 1.5 0 0 0 3.5 11H5" />
+                </svg>
+              {/snippet}
+              Copy message
+            </DropdownMenu.Item>
+          </DropdownMenu.Content>
+        {/snippet}
+      </DropdownMenu.Root>
+  </div>
+{/snippet}
+
 {#snippet messageBody(message: ChatMessage)}
+    {@const hasToolSegment = message.segments.some((s) => s.type === "tool-burst")}
+    {@const lastAssistantTextIdx =
+      message.role === "assistant" && hasToolSegment
+        ? message.segments.findLastIndex((s) => s.type === "text" && s.content.length > 0)
+        : -1}
     <div
       class="message"
       class:user={message.role === "user"}
@@ -681,13 +737,27 @@
         {:else}
           <span class="role-badge">{message.role === "user" ? "You" : "Friday"}</span>
 
-          {#each message.segments as segment}
+          {#each message.segments as segment, idx}
             {#if segment.type === "text" && segment.content.length > 0}
               {#if message.role === "assistant"}
                 {@const settled = message.id !== unsettledMessageId}
-                <div class="message-content markdown-body" use:copyButtons={settled}>
-                  <MarkdownBody content={segment.content} {settled} />
-                </div>
+                {#if idx === lastAssistantTextIdx}
+                  <!-- Wrap the last text bubble + actions row in one
+                       fit-content block so the actions row (and its
+                       trailing-edge ellipsis) tracks the bubble's right
+                       edge instead of the wider message column when
+                       a tool card forces the column wider. -->
+                  <div class="text-actions-group">
+                    <div class="message-content markdown-body" use:copyButtons={settled}>
+                      <MarkdownBody content={segment.content} {settled} />
+                    </div>
+                    {@render actionsRow(message)}
+                  </div>
+                {:else}
+                  <div class="message-content markdown-body" use:copyButtons={settled}>
+                    <MarkdownBody content={segment.content} {settled} />
+                  </div>
+                {/if}
               {:else}
                 <div class="message-content">{segment.content}</div>
               {/if}
@@ -759,84 +829,13 @@
             </div>
           {/if}
 
-          <!-- Per-message actions row: compact (alt→full) timestamp +
-               optional turn duration + UsageBadge + ellipsis menu.
-               Layout flips by role: assistant left-aligned, user
-               right-aligned. System messages stay quiet (no menu,
-               no time). -->
-          {@const fullTime = formatDateTimeFull(message.timestamp)}
-          {@const compactTime = formatTimeShort(message.timestamp)}
-          {@const duration = message.role === "assistant" ? turnDurationMs(message) : null}
-          <div class="message-actions" class:assistant={message.role === "assistant"} class:user={message.role === "user"}>
-              <span class="message-time" title={fullTime}>
-                {altPressed ? fullTime : compactTime}
-              </span>
-              {#if duration !== null}
-                <span class="turn-duration" title="turn duration">{formatDuration(duration)}</span>
-              {/if}
-              {#if message.role === "assistant" && message.metadata?.usage}
-                <UsageBadge
-                  usage={message.metadata.usage}
-                  provider={message.metadata.provider}
-                  startTimestamp={message.metadata.startTimestamp}
-                  endTimestamp={message.metadata.endTimestamp}
-                />
-              {/if}
-              <DropdownMenu.Root positioning={{ placement: message.role === "user" ? "bottom-end" : "bottom-start" }}>
-                {#snippet children()}
-                  <DropdownMenu.Trigger class="message-menu-trigger" aria-label="Message options">
-                    <!-- Dots shifted toward the bottom of the viewBox so
-                         the ellipsis aligns with the bottom of the
-                         neighboring text rather than centering on its
-                         own taller bounding box. -->
-                    <svg
-                      width="16"
-                      height="16"
-                      viewBox="0 0 16 16"
-                      fill="none"
-                      aria-hidden="true"
-                    >
-                      <circle cx="4" cy="13" r="1.25" fill="currentColor" />
-                      <circle cx="8" cy="13" r="1.25" fill="currentColor" />
-                      <circle cx="12" cy="13" r="1.25" fill="currentColor" />
-                    </svg>
-                  </DropdownMenu.Trigger>
-                  <DropdownMenu.Content>
-                    <!-- Convention: every dropdown item ships an icon
-                         via the `prepend` snippet. Keeps the column of
-                         items aligned to a consistent glyph rail. New
-                         items follow this shape:
-                           <DropdownMenu.Item onclick={...}>
-                             {#snippet prepend()}
-                               <svg class="menu-icon" .../>
-                             {/snippet}
-                             Label
-                           </DropdownMenu.Item>
-                         — see `Copy message` below. -->
-                    <DropdownMenu.Item onclick={() => void copyMessageText(message)}>
-                      {#snippet prepend()}
-                        <svg
-                          class="menu-icon"
-                          width="14"
-                          height="14"
-                          viewBox="0 0 16 16"
-                          fill="none"
-                          stroke="currentColor"
-                          stroke-width="1.4"
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                          aria-hidden="true"
-                        >
-                          <rect x="5" y="5" width="9" height="9" rx="1.5" />
-                          <path d="M11 5V3.5A1.5 1.5 0 0 0 9.5 2h-6A1.5 1.5 0 0 0 2 3.5v6A1.5 1.5 0 0 0 3.5 11H5" />
-                        </svg>
-                      {/snippet}
-                      Copy message
-                    </DropdownMenu.Item>
-                  </DropdownMenu.Content>
-                {/snippet}
-              </DropdownMenu.Root>
-          </div>
+          <!-- Per-message actions row: rendered inline above (alongside
+               the last assistant text bubble) when there is one; falls
+               back to the message end for user messages and for
+               assistant messages without a text segment. -->
+          {#if lastAssistantTextIdx === -1}
+            {@render actionsRow(message)}
+          {/if}
       {/if}
     </div>
 {/snippet}
@@ -940,13 +939,21 @@
     max-inline-size: 95%;
   }
 
+  /* User bubbles sit at the right edge of the column (`align-self`),
+     and their children also right-align inside the column (`align-items`)
+     so small bubbles aren't stranded on the left when the actions row
+     below makes the column wider. */
   .message.user {
+    align-items: flex-end;
     align-self: flex-end;
   }
 
+  /* Assistant bubble hugs the widest child (text bubble or tool card),
+     so the message-actions row below it (and the trailing-edge ellipsis)
+     match the bubble width instead of spanning the full column. */
   .message.assistant {
-    margin-inline-end: auto;
-    width: 100%;
+    align-self: flex-start;
+    width: fit-content;
   }
 
   /* Compact actions row — ellipsis menu, time, optional usage badge.
@@ -956,7 +963,7 @@
      sits flush with the bottom of the text rather than floating
      above it. */
   .message-actions {
-    align-items: flex-end;
+    align-items: center;
     /* More breathing room between items so glyphs don't crowd each
        other. Hidden items (like cache %) live at the trailing edge of
        the row; this gap also keeps them from sticking to their
@@ -1033,11 +1040,10 @@
   }
 
   .message-actions :global(.message-menu-trigger) {
-    /* Sized to match the row's text height so the dots line up with
-       the bottom of the time / usage labels instead of floating above
-       them. The SVG fills the trigger; the dots sit at viewBox center,
-       which now overlaps the text's mid-band rather than the row's
-       own taller bounding box.
+    /* Centered vertically with the time / usage labels via the row's
+       `align-items: center`. The icon fills the trigger box; the
+       dots are at the viewBox center, so they read centered with the
+       text x-height.
        `margin-inline-start: auto` parks the trigger at the trailing
        edge of the row regardless of role — when the row has spare
        horizontal space (assistant rows fill the full column width),
@@ -1135,10 +1141,27 @@
     background-color: var(--color-surface-3);
     border-radius: var(--radius-3);
     font-size: var(--font-size-3);
+    inline-size: fit-content;
     line-height: 1.55;
+    max-inline-size: 100%;
     padding: var(--size-2-5) var(--size-3);
     white-space: pre-wrap;
     word-break: break-word;
+  }
+
+  /* Wraps the last assistant text bubble together with the actions
+     row when the message also contains a tool card. `width: fit-content`
+     sizes the group to the bubble; the actions row inside stretches to
+     that width (default `align-items: stretch`), so the trailing-edge
+     ellipsis docks at the bubble's right edge rather than the wider
+     message column. */
+  .text-actions-group {
+    align-self: flex-start;
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-1);
+    width: fit-content;
+    max-inline-size: 100%;
   }
 
   .message-content.markdown-body {
