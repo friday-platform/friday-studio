@@ -640,7 +640,7 @@
     border-radius: var(--radius-1);
     color: var(--color-text);
     font-family: var(--font-family-monospace);
-    font-size: var(--font-size-0);
+    font-size: var(--font-size-1);
     font-weight: var(--font-weight-5);
     padding: var(--size-0-5) var(--size-1);
   }

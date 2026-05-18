@@ -262,7 +262,7 @@
     color: color-mix(in srgb, var(--color-text), transparent 25%);
     flex-shrink: 0;
     font-family: var(--font-family-monospace);
-    font-size: var(--font-size-0);
+    font-size: var(--font-size-1);
     padding-block: var(--size-0-5);
     padding-inline: var(--size-1-5);
   }

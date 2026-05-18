@@ -49,7 +49,7 @@ both. P3 wide-gamut color support with sRGB fallback.
 - **System fonts** — `ui-sans-serif, system-ui` stack. No custom web fonts.
 - **Melt UI** — headless accessible primitives (dialogs, dropdowns, popovers). Custom styling on top.
 - **Custom SVG icons** — inline, `stroke="currentColor"`, 16x16 viewBox
-- **Scoped styles** — component-level `<style>` blocks, no global utility classes
+- **Utility classes** — global single-purpose helpers (`.text-*` sizes, the `.button` block) live in `utilities.css` (CUBE CSS-style). Component-level `<style>` blocks still own everything else.
 - **6 accent families** — yellow, green, red, blue, brown, purple — mapped to `--accent-1/2/3` via class
 
 ### Design Principles

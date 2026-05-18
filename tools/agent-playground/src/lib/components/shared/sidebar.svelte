@@ -159,7 +159,7 @@
             <li>
               <a href="/platform/{ws.id}" class="nav-item" class:active>
                 <span class="dot" style:--dot-color={dotColor(ws.metadata?.color)}></span>
-                <span class="text">
+                <span class="nav-label">
                   {ws.displayName}
                 </span>
               </a>
@@ -446,7 +446,6 @@
       }
     }
 
-    .text,
     .nav-label {
       flex: 1;
       overflow: hidden;

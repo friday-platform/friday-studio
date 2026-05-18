@@ -9,7 +9,7 @@
 </script>
 
 {#snippet titleNode()}
-  <h1>
+  <h1 class="text text-bright">
     {@render children()}
   </h1>
 {/snippet}
@@ -31,7 +31,7 @@
   {/if}
 
   {#if subtitle}
-    <p class="description">{subtitle}</p>
+    <p class="description text text-faded">{subtitle}</p>
   {/if}
 </div>
 
@@ -51,16 +51,9 @@
   }
 
   h1 {
-    color: var(--text-bright);
-    font-size: var(--font-size-4);
     font-weight: var(--font-weight-5);
     line-height: 1.2;
     margin: 0;
     text-align: start;
-  }
-
-  p {
-    color: var(--text-faded);
-    font-size: var(--font-size-4);
   }
 </style>

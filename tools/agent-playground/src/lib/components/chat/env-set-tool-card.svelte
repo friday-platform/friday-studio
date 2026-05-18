@@ -236,7 +236,7 @@
 
   .eyebrow {
     color: color-mix(in srgb, var(--text), transparent 35%);
-    font-size: var(--font-size-0, 11px);
+    font-size: var(--font-size-1, 11px);
     font-weight: var(--font-weight-7);
     letter-spacing: 0.06em;
     text-transform: uppercase;
@@ -246,7 +246,7 @@
     background-color: color-mix(in srgb, var(--text), transparent 88%);
     border-radius: var(--radius-round);
     color: color-mix(in srgb, var(--text), transparent 30%);
-    font-size: var(--font-size-0, 11px);
+    font-size: var(--font-size-1, 11px);
     font-weight: var(--font-weight-6);
     padding: 1px var(--size-2);
   }
@@ -344,7 +344,7 @@
   }
 
   .hint code {
-    font-size: var(--font-size-0, 11px);
+    font-size: var(--font-size-1, 11px);
   }
 
   .secret-hint {

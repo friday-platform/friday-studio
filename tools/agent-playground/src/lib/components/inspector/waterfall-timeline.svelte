@@ -188,7 +188,7 @@
     display: flex;
     flex-direction: column;
     font-family: var(--font-mono);
-    font-size: var(--font-size-0);
+    font-size: var(--font-size-1);
     inline-size: 100%;
     overflow-y: auto;
   }
@@ -321,7 +321,7 @@
 
   .agent-id {
     color: color-mix(in srgb, var(--color-text), transparent 10%);
-    font-size: calc(var(--font-size-0) - 1px);
+    font-size: calc(var(--font-size-1) - 1px);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -397,7 +397,7 @@
     align-items: center;
     color: color-mix(in srgb, var(--color-text), transparent 30%);
     display: flex;
-    font-size: var(--font-size-0);
+    font-size: var(--font-size-1);
     inset-block: 0;
     margin-inline-start: var(--size-2);
     pointer-events: none;

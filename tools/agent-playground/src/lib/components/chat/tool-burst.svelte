@@ -222,7 +222,7 @@
   .reasoning-text {
     color: var(--text-faded);
     font-family: var(--font-family-mono, ui-monospace, monospace);
-    font-size: var(--font-size-0, 11px);
+    font-size: var(--font-size-1, 11px);
     line-height: 1.45;
   }
 </style>

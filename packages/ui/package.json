@@ -41,6 +41,7 @@
     },
     "./reset.css": "./src/lib/reset.css",
     "./tokens.css": "./src/lib/tokens.css",
+    "./utilities.css": "./src/lib/utilities.css",
     "./eslint": "./eslint.config.base.js",
     "./prettier": "./prettier.config.js"
   },

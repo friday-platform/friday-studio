@@ -163,7 +163,7 @@
     background: color-mix(in srgb, var(--color-accent, #1171df), transparent 80%);
     border-radius: var(--radius-round);
     color: var(--color-accent, #1171df);
-    font-size: var(--font-size-0);
+    font-size: var(--font-size-1);
     font-weight: var(--font-weight-6);
     min-inline-size: var(--size-4);
     padding-inline: var(--size-1);

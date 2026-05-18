@@ -732,7 +732,7 @@
 
   .search-status {
     color: color-mix(in srgb, var(--color-text), transparent 50%);
-    font-size: var(--font-size-0);
+    font-size: var(--font-size-1);
     padding: var(--size-1) var(--size-3);
   }
 
@@ -776,7 +776,7 @@
   .sugg-src {
     color: color-mix(in srgb, var(--color-text), transparent 40%);
     font-family: var(--font-family-monospace, monospace);
-    font-size: var(--font-size-0);
+    font-size: var(--font-size-1);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -807,7 +807,7 @@
 
   .installs {
     color: color-mix(in srgb, var(--color-text), transparent 55%);
-    font-size: var(--font-size-0);
+    font-size: var(--font-size-1);
   }
 
   .install-btn {
@@ -1069,7 +1069,7 @@
 
   .drawer-kicker {
     color: color-mix(in srgb, var(--color-text), transparent 60%);
-    font-size: var(--font-size-0);
+    font-size: var(--font-size-1);
     letter-spacing: 0.06em;
     margin-block-end: var(--size-1);
     text-transform: uppercase;

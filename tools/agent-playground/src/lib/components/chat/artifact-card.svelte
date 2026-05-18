@@ -388,7 +388,7 @@
     color: var(--color-accent);
     flex-shrink: 0;
     font-family: var(--font-family-mono, ui-monospace, monospace);
-    font-size: var(--font-size-0, 11px);
+    font-size: var(--font-size-1, 11px);
     padding: 1px 6px;
   }
 
@@ -511,7 +511,7 @@
     border-radius: var(--radius-1);
     color: var(--text);
     font-family: var(--font-family-mono, ui-monospace, monospace);
-    font-size: var(--font-size-0, 11px);
+    font-size: var(--font-size-1, 11px);
     line-height: 1.5;
     margin: 0;
     max-block-size: 280px;
@@ -564,7 +564,7 @@
     color: var(--text-faded);
     flex-shrink: 0;
     font-family: var(--font-family-mono, ui-monospace, monospace);
-    font-size: var(--font-size-0, 11px);
+    font-size: var(--font-size-1, 11px);
     inline-size: 36px;
     opacity: 0.6;
     text-transform: uppercase;
@@ -573,7 +573,7 @@
   .meta-row dd {
     color: var(--text-faded);
     font-family: var(--font-family-mono, ui-monospace, monospace);
-    font-size: var(--font-size-0, 11px);
+    font-size: var(--font-size-1, 11px);
     margin: 0;
     min-inline-size: 0;
     overflow: hidden;
