@@ -218,7 +218,7 @@
         {/if}
         <div class="actions-buttons">
           <Button
-            variant="destructive"
+            variant="none"
             onclick={() => answer("deny")}
             disabled={!matched || inFlight}
           >
@@ -226,9 +226,7 @@
           </Button>
           <Tooltip
             as="span"
-            label={missingSecretValue
-              ? "Enter a value for each secret-looking key to confirm."
-              : undefined}
+            label={missingSecretValue ? "Fill in any blank values." : undefined}
           >
             <Button
               onclick={() => answer("confirm")}
@@ -256,14 +254,23 @@
 </div>
 
 <style>
+  /* Definitive width so the card renders identically regardless of
+     what's beside it in the same message column. `min-inline-size`
+     pushes the parent `.message.assistant` (now `width: fit-content`)
+     to grow to at least the card's width, so a short sibling text
+     bubble can't squeeze the card narrower. `align-self: flex-start`
+     keeps the card from stretching when the parent ends up wider. */
   .env-set-card {
+    align-self: flex-start;
     background-color: var(--surface-dark);
     border: 1px solid transparent;
     border-radius: var(--radius-3);
     display: flex;
     flex-direction: column;
     gap: var(--size-3);
+    inline-size: var(--size-128);
     margin-block-end: var(--size-4);
+    min-inline-size: 0;
     padding: var(--size-3);
   }
 
@@ -326,41 +333,55 @@
   .var-list {
     display: flex;
     flex-direction: column;
-    gap: var(--size-1);
+    gap: var(--size-1-5);
+    margin-block: var(--size-2);
   }
 
-  /* No background or border on the row itself — the input carries the
-     only visible affordance; the row is pure layout. */
+  /* Single bordered envelope: key label slot, divider, input, optional
+     reveal — all share one affordance. Focus is owned by the row via
+     :focus-within so the border highlights as a unit. */
   .var-row {
-    align-items: center;
-    display: flex;
-    gap: var(--size-2);
-  }
-
-  .var-key {
-    color: var(--text-bright);
-    flex-shrink: 0;
-    font-size: var(--font-size-1);
-  }
-
-  /* Input — matches signal-input-form.svelte: --color-surface-2 fill,
-     --color-border-1 border, focus darkens the border to --color-text
-     instead of the browser's blue ring. */
-  .var-value {
+    align-items: stretch;
     background-color: var(--color-surface-2);
     border: 1px solid var(--color-border-1);
     border-radius: var(--radius-2);
+    display: flex;
+    transition: border-color 150ms ease;
+  }
+
+  .var-row:focus-within {
+    border-color: color-mix(in oklch, var(--color-text), transparent 60%);
+  }
+
+  .var-key {
+    align-items: center;
+    border-inline-end: 1px solid var(--color-border-1);
+    color: var(--text-bright);
+    display: inline-flex;
+    flex-shrink: 0;
+    font-size: var(--font-size-1);
+    padding: var(--size-1-5) var(--size-2-5);
+    transition: border-color 150ms ease;
+  }
+
+  .var-row:focus-within .var-key {
+    border-inline-end-color: color-mix(in oklch, var(--color-text), transparent 60%);
+  }
+
+  /* Transparent input — the parent .var-row owns the border + fill, so
+     the input dissolves into the envelope and only its text + caret read. */
+  .var-value {
+    background: transparent;
+    border: none;
     color: var(--color-text);
     flex: 1;
     font-family: var(--font-family-monospace);
     font-size: var(--font-size-1);
     min-inline-size: 0;
-    padding: var(--size-1) var(--size-2);
-    transition: border-color 150ms ease;
+    padding: var(--size-1-5) var(--size-2-5);
   }
 
   .var-value:focus {
-    border-color: color-mix(in oklch, var(--color-text), transparent 60%);
     outline: none;
   }
 
@@ -376,14 +397,16 @@
     cursor: pointer;
     display: inline-flex;
     flex-shrink: 0;
-    inline-size: 14px;
-    block-size: 14px;
-    padding: 0;
+    padding: var(--size-1) var(--size-2);
+  }
+
+  .reveal:hover {
+    color: var(--color-text);
   }
 
   .reveal :global(svg) {
-    inline-size: 100%;
-    block-size: 100%;
+    inline-size: 14px;
+    block-size: 14px;
   }
 
   /* Footer row: hint (left, muted) + buttons (right). The buttons use
