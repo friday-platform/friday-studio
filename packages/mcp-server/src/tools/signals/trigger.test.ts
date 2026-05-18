@@ -1,5 +1,6 @@
+import { SignalTriggerResponseSchema } from "@atlas/core";
 import { describe, expect, test } from "vitest";
-import { mapSignalTriggerResponse, SignalTriggerResponseSchema } from "./trigger.ts";
+import { mapSignalTriggerResponse } from "./trigger.ts";
 
 // MCP tools are reached by LLM clients, so silent shape drift on the
 // signal-trigger response envelope is the highest-stakes path among the

@@ -148,6 +148,62 @@ func TestHookForwardsByteForByte(t *testing.T) {
 	}
 }
 
+// TestHookForwardsByteForByte_NonAscii locks the byte-for-byte invariant
+// against the failure mode that ASCII tests don't catch: multi-byte
+// UTF-8 + raw non-UTF-8 bytes. HMAC is computed over the literal byte
+// stream, so a tunnel that ASCII-round-trips correctly can still silently
+// re-encode an emoji (UTF-8 normalization) or drop a 0xff byte. This
+// test fires both shapes through and asserts `bytes.Equal`.
+func TestHookForwardsByteForByte_NonAscii(t *testing.T) {
+	var seenBody []byte
+	atlasd := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seenBody, _ = io.ReadAll(r.Body)
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(`{"status":"accepted","correlationId":"c"}`))
+	}))
+	defer atlasd.Close()
+	base := setupTestServer(t, atlasd.URL)
+
+	cases := []struct {
+		name string
+		body []byte
+	}{
+		{
+			// GitHub-style JSON with multi-byte UTF-8 (Polish diacritics +
+			// composed accents + emoji). Re-encoding via `string()`
+			// round-trip would silently mutate these.
+			name: "utf8-multibyte",
+			body: []byte(`{"actor":"Łukasz Żelazny 👋","note":"żółw — łódź — ✓"}`),
+		},
+		{
+			// Non-UTF-8 bytes — webhook providers occasionally embed
+			// binary blobs (form-encoded uploads, signature pre-images).
+			// Byte preservation through the tunnel must hold.
+			name: "binary-bytes",
+			body: []byte{0x7B, 0x22, 0x6B, 0x22, 0x3A, 0x22, 0x00, 0x01, 0xFF, 0xFE, 0x22, 0x7D},
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			seenBody = nil
+			req, _ := http.NewRequest(http.MethodPost,
+				base+"/hook/raw/ws/sig", bytes.NewReader(c.body))
+			req.Header.Set("Content-Type", "application/octet-stream")
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatalf("do: %v", err)
+			}
+			_ = resp.Body.Close()
+			if resp.StatusCode != http.StatusAccepted {
+				t.Fatalf("status %d", resp.StatusCode)
+			}
+			if !bytes.Equal(seenBody, c.body) {
+				t.Errorf("body bytes mismatch:\n  want: %x\n  got:  %x", c.body, seenBody)
+			}
+		})
+	}
+}
+
 func TestHookUnknownProvider(t *testing.T) {
 	base := setupTestServer(t, "http://invalid:0")
 	// The realistic failure mode after PR #354's provider collapse is a
@@ -175,6 +231,25 @@ func TestHookUnknownProvider(t *testing.T) {
 				t.Errorf("response should mention `raw` (the only valid provider): %s", s)
 			}
 		})
+	}
+}
+
+// TestHookAtlasdUnreachable covers the most common operational failure
+// of the tunnel: atlasd is down / not yet up / network-partitioned.
+// httputil.ReverseProxy surfaces dial failures as 502 Bad Gateway —
+// asserting that here means an operator who curls the tunnel during an
+// atlasd outage sees a clear status code, not a hang or a misleading 500.
+func TestHookAtlasdUnreachable(t *testing.T) {
+	// 127.0.0.1:1 is reliably refused on every host (port 1 is reserved).
+	base := setupTestServer(t, "http://127.0.0.1:1")
+	resp, err := http.Post(base+"/hook/raw/ws/sig",
+		"application/json", strings.NewReader(`{"a":1}`))
+	if err != nil {
+		t.Fatalf("do: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusBadGateway {
+		t.Fatalf("expected 502, got %d", resp.StatusCode)
 	}
 }
 

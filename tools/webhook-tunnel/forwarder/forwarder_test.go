@@ -1,6 +1,7 @@
 package forwarder
 
 import (
+	"bytes"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -77,8 +78,8 @@ func TestWebhookProxyByteForByte(t *testing.T) {
 	if seenPath != "/api/workspaces/ws-light_papaya/signals/sig-pr-opened" {
 		t.Errorf("path: want /api/workspaces/ws-light_papaya/signals/sig-pr-opened, got %s", seenPath)
 	}
-	if string(seenBody) != string(body) {
-		t.Errorf("body bytes mismatch:\n  want: %s\n  got:  %s", body, seenBody)
+	if !bytes.Equal(seenBody, body) {
+		t.Errorf("body bytes mismatch:\n  want: %x\n  got:  %x", body, seenBody)
 	}
 	for _, h := range []string{
 		"X-Github-Event", // Go canonicalizes "X-GitHub-Event"

@@ -1,3 +1,4 @@
+import { Buffer } from "node:buffer";
 import { startNatsTestServer, type TestNatsServer } from "@atlas/core/test-utils/nats-test-server";
 import { connect, type NatsConnection } from "nats";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -70,6 +71,82 @@ describe("publishSignal + SignalConsumer", () => {
     expect(received[0]?.signalId).toBe("my-signal");
     expect(received[0]?.payload).toEqual({ hello: "world" });
     expect(received[0]?.publishedAt).toBeDefined();
+  }, 15_000);
+
+  // Webhook envelope fields — closes the cross-layer plumbing gap that
+  // only the live E2E catches today. Asserts that webhookBody (base64) +
+  // webhookHeaders (lowercased dict) round-trip through publish → consumer
+  // → SignalEnvelopeSchema.parse intact. If a schema field is renamed or
+  // its optional-handling drifts (e.g. `body: undefined` vs missing key),
+  // this test fails instead of letting the byte-for-byte invariant silently
+  // break for HMAC-verifying agents.
+  it("round-trips webhookBody + webhookHeaders through publishSignal → consumer", async () => {
+    const received: SignalEnvelope[] = [];
+    const consumer = new SignalConsumer(
+      nc,
+      (envelope) => {
+        received.push(envelope);
+        return Promise.resolve();
+      },
+      { name: `test-${crypto.randomUUID()}`, expiresMs: 1000 },
+    );
+    await consumer.start();
+
+    const githubBytes = `{"action":"opened","pull_request":{"number":42}}`;
+    const githubBase64 = Buffer.from(githubBytes, "utf-8").toString("base64");
+    const githubHeaders = {
+      "x-github-event": "pull_request",
+      "x-github-delivery": "72d3162e-cc78-11e3-81ab-4c9367dc0958",
+      "x-hub-signature-256": "sha256=abc123deadbeef",
+      "content-type": "application/json",
+    };
+
+    await publishSignal(nc, {
+      workspaceId: "ws-webhook",
+      signalId: "gh-pr-comment",
+      payload: { action: "opened" },
+      webhookBody: githubBase64,
+      webhookHeaders: githubHeaders,
+    });
+
+    await waitFor(() => received.length === 1, 5000);
+    await consumer.destroy();
+
+    expect(received).toHaveLength(1);
+    expect(received[0]?.webhookBody).toBe(githubBase64);
+    expect(received[0]?.webhookHeaders).toEqual(githubHeaders);
+    // The base64 → bytes round-trip preserves the exact upstream-signed
+    // bytes — this is what makes the agent's HMAC verification possible.
+    const decoded = Buffer.from(received[0]?.webhookBody ?? "", "base64").toString("utf-8");
+    expect(decoded).toBe(githubBytes);
+  }, 15_000);
+
+  it("publishes an envelope WITHOUT webhook fields (non-webhook triggers)", async () => {
+    // Locks the "webhook fields are webhook-only" contract: a CLI / cron /
+    // chat-fired signal must not have webhookBody/webhookHeaders set on
+    // the envelope — otherwise the agent's ctx.input.raw["body"] /
+    // ["headers"] would be polluted by non-HTTP triggers.
+    const received: SignalEnvelope[] = [];
+    const consumer = new SignalConsumer(
+      nc,
+      (envelope) => {
+        received.push(envelope);
+        return Promise.resolve();
+      },
+      { name: `test-${crypto.randomUUID()}`, expiresMs: 1000 },
+    );
+    await consumer.start();
+
+    await publishSignal(nc, {
+      workspaceId: "ws-non-webhook",
+      signalId: "cron-tick",
+      payload: { tick: 1 },
+    });
+    await waitFor(() => received.length === 1, 5000);
+    await consumer.destroy();
+
+    expect(received[0]?.webhookBody).toBeUndefined();
+    expect(received[0]?.webhookHeaders).toBeUndefined();
   }, 15_000);
 
   it("redelivers on forward failure up to maxDeliver, then dead-letters", async () => {

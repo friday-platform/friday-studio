@@ -5,40 +5,16 @@
 
 import { client, parseResult } from "@atlas/client/v2";
 import { validateSignalPayload } from "@atlas/config";
+// Shared producer/consumer schema — atlasd's route handler is the source
+// of truth; this consumer-side runtime parse catches drift on schema
+// rename / new status / missing required field before the malformed
+// envelope reaches the LLM client.
+import { type SignalTriggerResponse, SignalTriggerResponseSchema } from "@atlas/core";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { ToolContext } from "../types.ts";
 import { createErrorResponse, createSuccessResponse } from "../utils.ts";
 import { hasArtifactRefFields, resolveArtifactRefs } from "./resolve-artifact-refs.ts";
-
-/**
- * Response shape returned in a 2xx body by `POST /api/workspaces/:ws/signals/:sig`.
- * Atlasd emits exactly two shapes today:
- *   - `completed` — synchronous mode, cascade ran to completion
- *   - `accepted`  — `?nowait=true` or webhook mode, cascade dispatched async
- *
- * Terminal failures (workspace error, cascade reject, etc.) come back as
- * non-2xx and surface here via `result.ok === false` from `parseResult`,
- * not as a `status: "failed"` body. Keep this union tight to what atlasd
- * actually emits — a wider union would only protect a hypothetical
- * contract.
- *
- * Source of truth for these shapes: apps/atlasd/routes/workspaces/index.ts
- * (search for `status: "completed"` and `status: "accepted"`). MCP tools
- * are reached by LLM clients, so silent shape drift here would be the
- * highest-stakes path among the four discriminator call sites — the Zod
- * parse in the handler catches it at runtime.
- */
-export const SignalTriggerResponseSchema = z.discriminatedUnion("status", [
-  z.object({
-    status: z.literal("completed"),
-    sessionId: z.string(),
-    output: z.unknown().optional(),
-    summary: z.string().optional(),
-  }),
-  z.object({ status: z.literal("accepted"), correlationId: z.string() }),
-]);
-export type SignalTriggerResponse = z.infer<typeof SignalTriggerResponseSchema>;
 
 /**
  * Pure function — maps an atlasd signal-trigger response into the MCP
