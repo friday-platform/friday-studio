@@ -902,7 +902,6 @@ Deno binaries. Inventory is taken from `deno.lock`.
 | `@codemirror/search` | 6.7.0 | https://www.npmjs.com/package/@codemirror/search |
 | `@codemirror/state` | 6.6.0 | https://www.npmjs.com/package/@codemirror/state |
 | `@codemirror/view` | 6.41.1 | https://www.npmjs.com/package/@codemirror/view |
-| `@coderabbitai/bitbucket` | 1.1.4 | https://www.npmjs.com/package/@coderabbitai/bitbucket |
 | `@deno/kv-darwin-arm64` | 0.13.0 | https://www.npmjs.com/package/@deno/kv-darwin-arm64 |
 | `@deno/kv-darwin-x64` | 0.13.0 | https://www.npmjs.com/package/@deno/kv-darwin-x64 |
 | `@deno/kv-linux-x64-gnu` | 0.13.0 | https://www.npmjs.com/package/@deno/kv-linux-x64-gnu |
@@ -1583,7 +1582,6 @@ Deno binaries. Inventory is taken from `deno.lock`.
 | `onetime` | 7.0.0 | https://www.npmjs.com/package/onetime |
 | `oniguruma-parser` | 0.12.2 | https://www.npmjs.com/package/oniguruma-parser |
 | `oniguruma-to-es` | 4.3.6 | https://www.npmjs.com/package/oniguruma-to-es |
-| `openapi-fetch` | 0.14.1 | https://www.npmjs.com/package/openapi-fetch |
 | `openapi-fetch` | 0.15.2 | https://www.npmjs.com/package/openapi-fetch |
 | `openapi-fetch` | 0.17.0 | https://www.npmjs.com/package/openapi-fetch |
 | `openapi-types` | 12.1.3 | https://www.npmjs.com/package/openapi-types |

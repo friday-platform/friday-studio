@@ -32,7 +32,7 @@
   type Props = {
     signal: Signal;
     workspaceId: string;
-    /** Agent IDs configured in the workspace (e.g. ["gh", "bb", "claude-code"]) */
+    /** Agent IDs configured in the workspace (e.g. ["gh", "claude-code"]) */
     agentIds?: string[];
   };
 
@@ -43,7 +43,6 @@
     const providers: string[] = [];
     for (const id of agentIds) {
       if (id === "gh" && !providers.includes("github")) providers.push("github");
-      if (id === "bb" && !providers.includes("bitbucket")) providers.push("bitbucket");
     }
     return providers;
   });

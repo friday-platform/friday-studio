@@ -71,7 +71,7 @@
     return deriveWorkspaceAgents(config);
   });
 
-  /** Agent IDs configured in the workspace (e.g. ["gh", "bb", "claude-code"]). */
+  /** Agent IDs configured in the workspace (e.g. ["gh", "claude-code"]). */
   const agentIds = $derived.by(() => {
     const agents = config?.agents;
     if (!agents || typeof agents !== "object") return [];

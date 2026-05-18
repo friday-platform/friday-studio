@@ -1,7 +1,6 @@
 import type { AgentEnvironmentConfig, AtlasAgent } from "@atlas/agent-sdk";
 import type { ValidatedJSONSchema } from "@atlas/schemas/json-schema";
 import { z } from "zod";
-import { bbAgent } from "./bb/agent.ts";
 import { claudeCodeAgent } from "./claude-code/agent.ts";
 import { fathomGetTranscriptAgent } from "./fathom-ai/get-transcript.ts";
 import { ghAgent } from "./gh/agent.ts";
@@ -24,7 +23,6 @@ export const bundledAgents: AtlasAgent[] = [
   fathomGetTranscriptAgent,
   claudeCodeAgent,
   ghAgent,
-  bbAgent,
   jiraAgent,
   hubspotAgent,
   imageGenerationAgent,

@@ -106,7 +106,7 @@ RUN groupadd -g 10001 atlas && \
     useradd -u 10001 -g atlas -d /home/atlas -s /bin/sh -m atlas
 
 # Install Node.js, npm, git, GitHub CLI, and bash for the entrypoint
-# git is needed by the bb agent (Bitbucket clone) and gh agent
+# git is needed by the gh agent
 # Claude Code CLI for the claude-code agent
 COPY docker/package.json /tmp/docker-deps/package.json
 RUN apt-get update && \
