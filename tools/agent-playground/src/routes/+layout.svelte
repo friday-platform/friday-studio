@@ -81,7 +81,7 @@
 
   /**
    * Bare `/` opens chat mode. Cmd/Ctrl+/ opens switcher mode.
-   * Bare `/` is suppressed while typing in inputs/textareas/contenteditables;
+   * Bare `/` is suppressed while typing in inputs/textareas/contentEditables;
    * the modified form is allowed to fire from anywhere.
    */
   function handleGlobalKeydown(e: KeyboardEvent) {
@@ -114,7 +114,52 @@
 <svelte:window onkeydown={handleGlobalKeydown} />
 
 <svelte:head>
-  <title>Friday Studio</title>
+  <title>Friday \u2014 The complete agent harness platform</title>
+  <meta name="description" content="Friday is an agent harness platform that runs on your machine. Memory, tools, scheduling, and orchestration built in. Describe what you want in plain language and get a production-grade agent workflow in minutes." />
+
+  <!-- Open Graph -->
+  <meta property="og:title" content="Friday \u2014 The complete agent harness platform" />
+  <meta property="og:description" content="Friday is an agent harness platform that runs on your machine. Memory, tools, scheduling, and orchestration built in. Describe what you want in plain language and get a production-grade agent workflow in minutes." />
+  <meta property="og:type" content="website" />
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Friday \u2014 The complete agent harness platform" />
+  <meta name="twitter:description" content="Friday is an agent harness platform that runs on your machine. Memory, tools, scheduling, and orchestration built in. Describe what you want in plain language and get a production-grade agent workflow in minutes." />
+
+  <!-- JSON-LD Structured Data -->
+  {@html `<script type="application/ld+json">${JSON.stringify({
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "SoftwareApplication",
+        "name": "Friday",
+        "applicationCategory": "DeveloperApplication",
+        "operatingSystem": "macOS, Windows, Linux",
+        "description": "Friday is an agent harness platform. Memory, MCP tool integrations, scheduling, and FSM-backed orchestration built in. Describe your workflow in plain language and get a production-grade agent running in minutes.",
+        "url": "https://hellofriday.ai",
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "USD"
+        }
+      },
+      {
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "What is Friday?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Friday is an agent harness platform. It wraps your language model with memory, tools, scheduling, and orchestration so you get a complete, reliable agent, not just a prompt. Describe what you want in plain language and Friday builds a workflow that runs on schedule, every time."
+            }
+          }
+        ]
+      }
+    ]
+  })}<\/script>`}
+
   {#if !isChromeless}
     <!--
       The chromeless export-preview omits the favicon link entirely; the
