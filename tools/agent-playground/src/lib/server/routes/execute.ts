@@ -10,12 +10,7 @@ import { parseSSEEvents } from "@atlas/utils/sse";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { z } from "zod";
-// Daemon URL is injected at vite-config time (FRIDAYD_URL or fallback,
-// scheme upgraded to https:// when TLS is detected). We can't read
-// `process.env` here directly: SSR routes go through vite's transform
-// which has `define: { "process.env": "{}" }`, collapsing the read to
-// undefined. See ../../daemon-url.ts and tools/agent-playground/vite.config.ts.
-import { DAEMON_BASE_URL } from "../../daemon-url.ts";
+import { effectiveDaemonUrl } from "../daemon-url.ts";
 import { PlaygroundContextAdapter } from "../lib/context.ts";
 import { createSSEStream } from "../lib/sse.ts";
 
@@ -45,9 +40,10 @@ export const executeRoute = new Hono().post("/", zValidator("json", ExecuteBody)
     }
     // Relay SSE events from daemon — raw Response passthrough is silently buffered by Hono
     return createSSEStream(async (emitter, signal) => {
+      const daemonUrl = effectiveDaemonUrl();
       const url = workspaceId
-        ? `${DAEMON_BASE_URL}/api/agents/${agentId}/run?workspaceId=${encodeURIComponent(workspaceId)}`
-        : `${DAEMON_BASE_URL}/api/agents/${agentId}/run`;
+        ? `${daemonUrl}/api/agents/${agentId}/run?workspaceId=${encodeURIComponent(workspaceId)}`
+        : `${daemonUrl}/api/agents/${agentId}/run`;
       const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
