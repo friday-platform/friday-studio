@@ -274,10 +274,14 @@ export async function createMCPTools(
         });
       } else {
         const message = error instanceof Error ? error.message : String(error);
+        const cause = error instanceof Error && error.cause;
+        const causeMessage =
+          cause instanceof Error ? cause.message : cause ? String(cause) : undefined;
         logger.warn("MCP server skipped due to connection error", {
           operation: "mcp_connect",
           serverId: value.serverId,
           error: message,
+          cause: causeMessage,
         });
       }
       continue;
