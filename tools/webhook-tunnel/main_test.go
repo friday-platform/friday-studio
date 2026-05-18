@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/friday-platform/friday-studio/tools/webhook-tunnel/forwarder"
-	"github.com/friday-platform/friday-studio/tools/webhook-tunnel/provider"
 )
 
 // setupTestServer starts the same routes main() does, with NO_TUNNEL=true
@@ -21,9 +20,6 @@ func setupTestServer(t *testing.T, atlasdURL string) string {
 		AtlasdURL: atlasdURL,
 		Port:      0,
 		NoTunnel:  true,
-	}
-	if err := provider.Init(); err != nil {
-		t.Fatalf("provider init: %v", err)
 	}
 	f, err := forwarder.New(atlasdURL, "")
 	if err != nil {

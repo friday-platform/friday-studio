@@ -75,9 +75,6 @@ func main() {
 		log.Fatal("config error", "error", err)
 	}
 	cfg = conf
-	if err := provider.Init(); err != nil {
-		log.Fatal("provider init", "error", err)
-	}
 	f, err := forwarder.New(cfg.AtlasdURL, cfg.FridayCA)
 	if err != nil {
 		log.Fatal("forwarder init", "error", err)
@@ -344,23 +341,14 @@ func handleHook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	payload, desc, tErr := h.Transform(r.Header, body)
+	payload, tErr := h.Transform(body)
 	if tErr != nil {
 		writeJSONError(w, http.StatusBadRequest, tErr.Error())
-		return
-	}
-	if payload == nil {
-		log.Debug("event skipped",
-			"provider", providerName, "reason", "irrelevant event")
-		writeJSON(w, http.StatusOK, map[string]any{
-			"status": "skipped", "reason": "irrelevant event",
-		})
 		return
 	}
 
 	log.Info("webhook received",
 		"provider", providerName,
-		"description", desc,
 		"workspace_id", workspaceID,
 		"signal_id", signalID)
 
