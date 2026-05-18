@@ -15,7 +15,7 @@
     "@atlas/schemas": "workspace:*",
     "@atlas/llm": "workspace:*",
     "@atlas/logger": "workspace:*",
-    "@chat-adapter/slack": "4.28.1",
+    "@chat-adapter/slack": "4.29.0",
     "@coderabbitai/bitbucket": "^1.1.4",
     "@hubspot/api-client": "^13.4.0",
     "ai": "^6.0.183",
