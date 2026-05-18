@@ -76,7 +76,7 @@
     "npm:@lezer/common@^1.5.2": "1.5.2",
     "npm:@lezer/highlight@^1.2.3": "1.2.3",
     "npm:@lezer/markdown@^1.6.3": "1.6.3",
-    "npm:@libpdf/core@~0.3.4": "0.3.4",
+    "npm:@libpdf/core@~0.3.6": "0.3.6",
     "npm:@melt-ui/pp@~0.3.2": "0.3.2_@melt-ui+svelte@0.86.6__svelte@5.55.8_svelte@5.55.8",
     "npm:@melt-ui/svelte@~0.86.6": "0.86.6_svelte@5.55.8",
     "npm:@modelcontextprotocol/sdk@1.28": "1.28.0_zod@4.4.3",
@@ -455,7 +455,7 @@
         "bidi-js",
         "css-tree",
         "is-potential-custom-element-name",
-        "lru-cache@11.3.6"
+        "lru-cache@11.4.0"
       ]
     },
     "@asamuzakjp/generational-cache@1.0.1": {
@@ -1403,14 +1403,14 @@
         "@lezer/lr"
       ]
     },
-    "@libpdf/core@0.3.4": {
-      "integrity": "sha512-gE8LtgRsUofAMVSY1OVg9jGOfxe7tdUvV2cM4/vp46/TeO1JN4o2rZVIz2bW5rra6JuEzpdgUrdczfwiQft5pQ==",
+    "@libpdf/core@0.3.6": {
+      "integrity": "sha512-VzRUXaDq+M9qrroKiipCgePK2mwKM3M6DY7B0yfXnxD4aYnUxD/nUtkcsHCBUUnJpkX9rWikdEhYa5vU8ZlReg==",
       "dependencies": [
         "@noble/ciphers",
         "@noble/hashes@2.2.0",
         "@scure/base",
         "asn1js",
-        "lru-cache@11.3.6",
+        "lru-cache@11.4.0",
         "pako@2.1.0",
         "pkijs"
       ]
@@ -3068,7 +3068,7 @@
         "@asamuzakjp/css-color",
         "@csstools/css-syntax-patches-for-csstree",
         "css-tree",
-        "lru-cache@11.3.6"
+        "lru-cache@11.4.0"
       ]
     },
     "csstype@3.2.3": {
@@ -4226,8 +4226,8 @@
     "longest-streak@3.1.0": {
       "integrity": "sha512-9Ri+o0JYgehTaVBBDoMqIl8GXtbWg711O3srftcHhZ0dqnETqLaoIK0x17fUw9rFSlK/0NlsKe0Ahhyl5pXE2g=="
     },
-    "lru-cache@11.3.6": {
-      "integrity": "sha512-Gf/KoL3C/MlI7Bt0PGI9I+TeTC/I6r/csU58N4BSNc4lppLBeKsOdFYkK+dX0ABDUMJNfCHTyPpzwwO21Awd3A=="
+    "lru-cache@11.4.0": {
+      "integrity": "sha512-W+R+kFL4HgVxONq2bhXPi3bGpzGe/yEhVOp233qw9wCRtgncJ15P3bC+e4zZMu4Cq7d+WAJjXGW0uUkifhcatA=="
     },
     "lru-cache@6.0.0": {
       "integrity": "sha512-Jo6dJ04CmSjuznwJSS3pUeWmd/H0ffTlkXXgwZi+eq1UCmqQwCh+eLsYOYCwY991i2Fah4h1BEMCx4qThGbsiA==",
@@ -6221,7 +6221,7 @@
             "npm:@jsr/std__media-types@^1.1.0",
             "npm:@jsr/std__path@^1.1.4",
             "npm:@jsr/std__yaml@^1.0.10",
-            "npm:@libpdf/core@~0.3.4",
+            "npm:@libpdf/core@~0.3.6",
             "npm:@opentelemetry/api@^1.9.1",
             "npm:ai@^6.0.183",
             "npm:chat@4.29.0",
@@ -6369,7 +6369,7 @@
             "npm:@ai-sdk/provider@^3.0.10",
             "npm:@jsr/std__async@^1.0.14",
             "npm:@jsr/std__encoding@^1.0.10",
-            "npm:@libpdf/core@~0.3.4",
+            "npm:@libpdf/core@~0.3.6",
             "npm:@modelcontextprotocol/sdk@1.28",
             "npm:@xmldom/xmldom@~0.9.10",
             "npm:ai@^6.0.183",
