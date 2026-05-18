@@ -36,7 +36,7 @@
     "npm:@ai-sdk/mcp@1.0.41": "1.0.41_zod@4.4.3",
     "npm:@ai-sdk/openai@^3.0.64": "3.0.64_zod@4.4.3",
     "npm:@ai-sdk/provider@^3.0.10": "3.0.10",
-    "npm:@ai-sdk/svelte@^4.0.183": "4.0.183_svelte@5.55.7_zod@4.4.3",
+    "npm:@ai-sdk/svelte@^4.0.183": "4.0.183_svelte@5.55.8",
     "npm:@anthropic-ai/claude-agent-sdk@~0.2.137": "0.2.138_zod@4.4.3",
     "npm:@biomejs/biome@*": "2.4.14",
     "npm:@chat-adapter/discord@4.28.1": "4.28.1",
@@ -77,23 +77,23 @@
     "npm:@lezer/highlight@^1.2.3": "1.2.3",
     "npm:@lezer/markdown@^1.6.3": "1.6.3",
     "npm:@libpdf/core@~0.3.4": "0.3.4",
-    "npm:@melt-ui/pp@~0.3.2": "0.3.2_@melt-ui+svelte@0.86.6__svelte@5.55.7_svelte@5.55.7",
-    "npm:@melt-ui/svelte@~0.86.6": "0.86.6_svelte@5.55.7",
+    "npm:@melt-ui/pp@~0.3.2": "0.3.2_@melt-ui+svelte@0.86.6__svelte@5.55.8_svelte@5.55.8",
+    "npm:@melt-ui/svelte@~0.86.6": "0.86.6_svelte@5.55.8",
     "npm:@modelcontextprotocol/sdk@1.28": "1.28.0_zod@4.4.3",
     "npm:@opentelemetry/api@^1.9.0": "1.9.1",
     "npm:@opentelemetry/api@^1.9.1": "1.9.1",
     "npm:@sendgrid/helpers@8": "8.0.0",
-    "npm:@sveltejs/adapter-auto@^7.0.1": "7.0.1_@sveltejs+kit@2.60.1__@opentelemetry+api@1.9.1__@sveltejs+vite-plugin-svelte@6.2.4___svelte@5.55.7___vite@7.3.3____@types+node@25.6.2____yaml@2.9.0___yaml@2.9.0__svelte@5.55.7__typescript@5.9.3__vite@7.3.3___@types+node@25.6.2___yaml@2.9.0__yaml@2.9.0_yaml@2.9.0",
-    "npm:@sveltejs/adapter-static@^3.0.10": "3.0.10_@sveltejs+kit@2.60.1__@opentelemetry+api@1.9.1__@sveltejs+vite-plugin-svelte@6.2.4___svelte@5.55.7___vite@7.3.3____@types+node@25.6.2____yaml@2.9.0___yaml@2.9.0__svelte@5.55.7__typescript@5.9.3__vite@7.3.3___@types+node@25.6.2___yaml@2.9.0__yaml@2.9.0_yaml@2.9.0",
-    "npm:@sveltejs/kit@^2.60.1": "2.60.1_@opentelemetry+api@1.9.1_@sveltejs+vite-plugin-svelte@6.2.4__svelte@5.55.7__vite@7.3.3___@types+node@25.6.2___yaml@2.9.0__yaml@2.9.0_svelte@5.55.7_typescript@5.9.3_vite@7.3.3__@types+node@25.6.2__yaml@2.9.0_yaml@2.9.0",
-    "npm:@sveltejs/package@^2.5.7": "2.5.7_svelte@5.55.7",
-    "npm:@sveltejs/vite-plugin-svelte@^6.2.4": "6.2.4_svelte@5.55.7_vite@7.3.3__@types+node@25.6.2__yaml@2.9.0_yaml@2.9.0",
-    "npm:@sveltejs/vite-plugin-svelte@~6.2.4": "6.2.4_svelte@5.55.7_vite@7.3.3__@types+node@25.6.2__yaml@2.9.0_yaml@2.9.0",
+    "npm:@sveltejs/adapter-auto@^7.0.1": "7.0.1_@sveltejs+kit@2.60.1__@opentelemetry+api@1.9.1__@sveltejs+vite-plugin-svelte@6.2.4___svelte@5.55.8___vite@7.3.3____@types+node@25.6.2____yaml@2.9.0__svelte@5.55.8__typescript@5.9.3__vite@7.3.3___@types+node@25.6.2___yaml@2.9.0_svelte@5.55.8",
+    "npm:@sveltejs/adapter-static@^3.0.10": "3.0.10_@sveltejs+kit@2.60.1__@opentelemetry+api@1.9.1__@sveltejs+vite-plugin-svelte@6.2.4___svelte@5.55.8___vite@7.3.3____@types+node@25.6.2____yaml@2.9.0__svelte@5.55.8__typescript@5.9.3__vite@7.3.3___@types+node@25.6.2___yaml@2.9.0_svelte@5.55.8",
+    "npm:@sveltejs/kit@^2.60.1": "2.60.1_@opentelemetry+api@1.9.1_@sveltejs+vite-plugin-svelte@6.2.4__svelte@5.55.8__vite@7.3.3___@types+node@25.6.2___yaml@2.9.0_svelte@5.55.8_typescript@5.9.3_vite@7.3.3__@types+node@25.6.2__yaml@2.9.0",
+    "npm:@sveltejs/package@^2.5.7": "2.5.7_svelte@5.55.8",
+    "npm:@sveltejs/vite-plugin-svelte@^6.2.4": "6.2.4_svelte@5.55.8_vite@7.3.3__@types+node@25.6.2__yaml@2.9.0",
+    "npm:@sveltejs/vite-plugin-svelte@~6.2.4": "6.2.4_svelte@5.55.8_vite@7.3.3__@types+node@25.6.2__yaml@2.9.0",
     "npm:@tanstack/query-core@^5.100.10": "5.100.10",
-    "npm:@tanstack/svelte-query@^6.1.29": "6.1.29_svelte@5.55.7",
-    "npm:@tanstack/svelte-table@9.0.0-alpha.46": "9.0.0-alpha.46_svelte@5.55.7",
-    "npm:@tanstack/svelte-table@^9.0.0-alpha.46": "9.0.0-alpha.46_svelte@5.55.7",
-    "npm:@tanstack/svelte-virtual@~3.13.24": "3.13.24_svelte@5.55.7",
+    "npm:@tanstack/svelte-query@^6.1.29": "6.1.29_svelte@5.55.8",
+    "npm:@tanstack/svelte-table@9.0.0-alpha.46": "9.0.0-alpha.46_svelte@5.55.8",
+    "npm:@tanstack/svelte-table@^9.0.0-alpha.46": "9.0.0-alpha.46_svelte@5.55.8",
+    "npm:@tanstack/svelte-virtual@~3.13.24": "3.13.24_svelte@5.55.8",
     "npm:@tauri-apps/api@2.11.0": "2.11.0",
     "npm:@tauri-apps/cli@2.11.0": "2.11.0",
     "npm:@tauri-apps/plugin-opener@2.5.4": "2.5.4",
@@ -124,7 +124,7 @@
     "npm:dotenv@17.4.2": "17.4.2",
     "npm:dotenv@^17.4.2": "17.4.2",
     "npm:eslint-config-prettier@^10.1.8": "10.1.8_eslint@10.3.0",
-    "npm:eslint-plugin-svelte@^3.17.1": "3.17.1_eslint@10.3.0_svelte@5.55.7",
+    "npm:eslint-plugin-svelte@^3.17.1": "3.17.1_eslint@10.3.0_svelte@5.55.8",
     "npm:eslint@^10.3.0": "10.3.0",
     "npm:fast-glob@^3.3.3": "3.3.3",
     "npm:file-type@^22.0.1": "22.0.1",
@@ -162,16 +162,15 @@
     "npm:parallel-web@0.5.0": "0.5.0",
     "npm:postgres@3.4.9": "3.4.9",
     "npm:postgres@^3.4.7": "3.4.9",
-    "npm:prettier-plugin-svelte@^3.5.1": "3.5.1_prettier@3.8.3_svelte@5.55.7",
+    "npm:prettier-plugin-svelte@^3.5.1": "3.5.1_prettier@3.8.3_svelte@5.55.8",
     "npm:prettier@^3.8.3": "3.8.3",
     "npm:proper-lockfile@^4.1.2": "4.1.2",
     "npm:publint@~0.3.18": "0.3.20",
     "npm:react@^19.2.6": "19.2.6",
     "npm:shiki@^4.0.2": "4.0.2",
-    "npm:svelte-check@^4.4.7": "4.4.8_svelte@5.55.7_typescript@5.9.3",
-    "npm:svelte-eslint-parser@^1.6.1": "1.6.1_svelte@5.55.7",
-    "npm:svelte@^5.55.5": "5.55.7",
-    "npm:svelte@^5.55.7": "5.55.7",
+    "npm:svelte-check@^4.4.7": "4.4.8_svelte@5.55.8_typescript@5.9.3",
+    "npm:svelte-eslint-parser@^1.6.1": "1.6.1_svelte@5.55.8",
+    "npm:svelte@^5.55.8": "5.55.8",
     "npm:tar@^7.5.13": "7.5.15",
     "npm:turndown@7.2.4": "7.2.4",
     "npm:typescript-eslint@^8.59.3": "8.59.3_eslint@10.3.0_typescript@5.9.3",
@@ -355,7 +354,7 @@
         "json-schema"
       ]
     },
-    "@ai-sdk/svelte@4.0.183_svelte@5.55.7_zod@4.4.3": {
+    "@ai-sdk/svelte@4.0.183_svelte@5.55.8": {
       "integrity": "sha512-Fi7DNap3aG+7LXH+MLIwegsn9MgPSYsCtBsxW+BxCDKFr9F4KO8wMPVfXqvT7RyAzwVc/FPAR2QlX10z6tMudw==",
       "dependencies": [
         "@ai-sdk/provider-utils",
@@ -1419,7 +1418,7 @@
     "@marijn/find-cluster-break@1.0.2": {
       "integrity": "sha512-l0h88YhZFyKdXIFNfSWpyjStDjGHwZ/U7iobcK1cQQD8sejsONdQtTVU+1wVN1PBw40PiiHB1vA5S7VTfQiP9g=="
     },
-    "@melt-ui/pp@0.3.2_@melt-ui+svelte@0.86.6__svelte@5.55.7_svelte@5.55.7": {
+    "@melt-ui/pp@0.3.2_@melt-ui+svelte@0.86.6__svelte@5.55.8_svelte@5.55.8": {
       "integrity": "sha512-xKkPvaIAFinklLXcQOpwZ8YSpqAFxykjWf8Y/fSJQwsixV/0rcFs07hJ49hJjPy5vItvw5Qa0uOjzFUbXzBypQ==",
       "dependencies": [
         "@melt-ui/svelte",
@@ -1428,7 +1427,7 @@
         "svelte"
       ]
     },
-    "@melt-ui/svelte@0.86.6_svelte@5.55.7": {
+    "@melt-ui/svelte@0.86.6_svelte@5.55.8": {
       "integrity": "sha512-Jer+M7DgIwT5IHfTayb4Iw/fkkxWNmC/mqn/nMh9JrbPbkxmyabfLQnhJ+JDn5HK77f84j34lubO3iqFtYAfMg==",
       "dependencies": [
         "@floating-ui/core",
@@ -2092,19 +2091,19 @@
         "acorn"
       ]
     },
-    "@sveltejs/adapter-auto@7.0.1_@sveltejs+kit@2.60.1__@opentelemetry+api@1.9.1__@sveltejs+vite-plugin-svelte@6.2.4___svelte@5.55.7___vite@7.3.3____@types+node@25.6.2____yaml@2.9.0___yaml@2.9.0__svelte@5.55.7__typescript@5.9.3__vite@7.3.3___@types+node@25.6.2___yaml@2.9.0__yaml@2.9.0_yaml@2.9.0": {
+    "@sveltejs/adapter-auto@7.0.1_@sveltejs+kit@2.60.1__@opentelemetry+api@1.9.1__@sveltejs+vite-plugin-svelte@6.2.4___svelte@5.55.8___vite@7.3.3____@types+node@25.6.2____yaml@2.9.0__svelte@5.55.8__typescript@5.9.3__vite@7.3.3___@types+node@25.6.2___yaml@2.9.0_svelte@5.55.8": {
       "integrity": "sha512-dvuPm1E7M9NI/+canIQ6KKQDU2AkEefEZ2Dp7cY6uKoPq9Z/PhOXABe526UdW2mN986gjVkuSLkOYIBnS/M2LQ==",
       "dependencies": [
         "@sveltejs/kit"
       ]
     },
-    "@sveltejs/adapter-static@3.0.10_@sveltejs+kit@2.60.1__@opentelemetry+api@1.9.1__@sveltejs+vite-plugin-svelte@6.2.4___svelte@5.55.7___vite@7.3.3____@types+node@25.6.2____yaml@2.9.0___yaml@2.9.0__svelte@5.55.7__typescript@5.9.3__vite@7.3.3___@types+node@25.6.2___yaml@2.9.0__yaml@2.9.0_yaml@2.9.0": {
+    "@sveltejs/adapter-static@3.0.10_@sveltejs+kit@2.60.1__@opentelemetry+api@1.9.1__@sveltejs+vite-plugin-svelte@6.2.4___svelte@5.55.8___vite@7.3.3____@types+node@25.6.2____yaml@2.9.0__svelte@5.55.8__typescript@5.9.3__vite@7.3.3___@types+node@25.6.2___yaml@2.9.0_svelte@5.55.8": {
       "integrity": "sha512-7D9lYFWJmB7zxZyTE/qxjksvMqzMuYrrsyh1f4AlZqeZeACPRySjbC3aFiY55wb1tWUaKOQG9PVbm74JcN2Iew==",
       "dependencies": [
         "@sveltejs/kit"
       ]
     },
-    "@sveltejs/kit@2.60.1_@opentelemetry+api@1.9.1_@sveltejs+vite-plugin-svelte@6.2.4__svelte@5.55.7__vite@7.3.3___@types+node@25.6.2___yaml@2.9.0__yaml@2.9.0_svelte@5.55.7_typescript@5.9.3_vite@7.3.3__@types+node@25.6.2__yaml@2.9.0_yaml@2.9.0": {
+    "@sveltejs/kit@2.60.1_@opentelemetry+api@1.9.1_@sveltejs+vite-plugin-svelte@6.2.4__svelte@5.55.8__vite@7.3.3___@types+node@25.6.2___yaml@2.9.0_svelte@5.55.8_typescript@5.9.3_vite@7.3.3__@types+node@25.6.2__yaml@2.9.0": {
       "integrity": "sha512-mQjlkNo+rJvpln7V2IGY2j99BqhcFbS4UN0AQNKNYfhBAFZTuCDAdW3a1sgf330mvtNvsBXn3HpAhcmvdJTcIQ==",
       "dependencies": [
         "@opentelemetry/api",
@@ -2131,7 +2130,7 @@
       ],
       "bin": true
     },
-    "@sveltejs/package@2.5.7_svelte@5.55.7": {
+    "@sveltejs/package@2.5.7_svelte@5.55.8": {
       "integrity": "sha512-qqD9xa9H7TDiGFrF6rz7AirOR8k15qDK/9i4MIE8te4vWsv5GEogPks61rrZcLy+yWph+aI6pIj2MdoK3YI8AQ==",
       "dependencies": [
         "chokidar@5.0.0",
@@ -2143,7 +2142,7 @@
       ],
       "bin": true
     },
-    "@sveltejs/vite-plugin-svelte-inspector@5.0.2_@sveltejs+vite-plugin-svelte@6.2.4__svelte@5.55.7__vite@7.3.3___@types+node@25.6.2___yaml@2.9.0__yaml@2.9.0_svelte@5.55.7_vite@7.3.3__@types+node@25.6.2__yaml@2.9.0_yaml@2.9.0": {
+    "@sveltejs/vite-plugin-svelte-inspector@5.0.2_@sveltejs+vite-plugin-svelte@6.2.4__svelte@5.55.8__vite@7.3.3___@types+node@25.6.2___yaml@2.9.0_svelte@5.55.8_vite@7.3.3__@types+node@25.6.2__yaml@2.9.0": {
       "integrity": "sha512-TZzRTcEtZffICSAoZGkPSl6Etsj2torOVrx6Uw0KpXxrec9Gg6jFWQ60Q3+LmNGfZSxHRCZL7vXVZIWmuV50Ig==",
       "dependencies": [
         "@sveltejs/vite-plugin-svelte",
@@ -2152,7 +2151,7 @@
         "vite"
       ]
     },
-    "@sveltejs/vite-plugin-svelte@6.2.4_svelte@5.55.7_vite@7.3.3__@types+node@25.6.2__yaml@2.9.0_yaml@2.9.0": {
+    "@sveltejs/vite-plugin-svelte@6.2.4_svelte@5.55.8_vite@7.3.3__@types+node@25.6.2__yaml@2.9.0": {
       "integrity": "sha512-ou/d51QSdTyN26D7h6dSpusAKaZkAiGM55/AKYi+9AGZw7q85hElbjK3kEyzXHhLSnRISHOYzVge6x0jRZ7DXA==",
       "dependencies": [
         "@sveltejs/vite-plugin-svelte-inspector",
@@ -2176,21 +2175,21 @@
     "@tanstack/store@0.11.0": {
       "integrity": "sha512-WlzzCt3xi0G6pCAJu1U+2jiECwabETDpQDi3hfkFZvJii9AuZqEKbOiVarX1/bWhTNjU486yQtJCCasi/0q+Cw=="
     },
-    "@tanstack/svelte-query@6.1.29_svelte@5.55.7": {
+    "@tanstack/svelte-query@6.1.29_svelte@5.55.8": {
       "integrity": "sha512-qB6hv21JzGvUtKcqUFhbhYEp1qp2/x/PgBaeQVNCkz+BvygLCv/+OMnrzzi5hLoIDJgIbEtQSoX3xW85OYJ9JA==",
       "dependencies": [
         "@tanstack/query-core",
         "svelte"
       ]
     },
-    "@tanstack/svelte-store@0.12.0_svelte@5.55.7": {
+    "@tanstack/svelte-store@0.12.0_svelte@5.55.8": {
       "integrity": "sha512-XhXlU3jIO/WxikfeVczRdsAvRWzsLBh8Ic6sC7nzfzvMbPut7ZSdCbE7/usfm0bMjVGMmZmyzZy2xRu73QYWAA==",
       "dependencies": [
         "@tanstack/store",
         "svelte"
       ]
     },
-    "@tanstack/svelte-table@9.0.0-alpha.46_svelte@5.55.7": {
+    "@tanstack/svelte-table@9.0.0-alpha.46_svelte@5.55.8": {
       "integrity": "sha512-EbxAy2jxRPdV8rKv09dLWtVQRHLUr8b53VGp0iMc3+Mwp/KhFCnyPBLxf0AfxpnSf52P10og9xtPT2rOd0cBPQ==",
       "dependencies": [
         "@tanstack/svelte-store",
@@ -2198,7 +2197,7 @@
         "svelte"
       ]
     },
-    "@tanstack/svelte-virtual@3.13.24_svelte@5.55.7": {
+    "@tanstack/svelte-virtual@3.13.24_svelte@5.55.8": {
       "integrity": "sha512-Up3LOD5Cj+oJ3GuKfM1Li06jzzZMIZnRPmu3aik9rJQgk7jq7LgPo4yumfUw4+I4edjYfyPKSZnXGwZ9Vjlebw==",
       "dependencies": [
         "@tanstack/virtual-core",
@@ -3280,7 +3279,7 @@
       ],
       "bin": true
     },
-    "eslint-plugin-svelte@3.17.1_eslint@10.3.0_svelte@5.55.7": {
+    "eslint-plugin-svelte@3.17.1_eslint@10.3.0_svelte@5.55.8": {
       "integrity": "sha512-NyiXHtS3Ni7e532RBwS9OXlMKDIrENg3gY+/+ODjZzQx2xhU3NlJ+nIl1a93iUUQeiJL3lS8KLmY+W8hklzweQ==",
       "dependencies": [
         "@eslint-community/eslint-utils",
@@ -5067,7 +5066,7 @@
     "prelude-ls@1.2.1": {
       "integrity": "sha512-vkcDPrRZo1QZLbn5RLGPpg/WmIQ65qoWWhcGKf/b5eplkkarX0m9z8ppCat4mlOqUsWpyNuYgO3VRyrYHSzX5g=="
     },
-    "prettier-plugin-svelte@3.5.1_prettier@3.8.3_svelte@5.55.7": {
+    "prettier-plugin-svelte@3.5.1_prettier@3.8.3_svelte@5.55.8": {
       "integrity": "sha512-65+fr5+cgIKWKiqM1Doum4uX6bY8iFCdztvvp2RcF+AJoieaw9kJOFMNcJo/bkmKYsxFaM9OsVZK/gWauG/5mg==",
       "dependencies": [
         "prettier",
@@ -5583,7 +5582,7 @@
         "has-flag"
       ]
     },
-    "svelte-check@4.4.8_svelte@5.55.7_typescript@5.9.3": {
+    "svelte-check@4.4.8_svelte@5.55.8_typescript@5.9.3": {
       "integrity": "sha512-67adfgBox5eNSNIvIIwgFizKGdcRrGpiMoNO2obHcYuLz7iTa8Xgm/NGU3ntMFnNm8K1grFOIG6HhMLX/vcN8w==",
       "dependencies": [
         "@jridgewell/trace-mapping",
@@ -5596,7 +5595,7 @@
       ],
       "bin": true
     },
-    "svelte-eslint-parser@1.6.1_svelte@5.55.7": {
+    "svelte-eslint-parser@1.6.1_svelte@5.55.8": {
       "integrity": "sha512-hhvSH6kRj46UzrBVO5TaotD+Iuvruj5ccKBcO4wAhVcPTLmIc/c32D8UllBTYO0on4LzYuM0rNzf1lM/gBlkSQ==",
       "dependencies": [
         "eslint-scope@8.4.0",
@@ -5612,7 +5611,7 @@
         "svelte"
       ]
     },
-    "svelte2tsx@0.7.55_svelte@5.55.7_typescript@5.9.3": {
+    "svelte2tsx@0.7.55_svelte@5.55.8_typescript@5.9.3": {
       "integrity": "sha512-JWzgeM3lqySRNfqcsesvVEh8LhTWBxQJ9RMjzJ+VepdmXtVnNd0SbtGctG6+/fbHq0N6mhwSd823gszw9JHeGQ==",
       "dependencies": [
         "dedent-js",
@@ -5621,8 +5620,8 @@
         "typescript"
       ]
     },
-    "svelte@5.55.7": {
-      "integrity": "sha512-ymI5ykLPwIHW839E053FQbI1G+jnRFJEw3Kv5Y4njixVWywQBx+NUFpkkKyk5LIb36Fg9DVXSYpqiGekLD0hyw==",
+    "svelte@5.55.8": {
+      "integrity": "sha512-4D6lyrMHmDaZalQOEBMCWCCidyZjSnec14/oPn0k627G6goxcck9xqMwz1tFLlQz+ZFvtTTHfFOlUayuAz0z6Q==",
       "dependencies": [
         "@jridgewell/remapping",
         "@jridgewell/sourcemap-codec",
@@ -6271,7 +6270,7 @@
             "npm:@tauri-apps/api@2.11.0",
             "npm:@tauri-apps/cli@2.11.0",
             "npm:@tauri-apps/plugin-opener@2.5.4",
-            "npm:svelte@^5.55.7",
+            "npm:svelte@^5.55.8",
             "npm:typescript@^5.9.3",
             "npm:vite@^7.3.2"
           ]
@@ -6589,7 +6588,7 @@
             "npm:shiki@^4.0.2",
             "npm:svelte-check@^4.4.7",
             "npm:svelte-eslint-parser@^1.6.1",
-            "npm:svelte@^5.55.5",
+            "npm:svelte@^5.55.8",
             "npm:typescript-eslint@^8.59.3",
             "npm:typescript@^5.9.3",
             "npm:vite@^7.3.2",
@@ -6658,7 +6657,7 @@
             "npm:prettier@^3.8.3",
             "npm:shiki@^4.0.2",
             "npm:svelte-check@^4.4.7",
-            "npm:svelte@^5.55.5",
+            "npm:svelte@^5.55.8",
             "npm:typescript@^5.9.3",
             "npm:undici@^7.25.0",
             "npm:vite@^7.3.2",
