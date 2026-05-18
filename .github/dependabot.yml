@@ -65,6 +65,9 @@ updates:
         patterns:
           - "ai"
           - "@ai-sdk/*"
+      tanstack:
+        patterns:
+          - "@tanstack/*"
     ignore:
       # Vite 8 uses Rolldown (Rust native bindings) which fails on Alpine/musl
       # Docker images — rolldown-binding.linux-x64-musl.node not found.
