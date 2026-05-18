@@ -48,7 +48,7 @@
     "svelte": "^5.55.5",
     "dompurify": "^3.4.2",
     "undici": "^7.25.0",
-    "yaml": "^2.8.4",
+    "yaml": "^2.9.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
