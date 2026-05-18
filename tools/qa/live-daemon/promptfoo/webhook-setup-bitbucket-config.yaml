@@ -3,11 +3,12 @@
 description: |
   Friday workspace-chat webhook-setup eval — locks the contract that
   workspace-chat produces correct Bitbucket wiring instructions when the
-  wiring-external-webhooks skill is loaded. 11 scenarios cover the
-  setup walkthrough, env-var correction, loop-trap diagnosis, /status as
-  first debug step, no-bypass on test-webhook, the three signal modes
-  (nowait / sync / SSE-on-trigger), current provider list, and agent-side
-  HMAC for Bitbucket. Two control variants on the setup walkthrough:
+  wiring-external-webhooks skill is loaded. 12 scenarios cover the
+  setup walkthrough, env-var correction, /status as first debug step,
+  no-bypass on test-webhook, the three signal modes (nowait / sync /
+  SSE-on-trigger), current provider list, atlasd-URL-fallback rejection,
+  signal-schema additionalProperties rule, and the GitHub UI walkthrough.
+  Two control variants on the setup walkthrough:
 
     - with-skill: skill content in system prompt; must pass every check.
     - without-skill: control. Must fail at least one check; proves the

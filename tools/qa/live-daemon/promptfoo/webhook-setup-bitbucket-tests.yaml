@@ -1,24 +1,22 @@
 # yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
 
-# Six variants exercise the wiring-external-webhooks skill across the
+# Twelve scenarios exercise the wiring-external-webhooks skill across the
 # 2026-05-15 chat-dump failure modes. Positive variants must pass every
-# check; the without-skill control must fail at least one (proves the
-# skill is the carrier).
+# check; the without-skill control must fail at least one Friday-specific
+# positive-knowledge check (proves the skill is the carrier). Scenario
+# list is sourced from `main()` in scenarios/webhook-setup-bitbucket.ts.
 #
 # Negative-polarity checks across the variants cover:
 #   - wrong env vars (BITBUCKET_/JIRA_/GITHUB_WEBHOOK_SECRET)
-#   - bogus mappings shape (extract: instead of mapping:, missing providers: root)
-#   - deprecated /hook/bitbucket/ URL recommendation
+#   - deprecated /hook/bitbucket/ + /hook/github/ + /hook/jira/ URLs
 #   - atlasd direct path /api/workspaces/.../signals/...
 #   - Python/Node sidecar recommendation (Marc's chat ended up here)
 #   - hand-rolled cloudflared/ngrok/tunnel install
 #   - blame-the-restart misdiagnosis
-#   - sleep/rate-limit as a loop-fix (they don't break the cycle)
-#   - "just unsubscribe" as the only loop-fix
-#   - "just delete the spam comments" as the loop-fix
 #   - "restart the daemon" as the FIRST debug step (real first step is /status)
 #   - curl-localhost-bypass tests
-#   - hallucinated Bitbucket event names (pullrequest:merged etc.)
+#   - hallucinated Bitbucket event names (allowlist of real x-event-key values)
+#   - broken nowait+follow-by-correlationId pattern (no such GET endpoint)
 
 - description: workspace-chat gives correct Bitbucket setup guidance WITH wiring-external-webhooks skill loaded
   vars:
@@ -48,11 +46,11 @@
   vars:
     scenarioId: recommends-sync-for-output
 
-- description: user is building a UI that watches cascade progress live — agent recommends SSE (Accept: text/event-stream OR /signals/stream/{correlationId}), NOT polling, NOT parsing the sync output
+- description: user is building a UI that watches cascade progress live — agent recommends SSE on the trigger POST (Accept: text/event-stream), NOT polling, NOT parsing the sync output, NOT a follow-up GET /signals/stream/{correlationId} (no such endpoint exists)
   vars:
     scenarioId: recommends-sse-for-progress
 
-- description: user asks which webhook providers Friday's tunnel supports — agent names github + raw, does NOT list bitbucket/jira as built-ins, does NOT cite removal dates, does NOT recommend WEBHOOK_MAPPINGS_PATH as a way to register bitbucket/jira
+- description: user asks which webhook providers Friday's tunnel supports — agent names raw as the only built-in, does NOT list bitbucket/jira/github as built-ins, does NOT cite removal dates, does NOT recommend WEBHOOK_MAPPINGS_PATH as a way to register others
   vars:
     scenarioId: lists-current-providers
 

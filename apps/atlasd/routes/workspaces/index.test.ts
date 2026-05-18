@@ -55,6 +55,7 @@ function createTestApp() {
   const triggerWorkspaceSignal = vi
     .fn()
     .mockResolvedValue({ sessionId: "sess-1", output: [], artifactIds: [], summary: "" });
+  const publishSignalToJetStream = vi.fn().mockResolvedValue(undefined);
 
   const mockContext: AppContext = {
     startTime: Date.now(),
@@ -66,6 +67,7 @@ function createTestApp() {
     daemon: {
       getWorkspaceManager: () => mockWorkspaceManager,
       triggerWorkspaceSignal,
+      publishSignalToJetStream,
     } as unknown as AppContext["daemon"],
     streamRegistry: {} as AppContext["streamRegistry"],
     chatTurnRegistry: {} as AppContext["chatTurnRegistry"],
@@ -84,7 +86,7 @@ function createTestApp() {
   });
   app.route("/workspaces", workspacesRoutes);
 
-  return { app, mockWorkspaceManager, triggerWorkspaceSignal };
+  return { app, mockWorkspaceManager, triggerWorkspaceSignal, publishSignalToJetStream };
 }
 
 function post(
@@ -225,6 +227,78 @@ describe("POST /workspaces/:workspaceId/signals/:signalId envelope guard", () =>
       if (previous === undefined) delete process.env[INTERNAL_SIGNAL_BYPASS_TOKEN_ENV];
       else process.env[INTERNAL_SIGNAL_BYPASS_TOKEN_ENV] = previous;
     }
+  });
+});
+
+// The 202 "accepted" envelope below is consumed by FOUR downstream callers:
+//   - apps/atlas-cli/src/modules/signals/trigger.ts
+//   - packages/mcp-server/src/tools/signals/trigger.ts
+//   - packages/system/agents/workspace-chat/tools/job-tools.ts
+//   - tools/agent-playground/src/lib/components/workspace/run-job-dialog.svelte
+// All four discriminate on `data.status === "accepted"` and read `correlationId`.
+// These tests pin the exact field names and types so a route-side refactor
+// can't silently break the discriminator in all four consumers.
+describe("POST /workspaces/:workspaceId/signals/:signalId ?nowait=true publish-ack contract", () => {
+  const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+  test("?nowait=true returns 202 with the {status:'accepted', correlationId, workspaceId, signalId, message} envelope", async () => {
+    const { app, publishSignalToJetStream, triggerWorkspaceSignal } = createTestApp();
+    const res = await app.request("/workspaces/ws-1/signals/sig-1?nowait=true", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ payload: { hello: "world" } }),
+    });
+
+    expect(res.status).toBe(202);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body).toMatchObject({
+      message: "Signal accepted",
+      status: "accepted",
+      workspaceId: "ws-1",
+      signalId: "sig-1",
+    });
+    expect(body.correlationId).toMatch(UUID_V4);
+    // nowait must NOT fall through to the sync cascade path
+    expect(triggerWorkspaceSignal).not.toHaveBeenCalled();
+    expect(publishSignalToJetStream).toHaveBeenCalledOnce();
+    const publishArgs = publishSignalToJetStream.mock.calls[0][0] as Record<string, unknown>;
+    expect(publishArgs).toMatchObject({
+      workspaceId: "ws-1",
+      signalId: "sig-1",
+      payload: { hello: "world" },
+    });
+    expect(publishArgs.correlationId).toBe(body.correlationId);
+  });
+
+  test("?nowait=1 and ?wait=false are accepted aliases for ?nowait=true", async () => {
+    for (const query of ["?nowait=1", "?wait=false", "?wait=0"]) {
+      const { app, publishSignalToJetStream } = createTestApp();
+      const res = await app.request(`/workspaces/ws-1/signals/sig-1${query}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ payload: {} }),
+      });
+      expect(res.status, `alias ${query} should return 202`).toBe(202);
+      const body = (await res.json()) as Record<string, unknown>;
+      expect(body.status, `alias ${query} status`).toBe("accepted");
+      expect(publishSignalToJetStream).toHaveBeenCalledOnce();
+    }
+  });
+
+  test("returns 500 with a structured error envelope when publishSignalToJetStream throws", async () => {
+    const { app, publishSignalToJetStream } = createTestApp();
+    publishSignalToJetStream.mockRejectedValueOnce(new Error("JetStream unavailable"));
+    const res = await app.request("/workspaces/ws-1/signals/sig-1?nowait=true", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ payload: {} }),
+    });
+
+    expect(res.status).toBe(500);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body).toMatchObject({ workspaceId: "ws-1", signalId: "sig-1" });
+    expect(typeof body.error).toBe("string");
+    expect(body.error as string).toContain("JetStream unavailable");
   });
 });
 

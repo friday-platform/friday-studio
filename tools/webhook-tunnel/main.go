@@ -131,7 +131,7 @@ func main() {
 		startTunnel(tlsOn)
 	} else {
 		log.Info("tunnel disabled",
-			"local_url", fmt.Sprintf("%s://localhost:%d/hook/{provider}/{workspaceId}/{signalId}", scheme, cfg.Port))
+			"local_url", fmt.Sprintf("%s://localhost:%d/hook/raw/{workspaceId}/{signalId}", scheme, cfg.Port))
 	}
 
 	stop := make(chan os.Signal, 1)

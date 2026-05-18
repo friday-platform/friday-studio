@@ -22,8 +22,8 @@
  *     and env var" checks — proves the model doesn't already have this
  *     domain knowledge from training and that the skill is the carrier.
  *
- * The full scenario list (11 total) is wired in `main()` near the bottom
- * of this file — keep that list as the source of truth for count.
+ * The full scenario list is wired in `main()` near the bottom of this
+ * file — keep that list as the source of truth for count.
  *
  * Same direct-Anthropic-call shape as `secret-input-guard.ts` and
  * `connect-service-on-auth-error.ts` — no daemon spawn, no workspace
@@ -55,6 +55,45 @@ interface EvalResult {
 const ROOT = join(dirname(fromFileUrl(import.meta.url)), "..", "..", "..", "..");
 const PROMPT_PATH = join(ROOT, "packages/system/agents/workspace-chat/prompt.txt");
 const SKILL_PATH = join(ROOT, "packages/system/skills/wiring-external-webhooks/SKILL.md");
+
+// Bitbucket Cloud webhook event keys (x-event-key values). Shared by the
+// no-fake-event-name check's pass/evidence closures — must be a single
+// source of truth so the two copies can't drift.
+// Source: https://support.atlassian.com/bitbucket-cloud/docs/event-payloads/
+// NOTE: there is no `pullrequest:push` event. A push to a PR source branch
+// fires `repo:push` and (separately) `pullrequest:updated`.
+const ALLOWED_BITBUCKET_EVENTS = new Set([
+  // pullrequest:
+  "pullrequest:created",
+  "pullrequest:updated",
+  "pullrequest:approved",
+  "pullrequest:unapproved",
+  "pullrequest:changes_request_created",
+  "pullrequest:changes_request_removed",
+  "pullrequest:fulfilled",
+  "pullrequest:rejected",
+  "pullrequest:comment_created",
+  "pullrequest:comment_updated",
+  "pullrequest:comment_deleted",
+  "pullrequest:comment_resolved",
+  "pullrequest:comment_reopened",
+  // repo:
+  "repo:push",
+  "repo:fork",
+  "repo:updated",
+  "repo:transfer",
+  "repo:created",
+  "repo:deleted",
+  "repo:imported",
+  "repo:commit_comment_created",
+  "repo:commit_status_created",
+  "repo:commit_status_updated",
+  // issue:
+  "issue:created",
+  "issue:updated",
+  "issue:comment_created",
+]);
+const BITBUCKET_EVENT_REGEX = /\b(?:pullrequest|repo|issue):[a-z_]+(?::[a-z_]+)*\b/gi;
 
 // Synthetic workspace context inlined into the system prompt — mirrors the
 // shape `formatWorkspaceSection` produces at runtime (workspace-chat.agent.ts).
@@ -418,6 +457,44 @@ function runContractChecks(text: string): ContractCheck[] {
         /\b(?:install|brew install|download|set up|setup|run|spawn|start)\b[^.\n]{0,60}\b(?:cloudflared|ngrok|tailscale funnel|localtunnel|serveo)\b/i,
       )?.[0],
     },
+    {
+      // POSITIVE-KNOWLEDGE: Friday-specific architectural fact. The /hook/raw/
+      // path forwards the body verbatim WITHOUT HMAC verification — the workspace
+      // agent owns secret validation. A bare model usually says "use a webhook
+      // secret" generically (and may suggest the tunnel/receiver verifies), but
+      // the assignment of HMAC responsibility to the agent is in the skill body,
+      // not in any generic webhook tutorial.
+      id: "tunnel-doesnt-verify",
+      description:
+        "explicitly says the tunnel/raw path does NOT verify the signature — verification lives in the workspace agent",
+      pass:
+        /\b(?:tunnel|raw|hook\/raw)\b[^.\n]{0,80}(?:no(?:t)?\s+verif|doesn'?t\s+verif|does not verif|skip[s]?\s+verif|drops? (?:the )?(?:secret|signature|headers?)|no hmac|without (?:hmac|verif)|pass(?:es)?(?:-| )?through)/i.test(
+          text,
+        ) ||
+        /\b(?:agent|workspace|your (?:code|agent))\b[^.\n]{0,80}(?:verif|hmac|check (?:the )?signature|validate (?:the )?signature)/i.test(
+          text,
+        ),
+      evidence: text
+        .match(
+          /\b(?:tunnel|raw|hook\/raw)\b[^.\n]{0,80}(?:no(?:t)?\s+verif|doesn'?t\s+verif|skip[s]?\s+verif|drops? (?:the )?(?:secret|signature|headers?)|no hmac|pass(?:es)?(?:-| )?through)|\b(?:agent|workspace)\b[^.\n]{0,80}(?:verif|hmac|check (?:the )?signature)/i,
+        )?.[0]
+        ?.slice(0, 160),
+    },
+    {
+      // POSITIVE-KNOWLEDGE: Friday/Zod-specific schema rule. When the signal
+      // schema's top-level object declares `type: object` without
+      // `additionalProperties: true`, Zod silently strips every unknown field
+      // — so a Bitbucket POST arrives at the workspace agent with the body
+      // emptied. The skill teaches that nested webhook signal schemas MUST
+      // declare `additionalProperties: true` (or use the bare top-level
+      // shape). A bare model writing a generic webhook tutorial does not know
+      // this Friday-runtime detail.
+      id: "additional-properties-rule",
+      description:
+        "mentions the `additionalProperties: true` requirement on the signal schema (Friday/Zod-specific Run-dialog/payload-stripping rule)",
+      pass: /additional[-_]?properties\s*:\s*true/i.test(text),
+      evidence: text.match(/additional[-_]?properties\s*:\s*true/i)?.[0],
+    },
   ];
 }
 
@@ -470,15 +547,20 @@ async function runVariant(variant: "with-skill" | "without-skill"): Promise<Eval
   // mentioned it's WEBHOOK_SECRET") also pass trivially and aren't
   // proof of skill load-bearing-ness.
   //
-  // To prove the skill is the carrier, require ≥1 truly-Friday-specific
-  // check to fail in the control. The set is intentionally narrow: only
-  // facts that ONLY exist in Friday's runtime + this skill's body.
+  // To prove the skill is the carrier, require ≥2 truly-Friday-specific
+  // checks to fail in the control. The set is intentionally narrow: only
+  // facts that ONLY exist in Friday's runtime + this skill's body. Note
+  // that `url-pattern` is the weakest of the four — `/hook/raw/{ws}/{sig}`
+  // has leaked into public training corpora so a bare model often gets it
+  // right by reflex; the other three are the load-bearing signal.
   const POSITIVE_KNOWLEDGE_CHECKS = new Set([
-    "url-pattern", //     /hook/raw/{workspaceId}/{signalId} (Friday-tunnel-specific)
-    "status-endpoint", // GET /status discovery endpoint (Friday-tunnel-specific)
+    "url-pattern", //                  /hook/raw/{workspaceId}/{signalId} (often known by bare model)
+    "status-endpoint", //              GET /status discovery endpoint (Friday-tunnel-specific)
+    "tunnel-doesnt-verify", //         Verification responsibility is on the agent, not the tunnel
+    "additional-properties-rule", //   Zod-strip foot-gun: signal schemas need additionalProperties:true
   ]);
   const positiveFailed = failed.filter((c) => POSITIVE_KNOWLEDGE_CHECKS.has(c.id));
-  const MIN_POSITIVE_FAILURES = 1;
+  const MIN_POSITIVE_FAILURES = 2;
 
   if (positiveFailed.length < MIN_POSITIVE_FAILURES) {
     notes.push(
@@ -823,79 +905,14 @@ async function runTestWebhookNegativeCheck(): Promise<EvalResult> {
       id: "no-fake-event-name",
       description:
         "does NOT invent Bitbucket event names that don't exist (allowlist of real `pullrequest:` / `repo:` / `issue:` events; anything else is hallucinated)",
-      // Allowlist of real Bitbucket Cloud event keys (the `x-event-key`
-      // header values). If the agent emits any `<prefix>:<verb>` token
-      // outside this set, it's a hallucination.
-      // Source: https://support.atlassian.com/bitbucket-cloud/docs/event-payloads/
       pass: (() => {
-        const ALLOWED = new Set([
-          // pullrequest:
-          "pullrequest:created",
-          "pullrequest:updated",
-          "pullrequest:approved",
-          "pullrequest:unapproved",
-          "pullrequest:changes_request_created",
-          "pullrequest:changes_request_removed",
-          "pullrequest:fulfilled",
-          "pullrequest:rejected",
-          "pullrequest:comment_created",
-          "pullrequest:comment_updated",
-          "pullrequest:comment_deleted",
-          "pullrequest:comment_resolved",
-          "pullrequest:comment_reopened",
-          "pullrequest:push",
-          // repo:
-          "repo:push",
-          "repo:fork",
-          "repo:updated",
-          "repo:transfer",
-          "repo:created",
-          "repo:deleted",
-          "repo:imported",
-          "repo:commit_comment_created",
-          "repo:commit_status_created",
-          "repo:commit_status_updated",
-          // issue:
-          "issue:created",
-          "issue:updated",
-          "issue:comment_created",
-        ]);
-        const matches = result.text.match(/\b(?:pullrequest|repo|issue):[a-z_]+(?::[a-z_]+)*\b/gi);
+        const matches = result.text.match(BITBUCKET_EVENT_REGEX);
         if (!matches) return true;
-        return matches.every((m) => ALLOWED.has(m.toLowerCase()));
+        return matches.every((m) => ALLOWED_BITBUCKET_EVENTS.has(m.toLowerCase()));
       })(),
       evidence: (() => {
-        const ALLOWED = new Set([
-          "pullrequest:created",
-          "pullrequest:updated",
-          "pullrequest:approved",
-          "pullrequest:unapproved",
-          "pullrequest:changes_request_created",
-          "pullrequest:changes_request_removed",
-          "pullrequest:fulfilled",
-          "pullrequest:rejected",
-          "pullrequest:comment_created",
-          "pullrequest:comment_updated",
-          "pullrequest:comment_deleted",
-          "pullrequest:comment_resolved",
-          "pullrequest:comment_reopened",
-          "pullrequest:push",
-          "repo:push",
-          "repo:fork",
-          "repo:updated",
-          "repo:transfer",
-          "repo:created",
-          "repo:deleted",
-          "repo:imported",
-          "repo:commit_comment_created",
-          "repo:commit_status_created",
-          "repo:commit_status_updated",
-          "issue:created",
-          "issue:updated",
-          "issue:comment_created",
-        ]);
-        const matches = result.text.match(/\b(?:pullrequest|repo|issue):[a-z_]+(?::[a-z_]+)*\b/gi);
-        const bad = matches?.filter((m) => !ALLOWED.has(m.toLowerCase()));
+        const matches = result.text.match(BITBUCKET_EVENT_REGEX);
+        const bad = matches?.filter((m) => !ALLOWED_BITBUCKET_EVENTS.has(m.toLowerCase()));
         return bad && bad.length > 0 ? bad.slice(0, 5).join(", ") : undefined;
       })(),
     },
