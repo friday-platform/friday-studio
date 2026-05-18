@@ -11,7 +11,7 @@ import process from "node:process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { serveStatic } from "hono/deno";
-import { effectiveDaemonUrl } from "./src/lib/server/daemon-url.ts";
+import { effectiveDaemonUrl, effectiveTunnelUrl } from "./src/lib/server/daemon-url.ts";
 import { buildStaticApp } from "./src/lib/server/static-app.ts";
 import { resolveBrowserTlsPaths } from "./tls-paths.ts";
 
@@ -34,12 +34,11 @@ const SCHEME = TLS ? "https" : "http";
 // origin's browser cert. They're separate listeners with separate certs.
 // The launcher migrates stale http:// values in .env to https:// at boot
 // (tools/friday-launcher/cert_env.go::migrateStaleURLSchemes) when the
-// s2s mesh is up, so a literal env-var read here matches whatever the
-// daemon / tunnel actually listen on. No consumer-side auto-upgrade
-// needed — single source of truth lives in the launcher.
-const S2S_SCHEME = process.env.FRIDAY_TLS_CERT && process.env.FRIDAY_TLS_KEY ? "https" : "http";
+// s2s mesh is up, so the runtime env-var reads inside the helpers below
+// match whatever the daemon / tunnel actually listen on. No consumer-side
+// auto-upgrade needed — single source of truth lives in the launcher.
 const DAEMON_URL = effectiveDaemonUrl();
-const TUNNEL_URL = process.env.EXTERNAL_TUNNEL_URL ?? `${S2S_SCHEME}://localhost:9090`;
+const TUNNEL_URL = effectiveTunnelUrl();
 
 // Resolve `./build` relative to this source file, so the path is correct
 // both when running via `deno run` from any cwd and when running as a
