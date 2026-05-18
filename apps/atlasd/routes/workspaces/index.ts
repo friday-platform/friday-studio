@@ -50,6 +50,7 @@ import { FilesystemWorkspaceCreationAdapter } from "@atlas/storage";
 import { ColorSchema, isErrnoException, stringifyError } from "@atlas/utils";
 import { getFridayHome } from "@atlas/utils/paths.server";
 import { zValidator } from "@hono/zod-validator";
+import { encodeBase64 } from "@std/encoding/base64";
 import { parse, stringify } from "@std/yaml";
 import { z } from "zod";
 import { requireDevEnv } from "../../src/dev-only.ts";
@@ -2087,6 +2088,104 @@ const workspacesRoutes = daemonFactory
     zValidator("json", signalBodySchema),
     async (c) => {
       const { workspaceId, signalId } = c.req.valid("param");
+      const ctx = c.get("app");
+
+      // ────── Webhook-mode fast path ──────
+      // The webhook-tunnel reverse-proxies upstream POSTs into this endpoint
+      // with the body bytes + request headers preserved verbatim. The body
+      // never carries an envelope wrapper — it's the upstream's actual
+      // payload (e.g. `{"action":"opened","repository":{...}}` from GitHub).
+      // Discriminator: if the parsed body has NO envelope keys (payload,
+      // streamId, skipStates, bypassConcurrency, parentSessionId), it's a
+      // webhook. We capture the raw bytes (base64) + lowercased headers and
+      // dispatch via nowait so the agent can verify HMAC against the exact
+      // bytes the upstream signed.
+      const rawBytes = new Uint8Array(await c.req.arrayBuffer());
+      let parsedRawBody: unknown;
+      if (rawBytes.length > 0) {
+        try {
+          const text = new TextDecoder("utf-8", { fatal: true }).decode(rawBytes);
+          parsedRawBody = JSON.parse(text);
+        } catch {
+          // Non-JSON or non-UTF-8 body — treat as webhook (some upstreams
+          // send form-encoded or binary data).
+        }
+      }
+      const isObjectBody =
+        parsedRawBody !== null &&
+        typeof parsedRawBody === "object" &&
+        !Array.isArray(parsedRawBody);
+      const hasEnvelopeKey =
+        isObjectBody &&
+        Object.keys(parsedRawBody as Record<string, unknown>).some((k) =>
+          SIGNAL_ENVELOPE_KEYS.has(k),
+        );
+      const isEmptyObject =
+        isObjectBody && Object.keys(parsedRawBody as Record<string, unknown>).length === 0;
+      // Empty body / empty {} stays in envelope mode — that's the valid
+      // "no-payload signal trigger" today (cron-like CLI invocations).
+      const isWebhook = rawBytes.length > 0 && !hasEnvelopeKey && !isEmptyObject;
+
+      if (isWebhook) {
+        const HOP_BY_HOP = new Set([
+          "host",
+          "connection",
+          "keep-alive",
+          "proxy-authenticate",
+          "proxy-authorization",
+          "te",
+          "trailer",
+          "transfer-encoding",
+          "upgrade",
+          "content-length",
+        ]);
+        const webhookHeaders: Record<string, string> = {};
+        c.req.raw.headers.forEach((value, key) => {
+          const lower = key.toLowerCase();
+          if (!HOP_BY_HOP.has(lower)) webhookHeaders[lower] = value;
+        });
+        // Best-effort parsed view of the body — agents that just want
+        // structured access via `ctx.input.config.<field>` get it without
+        // touching raw bytes. HMAC-verifying agents read the raw bytes
+        // from `ctx.input.raw["body"]`. If the body isn't an object,
+        // payload stays undefined (the agent owns parsing).
+        const payload = isObjectBody ? (parsedRawBody as Record<string, unknown>) : undefined;
+        const correlationId = crypto.randomUUID();
+        try {
+          await ctx.daemon.publishSignalToJetStream({
+            workspaceId,
+            signalId,
+            payload,
+            correlationId,
+            webhookBody: encodeBase64(rawBytes),
+            webhookHeaders,
+          });
+          return c.json(
+            {
+              message: "Webhook accepted",
+              status: "accepted" as const,
+              workspaceId,
+              signalId,
+              correlationId,
+            },
+            202,
+          );
+        } catch (error) {
+          const errorMessage = stringifyError(error);
+          logger.error("Failed to publish webhook signal", {
+            error,
+            workspaceId,
+            signalId,
+            correlationId,
+          });
+          return c.json(
+            { error: `Failed to publish webhook signal: ${errorMessage}`, workspaceId, signalId },
+            500,
+          );
+        }
+      }
+
+      // ────── Envelope mode (CLI / MCP / chat-tools) ──────
       await requireWorkspaceMember(c, workspaceId);
       const {
         payload,
@@ -2095,13 +2194,17 @@ const workspacesRoutes = daemonFactory
         parentSessionId,
         bypassConcurrency,
       } = c.req.valid("json");
+
+      // Envelope guard: catch mixed-shape mistakes — e.g. a caller who set
+      // `streamId` (an envelope key) but also dropped raw payload fields
+      // at the top level without wrapping them in `{payload: ...}`. The
+      // mistake is invisible after zValidator strips unknown keys, so
+      // surface it here with a clear error instead of running a cascade
+      // with a half-empty payload.
       if (payload === undefined) {
-        // Hono caches the parsed body — re-reading here is the same object
-        // zValidator already consumed, just with unknown keys still visible.
-        const envelopeError = detectUnwrappedSignalBody(await c.req.json());
+        const envelopeError = detectUnwrappedSignalBody(parsedRawBody);
         if (envelopeError) return c.json({ error: envelopeError }, 400);
       }
-      const ctx = c.get("app");
 
       if (bypassConcurrency) {
         if (!isInternalSignalBypassAuthorized(c)) {

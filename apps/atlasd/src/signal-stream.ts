@@ -75,6 +75,24 @@ export const SignalEnvelopeSchema = z.object({
    * trigger, future cross-cascade emit-and-await) can subscribe and unblock.
    */
   correlationId: z.string().optional(),
+  /**
+   * Base64-encoded original webhook request body. Preserved byte-for-byte
+   * so a workspace agent can recompute the HMAC over the exact bytes the
+   * upstream (GitHub / Bitbucket / etc) signed. Base64 (not raw UTF-8) so
+   * non-UTF-8 payloads survive intact. Only set for webhook-triggered
+   * signals; absent for cron / system / chat-emitted signals. Surfaces to
+   * agents as `ctx.input.raw["body"]` (decoded back to bytes).
+   */
+  webhookBody: z.string().optional(),
+  /**
+   * Original webhook request headers — lowercased keys, single value per
+   * key. GitHub / Bitbucket / Jira don't send multi-value headers for
+   * webhooks; if a provider ever does, the first value wins. Lowercase
+   * keys match the gidgethub / githubkit / WSGI convention so a Python
+   * agent can do `headers["x-hub-signature-256"]` without case dancing.
+   * Surfaces to agents as `ctx.input.raw["headers"]`.
+   */
+  webhookHeaders: z.record(z.string(), z.string()).optional(),
 });
 
 export type SignalEnvelope = z.infer<typeof SignalEnvelopeSchema>;
@@ -153,6 +171,10 @@ export interface PublishSignalOpts {
    * `awaitSignalCompletion` (or your own `nc.subscribe`) to receive it.
    */
   correlationId?: string;
+  /** See SignalEnvelopeSchema.webhookBody. */
+  webhookBody?: string;
+  /** See SignalEnvelopeSchema.webhookHeaders. */
+  webhookHeaders?: Record<string, string>;
 }
 
 /**
@@ -180,6 +202,8 @@ export async function publishSignal(
     publishedAt,
     traceId: opts.traceId,
     correlationId: opts.correlationId,
+    webhookBody: opts.webhookBody,
+    webhookHeaders: opts.webhookHeaders,
   };
 
   const h = natsHeaders();

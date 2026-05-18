@@ -7,7 +7,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
-	"encoding/json"
 	"encoding/pem"
 	"io"
 	"math/big"
@@ -23,53 +22,119 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-func TestForwardHappyPath(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			t.Errorf("method: want POST, got %s", r.Method)
-		}
-		if r.URL.Path != "/api/workspaces/ws-1/signals/sig-1" {
-			t.Errorf("path: %s", r.URL.Path)
-		}
-		var body map[string]any
-		_ = json.NewDecoder(r.Body).Decode(&body)
-		payload, _ := body["payload"].(map[string]any)
-		if payload["foo"] != "bar" {
-			t.Errorf("payload missing: %v", payload)
-		}
-		_, _ = w.Write([]byte(`{"sessionId":"sess-123"}`))
+// TestWebhookProxyByteForByte verifies the load-bearing property of the
+// tunnel: a request that arrives on /hook/raw/{ws}/{sig} reaches atlasd
+// with body bytes and headers preserved verbatim — only the URL host
+// + path change. This is what makes downstream HMAC verification work.
+func TestWebhookProxyByteForByte(t *testing.T) {
+	var (
+		seenPath    string
+		seenMethod  string
+		seenBody    []byte
+		seenHeaders http.Header
+	)
+	atlasd := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seenPath = r.URL.Path
+		seenMethod = r.Method
+		seenBody, _ = io.ReadAll(r.Body)
+		seenHeaders = r.Header.Clone()
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(`{"status":"accepted","correlationId":"corr-1"}`))
 	}))
-	defer srv.Close()
+	defer atlasd.Close()
 
-	f, err := New(srv.URL, "")
+	f, err := New(atlasd.URL, "")
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	sid, err := f.Forward("ws-1", "sig-1", map[string]any{"foo": "bar"})
+	r := chi.NewRouter()
+	r.Post("/hook/{provider}/{workspaceId}/{signalId}", f.WebhookProxyHandler().ServeHTTP)
+	tunnel := httptest.NewServer(r)
+	defer tunnel.Close()
+
+	// Replay a realistic GitHub-style POST: signed body + standard webhook headers.
+	body := []byte(`{"action":"opened","repository":{"full_name":"acme/widgets"},"sender":{"login":"alice"}}`)
+	req, _ := http.NewRequest(http.MethodPost,
+		tunnel.URL+"/hook/raw/ws-light_papaya/sig-pr-opened",
+		strings.NewReader(string(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-GitHub-Event", "pull_request")
+	req.Header.Set("X-GitHub-Delivery", "72d3162e-cc78-11e3-81ab-4c9367dc0958")
+	req.Header.Set("X-Hub-Signature-256", "sha256=abc123deadbeef")
+	req.Header.Set("User-Agent", "GitHub-Hookshot/abc")
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		t.Fatalf("forward: %v", err)
+		t.Fatalf("do: %v", err)
 	}
-	if sid != "sess-123" {
-		t.Errorf("sessionId: want sess-123, got %q", sid)
+	_ = resp.Body.Close()
+
+	if resp.StatusCode != http.StatusAccepted {
+		t.Errorf("status: want 202, got %d", resp.StatusCode)
+	}
+	if seenMethod != http.MethodPost {
+		t.Errorf("method: want POST, got %s", seenMethod)
+	}
+	if seenPath != "/api/workspaces/ws-light_papaya/signals/sig-pr-opened" {
+		t.Errorf("path: want /api/workspaces/ws-light_papaya/signals/sig-pr-opened, got %s", seenPath)
+	}
+	if string(seenBody) != string(body) {
+		t.Errorf("body bytes mismatch:\n  want: %s\n  got:  %s", body, seenBody)
+	}
+	for _, h := range []string{
+		"X-Github-Event", // Go canonicalizes "X-GitHub-Event"
+		"X-Github-Delivery",
+		"X-Hub-Signature-256",
+		"User-Agent",
+		"Content-Type",
+	} {
+		if seenHeaders.Get(h) == "" {
+			t.Errorf("header %q lost in proxy", h)
+		}
+	}
+	if seenHeaders.Get("X-Github-Event") != "pull_request" {
+		t.Errorf("X-GitHub-Event value mutated: %q", seenHeaders.Get("X-Github-Event"))
+	}
+	if seenHeaders.Get("X-Hub-Signature-256") != "sha256=abc123deadbeef" {
+		t.Errorf("X-Hub-Signature-256 value mutated: %q", seenHeaders.Get("X-Hub-Signature-256"))
 	}
 }
 
-func TestForwardNon2xx(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte(`workspace not found`))
+// TestWebhookProxyStripsHopByHop confirms the RFC 7230 hop-by-hop
+// header stripping httputil.ReverseProxy gives us for free — the agent
+// never sees Connection / Keep-Alive / etc.
+func TestWebhookProxyStripsHopByHop(t *testing.T) {
+	var got http.Header
+	atlasd := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Clone()
+		w.WriteHeader(http.StatusAccepted)
 	}))
-	defer srv.Close()
-	f, err := New(srv.URL, "")
+	defer atlasd.Close()
+
+	f, err := New(atlasd.URL, "")
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	_, err = f.Forward("ws", "sig", nil)
-	if err == nil {
-		t.Fatalf("expected error on 5xx response")
+	r := chi.NewRouter()
+	r.Post("/hook/{provider}/{workspaceId}/{signalId}", f.WebhookProxyHandler().ServeHTTP)
+	tunnel := httptest.NewServer(r)
+	defer tunnel.Close()
+
+	req, _ := http.NewRequest(http.MethodPost,
+		tunnel.URL+"/hook/raw/ws/sig", strings.NewReader(`{"k":1}`))
+	req.Header.Set("Connection", "keep-alive")
+	req.Header.Set("Keep-Alive", "timeout=5")
+	req.Header.Set("X-Custom", "preserved")
+	resp, _ := http.DefaultClient.Do(req)
+	_ = resp.Body.Close()
+
+	if got.Get("Connection") != "" {
+		t.Errorf("Connection should be stripped, got %q", got.Get("Connection"))
 	}
-	if !strings.Contains(err.Error(), "atlasd 500") {
-		t.Errorf("unexpected error: %v", err)
+	if got.Get("Keep-Alive") != "" {
+		t.Errorf("Keep-Alive should be stripped, got %q", got.Get("Keep-Alive"))
+	}
+	if got.Get("X-Custom") != "preserved" {
+		t.Errorf("X-Custom should be preserved, got %q", got.Get("X-Custom"))
 	}
 }
 
@@ -125,49 +190,10 @@ func TestProxyPathRewrite(t *testing.T) {
 	}
 }
 
-// TestProxyStripsHopByHop verifies that httputil.ReverseProxy strips
-// RFC 7230 hop-by-hop headers — the bug the TS implementation has.
-func TestProxyStripsHopByHop(t *testing.T) {
-	var got http.Header
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		got = r.Header.Clone()
-	}))
-	defer srv.Close()
-
-	f, err := New(srv.URL, "")
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	r := chi.NewRouter()
-	r.Handle("/platform/{provider}", f.ProxyHandler())
-	clientSrv := httptest.NewServer(r)
-	defer clientSrv.Close()
-
-	req, _ := http.NewRequest(http.MethodPost, clientSrv.URL+"/platform/raw", strings.NewReader(""))
-	req.Header.Set("Connection", "keep-alive")
-	req.Header.Set("Keep-Alive", "timeout=5")
-	req.Header.Set("X-Custom", "preserved")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("do: %v", err)
-	}
-	_ = resp.Body.Close()
-
-	if got.Get("Connection") != "" {
-		t.Errorf("Connection header should be stripped, got %q", got.Get("Connection"))
-	}
-	if got.Get("Keep-Alive") != "" {
-		t.Errorf("Keep-Alive header should be stripped, got %q", got.Get("Keep-Alive"))
-	}
-	if got.Get("X-Custom") != "preserved" {
-		t.Errorf("X-Custom should be preserved, got %q", got.Get("X-Custom"))
-	}
-}
-
-// TestForwardTrustsPrivateCA verifies that when New() is given a CA
-// file, the forwarder can reach an HTTPS atlasd whose cert chains to
+// TestProxyTrustsPrivateCA verifies that when New() is given a CA
+// file, the proxy can reach an HTTPS atlasd whose cert chains to
 // that CA — the path that breaks without FRIDAY_TLS_CA plumbing.
-func TestForwardTrustsPrivateCA(t *testing.T) {
+func TestProxyTrustsPrivateCA(t *testing.T) {
 	// Mint a self-signed CA + leaf for 127.0.0.1.
 	caKey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	caTpl := &x509.Certificate{
@@ -202,37 +228,50 @@ func TestForwardTrustsPrivateCA(t *testing.T) {
 		t.Fatalf("write ca: %v", err)
 	}
 
-	// Stand up an httptest TLS server presenting the leaf, then validate
-	// that a forwarder configured WITHOUT the CA fails and one WITH the
-	// CA succeeds — exactly the divergence the s2s rollout introduced.
+	// Stand up a TLS server presenting the leaf; verify the proxy can
+	// reach it WITH the CA but not without.
 	tlsCert := tls.Certificate{Certificate: [][]byte{leafDER}, PrivateKey: leafKey}
 	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte(`{"sessionId":"ok"}`))
+		w.WriteHeader(http.StatusAccepted)
 	}))
 	srv.TLS = &tls.Config{Certificates: []tls.Certificate{tlsCert}}
 	srv.StartTLS()
 	defer srv.Close()
 
-	// Without CA: must error with an x509 / unknown-authority message.
+	// Without CA: request reaches the proxy but the proxy fails TLS to atlasd.
+	// httputil.ReverseProxy surfaces this as 502 Bad Gateway to the caller.
 	noCA, err := New(srv.URL, "")
 	if err != nil {
 		t.Fatalf("New no-ca: %v", err)
 	}
-	if _, err := noCA.Forward("ws", "sig", nil); err == nil {
-		t.Fatalf("expected TLS verification error without CA")
+	r := chi.NewRouter()
+	r.Post("/hook/{provider}/{workspaceId}/{signalId}", noCA.WebhookProxyHandler().ServeHTTP)
+	tunnelNoCA := httptest.NewServer(r)
+	defer tunnelNoCA.Close()
+	resp, _ := http.Post(tunnelNoCA.URL+"/hook/raw/ws/sig",
+		"application/json", strings.NewReader(`{}`))
+	if resp.StatusCode != http.StatusBadGateway {
+		t.Errorf("without CA: want 502, got %d", resp.StatusCode)
 	}
+	_ = resp.Body.Close()
 
 	// With CA: must succeed.
 	withCA, err := New(srv.URL, caPath)
 	if err != nil {
 		t.Fatalf("New with-ca: %v", err)
 	}
-	sid, err := withCA.Forward("ws", "sig", nil)
+	r2 := chi.NewRouter()
+	r2.Post("/hook/{provider}/{workspaceId}/{signalId}", withCA.WebhookProxyHandler().ServeHTTP)
+	tunnelWithCA := httptest.NewServer(r2)
+	defer tunnelWithCA.Close()
+	resp, err = http.Post(tunnelWithCA.URL+"/hook/raw/ws/sig",
+		"application/json", strings.NewReader(`{}`))
 	if err != nil {
-		t.Fatalf("forward with CA: %v", err)
+		t.Fatalf("post: %v", err)
 	}
-	if sid != "ok" {
-		t.Errorf("sessionId: want ok, got %q", sid)
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusAccepted {
+		t.Errorf("with CA: want 202, got %d", resp.StatusCode)
 	}
 }
 

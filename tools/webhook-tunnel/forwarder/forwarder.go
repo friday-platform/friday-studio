@@ -1,37 +1,34 @@
-// Package forwarder pushes normalized webhook payloads at atlasd
-// (Forward) and proxies the /platform/{provider}/{suffix} pass-through
-// to atlasd's /signals/... endpoint via httputil.ReverseProxy.
+// Package forwarder reverse-proxies inbound webhook + platform requests
+// from the cloudflared tunnel to atlasd's signal endpoints. Every byte
+// of the request body and every upstream header is preserved verbatim —
+// only the URL (host + path) is rewritten. The agent on the other side
+// sees a request byte-identical to what the upstream (GitHub / Bitbucket
+// / Slack / etc.) sent, which is what makes HMAC verification possible.
 //
-// Using httputil.ReverseProxy for the proxy path gets RFC 7230
-// hop-by-hop header stripping (Connection, Keep-Alive,
-// Proxy-Authenticate, Proxy-Authorization, TE, Trailers,
-// Transfer-Encoding, Upgrade) for free — the TS implementation
-// stripped only Host + Content-Length, which is incorrect under RFC.
+// Using httputil.ReverseProxy for both paths gets RFC 7230 hop-by-hop
+// header stripping (Connection, Keep-Alive, Proxy-Authenticate,
+// Proxy-Authorization, TE, Trailers, Transfer-Encoding, Upgrade) for
+// free — the agent never sees these transport-only headers.
 package forwarder
 
 import (
-	"bytes"
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 )
 
-// Forwarder bundles the atlasd URL + an HTTP client.
+// Forwarder bundles the atlasd URL + a reverse-proxy transport.
 type Forwarder struct {
 	atlasdURL string
 	transport http.RoundTripper
-	client    *http.Client
 }
 
 // New returns a Forwarder pointing at the given atlasd base URL
@@ -48,7 +45,6 @@ func New(atlasdURL, caCertPath string) (*Forwarder, error) {
 	return &Forwarder{
 		atlasdURL: strings.TrimRight(atlasdURL, "/"),
 		transport: transport,
-		client:    &http.Client{Timeout: 30 * time.Second, Transport: transport},
 	}, nil
 }
 
@@ -83,79 +79,37 @@ func buildTransport(caCertPath string) (http.RoundTripper, error) {
 	return t, nil
 }
 
-// SignalResponse is the parsed atlasd signal response. We only care
-// about sessionId / correlationId — everything else is opaque.
-// (correlationId is returned by the ?nowait=true path; sessionId by
-// the default sync path.)
-type SignalResponse struct {
-	SessionID     string `json:"sessionId,omitempty"`
-	CorrelationID string `json:"correlationId,omitempty"`
-	Status        string `json:"status,omitempty"`
-}
-
-// Forward POSTs the payload to atlasd's signal endpoint with
-// `?nowait=true` so atlasd returns 202 the moment the message lands on
-// the SIGNALS JetStream subject — the cascade runs async on the
-// CASCADES consumer regardless. We never need the cascade's output to
-// respond to the upstream webhook (Bitbucket / GitHub / etc), so
-// holding the HTTP connection open while the cascade runs would just
-// re-couple two systems the bus already decoupled.
+// WebhookProxyHandler returns an http.Handler that reverse-proxies
+// /hook/{provider}/{workspaceId}/{signalId} on the tunnel-facing side
+// to atlasd's /api/workspaces/{workspaceId}/signals/{signalId} on the
+// daemon-facing side. The request method, body bytes, headers, and
+// query string all pass through untouched — only the host + path
+// change. atlasd's signal-trigger endpoint discriminates webhook mode
+// by body shape (no envelope keys) and captures the verbatim body +
+// headers so a workspace agent can verify HMAC against the exact
+// bytes the upstream signed.
 //
-//	POST {atlasdURL}/api/workspaces/{workspaceID}/signals/{signalID}?nowait=true
-//	body: {"payload": <payload>}
-//
-// Returns sessionId (when atlasd is in sync mode) or correlationId
-// (the nowait shape) — empty when atlasd returned neither.
-//
-// The 30-second client timeout covers PUBLISH ACK only. Atlasd's
-// publishSignalToJetStream typically completes in <100ms; if it
-// stretches past 30s, the JetStream broker or NATS connection is
-// genuinely sick and a clearer error than `context deadline exceeded`
-// is what callers want.
-func (f *Forwarder) Forward(workspaceID, signalID string, payload map[string]any) (string, error) {
-	body := map[string]any{"payload": payload}
-	encoded, err := json.Marshal(body)
+// Routing — chi binds path params `provider`, `workspaceId`, `signalId`
+// at the route registration site; we just read them back here.
+func (f *Forwarder) WebhookProxyHandler() http.Handler {
+	target, err := url.Parse(f.atlasdURL)
 	if err != nil {
-		return "", fmt.Errorf("marshal: %w", err)
+		return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			http.Error(w, fmt.Sprintf("forwarder: bad atlasd URL: %v", err), http.StatusInternalServerError)
+		})
 	}
-	endpoint := fmt.Sprintf("%s/api/workspaces/%s/signals/%s?nowait=true",
-		f.atlasdURL, workspaceID, signalID)
-	req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(encoded))
-	if err != nil {
-		return "", err
+	rp := &httputil.ReverseProxy{
+		Transport: f.transport,
+		Director: func(r *http.Request) {
+			workspaceID := chi.URLParam(r, "workspaceId")
+			signalID := chi.URLParam(r, "signalId")
+			r.URL.Path = fmt.Sprintf("/api/workspaces/%s/signals/%s", workspaceID, signalID)
+			r.URL.Scheme = target.Scheme
+			r.URL.Host = target.Host
+			r.Host = target.Host
+		},
 	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := f.client.Do(req)
-	if err != nil {
-		// Surface what specifically failed — the bare `context deadline
-		// exceeded` Go default tells the operator nothing about which
-		// hop in the chain timed out. We expect this hop (tunnel →
-		// atlasd JetStream publish) to take <100ms; a 30s timeout here
-		// means atlasd or its broker is stuck before even accepting
-		// the message.
-		var ue *url.Error
-		if errors.As(err, &ue) && ue.Timeout() {
-			return "", fmt.Errorf(
-				"timeout waiting for atlasd to ACK the signal publish (30s) — "+
-					"the bus normally returns in <100ms. Check atlasd /health, the NATS "+
-					"connection, and JetStream stream health. Endpoint: %s",
-				endpoint,
-			)
-		}
-		return "", fmt.Errorf("post atlasd: %w (endpoint: %s)", err, endpoint)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return "", fmt.Errorf("atlasd %d: %s", resp.StatusCode, string(body))
-	}
-	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	var sr SignalResponse
-	_ = json.Unmarshal(respBody, &sr) // both id fields are optional
-	if sr.SessionID != "" {
-		return sr.SessionID, nil
-	}
-	return sr.CorrelationID, nil
+	return rp
 }
 
 // ProxyHandler returns an http.Handler that reverse-proxies any

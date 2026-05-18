@@ -90,42 +90,61 @@ func TestStatusEndpointHasAllSevenFields(t *testing.T) {
 	}
 }
 
-func TestHookForwardsRawBody(t *testing.T) {
-	var seenPath string
-	var seenBody []byte
+// TestHookForwardsByteForByte locks the load-bearing tunnel property:
+// the request that arrives on /hook/raw/{ws}/{sig} reaches atlasd with
+// body bytes and headers preserved verbatim — only the URL host + path
+// are rewritten. This is what makes downstream HMAC verification work.
+func TestHookForwardsByteForByte(t *testing.T) {
+	var (
+		seenPath string
+		seenBody []byte
+		seenSig  string
+		seenEv   string
+		seenCT   string
+	)
 	atlasd := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		seenPath = r.URL.Path
 		seenBody, _ = io.ReadAll(r.Body)
-		_, _ = w.Write([]byte(`{"sessionId":"sess-99"}`))
+		seenSig = r.Header.Get("X-Hub-Signature-256")
+		seenEv = r.Header.Get("X-GitHub-Event")
+		seenCT = r.Header.Get("Content-Type")
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(`{"status":"accepted","correlationId":"corr-1"}`))
 	}))
 	defer atlasd.Close()
 	base := setupTestServer(t, atlasd.URL)
 
-	body := []byte(`{"actor":{"name":"alice"},"comment":{"raw":"hi"}}`)
-	resp, err := http.Post(base+"/hook/raw/ws-1/sig-1", "application/json", bytes.NewReader(body))
+	// Realistic GitHub pull_request webhook payload + standard headers.
+	body := []byte(`{"action":"opened","pull_request":{"number":42,"title":"Add widget"},"repository":{"full_name":"acme/widgets"},"sender":{"login":"alice"}}`)
+	req, _ := http.NewRequest(http.MethodPost,
+		base+"/hook/raw/ws-1/sig-1", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-GitHub-Event", "pull_request")
+	req.Header.Set("X-Hub-Signature-256", "sha256=abcdef0123456789")
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("do: %v", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode != http.StatusAccepted {
 		respBody, _ := io.ReadAll(resp.Body)
 		t.Fatalf("status %d, body %s", resp.StatusCode, respBody)
-	}
-	var got map[string]any
-	_ = json.NewDecoder(resp.Body).Decode(&got)
-	if got["status"] != "forwarded" {
-		t.Errorf("status: %v", got["status"])
-	}
-	if got["sessionId"] != "sess-99" {
-		t.Errorf("sessionId: %v", got["sessionId"])
 	}
 	if seenPath != "/api/workspaces/ws-1/signals/sig-1" {
 		t.Errorf("atlasd received unexpected path: %s", seenPath)
 	}
-	// The forwarder wraps the body as {"payload": <body>}; just sanity-check
-	// that the actor field survived round-trip.
-	if !bytes.Contains(seenBody, []byte("alice")) {
-		t.Errorf("body did not reach atlasd intact: %s", seenBody)
+	// Byte-for-byte body preservation is the core invariant.
+	if !bytes.Equal(seenBody, body) {
+		t.Errorf("body bytes mismatch\n  want: %s\n  got:  %s", body, seenBody)
+	}
+	if seenSig != "sha256=abcdef0123456789" {
+		t.Errorf("X-Hub-Signature-256 lost or mutated: %q", seenSig)
+	}
+	if seenEv != "pull_request" {
+		t.Errorf("X-GitHub-Event lost or mutated: %q", seenEv)
+	}
+	if seenCT != "application/json" {
+		t.Errorf("Content-Type lost or mutated: %q", seenCT)
 	}
 }
 
@@ -155,28 +174,5 @@ func TestHookOversizedRejectedAs413(t *testing.T) {
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusRequestEntityTooLarge {
 		t.Fatalf("expected 413, got %d", resp.StatusCode)
-	}
-}
-
-func TestHookRawForwarded(t *testing.T) {
-	atlasd := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var body map[string]any
-		_ = json.NewDecoder(r.Body).Decode(&body)
-		payload, _ := body["payload"].(map[string]any)
-		if payload["foo"] != "bar" {
-			t.Errorf("payload: %v", payload)
-		}
-		_, _ = w.Write([]byte(`{}`))
-	}))
-	defer atlasd.Close()
-	base := setupTestServer(t, atlasd.URL)
-	resp, err := http.Post(base+"/hook/raw/w/s",
-		"application/json", strings.NewReader(`{"foo":"bar"}`))
-	if err != nil {
-		t.Fatalf("post: %v", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("status %d", resp.StatusCode)
 	}
 }

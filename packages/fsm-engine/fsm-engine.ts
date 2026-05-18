@@ -102,7 +102,14 @@ const PLATFORM_TOOL_ALLOWLIST = LLM_AGENT_ALLOWED_PLATFORM_TOOLS;
 const FSMStateSchema = z.object({ state: z.string() });
 
 const PrepareResultSchema = z
-  .object({ task: z.string().optional(), config: z.record(z.string(), z.unknown()).optional() })
+  .object({
+    task: z.string().optional(),
+    config: z.record(z.string(), z.unknown()).optional(),
+    // Webhook passthrough — only set for HTTP-tunnel-triggered signals so
+    // the agent can recompute HMAC against the exact upstream bytes.
+    body: z.string().optional(),
+    headers: z.record(z.string(), z.string()).optional(),
+  })
   .passthrough();
 
 type PrepareResult = z.infer<typeof PrepareResultSchema>;
@@ -1082,6 +1089,12 @@ export class FSMEngine {
             ? (candidate.payload as Record<string, unknown>)
             : candidate;
         prepareResult = { config: payload };
+        // Webhook-only fields ride alongside `data` on the signal (not inside
+        // it) so the upstream payload stays unpolluted. Surface them at the
+        // top level of input so the agent reads `ctx.input.raw["body"]` /
+        // `ctx.input.raw["headers"]` rather than digging into config.
+        if (sig.body !== undefined) prepareResult.body = sig.body;
+        if (sig.headers !== undefined) prepareResult.headers = sig.headers;
       }
       for (const action of actions) {
         prepareResult = await this.executeAction(

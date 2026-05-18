@@ -23,7 +23,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"os/signal"
@@ -288,7 +287,7 @@ func handleStatus(w http.ResponseWriter, _ *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"url":          url,
-		"providers":    provider.List(),
+		"providers":    provider.Names(),
 		"pattern":      "/hook/raw/{workspaceId}/{signalId}",
 		"active":       alive,
 		"tunnelAlive":  tunnelAlive,
@@ -306,44 +305,30 @@ func handleRoot(w http.ResponseWriter, _ *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"service":   "webhook-tunnel",
-		"providers": provider.List(),
+		"providers": provider.Names(),
 		"pattern":   "/hook/raw/{workspaceId}/{signalId}",
 		"url":       url,
 	})
 }
 
+// handleHook reverse-proxies the upstream webhook POST byte-for-byte to
+// atlasd. Body bytes, headers, and query string flow through unchanged;
+// only the URL host + path are rewritten. This is what lets a workspace
+// agent receive a request byte-identical to what GitHub / Bitbucket /
+// Jira sent and verify HMAC against the exact upstream-signed bytes.
+//
+// Provider-name validation lives here (not in the proxy) so we can
+// short-circuit obviously-wrong URLs with a clear 400 instead of
+// forwarding to atlasd and surfacing its (less specific) error.
 func handleHook(w http.ResponseWriter, r *http.Request) {
 	providerName := chi.URLParam(r, "provider")
 	workspaceID := chi.URLParam(r, "workspaceId")
 	signalID := chi.URLParam(r, "signalId")
 
-	h := provider.Get(providerName)
-	if h == nil {
+	if !provider.IsValid(providerName) {
 		writeJSONError(w, http.StatusBadRequest,
 			fmt.Sprintf("Unknown provider: %s. Available: %s",
-				providerName, strings.Join(provider.List(), ", ")))
-		return
-	}
-
-	// Read body once into bytes — verify + transform both consume from
-	// the same []byte. (Go net/http does NOT buffer req.Body, unlike
-	// Hono.) MaxBytesReader returns 413 on overflow before we read.
-	r.Body = http.MaxBytesReader(w, r.Body, maxBodySize)
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		var mre *http.MaxBytesError
-		if errors.As(err, &mre) {
-			writeJSONError(w, http.StatusRequestEntityTooLarge,
-				fmt.Sprintf("body exceeds %d bytes", maxBodySize))
-			return
-		}
-		writeJSONError(w, http.StatusBadRequest, "read body: "+err.Error())
-		return
-	}
-
-	payload, tErr := h.Transform(body)
-	if tErr != nil {
-		writeJSONError(w, http.StatusBadRequest, tErr.Error())
+				providerName, strings.Join(provider.Names(), ", ")))
 		return
 	}
 
@@ -352,27 +337,18 @@ func handleHook(w http.ResponseWriter, r *http.Request) {
 		"workspace_id", workspaceID,
 		"signal_id", signalID)
 
-	sessionID, fErr := fwd.Forward(workspaceID, signalID, payload)
-	if fErr != nil {
-		log.Error("forward to atlasd failed",
-			"provider", providerName,
-			"workspace_id", workspaceID,
-			"signal_id", signalID,
-			"error", fErr)
-		writeJSONError(w, http.StatusBadGateway,
-			fmt.Sprintf("Cannot reach atlasd: %v", fErr))
+	// Cheap pre-check: if Content-Length is advertised and exceeds the
+	// cap, reject with 413 before we start streaming bytes. Mid-stream
+	// overflow (chunked encoding, or a lying Content-Length) falls back
+	// to MaxBytesReader below — httputil.ReverseProxy converts that
+	// into a 502, which is less precise but still bounded.
+	if r.ContentLength > maxBodySize {
+		writeJSONError(w, http.StatusRequestEntityTooLarge,
+			fmt.Sprintf("body exceeds %d bytes", maxBodySize))
 		return
 	}
-	log.Info("signal triggered",
-		"provider", providerName,
-		"workspace_id", workspaceID,
-		"signal_id", signalID,
-		"session_id", sessionID)
-	resp := map[string]any{"status": "forwarded"}
-	if sessionID != "" {
-		resp["sessionId"] = sessionID
-	}
-	writeJSON(w, http.StatusOK, resp)
+	r.Body = http.MaxBytesReader(w, r.Body, maxBodySize)
+	fwd.WebhookProxyHandler().ServeHTTP(w, r)
 }
 
 // wrapMaxBytes applies the body-size cap to the platform proxy so a

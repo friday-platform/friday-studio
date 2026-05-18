@@ -802,6 +802,14 @@ export class AtlasDaemon {
       nc,
       async (envelope, ctx) => {
         try {
+          // Webhook-only fields ride on the envelope alongside payload (set
+          // only by the /signals/:sig/webhook endpoint that fronts the
+          // byte-for-byte tunnel proxy). Pass them through so the agent
+          // can verify HMAC against the exact upstream bytes.
+          const webhookContext =
+            envelope.webhookBody !== undefined || envelope.webhookHeaders !== undefined
+              ? { body: envelope.webhookBody, headers: envelope.webhookHeaders }
+              : undefined;
           return await this.triggerWorkspaceSignal(
             envelope.workspaceId,
             envelope.signalId,
@@ -815,6 +823,7 @@ export class AtlasDaemon {
             // consumed — Phase 11 makes it carry across into
             // `SessionSummary.parentSessionId`.
             envelope.sourceSessionId,
+            webhookContext,
           );
         } catch (err) {
           if (err instanceof SessionFailedError) {
@@ -2190,6 +2199,14 @@ export class AtlasDaemon {
      * spawned session records its parent. Phase 11 provenance.
      */
     parentSessionId?: string,
+    /**
+     * Webhook-only context (base64 body + lowercased headers) preserved
+     * byte-for-byte from the upstream HTTP request when the signal came
+     * in through Friday's webhook-tunnel. Surfaces to the agent as
+     * `ctx.input.raw["body"]` / `ctx.input.raw["headers"]`. Absent for
+     * cron / chat / system / FSM-emitted signals.
+     */
+    webhookContext?: { body?: string; headers?: Record<string, string> },
   ): Promise<{
     sessionId: string;
     output: Array<{ id: string; type: string; data: Record<string, unknown> }>;
@@ -2218,6 +2235,7 @@ export class AtlasDaemon {
         skipStates,
         abortSignal,
         parentSessionId,
+        webhookContext,
       );
       const session = result.session;
 

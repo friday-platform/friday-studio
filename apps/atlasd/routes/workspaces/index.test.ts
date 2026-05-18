@@ -149,15 +149,34 @@ describe("POST /workspaces/:workspaceId/signals/:signalId bypass guard", () => {
 });
 
 describe("POST /workspaces/:workspaceId/signals/:signalId envelope guard", () => {
-  test("rejects a bare (un-enveloped) payload with a clear envelope error", async () => {
-    const { app, triggerWorkspaceSignal } = createTestApp();
+  test("a bare body (no envelope keys) routes to webhook mode — bytes preserved, 202 returned", async () => {
+    // Same body shape that used to 400 with the envelope guard. Under
+    // the byte-for-byte reverse-proxy design, a body without any
+    // envelope key is a webhook payload: the dispatch happens via nowait
+    // (cascade runs async) and the raw bytes + headers ride in the
+    // envelope so the agent can verify HMAC against them.
+    const { app, triggerWorkspaceSignal, publishSignalToJetStream } = createTestApp();
     const res = await post(app, "/workspaces/ws-1/signals/sig-1", { input: "hello" });
 
-    expect(res.status).toBe(400);
-    const body = (await res.json()) as { error: string };
-    expect(body.error).toContain('{"payload"');
-    expect(body.error).toContain("input");
+    expect(res.status).toBe(202);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body).toMatchObject({
+      message: "Webhook accepted",
+      status: "accepted",
+      workspaceId: "ws-1",
+      signalId: "sig-1",
+    });
     expect(triggerWorkspaceSignal).not.toHaveBeenCalled();
+    expect(publishSignalToJetStream).toHaveBeenCalledOnce();
+    const publishArgs = publishSignalToJetStream.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(publishArgs).toMatchObject({
+      workspaceId: "ws-1",
+      signalId: "sig-1",
+      payload: { input: "hello" },
+    });
+    // Body is base64-encoded for byte-fidelity.
+    expect(typeof publishArgs.webhookBody).toBe("string");
+    expect(atob(publishArgs.webhookBody as string)).toBe('{"input":"hello"}');
   });
 
   test("rejects stray keys even when a valid envelope key is also present", async () => {
@@ -261,7 +280,7 @@ describe("POST /workspaces/:workspaceId/signals/:signalId ?nowait=true publish-a
     // nowait must NOT fall through to the sync cascade path
     expect(triggerWorkspaceSignal).not.toHaveBeenCalled();
     expect(publishSignalToJetStream).toHaveBeenCalledOnce();
-    const publishArgs = publishSignalToJetStream.mock.calls[0][0] as Record<string, unknown>;
+    const publishArgs = publishSignalToJetStream.mock.calls[0]?.[0] as Record<string, unknown>;
     expect(publishArgs).toMatchObject({
       workspaceId: "ws-1",
       signalId: "sig-1",
@@ -299,6 +318,111 @@ describe("POST /workspaces/:workspaceId/signals/:signalId ?nowait=true publish-a
     expect(body).toMatchObject({ workspaceId: "ws-1", signalId: "sig-1" });
     expect(typeof body.error).toBe("string");
     expect(body.error as string).toContain("JetStream unavailable");
+  });
+});
+
+// Webhook-mode tests — the byte-for-byte reverse-proxy path. The tunnel
+// (apps/atlas-cli ⟶ atlasd via cloudflared) forwards upstream HTTP bytes
+// unchanged. Body shape is the discriminator: no envelope keys → webhook
+// mode, dispatch via nowait with the raw bytes (base64) + headers
+// (lowercased) preserved on the JetStream envelope. The agent then
+// recomputes HMAC against ctx.input.raw["body"] using
+// ctx.input.raw["headers"]["x-hub-signature-256"].
+describe("POST /workspaces/:workspaceId/signals/:signalId webhook mode (byte-for-byte)", () => {
+  test("forwards a GitHub-style webhook with headers + raw body preserved", async () => {
+    const { app, publishSignalToJetStream } = createTestApp();
+    const githubBody = `{"action":"opened","pull_request":{"number":42},"repository":{"full_name":"acme/widgets"}}`;
+    const res = await app.request("/workspaces/ws-1/signals/pr-opened", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-GitHub-Event": "pull_request",
+        "X-GitHub-Delivery": "72d3162e-cc78-11e3-81ab-4c9367dc0958",
+        "X-Hub-Signature-256": "sha256=abc123deadbeef",
+        "User-Agent": "GitHub-Hookshot/abc",
+      },
+      body: githubBody,
+    });
+    expect(res.status).toBe(202);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body).toMatchObject({
+      message: "Webhook accepted",
+      status: "accepted",
+      workspaceId: "ws-1",
+      signalId: "pr-opened",
+    });
+    expect(publishSignalToJetStream).toHaveBeenCalledOnce();
+    const args = publishSignalToJetStream.mock.calls[0]?.[0] as Record<string, unknown>;
+    // Body bytes round-trip via base64 — recomputing HMAC over decoded
+    // bytes will match the upstream signature.
+    expect(atob(args.webhookBody as string)).toBe(githubBody);
+    // Headers preserved with lowercased keys, hop-by-hop stripped.
+    const headers = args.webhookHeaders as Record<string, string>;
+    expect(headers["x-github-event"]).toBe("pull_request");
+    expect(headers["x-github-delivery"]).toBe("72d3162e-cc78-11e3-81ab-4c9367dc0958");
+    expect(headers["x-hub-signature-256"]).toBe("sha256=abc123deadbeef");
+    expect(headers["user-agent"]).toBe("GitHub-Hookshot/abc");
+    expect(headers["content-type"]).toBe("application/json");
+    // Hop-by-hop stripped (none of these should be in webhookHeaders).
+    expect(headers).not.toHaveProperty("content-length");
+    expect(headers).not.toHaveProperty("host");
+    // Parsed view also set for agents that want structured access.
+    expect(args.payload).toMatchObject({ action: "opened" });
+  });
+
+  test("non-JSON body still rides through with payload undefined", async () => {
+    // Some upstreams (e.g. Stripe, Twilio) sign form-encoded or other
+    // non-JSON payloads. The agent owns parsing; we just preserve bytes.
+    const { app, publishSignalToJetStream } = createTestApp();
+    const formBody = "event=charge.succeeded&id=ch_123&amount=2000";
+    const res = await app.request("/workspaces/ws-1/signals/stripe-evt", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: formBody,
+    });
+    expect(res.status).toBe(202);
+    const args = publishSignalToJetStream.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(atob(args.webhookBody as string)).toBe(formBody);
+    expect(args.payload).toBeUndefined();
+  });
+
+  test("envelope-shape bodies skip webhook mode (regression guard)", async () => {
+    // {payload: ...} → envelope mode, NOT webhook mode. The agent SDK's
+    // ctx.input.config still works the same way for CLI/MCP callers.
+    const previous = process.env[INTERNAL_SIGNAL_BYPASS_TOKEN_ENV];
+    process.env[INTERNAL_SIGNAL_BYPASS_TOKEN_ENV] = "test-token";
+    try {
+      const { app, triggerWorkspaceSignal, publishSignalToJetStream } = createTestApp();
+      const res = await post(
+        app,
+        "/workspaces/ws-1/signals/sig-1",
+        { payload: { input: "hello" }, bypassConcurrency: true },
+        { [INTERNAL_SIGNAL_BYPASS_HEADER]: "test-token" },
+      );
+      expect(res.status).toBe(200);
+      expect(triggerWorkspaceSignal).toHaveBeenCalledOnce();
+      expect(publishSignalToJetStream).not.toHaveBeenCalled();
+    } finally {
+      if (previous === undefined) delete process.env[INTERNAL_SIGNAL_BYPASS_TOKEN_ENV];
+      else process.env[INTERNAL_SIGNAL_BYPASS_TOKEN_ENV] = previous;
+    }
+  });
+
+  test("envelope publish does NOT carry webhookBody / webhookHeaders", async () => {
+    // Non-webhook envelope callers (CLI nowait) get the same envelope as
+    // before — no spurious webhookBody/webhookHeaders polluting the
+    // agent's input. Locks the "webhook fields are webhook-only" contract.
+    const { app, publishSignalToJetStream } = createTestApp();
+    const res = await app.request("/workspaces/ws-1/signals/sig-1?nowait=true", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ payload: { hello: "world" } }),
+    });
+    expect(res.status).toBe(202);
+    expect(publishSignalToJetStream).toHaveBeenCalledOnce();
+    const args = publishSignalToJetStream.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(args).not.toHaveProperty("webhookBody");
+    expect(args).not.toHaveProperty("webhookHeaders");
   });
 });
 

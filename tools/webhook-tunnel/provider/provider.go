@@ -1,57 +1,24 @@
-// Package provider exposes the webhook payload handler. Every webhook
-// — from any upstream — uses the same path-through-tunnel shape: the
-// request body becomes the signal payload as-is. Workspace agents own
-// parsing and any signature verification they need.
+// Package provider holds the allowlist of recognized URL-segment names
+// for the tunnel's /hook/{provider}/{workspaceId}/{signalId} route. The
+// tunnel is a byte-for-byte reverse proxy — it does NOT parse, transform,
+// or verify the payload itself. The `provider` URL segment is a stable
+// path prefix kept so any future provider can be added without breaking
+// existing webhook URLs. Today there is exactly one valid value: "raw".
 //
-// The Handler interface takes already-buffered request body bytes —
-// never an *http.Request. This pins the "read body once, then parse"
-// contract so a future caller can't accidentally re-read req.Body and
-// silently get an empty second read.
+// Workspace agents own payload parsing and (when needed) HMAC verification
+// against the raw request bytes — both surface to the agent via the
+// `ctx.input.raw["body"]` / `ctx.input.raw["headers"]` channel atlasd
+// preserves byte-for-byte.
 package provider
 
-import (
-	"encoding/json"
-	"fmt"
-)
-
-// Handler is what callers invoke per webhook request. Transform receives
-// the body slice and returns the parsed payload. A non-nil error means
-// malformed input the caller should surface as 400.
-type Handler interface {
-	Transform(body []byte) (payload map[string]any, err error)
-}
-
-// Get returns the handler for the named provider. Only `raw` is
-// supported — anything else returns nil so callers respond with a
-// clear "unknown provider" error.
-func Get(name string) Handler {
-	if name == "raw" {
-		return &rawHandler{}
-	}
-	return nil
-}
-
-// List returns the supported provider names. There is exactly one.
-func List() []string {
+// Names returns the allowed URL-segment names in order. Used in
+// "Unknown provider: X. Available: ..." error messages.
+func Names() []string {
 	return []string{"raw"}
 }
 
-// rawHandler forwards the full JSON body as the signal payload. No
-// HMAC, no event filtering, no transformation. Workspace agents that
-// need signature verification do it themselves on the raw body.
-type rawHandler struct{}
-
-func (h *rawHandler) Transform(body []byte) (map[string]any, error) {
-	if len(body) == 0 {
-		return nil, fmt.Errorf("empty body")
-	}
-	var v any
-	if err := json.Unmarshal(body, &v); err != nil {
-		return nil, fmt.Errorf("json: %w", err)
-	}
-	m, ok := v.(map[string]any)
-	if !ok {
-		return nil, fmt.Errorf("raw provider expects JSON object, got %T", v)
-	}
-	return m, nil
+// IsValid reports whether the given name is a recognized provider
+// URL-segment value.
+func IsValid(name string) bool {
+	return name == "raw"
 }
