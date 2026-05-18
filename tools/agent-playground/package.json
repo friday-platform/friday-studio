@@ -35,7 +35,7 @@
     "@melt-ui/svelte": "~0.86.6",
     "@opentelemetry/api": "^1.9.1",
     "@tanstack/query-core": "^5.100.10",
-    "@tanstack/svelte-query": "^6.1.28",
+    "@tanstack/svelte-query": "^6.1.29",
     "@tanstack/svelte-table": "9.0.0-alpha.46",
     "@tanstack/svelte-virtual": "~3.13.24",
     "@types/deno": "2.5.0",
