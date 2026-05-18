@@ -462,25 +462,44 @@ async function runVariant(variant: "with-skill" | "without-skill"): Promise<Eval
     return { id: variant, pass: false, notes, metrics };
   }
 
-  // without-skill (control): we expect at least one to fail. If none
-  // fail, the skill isn't actually adding value (the model knows this
-  // from training) — that's a meta-bug worth surfacing.
-  if (failed.length === 0) {
+  // without-skill (control): we expect failures, but specifically in
+  // POSITIVE-KNOWLEDGE checks (Friday-tunnel-specific facts a bare model
+  // doesn't know). Negative-polarity checks like `no-wrong-env-var` pass
+  // trivially for a bare model — it has nothing to invent. Checks that
+  // test generic knowledge (Bitbucket event names, "if env var is
+  // mentioned it's WEBHOOK_SECRET") also pass trivially and aren't
+  // proof of skill load-bearing-ness.
+  //
+  // To prove the skill is the carrier, require ≥1 truly-Friday-specific
+  // check to fail in the control. The set is intentionally narrow: only
+  // facts that ONLY exist in Friday's runtime + this skill's body.
+  const POSITIVE_KNOWLEDGE_CHECKS = new Set([
+    "url-pattern", //     /hook/raw/{workspaceId}/{signalId} (Friday-tunnel-specific)
+    "status-endpoint", // GET /status discovery endpoint (Friday-tunnel-specific)
+  ]);
+  const positiveFailed = failed.filter((c) => POSITIVE_KNOWLEDGE_CHECKS.has(c.id));
+  const MIN_POSITIVE_FAILURES = 1;
+
+  if (positiveFailed.length < MIN_POSITIVE_FAILURES) {
     notes.push(
-      `Negative-control passed all checks WITHOUT the skill — the skill isn't earning its keep. ` +
-        `Either the contract is too lenient or the model already knows Friday's wiring. Tighten the checks.`,
+      `Negative-control: ${positiveFailed.length}/${POSITIVE_KNOWLEDGE_CHECKS.size} positive-knowledge checks failed ` +
+        `(need ≥${MIN_POSITIVE_FAILURES}). The skill isn't earning its keep — either the model already knows ` +
+        `Friday's wiring from training, or the contract is too lenient. Tighten the positive-knowledge checks.`,
     );
     for (const c of checks) {
-      notes.push(`  ✓ ${c.id}: ${c.description}${c.evidence ? ` [${c.evidence}]` : ""}`);
+      notes.push(
+        `  ${c.pass ? "✓" : "✗"} ${c.id}${POSITIVE_KNOWLEDGE_CHECKS.has(c.id) ? " [POS]" : ""}: ${c.description}${c.evidence ? ` [${c.evidence}]` : ""}`,
+      );
     }
     return { id: variant, pass: false, notes, metrics };
   }
   notes.push(
-    `Negative-control failed ${failed.length}/${checks.length} as expected (skill is the carrier of this knowledge).`,
+    `Negative-control: ${positiveFailed.length}/${POSITIVE_KNOWLEDGE_CHECKS.size} positive-knowledge checks failed ` +
+      `(${failed.length}/${checks.length} total) — skill is the load-bearing carrier of this knowledge.`,
   );
   for (const c of checks) {
     notes.push(
-      `  ${c.pass ? "✓" : "✗"} ${c.id}: ${c.description}${c.evidence ? ` [${c.evidence}]` : ""}`,
+      `  ${c.pass ? "✓" : "✗"} ${c.id}${POSITIVE_KNOWLEDGE_CHECKS.has(c.id) ? " [POS]" : ""}: ${c.description}${c.evidence ? ` [${c.evidence}]` : ""}`,
     );
   }
   return { id: variant, pass: true, notes, metrics };
@@ -803,15 +822,82 @@ async function runTestWebhookNegativeCheck(): Promise<EvalResult> {
     {
       id: "no-fake-event-name",
       description:
-        "does NOT invent Bitbucket event names that don't exist (e.g. pullrequest:merged is fake — real name is pullrequest:fulfilled)",
-      // Real Bitbucket Cloud event names per `pullrequest:` prefix. Anything
-      // outside this set is hallucinated. Limit to common-hallucination forms.
-      pass:
-        !/pullrequest:merged\b/i.test(result.text) &&
-        !/pullrequest:closed\b/i.test(result.text) &&
-        !/pullrequest:opened\b/i.test(result.text) &&
-        !/repo:commit\b(?![:_])/i.test(result.text),
-      evidence: result.text.match(/pullrequest:(?:merged|closed|opened)|repo:commit\b/i)?.[0],
+        "does NOT invent Bitbucket event names that don't exist (allowlist of real `pullrequest:` / `repo:` / `issue:` events; anything else is hallucinated)",
+      // Allowlist of real Bitbucket Cloud event keys (the `x-event-key`
+      // header values). If the agent emits any `<prefix>:<verb>` token
+      // outside this set, it's a hallucination.
+      // Source: https://support.atlassian.com/bitbucket-cloud/docs/event-payloads/
+      pass: (() => {
+        const ALLOWED = new Set([
+          // pullrequest:
+          "pullrequest:created",
+          "pullrequest:updated",
+          "pullrequest:approved",
+          "pullrequest:unapproved",
+          "pullrequest:changes_request_created",
+          "pullrequest:changes_request_removed",
+          "pullrequest:fulfilled",
+          "pullrequest:rejected",
+          "pullrequest:comment_created",
+          "pullrequest:comment_updated",
+          "pullrequest:comment_deleted",
+          "pullrequest:comment_resolved",
+          "pullrequest:comment_reopened",
+          "pullrequest:push",
+          // repo:
+          "repo:push",
+          "repo:fork",
+          "repo:updated",
+          "repo:transfer",
+          "repo:created",
+          "repo:deleted",
+          "repo:imported",
+          "repo:commit_comment_created",
+          "repo:commit_status_created",
+          "repo:commit_status_updated",
+          // issue:
+          "issue:created",
+          "issue:updated",
+          "issue:comment_created",
+        ]);
+        const matches = result.text.match(/\b(?:pullrequest|repo|issue):[a-z_]+(?::[a-z_]+)*\b/gi);
+        if (!matches) return true;
+        return matches.every((m) => ALLOWED.has(m.toLowerCase()));
+      })(),
+      evidence: (() => {
+        const ALLOWED = new Set([
+          "pullrequest:created",
+          "pullrequest:updated",
+          "pullrequest:approved",
+          "pullrequest:unapproved",
+          "pullrequest:changes_request_created",
+          "pullrequest:changes_request_removed",
+          "pullrequest:fulfilled",
+          "pullrequest:rejected",
+          "pullrequest:comment_created",
+          "pullrequest:comment_updated",
+          "pullrequest:comment_deleted",
+          "pullrequest:comment_resolved",
+          "pullrequest:comment_reopened",
+          "pullrequest:push",
+          "repo:push",
+          "repo:fork",
+          "repo:updated",
+          "repo:transfer",
+          "repo:created",
+          "repo:deleted",
+          "repo:imported",
+          "repo:commit_comment_created",
+          "repo:commit_status_created",
+          "repo:commit_status_updated",
+          "issue:created",
+          "issue:updated",
+          "issue:comment_created",
+        ]);
+        const matches = result.text.match(/\b(?:pullrequest|repo|issue):[a-z_]+(?::[a-z_]+)*\b/gi);
+        const bad = matches?.filter((m) => !ALLOWED.has(m.toLowerCase()));
+        return bad && bad.length > 0 ? bad.slice(0, 5).join(", ") : undefined;
+      })(),
     },
   ];
 
@@ -1184,9 +1270,18 @@ async function runProviderList(): Promise<EvalResult> {
       id: "names-raw-only",
       description:
         "Names `raw` as the single built-in provider — github/bitbucket/jira are NOT built-in",
+      // Must mention `raw` AND must not pair another provider word with
+      // `raw` in a provider-listing context. Catches phrasings like "we
+      // support `raw` and `bitbucket`" or "providers: raw, github".
       pass:
         /\braw\b/i.test(text) &&
-        !/(?:^|[^a-z])(?:two|both|2)\s+(?:built[-\s]?in\s+)?providers\b/i.test(text),
+        !/(?:^|[^a-z])(?:two|both|2)\s+(?:built[-\s]?in\s+)?providers\b/i.test(text) &&
+        !/\braw\b[^.\n]{0,40}(?:\s+(?:and|,|\+|\|)\s+|\s+plus\s+)`?(?:github|bitbucket|jira)`?\b/i.test(
+          text,
+        ) &&
+        !/`?(?:github|bitbucket|jira)`?[^.\n]{0,40}(?:\s+(?:and|,|\+|\|)\s+|\s+plus\s+)`?raw`?\b/i.test(
+          text,
+        ),
       evidence: text
         .match(/\braw\b[^\n.]{0,80}|providers?\s*[:=]\s*[^\n]{0,80}/i)?.[0]
         ?.slice(0, 160),
@@ -1303,19 +1398,6 @@ async function runProviderList(): Promise<EvalResult> {
         .match(
           /WEBHOOK_MAPPINGS_PATH[^\n.]{0,120}\b(?:bitbucket|jira)\b|[^.\n]{0,80}WEBHOOK_MAPPINGS_PATH[^.\n]{0,80}/i,
         )?.[0]
-        ?.slice(0, 200),
-    },
-    {
-      id: "mentions-hook-raw-for-bitbucket",
-      description: "Explains bitbucket / other providers use /hook/raw/",
-      pass:
-        /\/hook\/raw\b/.test(text) ||
-        /\braw\b[^.\n]{0,60}\b(?:bitbucket|jira|custom|other)/i.test(text) ||
-        /\bbitbucket\b[^.\n]{0,60}\b(?:goes through|use[s]?|via|through)\b[^.\n]{0,30}\braw\b/i.test(
-          text,
-        ),
-      evidence: text
-        .match(/\/hook\/raw\/[^\s)`]*|\b(?:bitbucket|jira)[^.\n]{0,80}\braw\b[^.\n]{0,40}/i)?.[0]
         ?.slice(0, 200),
     },
   ];

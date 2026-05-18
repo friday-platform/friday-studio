@@ -79,12 +79,12 @@ jobs:
 
 A `provider: http` signal exposes a URL but does NOT tell upstream systems
 (Bitbucket / GitHub / Jira) to call it. The user still needs to register the
-webhook on the upstream side. URL pattern, secret env var, signature header,
-embedded event allowlists, and the `Unknown provider` / `irrelevant event` /
-`missing x-hub-signature` error catalog all live in
-[[wiring-external-webhooks]] — load that skill any time the user asks how to
-"set up the webhook", "wire Bitbucket/GitHub/Jira", or "fix" one of those
-errors. The HTTP signal in `workspace.yml` is necessary but not sufficient.
+webhook on the upstream side. The `/hook/raw/{workspaceId}/{signalId}` URL
+pattern, the `/status` discovery flow, signal-schema requirements, and the
+tunnel-level error catalog all live in [[wiring-external-webhooks]] — load
+that skill any time the user asks how to "set up the webhook", "wire
+Bitbucket/GitHub/Jira", or why `/status` is unreachable. The HTTP signal in
+`workspace.yml` is necessary but not sufficient.
 
 ## Templates
 
