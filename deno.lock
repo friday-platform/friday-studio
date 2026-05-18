@@ -33,19 +33,19 @@
     "jsr:@std/yaml@1": "1.1.0",
     "npm:@ai-sdk/anthropic@^3.0.76": "3.0.78_zod@4.4.3",
     "npm:@ai-sdk/anthropic@^3.0.78": "3.0.78_zod@4.4.3",
-    "npm:@ai-sdk/google@^3.0.74": "3.0.74_zod@4.4.3",
+    "npm:@ai-sdk/google@^3.0.75": "3.0.75_zod@4.4.3",
     "npm:@ai-sdk/groq@^3.0.39": "3.0.39_zod@4.4.3",
     "npm:@ai-sdk/mcp@1.0.41": "1.0.41_zod@4.4.3",
     "npm:@ai-sdk/openai@^3.0.64": "3.0.64_zod@4.4.3",
     "npm:@ai-sdk/provider@^3.0.10": "3.0.10",
-    "npm:@ai-sdk/svelte@^4.0.183": "4.0.183_svelte@5.55.8",
-    "npm:@anthropic-ai/claude-agent-sdk@~0.3.143": "0.3.143_@anthropic-ai+sdk@0.96.0__zod@4.4.3_@modelcontextprotocol+sdk@1.28.0__zod@4.4.3_zod@4.4.3",
+    "npm:@ai-sdk/svelte@^4.0.184": "4.0.184_svelte@5.55.8_zod@4.4.3",
+    "npm:@anthropic-ai/claude-agent-sdk@~0.3.143": "0.3.143_@modelcontextprotocol+sdk@1.28.0__zod@4.4.3_zod@4.4.3",
     "npm:@biomejs/biome@*": "2.4.14",
-    "npm:@chat-adapter/discord@4.29.0": "4.29.0_ai@6.0.183__zod@4.4.3_zod@4.4.3",
-    "npm:@chat-adapter/slack@4.29.0": "4.29.0_ai@6.0.183__zod@4.4.3_zod@4.4.3",
-    "npm:@chat-adapter/teams@4.29.0": "4.29.0_ai@6.0.183__zod@4.4.3_zod@4.4.3",
-    "npm:@chat-adapter/telegram@4.29.0": "4.29.0_ai@6.0.183__zod@4.4.3_zod@4.4.3",
-    "npm:@chat-adapter/whatsapp@4.29.0": "4.29.0_ai@6.0.183__zod@4.4.3_zod@4.4.3",
+    "npm:@chat-adapter/discord@4.29.0": "4.29.0_ai@6.0.184__zod@4.4.3",
+    "npm:@chat-adapter/slack@4.29.0": "4.29.0_ai@6.0.184__zod@4.4.3",
+    "npm:@chat-adapter/teams@4.29.0": "4.29.0_ai@6.0.184__zod@4.4.3",
+    "npm:@chat-adapter/telegram@4.29.0": "4.29.0_ai@6.0.184__zod@4.4.3",
+    "npm:@chat-adapter/whatsapp@4.29.0": "4.29.0_ai@6.0.184__zod@4.4.3",
     "npm:@codemirror/lang-markdown@^6.5.0": "6.5.0",
     "npm:@codemirror/lang-yaml@^6.1.3": "6.1.3",
     "npm:@codemirror/language@^6.12.3": "6.12.3",
@@ -111,11 +111,10 @@
     "npm:@worker-tools/html-rewriter@~0.1.0-pre.17": "0.1.0-pre.19",
     "npm:@xmldom/xmldom@~0.9.10": "0.9.10",
     "npm:ai-sdk-provider-claude-code@^3.4.4": "3.4.4_zod@4.4.3",
-    "npm:ai@^6.0.141": "6.0.183_zod@4.4.3",
-    "npm:ai@^6.0.177": "6.0.183_zod@4.4.3",
-    "npm:ai@^6.0.183": "6.0.183_zod@4.4.3",
-    "npm:chat@4.29.0": "4.29.0_ai@6.0.183__zod@4.4.3_zod@4.4.3",
-    "npm:chat@^4.29.0": "4.29.0_ai@6.0.183__zod@4.4.3_zod@4.4.3",
+    "npm:ai@^6.0.141": "6.0.184_zod@4.4.3",
+    "npm:ai@^6.0.184": "6.0.184_zod@4.4.3",
+    "npm:chat@4.29.0": "4.29.0_ai@6.0.184__zod@4.4.3_zod@4.4.3",
+    "npm:chat@^4.29.0": "4.29.0_ai@6.0.184__zod@4.4.3_zod@4.4.3",
     "npm:codemirror@^6.0.2": "6.0.2",
     "npm:concurrently@^9.2.1": "9.2.1",
     "npm:cookie@^1.0.2": "1.1.1",
@@ -308,8 +307,8 @@
         "zod"
       ]
     },
-    "@ai-sdk/google@3.0.74_zod@4.4.3": {
-      "integrity": "sha512-LMuDNHYNt4bfDMTE2oxe83ClF0HenCepkBs5Wb0LKBokuN1dxIUirPQHQvi1AuT+80SLyrOZ5c4wPGTVUl2A4w==",
+    "@ai-sdk/google@3.0.75_zod@4.4.3": {
+      "integrity": "sha512-XAm31ftiOrzlb8NjDzT7kw0xw+4lmgFdGFn1QKM73nXFFKyN1kWLESBV75UGNfjXP8X1YJ0YydnMVqO0jaPghw==",
       "dependencies": [
         "@ai-sdk/provider",
         "@ai-sdk/provider-utils",
@@ -356,8 +355,8 @@
         "json-schema"
       ]
     },
-    "@ai-sdk/svelte@4.0.183_svelte@5.55.8": {
-      "integrity": "sha512-Fi7DNap3aG+7LXH+MLIwegsn9MgPSYsCtBsxW+BxCDKFr9F4KO8wMPVfXqvT7RyAzwVc/FPAR2QlX10z6tMudw==",
+    "@ai-sdk/svelte@4.0.184_svelte@5.55.8_zod@4.4.3": {
+      "integrity": "sha512-oNEwcG68q7ZvnBzS6HbdecEhTQssFkMnszsc2HFjs1b145JSoDdw//akeduYa110AFvsuapGHZwBoVK/U2LlWQ==",
       "dependencies": [
         "@ai-sdk/provider-utils",
         "ai",
@@ -469,7 +468,7 @@
         "@anthropic-ai/claude-agent-sdk-win32-x64@0.2.138"
       ]
     },
-    "@anthropic-ai/claude-agent-sdk@0.3.143_@anthropic-ai+sdk@0.96.0__zod@4.4.3_@modelcontextprotocol+sdk@1.28.0__zod@4.4.3_zod@4.4.3": {
+    "@anthropic-ai/claude-agent-sdk@0.3.143_@modelcontextprotocol+sdk@1.28.0__zod@4.4.3_zod@4.4.3": {
       "integrity": "sha512-JnxOTRpSBpFqKFMfV5cW4QjpeDOHUNr31rRislmOVWEPsRmCjsy9jYwKxDf7kxcwxyZ6h/YHz1ACvMaUWy6o6A==",
       "dependencies": [
         "@anthropic-ai/sdk@0.96.0_zod@4.4.3",
@@ -678,7 +677,7 @@
       ],
       "bin": true
     },
-    "@chat-adapter/discord@4.29.0_ai@6.0.183__zod@4.4.3_zod@4.4.3": {
+    "@chat-adapter/discord@4.29.0_ai@6.0.184__zod@4.4.3": {
       "integrity": "sha512-C6pDVKn7s0PhvgeqldYxoShWXJzthwtlo+sCesqenh56M03eHsioinqxeJttmtK8y1ZD8/qiP2lAZufDwuEQhA==",
       "dependencies": [
         "@chat-adapter/shared",
@@ -688,13 +687,13 @@
         "discord.js"
       ]
     },
-    "@chat-adapter/shared@4.29.0_ai@6.0.183__zod@4.4.3_zod@4.4.3": {
+    "@chat-adapter/shared@4.29.0_ai@6.0.184__zod@4.4.3": {
       "integrity": "sha512-ARqTDoHJHKN9rpytbFPJbNmqqx3fOg5xwsTZdlingQPAssOSeHDBdqrFJkgDhyCRGbmDtG09cuS0FkVzeoh2qg==",
       "dependencies": [
         "chat"
       ]
     },
-    "@chat-adapter/slack@4.29.0_ai@6.0.183__zod@4.4.3_zod@4.4.3": {
+    "@chat-adapter/slack@4.29.0_ai@6.0.184__zod@4.4.3": {
       "integrity": "sha512-s2DXAwkTpmiIKSATXgrO879s1pqFwS70Y0JPd+TRGRzDeh6nfqt5dnKt5Bug0P1zwkB6DoPurhnYS9nqhSmD/w==",
       "dependencies": [
         "@chat-adapter/shared",
@@ -703,7 +702,7 @@
         "chat"
       ]
     },
-    "@chat-adapter/teams@4.29.0_ai@6.0.183__zod@4.4.3_zod@4.4.3": {
+    "@chat-adapter/teams@4.29.0_ai@6.0.184__zod@4.4.3": {
       "integrity": "sha512-KQq1JOeE8kgp13CAviT8+7A4KHO4uZOceV4VbIZdJiyDsChR08KTOeCNAKd6wr48zyF5SulJUjMbnOy745NTFw==",
       "dependencies": [
         "@chat-adapter/shared",
@@ -714,14 +713,14 @@
         "chat"
       ]
     },
-    "@chat-adapter/telegram@4.29.0_ai@6.0.183__zod@4.4.3_zod@4.4.3": {
+    "@chat-adapter/telegram@4.29.0_ai@6.0.184__zod@4.4.3": {
       "integrity": "sha512-015tU3HEjFQWw7DgebXWkDeQA6lTdTVEO4btAV3f6U1kEnOfjLVJq98latcsM1WkEvv+3LIFKpsz9pG53aamBw==",
       "dependencies": [
         "@chat-adapter/shared",
         "chat"
       ]
     },
-    "@chat-adapter/whatsapp@4.29.0_ai@6.0.183__zod@4.4.3_zod@4.4.3": {
+    "@chat-adapter/whatsapp@4.29.0_ai@6.0.184__zod@4.4.3": {
       "integrity": "sha512-CDKmlDHmiiJ2xtca0wZ2DIYnySUFuiKn6f3ZQvschFVa6pSaDmaldmJc3iul+ELi10+RE7x5+immfc//+TTzFg==",
       "dependencies": [
         "@chat-adapter/shared",
@@ -2723,8 +2722,8 @@
         "zod"
       ]
     },
-    "ai@6.0.183_zod@4.4.3": {
-      "integrity": "sha512-7pJ03j/XFbkdW6wadPWNCvNpFoxPwShEkzuACEvKBNeL+P5EbHrffh12Qzn1gdEO8Wunk1kkM37XX12bGQokUg==",
+    "ai@6.0.184_zod@4.4.3": {
+      "integrity": "sha512-j//zHkKvj5ra27l8izHco8cj1g1Pr7vx1ZK+hrzrkHvndgIRmdfZKOb6+RAPpvbk42qGIsuYvlYbGlVAu3erNQ==",
       "dependencies": [
         "@ai-sdk/gateway",
         "@ai-sdk/provider",
@@ -2927,7 +2926,7 @@
     "character-entities@2.0.2": {
       "integrity": "sha512-shx7oQ0Awen/BRIdkjkvz54PnEEI/EjwXDSIZp86/KKdbafHh1Df/RYGBhn4hbe2+uKC9FnT5UCEdyPz3ai9hQ=="
     },
-    "chat@4.29.0_ai@6.0.183__zod@4.4.3_zod@4.4.3": {
+    "chat@4.29.0_ai@6.0.184__zod@4.4.3_zod@4.4.3": {
       "integrity": "sha512-KdPfzaie5ivYytyRICTERg5xT+LeCbYefokvNAqTHe92eqkFaoTMXXkSitikxJVWhZIb2YoXF1b9UZHyzSzKzw==",
       "dependencies": [
         "@workflow/serde",
@@ -6256,7 +6255,7 @@
             "npm:@jsr/std__dotenv@~0.225.5",
             "npm:@jsr/std__yaml@^1.0.10",
             "npm:@types/react@^19.2.14",
-            "npm:ai@^6.0.183",
+            "npm:ai@^6.0.184",
             "npm:gunshi@~0.29.5",
             "npm:ink@^7.0.1",
             "npm:js-levenshtein@^1.1.6",
@@ -6292,7 +6291,7 @@
             "npm:@jsr/std__yaml@^1.0.10",
             "npm:@libpdf/core@~0.3.6",
             "npm:@opentelemetry/api@^1.9.1",
-            "npm:ai@^6.0.183",
+            "npm:ai@^6.0.184",
             "npm:chat@4.29.0",
             "npm:file-type@^22.0.1",
             "npm:hono-openapi@^1.3.0",
@@ -6368,7 +6367,7 @@
           "dependencies": [
             "npm:@ai-sdk/provider@^3.0.10",
             "npm:@opentelemetry/api@^1.9.1",
-            "npm:ai@^6.0.183",
+            "npm:ai@^6.0.184",
             "npm:jsonrepair@^3.14.0",
             "npm:vitest@^4.1.6",
             "npm:zod@^4.4.3"
@@ -6399,7 +6398,7 @@
             "npm:@coderabbitai/bitbucket@^1.1.4",
             "npm:@hubspot/api-client@^13.4.0",
             "npm:@types/markdown-it@^14.1.2",
-            "npm:ai@^6.0.183",
+            "npm:ai@^6.0.184",
             "npm:jira.js@^5.3.1",
             "npm:markdown-it@^14.1.1",
             "npm:parallel-web@0.5.0",
@@ -6441,7 +6440,7 @@
             "npm:@libpdf/core@~0.3.6",
             "npm:@modelcontextprotocol/sdk@1.28",
             "npm:@xmldom/xmldom@~0.9.10",
-            "npm:ai@^6.0.183",
+            "npm:ai@^6.0.184",
             "npm:chat@^4.29.0",
             "npm:file-type@^22.0.1",
             "npm:jose@^6.2.3",
@@ -6504,14 +6503,14 @@
         "packageJson": {
           "dependencies": [
             "npm:@ai-sdk/anthropic@^3.0.78",
-            "npm:@ai-sdk/google@^3.0.74",
+            "npm:@ai-sdk/google@^3.0.75",
             "npm:@ai-sdk/groq@^3.0.39",
             "npm:@ai-sdk/openai@^3.0.64",
             "npm:@ai-sdk/provider@^3.0.10",
             "npm:@anthropic-ai/claude-agent-sdk@~0.3.143",
             "npm:@jsr/std__collections@^1.1.3",
             "npm:ai-sdk-provider-claude-code@^3.4.4",
-            "npm:ai@^6.0.183",
+            "npm:ai@^6.0.184",
             "npm:undici@^7.25.0",
             "npm:vitest@^4.1.6",
             "npm:zod@^4.4.3"
@@ -6533,7 +6532,7 @@
           "dependencies": [
             "npm:@ai-sdk/mcp@1.0.41",
             "npm:@modelcontextprotocol/sdk@1.28",
-            "npm:ai@^6.0.183",
+            "npm:ai@^6.0.184",
             "npm:vitest@^4.1.6",
             "npm:zod@^4.4.3"
           ]
@@ -6544,7 +6543,7 @@
           "dependencies": [
             "npm:@modelcontextprotocol/sdk@1.28",
             "npm:@worker-tools/html-rewriter@0.1.0-pre.19",
-            "npm:ai@^6.0.183",
+            "npm:ai@^6.0.184",
             "npm:fast-glob@^3.3.3",
             "npm:minimatch@^10.2.5",
             "npm:nats@^2.29.3",
@@ -6596,7 +6595,7 @@
         "packageJson": {
           "dependencies": [
             "npm:@jsr/std__yaml@^1.0.10",
-            "npm:ai@^6.0.183",
+            "npm:ai@^6.0.184",
             "npm:markdown-it@^14.1.1",
             "npm:nanoid@^5.1.6",
             "npm:nats@^2.29.3",
@@ -6629,7 +6628,7 @@
             "npm:@jsr/std__encoding@^1.0.10",
             "npm:@jsr/std__yaml@^1.0.10",
             "npm:@worker-tools/html-rewriter@~0.1.0-pre.17",
-            "npm:ai@^6.0.183",
+            "npm:ai@^6.0.184",
             "npm:turndown@7.2.4",
             "npm:vitest@^4.1.6",
             "npm:zod@^4.4.3"
@@ -6688,7 +6687,7 @@
           "dependencies": [
             "npm:@jsr/std__dotenv@~0.225.5",
             "npm:@jsr/std__yaml@^1.0.10",
-            "npm:ai@^6.0.183",
+            "npm:ai@^6.0.184",
             "npm:nats@^2.29.3",
             "npm:vitest@^4.1.6",
             "npm:zod@^4.4.3"
@@ -6702,7 +6701,7 @@
         ],
         "packageJson": {
           "dependencies": [
-            "npm:@ai-sdk/svelte@^4.0.183",
+            "npm:@ai-sdk/svelte@^4.0.184",
             "npm:@codemirror/lang-markdown@^6.5.0",
             "npm:@codemirror/lang-yaml@^6.1.3",
             "npm:@codemirror/language@^6.12.3",
@@ -6721,7 +6720,7 @@
             "npm:@tanstack/svelte-table@9.0.0-alpha.48",
             "npm:@tanstack/svelte-virtual@~3.13.24",
             "npm:@types/deno@2.5.0",
-            "npm:ai@^6.0.183",
+            "npm:ai@^6.0.184",
             "npm:codemirror@^6.0.2",
             "npm:diff@9",
             "npm:dompurify@^3.4.5",
@@ -6746,7 +6745,7 @@
         "packageJson": {
           "dependencies": [
             "npm:@ai-sdk/provider@^3.0.10",
-            "npm:ai@^6.0.183",
+            "npm:ai@^6.0.184",
             "npm:dotenv@17.4.2",
             "npm:gunshi@~0.29.5",
             "npm:vitest@^4.1.6",
