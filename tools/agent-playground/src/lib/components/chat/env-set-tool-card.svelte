@@ -150,8 +150,8 @@
       {#if isInProgress(call.state) || !proposal}
         Environment write
       {:else}
-        Set {entries.length} variable{entries.length === 1 ? "" : "s"} in
-        <code>{scope === "global" ? "global .env" : "workspace .env"}</code>
+        Set {entries.length} {scope === "global" ? "global" : "workspace"} environment
+        variable{entries.length === 1 ? "" : "s"}
       {/if}
     </h3>
     <Tooltip
@@ -330,10 +330,13 @@
     color: var(--red-primary);
   }
 
+  /* Grid + subgrid so the key column lines up across rows — without
+     subgrid each row's flex layout would size its key cell to its own
+     content, leaving multi-row cards visually jagged on the divider. */
   .var-list {
-    display: flex;
-    flex-direction: column;
+    display: grid;
     gap: var(--size-1-5);
+    grid-template-columns: max-content 1fr auto;
     margin-block: var(--size-2);
   }
 
@@ -345,7 +348,9 @@
     background-color: var(--color-surface-2);
     border: 1px solid var(--color-border-1);
     border-radius: var(--radius-2);
-    display: flex;
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
     transition: border-color 150ms ease;
   }
 
@@ -374,11 +379,17 @@
     background: transparent;
     border: none;
     color: var(--color-text);
-    flex: 1;
     font-family: var(--font-family-monospace);
     font-size: var(--font-size-1);
     min-inline-size: 0;
     padding: var(--size-1-5) var(--size-2-5);
+  }
+
+  /* When the row has no reveal button (non-secret keys), let the input
+     fill the trailing column so the row reads as `key | input` rather
+     than `key | input | empty`. */
+  .var-row:not(:has(.reveal)) .var-value {
+    grid-column: 2 / -1;
   }
 
   .var-value:focus {
