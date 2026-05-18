@@ -5,6 +5,7 @@
   import { browser } from "$app/environment";
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
+  import "@atlas/ui/reset.css";
   import "@atlas/ui/tokens.css";
   import "@atlas/ui/colors.css";
   import "../app.css";
