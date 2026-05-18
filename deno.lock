@@ -53,11 +53,11 @@
     "npm:@deno/kv@0.13": "0.13.0",
     "npm:@eslint/compat@^2.1.0": "2.1.0_eslint@10.3.0",
     "npm:@eslint/js@^10.0.1": "10.0.1_eslint@10.3.0",
-    "npm:@hono/mcp@~0.2.5": "0.2.5_@modelcontextprotocol+sdk@1.29.0__zod@4.4.3_hono@4.12.18_zod@4.4.3",
-    "npm:@hono/standard-validator@~0.2.2": "0.2.2_@standard-schema+spec@1.1.0_hono@4.12.18",
-    "npm:@hono/zod-validator@0.8": "0.8.0_hono@4.12.18_zod@4.4.3",
-    "npm:@hono/zod-validator@0.8.0": "0.8.0_hono@4.12.18_zod@4.4.3",
-    "npm:@hono/zod-validator@~0.7.5": "0.7.6_hono@4.12.18_zod@4.4.3",
+    "npm:@hono/mcp@0.3": "0.3.0_@modelcontextprotocol+sdk@1.28.0__zod@4.4.3_hono@4.12.19_hono-rate-limiter@0.5.3__hono@4.12.19_zod@4.4.3",
+    "npm:@hono/standard-validator@~0.2.2": "0.2.2_hono@4.12.19",
+    "npm:@hono/zod-validator@0.8": "0.8.0_hono@4.12.19_zod@4.4.3",
+    "npm:@hono/zod-validator@0.8.0": "0.8.0_hono@4.12.19_zod@4.4.3",
+    "npm:@hono/zod-validator@~0.7.5": "0.7.6_hono@4.12.19_zod@4.4.3",
     "npm:@hubspot/api-client@^13.4.0": "13.5.0",
     "npm:@hubspot/api-client@^13.5.0": "13.5.0",
     "npm:@ianvs/prettier-plugin-sort-imports@^4.7.1": "4.7.1_prettier@3.8.3",
@@ -131,8 +131,9 @@
     "npm:globals@^17.6.0": "17.6.0",
     "npm:gunshi@~0.29.5": "0.29.5",
     "npm:happy-dom@^20.9.0": "20.9.0",
-    "npm:hono-openapi@^1.3.0": "1.3.0_@hono+standard-validator@0.2.2__@standard-schema+spec@1.1.0__hono@4.12.18_hono@4.12.18_zod@4.4.3",
+    "npm:hono-openapi@^1.3.0": "1.3.0_@hono+standard-validator@0.2.2__hono@4.12.19_hono@4.12.19",
     "npm:hono@4.12.18": "4.12.18",
+    "npm:hono@4.12.19": "4.12.19",
     "npm:immer@^11.1.8": "11.1.8",
     "npm:ink@^7.0.1": "7.0.2_@types+react@19.2.14_react@19.2.6",
     "npm:isomorphic-dompurify@^2.16.0": "2.36.0",
@@ -1134,40 +1135,40 @@
     "@floating-ui/utils@0.2.11": {
       "integrity": "sha512-RiB/yIh78pcIxl6lLMG0CgBXAZ2Y0eVHqMPYugu+9U0AeT6YBeiJpf7lbdJNIugFP5SIjwNRgo4DhR1Qxi26Gg=="
     },
-    "@hono/mcp@0.2.5_@modelcontextprotocol+sdk@1.29.0__zod@4.4.3_hono@4.12.18_zod@4.4.3": {
-      "integrity": "sha512-JsaJes7VlNvUrUQ9j2b9C13xjFLvyKQY515aWtsdJ9cwhBmWz5od2yUCbDu7cX38GeADmlLmpu4BKNNAV6G27w==",
+    "@hono/mcp@0.3.0_@modelcontextprotocol+sdk@1.28.0__zod@4.4.3_hono@4.12.19_hono-rate-limiter@0.5.3__hono@4.12.19_zod@4.4.3": {
+      "integrity": "sha512-UhSWFbZwRxHBdptOn2r1HyB8Vt6gU+BL3AbTis2t8TBW69ZhG4soJQ09yEL/t/ymxszJnWp5Rq6tOXXOjuK1qg==",
       "dependencies": [
-        "@modelcontextprotocol/sdk@1.29.0_zod@4.4.3",
-        "hono",
+        "@modelcontextprotocol/sdk@1.28.0_zod@4.4.3",
+        "hono@4.12.19",
         "hono-rate-limiter",
         "pkce-challenge",
         "zod"
       ]
     },
-    "@hono/node-server@1.19.14_hono@4.12.18": {
+    "@hono/node-server@1.19.14_hono@4.12.19": {
       "integrity": "sha512-GwtvgtXxnWsucXvbQXkRgqksiH2Qed37H9xHZocE5sA3N8O8O8/8FA3uclQXxXVzc9XBZuEOMK7+r02FmSpHtw==",
       "dependencies": [
-        "hono"
+        "hono@4.12.19"
       ]
     },
-    "@hono/standard-validator@0.2.2_@standard-schema+spec@1.1.0_hono@4.12.18": {
+    "@hono/standard-validator@0.2.2_hono@4.12.19": {
       "integrity": "sha512-mJ7W84Bt/rSvoIl63Ynew+UZOHAzzRAoAXb3JaWuxAkM/Lzg+ZHTCUiz77KOtn2e623WNN8LkD57Dk0szqUrIw==",
       "dependencies": [
         "@standard-schema/spec",
-        "hono"
+        "hono@4.12.19"
       ]
     },
-    "@hono/zod-validator@0.7.6_hono@4.12.18_zod@4.4.3": {
+    "@hono/zod-validator@0.7.6_hono@4.12.19_zod@4.4.3": {
       "integrity": "sha512-Io1B6d011Gj1KknV4rXYz4le5+5EubcWEU/speUjuw9XMMIaP3n78yXLhjd2A3PXaXaUwEAluOiAyLqhBEJgsw==",
       "dependencies": [
-        "hono",
+        "hono@4.12.19",
         "zod"
       ]
     },
-    "@hono/zod-validator@0.8.0_hono@4.12.18_zod@4.4.3": {
+    "@hono/zod-validator@0.8.0_hono@4.12.19_zod@4.4.3": {
       "integrity": "sha512-5uS4S1/LKtZQYvD4BtpPUFkOv8d1wNxHHrChm26buMiEYc1FrHWvDUaKVBwkiVtvSExHSpLGDvcnpI2Copyj9w==",
       "dependencies": [
-        "hono",
+        "hono@4.12.19",
         "zod"
       ]
     },
@@ -1498,7 +1499,7 @@
         "eventsource-parser",
         "express",
         "express-rate-limit",
-        "hono",
+        "hono@4.12.19",
         "jose@6.2.3",
         "json-schema-typed",
         "pkce-challenge",
@@ -1520,7 +1521,7 @@
         "eventsource-parser",
         "express",
         "express-rate-limit",
-        "hono",
+        "hono@4.12.19",
         "jose@6.2.3",
         "json-schema-typed",
         "pkce-challenge",
@@ -3723,29 +3724,32 @@
         "@types/hast"
       ]
     },
-    "hono-openapi@1.3.0_@hono+standard-validator@0.2.2__@standard-schema+spec@1.1.0__hono@4.12.18_hono@4.12.18_zod@4.4.3": {
+    "hono-openapi@1.3.0_@hono+standard-validator@0.2.2__hono@4.12.19_hono@4.12.19": {
       "integrity": "sha512-xDvCWpWEIv0weEmnl3EjRQzqbHIO8LnfzMuYOCmbuyE5aes6aXxLg4vM3ybnoZD5TiTUkA6PuRQPJs3R7WRBig==",
       "dependencies": [
         "@hono/standard-validator",
         "@standard-community/standard-json",
         "@standard-community/standard-openapi",
         "@types/json-schema",
-        "hono",
+        "hono@4.12.19",
         "openapi-types"
       ],
       "optionalPeers": [
         "@hono/standard-validator",
-        "hono"
+        "hono@4.12.19"
       ]
     },
-    "hono-rate-limiter@0.4.2_hono@4.12.18": {
-      "integrity": "sha512-AAtFqgADyrmbDijcRTT/HJfwqfvhalya2Zo+MgfdrMPas3zSMD8SU03cv+ZsYwRU1swv7zgVt0shwN059yzhjw==",
+    "hono-rate-limiter@0.5.3_hono@4.12.19": {
+      "integrity": "sha512-M0DxbVMpPELEzLi0AJg1XyBHLGJXz7GySjsPoK+gc5YeeBsdGDGe+2RvVuCAv8ydINiwlbxqYMNxUEyYfRji/A==",
       "dependencies": [
-        "hono"
+        "hono@4.12.19"
       ]
     },
     "hono@4.12.18": {
       "integrity": "sha512-RWzP96k/yv0PQfyXnWjs6zot20TqfpfsNXhOnev8d1InAxubW93L11/oNUc3tQqn2G0bSdAOBpX+2uDFHV7kdQ=="
+    },
+    "hono@4.12.19": {
+      "integrity": "sha512-xa3eYXYXx68XTT4hZ7dRzsXBhaq85ToSrlUJNoR0gwz/1Ap/CNwX47wfvV7pc/xWhjKVVkLT7zBJy8chhNguqQ=="
     },
     "html-encoding-sniffer@6.0.0": {
       "integrity": "sha512-CV9TW3Y3f8/wT0BRFc1/KAVQ3TUHiXmaAb6VW9vtiMFf7SLoMd1PdAc4W3KFOFETBJUb90KatHqlsZMWV+R9Gg==",
@@ -6203,7 +6207,7 @@
             "npm:@chat-adapter/teams@4.28.1",
             "npm:@chat-adapter/telegram@4.28.1",
             "npm:@chat-adapter/whatsapp@4.28.1",
-            "npm:@hono/mcp@~0.2.5",
+            "npm:@hono/mcp@0.3",
             "npm:@hono/standard-validator@~0.2.2",
             "npm:@hono/zod-validator@0.8",
             "npm:@jsr/db__sqlite@0.12",
@@ -6218,7 +6222,7 @@
             "npm:chat@4.28.1",
             "npm:file-type@^22.0.1",
             "npm:hono-openapi@^1.3.0",
-            "npm:hono@4.12.18",
+            "npm:hono@4.12.19",
             "npm:jszip@^3.10.1",
             "npm:papaparse@^5.5.3",
             "npm:vitest@^4.1.6",
@@ -6250,7 +6254,7 @@
             "npm:@jsr/db__sqlite@0.12",
             "npm:@jsr/std__async@1.0.15",
             "npm:@modelcontextprotocol/sdk@1.28",
-            "npm:hono@4.12.18",
+            "npm:hono@4.12.19",
             "npm:jose@6.2.3",
             "npm:nanoid@5.1.11",
             "npm:oauth4webapi@3.8.6",
@@ -6334,7 +6338,7 @@
       "packages/client": {
         "packageJson": {
           "dependencies": [
-            "npm:hono@4.12.18",
+            "npm:hono@4.12.19",
             "npm:zod@^4.4.3"
           ]
         }
@@ -6444,7 +6448,7 @@
         "packageJson": {
           "dependencies": [
             "npm:@opentelemetry/api@^1.9.1",
-            "npm:hono@4.12.18",
+            "npm:hono@4.12.19",
             "npm:vitest@^4.1.6",
             "npm:zod@^4.4.3"
           ]
@@ -6649,7 +6653,7 @@
             "npm:dompurify@^3.4.2",
             "npm:eslint@^10.3.0",
             "npm:happy-dom@^20.9.0",
-            "npm:hono@4.12.18",
+            "npm:hono@4.12.19",
             "npm:jszip@^3.10.1",
             "npm:prettier@^3.8.3",
             "npm:shiki@^4.0.2",
