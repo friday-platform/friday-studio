@@ -1617,12 +1617,18 @@
     opacity: 0.6;
   }
 
-  /* Fullscreen mode: lift the chat surface out of its ListDetail slot to
-     cover the sidebar and any surrounding chrome. Ctrl+F toggles, Esc
-     exits — the keydown handler at the top of the component owns both. */
+  /* Fullscreen mode: lift the chat surface out of its ListDetail slot
+     to cover the sidebar and any surrounding chrome. Ctrl+F toggles,
+     Esc exits — the keydown handler at the top of the component owns
+     both. The box-shadow paints a `--surface-dark` slab outside the
+     chat so the gap doesn't leak the underlying sidebar / header
+     chrome through. */
   .user-chat.fullscreen {
     background: var(--surface);
-    inset: 0;
+    border-radius: var(--radius-7);
+    box-shadow: 0 0 0 100vmax var(--surface-dark);
+    inset: var(--size-1-5);
+    overflow: hidden;
     position: fixed;
     z-index: 100;
   }
