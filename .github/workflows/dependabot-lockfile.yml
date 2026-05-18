@@ -77,7 +77,7 @@ jobs:
         uses: stefanzweifel/git-auto-commit-action@v7
         with:
           commit_message: "chore: sync deno.lock + deno.json [dependabot skip]"
-          file_pattern: "deno.lock **/deno.json **/deno.jsonc"
+          file_pattern: "deno.lock deno.json deno.jsonc **/deno.json **/deno.jsonc"
           commit_user_name: "github-actions[bot]"
           commit_user_email: "41898282+github-actions[bot]@users.noreply.github.com"
           push_options: "--force-with-lease"
