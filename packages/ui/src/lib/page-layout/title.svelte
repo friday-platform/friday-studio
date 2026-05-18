@@ -6,6 +6,8 @@
   type Props = { subtitle?: string; children: Snippet; actions?: Snippet<[Writable<boolean>]> };
 
   let { subtitle, children, actions }: Props = $props();
+
+  let descriptionTruncated = $state(true);
 </script>
 
 {#snippet titleNode()}
@@ -31,7 +33,21 @@
   {/if}
 
   {#if subtitle}
-    <p class="description text text-faded">{subtitle}</p>
+    <p
+      class="description text text-faded"
+      class:truncated={descriptionTruncated}
+      role="button"
+      tabindex="0"
+      onclick={() => (descriptionTruncated = !descriptionTruncated)}
+      onkeydown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          descriptionTruncated = !descriptionTruncated;
+        }
+      }}
+    >
+      {subtitle}
+    </p>
   {/if}
 </div>
 
@@ -55,5 +71,16 @@
     line-height: 1.2;
     margin: 0;
     text-align: start;
+  }
+
+  .description {
+    cursor: pointer;
+    max-inline-size: 60ch;
+
+    &.truncated {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
   }
 </style>
