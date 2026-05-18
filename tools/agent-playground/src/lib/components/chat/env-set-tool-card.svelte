@@ -129,6 +129,37 @@
     );
   }
 
+  /**
+   * Pull the current value of a secret-bearing key from the daemon's env
+   * endpoint (which returns the real value — only the agent-facing
+   * `env_get` tool masks). Used to reveal what the user typed into an
+   * applied card after a page refresh, without persisting the value on
+   * the elicitation answer record. The value travels: card → daemon →
+   * `.env` → daemon → card, never touching the chat message stream.
+   */
+  async function fetchAppliedValue(key: string): Promise<void> {
+    if (!applied) return;
+    // Playground proxies daemon calls through `/api/daemon/*` — the
+    // SvelteKit catch-all strips that prefix and forwards to atlasd.
+    const base =
+      scope === "global"
+        ? "/api/daemon/api/config/env"
+        : routeWorkspaceId
+          ? `/api/daemon/api/workspaces/${encodeURIComponent(routeWorkspaceId)}/env`
+          : null;
+    if (!base) return;
+    try {
+      const res = await fetch(`${base}/${encodeURIComponent(key)}`);
+      if (!res.ok) return;
+      const body = (await res.json()) as { success?: boolean; value?: string };
+      if (body.success && typeof body.value === "string") {
+        userValues = { ...userValues, [key]: body.value };
+      }
+    } catch {
+      // Silent — the input stays empty, user can click reveal again to retry.
+    }
+  }
+
   /** Status pill text — drives the one terminal-state line. */
   const statusLabel = $derived.by(() => {
     if (!status) return isInProgress(call.state) ? "preparing" : "waiting";
@@ -181,12 +212,13 @@
     <div class="var-list">
       {#each entries as [key, value] (key)}
         {@const secret = isSecretKey(key)}
+        {@const maskApplied = !isPending && secret && !revealed[key]}
         <div class="var-row">
           <code class="var-key">{key}</code>
           <input
             class="var-value"
             type={secret && !revealed[key] ? "password" : "text"}
-            value={userValues[key] ?? value}
+            value={maskApplied ? "********" : (userValues[key] ?? value)}
             placeholder="Enter value"
             autocomplete="off"
             spellcheck="false"
@@ -201,7 +233,15 @@
               class="reveal"
               aria-label={revealed[key] ? "Hide value" : "Show value"}
               onclick={() => {
-                revealed = { ...revealed, [key]: !revealed[key] };
+                const next = !revealed[key];
+                revealed = { ...revealed, [key]: next };
+                // On applied cards the in-memory value is gone after a
+                // page refresh; lazily fetch what's actually in .env so
+                // the eyeball click is the explicit "show me" gesture
+                // that triggers the read.
+                if (next && applied && !(userValues[key] ?? "").length) {
+                  void fetchAppliedValue(key);
+                }
               }}
             >
               {#if revealed[key]}<Icons.Eye />{:else}<Icons.EyeClosed />{/if}
