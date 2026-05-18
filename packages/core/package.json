@@ -73,8 +73,8 @@
     "@std/encoding": "npm:@jsr/std__encoding@^1.0.10",
     "@std/async": "npm:@jsr/std__async@^1.0.14",
     "@xmldom/xmldom": "^0.9.10",
-    "ai": "^6.0.177",
-    "@libpdf/core": "^0.3.4",
+    "ai": "^6.0.184",
+    "@libpdf/core": "^0.3.6",
     "file-type": "^22.0.1",
     "jetstream": "workspace:*",
     "jose": "^6.2.3",
@@ -83,9 +83,9 @@
     "nats": "^2.29.3",
     "papaparse": "^5.5.3",
     "proper-lockfile": "^4.1.2",
-    "xstate": "^5.31.0",
-    "chat": "^4.28.1",
+    "xstate": "^5.31.1",
+    "chat": "^4.29.0",
     "zod": "^4.4.3"
   },
-  "devDependencies": { "vitest": "^4.1.0" }
+  "devDependencies": { "vitest": "^4.1.6" }
 }

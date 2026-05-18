@@ -73,6 +73,7 @@ import {
 } from "../../src/workspace-authz.ts";
 import {
   buildWorkspaceBundleBytes,
+  installImportedAgents,
   isOnDiskWorkspace,
   materializeImportedMemory,
 } from "./bundle-helpers.ts";
@@ -953,8 +954,11 @@ const workspacesRoutes = daemonFactory
         name: string;
         path: string;
         memory?: { kind: string; path?: string; reason?: string };
+        agentsInstalled?: number;
+        agentsSkipped?: number;
       }> = [];
       const errors: Array<{ name: string; error: string }> = [...result.errors];
+      let installedAnyAgents = false;
       for (const entry of result.imported) {
         try {
           const validation = await validateImportedWorkspace(
@@ -979,14 +983,32 @@ const workspacesRoutes = daemonFactory
             atlasHome,
             newWorkspaceId: registered.workspace.id,
           });
+          const agents = await installImportedAgents({
+            targetDir: entry.path,
+            primitives: entry.primitives,
+            atlasHome,
+            logger: importLogger,
+          });
+          if (agents.installed.length > 0) installedAnyAgents = true;
           imported.push({
             workspaceId: registered.workspace.id,
             name: entry.name,
             path: entry.path,
             memory,
+            agentsInstalled: agents.installed.length,
+            agentsSkipped: agents.skipped.length,
           });
         } catch (err) {
           errors.push({ name: entry.name, error: stringifyError(err) });
+        }
+      }
+      if (installedAnyAgents) {
+        try {
+          await ctx.getAgentRegistry()?.reload();
+        } catch (error) {
+          importLogger.warn("Agent registry reload after bundle-all import failed", {
+            error: stringifyError(error),
+          });
         }
       }
 
@@ -1231,12 +1253,34 @@ const workspacesRoutes = daemonFactory
         newWorkspaceId: registered.workspace.id,
       });
 
+      // Bundled user agents land at `<targetDir>/agents/<name>/` — invisible
+      // to the AgentRegistry, which only scans `<atlasHome>/agents/`. Install
+      // them into the global dir and reload so the imported workspace.yml's
+      // `type: user` references resolve at runtime.
+      const agents = await installImportedAgents({
+        targetDir,
+        primitives: result.primitives,
+        atlasHome,
+        logger: importLogger,
+      });
+      if (agents.installed.length > 0) {
+        try {
+          await ctx.getAgentRegistry()?.reload();
+        } catch (error) {
+          importLogger.warn("Agent registry reload after import failed", {
+            error: stringifyError(error),
+          });
+        }
+      }
+
       return c.json({
         workspaceId: registered.workspace.id,
         path: targetDir,
         name: result.lockfile.workspace.name,
         primitives: result.primitives,
         memory,
+        agentsInstalled: agents.installed.length,
+        agentsSkipped: agents.skipped.length,
       });
     } catch (error) {
       const errorMessage = stringifyError(error);

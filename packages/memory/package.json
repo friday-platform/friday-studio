@@ -5,5 +5,5 @@
   "exports": { ".": "./src/bootstrap.ts", "./discovery-to-task": "./src/discovery-to-task.ts" },
   "main": "./src/bootstrap.ts",
   "dependencies": { "zod": "^4.4.3" },
-  "devDependencies": { "vitest": "^4.1.0" }
+  "devDependencies": { "vitest": "^4.1.6" }
 }

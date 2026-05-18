@@ -10,20 +10,20 @@
   },
   "dependencies": {
     "@ai-sdk/provider": "^3.0.10",
-    "@anthropic-ai/claude-agent-sdk": "^0.2.137",
+    "@anthropic-ai/claude-agent-sdk": "^0.3.143",
     "@atlas/agent-sdk": "workspace:*",
     "@atlas/schemas": "workspace:*",
     "@atlas/llm": "workspace:*",
     "@atlas/logger": "workspace:*",
-    "@chat-adapter/slack": "4.28.1",
+    "@chat-adapter/slack": "4.29.0",
     "@coderabbitai/bitbucket": "^1.1.4",
     "@hubspot/api-client": "^13.4.0",
-    "ai": "^6.0.177",
+    "ai": "^6.0.184",
     "jira.js": "^5.3.1",
     "markdown-it": "^14.1.1",
     "parallel-web": "0.5.0",
     "zod": "^4.4.3",
     "turndown": "7.2.4"
   },
-  "devDependencies": { "@types/markdown-it": "^14.1.2", "vitest": "^4.1.0" }
+  "devDependencies": { "@types/markdown-it": "^14.1.2", "vitest": "^4.1.6" }
 }

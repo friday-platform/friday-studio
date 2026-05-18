@@ -18,14 +18,14 @@
     "@inkjs/ui": "^2.0.0",
     "@std/dotenv": "npm:@jsr/std__dotenv@^0.225.5",
     "@std/yaml": "npm:@jsr/std__yaml@^1.0.10",
-    "ai": "^6.0.177",
+    "ai": "^6.0.184",
     "gunshi": "^0.29.5",
     "ink": "^7.0.1",
     "js-levenshtein": "^1.1.6",
     "nanoid": "^5.1.6",
-    "react": "^19.2.5",
+    "react": "^19.2.6",
     "yargs": "^18.0.0",
     "zod": "^4.4.3"
   },
-  "devDependencies": { "@types/react": "^19.2.14", "vitest": "^4.1.0" }
+  "devDependencies": { "@types/react": "^19.2.14", "vitest": "^4.1.6" }
 }

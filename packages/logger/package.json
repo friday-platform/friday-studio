@@ -8,11 +8,11 @@
     "./telemetry": "./src/telemetry.ts"
   },
   "main": "./mod.ts",
-  "devDependencies": { "vitest": "^4.1.0" },
+  "devDependencies": { "vitest": "^4.1.6" },
   "dependencies": {
     "@atlas/utils": "workspace:*",
     "@opentelemetry/api": "^1.9.1",
-    "hono": "4.12.18",
+    "hono": "4.12.19",
     "zod": "^4.4.3"
   }
 }

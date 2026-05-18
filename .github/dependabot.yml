@@ -65,6 +65,9 @@ updates:
         patterns:
           - "ai"
           - "@ai-sdk/*"
+      tanstack:
+        patterns:
+          - "@tanstack/*"
     ignore:
       # Vite 8 uses Rolldown (Rust native bindings) which fails on Alpine/musl
       # Docker images — rolldown-binding.linux-x64-musl.node not found.
@@ -87,6 +90,12 @@ updates:
       # in packages/mcp-server. Pinned to ~1.28.x until upstream fixes typing.
       - dependency-name: "@modelcontextprotocol/sdk"
         versions: [">= 1.29.0"]
+      # @ai-sdk/mcp 1.0.42 assigns to StreamableHTTPClientTransport.protocolVersion,
+      # which is a getter-only property — every HTTP MCP initialize throws and the
+      # server is silently skipped. Pinned to 1.0.41 until upstream fixes it.
+      # See PR #370 for context.
+      - dependency-name: "@ai-sdk/mcp"
+        versions: [">= 1.0.42"]
       # undici 8.x calls webidl.util.markAsUncloneable, which Deno's webidl
       # shim doesn't expose — daemon crashes on startup loading CacheStorage.
       # Hold majors until Deno catches up. See PR #89 for context.

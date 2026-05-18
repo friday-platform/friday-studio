@@ -38,10 +38,10 @@
     "@types/papaparse": "^5.5.2",
     "@types/proper-lockfile": "^4.1.4",
     "@types/turndown": "^5.0.6",
-    "@vitest/coverage-v8": "4.1.5",
+    "@vitest/coverage-v8": "4.1.6",
     "happy-dom": "^20.9.0",
-    "knip": "6.11.0",
-    "vitest": "^4.1.0"
+    "knip": "6.14.0",
+    "vitest": "^4.1.6"
   },
   "knip": {}
 }

@@ -226,7 +226,9 @@ describe("model-catalog — cache", () => {
     await getCatalog();
     await getCatalog();
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    // One catalog fetch = 2 HTTP calls (gateway + openrouter). Cache hit on
+    // calls 2 and 3 means no further requests.
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("dedupes concurrent callers onto a single in-flight fetch (no thundering herd)", async () => {
@@ -254,7 +256,9 @@ describe("model-catalog — cache", () => {
     } as unknown as Response);
     await Promise.all([a, b, c]);
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    // 2 HTTP calls per catalog fetch (gateway + openrouter); the three
+    // concurrent callers share the one in-flight fetchCatalog.
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("discards an in-flight fetch's result when invalidateCatalog runs before it resolves", async () => {
@@ -298,7 +302,8 @@ describe("model-catalog — cache", () => {
 
     // Next call must start a fresh fetch, not return the stale cached one.
     const after = await getCatalog();
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    // 2 catalog fetches × 2 HTTP calls each (gateway + openrouter) = 4.
+    expect(fetchMock).toHaveBeenCalledTimes(4);
     expect(find(after, "anthropic").models.map((m) => m.id)).toEqual(["claude-haiku-4-5"]);
   });
 });
