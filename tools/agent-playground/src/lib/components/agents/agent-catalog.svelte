@@ -5,7 +5,7 @@
   Agents render as CatalogRow components with expandable spec sheets.
 
   Keyboard shortcuts:
-  - Cmd+K: Focus search input
+  - Cmd+I: Focus search input
   - Arrow Up/Down: Move focus between agents
   - Enter: Toggle spec sheet on focused agent
   - Cmd+Enter: Navigate to workbench for focused agent
@@ -86,8 +86,8 @@
   }
 
   function handleKeydown(e: KeyboardEvent) {
-    // Cmd+K: focus search
-    if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+    // Cmd+I: focus search
+    if ((e.metaKey || e.ctrlKey) && e.key === "i") {
       e.preventDefault();
       searchInput?.focus();
       searchInput?.select();
@@ -175,7 +175,6 @@
 
 <div class="catalog">
   <header class="catalog-header">
-    <h1>Agents</h1>
     <div class="search-row">
       <input
         bind:this={searchInput}
@@ -186,7 +185,7 @@
         onkeydown={handleSearchKeydown}
         aria-label="Search agents"
       />
-      <kbd class="shortcut-hint">⌘K</kbd>
+      <kbd class="shortcut-hint">⌘I</kbd>
     </div>
     <p class="subtitle">{resultCount}</p>
   </header>
@@ -228,11 +227,6 @@
     gap: var(--size-3);
     padding-block: var(--size-5);
     padding-inline: var(--size-6);
-
-    h1 {
-      font-size: var(--font-size-6);
-      font-weight: var(--font-weight-6);
-    }
   }
 
   .search-row {

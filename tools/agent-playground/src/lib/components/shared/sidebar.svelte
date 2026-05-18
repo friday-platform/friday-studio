@@ -69,10 +69,10 @@
   const toolLinks: NavItem[] = [
     { label: "Chat", href: "/platform/user/chat", icon: IconLarge.SpeechBubble },
     { label: "Memory", href: "/memory", icon: IconLarge.Write },
-    { label: "Activity", href: "/activity", icon: IconLarge.SpeechBubble },
+    { label: "Activity", href: "/activity", icon: IconLarge.Clock },
     { label: "Agent Tester", href: "/agents", icon: IconLarge.Chip },
     { label: "Job Inspector", href: "/inspector", icon: IconLarge.DiamondCheck },
-    { label: "Schedules", href: "/schedules", icon: IconLarge.Target },
+    { label: "Schedules", href: "/schedules", icon: IconLarge.ArrowsRotate },
     { label: "MCP Catalog", href: "/mcp", icon: IconLarge.Wrench },
     { label: "Skills", href: "/skills", icon: IconLarge.Compass },
     { label: "Usage", href: "/usage", icon: IconLarge.Target },

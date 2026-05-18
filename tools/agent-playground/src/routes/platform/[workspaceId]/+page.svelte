@@ -16,7 +16,7 @@
   import { deriveSignalDetails } from "@atlas/config/signal-details";
   import { deriveTopology } from "@atlas/config/topology";
   import { deriveWorkspaceAgents } from "@atlas/config/workspace-agents";
-  import { Button, Dialog, DropdownMenu, IconLarge, Icons, toast } from "@atlas/ui";
+  import { IconLarge, PageLayout } from "@atlas/ui";
   import { createQuery } from "@tanstack/svelte-query";
   import { goto } from "$app/navigation";
   import { browser } from "$app/environment";
@@ -26,41 +26,11 @@
   import CommunicatorsCard from "$lib/components/workspace/communicators-card.svelte";
   import JobsIntegrationsCard from "$lib/components/workspace/jobs-integrations-card.svelte";
   import SignalsCard from "$lib/components/workspace/signals-card.svelte";
-  import { sessionQueries, useDeleteWorkspace, workspaceQueries } from "$lib/queries";
-  import { writable } from "svelte/store";
-  import { stringify } from "yaml";
+  import { sessionQueries, workspaceQueries } from "$lib/queries";
 
   const workspaceId = $derived(page.params.workspaceId ?? null);
   const configQuery = createQuery(() => workspaceQueries.config(workspaceId));
   const config = $derived(configQuery.data?.config ?? null);
-
-  // ---------------------------------------------------------------------------
-  // Workspace color (shared cache with sidebar)
-  // ---------------------------------------------------------------------------
-
-  const workspacesQuery = createQuery(() => workspaceQueries.list());
-
-  const COLORS: Record<string, string> = {
-    yellow: "var(--yellow-2, #facc15)",
-    purple: "var(--purple-2, #a78bfa)",
-    red: "var(--red-2, #f87171)",
-    blue: "var(--blue-2, #60a5fa)",
-    green: "var(--green-2, #4ade80)",
-    brown: "var(--brown-2, #a3824a)",
-  };
-
-  const currentWorkspace = $derived(
-    (workspacesQuery.data ?? []).find((w) => w.id === workspaceId),
-  );
-
-  const workspaceColor = $derived.by(() => {
-    const color = currentWorkspace?.metadata?.color;
-    return COLORS[color ?? "yellow"] ?? COLORS["yellow"];
-  });
-
-  // Default to canonical (non-deletable) while the workspace list is still
-  // loading — keeps the destructive "Remove" action hidden until we're sure.
-  const isCanonical = $derived(!currentWorkspace || currentWorkspace.canonical !== undefined);
 
   // ---------------------------------------------------------------------------
   // Agents
@@ -204,56 +174,6 @@
     return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
   }
 
-  /** Download the workspace config as a YAML file. */
-  function exportWorkspaceConfig() {
-    if (!configQuery.data) return;
-    const yamlStr = stringify(configQuery.data.config);
-    const blob = new Blob([yamlStr], { type: "text/yaml" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "workspace.yml";
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
-  /**
-   * Download the workspace as a portable zip bundle (workspace.yml + skills/ +
-   * agents/, optionally including narrative memory in migration mode). The
-   * daemon's route streams `application/zip`; we capture as a blob and trigger
-   * a browser download with the server's Content-Disposition filename.
-   */
-  async function downloadWorkspaceBundle(mode: "definition" | "migration") {
-    if (!workspaceId) return;
-    const qs = mode === "migration" ? "?mode=migration" : "";
-    const url = `/api/daemon/api/workspaces/${workspaceId}/bundle${qs}`;
-    try {
-      const res = await fetch(url);
-      if (!res.ok) {
-        const errBody = await res.text();
-        toast({
-          title: `Download failed: ${errBody.slice(0, 200)}`,
-          error: true,
-        });
-        return;
-      }
-      const blob = await res.blob();
-      const disposition = res.headers.get("content-disposition") ?? "";
-      const nameMatch = /filename="([^"]+)"/.exec(disposition);
-      const filename = nameMatch?.[1] ?? `${workspaceId}.zip`;
-      const href = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = href;
-      a.download = filename;
-      a.click();
-      URL.revokeObjectURL(href);
-      toast({ title: "Workspace downloaded" });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      toast({ title: `Download failed: ${msg}`, error: true });
-    }
-  }
-
   // ---------------------------------------------------------------------------
   // Empty state — start-chat card
   // ---------------------------------------------------------------------------
@@ -300,27 +220,6 @@
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       startChat();
-    }
-  }
-
-  // ---------------------------------------------------------------------------
-  // Delete workspace
-  // ---------------------------------------------------------------------------
-
-  const deleteMut = useDeleteWorkspace();
-  const deleteDialogOpen = writable(false);
-
-  async function confirmDelete() {
-    if (!workspaceId || deleteMut.isPending) return;
-    try {
-      await deleteMut.mutateAsync(workspaceId);
-      deleteDialogOpen.set(false);
-      toast({ title: `${configQuery.data?.config?.workspace?.name ?? workspaceId} removed` });
-      // Only non-canonical workspaces are deletable, so the personal workspace
-      // ("user") always exists as a landing target.
-      goto("/platform/user");
-    } catch {
-      toast({ title: "Failed to remove workspace", error: true });
     }
   }
 
@@ -380,7 +279,12 @@
   let activeTab = $state<Tab>("activity");
 </script>
 
-<div class="overview-page">
+<PageLayout.Root>
+  <PageLayout.Title subtitle={configQuery.data?.config?.workspace?.description}>
+    {configQuery.data?.config?.workspace?.name ?? "Workspace"}
+  </PageLayout.Title>
+  <PageLayout.Body>
+    <PageLayout.Content>
   {#if !workspaceId}
     <div class="empty-state">
       <p>No workspace selected</p>
@@ -396,49 +300,6 @@
       <p class="hint">{configQuery.error?.message}</p>
     </div>
   {:else if configQuery.data}
-    <!-- Row 1: Header -->
-    <div class="workspace-header">
-      <div class="header-info">
-        <h1 class="workspace-name">
-          <span class="workspace-dot" style:color={workspaceColor}><span></span></span>
-          {configQuery.data.config.workspace.name}
-        </h1>
-        {#if configQuery.data.config.workspace.description}
-          <p class="workspace-description">{configQuery.data.config.workspace.description}</p>
-        {/if}
-      </div>
-      <div class="actions">
-        <Button size="small" variant="secondary" href="/platform/{workspaceId}/edit">
-          Edit Configuration
-        </Button>
-        <DropdownMenu.Root positioning={{ placement: "bottom-end" }}>
-          {#snippet children()}
-            <DropdownMenu.Trigger class="more-trigger" aria-label="More options">
-              <Icons.TripleDots />
-            </DropdownMenu.Trigger>
-
-            <DropdownMenu.Content>
-              <DropdownMenu.Item onclick={exportWorkspaceConfig}>
-                Export configuration
-              </DropdownMenu.Item>
-              <DropdownMenu.Item onclick={() => downloadWorkspaceBundle("definition")}>
-                Download workspace
-              </DropdownMenu.Item>
-              <DropdownMenu.Item onclick={() => downloadWorkspaceBundle("migration")}>
-                Download workspace with notes &amp; memory
-              </DropdownMenu.Item>
-              {#if !isCanonical}
-                <DropdownMenu.Separator />
-                <DropdownMenu.Item onclick={() => deleteDialogOpen.set(true)}>
-                  Remove workspace
-                </DropdownMenu.Item>
-              {/if}
-            </DropdownMenu.Content>
-          {/snippet}
-        </DropdownMenu.Root>
-      </div>
-    </div>
-
     <!-- Tabs (non-empty state only) -->
     {#if !isEmpty}
       <div class="tab-bar" role="tablist">
@@ -617,114 +478,11 @@
       </div>
     {/if}
   {/if}
-</div>
-
-<Dialog.Root open={deleteDialogOpen}>
-  {#snippet children()}
-    <Dialog.Content>
-      <Dialog.Close />
-
-      {#snippet header()}
-        <Dialog.Title>Remove workspace</Dialog.Title>
-        <Dialog.Description>
-          This will unregister <strong>{configQuery.data?.config?.workspace?.name ?? workspaceId}</strong> from Friday.
-        </Dialog.Description>
-      {/snippet}
-
-      {#snippet footer()}
-        <Dialog.Button onclick={confirmDelete} disabled={deleteMut.isPending} closeOnClick={false}>
-          {deleteMut.isPending ? "Removing..." : "Remove"}
-        </Dialog.Button>
-        <Dialog.Cancel>Cancel</Dialog.Cancel>
-      {/snippet}
-    </Dialog.Content>
-  {/snippet}
-</Dialog.Root>
+    </PageLayout.Content>
+  </PageLayout.Body>
+</PageLayout.Root>
 
 <style>
-  .overview-page {
-    display: flex;
-    flex-direction: column;
-    gap: var(--size-5);
-    padding: var(--size-8) var(--size-10);
-  }
-
-  .workspace-header {
-    align-items: flex-start;
-    display: flex;
-    gap: var(--size-4);
-    justify-content: space-between;
-  }
-
-  .header-info {
-    display: flex;
-    flex-direction: column;
-    gap: var(--size-2);
-  }
-
-  .actions {
-    align-items: center;
-    display: flex;
-    gap: var(--size-2);
-  }
-
-  :global(.more-trigger) {
-    align-items: center;
-    background-color: var(--color-surface-2);
-    block-size: var(--size-6);
-    border: none;
-    border-radius: var(--radius-2-5);
-    color: var(--text-1);
-    cursor: default;
-    display: inline-flex;
-    inline-size: var(--size-6);
-    justify-content: center;
-    transition: all 150ms ease;
-    user-select: none;
-    -webkit-user-select: none;
-  }
-
-  :global(.more-trigger:hover) {
-    background-color: color-mix(in srgb, var(--color-surface-2), var(--color-text) 5%);
-  }
-
-
-  .workspace-name {
-    align-items: center;
-    color: var(--color-text);
-    display: flex;
-    font-size: var(--font-size-8);
-    font-weight: var(--font-weight-7);
-    gap: var(--size-3);
-    line-height: var(--font-lineheight-1);
-    margin: 0;
-  }
-
-  .workspace-dot {
-    align-items: center;
-    aspect-ratio: 1;
-    block-size: var(--size-4);
-    display: flex;
-    justify-content: center;
-
-    span {
-      background-color: currentColor;
-      block-size: 11px;
-      border: var(--size-0-5) solid var(--color-white);
-      border-radius: var(--radius-round);
-      box-shadow: var(--shadow-1);
-      inline-size: 11px;
-    }
-  }
-
-  .workspace-description {
-    color: color-mix(in srgb, var(--color-text), transparent 25%);
-    font-size: var(--font-size-3);
-    line-height: var(--font-lineheight-3);
-    margin: 0;
-    max-inline-size: 56ch;
-  }
-
   /* ── Tab bar ───────────────────────────────────────────────────────────── */
 
   .tab-bar {

@@ -13,15 +13,14 @@
 -->
 
 <script lang="ts">
-  import { Dialog, toast } from "@atlas/ui";
+  import { Dialog, PageLayout, toast } from "@atlas/ui";
   import { createQuery, queryOptions, skipToken } from "@tanstack/svelte-query";
   import { browser } from "$app/environment";
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
   import SkillLoader from "$lib/components/skills/skill-loader.svelte";
   import SkillsShImport from "$lib/components/skills/skills-sh-import.svelte";
-  import WorkspaceBreadcrumb from "$lib/components/workspace/workspace-breadcrumb.svelte";
-  import { skillQueries } from "$lib/queries";
+  import { skillQueries, workspaceQueries } from "$lib/queries";
   import {
     searchSkillsSh,
     useAssignSkill,
@@ -31,6 +30,19 @@
   import { writable } from "svelte/store";
 
   const workspaceId = $derived(page.params.workspaceId ?? null);
+  const workspaceConfigQuery = createQuery(() => workspaceQueries.config(workspaceId));
+  const workspaceName = $derived(
+    workspaceConfigQuery.data?.config?.workspace?.name ?? workspaceId ?? "",
+  );
+  const crumbs = $derived(
+    workspaceId
+      ? [
+          { label: workspaceName, href: `/platform/${workspaceId}` },
+          { label: "Skills" },
+        ]
+      : [{ label: "Skills" }],
+  );
+
   const classifiedQuery = createQuery(() =>
     skillQueries.classifiedWorkspaceSkills(workspaceId),
   );
@@ -178,10 +190,11 @@
   const jobBreakdown = $derived(jobBreakdownQuery.data?.byJob ?? []);
 </script>
 
-<div class="skills-page">
+<PageLayout.Root>
+  <PageLayout.Breadcrumbs {crumbs} />
+  <PageLayout.Body>
+    <PageLayout.Content>
   {#if workspaceId}
-    <WorkspaceBreadcrumb {workspaceId} />
-
     <!-- Inline install form. Accepts owner/repo/slug (as returned by skills.sh
          /search). Server runs local audit + publish-time lint, auto-assigns
          official sources to this workspace, requires the acknowledge box for
@@ -368,7 +381,9 @@
       {/if}
     </section>
   {/if}
-</div>
+    </PageLayout.Content>
+  </PageLayout.Body>
+</PageLayout.Root>
 
 <Dialog.Root open={addDialogOpen}>
   {#snippet children()}
@@ -427,13 +442,6 @@
 </Dialog.Root>
 
 <style>
-  .skills-page {
-    display: flex;
-    flex-direction: column;
-    gap: var(--size-6);
-    padding: var(--size-8) var(--size-10);
-  }
-
   .install-section {
     border: 1px solid color-mix(in srgb, var(--color-border-1), transparent 50%);
     border-radius: var(--radius-4);
