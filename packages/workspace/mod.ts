@@ -28,6 +28,7 @@ export {
 } from "./src/canonical.ts";
 // Export main components
 export { validateMCPEnvironmentForWorkspace, WorkspaceManager } from "./src/manager.ts";
+export type { TriggerSignalOpts } from "./src/runtime.ts";
 // Runtime
 export { classifySessionError, WorkspaceRuntime } from "./src/runtime.ts";
 // Storage factories and registry adapter

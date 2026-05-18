@@ -1777,11 +1777,12 @@ const workspacesRoutes = daemonFactory
               workspaceId,
               signalId,
               body.payload,
-              body.streamId,
-              forwardChunk,
-              undefined,
-              clientAbort,
-              body.parentSessionId,
+              {
+                streamId: body.streamId,
+                onStreamEvent: forwardChunk,
+                abortSignal: clientAbort,
+                parentSessionId: body.parentSessionId,
+              },
             );
             safeEnqueue(
               encoder.encode(
@@ -2211,16 +2212,12 @@ const workspacesRoutes = daemonFactory
           return c.json(rejectUnauthorizedSignalBypass(), 403);
         }
         try {
-          const result = await ctx.daemon.triggerWorkspaceSignal(
-            workspaceId,
-            signalId,
-            payload,
+          const result = await ctx.daemon.triggerWorkspaceSignal(workspaceId, signalId, payload, {
             streamId,
-            undefined,
-            _skipStates,
-            c.req.raw.signal,
+            skipStates: _skipStates,
+            abortSignal: c.req.raw.signal,
             parentSessionId,
-          );
+          });
           return c.json({
             message: "Signal completed",
             status: "completed" as const,

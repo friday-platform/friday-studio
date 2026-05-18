@@ -2,7 +2,7 @@ import { stat } from "node:fs/promises";
 import { join } from "node:path";
 import process, { env } from "node:process";
 import { JetStreamMemoryAdapter } from "@atlas/adapters-md";
-import type { AgentRegistry as AgentRegistryType, AtlasUIMessageChunk } from "@atlas/agent-sdk";
+import type { AgentRegistry as AgentRegistryType } from "@atlas/agent-sdk";
 import type { ConcurrencyPolicy } from "@atlas/config";
 import { FilesystemAtlasConfigSource } from "@atlas/config/server";
 import {
@@ -45,6 +45,7 @@ import { getFridayHome } from "@atlas/utils/paths.server";
 import {
   createJetStreamKVStorage,
   createRegistryStorageJS,
+  type TriggerSignalOpts,
   validateMCPEnvironmentForWorkspace,
   WorkspaceManager,
   WorkspaceRuntime,
@@ -814,16 +815,17 @@ export class AtlasDaemon {
             envelope.workspaceId,
             envelope.signalId,
             envelope.payload,
-            envelope.streamId,
-            ctx.onStreamEvent,
-            undefined,
-            ctx.abortSignal,
-            // Reuse the existing `sourceSessionId` envelope field as the
-            // parent linkage. It was wired through on publish but never
-            // consumed — Phase 11 makes it carry across into
-            // `SessionSummary.parentSessionId`.
-            envelope.sourceSessionId,
-            webhookContext,
+            {
+              streamId: envelope.streamId,
+              onStreamEvent: ctx.onStreamEvent,
+              abortSignal: ctx.abortSignal,
+              // Reuse the existing `sourceSessionId` envelope field as the
+              // parent linkage. It was wired through on publish but never
+              // consumed — Phase 11 makes it carry across into
+              // `SessionSummary.parentSessionId`.
+              parentSessionId: envelope.sourceSessionId,
+              webhookContext,
+            },
           );
         } catch (err) {
           if (err instanceof SessionFailedError) {
@@ -2144,14 +2146,11 @@ export class AtlasDaemon {
       triggerFn: async (signalId, signalData, streamId, onStreamEvent, abortSignal) => {
         const runtime = await this.getOrCreateWorkspaceRuntime(workspaceId);
         try {
-          const session = await runtime.triggerSignalWithSession(
-            signalId,
-            signalData,
+          const session = await runtime.triggerSignalWithSession(signalId, signalData, {
             streamId,
             onStreamEvent,
-            undefined,
             abortSignal,
-          );
+          });
           return { sessionId: session.id };
         } finally {
           runtime.shutdown().catch((err) => {
@@ -2178,35 +2177,16 @@ export class AtlasDaemon {
    * @param workspaceId - Workspace ID to trigger signal in
    * @param signalId - Signal ID to trigger
    * @param payload - Signal payload data
-   * @param streamId - Optional stream ID for conversation context
-   * @param onStreamEvent - Optional callback for streaming responses (used by Discord, web chat, etc)
-   * @param skipStates - Optional state IDs to skip during FSM execution
-   * @param abortSignal - Wired by CascadeConsumer for the `replace` policy — aborts the cascade in favour of a newer envelope
+   * @param opts - Trailing optional context (streamId, onStreamEvent,
+   *   skipStates, abortSignal, parentSessionId, webhookContext). See
+   *   `TriggerSignalOpts` in packages/workspace/src/runtime.ts.
    * @returns Session ID for tracking the triggered signal
    */
   public async triggerWorkspaceSignal(
     workspaceId: string,
     signalId: string,
     payload?: Record<string, unknown>,
-    streamId?: string,
-    onStreamEvent?: (chunk: AtlasUIMessageChunk) => void,
-    skipStates?: string[],
-    abortSignal?: AbortSignal,
-    /**
-     * Parent session id when this signal is being fired from inside
-     * another session (chat-spawned-job, FSM-emit-and-await, etc.).
-     * Threads through to `SessionSummary.parentSessionId` so the
-     * spawned session records its parent. Phase 11 provenance.
-     */
-    parentSessionId?: string,
-    /**
-     * Webhook-only context (base64 body + lowercased headers) preserved
-     * byte-for-byte from the upstream HTTP request when the signal came
-     * in through Friday's webhook-tunnel. Surfaces to the agent as
-     * `ctx.input.raw["body"]` / `ctx.input.raw["headers"]`. Absent for
-     * cron / chat / system / FSM-emitted signals.
-     */
-    webhookContext?: { body?: string; headers?: Record<string, string> },
+    opts: TriggerSignalOpts = {},
   ): Promise<{
     sessionId: string;
     output: Array<{ id: string; type: string; data: Record<string, unknown> }>;
@@ -2227,16 +2207,7 @@ export class AtlasDaemon {
   }> {
     const runtime = await this.getOrCreateWorkspaceRuntime(workspaceId);
     try {
-      const result = await runtime.triggerSignalWithResult(
-        signalId,
-        payload || {},
-        streamId,
-        onStreamEvent,
-        skipStates,
-        abortSignal,
-        parentSessionId,
-        webhookContext,
-      );
+      const result = await runtime.triggerSignalWithResult(signalId, payload || {}, opts);
       const session = result.session;
 
       // Record signal trigger metric by provider type (http, schedule, slack, etc.)

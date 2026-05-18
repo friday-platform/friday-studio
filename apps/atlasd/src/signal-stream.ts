@@ -28,7 +28,13 @@ import { z } from "zod";
 
 const STREAM_NAME = "SIGNALS";
 const SCHEMA_VERSION = "1";
-const DEFAULT_MAX_MSG_SIZE = 1 * 1024 * 1024;
+// 8 MiB matches the FRIDAY_JETSTREAM_MAX_MSG_SIZE env default in
+// packages/jetstream/src/config.ts. The previous 1 MiB was only used
+// when a caller created the SIGNALS stream without passing limits
+// (test code paths), and it was tighter than production — so a test
+// publishing a base64-encoded webhook body could pass against values
+// that would 500 on a real daemon. Keep them aligned.
+const DEFAULT_MAX_MSG_SIZE = 8 * 1024 * 1024;
 const DEFAULT_MAX_AGE_NS = 7 * 24 * 60 * 60 * 1_000_000_000; // 7 days
 const DEFAULT_DUPLICATE_WINDOW_NS = 5 * 60 * 1_000_000_000; // 5 min — covers cron-tick double-fires
 

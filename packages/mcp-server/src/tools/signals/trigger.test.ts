@@ -1,11 +1,21 @@
 import { describe, expect, test } from "vitest";
-import { mapSignalTriggerResponse } from "./trigger.ts";
+import { mapSignalTriggerResponse, SignalTriggerResponseSchema } from "./trigger.ts";
 
 // MCP tools are reached by LLM clients, so silent shape drift on the
 // signal-trigger response envelope is the highest-stakes path among the
-// four discriminator call sites. These tests lock the union narrowing
-// so a future schema change is caught at test time, not by an LLM that
-// then routes a half-shipped envelope back to the user.
+// four discriminator call sites. These tests lock TWO surfaces:
+//   1. `mapSignalTriggerResponse` correctly narrows the
+//      `completed | accepted` union from atlasd.
+//   2. `SignalTriggerResponseSchema` validates atlasd's actual 2xx body
+//      shape at runtime — schema drift (renamed field, new status)
+//      surfaces here before the LLM client sees a malformed envelope.
+//
+// Atlasd emits only two 2xx body shapes (apps/atlasd/routes/workspaces/index.ts):
+//   - status: "completed" + sessionId  (synchronous mode)
+//   - status: "accepted"  + correlationId  (?nowait=true / webhook mode)
+// Terminal failures return non-2xx (caught earlier via result.ok === false),
+// not a status:"failed" body. The schema deliberately doesn't allow
+// failed/cancelled — adding them would protect a hypothetical contract.
 
 describe("mapSignalTriggerResponse — discriminator coverage", () => {
   test("completed → success with sessionId + triggered status", () => {
@@ -42,46 +52,44 @@ describe("mapSignalTriggerResponse — discriminator coverage", () => {
     expect(out.payload).not.toHaveProperty("sessionId");
     expect((out.payload.message as string).toLowerCase()).toContain("async");
   });
+});
 
-  test("failed → error envelope with error string", () => {
-    const out = mapSignalTriggerResponse("ws-1", "sig-1", {
-      status: "failed",
-      error: "agent threw",
+describe("SignalTriggerResponseSchema — runtime validation at the atlasd seam", () => {
+  test("parses a valid completed envelope", () => {
+    const r = SignalTriggerResponseSchema.safeParse({
+      status: "completed",
+      sessionId: "s1",
+      output: [],
+      summary: "",
     });
-    expect(out.kind).toBe("error");
-    expect(out.payload).toMatchObject({
-      workspaceId: "ws-1",
-      signalId: "sig-1",
-      status: "failed",
-      error: "agent threw",
-    });
+    expect(r.success).toBe(true);
   });
 
-  test("failed without error string → falls back to a sensible default", () => {
-    const out = mapSignalTriggerResponse("ws-1", "sig-1", { status: "failed" });
-    expect(out.kind).toBe("error");
-    expect(out.payload.status).toBe("failed");
-    expect(out.payload.error).toBeTruthy();
+  test("parses a valid accepted envelope", () => {
+    const r = SignalTriggerResponseSchema.safeParse({ status: "accepted", correlationId: "c1" });
+    expect(r.success).toBe(true);
   });
 
-  test("cancelled → error envelope with reason", () => {
-    const out = mapSignalTriggerResponse("ws-1", "sig-1", {
-      status: "cancelled",
-      reason: "client disconnected",
-    });
-    expect(out.kind).toBe("error");
-    expect(out.payload).toMatchObject({
-      workspaceId: "ws-1",
-      signalId: "sig-1",
-      status: "cancelled",
-      error: "client disconnected",
-    });
+  test("rejects an unknown status (the load-bearing drift guard)", () => {
+    // If atlasd ever starts returning a new status (e.g. "queued") in a
+    // 2xx body, this assertion fails — forcing the team to either widen
+    // the schema deliberately or fix atlasd.
+    const r = SignalTriggerResponseSchema.safeParse({ status: "queued", correlationId: "c1" });
+    expect(r.success).toBe(false);
   });
 
-  test("cancelled without reason → falls back to a sensible default", () => {
-    const out = mapSignalTriggerResponse("ws-1", "sig-1", { status: "cancelled" });
-    expect(out.kind).toBe("error");
-    expect(out.payload.status).toBe("cancelled");
-    expect(out.payload.error).toBeTruthy();
+  test("rejects completed without sessionId (caught at the seam, not downstream)", () => {
+    const r = SignalTriggerResponseSchema.safeParse({ status: "completed" });
+    expect(r.success).toBe(false);
+  });
+
+  test("rejects accepted without correlationId", () => {
+    const r = SignalTriggerResponseSchema.safeParse({ status: "accepted" });
+    expect(r.success).toBe(false);
+  });
+
+  test("rejects status:failed (atlasd surfaces failures as non-2xx, not as a 2xx failed envelope)", () => {
+    const r = SignalTriggerResponseSchema.safeParse({ status: "failed", error: "x" });
+    expect(r.success).toBe(false);
   });
 });

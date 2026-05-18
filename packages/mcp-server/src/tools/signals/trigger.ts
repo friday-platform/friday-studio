@@ -12,20 +12,33 @@ import { createErrorResponse, createSuccessResponse } from "../utils.ts";
 import { hasArtifactRefFields, resolveArtifactRefs } from "./resolve-artifact-refs.ts";
 
 /**
- * Response shape returned by `POST /api/workspaces/:ws/signals/:sig`. The
- * `status` field is the load-bearing discriminator — every consumer that
- * narrows on it must handle the full union, not just `completed`.
+ * Response shape returned in a 2xx body by `POST /api/workspaces/:ws/signals/:sig`.
+ * Atlasd emits exactly two shapes today:
+ *   - `completed` — synchronous mode, cascade ran to completion
+ *   - `accepted`  — `?nowait=true` or webhook mode, cascade dispatched async
  *
- * MCP tools are reached by LLM clients, so silent shape drift here is the
- * highest-stakes path among the four discriminator call sites
- * (atlas-cli, mcp-server, workspace-chat job-tools, run-job-dialog).
- * Locked by `mapSignalTriggerResponse` tests below.
+ * Terminal failures (workspace error, cascade reject, etc.) come back as
+ * non-2xx and surface here via `result.ok === false` from `parseResult`,
+ * not as a `status: "failed"` body. Keep this union tight to what atlasd
+ * actually emits — a wider union would only protect a hypothetical
+ * contract.
+ *
+ * Source of truth for these shapes: apps/atlasd/routes/workspaces/index.ts
+ * (search for `status: "completed"` and `status: "accepted"`). MCP tools
+ * are reached by LLM clients, so silent shape drift here would be the
+ * highest-stakes path among the four discriminator call sites — the Zod
+ * parse in the handler catches it at runtime.
  */
-type SignalTriggerResponse =
-  | { status: "completed"; sessionId: string; output?: unknown; summary?: string }
-  | { status: "accepted"; correlationId: string }
-  | { status: "failed"; error?: string }
-  | { status: "cancelled"; reason?: string };
+export const SignalTriggerResponseSchema = z.discriminatedUnion("status", [
+  z.object({
+    status: z.literal("completed"),
+    sessionId: z.string(),
+    output: z.unknown().optional(),
+    summary: z.string().optional(),
+  }),
+  z.object({ status: z.literal("accepted"), correlationId: z.string() }),
+]);
+export type SignalTriggerResponse = z.infer<typeof SignalTriggerResponseSchema>;
 
 /**
  * Pure function — maps an atlasd signal-trigger response into the MCP
@@ -36,7 +49,7 @@ export function mapSignalTriggerResponse(
   workspaceId: string,
   signalId: string,
   response: SignalTriggerResponse,
-): { kind: "success" | "error"; payload: Record<string, unknown> } {
+): { kind: "success"; payload: Record<string, unknown> } {
   if (response.status === "completed") {
     return {
       kind: "success",
@@ -49,30 +62,15 @@ export function mapSignalTriggerResponse(
       },
     };
   }
-  if (response.status === "accepted") {
-    return {
-      kind: "success",
-      payload: {
-        workspaceId,
-        signalId,
-        status: "accepted" as const,
-        correlationId: response.correlationId,
-        message: `Signal '${signalId}' accepted on workspace '${workspaceId}' (async).`,
-      },
-    };
-  }
-  // failed | cancelled — surface as an error to the LLM client so it can
-  // react instead of treating a half-shipped envelope as "OK".
+  // status === "accepted" (exhaustive — TS narrows after the if above)
   return {
-    kind: "error",
+    kind: "success",
     payload: {
       workspaceId,
       signalId,
-      status: response.status,
-      error:
-        response.status === "failed"
-          ? (response.error ?? "Signal failed without error message")
-          : (response.reason ?? "Signal cancelled without reason"),
+      status: "accepted" as const,
+      correlationId: response.correlationId,
+      message: `Signal '${signalId}' accepted on workspace '${workspaceId}' (async).`,
     },
   };
 }
@@ -213,17 +211,25 @@ export function registerSignalTriggerTool(server: McpServer, ctx: ToolContext) {
           );
         }
 
-        const mapped = mapSignalTriggerResponse(
-          workspaceId,
-          signalId,
-          result.data as SignalTriggerResponse,
-        );
-        if (mapped.kind === "error") {
-          ctx.logger.error("Signal trigger returned terminal failure", mapped.payload);
+        // Runtime-validate atlasd's response shape at the seam instead
+        // of `as`-casting. Schema drift (renamed field, new status) gets
+        // caught here with a clear error instead of feeding a malformed
+        // envelope to the LLM client.
+        const parsed = SignalTriggerResponseSchema.safeParse(result.data);
+        if (!parsed.success) {
+          ctx.logger.error("Atlasd signal-trigger response shape drifted", {
+            workspaceId,
+            signalId,
+            zodError: parsed.error.message,
+            rawData: result.data,
+          });
           return createErrorResponse(
-            `Signal '${signalId}' on workspace '${workspaceId}' returned ${mapped.payload.status}: ${mapped.payload.error}`,
+            `Atlasd returned an unexpected signal-trigger response shape — ` +
+              `the MCP tool's contract assumes status ∈ {completed, accepted} ` +
+              `but got: ${parsed.error.message}`,
           );
         }
+        const mapped = mapSignalTriggerResponse(workspaceId, signalId, parsed.data);
         if (mapped.payload.status === "accepted") {
           ctx.logger.warn("Signal trigger returned non-completed status", mapped.payload);
         } else {

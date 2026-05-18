@@ -180,7 +180,7 @@ func TestHookUnknownProvider(t *testing.T) {
 
 func TestHookOversizedRejectedAs413(t *testing.T) {
 	base := setupTestServer(t, "http://invalid:0")
-	// 25 MB + 1 byte
+	// One byte over the cap.
 	body := bytes.Repeat([]byte("a"), maxBodySize+1)
 	req, _ := http.NewRequest(http.MethodPost,
 		base+"/hook/raw/ws/sig", bytes.NewReader(body))

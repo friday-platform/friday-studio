@@ -42,10 +42,17 @@ import (
 )
 
 // maxBodySize caps request bodies for /hook and /platform routes.
-// 25 MB matches GitHub's documented webhook payload max — the most
-// generous of the common providers. Oversized bodies get 413 before
-// any handler reads them so a hostile caller can't OOM the process.
-const maxBodySize = 25 * 1024 * 1024
+// Sized to land safely under the SIGNALS JetStream stream's
+// `max_msg_size` (default 8 MiB; see FRIDAY_JETSTREAM_MAX_MSG_SIZE in
+// packages/jetstream/src/config.ts). The webhook body rides the stream
+// as base64 (~1.33× inflation) wrapped in a small envelope JSON, so a
+// 4 MiB raw body produces a ~5.4 MiB JetStream message — comfortably
+// inside 8 MiB without surprise 500s at publish. GitHub's documented
+// 25 MiB ceiling is larger than this; payloads above ~4 MiB are
+// rejected here with a clear 413 rather than failing silently at the
+// JetStream layer. Oversized bodies get 413 before any handler reads
+// them so a hostile caller can't OOM the process.
+const maxBodySize = 4 * 1024 * 1024
 
 // shutdownTimeout matches the TS implementation's 25-second drain.
 const shutdownTimeout = 25 * time.Second
@@ -344,7 +351,12 @@ func handleHook(w http.ResponseWriter, r *http.Request) {
 	// into a 502, which is less precise but still bounded.
 	if r.ContentLength > maxBodySize {
 		writeJSONError(w, http.StatusRequestEntityTooLarge,
-			fmt.Sprintf("body exceeds %d bytes", maxBodySize))
+			fmt.Sprintf(
+				"body exceeds %d bytes (%d MiB) — the cap is sized to leave "+
+					"headroom under atlasd's JetStream max_msg_size after base64 "+
+					"+ envelope overhead. Split the webhook upstream or raise "+
+					"FRIDAY_JETSTREAM_MAX_MSG_SIZE if you need a larger ceiling.",
+				maxBodySize, maxBodySize/(1024*1024)))
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxBodySize)
