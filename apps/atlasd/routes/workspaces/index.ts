@@ -2256,11 +2256,20 @@ const workspacesRoutes = daemonFactory
       // Callers that need to watch progress must use the in-handler SSE path
       // (Accept: text/event-stream on the POST below) which subscribes
       // BEFORE publishing.
-      const nowait =
-        c.req.query("nowait") === "true" ||
-        c.req.query("nowait") === "1" ||
-        c.req.query("wait") === "false" ||
-        c.req.query("wait") === "0";
+      //
+      // Precedence with `Accept: text/event-stream`: the SSE middleware
+      // (registered earlier in this same chain, line ~1712) short-circuits
+      // before this handler runs whenever the Accept header is set, so an
+      // `Accept: text/event-stream` request with `?nowait=true` reaches
+      // the SSE branch — Accept wins, ?nowait is ignored. That's locked
+      // by `sse+nowait → SSE wins` test in index.test.ts.
+      // One canonical spelling — `?nowait=true`. Other variants
+      // (`nowait=1`, `wait=false`, `wait=0`) were never required by any
+      // caller (the only consumer is the webhook-tunnel, which now
+      // routes through webhook mode and doesn't use this query at all)
+      // and they invite the next "why does `wait=0` work but `wait=no`
+      // doesn't?" question.
+      const nowait = c.req.query("nowait") === "true";
       if (nowait) {
         try {
           await ctx.daemon.publishSignalToJetStream({

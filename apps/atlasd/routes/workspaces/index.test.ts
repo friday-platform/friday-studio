@@ -289,18 +289,31 @@ describe("POST /workspaces/:workspaceId/signals/:signalId ?nowait=true publish-a
     expect(publishArgs.correlationId).toBe(body.correlationId);
   });
 
-  test("?nowait=1 and ?wait=false are accepted aliases for ?nowait=true", async () => {
-    for (const query of ["?nowait=1", "?wait=false", "?wait=0"]) {
+  test("only ?nowait=true is recognized — non-canonical spellings fall through to sync mode", async () => {
+    // Locks the canonical-spelling decision: spelling variants like
+    // `nowait=1`, `wait=false`, `wait=0` used to be aliases. They were
+    // never required by any caller (the only nowait consumer was the
+    // webhook-tunnel, which now uses webhook mode entirely) and they
+    // invite spelling-mistake confusion. Test that non-canonical
+    // spellings do NOT trigger the nowait publish-only path.
+    for (const query of ["?nowait=1", "?wait=false", "?wait=0", "?nowait=yes"]) {
       const { app, publishSignalToJetStream } = createTestApp();
-      const res = await app.request(`/workspaces/ws-1/signals/sig-1${query}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ payload: {} }),
-      });
-      expect(res.status, `alias ${query} should return 202`).toBe(202);
-      const body = (await res.json()) as Record<string, unknown>;
-      expect(body.status, `alias ${query} status`).toBe("accepted");
-      expect(publishSignalToJetStream).toHaveBeenCalledOnce();
+      // We deliberately don't await — sync mode opens a NATS subscription
+      // and would hang in the unit test. We only need to confirm the
+      // request did NOT take the nowait publish-only fast path.
+      app
+        .request(`/workspaces/ws-1/signals/sig-1${query}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ payload: {} }),
+        })
+        .catch(() => undefined);
+      // Give the handler a tick to discriminate.
+      await new Promise((r) => setTimeout(r, 50));
+      expect(
+        publishSignalToJetStream,
+        `non-canonical ${query} must NOT take the nowait branch`,
+      ).not.toHaveBeenCalled();
     }
   });
 
@@ -318,6 +331,27 @@ describe("POST /workspaces/:workspaceId/signals/:signalId ?nowait=true publish-a
     expect(body).toMatchObject({ workspaceId: "ws-1", signalId: "sig-1" });
     expect(typeof body.error).toBe("string");
     expect(body.error as string).toContain("JetStream unavailable");
+  });
+
+  test("Accept: text/event-stream wins over ?nowait=true (SSE handler short-circuits first)", async () => {
+    // Topology lock: the SSE handler is a SEPARATE .post() registration
+    // earlier in the route chain that branches on Accept header before
+    // the JSON handler's nowait check runs. So a caller that asks for
+    // both SSE AND nowait gets SSE — not a 202 publish-only response.
+    // This pins the precedence so a future refactor can't silently flip it.
+    const { app, publishSignalToJetStream, triggerWorkspaceSignal } = createTestApp();
+    const res = await app.request("/workspaces/ws-1/signals/sig-1?nowait=true", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+      body: JSON.stringify({ input: "hello" }),
+    });
+    // The SSE handler rejects un-enveloped bodies with 400 (its own envelope
+    // guard, separate from the JSON handler). Status 400 here proves we
+    // reached the SSE handler, not the JSON handler (which would have
+    // routed `{input: "hello"}` to webhook mode and returned 202).
+    expect(res.status).toBe(400);
+    expect(publishSignalToJetStream).not.toHaveBeenCalled();
+    expect(triggerWorkspaceSignal).not.toHaveBeenCalled();
   });
 });
 

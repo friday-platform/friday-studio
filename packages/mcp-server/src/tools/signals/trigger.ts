@@ -11,6 +11,72 @@ import type { ToolContext } from "../types.ts";
 import { createErrorResponse, createSuccessResponse } from "../utils.ts";
 import { hasArtifactRefFields, resolveArtifactRefs } from "./resolve-artifact-refs.ts";
 
+/**
+ * Response shape returned by `POST /api/workspaces/:ws/signals/:sig`. The
+ * `status` field is the load-bearing discriminator — every consumer that
+ * narrows on it must handle the full union, not just `completed`.
+ *
+ * MCP tools are reached by LLM clients, so silent shape drift here is the
+ * highest-stakes path among the four discriminator call sites
+ * (atlas-cli, mcp-server, workspace-chat job-tools, run-job-dialog).
+ * Locked by `mapSignalTriggerResponse` tests below.
+ */
+type SignalTriggerResponse =
+  | { status: "completed"; sessionId: string; output?: unknown; summary?: string }
+  | { status: "accepted"; correlationId: string }
+  | { status: "failed"; error?: string }
+  | { status: "cancelled"; reason?: string };
+
+/**
+ * Pure function — maps an atlasd signal-trigger response into the MCP
+ * tool's response envelope. Extracted so the discriminator behavior is
+ * unit-testable without standing up the full Hono RPC + MCP server stack.
+ */
+export function mapSignalTriggerResponse(
+  workspaceId: string,
+  signalId: string,
+  response: SignalTriggerResponse,
+): { kind: "success" | "error"; payload: Record<string, unknown> } {
+  if (response.status === "completed") {
+    return {
+      kind: "success",
+      payload: {
+        workspaceId,
+        signalId,
+        sessionId: response.sessionId,
+        status: "triggered" as const,
+        message: `Signal '${signalId}' triggered successfully on workspace '${workspaceId}'`,
+      },
+    };
+  }
+  if (response.status === "accepted") {
+    return {
+      kind: "success",
+      payload: {
+        workspaceId,
+        signalId,
+        status: "accepted" as const,
+        correlationId: response.correlationId,
+        message: `Signal '${signalId}' accepted on workspace '${workspaceId}' (async).`,
+      },
+    };
+  }
+  // failed | cancelled — surface as an error to the LLM client so it can
+  // react instead of treating a half-shipped envelope as "OK".
+  return {
+    kind: "error",
+    payload: {
+      workspaceId,
+      signalId,
+      status: response.status,
+      error:
+        response.status === "failed"
+          ? (response.error ?? "Signal failed without error message")
+          : (response.reason ?? "Signal cancelled without reason"),
+    },
+  };
+}
+
 export function registerSignalTriggerTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
     "workspace_signal_trigger",
@@ -147,38 +213,23 @@ export function registerSignalTriggerTool(server: McpServer, ctx: ToolContext) {
           );
         }
 
-        const response = result.data;
-
-        // The route can return a 202 "accepted" envelope (?nowait=true)
-        // or the default "completed" envelope. This MCP tool only triggers
-        // synchronously, so we expect "completed" — but narrow defensively
-        // so a future default flip doesn't crash here.
-        if (response.status !== "completed") {
-          ctx.logger.warn("Signal trigger returned non-completed status", {
-            workspaceId,
-            signalId,
-            status: response.status,
-          });
-          return createSuccessResponse({
-            workspaceId,
-            signalId,
-            status: response.status,
-            message: `Signal '${signalId}' accepted on workspace '${workspaceId}' (async).`,
-          });
+        const mapped = mapSignalTriggerResponse(
+          workspaceId,
+          signalId,
+          result.data as SignalTriggerResponse,
+        );
+        if (mapped.kind === "error") {
+          ctx.logger.error("Signal trigger returned terminal failure", mapped.payload);
+          return createErrorResponse(
+            `Signal '${signalId}' on workspace '${workspaceId}' returned ${mapped.payload.status}: ${mapped.payload.error}`,
+          );
         }
-        ctx.logger.info("Signal triggered successfully", {
-          workspaceId,
-          signalId,
-          sessionId: response.sessionId,
-        });
-
-        return createSuccessResponse({
-          workspaceId,
-          signalId,
-          sessionId: response.sessionId,
-          status: "triggered",
-          message: `Signal '${signalId}' triggered successfully on workspace '${workspaceId}'`,
-        });
+        if (mapped.payload.status === "accepted") {
+          ctx.logger.warn("Signal trigger returned non-completed status", mapped.payload);
+        } else {
+          ctx.logger.info("Signal triggered successfully", mapped.payload);
+        }
+        return createSuccessResponse(mapped.payload);
       } catch (error) {
         ctx.logger.error("Error triggering signal", { workspaceId, signalId, error });
         return createErrorResponse(

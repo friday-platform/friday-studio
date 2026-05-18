@@ -150,14 +150,31 @@ func TestHookForwardsByteForByte(t *testing.T) {
 
 func TestHookUnknownProvider(t *testing.T) {
 	base := setupTestServer(t, "http://invalid:0")
-	resp, err := http.Post(base+"/hook/martian/ws/sig",
-		"application/json", strings.NewReader(`{}`))
-	if err != nil {
-		t.Fatalf("post: %v", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d", resp.StatusCode)
+	// The realistic failure mode after PR #354's provider collapse is a
+	// caller still POSTing to the pre-PR URLs (/hook/github/, /hook/bitbucket/,
+	// /hook/jira/). Each should 400 with a body that names both the
+	// invalid provider AND `raw` so the operator sees the migration
+	// path. `martian` is a control for arbitrary unknown names.
+	for _, providerName := range []string{"github", "bitbucket", "jira", "martian"} {
+		t.Run(providerName, func(t *testing.T) {
+			resp, err := http.Post(base+"/hook/"+providerName+"/ws/sig",
+				"application/json", strings.NewReader(`{}`))
+			if err != nil {
+				t.Fatalf("post: %v", err)
+			}
+			defer func() { _ = resp.Body.Close() }()
+			if resp.StatusCode != http.StatusBadRequest {
+				t.Fatalf("expected 400, got %d", resp.StatusCode)
+			}
+			body, _ := io.ReadAll(resp.Body)
+			s := string(body)
+			if !strings.Contains(s, providerName) {
+				t.Errorf("response should name the rejected provider %q: %s", providerName, s)
+			}
+			if !strings.Contains(s, "raw") {
+				t.Errorf("response should mention `raw` (the only valid provider): %s", s)
+			}
+		})
 	}
 }
 
