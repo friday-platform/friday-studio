@@ -53,7 +53,7 @@
     "npm:@deno/kv@0.13": "0.13.0",
     "npm:@eslint/compat@^2.1.0": "2.1.0_eslint@10.3.0",
     "npm:@eslint/js@^10.0.1": "10.0.1_eslint@10.3.0",
-    "npm:@hono/mcp@0.3": "0.3.0_@modelcontextprotocol+sdk@1.28.0__zod@4.4.3_hono@4.12.19_hono-rate-limiter@0.5.3__hono@4.12.19_zod@4.4.3",
+    "npm:@hono/mcp@0.3": "0.3.0_@modelcontextprotocol+sdk@1.28.0__zod@4.4.3_hono@4.12.19_zod@4.4.3",
     "npm:@hono/standard-validator@~0.2.2": "0.2.2_hono@4.12.19",
     "npm:@hono/zod-validator@0.8": "0.8.0_hono@4.12.19_zod@4.4.3",
     "npm:@hono/zod-validator@0.8.0": "0.8.0_hono@4.12.19_zod@4.4.3",
@@ -91,8 +91,8 @@
     "npm:@sveltejs/vite-plugin-svelte@~6.2.4": "6.2.4_svelte@5.55.8_vite@7.3.3__@types+node@25.6.2__yaml@2.9.0",
     "npm:@tanstack/query-core@^5.100.10": "5.100.10",
     "npm:@tanstack/svelte-query@^6.1.29": "6.1.29_svelte@5.55.8",
-    "npm:@tanstack/svelte-table@9.0.0-alpha.46": "9.0.0-alpha.46_svelte@5.55.8",
-    "npm:@tanstack/svelte-table@^9.0.0-alpha.46": "9.0.0-alpha.46_svelte@5.55.8",
+    "npm:@tanstack/svelte-table@9.0.0-alpha.48": "9.0.0-alpha.48_svelte@5.55.8",
+    "npm:@tanstack/svelte-table@^9.0.0-alpha.48": "9.0.0-alpha.48_svelte@5.55.8",
     "npm:@tanstack/svelte-virtual@~3.13.24": "3.13.24_svelte@5.55.8",
     "npm:@tauri-apps/api@2.11.0": "2.11.0",
     "npm:@tauri-apps/cli@2.11.0": "2.11.0",
@@ -1134,7 +1134,7 @@
     "@floating-ui/utils@0.2.11": {
       "integrity": "sha512-RiB/yIh78pcIxl6lLMG0CgBXAZ2Y0eVHqMPYugu+9U0AeT6YBeiJpf7lbdJNIugFP5SIjwNRgo4DhR1Qxi26Gg=="
     },
-    "@hono/mcp@0.3.0_@modelcontextprotocol+sdk@1.28.0__zod@4.4.3_hono@4.12.19_hono-rate-limiter@0.5.3__hono@4.12.19_zod@4.4.3": {
+    "@hono/mcp@0.3.0_@modelcontextprotocol+sdk@1.28.0__zod@4.4.3_hono@4.12.19_zod@4.4.3": {
       "integrity": "sha512-UhSWFbZwRxHBdptOn2r1HyB8Vt6gU+BL3AbTis2t8TBW69ZhG4soJQ09yEL/t/ymxszJnWp5Rq6tOXXOjuK1qg==",
       "dependencies": [
         "@modelcontextprotocol/sdk@1.28.0_zod@4.4.3",
@@ -2189,8 +2189,8 @@
         "svelte"
       ]
     },
-    "@tanstack/svelte-table@9.0.0-alpha.46_svelte@5.55.8": {
-      "integrity": "sha512-EbxAy2jxRPdV8rKv09dLWtVQRHLUr8b53VGp0iMc3+Mwp/KhFCnyPBLxf0AfxpnSf52P10og9xtPT2rOd0cBPQ==",
+    "@tanstack/svelte-table@9.0.0-alpha.48_svelte@5.55.8": {
+      "integrity": "sha512-02lT+pdZbGfW7080PPTOYkiyLlzZEhexvQhfoHcGqbMePFdBTJsomuWy+CHSxjV3eJoC8iZzMsz6p0MQIqubpw==",
       "dependencies": [
         "@tanstack/svelte-store",
         "@tanstack/table-core",
@@ -2204,8 +2204,8 @@
         "svelte"
       ]
     },
-    "@tanstack/table-core@9.0.0-alpha.46": {
-      "integrity": "sha512-6eat46JP20mgC2s0GlQkt/Eim5RscJmsOdT2GZMBGlqil6RwbIzndeQtzsaKMs7T/gQzmzGOfvQwSt+qOc7kgQ==",
+    "@tanstack/table-core@9.0.0-alpha.48": {
+      "integrity": "sha512-u2e8HkSEqJUXmNOCjFP8PhblGaIdOhFyxyfb2TGqp2CSF54wxEuMrVGX37XjPFeYlRH7AE31iWgoaPn53nbWQQ==",
       "dependencies": [
         "@tanstack/store"
       ]
@@ -6574,7 +6574,7 @@
             "npm:@sveltejs/kit@^2.60.1",
             "npm:@sveltejs/package@^2.5.7",
             "npm:@sveltejs/vite-plugin-svelte@^6.2.4",
-            "npm:@tanstack/svelte-table@^9.0.0-alpha.46",
+            "npm:@tanstack/svelte-table@^9.0.0-alpha.48",
             "npm:@types/node@25",
             "npm:eslint-config-prettier@^10.1.8",
             "npm:eslint-plugin-svelte@^3.17.1",
@@ -6643,7 +6643,7 @@
             "npm:@sveltejs/vite-plugin-svelte@~6.2.4",
             "npm:@tanstack/query-core@^5.100.10",
             "npm:@tanstack/svelte-query@^6.1.29",
-            "npm:@tanstack/svelte-table@9.0.0-alpha.46",
+            "npm:@tanstack/svelte-table@9.0.0-alpha.48",
             "npm:@tanstack/svelte-virtual@~3.13.24",
             "npm:@types/deno@2.5.0",
             "npm:ai@^6.0.183",
