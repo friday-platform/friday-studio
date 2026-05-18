@@ -15,7 +15,7 @@ interface VersionEntry {
 }
 
 /** Minimal shape of the metadata.json sidecar — validates disk boundary */
-const AgentMetadataFileSchema = z.object({
+export const AgentMetadataFileSchema = z.object({
   id: z.string(),
   version: z.string(),
   displayName: z.string().optional(),
