@@ -146,10 +146,14 @@
 -->
 <div class="env-set-card" class:pending={isPending}>
   <div class="card-header">
-    <span class="eyebrow">
-      <span class="eyebrow-icon" aria-hidden="true"><Icons.BellAlert /></span>
-      Environment write
-    </span>
+    <h3 class="card-title">
+      {#if isInProgress(call.state) || !proposal}
+        Environment write
+      {:else}
+        Set {entries.length} variable{entries.length === 1 ? "" : "s"} in
+        <code>{scope === "global" ? "global .env" : "workspace .env"}</code>
+      {/if}
+    </h3>
     <Tooltip
       as="span"
       label={statusLabel === "expired"
@@ -168,17 +172,12 @@
   </div>
 
   {#if isInProgress(call.state)}
-    <p class="hint">Preparing environment write…</p>
+    <p class="hint">Preparing…</p>
   {:else if !proposal}
     <p class="hint">
       {matched ? "No variables in this request." : "Syncing with Activity…"}
     </p>
   {:else}
-    <div class="scope-line">
-      Set {entries.length} variable{entries.length === 1 ? "" : "s"} in
-      <code>{scope === "global" ? "the global .env" : "this workspace's .env"}</code>
-    </div>
-
     <div class="var-list">
       {#each entries as [key, value] (key)}
         {@const secret = isSecretKey(key)}
@@ -212,37 +211,39 @@
       {/each}
     </div>
 
-    {#if hasSecretLooking}
-      <p class="hint secret-hint">
-        Some keys look credential-bearing. The workspace <code>.env</code>
-         is for non-secret values.
-      </p>
-    {/if}
-
     {#if isPending}
       <div class="actions">
-        <Button
-          variant="destructive"
-          onclick={() => answer("deny")}
-          disabled={!matched || inFlight}
-        >
-          Deny
-        </Button>
-        <Tooltip
-          as="span"
-          label={missingSecretValue
-            ? "Enter a value for each secret-looking key to confirm."
-            : undefined}
-        >
+        {#if hasSecretLooking}
+          <p class="hint actions-hint">Credential-bearing values stay out of chat history.</p>
+        {/if}
+        <div class="actions-buttons">
           <Button
-            onclick={() => answer("confirm")}
-            disabled={!matched || inFlight || missingSecretValue}
+            variant="destructive"
+            onclick={() => answer("deny")}
+            disabled={!matched || inFlight}
           >
-            {answerMutation.isPending ? "Applying…" : "Confirm"}
+            Deny
           </Button>
-        </Tooltip>
+          <Tooltip
+            as="span"
+            label={missingSecretValue
+              ? "Enter a value for each secret-looking key to confirm."
+              : undefined}
+          >
+            <Button
+              onclick={() => answer("confirm")}
+              disabled={!matched || inFlight || missingSecretValue}
+            >
+              {answerMutation.isPending ? "Applying…" : "Confirm"}
+            </Button>
+          </Tooltip>
+        </div>
       </div>
-    {:else if status === "declined"}
+    {:else if hasSecretLooking}
+      <p class="hint">Credential-bearing values stay out of chat history.</p>
+    {/if}
+
+    {#if !isPending && status === "declined"}
       <p class="hint terminal">Declined — nothing was written.</p>
     {:else if !status}
       <p class="hint">Syncing with Activity…</p>
@@ -261,74 +262,46 @@
     border-radius: var(--radius-3);
     display: flex;
     flex-direction: column;
-    gap: var(--size-2);
+    gap: var(--size-3);
     margin-block-end: var(--size-4);
     padding: var(--size-3);
   }
 
   /* Pending: a soft inset ring in --color-info — the codebase's
      "this element is active/selected" convention (pipeline-diagram,
-     job-selector, model-chain). Half-transparent so the dot + pending
-     pill stay the loudest signals in the card. */
+     job-selector, model-chain). */
   .env-set-card.pending {
     box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-info), transparent 50%);
   }
 
   .card-header {
-    align-items: center;
+    align-items: baseline;
     display: flex;
     gap: var(--size-2);
     justify-content: space-between;
-    margin-block-end: var(--size-2);
   }
 
-  /* Monospace + uppercase reads as a system action label — fits the
-     "tool action" semantic (env-write, run-code, etc.) the brand uses
-     for terminal-style operations. */
-  .eyebrow {
-    align-items: center;
-    color: var(--text-faded);
-    display: inline-flex;
-    font-family: var(--font-family-monospace);
-    font-size: var(--font-size-1);
+  /* Single title slot — replaces the old monospace-uppercase eyebrow +
+     separate scope line. Sentence-case sans-serif keeps the card on one
+     typographic register; monospace only appears for the `.env` identifier
+     inline below. */
+  .card-title {
+    color: var(--text-bright);
+    font-size: var(--font-size-2);
     font-weight: var(--font-weight-5);
-    gap: var(--size-1-5);
-    letter-spacing: 0.06em;
-    line-height: 1;
-    text-transform: uppercase;
-  }
-
-  /* Status icon — neutral by default, --color-info when pending. Carries
-     the "needs your attention" semantic; the BellAlert glyph reads at a
-     glance where a colored dot didn't. */
-  .eyebrow-icon {
-    align-items: center;
-    block-size: 14px;
-    color: var(--text-faded);
-    display: inline-flex;
-    flex-shrink: 0;
-    inline-size: 14px;
-  }
-
-  .eyebrow-icon :global(svg) {
-    block-size: 100%;
-    color: currentColor;
-    inline-size: 100%;
-  }
-
-  .env-set-card.pending .eyebrow-icon {
-    color: var(--color-info);
+    line-height: 1.35;
+    margin: 0;
   }
 
   /* Status badge — matches the project's .badge convention in
      MemoryEntryTable.svelte: small radius, sentence case, regular
-     weight, no letter-spacing. The uppercase + letter-spaced "small
-     caps" template is template chrome, not this codebase's voice. */
+     weight, no letter-spacing. */
   .status {
     background-color: color-mix(in srgb, var(--color-text), transparent 88%);
     border-radius: var(--radius-1);
     color: var(--text-faded);
     display: inline-block;
+    flex-shrink: 0;
     font-size: var(--font-size-1);
     font-weight: var(--font-weight-5);
     padding: 1px var(--size-1-5);
@@ -350,33 +323,18 @@
     color: var(--red-primary);
   }
 
-  .scope-line {
-    color: var(--text-bright);
-    font-size: var(--font-size-2);
-    font-weight: var(--font-weight-6);
-    line-height: 1.35;
-  }
-
-  .scope-line code {
-    font-weight: var(--font-weight-4);
-  }
-
   .var-list {
     display: flex;
     flex-direction: column;
-    gap: var(--size-1-5);
+    gap: var(--size-1);
   }
 
-  /* Recessed against --surface-bright card so the keys/values read as a
-     contained block, not floating chips. */
+  /* No background or border on the row itself — the input carries the
+     only visible affordance; the row is pure layout. */
   .var-row {
     align-items: center;
-    background-color: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-2);
     display: flex;
     gap: var(--size-2);
-    padding: var(--size-1-5) var(--size-2);
   }
 
   .var-key {
@@ -385,9 +343,9 @@
     font-size: var(--font-size-1);
   }
 
-  /* Input — matches the project input pattern in signal-input-form.svelte:
-     --color-surface-2 fill, --color-border-1 border, focus darkens the
-     border to --color-text instead of the browser's blue ring. */
+  /* Input — matches signal-input-form.svelte: --color-surface-2 fill,
+     --color-border-1 border, focus darkens the border to --color-text
+     instead of the browser's blue ring. */
   .var-value {
     background-color: var(--color-surface-2);
     border: 1px solid var(--color-border-1);
@@ -395,9 +353,9 @@
     color: var(--color-text);
     flex: 1;
     font-family: var(--font-family-monospace);
-    font-size: var(--font-size-2);
+    font-size: var(--font-size-1);
     min-inline-size: 0;
-    padding: var(--size-1-5) var(--size-2);
+    padding: var(--size-1) var(--size-2);
     transition: border-color 150ms ease;
   }
 
@@ -418,8 +376,8 @@
     cursor: pointer;
     display: inline-flex;
     flex-shrink: 0;
-    inline-size: 16px;
-    block-size: 16px;
+    inline-size: 14px;
+    block-size: 14px;
     padding: 0;
   }
 
@@ -428,12 +386,25 @@
     block-size: 100%;
   }
 
+  /* Footer row: hint (left, muted) + buttons (right). The buttons use
+     margin-inline-start: auto so they stay right-aligned whether or not
+     the hint is present. */
   .actions {
     align-items: center;
     display: flex;
     flex-wrap: wrap;
     gap: var(--size-2);
-    justify-content: flex-end;
+  }
+
+  .actions-hint {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+  }
+
+  .actions-buttons {
+    display: flex;
+    gap: var(--size-1-5);
+    margin-inline-start: auto;
   }
 
   .hint,
@@ -444,29 +415,6 @@
 
   .hint {
     color: var(--text-faded);
-  }
-
-  .hint code {
-    font-size: var(--font-size-0, 11px);
-  }
-
-  /* Advisory, not alarming. A small yellow marker carries the warning
-     semantics; the text itself stays muted so it doesn't fight the CTAs. */
-  .secret-hint {
-    align-items: baseline;
-    color: var(--text-faded);
-    display: flex;
-    gap: var(--size-1-5);
-  }
-
-  .secret-hint::before {
-    background-color: var(--yellow-primary);
-    block-size: 6px;
-    border-radius: var(--radius-round);
-    content: "";
-    flex-shrink: 0;
-    inline-size: 6px;
-    transform: translateY(-1px);
   }
 
   .terminal {
