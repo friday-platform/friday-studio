@@ -2873,13 +2873,22 @@ export class AtlasDaemon {
 
       const toEvict = [...toEvictIdle, ...toEvictActive];
 
-      logger.warn("Evicting LRU agent sessions due to limit", {
+      // Force-evicting an active session aborts the client's in-flight MCP
+      // stream — escalate to `error` so on-call notices a user-visible
+      // disconnect rather than dismissing it as benign idle cleanup.
+      const evictionContext = {
         evictionCount: toEvict.length,
         idleEvicted: toEvictIdle.length,
         activeEvicted: toEvictActive.length,
+        evictedSessionIds: toEvict.map(([id]) => id),
         totalSessions: this.agentSessions.size,
         maxSessions: this.MAX_AGENT_SESSIONS,
-      });
+      };
+      if (toEvictActive.length > 0) {
+        logger.error("Evicting LRU agent sessions due to limit", evictionContext);
+      } else {
+        logger.warn("Evicting LRU agent sessions due to limit", evictionContext);
+      }
 
       for (const [sessionId] of toEvict) {
         await this.cleanupAgentSession(sessionId);
@@ -2959,13 +2968,21 @@ export class AtlasDaemon {
 
       const toEvict = [...toEvictIdle, ...toEvictActive];
 
-      logger.warn("Evicting LRU platform sessions due to limit", {
+      // See `performAgentSessionCleanup` — `error` when we're killing
+      // in-flight streams, `warn` for clean idle eviction.
+      const evictionContext = {
         evictionCount: toEvict.length,
         idleEvicted: toEvictIdle.length,
         activeEvicted: toEvictActive.length,
+        evictedSessionIds: toEvict.map(([id]) => id),
         totalSessions: this.platformMcpSessions.size,
         maxSessions: this.MAX_PLATFORM_SESSIONS,
-      });
+      };
+      if (toEvictActive.length > 0) {
+        logger.error("Evicting LRU platform sessions due to limit", evictionContext);
+      } else {
+        logger.warn("Evicting LRU platform sessions due to limit", evictionContext);
+      }
 
       for (const [sessionId] of toEvict) {
         await this.cleanupPlatformSession(sessionId);
