@@ -7,13 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+
+## [0.1.10] - 2026-05-19
+
+A reliability and polish release. **Microsoft Mail** is now a connector — link your personal Outlook or work Microsoft 365 mailbox and Friday can read, search, and send mail on your behalf (#389). On macOS, **Friday Studio comes back on its own if it crashes** instead of leaving you with a missing tray icon until the next login (#345). The chat sidebar no longer gets stuck on **"Offline" after long sessions** — it recovers on its own where you previously needed to restart the app (#369). When agents need to set a secret like an API key, you can now **type it straight into the confirmation card** so the value never shows up in your chat history (#352). Installed builds also log a lot less by default, so daemon logs stay readable (#392). Plus a design pass that brings consistent typography, spacing, and layout across the playground (#387).
+
 ### Added
 
-- **`env_set` confirmation card keeps secret values out of chat history.** Agents propose environment-variable writes through an in-chat card; the user reviews, edits, and confirms. For secret-looking keys (`token`, `key`, `secret`, `password`, `credential`), the agent leaves the value blank and the user types it into a password input. Exception: if the user pasted the literal value in chat first, the agent passes it through. After confirmation the card mirrors what's in `.env`, so edits survive a page refresh; secrets load only when you click the reveal eye. (#352)
+- **`env_set` confirmation card keeps secret values out of chat history.** Agents propose env writes through an in-chat card; the user reviews, edits, and confirms. For secret-looking keys (`token`, `key`, `secret`, `password`, `credential`), the agent leaves the value blank and the user types it into a password input. Exception: if the user pasted the literal value in chat first, the agent passes it through. After confirmation the card mirrors what's in `.env`, so edits survive a page refresh; secrets reveal only when you click the eye. (#352)
+- **Microsoft Mail OAuth provider + MCP registry entry.** Read and send Outlook / Microsoft 365 mail through a new `microsoft-mail` provider in Link, wrapping `@softeria/ms-365-mcp-server --preset mail`. PKCE-only public client (no app secret), mail-only scopes (`User.Read`, `Mail.ReadWrite`, `Mail.Send`, `offline_access`). Personal MSA, work, and school accounts all sign in through `/common`. Calendar / Files / Teams will ship as separate providers to keep consent screens minimal. (#389)
 
 ### Changed
 
 - **Chat surface polish.** Message actions (timestamp, menu) hug the bubble's right edge instead of stranding past wide tool cards. Inline timestamps drop seconds — hover for full date+time, or hold Alt for the full inline format. Fullscreen chat (Ctrl+F) keeps its rounded panel framing instead of going edge-to-edge. (#352)
+- **Design system pass across `@atlas/ui` and the playground.** New shared CSS reset and `utilities.css` (CUBE-style `.text-*` size scale, `.text-bright` / `.text-faded` color helpers, `.button` block with variant/size modifiers) loaded from both `agent-playground` and `chat-replay`. `PageLayout` gains a "shell mode" — a workspace-level sidebar as a direct child of `Root` switches the layout to a responsive 2-column grid via `:has()`. Hand-rolled `font-size` / `color` rules across ~50 playground components migrate to the utility classes. (#387)
+- **MCP catalog sorts alphabetically.** Previous order grouped by static-vs-runtime source, which was invisible since the tree renders without group headers. (#389)
+- **Installed Studio builds default `FRIDAY_LOG_LEVEL=warn` instead of `debug`.** `debug` was flooding the daemon log with per-token MCP stream events. Existing `.env` customisations are preserved on upgrade. Bare CLI / `deno task atlas` still falls through to `debug` for local development. (#392)
+- **`deno.compile.json` drops its vestigial `tasks:` block.** The file is consumed only by `deno compile`, which doesn't read tasks. The block had silently drifted from `deno.json`; `deno.json` is now the single source of truth for tasks. Closes #317. (#393)
+
+### Fixed
+
+- **Launcher self-recovers from crashes.** The macOS LaunchAgent plist has shipped with `KeepAlive=<false/>` since v0.0.x, so launchd never restarted on panic, segfault, OOM, or signal-kill — a crashed launcher left a vanished tray icon and a dead playground port until the next login. Now writes `KeepAlive={Crashed:true, SuccessfulExit:false}`, which catches any abnormal exit while leaving clean Quit / installer-SIGTERM alone. **macOS 26 (Tahoe) gotcha:** `{Crashed:true}` *alone* is silently ignored on Tahoe — verified empirically on 26.4.1 — so the two-key form is load-bearing on current macOS. Existing users on either the old `<false/>` form or the intermediate `{Crashed:true}` shape get migrated to the canonical two-key dict on their next launcher boot. (#345)
+- **Two-pass MCP session eviction unsticks long-lived SSE streams.** The 60s cleanup tick filtered eviction candidates by "no active requests," but long-lived SSE / chat-storage streams keep that counter above zero for the lifetime of an open browser tab. Once the session map filled, the warning fired every 60s with no progress and new sessions got crowded out — the studio chat-storage "Offline" wedge required a daemon restart to recover. Now: prefer evicting idle sessions oldest-first; if still over the limit, force-evict the LRU active session and tear down its stream. Force-eviction logs at `error` (with the evicted session ids) since it disconnects a live client. (#369)
 
 
 ## [0.1.9] - 2026-05-18
