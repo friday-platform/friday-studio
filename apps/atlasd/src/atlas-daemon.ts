@@ -127,6 +127,7 @@ import { CronSignalRegistrar } from "./signal-registrars/cron-registrar.ts";
 import { FsWatchSignalRegistrar } from "./signal-registrars/fs-watch-registrar.ts";
 import {
   ensureSignalsStream,
+  envelopeToWebhookContext,
   type PublishSignalOpts,
   publishSignal,
   SignalConsumer,
@@ -803,14 +804,11 @@ export class AtlasDaemon {
       nc,
       async (envelope, ctx) => {
         try {
-          // Webhook-only fields ride on the envelope alongside payload (set
-          // only by the /signals/:sig/webhook endpoint that fronts the
-          // byte-for-byte tunnel proxy). Pass them through so the agent
-          // can verify HMAC against the exact upstream bytes.
-          const webhookContext =
-            envelope.webhookBody !== undefined || envelope.webhookHeaders !== undefined
-              ? { body: envelope.webhookBody, headers: envelope.webhookHeaders }
-              : undefined;
+          // `envelopeToWebhookContext` extracts the byte-for-byte webhook
+          // fields (body + headers, set only by the /signals/:sig/webhook
+          // endpoint that fronts the tunnel proxy) into the opts-bag shape
+          // `triggerWorkspaceSignal` expects. Returns `undefined` for
+          // non-webhook envelopes so the runtime signal stays clean.
           return await this.triggerWorkspaceSignal(
             envelope.workspaceId,
             envelope.signalId,
@@ -824,7 +822,7 @@ export class AtlasDaemon {
               // consumed — Phase 11 makes it carry across into
               // `SessionSummary.parentSessionId`.
               parentSessionId: envelope.sourceSessionId,
-              webhookContext,
+              webhookContext: envelopeToWebhookContext(envelope),
             },
           );
         } catch (err) {

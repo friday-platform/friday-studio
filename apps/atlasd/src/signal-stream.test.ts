@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   awaitSignalCompletion,
   ensureSignalsStream,
+  envelopeToWebhookContext,
   publishSignal,
   SignalConsumer,
   type SignalEnvelope,
@@ -278,6 +279,53 @@ describe("publishSignal + SignalConsumer", () => {
 
     expect(seen).toEqual(["s-0", "s-1", "s-2", "s-3", "s-4", "s-5"]);
   }, 15_000);
+});
+
+describe("envelopeToWebhookContext", () => {
+  // Pass-4 review #4. CascadeConsumer's dispatcher closure in
+  // atlas-daemon.ts used to inline this mapping, which meant the only way
+  // to verify it was a live JetStream+Hono+workspace E2E (CI-flaky and
+  // slow). Extracting the helper lets us cover all four envelope shapes
+  // in a pure unit test — and locks the runtime contract:
+  //
+  //   webhookContext.body === envelope.webhookBody (no transcoding)
+  //   webhookContext.headers === envelope.webhookHeaders (no lower-casing,
+  //     no rename) — the receiver layer already normalized them
+  //
+  // Returning `undefined` (not `{}`) for non-webhook envelopes is what
+  // keeps `WorkspaceRuntimeSignal.body`/`.headers` undefined so the agent
+  // SDK doesn't surface `ctx.input.raw["body"] === ""` for cron/CLI/chat
+  // triggers.
+  const baseEnvelope: SignalEnvelope = {
+    workspaceId: "ws-1",
+    signalId: "sig-1",
+    payload: {},
+    publishedAt: "2026-05-18T00:00:00Z",
+  };
+
+  it("returns undefined when neither webhookBody nor webhookHeaders is set", () => {
+    expect(envelopeToWebhookContext(baseEnvelope)).toBeUndefined();
+  });
+
+  it("returns { body, headers } when both fields are set", () => {
+    const body = Buffer.from(`{"action":"opened"}`, "utf-8").toString("base64");
+    const headers = { "x-github-event": "pull_request", "x-hub-signature-256": "sha256=abc" };
+    expect(
+      envelopeToWebhookContext({ ...baseEnvelope, webhookBody: body, webhookHeaders: headers }),
+    ).toEqual({ body, headers });
+  });
+
+  it("returns context with only body when only webhookBody is set", () => {
+    const body = "ZGVhZGJlZWY=";
+    const result = envelopeToWebhookContext({ ...baseEnvelope, webhookBody: body });
+    expect(result).toEqual({ body, headers: undefined });
+  });
+
+  it("returns context with only headers when only webhookHeaders is set", () => {
+    const headers = { "x-trace-id": "t1" };
+    const result = envelopeToWebhookContext({ ...baseEnvelope, webhookHeaders: headers });
+    expect(result).toEqual({ body: undefined, headers });
+  });
 });
 
 async function waitFor(predicate: () => boolean, timeoutMs: number): Promise<void> {

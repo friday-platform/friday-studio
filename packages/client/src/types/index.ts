@@ -8,6 +8,9 @@ export interface AtlasClientOptions {
   timeout?: number;
 }
 
+// `SignalTriggerResponse` re-exported from `@atlas/core` (was a local
+// duplicate before pass-4 fix #1).
+export type { SignalTriggerResponse } from "@atlas/core";
 export type { AgentInfo, JobDetailedInfo, JobInfo } from "./agent.ts";
 // Re-export all types
 export type { DaemonStatus } from "./daemon.ts";
@@ -18,11 +21,7 @@ export type {
   SessionInfo,
   WorkspaceSessionInfo,
 } from "./session.ts";
-
-export type {
-  SignalResponse,
-  SignalTriggerResponse,
-} from "./signal.ts";
+export type { SignalResponse } from "./signal.ts";
 export type {
   WorkspaceAddRequest,
   WorkspaceBatchAddRequest,

@@ -441,6 +441,16 @@ describe("POST /workspaces/:workspaceId/signals/:signalId webhook mode (byte-for
         "X-GitHub-Delivery": "72d3162e-cc78-11e3-81ab-4c9367dc0958",
         "X-Hub-Signature-256": "sha256=abc123deadbeef",
         "User-Agent": "GitHub-Hookshot/abc",
+        // Hop-by-hop headers explicitly set on the request so the
+        // `not.toHaveProperty` assertions below actually test that the
+        // HOP_BY_HOP filter strips them. Without these in the request,
+        // the assertions used to pass trivially because the synthetic
+        // `app.request()` Request doesn't auto-populate these headers
+        // — see pass-4 review item #3.
+        Connection: "keep-alive",
+        "Keep-Alive": "timeout=5",
+        "Transfer-Encoding": "chunked",
+        "Proxy-Authorization": "Basic abc",
       },
       body: githubBody,
     });
@@ -464,7 +474,12 @@ describe("POST /workspaces/:workspaceId/signals/:signalId webhook mode (byte-for
     expect(headers["x-hub-signature-256"]).toBe("sha256=abc123deadbeef");
     expect(headers["user-agent"]).toBe("GitHub-Hookshot/abc");
     expect(headers["content-type"]).toBe("application/json");
-    // Hop-by-hop stripped (none of these should be in webhookHeaders).
+    // Hop-by-hop headers (set explicitly above) must NOT survive the
+    // filter — these were the test gap that pass-4 #3 surfaced.
+    expect(headers).not.toHaveProperty("connection");
+    expect(headers).not.toHaveProperty("keep-alive");
+    expect(headers).not.toHaveProperty("transfer-encoding");
+    expect(headers).not.toHaveProperty("proxy-authorization");
     expect(headers).not.toHaveProperty("content-length");
     expect(headers).not.toHaveProperty("host");
     // Parsed view also set for agents that want structured access.
@@ -524,6 +539,29 @@ describe("POST /workspaces/:workspaceId/signals/:signalId webhook mode (byte-for
     const args = publishSignalToJetStream.mock.calls[0]?.[0] as Record<string, unknown>;
     expect(args).not.toHaveProperty("webhookBody");
     expect(args).not.toHaveProperty("webhookHeaders");
+  });
+
+  test("empty `{}` body routes to envelope mode, not webhook (isEmptyObject branch)", async () => {
+    // Pass-4 fix #5: the discriminator has three predicates —
+    // isObjectBody, allKeysAreEnvelope, isEmptyObject. The third one
+    // (the gate that keeps `{}` in envelope mode — the valid
+    // no-payload cron/CLI trigger pattern) had no direct test before
+    // this. Existing "allows empty body" test exercises the bypass
+    // path, not the empty-object discriminator branch.
+    const { app, publishSignalToJetStream } = createTestApp();
+    const res = await app.request("/workspaces/ws-1/signals/sig-1", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    // Envelope mode → no bypass header → not nowait → would reach the
+    // sync path → mockGetNatsConnection throws → 500. The point is:
+    // NOT 202 "Webhook accepted", NOT publishSignalToJetStream call.
+    // If someone removes the `!isEmptyObject` gate, `{}` mis-routes to
+    // webhook and this test catches it.
+    expect(publishSignalToJetStream).not.toHaveBeenCalled();
+    const body = (await res.json().catch(() => undefined)) as { message?: string } | undefined;
+    expect(body?.message).not.toBe("Webhook accepted");
   });
 
   // Discriminator edge cases — `isObjectBody` + `hasEnvelopeKey` +

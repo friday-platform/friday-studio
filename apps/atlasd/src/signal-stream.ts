@@ -103,6 +103,29 @@ export const SignalEnvelopeSchema = z.object({
 
 export type SignalEnvelope = z.infer<typeof SignalEnvelopeSchema>;
 
+/**
+ * Extract `{ body, headers }` from a SignalEnvelope when either webhook
+ * field is set, otherwise `undefined`. Pure function — the CascadeConsumer
+ * dispatcher in atlas-daemon.ts uses it to build the `webhookContext`
+ * arg passed to `triggerWorkspaceSignal`. Extracted so the dispatcher's
+ * envelope→opts mapping is unit-testable without standing up the full
+ * Hono + JetStream + workspace runtime stack.
+ *
+ * Returning `undefined` (not an empty object) for non-webhook envelopes
+ * is the contract `WorkspaceRuntimeSignal.body`/`.headers` rely on to
+ * stay `undefined` — anything else would pollute non-webhook signals
+ * with empty strings/objects that the agent SDK would surface as
+ * `ctx.input.raw["body"] === ""`.
+ */
+export function envelopeToWebhookContext(
+  envelope: SignalEnvelope,
+): { body?: string; headers?: Record<string, string> } | undefined {
+  if (envelope.webhookBody === undefined && envelope.webhookHeaders === undefined) {
+    return undefined;
+  }
+  return { body: envelope.webhookBody, headers: envelope.webhookHeaders };
+}
+
 /** Result published by SignalConsumer to the response subject. */
 export const SignalResponseSchema = z.discriminatedUnion("ok", [
   z.object({ ok: z.literal(true), result: z.unknown() }),

@@ -4,6 +4,7 @@
  */
 
 import { parseResult, client as v2Client } from "@atlas/client/v2";
+import { SignalTriggerResponseSchema } from "@atlas/core";
 import { stringifyError } from "@atlas/utils";
 import { AtlasApiError } from "./errors.ts";
 import type {
@@ -87,7 +88,13 @@ export class AtlasClient {
   }
 
   /**
-   * Trigger a signal in a workspace
+   * Trigger a signal in a workspace.
+   *
+   * Returns the discriminated union from `@atlas/core` — narrow on
+   * `result.status` ("completed" → has `sessionId`; "accepted" → has
+   * `correlationId`). Atlasd's 2xx body shape is runtime-validated
+   * against `SignalTriggerResponseSchema`; schema drift surfaces with a
+   * clear AtlasApiError instead of a malformed envelope.
    */
   async triggerSignal(
     workspaceId: string,
@@ -103,7 +110,18 @@ export class AtlasClient {
     if (!response.ok) {
       throw new Error(`Failed to trigger signal: ${stringifyError(response.error)}`);
     }
-    return response.data;
+    const parsed = SignalTriggerResponseSchema.safeParse(response.data);
+    if (!parsed.success) {
+      // 502: the upstream (atlasd) is reachable but emitted a body
+      // shape we can't interpret — a contract drift, not a transient
+      // failure.
+      throw new AtlasApiError(
+        `Atlasd returned an unexpected signal-trigger response shape (status ∈ ` +
+          `{completed, accepted} expected): ${parsed.error.message}`,
+        502,
+      );
+    }
+    return parsed.data;
   }
 
   /**

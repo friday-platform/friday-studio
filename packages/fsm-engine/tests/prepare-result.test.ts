@@ -23,8 +23,36 @@ describe("parsePrepareResult", () => {
     expect(parsePrepareResult(42)).toBeUndefined();
   });
 
-  it("returns undefined for empty object (neither task nor config)", () => {
+  it("returns undefined for empty object (neither task nor config nor webhook fields)", () => {
     expect(parsePrepareResult({})).toBeUndefined();
+  });
+
+  it("keeps result with only body+headers (webhook-only, no task/config)", () => {
+    // Pass-4 fix #2: parsePrepareResult used to return undefined when
+    // task+config were both null even if body/headers were set. That
+    // broke `__lastPrepare` carryover for webhook-triggered signals
+    // where the seed had body/headers but a downstream code action
+    // returned no structural data — silently dropping the HMAC
+    // material on the next state's read.
+    const result = parsePrepareResult({
+      body: "ZGVhZGJlZWY=", // base64 webhook bytes
+      headers: { "x-github-event": "pull_request" },
+    });
+    expect(result).toBeDefined();
+    expect(result?.body).toBe("ZGVhZGJlZWY=");
+    expect(result?.headers).toEqual({ "x-github-event": "pull_request" });
+  });
+
+  it("keeps result with only body (no headers, no task, no config)", () => {
+    const result = parsePrepareResult({ body: "abc" });
+    expect(result).toBeDefined();
+    expect(result?.body).toBe("abc");
+  });
+
+  it("keeps result with only headers (no body, no task, no config)", () => {
+    const result = parsePrepareResult({ headers: { "x-trace-id": "t1" } });
+    expect(result).toBeDefined();
+    expect(result?.headers).toEqual({ "x-trace-id": "t1" });
   });
 
   it("returns result with only task", () => {

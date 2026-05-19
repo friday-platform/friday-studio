@@ -195,8 +195,18 @@ export function parsePrepareResult(raw: unknown): PrepareResult | undefined {
     return undefined;
   }
 
-  // Filter out empty results (neither task nor config present)
-  if (parsed.data.task == null && parsed.data.config == null) {
+  // Filter out empty results (no task, no config, AND no webhook-only
+  // fields). Webhook-triggered signals can land with body/headers but
+  // empty config (e.g., a code action that returns nothing structural
+  // after the seed) — discarding them here would silently drop the
+  // HMAC-verification material on `__lastPrepare` carryover, same
+  // regression class as the pass-3 inputFrom merge bug.
+  if (
+    parsed.data.task == null &&
+    parsed.data.config == null &&
+    parsed.data.body == null &&
+    parsed.data.headers == null
+  ) {
     return undefined;
   }
 
