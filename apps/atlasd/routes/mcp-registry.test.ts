@@ -663,6 +663,38 @@ describe("MCP Registry Routes", () => {
       fetchSpy.mockRestore();
     });
 
+    // A curated annotation with `providerId` means the curators have already
+    // routed credentials to an existing Link provider — the configTemplate is
+    // fully specified and the doctor has nothing to analyze. Without this case
+    // in the skip predicate, Notion/Linear/Atlassian/PostHog land in
+    // `setting_up`, the doctor returns `unknown` (no envs to enumerate from
+    // a bare HTTP remote), and enable_mcp_server then 409s on `needs_manual_config`.
+    it.each([
+      "com.notion/mcp",
+      "app.linear/linear",
+      "com.atlassian/atlassian-mcp-server",
+      "io.github.PostHog/mcp",
+    ])("fast path: annotated HTTP-remote %s → 201 ready, no doctor", async (canonicalName) => {
+      mockFetchLatest.mockResolvedValue(createHttpRemoteUpstreamEntry(canonicalName, "1.0.0"));
+      const fetchSpy = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 201 }));
+
+      const res = await installApp().request("/install/preflight", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ registryName: canonicalName }),
+      });
+
+      expect(res.status).toBe(201);
+      const body = PreflightReadySchema.parse(await res.json());
+      expect((await testAdapter.get(body.server_id))?.status).toBe("ready");
+      expect(mockRunDoctor).not.toHaveBeenCalled();
+      // Annotation suppresses dynamic Link provider synthesis — no Link call.
+      expect(fetchSpy).not.toHaveBeenCalled();
+      fetchSpy.mockRestore();
+    });
+
     it("fast path: surfaces a warning when Link provider creation fails", async () => {
       const canonicalName = "io.github.test/preflight-link-fail";
       mockFetchLatest.mockResolvedValue(createNpmStdioUpstreamEntryWithEnv(canonicalName, "1.0.0"));
