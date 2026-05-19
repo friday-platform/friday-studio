@@ -689,15 +689,18 @@ func supervisedProcesses(binDir string) []processSpec {
 	for i, s := range specs {
 		port := portOverride(s.name)
 		if port == "" {
-			if s.name == "friday" {
-				// No port override, but the friday spec's healthPort still
-				// has to track `<port>+1` against the *default* port 8080.
-				// Pin the CLI flag so the supervised daemon binds the same
-				// liveness port the launcher probes — otherwise atlas-cli's
-				// own `mainPort + 1` default would shift if the daemon's
-				// default port ever changes.
-				specs[i].args = append(specs[i].args, "--health-port", specs[i].healthPort)
-			}
+			// No override → trust each binary's own default. For friday
+			// that's <port>+1 = 8081 in atlas-cli's deriveHealthPort;
+			// the spec's healthPort: "8081" above matches by construction.
+			continue
+		}
+		// Validate port is numeric. Without this, a typo like
+		// FRIDAY_PORT_FRIDAY="abc" would silently set healthPort to "abc"
+		// and the launcher would probe https://127.0.0.1:abc/ forever.
+		portNum, atoiErr := strconv.Atoi(port)
+		if atoiErr != nil || portNum < 1 || portNum > 65535 {
+			log.Error("port override is not a valid 1-65535 integer; ignoring",
+				"service", s.name, "value", port, "error", atoiErr)
 			continue
 		}
 		// Update the launcher's own readiness probe so it watches the
@@ -716,11 +719,15 @@ func supervisedProcesses(binDir string) []processSpec {
 			specs[i].args = append(specs[i].args, "--port", port)
 			// Liveness listener moves with the main port — keep it at
 			// <port>+1. The launcher probes this, not the main port.
-			healthPort, err := strconv.Atoi(port)
-			if err == nil {
-				healthPortStr := strconv.Itoa(healthPort + 1)
+			// Guard against 65535 → 65536 wrap; fall back to no-flag,
+			// daemon's own default will skip the listener too.
+			if portNum < 65535 {
+				healthPortStr := strconv.Itoa(portNum + 1)
 				specs[i].healthPort = healthPortStr
 				specs[i].args = append(specs[i].args, "--health-port", healthPortStr)
+			} else {
+				log.Warn("friday port=65535 leaves no room for liveness listener; skipping --health-port",
+					"port", port)
 			}
 		case "link":
 			// apps/link/src/config.ts:40 reads LINK_PORT (default 3100).

@@ -2395,19 +2395,31 @@ export class AtlasDaemon {
   /**
    * Bind the dedicated liveness listener on `options.healthPort`, if set.
    *
-   * The handler returns a static `Response("ok")` for every request — no
-   * Hono routing, no middleware, no `c.get("app")` lookup, no async work.
-   * The point is to give the launcher's readiness probe a socket that
-   * stays answerable even when the main listener's event-loop slice is
-   * starved by MCP fan-out, NATS-request backpressure, or agent streaming.
+   * Handler is `() => new Response("ok")` for every request — no Hono
+   * routing, no middleware, no shared-state lookup. Three concrete wins
+   * over probing `/health` on the main listener:
    *
-   * The two listeners share one V8 isolate so they aren't truly isolated,
-   * but Deno's Tokio-side accept loop runs them as independent tasks and
-   * the static-Response fast path is the lightest possible JS work — it
-   * wins the microtask race that a Hono-routed handler would lose.
+   *   1. Bypasses the `app.use("*", ...)` request-logger middleware and
+   *      Hono route resolution that every main-port hit pays.
+   *   2. Independent TCP accept queue — when the main port's backlog is
+   *      saturated by slow handlers (long SSE streams, agent fan-out),
+   *      the probe still finds an empty queue on this socket.
+   *   3. Insulates the probe from per-route regressions on the main app
+   *      (a bad middleware change can't take readiness offline).
+   *
+   * The two listeners share one V8 isolate, one event loop, and one
+   * microtask queue. Under genuine CPU starvation neither handler
+   * dispatches — this fix doesn't claim otherwise. The wins above are
+   * about routing/middleware overhead and accept-queue isolation, not
+   * microtask-queue priority.
    *
    * No-op when `healthPort` is unset or equal to `port` — the main
    * `/health` route still serves general clients (atlas-cli, the UI).
+   *
+   * Bind failures surface asynchronously via the `finished` promise
+   * rejection (Deno.serve returns synchronously after registering, so
+   * a sync try/catch never sees EADDRINUSE). The `.catch` below logs
+   * and nulls `healthServer` so the shutdown drain skips a dead handle.
    */
   private startHealthListener(
     hostname: string,
@@ -2417,32 +2429,30 @@ export class AtlasDaemon {
     const healthPort = this.options.healthPort;
     if (!healthPort || healthPort === this.options.port) return;
 
-    try {
-      this.healthServer = Deno.serve(
-        {
-          port: healthPort,
-          hostname,
-          signal: this.healthServerAbortController.signal,
-          ...(tls ?? {}),
-          onListen: ({ hostname, port }) => {
-            logger.info("Liveness listener running", { hostname, port, scheme });
-          },
-          onError: (error) => {
-            logger.warn("Liveness listener handler error", { error: String(error) });
-            return new Response("err", { status: 500 });
-          },
+    this.healthServer = Deno.serve(
+      {
+        port: healthPort,
+        hostname,
+        signal: this.healthServerAbortController.signal,
+        ...(tls ?? {}),
+        onListen: ({ hostname, port }) => {
+          logger.info("Liveness listener running", { hostname, port, scheme });
         },
-        () => new Response("ok"),
-      );
-    } catch (error) {
-      // Bind failure (port in use, permission) is non-fatal — the main
-      // /health route still works, the launcher just loses the resilient
-      // path. Log loudly so an operator can fix the port collision.
-      logger.error("Liveness listener bind failed", {
+      },
+      () => new Response("ok"),
+    );
+
+    // EADDRINUSE / permission errors surface here, not from the
+    // synchronous Deno.serve call. Drop the dead handle and let the
+    // main daemon continue — the main `/health` route still works,
+    // operators can fix the port collision out-of-band.
+    this.healthServer.finished.catch((error) => {
+      logger.error("Liveness listener failed", {
         healthPort,
         error: error instanceof Error ? error.message : String(error),
       });
-    }
+      this.healthServer = null;
+    });
   }
 
   async startNonBlocking(): Promise<{ finished: Promise<void> }> {
