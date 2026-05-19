@@ -81,11 +81,9 @@
   });
 
   const sortedInstalled = $derived(
-    [...filteredInstalled].sort((a, b) => {
-      const aBundled = a.source === "static" ? 0 : 1;
-      const bBundled = b.source === "static" ? 0 : 1;
-      return aBundled - bBundled;
-    }),
+    [...filteredInstalled].sort((a, b) =>
+      a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+    ),
   );
 
   function securityColor(rating: string | undefined): string {
