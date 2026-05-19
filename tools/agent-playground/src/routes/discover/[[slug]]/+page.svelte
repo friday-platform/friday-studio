@@ -330,7 +330,7 @@
 
   .section-label {
     color: color-mix(in srgb, var(--color-text), transparent 45%);
-    font-size: var(--font-size-0);
+    font-size: var(--font-size-1);
     font-weight: var(--font-weight-6);
     letter-spacing: 0.04em;
     text-transform: uppercase;
@@ -338,7 +338,7 @@
 
   .section-count {
     color: color-mix(in srgb, var(--color-text), transparent 65%);
-    font-size: var(--font-size-0);
+    font-size: var(--font-size-1);
     font-variant-numeric: tabular-nums;
   }
 
@@ -565,7 +565,7 @@
 
   .manifest-h {
     color: color-mix(in srgb, var(--color-text), transparent 45%);
-    font-size: var(--font-size-0);
+    font-size: var(--font-size-1);
     font-weight: var(--font-weight-6);
     letter-spacing: 0.04em;
     margin: 0;

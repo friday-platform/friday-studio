@@ -1,6 +1,8 @@
 <script lang="ts">
+import "@atlas/ui/reset.css";
 import "@atlas/ui/tokens.css";
 import "@atlas/ui/colors.css";
+import "@atlas/ui/utilities.css";
 import "$lib/../app.css";
 import "./replay.css";
 

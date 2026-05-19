@@ -291,7 +291,7 @@
 
   .health-label {
     color: color-mix(in srgb, var(--color-text), transparent 10%);
-    font-size: var(--font-size-0);
+    font-size: var(--font-size-1);
     margin-inline-start: auto;
     white-space: nowrap;
   }
@@ -362,7 +362,7 @@
     color: color-mix(in srgb, var(--color-text), transparent 25%);
     flex-shrink: 1;
     font-family: var(--font-family-monospace);
-    font-size: var(--font-size-0);
+    font-size: var(--font-size-1);
     min-inline-size: 0;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -372,7 +372,7 @@
   .tool-count {
     color: color-mix(in srgb, var(--color-text), transparent 45%);
     flex-shrink: 0;
-    font-size: var(--font-size-0);
+    font-size: var(--font-size-1);
     white-space: nowrap;
   }
 

@@ -69,10 +69,10 @@
   const toolLinks: NavItem[] = [
     { label: "Chat", href: "/platform/user/chat", icon: IconLarge.SpeechBubble },
     { label: "Memory", href: "/memory", icon: IconLarge.Write },
-    { label: "Activity", href: "/activity", icon: IconLarge.SpeechBubble },
+    { label: "Activity", href: "/activity", icon: IconLarge.Clock },
     { label: "Agent Tester", href: "/agents", icon: IconLarge.Chip },
     { label: "Job Inspector", href: "/inspector", icon: IconLarge.DiamondCheck },
-    { label: "Schedules", href: "/schedules", icon: IconLarge.Target },
+    { label: "Schedules", href: "/schedules", icon: IconLarge.ArrowsRotate },
     { label: "MCP Catalog", href: "/mcp", icon: IconLarge.Wrench },
     { label: "Skills", href: "/skills", icon: IconLarge.Compass },
     { label: "Usage", href: "/usage", icon: IconLarge.Target },
@@ -159,7 +159,7 @@
             <li>
               <a href="/platform/{ws.id}" class="nav-item" class:active>
                 <span class="dot" style:--dot-color={dotColor(ws.metadata?.color)}></span>
-                <span class="text">
+                <span class="nav-label">
                   {ws.displayName}
                 </span>
               </a>
@@ -446,7 +446,6 @@
       }
     }
 
-    .text,
     .nav-label {
       flex: 1;
       overflow: hidden;

@@ -1514,7 +1514,7 @@
     color: color-mix(in srgb, var(--color-text), transparent 50%);
     font-variant-numeric: tabular-nums;
     text-transform: uppercase;
-    font-size: var(--font-size-0, 11px);
+    font-size: var(--font-size-1, 11px);
   }
 
   /* ─── Inline images ─────────────────────────────────────────────────── */

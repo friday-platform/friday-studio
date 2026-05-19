@@ -28,7 +28,7 @@
     border-radius: var(--radius-1);
     flex-shrink: 0;
     font-family: var(--font-family-monospace);
-    font-size: var(--font-size-0);
+    font-size: var(--font-size-1);
     font-weight: var(--font-weight-6);
     letter-spacing: var(--font-letterspacing-1);
     padding: var(--size-0-5) var(--size-1);

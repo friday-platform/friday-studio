@@ -575,7 +575,7 @@
     background-color: color-mix(in srgb, var(--text), transparent 88%);
     border-radius: var(--radius-round);
     color: color-mix(in srgb, var(--text), transparent 30%);
-    font-size: var(--font-size-0, 11px);
+    font-size: var(--font-size-1, 11px);
     font-weight: var(--font-weight-6);
     padding: 1px var(--size-2);
   }
@@ -644,7 +644,7 @@
     background-color: color-mix(in srgb, var(--text), transparent 88%);
     border-radius: var(--radius-1);
     color: color-mix(in srgb, var(--text), transparent 25%);
-    font-size: var(--font-size-0, 11px);
+    font-size: var(--font-size-1, 11px);
     font-weight: var(--font-weight-6);
     padding: 1px var(--size-1-5);
   }
@@ -682,7 +682,7 @@
     border-radius: var(--radius-1);
     color: var(--text);
     cursor: pointer;
-    font-size: var(--font-size-0, 11px);
+    font-size: var(--font-size-1, 11px);
     padding: var(--size-0-5) var(--size-2);
   }
 </style>

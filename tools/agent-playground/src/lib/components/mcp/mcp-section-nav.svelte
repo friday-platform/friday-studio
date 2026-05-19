@@ -99,7 +99,7 @@
     color: var(--text-faded);
     cursor: pointer;
     font: inherit;
-    font-size: var(--font-size-2-5);
+    font-size: var(--font-size-2);
     font-weight: var(--font-weight-5);
     padding: var(--size-1-5) var(--size-2-5);
     text-align: start;

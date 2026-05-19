@@ -18,7 +18,7 @@
   import { deriveSignalDetails, type SignalDetail } from "@atlas/config/signal-details";
   import { deriveTopology } from "@atlas/config/topology";
   import { deriveWorkspaceAgents, type WorkspaceAgent } from "@atlas/config/workspace-agents";
-  import { Button, DropdownMenu } from "@atlas/ui";
+  import { Button, DropdownMenu, PageLayout } from "@atlas/ui";
   import { createQuery } from "@tanstack/svelte-query";
   import { goto } from "$app/navigation";
   import { resolve } from "$app/paths";
@@ -26,7 +26,6 @@
   import InlineBadge from "$lib/components/shared/inline-badge.svelte";
   import PipelineDiagram from "$lib/components/workspace/pipeline-diagram.svelte";
   import RunJobDialog from "$lib/components/workspace/run-job-dialog.svelte";
-  import WorkspaceBreadcrumb from "$lib/components/workspace/workspace-breadcrumb.svelte";
   import { humanizeCronSchedule } from "$lib/cron-humanize";
   import { daemonUrl } from "$lib/daemon-url";
   import { integrationQueries, workspaceQueries, type IntegrationStatus } from "$lib/queries";
@@ -35,6 +34,16 @@
   const workspaceId = $derived(page.params.workspaceId ?? null);
   const configQuery = createQuery(() => workspaceQueries.config(workspaceId));
   let searchQuery = $state("");
+
+  const workspaceName = $derived(configQuery.data?.config?.workspace?.name ?? workspaceId ?? "");
+  const crumbs = $derived(
+    workspaceId
+      ? [
+          { label: workspaceName, href: `/platform/${workspaceId}` },
+          { label: "Jobs" },
+        ]
+      : [{ label: "Jobs" }],
+  );
 
   const topology = $derived.by(() => {
     const data = configQuery.data;
@@ -257,11 +266,10 @@
   }
 </script>
 
-<div class="jobs-page">
-  {#if workspaceId}
-    <WorkspaceBreadcrumb {workspaceId} section="Jobs" />
-  {/if}
-
+<PageLayout.Root>
+  <PageLayout.Breadcrumbs {crumbs} />
+  <PageLayout.Body>
+    <PageLayout.Content>
   {#if configQuery.isLoading}
     <div class="empty-state"><p>Loading jobs…</p></div>
   {:else if configQuery.isError}
@@ -271,16 +279,10 @@
     </div>
   {:else}
     <section class="section">
-      <header class="page-header">
-        <div class="header-info">
-          <h1 class="page-title">Jobs</h1>
-          <p class="section-description">
-            Jobs are workflows that can be triggered by signals. Review each job's trigger, flow,
-            and assigned agents, or run and manage a job directly from this page.
-          </p>
-        </div>
-        <span class="count">{filteredJobEntries.length}</span>
-      </header>
+      <p class="section-description">
+        Jobs are workflows that can be triggered by signals. Review each job's trigger, flow,
+        and assigned agents, or run and manage a job directly from this page.
+      </p>
 
       <section class="search-section">
         <div class="search-row">
@@ -458,16 +460,11 @@
       {/if}
     </section>
   {/if}
-</div>
+    </PageLayout.Content>
+  </PageLayout.Body>
+</PageLayout.Root>
 
 <style>
-  .jobs-page {
-    display: flex;
-    flex-direction: column;
-    gap: var(--size-6);
-    padding: var(--size-8) var(--size-10);
-  }
-
   .search-section {
     display: flex;
     flex-direction: column;
@@ -506,32 +503,6 @@
     display: flex;
     flex-direction: column;
     gap: var(--size-2);
-  }
-
-  .page-header {
-    align-items: flex-start;
-    display: flex;
-    gap: var(--size-4);
-    justify-content: space-between;
-  }
-
-  .header-info {
-    display: flex;
-    flex-direction: column;
-    gap: var(--size-2);
-  }
-
-  .page-title {
-    color: var(--color-text);
-    font-size: var(--font-size-8);
-    font-weight: var(--font-weight-7);
-    line-height: var(--font-lineheight-1);
-    margin: 0;
-  }
-
-  .count {
-    color: color-mix(in srgb, var(--color-text), transparent 45%);
-    font-size: var(--font-size-3);
   }
 
   .section-description {
@@ -709,11 +680,11 @@
   }
 
   .detail-block-flow :global(.pill),
-  .jobs-page :global(.button.size-small) {
+  .job-list :global(.button.size-small) {
     font-size: var(--font-size-3);
   }
 
-  .jobs-page :global(.inline-badge) {
+  .job-list :global(.inline-badge) {
     font-size: var(--font-size-1);
   }
 

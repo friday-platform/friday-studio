@@ -672,7 +672,7 @@
   .installed-badge {
     color: color-mix(in srgb, var(--text), transparent 50%);
     flex-shrink: 0;
-    font-size: var(--font-size-0);
+    font-size: var(--font-size-1);
     font-weight: var(--font-weight-5);
     letter-spacing: 0.04em;
     text-transform: uppercase;

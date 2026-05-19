@@ -316,7 +316,7 @@
 </script>
 
 <PageLayout.Root>
-  <PageLayout.Title>Schedules</PageLayout.Title>
+  <PageLayout.Title subtitle="All cron triggers across every space">Schedules</PageLayout.Title>
   <PageLayout.Body>
     <PageLayout.Content>
       {#if timersQuery.isLoading}
@@ -584,30 +584,10 @@
         {/if}
       {/if}
     </PageLayout.Content>
-    <PageLayout.Sidebar>
-      {#if activeTab === "active"}
-        <p class="subtitle">All cron triggers across every space</p>
-      {:else}
-        <p class="subtitle">Cron firings the daemon was down for.</p>
-        <p class="subtitle subtle">
-          <strong>Active</strong>: pending <code>onMissed: manual</code> events waiting on
-          your action.
-        </p>
-        <p class="subtitle subtle">
-          <strong>History</strong>: fired / dismissed manual events, plus all auto-fired
-          (<code>coalesce</code>, <code>catchup</code>) entries within the 30-day window.
-        </p>
-      {/if}
-    </PageLayout.Sidebar>
   </PageLayout.Body>
 </PageLayout.Root>
 
 <style>
-  .subtitle {
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
-    font-size: var(--font-size-2);
-  }
-
   /* ── Tabs ────────────────────────────────────────────────────────── */
 
   .tab-bar {
@@ -965,11 +945,6 @@
 
   .event-time {
     font-variant-numeric: tabular-nums;
-  }
-
-  .subtle {
-    margin-top: var(--size-3);
-    font-size: var(--font-size-1);
   }
 
   .action-btn {

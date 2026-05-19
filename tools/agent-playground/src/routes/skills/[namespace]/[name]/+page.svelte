@@ -718,7 +718,7 @@
 
   .lint-severity {
     font-family: var(--font-mono, monospace);
-    font-size: var(--font-size-0);
+    font-size: var(--font-size-1);
     font-weight: var(--font-weight-6);
     letter-spacing: 0.04em;
     text-transform: uppercase;

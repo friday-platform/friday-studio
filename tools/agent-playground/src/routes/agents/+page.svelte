@@ -6,6 +6,7 @@
 -->
 
 <script lang="ts">
+  import { PageLayout } from "@atlas/ui";
   import { createQuery } from "@tanstack/svelte-query";
   import AgentCatalog from "$lib/components/agents/agent-catalog.svelte";
   import { agentQueries } from "$lib/queries";
@@ -14,13 +15,20 @@
   const agents = $derived(agentsQuery.data ?? []);
 </script>
 
-{#if agentsQuery.isLoading}
-  <div class="loading">Loading agents...</div>
-{:else if agentsQuery.isError}
-  <div class="error">Failed to load agents</div>
-{:else}
-  <AgentCatalog {agents} />
-{/if}
+<PageLayout.Root>
+  <PageLayout.Title subtitle="Inspect and run bundled agents">Agents</PageLayout.Title>
+  <PageLayout.Body>
+    <PageLayout.Content>
+      {#if agentsQuery.isLoading}
+        <div class="loading">Loading agents...</div>
+      {:else if agentsQuery.isError}
+        <div class="error">Failed to load agents</div>
+      {:else}
+        <AgentCatalog {agents} />
+      {/if}
+    </PageLayout.Content>
+  </PageLayout.Body>
+</PageLayout.Root>
 
 <style>
   .loading,

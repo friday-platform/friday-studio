@@ -250,7 +250,7 @@
 
   .tier-tag {
     border-radius: var(--radius-1);
-    font-size: var(--font-size-0);
+    font-size: var(--font-size-1);
     font-weight: var(--font-weight-6);
     letter-spacing: 0.04em;
     padding: 1px var(--size-1);
@@ -271,7 +271,7 @@
 
   .installs {
     color: color-mix(in srgb, var(--color-text), transparent 50%);
-    font-size: var(--font-size-0);
+    font-size: var(--font-size-1);
   }
 
   .install-btn {

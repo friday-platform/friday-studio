@@ -430,7 +430,7 @@
     border: none;
     color: color-mix(in srgb, var(--color-text), transparent 25%);
     cursor: pointer;
-    font-size: var(--font-size-0);
+    font-size: var(--font-size-1);
     padding: 0;
   }
 
@@ -500,7 +500,7 @@
 
   .tool-call-done {
     color: color-mix(in srgb, var(--color-success), transparent 30%);
-    font-size: var(--font-size-0);
+    font-size: var(--font-size-1);
     font-weight: var(--font-weight-4);
   }
 
@@ -577,7 +577,7 @@
 
   .tool-call-section-label {
     color: color-mix(in srgb, var(--color-text), transparent 25%);
-    font-size: var(--font-size-0);
+    font-size: var(--font-size-1);
     font-weight: var(--font-weight-5);
     letter-spacing: var(--font-letterspacing-2);
     padding-block-start: var(--size-1-5);
