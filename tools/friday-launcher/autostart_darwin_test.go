@@ -40,8 +40,30 @@ func TestCurrentAutostartBundleID_AbsentReturnsEmpty(t *testing.T) {
 // Mirrors autostart_windows.go's `registered != ""` check.
 func TestIsAutostartStale_AbsentReturnsFalse(t *testing.T) {
 	withFakePlist(t)
-	if isAutostartStale() {
-		t.Error("isAutostartStale() = true with no plist on disk, want false (user-disabled autostart must stay disabled)")
+	stale, reason := isAutostartStale()
+	if stale {
+		t.Errorf("isAutostartStale() = (true, %q) with no plist on disk, want (false, \"\") (user-disabled autostart must stay disabled)", reason)
+	}
+	if reason != "" {
+		t.Errorf("isAutostartStale() reason = %q, want \"\" when not stale", reason)
+	}
+}
+
+// TestIsAutostartStale_MalformedXMLReturnsFalse pins the second
+// Decision #36 path: an unreadable/hand-edited plist must NOT be
+// silently rewritten — we don't know what the user wanted. The
+// new isAutostartStale early-returns false when readLaunchAgent
+// fails. A future refactor that flipped this to "treat unreadable
+// as stale, just rewrite" would slip past every other test in
+// this file; this assertion stops that.
+func TestIsAutostartStale_MalformedXMLReturnsFalse(t *testing.T) {
+	path := withFakePlist(t)
+	if err := os.WriteFile(path, []byte("not actual XML"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stale, reason := isAutostartStale()
+	if stale {
+		t.Errorf("isAutostartStale() = (true, %q) for malformed XML, want (false, \"\")", reason)
 	}
 }
 
@@ -128,8 +150,8 @@ func TestCurrentAutostartBundleID_CurrentFormatReturnsBundleID(t *testing.T) {
 	// plist on every launcher start — chewing through file I/O for no
 	// reason AND breaking any "the plist was rewritten" signal that
 	// telemetry might want to attach in future.
-	if isAutostartStale() {
-		t.Error("isAutostartStale() = true on canonically-shaped plist, want false")
+	if stale, reason := isAutostartStale(); stale {
+		t.Errorf("isAutostartStale() = (true, %q) on canonically-shaped plist, want (false, \"\")", reason)
 	}
 }
 
@@ -162,8 +184,12 @@ func TestCurrentAutostartBundleID_DifferentBundleIDReturnsThatID(t *testing.T) {
 	}
 	// And isAutostartStale should fire — the registered ID
 	// differs from launcherBundleID.
-	if !isAutostartStale() {
+	stale, reason := isAutostartStale()
+	if !stale {
 		t.Error("isAutostartStale = false, want true (bundle ID mismatch)")
+	}
+	if reason != "bundle_id_mismatch" {
+		t.Errorf("isAutostartStale reason = %q, want %q", reason, "bundle_id_mismatch")
 	}
 }
 
@@ -299,8 +325,12 @@ func TestIsAutostartStale_OldKeepAliveShapeIsStale(t *testing.T) {
 	if err := os.WriteFile(path, []byte(oldShape), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if !isAutostartStale() {
+	stale, reason := isAutostartStale()
+	if !stale {
 		t.Error("isAutostartStale() = false for old KeepAlive shape, want true (migration must fire)")
+	}
+	if reason != "keepalive_shape" {
+		t.Errorf("isAutostartStale() reason = %q, want %q", reason, "keepalive_shape")
 	}
 }
 
@@ -331,8 +361,16 @@ func TestIsAutostartStale_V008ShapeIsStale(t *testing.T) {
 	if err := os.WriteFile(path, []byte(v008Plist), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if !isAutostartStale() {
+	stale, reason := isAutostartStale()
+	if !stale {
 		t.Error("isAutostartStale() = false for v0.0.8 plist, want true (migration must fire)")
+	}
+	// v0.0.8 plists fail the bundle-ID check first (raw exe path,
+	// no /usr/bin/open -b wrapper), so the reason is bundle_id_mismatch
+	// rather than keepalive_shape — even though the KeepAlive=<false/>
+	// would ALSO trip the shape check if we got that far.
+	if reason != "bundle_id_mismatch" {
+		t.Errorf("isAutostartStale() reason = %q, want %q", reason, "bundle_id_mismatch")
 	}
 }
 
@@ -361,5 +399,25 @@ func TestCurrentAutostartBundleID_WrongPrefixReturnsEmpty(t *testing.T) {
 	}
 	if got := currentAutostartBundleID(); got != "" {
 		t.Errorf("got %q, want \"\" for non-/usr/bin/open prefix", got)
+	}
+}
+
+// TestEnableAutostartProducesNonStalePlist pins the load-bearing
+// round-trip invariant: whatever plistTemplate writes today must be
+// accepted as canonical by isAutostartStale on read-back. If a future
+// edit changes the template (or hasCrashOnlyKeepAlive) in a way that
+// breaks this round-trip, every launcher boot would mark its own
+// freshly-written plist as stale, rewrite it, mark it stale on the
+// next boot, ad infinitum. Every other test in this file uses
+// hand-rolled XML strings; this is the only one that exercises the
+// real template through the real read-back path.
+func TestEnableAutostartProducesNonStalePlist(t *testing.T) {
+	withFakePlist(t)
+	if err := enableAutostart(); err != nil {
+		t.Fatalf("enableAutostart() error = %v", err)
+	}
+	stale, reason := isAutostartStale()
+	if stale {
+		t.Errorf("freshly-written plist is stale: reason=%q. Either plistTemplate drifted from hasCrashOnlyKeepAlive(), or the bundle-ID match broke — fix one to match the other.", reason)
 	}
 }

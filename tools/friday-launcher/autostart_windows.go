@@ -95,17 +95,21 @@ func currentAutostartPath() string {
 }
 
 // isAutostartStale reports whether the registry entry needs to be
-// rewritten. Cross-platform contract — see autostart_darwin.go.
+// rewritten, returning a short reason tag for the rewrite log.
+// Cross-platform contract — see autostart_darwin.go.
 //
 // Windows: stale iff the registered exe path differs from
-// os.Executable(). Stack 3 doesn't change the Windows autostart
-// shape (no .app bundle on Windows), so the v0.0.8 behavior carries
-// forward unchanged.
-func isAutostartStale() bool {
+// os.Executable() → reason "exe_path_mismatch". Stack 3 doesn't
+// change the Windows autostart shape (no .app bundle on Windows),
+// so the v0.0.8 behavior carries forward unchanged.
+func isAutostartStale() (bool, string) {
 	exe, err := os.Executable()
 	if err != nil {
-		return false
+		return false, ""
 	}
 	registered := currentAutostartPath()
-	return registered != "" && registered != exe
+	if registered != "" && registered != exe {
+		return true, "exe_path_mismatch"
+	}
+	return false, ""
 }

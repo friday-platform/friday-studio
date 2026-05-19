@@ -18,7 +18,7 @@ var (
 	_ = launcherBundleID
 )
 
-func enableAutostart() error   { return nil }
-func disableAutostart() error  { return nil }
-func isAutostartEnabled() bool { return false }
-func isAutostartStale() bool   { return false }
+func enableAutostart() error              { return nil }
+func disableAutostart() error             { return nil }
+func isAutostartEnabled() bool            { return false }
+func isAutostartStale() (bool, string)    { return false, "" }

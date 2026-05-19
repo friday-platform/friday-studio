@@ -25,16 +25,20 @@ import (
 //
 // RunAtLoad=true triggers (re-)launch at login.
 //
-// KeepAlive={Crashed: true} narrows launchd's restart trigger to
-// "the process exited abnormally" — non-zero exit code or terminated
-// by an uncaught signal. Two paths benefit:
+// KeepAlive={Crashed: true} tells launchd to restart the job on any
+// "abnormal exit" — which per Apple's docs means EITHER:
 //
-//   - launcher panics / segfaults / OOMs → launchd brings it back
-//     within seconds, so a transient bug doesn't leave the user
-//     staring at a dead tray icon until next login. Without this,
-//     `KeepAlive=false` meant any crash stayed crashed.
-//   - process-compose's runner fails fatally and the launcher's
-//     watchdog can't recover → same recovery path.
+//   - the process exited with a non-zero status code, OR
+//   - the process was terminated by an uncaught signal.
+//
+// Note the breadth: launchd doesn't distinguish "panic / segfault /
+// OOM / uncaught signal" from "the launcher's main() returned an
+// error after the user clicked a dismissible dialog." Any `os.Exit`
+// with a non-zero code counts. Audit existing exit sites
+// (preflight failures, port-bind conflicts after the
+// port-in-use dialog, etc.) before assuming launchd will only catch
+// genuine crashes — paths that today exit 1 will now be relaunched
+// by launchd ~10 s later (Apple's throttle floor).
 //
 // Deliberate non-triggers (i.e. when launchd MUST NOT restart):
 //
@@ -47,6 +51,10 @@ import (
 //     exit, so launchd doesn't fight the installer's deliberate
 //     downtime window. (The installer-cancel trap is a separate
 //     issue tracked elsewhere.)
+//
+// The intent is "crashes auto-recover" — for that to hold, fatal-but-
+// user-actionable error paths should exit 0 (treat the dialog as the
+// recovery surface) rather than exit 1 (relaunch loop).
 //
 // Apple docs: <https://developer.apple.com/library/archive/documentation/MacOSX/Conceptual/BPSystemStartup/Chapters/CreatingLaunchdJobs.html#//apple_ref/doc/uid/10000172i-SW7>
 const plistTemplate = `<?xml version="1.0" encoding="UTF-8"?>
@@ -72,6 +80,13 @@ const plistTemplate = `<?xml version="1.0" encoding="UTF-8"?>
   </dict>
 </dict>
 </plist>`
+
+// IMPORTANT: if you change the KeepAlive dict's shape in plistTemplate
+// above (add/remove sub-keys, flip Crashed to false, etc.), update
+// hasCrashOnlyKeepAlive() below to match. The staleness check is
+// strict-equality; any drift between template and predicate causes an
+// infinite rewrite loop on every launcher boot. The round-trip test
+// TestEnableAutostartProducesNonStalePlist enforces this invariant.
 
 // launchAgent mirrors the subset of the plist we read back. KeepAlive
 // is `any` because the schema is a discriminated union — `<false/>`
@@ -171,33 +186,46 @@ func hasCrashOnlyKeepAlive(agent launchAgent) bool {
 }
 
 // isAutostartStale reports whether the LaunchAgent plist needs to
-// be rewritten. Cross-platform contract — see autostart_linux.go +
-// autostart_windows.go for the per-OS interpretation.
+// be rewritten, returning a short reason tag for the rewrite log.
+// Cross-platform contract — see autostart_linux.go +
+// autostart_windows.go for the per-OS interpretation. The reason is
+// "" when stale=false, and otherwise an identifier the caller can
+// log to triage repeated migrations (e.g. "I see keepalive_shape on
+// every boot" → template/predicate drift).
 //
 // Darwin: stale iff a plist is present AND any of:
 //   - registered bundle ID differs from launcherBundleID (covers
 //     v0.0.8-format plists with a raw exe path, and future bundle-ID
-//     renames);
+//     renames) → reason "bundle_id_mismatch";
 //   - KeepAlive is anything other than `{Crashed: true}` (covers
 //     v0.0.x-format plists that used `<false/>`, so the
 //     crash-recovery upgrade rolls out automatically on next launcher
-//     boot).
+//     boot) → reason "keepalive_shape".
 //
 // An absent plist is NOT stale — it means the user toggled "Start at
 // login" off via the tray, and Decision #36 says a deliberately-
 // disabled autostart stays disabled. Without that guard, the
 // autostartSelfRegister staleness-repair pass would silently
 // re-enable autostart on every launcher start, ignoring the user's
-// preference. Mirrors autostart_windows.go's "is the file there at
-// all" check.
-func isAutostartStale() bool {
+// preference. A malformed/unreadable plist also returns not-stale
+// for the same Decision #36 reason: we don't know what the user
+// wanted, so we don't overwrite.
+//
+// The "absent → not stale" half mirrors autostart_windows.go (and the
+// linux no-op). Beyond that, darwin's check is strictly richer
+// because the plist schema is richer (bundle ID + KeepAlive shape);
+// Windows has only an exe-path equality check.
+func isAutostartStale() (bool, string) {
 	agent, ok := readLaunchAgent()
 	if !ok {
-		return false
+		return false, ""
 	}
 	registered := currentAutostartBundleID()
 	if registered == "" || registered != launcherBundleID {
-		return true
+		return true, "bundle_id_mismatch"
 	}
-	return !hasCrashOnlyKeepAlive(agent)
+	if !hasCrashOnlyKeepAlive(agent) {
+		return true, "keepalive_shape"
+	}
+	return false, ""
 }
