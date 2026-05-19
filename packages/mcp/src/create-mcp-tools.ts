@@ -517,7 +517,7 @@ type StdioAttempt =
   | { ok: true; client: MCPClient; tools: Record<string, Tool> }
   | { ok: false; error: Error; stderr: string };
 
-async function attemptStdio(
+export async function attemptStdio(
   command: string,
   args: readonly string[],
   env: Record<string, string>,
@@ -547,39 +547,47 @@ async function attemptStdio(
     return buf.toString("utf8").trim();
   };
 
+  // Hoist the transport so the abort listener can call transport.close()
+  // BEFORE `createMCPClient` resolves. The AI SDK's createMCPClient awaits
+  // the MCP `initialize` handshake with no signal observation — a server
+  // that hangs at handshake (the exact #344 production failure) leaves
+  // the spawn running with no termination path. transport.close() →
+  // abortController.abort() → SIGTERM kills the child immediately and
+  // the in-flight handshake rejects via the transport's onclose handler.
+  const transport = new StdioMCPTransport({ command, args: [...args], env, stderr: fd });
+  let onAbort: (() => void) | undefined;
+  if (signal) {
+    onAbort = () => {
+      transport.close().catch(() => {});
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+  }
+
   let client: MCPClient | undefined;
   try {
     try {
-      client = await createMCPClient({
-        transport: new StdioMCPTransport({ command, args: [...args], env, stderr: fd }),
-      });
+      client = await createMCPClient({ transport });
     } catch (err) {
       // The transport's start() can reject (e.g. ENOENT, or the subprocess
       // dies before completing the MCP handshake). Capture stderr from the
       // temp file and return failure rather than letting it propagate.
+      // If the rejection is *because* the signal aborted (transport.close()
+      // tore down the in-flight handshake), surface the abort reason instead
+      // of the resulting "Connection closed" — preserves the contract that
+      // an aborted attempt throws signal.reason.
+      if (signal?.aborted) throw signal.reason;
       const stderr = readStderr();
       const error = err instanceof Error ? err : new Error(String(err));
       return { ok: false, error, stderr };
     }
 
-    // Close the race window between createMCPClient resolving and the abort
-    // listener attaching: if the signal aborted while the handshake was in
-    // flight, kill the just-spawned child before returning.
+    // If the signal aborted in the narrow window between createMCPClient
+    // resolving and reaching this check, the abort listener has already
+    // called transport.close(). Surface signal.reason rather than
+    // proceeding to client.tools() against a torn-down transport.
     if (signal?.aborted) {
       await client.close().catch(() => {});
       throw signal.reason;
-    }
-    if (signal) {
-      // One-shot listener that survives attemptStdio's return. Kills the spawned
-      // child via StdioMCPTransport.close() → AbortController.abort() → SIGTERM.
-      // On success (ok:true) the caller owns the client and may dispose normally;
-      // a late signal abort still fires this listener and closes the child.
-      // On failure paths below, the catch already calls client.close() — a later
-      // listener fire is a no-op (close is idempotent). { once: true } means the
-      // listener auto-removes after firing, and the signal is request-scoped so
-      // it (and an unfired listener) is GC'd when the request ends.
-      const c = client;
-      signal.addEventListener("abort", () => c.close().catch(() => {}), { once: true });
     }
 
     // Verify the subprocess is actually responding AND capture tools in one call.

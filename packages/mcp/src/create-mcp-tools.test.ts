@@ -67,6 +67,14 @@ beforeEach(() => {
   MockHTTPTransport.mockReset();
   mockResolveEnvValues.mockReset();
   mockResolveEnvValues.mockResolvedValue({});
+  // attemptStdio's abort listener calls transport.close() to SIGTERM the
+  // spawned child before createMCPClient resolves. The default mock needs
+  // a close() that returns a Promise so the abort path doesn't throw.
+  // Individual tests override via mockImplementation when they care about
+  // the transport instance (e.g. stderr inspection).
+  MockStdioTransport.mockImplementation(function (this: { close: () => Promise<void> }) {
+    this.close = () => Promise.resolve();
+  });
 });
 
 afterEach(() => {
