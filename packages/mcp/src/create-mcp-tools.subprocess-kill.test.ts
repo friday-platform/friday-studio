@@ -111,11 +111,22 @@ describe.skipIf(process.platform === "win32")("attemptStdio subprocess teardown"
   }, 10_000);
 
   it("kills the spawned child when withTimeout fires (reduced timeout)", async () => {
-    // Mirror `connectServerWithTimeout`'s wiring with a 200ms timeout
-    // instead of the production 20s. When the timer fires, it aborts
-    // `timeoutController`, which propagates through `AbortSignal.any`
-    // into `attemptStdio`'s registered abort listener and SIGTERMs the
-    // child — same kill path as test A, different trigger.
+    // Mirrors `connectServerWithTimeout` (packages/mcp/src/create-mcp-tools.ts)
+    // with a 200ms timeout instead of the production 20s. The production
+    // wiring is: internal `AbortController` + downstream `AbortSignal.any`
+    // combining it with the external signal + `timeoutController.abort(err)`
+    // called from inside `withTimeout`'s `makeError` callback. We reproduce
+    // that here so the timer firing reaches `attemptStdio`'s registered
+    // listener via the same signal-propagation path.
+    //
+    // IF `connectServerWithTimeout` CHANGES ITS SIGNAL COMPOSITION (e.g.
+    // drops `AbortSignal.any`, moves the `timeoutController.abort()` call,
+    // or substitutes a different timeout primitive), THIS TEST WILL SILENTLY
+    // KEEP PASSING WHILE NO LONGER TESTING THE REAL PATH. Mirror the change
+    // here. The signal-aware behavior of `withTimeout` and the abort
+    // listener in `attemptStdio` are what's actually under test; the
+    // composition between them lives in `connectServerWithTimeout` and
+    // is the load-bearing part to keep in sync.
     const timeoutController = new AbortController();
     const baseline = new Set(listChildren(process.pid));
 
