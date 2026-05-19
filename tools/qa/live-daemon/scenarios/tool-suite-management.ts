@@ -36,6 +36,7 @@ import {
   ensureCredentialsLoaded,
   HARNESS_PATHS,
   makeFixtureDir,
+  qaProviderReplacements,
   registerWorkspace,
   type SSEEvent,
   startDaemon,
@@ -202,7 +203,11 @@ interface SetupResult {
 async function materializeFixture(fridayHome: string, srcDir: string): Promise<string> {
   const tmpDir = await makeFixtureDir(fridayHome, "friday-tsm-fixture-");
   const src = await Deno.readTextFile(join(srcDir, "workspace.yml"));
-  await Deno.writeTextFile(join(tmpDir, "workspace.yml"), src);
+  let rendered = src;
+  for (const [from, to] of Object.entries(qaProviderReplacements())) {
+    rendered = rendered.replaceAll(from, to);
+  }
+  await Deno.writeTextFile(join(tmpDir, "workspace.yml"), rendered);
   return tmpDir;
 }
 

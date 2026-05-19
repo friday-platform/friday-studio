@@ -145,6 +145,33 @@ export class AtlasLLMProviderAdapter implements LLMProvider {
             },
           ];
 
+      // Provider-level strict-JSON-schema enforcement. OpenAI-compatible
+      // providers (Groq, OpenAI, OpenRouter, LiteLLM) treat tool schemas as
+      // advisory by default: they accept tool calls that violate `required`
+      // and `additionalProperties: false`. Models exploit that and return
+      // `{}` for tools whose schema actually requires fields, breaking the
+      // FSM's `complete()` contract. Strict mode flips `strict: true` on
+      // the function def so generation is constrained to the schema.
+      //
+      // Enabled unconditionally for non-Anthropic providers. Strict mode
+      // triggers `response_format: json_schema` on the wire; older/smaller
+      // models (gpt-oss-*, llama-3.x) will return HTTP 400 because they
+      // don't support that format. That's an intentional upgrade over the
+      // status quo where those models silently return `{}` — a clear
+      // provider error tells the user "pick a different model" instead of
+      // leaving them to debug an empty-output FSM. Anthropic ignores
+      // `providerOptions.groq/openai`, so its path is unaffected.
+      const strictModeProviderOptions: {
+        groq?: { strictJsonSchema: boolean };
+        openai?: { strictJsonSchema: boolean; structuredOutputs: boolean };
+      } = {};
+      const effectiveProvider = params.provider ?? providerName;
+      if (effectiveProvider.startsWith("groq")) {
+        strictModeProviderOptions.groq = { strictJsonSchema: true };
+      } else if (effectiveProvider.startsWith("openai")) {
+        strictModeProviderOptions.openai = { strictJsonSchema: true, structuredOutputs: true };
+      }
+
       const emitChunk = params.onStreamEvent;
       const result = streamText({
         model: modelForCall,
@@ -156,6 +183,7 @@ export class AtlasLLMProviderAdapter implements LLMProvider {
         experimental_repairToolCall: repairToolCall,
         stopWhen: stopConditions,
         abortSignal: params.abortSignal,
+        providerOptions: strictModeProviderOptions,
         ...(this.providerOptions || {}),
         ...(params.providerOptions || {}),
         onError: ({ error }) => {

@@ -18,6 +18,7 @@ import {
   HARNESS_PATHS,
   listArtifactsForSession,
   makeFixtureDir,
+  qaProviderReplacements,
   registerWorkspace,
   type SSEEvent,
   startDaemon,
@@ -47,7 +48,8 @@ async function materializeFixture(
   const tmpDir = await makeFixtureDir(fridayHome, "friday-first-principles-");
   const src = await Deno.readTextFile(join(srcDir, "workspace.yml"));
   let rendered = src;
-  for (const [from, to] of Object.entries(replacements)) {
+  const merged = { ...qaProviderReplacements(), ...replacements };
+  for (const [from, to] of Object.entries(merged)) {
     rendered = rendered.replaceAll(from, to);
   }
   await Deno.writeTextFile(join(tmpDir, "workspace.yml"), rendered);

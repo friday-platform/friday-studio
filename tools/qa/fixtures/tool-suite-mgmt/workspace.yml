@@ -17,8 +17,8 @@ agents:
     type: llm
     description: "LLM-backed triage agent for inventory list/describe coverage."
     config:
-      provider: anthropic
-      model: claude-sonnet-4-6
+      provider: __FRIDAY_QA_PROVIDER__
+      model: "__FRIDAY_QA_MODEL__"
       temperature: 0
       max_steps: 4
       prompt: |
