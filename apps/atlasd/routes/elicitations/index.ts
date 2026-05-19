@@ -53,6 +53,16 @@ const EnvWriteArgsSchema = z.object({
  * Apply a confirmed `env-write` elicitation. A chat turn can't block on the
  * user, so `env_set` only proposes — the actual write lands here.
  *
+ * `varsOverride` carries user-typed values from the confirmation card —
+ * the real value of a secret-bearing key the agent proposed as `""`, plus
+ * any non-secret value the user fixed/filled in via the card's input. It
+ * only overrides keys already present in the proposal — the override can't
+ * smuggle in a new key. Each value is validated by `AnswerBodySchema`
+ * before this is called, so we don't re-validate here. The card UI shows
+ * the value being committed (it's bound to the input), so user-driven
+ * non-secret overrides aren't a confused-deputy risk: the proposal in
+ * chat is the agent's ask; the override is the user's edit.
+ *
  * Called *before* the elicitation is marked answered: the write must succeed
  * for "answered" to be honest. A failure returns `{ ok: false }` so the
  * caller can 500 and leave the elicitation `pending` for the user to retry
@@ -61,6 +71,7 @@ const EnvWriteArgsSchema = z.object({
 async function commitEnvWriteElicitation(
   c: Context<AppVariables>,
   elicitation: Elicitation,
+  varsOverride: Record<string, string> | undefined,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const parsed = EnvWriteArgsSchema.safeParse(elicitation.pendingTool?.args);
   if (!parsed.success) {
@@ -70,7 +81,24 @@ async function commitEnvWriteElicitation(
     });
     return { ok: false, error: `malformed env-write args: ${parsed.error.message}` };
   }
-  const { scope, vars } = parsed.data;
+  const { scope, vars: proposed } = parsed.data;
+  const vars: Record<string, string> = { ...proposed };
+  if (varsOverride) {
+    for (const [key, value] of Object.entries(varsOverride)) {
+      // Override can only set values for keys the agent already proposed —
+      // never inject a new key. `Object.hasOwn` (not `key in vars`) skips
+      // inherited `Object.prototype` keys like `toString`. Unknown override
+      // keys are ignored (logged, no value).
+      if (!Object.hasOwn(vars, key)) {
+        logger.warn("env-write override referenced unknown key — ignored", {
+          id: elicitation.id,
+          key,
+        });
+        continue;
+      }
+      vars[key] = value;
+    }
+  }
   const keys = Object.keys(vars);
 
   try {
@@ -237,6 +265,19 @@ const AnswerBodySchema = z.object({
   value: z.string(),
   note: z.string().optional(),
   answeredBy: z.string().optional(),
+  /**
+   * Only meaningful for `env-write` confirmations. Lets the confirmation card
+   * supply user-typed values (e.g. the real secret for a key the agent
+   * proposed as `""`) without those values ever passing through chat history.
+   * Keys must be POSIX identifiers; values must not contain newlines, matching
+   * the constraints `env_set` enforces on its own input.
+   */
+  varsOverride: z
+    .record(
+      z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/, "env var keys must be POSIX identifiers"),
+      z.string().regex(/^[^\r\n]*$/, "env var values must not contain newlines"),
+    )
+    .optional(),
 });
 
 elicitationApp.post(
@@ -289,15 +330,36 @@ elicitationApp.post(
       // For env-write confirmations the write must land *before* the
       // elicitation is marked answered — "answered" has to mean "applied".
       // A commit failure leaves the elicitation pending so the user can
-      // retry; the per-key writers are idempotent, so retry is safe.
+      // retry with the same values.
       //
       // The inverse — commit succeeds, then `answer` below fails — leaves the
       // write applied while the elicitation stays `pending`. That's the
-      // accepted asymmetry: the write IS done (idempotent, so a retry confirm
-      // is a no-op), and a stuck-`pending` elicitation is a far better failure
-      // than a silently-lost write. There is no compensating rollback.
+      // accepted asymmetry: the write IS done, and a stuck-`pending`
+      // elicitation is a far better failure than a silently-lost write. There
+      // is no compensating rollback.
+      //
+      // Note: `userValues` on the confirmation card is in-memory only — on
+      // commit failure + page refresh, the user has to retype any secret
+      // they entered. Acceptable because commit failure is rare.
+      //
+      // Small TOCTOU window: the `status !== "pending"` check below is a
+      // pre-check; the authoritative CAS happens inside
+      // `ElicitationStorage.answer` → `transitionPending`. Two concurrent
+      // `/answer` requests for the same id can both pass this gate and
+      // both call `commitEnvWriteElicitation` before the CAS resolves —
+      // exactly one envelope update wins, but the loser's `setEnvFileVar`
+      // may have run second and overwritten disk. Needs network retries
+      // or a double-submit to manifest; the resulting state is
+      // "answered=A, .env=B" until the next write. Not worth a distributed
+      // lock today — the cost-to-likelihood ratio favors documenting it.
       if (got.data.kind === "env-write" && body.value === "confirm") {
-        const commit = await commitEnvWriteElicitation(c, got.data);
+        if (got.data.status !== "pending") {
+          return c.json(
+            { error: `Elicitation ${id} already in terminal state: ${got.data.status}` },
+            500,
+          );
+        }
+        const commit = await commitEnvWriteElicitation(c, got.data, body.varsOverride);
         if (!commit.ok) {
           return c.json({ error: `env write failed: ${commit.error}` }, 500);
         }

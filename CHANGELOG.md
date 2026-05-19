@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`env_set` confirmation card keeps secret values out of chat history.** Agents propose environment-variable writes through an in-chat card; the user reviews, edits, and confirms. For secret-looking keys (`token`, `key`, `secret`, `password`, `credential`), the agent leaves the value blank and the user types it into a password input. Exception: if the user pasted the literal value in chat first, the agent passes it through. After confirmation the card mirrors what's in `.env`, so edits survive a page refresh; secrets load only when you click the reveal eye. (#352)
+
+### Changed
+
+- **Chat surface polish.** Message actions (timestamp, menu) hug the bubble's right edge instead of stranding past wide tool cards. Inline timestamps drop seconds — hover for full date+time, or hold Alt for the full inline format. Fullscreen chat (Ctrl+F) keeps its rounded panel framing instead of going edge-to-edge. (#352)
+
+
 ## [0.1.9] - 2026-05-18
 
 Wire any external service to a workspace via webhooks. The tunnel no longer ships hardcoded `bitbucket` / `jira` / `github` providers — instead it hands the raw bytes to your workspace agent, which parses the body and verifies the signature itself. A new `wiring-external-webhooks` skill walks through the setup end-to-end (#354). **OpenRouter** joins as an opt-in LLM provider — set `OPENROUTER_API_KEY` and pick any tool-capable model from their catalog (#348). Installed **Friday Studio** stops hitting dead ports: workspace imports from the discover catalog and bundled-agent runs both work against the real daemon now (#386), and imported workspaces that reference bundled `type: user` agents actually run them instead of failing with "agent not found" (#349). Read **Breaking changes** before upgrading — webhook URLs have moved and the signal-trigger SDK response shape narrows to a discriminated union.
