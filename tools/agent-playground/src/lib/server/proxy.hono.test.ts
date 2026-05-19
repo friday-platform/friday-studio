@@ -23,15 +23,14 @@ describe("buildHonoProxy (compiled binary wrapper)", () => {
     globalThis.fetch = originalFetch;
   });
 
-  function call(prefix: string, upstream: string, label: string, url: string) {
-    const handler = buildHonoProxy(prefix, upstream, label);
+  function call(upstream: string, label: string, url: string) {
+    const handler = buildHonoProxy(upstream, label);
     const request = new Request(url, { method: "GET" });
     return handler({ req: { url: request.url, raw: request } });
   }
 
-  it("strips the prefix from the path and forwards to the upstream", async () => {
+  it("strips the /api/${label} prefix from the path and forwards to the upstream", async () => {
     await call(
-      "/api/daemon",
       "https://daemon.local:8080",
       "daemon",
       "https://localhost:5200/api/daemon/api/workspaces/x?foo=1",
@@ -43,7 +42,6 @@ describe("buildHonoProxy (compiled binary wrapper)", () => {
 
   it("delegates OAuth-critical semantics (X-Forwarded-* + redirect:manual) to executeProxyFetch", async () => {
     await call(
-      "/api/daemon",
       "https://daemon.local:8080",
       "daemon",
       "https://localhost:5200/api/daemon/api/link/v1/oauth/authorize/google-calendar",
@@ -54,5 +52,17 @@ describe("buildHonoProxy (compiled binary wrapper)", () => {
     expect(headers.get("x-forwarded-host")).toBe("localhost:5200");
     expect(headers.get("x-forwarded-proto")).toBe("https");
     expect(headers.get("x-forwarded-prefix")).toBe("/api/daemon");
+  });
+
+  it("stamps x-forwarded-prefix matching the stripped mount prefix (single source of truth)", async () => {
+    await call(
+      "https://tunnel.local:9090",
+      "tunnel",
+      "https://localhost:5200/api/tunnel/v1/webhook/abc?foo=1",
+    );
+    const target = fetchMock.mock.calls[0]?.[0] as URL;
+    expect(target.toString()).toBe("https://tunnel.local:9090/v1/webhook/abc?foo=1");
+    const headers = (fetchMock.mock.calls[0]?.[1] as RequestInit).headers as Headers;
+    expect(headers.get("x-forwarded-prefix")).toBe("/api/tunnel");
   });
 });
