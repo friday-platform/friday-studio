@@ -190,17 +190,17 @@ func hasCrashOnlyKeepAlive(agent launchAgent) bool {
 // Cross-platform contract — see autostart_linux.go +
 // autostart_windows.go for the per-OS interpretation. The reason is
 // "" when stale=false, and otherwise an identifier the caller can
-// log to triage repeated migrations (e.g. "I see keepalive_shape on
+// log to triage repeated migrations (e.g. "I see keepalive_mismatch on
 // every boot" → template/predicate drift).
 //
 // Darwin: stale iff a plist is present AND any of:
 //   - registered bundle ID differs from launcherBundleID (covers
 //     v0.0.8-format plists with a raw exe path, and future bundle-ID
-//     renames) → reason "bundle_id_mismatch";
+//     renames) → reason autostartReasonBundleIDMismatch;
 //   - KeepAlive is anything other than `{Crashed: true}` (covers
 //     v0.0.x-format plists that used `<false/>`, so the
 //     crash-recovery upgrade rolls out automatically on next launcher
-//     boot) → reason "keepalive_shape".
+//     boot) → reason autostartReasonKeepAliveMismatch.
 //
 // An absent plist is NOT stale — it means the user toggled "Start at
 // login" off via the tray, and Decision #36 says a deliberately-
@@ -222,10 +222,10 @@ func isAutostartStale() (bool, string) {
 	}
 	registered := currentAutostartBundleID()
 	if registered == "" || registered != launcherBundleID {
-		return true, "bundle_id_mismatch"
+		return true, autostartReasonBundleIDMismatch
 	}
 	if !hasCrashOnlyKeepAlive(agent) {
-		return true, "keepalive_shape"
+		return true, autostartReasonKeepAliveMismatch
 	}
 	return false, ""
 }

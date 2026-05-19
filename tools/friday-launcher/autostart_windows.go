@@ -109,7 +109,7 @@ func isAutostartStale() (bool, string) {
 	}
 	registered := currentAutostartPath()
 	if registered != "" && registered != exe {
-		return true, "exe_path_mismatch"
+		return true, autostartReasonExePathMismatch
 	}
 	return false, ""
 }

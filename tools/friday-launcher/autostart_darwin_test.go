@@ -188,8 +188,8 @@ func TestCurrentAutostartBundleID_DifferentBundleIDReturnsThatID(t *testing.T) {
 	if !stale {
 		t.Error("isAutostartStale = false, want true (bundle ID mismatch)")
 	}
-	if reason != "bundle_id_mismatch" {
-		t.Errorf("isAutostartStale reason = %q, want %q", reason, "bundle_id_mismatch")
+	if reason != autostartReasonBundleIDMismatch {
+		t.Errorf("isAutostartStale reason = %q, want %q", reason, autostartReasonBundleIDMismatch)
 	}
 }
 
@@ -329,8 +329,8 @@ func TestIsAutostartStale_OldKeepAliveShapeIsStale(t *testing.T) {
 	if !stale {
 		t.Error("isAutostartStale() = false for old KeepAlive shape, want true (migration must fire)")
 	}
-	if reason != "keepalive_shape" {
-		t.Errorf("isAutostartStale() reason = %q, want %q", reason, "keepalive_shape")
+	if reason != autostartReasonKeepAliveMismatch {
+		t.Errorf("isAutostartStale() reason = %q, want %q", reason, autostartReasonKeepAliveMismatch)
 	}
 }
 
@@ -367,10 +367,10 @@ func TestIsAutostartStale_V008ShapeIsStale(t *testing.T) {
 	}
 	// v0.0.8 plists fail the bundle-ID check first (raw exe path,
 	// no /usr/bin/open -b wrapper), so the reason is bundle_id_mismatch
-	// rather than keepalive_shape — even though the KeepAlive=<false/>
+	// rather than keepalive_mismatch — even though the KeepAlive=<false/>
 	// would ALSO trip the shape check if we got that far.
-	if reason != "bundle_id_mismatch" {
-		t.Errorf("isAutostartStale() reason = %q, want %q", reason, "bundle_id_mismatch")
+	if reason != autostartReasonBundleIDMismatch {
+		t.Errorf("isAutostartStale() reason = %q, want %q", reason, autostartReasonBundleIDMismatch)
 	}
 }
 
@@ -411,10 +411,20 @@ func TestCurrentAutostartBundleID_WrongPrefixReturnsEmpty(t *testing.T) {
 // next boot, ad infinitum. Every other test in this file uses
 // hand-rolled XML strings; this is the only one that exercises the
 // real template through the real read-back path.
+//
+// The bundle-ID assertion below is the "did the file actually parse"
+// half — without it, an unparseable template (typo'd tag, unescaped
+// `&`, missing closing element) would silently pass: readLaunchAgent
+// would fail, isAutostartStale would return (false, "") via its
+// Decision #36 guard, and !stale would be satisfied while the user's
+// real launcher writes garbage on every boot.
 func TestEnableAutostartProducesNonStalePlist(t *testing.T) {
 	withFakePlist(t)
 	if err := enableAutostart(); err != nil {
 		t.Fatalf("enableAutostart() error = %v", err)
+	}
+	if got := currentAutostartBundleID(); got != launcherBundleID {
+		t.Errorf("freshly-written plist parsed bundle ID = %q, want %q (plistTemplate is producing unparseable or wrong-shape XML)", got, launcherBundleID)
 	}
 	stale, reason := isAutostartStale()
 	if stale {
