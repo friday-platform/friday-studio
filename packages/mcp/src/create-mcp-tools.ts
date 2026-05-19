@@ -78,18 +78,41 @@ export interface MCPToolsResult {
   disconnected: DisconnectedIntegration[];
 }
 
-/** Race a promise against a timeout, clearing the timer when the promise settles. */
-function withTimeout<T>(
+/**
+ * Race a promise against a timeout, clearing the timer when the promise settles.
+ *
+ * When `signal` is supplied, the race also rejects with `signal.reason` if the
+ * signal aborts before the timer fires. The timer is cleared on every exit path
+ * (settle, timeout, abort) so no zombie `setTimeout` is left behind.
+ */
+export function withTimeout<T>(
   promise: Promise<T>,
   timeoutMs: number,
   makeError: (actualDurationMs: number) => Error,
+  signal?: AbortSignal,
 ): Promise<T> {
+  if (signal?.aborted) return Promise.reject(signal.reason);
   const startedAt = Date.now();
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let onAbort: (() => void) | undefined;
+  const cleanup = () => {
+    if (timer !== undefined) clearTimeout(timer);
+    if (signal && onAbort) signal.removeEventListener("abort", onAbort);
+  };
   const timeoutPromise = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(makeError(Date.now() - startedAt)), timeoutMs);
+    timer = setTimeout(() => {
+      cleanup();
+      reject(makeError(Date.now() - startedAt));
+    }, timeoutMs);
+    if (signal) {
+      onAbort = () => {
+        cleanup();
+        reject(signal.reason);
+      };
+      signal.addEventListener("abort", onAbort);
+    }
   });
-  return Promise.race([promise.finally(() => clearTimeout(timer)), timeoutPromise]);
+  return Promise.race([promise.finally(cleanup), timeoutPromise]);
 }
 
 /** Add the 15-minute hard ceiling to a single tool's execute. */

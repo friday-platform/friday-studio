@@ -48,7 +48,7 @@ vi.mock("@atlas/core/mcp-registry/credential-resolver", async (importOriginal) =
 });
 
 // Import after mocks
-const { createMCPTools, MCPTimeoutError } = await import("./create-mcp-tools.ts");
+const { createMCPTools, MCPTimeoutError, withTimeout } = await import("./create-mcp-tools.ts");
 
 // Fake logger
 const fakeLogger = {
@@ -1262,5 +1262,93 @@ describe("createMCPTools", () => {
         if (originalAtlasHome !== undefined) process.env.FRIDAY_HOME = originalAtlasHome;
       }
     });
+  });
+});
+
+describe("withTimeout", () => {
+  const makeTimeoutError = (ms: number) => new Error(`timed out after ${ms}ms`);
+
+  it("rejects immediately with signal.reason when signal is already aborted", async () => {
+    const reason = new Error("pre-aborted");
+    const controller = new AbortController();
+    controller.abort(reason);
+
+    await expect(
+      withTimeout(new Promise(() => {}), 10_000, makeTimeoutError, controller.signal),
+    ).rejects.toBe(reason);
+  });
+
+  it("rejects with signal.reason when signal aborts before the timer fires", async () => {
+    vi.useFakeTimers();
+    try {
+      const controller = new AbortController();
+      const reason = new Error("mid-flight");
+      const promise = withTimeout(
+        new Promise(() => {}),
+        10_000,
+        makeTimeoutError,
+        controller.signal,
+      );
+
+      // Abort before the 10s timer would fire.
+      await vi.advanceTimersByTimeAsync(50);
+      controller.abort(reason);
+
+      await expect(promise).rejects.toBe(reason);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("clears the timer when the signal aborts (no zombie setTimeout)", async () => {
+    vi.useFakeTimers();
+    try {
+      const controller = new AbortController();
+      const promise = withTimeout(
+        new Promise(() => {}),
+        10_000,
+        makeTimeoutError,
+        controller.signal,
+      );
+
+      controller.abort(new Error("cancel"));
+      await expect(promise).rejects.toThrow("cancel");
+
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("clears the timer when the inner promise resolves", async () => {
+    vi.useFakeTimers();
+    try {
+      const promise = withTimeout(Promise.resolve("ok"), 10_000, makeTimeoutError);
+      await expect(promise).resolves.toBe("ok");
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("still rejects on timeout when no signal is supplied (backward compatible)", async () => {
+    vi.useFakeTimers();
+    try {
+      const promise = withTimeout(new Promise(() => {}), 1_000, makeTimeoutError);
+      const assertion = expect(promise).rejects.toThrow("timed out after");
+      await vi.advanceTimersByTimeAsync(1_500);
+      await assertion;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("removes the abort listener after the inner promise settles", async () => {
+    const controller = new AbortController();
+    const removeSpy = vi.spyOn(controller.signal, "removeEventListener");
+
+    await withTimeout(Promise.resolve("ok"), 10_000, makeTimeoutError, controller.signal);
+
+    expect(removeSpy).toHaveBeenCalledWith("abort", expect.any(Function));
   });
 });
