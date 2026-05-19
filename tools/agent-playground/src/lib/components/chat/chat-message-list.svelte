@@ -772,7 +772,7 @@
             <div class="message-content system-content">{text}</div>
           {/if}
         {:else}
-          <span class="role-badge">{message.role === "user" ? "You" : "Friday"}</span>
+          <span class="role-badge text-faded">{message.role === "user" ? "You" : "Friday"}</span>
 
           {#each message.segments as segment, idx}
             {#if segment.type === "text" && segment.content.length > 0}
@@ -903,8 +903,8 @@
          or a tool-call arrives. Same layout as .message.assistant so
          there's no visual jump when the swap happens. -->
     <div class="message assistant thinking-bubble" role="status" aria-live="polite">
-      <span class="role-badge">Friday</span>
-      <div class="message-content thinking-content">
+      <span class="role-badge text-faded">Friday</span>
+      <div class="message-content thinking-content text-faded">
         <span class="braille-spinner" aria-hidden="true">{BRAILLE_FRAMES[brailleFrame]}</span>
         <span class="thinking-label">Thinking…</span>
       </div>
@@ -1117,7 +1117,6 @@
      swapping it for the real message doesn't visually jump. */
   .thinking-content {
     align-items: center;
-    color: color-mix(in srgb, var(--color-text), transparent 35%);
     display: inline-flex;
     font-style: italic;
     gap: var(--size-2);
@@ -1135,7 +1134,6 @@
   }
 
   .role-badge {
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
     font-size: var(--font-size-1);
     font-weight: var(--font-weight-5);
     letter-spacing: 0.04em;
