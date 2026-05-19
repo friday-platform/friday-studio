@@ -25,11 +25,15 @@ import (
 //
 // RunAtLoad=true triggers (re-)launch at login.
 //
-// KeepAlive={Crashed: true} tells launchd to restart the job on any
-// "abnormal exit" — which per Apple's docs means EITHER:
-//
-//   - the process exited with a non-zero status code, OR
-//   - the process was terminated by an uncaught signal.
+// KeepAlive={Crashed: true, SuccessfulExit: false} is the BOTH-keys
+// form required for crash-recovery to actually fire on macOS 26
+// (Tahoe). Apple's docs claim `{Crashed: true}` alone should suffice
+// — but empirically (2026-05 QA on darwin/arm64 26.4.1) launchd
+// sets the `after crash => 1` semaphore on SIGKILL yet refuses to
+// respawn until SuccessfulExit=false is ALSO present. The two-key
+// combination means "restart if (last exit was abnormal) OR (last
+// exit was non-successful)" — covers both SIGKILL/panic and exit-N,
+// while a clean exit 0 still leaves the job stopped.
 //
 // Note the breadth: launchd doesn't distinguish "panic / segfault /
 // OOM / uncaught signal" from "the launcher's main() returned an
@@ -77,24 +81,26 @@ const plistTemplate = `<?xml version="1.0" encoding="UTF-8"?>
   <dict>
     <key>Crashed</key>
     <true/>
+    <key>SuccessfulExit</key>
+    <false/>
   </dict>
 </dict>
 </plist>`
 
 // IMPORTANT: if you change the KeepAlive dict's shape in plistTemplate
-// above (add/remove sub-keys, flip Crashed to false, etc.), update
-// hasCrashOnlyKeepAlive() below to match. The staleness check is
+// above (add/remove sub-keys, flip a value, etc.), update
+// hasCanonicalKeepAlive() below to match. The staleness check is
 // strict-equality; any drift between template and predicate causes an
 // infinite rewrite loop on every launcher boot. The round-trip test
 // TestEnableAutostartProducesNonStalePlist enforces this invariant.
 
 // launchAgent mirrors the subset of the plist we read back. KeepAlive
 // is `any` because the schema is a discriminated union — `<false/>`
-// (the v0.0.x shape) parses to `bool`, the new `<dict><key>Crashed</key>
-// <true/></dict>` parses to `map[string]any`. Pinning the field to
-// `bool` made the new shape unmarshal-fail silently, which would mean
-// every staleness check returned "not stale" for installs that
-// already have the dict form — defeating the migration check below.
+// (the v0.0.x shape) parses to `bool`, the dict form parses to
+// `map[string]any`. Pinning the field to `bool` made the new shape
+// unmarshal-fail silently, which would mean every staleness check
+// returned "not stale" for installs that already have the dict form —
+// defeating the migration check below.
 type launchAgent struct {
 	Label            string   `plist:"Label"`
 	ProgramArguments []string `plist:"ProgramArguments"`
@@ -166,23 +172,29 @@ func readLaunchAgent() (launchAgent, bool) {
 	return agent, true
 }
 
-// hasCrashOnlyKeepAlive reports whether the parsed plist's KeepAlive
-// value is exactly `{Crashed: true}` — the shape this launcher now
-// writes. The historical shape (`<false/>` → `bool(false)`) and any
-// other dict shape both return false, marking the plist for rewrite.
-// Strict-equality check (single key, value true) so a future plist
-// that adds more KeepAlive sub-keys for a new feature is correctly
-// detected as different + rewritten.
-func hasCrashOnlyKeepAlive(agent launchAgent) bool {
+// hasCanonicalKeepAlive reports whether the parsed plist's KeepAlive
+// value is exactly `{Crashed: true, SuccessfulExit: false}` — the
+// shape this launcher now writes. The historical shape
+// (`<false/>` → `bool(false)`), the intermediate `{Crashed: true}`-
+// only shape that an earlier draft of this PR shipped, and any
+// other dict shape all return false, marking the plist for rewrite.
+// Strict-equality check (exactly these two keys with these two values)
+// so a future plist that adds more KeepAlive sub-keys for a new
+// feature is correctly detected as different + rewritten.
+func hasCanonicalKeepAlive(agent launchAgent) bool {
 	m, ok := agent.KeepAlive.(map[string]any)
 	if !ok {
 		return false
 	}
-	if len(m) != 1 {
+	if len(m) != 2 {
 		return false
 	}
 	crashed, ok := m["Crashed"].(bool)
-	return ok && crashed
+	if !ok || !crashed {
+		return false
+	}
+	successfulExit, ok := m["SuccessfulExit"].(bool)
+	return ok && !successfulExit
 }
 
 // isAutostartStale reports whether the LaunchAgent plist needs to
@@ -224,7 +236,7 @@ func isAutostartStale() (bool, string) {
 	if registered == "" || registered != launcherBundleID {
 		return true, autostartReasonBundleIDMismatch
 	}
-	if !hasCrashOnlyKeepAlive(agent) {
+	if !hasCanonicalKeepAlive(agent) {
 		return true, autostartReasonKeepAliveMismatch
 	}
 	return false, ""

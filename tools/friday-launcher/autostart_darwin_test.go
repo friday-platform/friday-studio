@@ -136,6 +136,8 @@ func TestCurrentAutostartBundleID_CurrentFormatReturnsBundleID(t *testing.T) {
   <dict>
     <key>Crashed</key>
     <true/>
+    <key>SuccessfulExit</key>
+    <false/>
   </dict>
 </dict>
 </plist>`
@@ -218,82 +220,119 @@ func TestCurrentAutostartBundleID_TooFewArgsReturnsEmpty(t *testing.T) {
 	}
 }
 
-// TestHasCrashOnlyKeepAlive_BoolFalse: the historical v0.0.x plist
+// TestHasCanonicalKeepAlive_BoolFalse: the historical v0.0.x plist
 // shape (`<key>KeepAlive</key><false/>`) parses to `bool(false)`,
-// which must be rejected by hasCrashOnlyKeepAlive so the staleness
+// which must be rejected by hasCanonicalKeepAlive so the staleness
 // pass rewrites it with the dict form. THIS IS THE LOAD-BEARING PATH
 // FOR THE v0.0.x → crash-recovery KeepAlive MIGRATION — without it,
 // users who deployed before the upgrade would never get the new
 // shape and crashed launchers would stay dead.
-func TestHasCrashOnlyKeepAlive_BoolFalse(t *testing.T) {
-	if hasCrashOnlyKeepAlive(launchAgent{KeepAlive: false}) {
-		t.Error("hasCrashOnlyKeepAlive(bool false) = true, want false")
+func TestHasCanonicalKeepAlive_BoolFalse(t *testing.T) {
+	if hasCanonicalKeepAlive(launchAgent{KeepAlive: false}) {
+		t.Error("hasCanonicalKeepAlive(bool false) = true, want false")
 	}
 }
 
-// TestHasCrashOnlyKeepAlive_BoolTrue: defensively rejects the
+// TestHasCanonicalKeepAlive_BoolTrue: defensively rejects the
 // `<key>KeepAlive</key><true/>` shape too. Friday has never written
 // that, but a hand-edited or future-altered plist mustn't sneak past
 // the staleness check just because the value is "truthy."
-func TestHasCrashOnlyKeepAlive_BoolTrue(t *testing.T) {
-	if hasCrashOnlyKeepAlive(launchAgent{KeepAlive: true}) {
-		t.Error("hasCrashOnlyKeepAlive(bool true) = true, want false")
+func TestHasCanonicalKeepAlive_BoolTrue(t *testing.T) {
+	if hasCanonicalKeepAlive(launchAgent{KeepAlive: true}) {
+		t.Error("hasCanonicalKeepAlive(bool true) = true, want false")
 	}
 }
 
-// TestHasCrashOnlyKeepAlive_DictWithCrashedTrue: the canonical shape
-// we write today. This is the only input that should return true.
-func TestHasCrashOnlyKeepAlive_DictWithCrashedTrue(t *testing.T) {
-	agent := launchAgent{KeepAlive: map[string]any{"Crashed": true}}
-	if !hasCrashOnlyKeepAlive(agent) {
-		t.Error("hasCrashOnlyKeepAlive({Crashed: true}) = false, want true")
-	}
-}
-
-// TestHasCrashOnlyKeepAlive_DictWithCrashedFalse: a dict with the
-// right key but the wrong value — `{Crashed: false}` would tell
-// launchd to restart on CLEAN exit instead of crash, the opposite of
-// what we want. Must be rejected so the rewrite path replaces it.
-func TestHasCrashOnlyKeepAlive_DictWithCrashedFalse(t *testing.T) {
-	agent := launchAgent{KeepAlive: map[string]any{"Crashed": false}}
-	if hasCrashOnlyKeepAlive(agent) {
-		t.Error("hasCrashOnlyKeepAlive({Crashed: false}) = true, want false")
-	}
-}
-
-// TestHasCrashOnlyKeepAlive_DictWithExtraKey: a dict that has
-// {Crashed: true} but also a second sub-key (NetworkState,
-// SuccessfulExit, AfterInitialDemand, etc.) is not our canonical
-// shape. Strict-equality match: extra keys → stale, because future
-// versions of this launcher may add a key for a new feature and the
-// staleness check needs to fire so the upgrade rolls out.
-func TestHasCrashOnlyKeepAlive_DictWithExtraKey(t *testing.T) {
+// TestHasCanonicalKeepAlive_DictCrashedAndSuccessfulExit: the canonical
+// shape we write today — both keys, both with their canonical values.
+// This is the ONLY input that should return true.
+func TestHasCanonicalKeepAlive_DictCrashedAndSuccessfulExit(t *testing.T) {
 	agent := launchAgent{KeepAlive: map[string]any{
 		"Crashed":        true,
 		"SuccessfulExit": false,
 	}}
-	if hasCrashOnlyKeepAlive(agent) {
-		t.Error("hasCrashOnlyKeepAlive({Crashed:true, SuccessfulExit:false}) = true, want false")
+	if !hasCanonicalKeepAlive(agent) {
+		t.Error("hasCanonicalKeepAlive({Crashed:true, SuccessfulExit:false}) = false, want true")
 	}
 }
 
-// TestHasCrashOnlyKeepAlive_EmptyDict: a plist with `<key>KeepAlive
+// TestHasCanonicalKeepAlive_DictCrashedOnly: the intermediate shape
+// shipped by an earlier draft of this PR — `{Crashed: true}` alone
+// without `SuccessfulExit: false`. THIS IS THE LOAD-BEARING PATH for
+// migrating users who already received the broken intermediate shape
+// (a single-key dict that macOS 26.x launchd silently ignores for
+// crash-recovery purposes — confirmed empirically 2026-05-19 on
+// darwin/arm64 26.4.1: SIGKILL sets `after crash => 1` but never
+// triggers respawn). Must be rejected so the staleness pass rewrites
+// it with the two-key form that actually fires respawn.
+func TestHasCanonicalKeepAlive_DictCrashedOnly(t *testing.T) {
+	agent := launchAgent{KeepAlive: map[string]any{"Crashed": true}}
+	if hasCanonicalKeepAlive(agent) {
+		t.Error("hasCanonicalKeepAlive({Crashed:true} only) = true, want false (intermediate broken shape — must migrate to two-key)")
+	}
+}
+
+// TestHasCanonicalKeepAlive_DictCrashedFalse: a dict with the right
+// keys but the wrong "Crashed" value — `{Crashed:false, SuccessfulExit:
+// false}` would tell launchd to leave crashes alone (opposite of
+// what we want). Must be rejected.
+func TestHasCanonicalKeepAlive_DictCrashedFalse(t *testing.T) {
+	agent := launchAgent{KeepAlive: map[string]any{
+		"Crashed":        false,
+		"SuccessfulExit": false,
+	}}
+	if hasCanonicalKeepAlive(agent) {
+		t.Error("hasCanonicalKeepAlive({Crashed:false, SuccessfulExit:false}) = true, want false")
+	}
+}
+
+// TestHasCanonicalKeepAlive_DictSuccessfulExitTrue: the wrong
+// SuccessfulExit value — `{Crashed:true, SuccessfulExit:true}` would
+// fight the user's Quit (restart on every clean exit too). Reject.
+func TestHasCanonicalKeepAlive_DictSuccessfulExitTrue(t *testing.T) {
+	agent := launchAgent{KeepAlive: map[string]any{
+		"Crashed":        true,
+		"SuccessfulExit": true,
+	}}
+	if hasCanonicalKeepAlive(agent) {
+		t.Error("hasCanonicalKeepAlive({Crashed:true, SuccessfulExit:true}) = true, want false")
+	}
+}
+
+// TestHasCanonicalKeepAlive_DictWithExtraKey: a dict that has the two
+// canonical keys with canonical values PLUS a third sub-key
+// (NetworkState, AfterInitialDemand, etc.) is not our canonical shape.
+// Strict-equality match: extra keys → stale, because future versions
+// of this launcher may add a key for a new feature and the staleness
+// check needs to fire so the upgrade rolls out.
+func TestHasCanonicalKeepAlive_DictWithExtraKey(t *testing.T) {
+	agent := launchAgent{KeepAlive: map[string]any{
+		"Crashed":            true,
+		"SuccessfulExit":     false,
+		"AfterInitialDemand": true,
+	}}
+	if hasCanonicalKeepAlive(agent) {
+		t.Error("hasCanonicalKeepAlive({Crashed,SuccessfulExit,AfterInitialDemand}) = true, want false")
+	}
+}
+
+// TestHasCanonicalKeepAlive_EmptyDict: a plist with `<key>KeepAlive
 // </key><dict></dict>` is technically valid launchd syntax (means
-// "always keep alive") — definitely not our crash-only shape. Reject.
-func TestHasCrashOnlyKeepAlive_EmptyDict(t *testing.T) {
-	if hasCrashOnlyKeepAlive(launchAgent{KeepAlive: map[string]any{}}) {
-		t.Error("hasCrashOnlyKeepAlive(empty dict) = true, want false")
+// "always keep alive") — definitely not canonical. Reject.
+func TestHasCanonicalKeepAlive_EmptyDict(t *testing.T) {
+	if hasCanonicalKeepAlive(launchAgent{KeepAlive: map[string]any{}}) {
+		t.Error("hasCanonicalKeepAlive(empty dict) = true, want false")
 	}
 }
 
-// TestHasCrashOnlyKeepAlive_AbsentField: a plist with no KeepAlive
-// key at all (default: never restart) parses to a nil any. Reject —
-// even though the behaviour is "no restart on anything," it's not
-// the shape we now own, and we want the upgrade to install our
-// explicit `{Crashed: true}` dict.
-func TestHasCrashOnlyKeepAlive_AbsentField(t *testing.T) {
-	if hasCrashOnlyKeepAlive(launchAgent{KeepAlive: nil}) {
-		t.Error("hasCrashOnlyKeepAlive(nil) = true, want false")
+// TestHasCanonicalKeepAlive_AbsentField: a plist with no KeepAlive key
+// at all (default: never restart) parses to a nil any. Reject — even
+// though the behaviour is "no restart on anything," it's not the
+// shape we now own, and we want the upgrade to install our explicit
+// two-key dict.
+func TestHasCanonicalKeepAlive_AbsentField(t *testing.T) {
+	if hasCanonicalKeepAlive(launchAgent{KeepAlive: nil}) {
+		t.Error("hasCanonicalKeepAlive(nil) = true, want false")
 	}
 }
 
@@ -328,6 +367,46 @@ func TestIsAutostartStale_OldKeepAliveShapeIsStale(t *testing.T) {
 	stale, reason := isAutostartStale()
 	if !stale {
 		t.Error("isAutostartStale() = false for old KeepAlive shape, want true (migration must fire)")
+	}
+	if reason != autostartReasonKeepAliveMismatch {
+		t.Errorf("isAutostartStale() reason = %q, want %q", reason, autostartReasonKeepAliveMismatch)
+	}
+}
+
+// TestIsAutostartStale_IntermediateCrashedOnlyIsStale: an installed
+// plist with the correct bundle ID and the single-key `{Crashed:true}`
+// dict — the shape an earlier draft of this PR shipped. macOS 26.x
+// launchd silently ignores that shape for crash-recovery (the
+// `after crash` semaphore is satisfied but no respawn fires), so we
+// migrate it to the two-key form that actually works.
+func TestIsAutostartStale_IntermediateCrashedOnlyIsStale(t *testing.T) {
+	path := withFakePlist(t)
+	intermediate := `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>ai.hellofriday.studio</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/open</string>
+    <string>-b</string>
+    <string>` + launcherBundleID + `</string>
+    <string>--args</string>
+    <string>--no-browser</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key>
+  <dict>
+    <key>Crashed</key><true/>
+  </dict>
+</dict>
+</plist>`
+	if err := os.WriteFile(path, []byte(intermediate), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stale, reason := isAutostartStale()
+	if !stale {
+		t.Error("isAutostartStale() = false for {Crashed:true}-only plist, want true (intermediate shape must migrate to two-key)")
 	}
 	if reason != autostartReasonKeepAliveMismatch {
 		t.Errorf("isAutostartStale() reason = %q, want %q", reason, autostartReasonKeepAliveMismatch)
@@ -405,7 +484,7 @@ func TestCurrentAutostartBundleID_WrongPrefixReturnsEmpty(t *testing.T) {
 // TestEnableAutostartProducesNonStalePlist pins the load-bearing
 // round-trip invariant: whatever plistTemplate writes today must be
 // accepted as canonical by isAutostartStale on read-back. If a future
-// edit changes the template (or hasCrashOnlyKeepAlive) in a way that
+// edit changes the template (or hasCanonicalKeepAlive) in a way that
 // breaks this round-trip, every launcher boot would mark its own
 // freshly-written plist as stale, rewrite it, mark it stale on the
 // next boot, ad infinitum. Every other test in this file uses
@@ -428,6 +507,6 @@ func TestEnableAutostartProducesNonStalePlist(t *testing.T) {
 	}
 	stale, reason := isAutostartStale()
 	if stale {
-		t.Errorf("freshly-written plist is stale: reason=%q. Either plistTemplate drifted from hasCrashOnlyKeepAlive(), or the bundle-ID match broke — fix one to match the other.", reason)
+		t.Errorf("freshly-written plist is stale: reason=%q. Either plistTemplate drifted from hasCanonicalKeepAlive(), or the bundle-ID match broke — fix one to match the other.", reason)
 	}
 }
