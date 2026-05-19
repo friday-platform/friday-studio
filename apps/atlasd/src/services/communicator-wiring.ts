@@ -64,12 +64,13 @@ function getLinkServiceUrl(): string {
 }
 
 /**
- * Local URL for webhook-tunnel's `/status` endpoint. Defaults to the
- * standard webhook-tunnel listener; override via `WEBHOOK_TUNNEL_URL`
- * for non-default ports / dev rigs. Scheme follows the s2s mesh.
+ * Local URL for webhook-tunnel's `/status` endpoint. `EXTERNAL_TUNNEL_URL`
+ * is the launcher's contract (`tools/friday-launcher/cert_env.go`) — the
+ * single source the agent-playground server also reads. Defaults to the
+ * `tools/webhook-tunnel/config.go` port for bare `deno task webhook-tunnel`.
  */
 function getWebhookTunnelUrl(): string {
-  return process.env.WEBHOOK_TUNNEL_URL ?? `${s2sScheme()}://localhost:9090`;
+  return process.env.EXTERNAL_TUNNEL_URL ?? `${s2sScheme()}://localhost:9090`;
 }
 
 const TunnelStatusSchema = z.object({ url: z.string().url().nullable().optional() });

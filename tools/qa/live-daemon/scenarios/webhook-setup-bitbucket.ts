@@ -822,6 +822,35 @@ async function runPointsAtStatusFirst(): Promise<EvalResult> {
         /\b(?:curl|wget|http)\b[^.\n]{0,60}(?:localhost|127\.0\.0\.1)(?::\d+)?\/hook\/[^\s)`]+/i,
       )?.[0],
     },
+    {
+      // Pinned 2026-05-18 after chat_mCiYnHbUQs: agent followed the
+      // skill's hardcoded `https://localhost:9090/status`, got empty stdout
+      // on the playground rig (webhook-tunnel listens on 19090 there via
+      // EXTERNAL_TUNNEL_URL), and improvised. Skill was fixed to teach
+      // the env-var form `"${EXTERNAL_TUNNEL_URL:-https://localhost:9090}"`.
+      // This check locks the contract: any mention of localhost:9090/status
+      // must come through $EXTERNAL_TUNNEL_URL (the {:-default} fallback is
+      // fine), never as a bare hardcoded port.
+      id: "tunnel-port-via-env-not-hardcoded",
+      description:
+        "When telling the user how to call /status, the local tunnel host comes from $EXTERNAL_TUNNEL_URL (the launcher / playground export) — never a bare hardcoded port like localhost:9090 (which is wrong on the playground rig)",
+      pass: (() => {
+        const text = result.text;
+        const mentionsBarePort = /localhost:9090\/status/.test(text);
+        // Anywhere in the response: ${EXTERNAL_TUNNEL_URL...}, $EXTERNAL_TUNNEL_URL,
+        // or even prose like "from $EXTERNAL_TUNNEL_URL" counts. Either it's
+        // not mentioning the bare port at all, or the env-var is in scope.
+        const referencesEnvVar = /\$\{?EXTERNAL_TUNNEL_URL/.test(text);
+        return !mentionsBarePort || referencesEnvVar;
+      })(),
+      evidence: (() => {
+        const barePort = result.text.match(/[^\s`'"]*localhost:9090\/status[^\s`'"]*/)?.[0];
+        const envForm = result.text.match(/[^\s`'"]*\$\{?EXTERNAL_TUNNEL_URL[^\s`'"]*/)?.[0];
+        if (envForm) return `env-var form: ${envForm.slice(0, 120)}`;
+        if (barePort) return `bare hardcoded port: ${barePort.slice(0, 120)}`;
+        return "(no /status curl mentioned)";
+      })(),
+    },
   ];
 
   metrics.checks = checks;
@@ -1492,10 +1521,10 @@ async function runNoAtlasdUrlFallback(): Promise<EvalResult> {
         /\b(?:please\s+)?(?:run|paste|share|provide|tell me|give me|copy)\b[^.\n]{0,80}(?:\/status|tunnel\s+URL|tunnel-url|public\s+(?:tunnel\s+)?(?:URL|hostname))/i.test(
           text,
         ) ||
-        /\bcurl\b[^.\n]{0,60}localhost:9090\/status/i.test(text),
+        /\bcurl\b[^.\n]{0,80}\$\{?EXTERNAL_TUNNEL_URL[^.\n]{0,40}\/status/i.test(text),
       evidence: text
         .match(
-          /\/hook\/raw\/[^\s)`]+|\b(?:run|paste|share|provide|tell me|give me|copy)[^.\n]{0,80}(?:\/status|tunnel\s+URL|public\s+(?:tunnel\s+)?(?:URL|hostname))[^.\n]{0,40}|\bcurl\b[^.\n]{0,60}\/status/i,
+          /\/hook\/raw\/[^\s)`]+|\b(?:run|paste|share|provide|tell me|give me|copy)[^.\n]{0,80}(?:\/status|tunnel\s+URL|public\s+(?:tunnel\s+)?(?:URL|hostname))[^.\n]{0,40}|\bcurl\b[^.\n]{0,80}\$\{?EXTERNAL_TUNNEL_URL[^.\n]{0,40}\/status/i,
         )?.[0]
         ?.slice(0, 200),
     },
