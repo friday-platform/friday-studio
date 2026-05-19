@@ -14,7 +14,7 @@
 <script lang="ts">
   import { Button, Dialog } from "@atlas/ui";
   import { goto } from "$app/navigation";
-  import { getDaemonClient } from "$lib/daemon-client";
+  import { getDaemonClient, PROXY_BASE } from "$lib/daemon-client";
   import {
     getFieldRendering,
     humanizeFieldName,
@@ -104,32 +104,91 @@
 
     error = null;
 
-    // Fire-and-forget: dismiss modal immediately, navigate on success
+    // Use `?nowait=true` so the inbound HTTP request returns 202 as soon as
+    // the signal is published to JetStream. The cascade runs decoupled from
+    // this browser tab's lifetime — closing the modal, navigating away, or
+    // refreshing won't abort the spawned session. The sync path (no nowait)
+    // held the fetch open for the full cascade and cancelled the run on any
+    // navigation; long jobs (minutes-plus) always lost that race.
+    //
+    // Direct fetch instead of the typed RPC client: the daemon route has no
+    // `zValidator("query")`, so the Hono RPC input type doesn't expose a
+    // `query` field. Adding one upstream would force every other caller
+    // (CLI, MCP server, workspace-chat job tools, the platform client) to
+    // pass `query: {}` boilerplate — not worth the churn for a single
+    // optional flag.
+    //
+    // Auto-navigation: nowait's response doesn't carry a sessionId (the
+    // consumer assigns one when it picks up the message). To still land the
+    // user on the running session view, we record `since` before the POST
+    // and then poll `/api/sessions?workspaceId=…` for a session that
+    // started after that timestamp. Give up silently after a few seconds
+    // — at that point the cascade may have crashed pre-session-creation
+    // and there's nothing to navigate to.
+    const since = Date.now();
     open.set(false);
     resetForm();
 
-    const client = getDaemonClient();
-    client.workspace[":workspaceId"].signals[":signalId"]
-      .$post({
-        param: { workspaceId, signalId },
-        json: { payload },
-      })
+    const url = `${PROXY_BASE}/api/workspaces/${encodeURIComponent(
+      workspaceId,
+    )}/signals/${encodeURIComponent(signalId)}?nowait=true`;
+    fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ payload }),
+    })
       .then(async (res) => {
         if (!res.ok) {
           console.error("Trigger failed:", res.status);
           return;
         }
-        const data = await res.json();
-        // Response can be {status:"completed",sessionId,...} (default sync)
-        // or {status:"accepted",correlationId,...} (?nowait=true). This
-        // dialog uses sync mode (no nowait), so navigate to the session.
-        if (data.status === "completed" && data.sessionId) {
-          goto(`/platform/${workspaceId}/sessions/${data.sessionId}`);
+        // Poll for the spawned session and navigate when it appears.
+        const sessionId = await findSpawnedSessionId(workspaceId, since);
+        if (sessionId) {
+          goto(`/platform/${workspaceId}/sessions/${sessionId}`);
         }
       })
       .catch((err) => {
         console.error("Failed to trigger signal:", err);
       });
+  }
+
+  /**
+   * Poll the same endpoint that powers the Recent Runs panel
+   * (`recent-sessions.svelte` → `sessionQueries.list`) until a session for
+   * this workspace that started after `since` shows up. The list is
+   * returned newest-first; a match on `startedAt >= since` is the run we
+   * just triggered.
+   *
+   * Total budget ~6s at 400ms intervals — enough for the consumer to pick
+   * up the JetStream message and instantiate the FSM (~50–500ms in dev,
+   * up to 2s under load) without leaving the user staring at the jobs
+   * page indefinitely if something upstream silently dropped the message.
+   */
+  async function findSpawnedSessionId(
+    workspaceId: string,
+    since: number,
+  ): Promise<string | null> {
+    const intervalMs = 400;
+    const maxAttempts = 15;
+    const client = getDaemonClient();
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        const res = await client.sessions.index.$get({ query: { workspaceId } });
+        if (res.ok) {
+          const data = await res.json();
+          const match = data.sessions?.find((s) => {
+            const startedAt = s.startedAt ? Date.parse(s.startedAt) : Number.NaN;
+            return Number.isFinite(startedAt) && startedAt >= since;
+          });
+          if (match?.sessionId) return match.sessionId;
+        }
+      } catch (err) {
+        console.warn("Session poll failed:", err);
+      }
+      await new Promise<void>((resolve) => setTimeout(resolve, intervalMs));
+    }
+    return null;
   }
 </script>
 
