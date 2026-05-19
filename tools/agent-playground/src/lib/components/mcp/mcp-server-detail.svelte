@@ -1,9 +1,9 @@
 <!--
   MCP Server Detail — the content column for a selected catalog server.
 
-  The middle-column section nav (`mcp-section-nav.svelte`) and the catalog
-  breadcrumb live in the route's ListDetail sidebar; this component renders
-  only the active section's content. Each section is its own route
+  The middle-column catalog tree (`mcp-catalog-tree.svelte`) holds the
+  selected server's section sub-nav (it expands in place); this component
+  renders only the active section's content. Each section is its own route
   (`/mcp/{server}/{section}`).
 
   Install-time states (`setting_up`, `awaiting_confirm`) render a focused
@@ -18,12 +18,12 @@
 -->
 
 <script lang="ts">
+  import { getAnnotation } from "@atlas/core/mcp-registry/annotations";
   import type {
     DoctorEnvVar,
     DoctorReport,
     MCPServerMetadata,
   } from "@atlas/core/mcp-registry/schemas";
-  import { getAnnotation } from "@atlas/core/mcp-registry/annotations";
   import {
     Badge,
     Button,
@@ -34,16 +34,16 @@
     toast,
   } from "@atlas/ui";
   import { useQueryClient } from "@tanstack/svelte-query";
-  import { fade } from "svelte/transition";
-  import { writable } from "svelte/store";
   import {
-    type CommitEnvVar,
-    type DoctorProgressEvent,
     doctorProgressStream,
     mcpQueries,
     useCancelMCPInstall,
     useCommitMCPInstall,
+    type CommitEnvVar,
+    type DoctorProgressEvent,
   } from "$lib/queries/mcp-queries";
+  import { writable } from "svelte/store";
+  import { fade } from "svelte/transition";
   import ManualConfigSetup from "./manual-config-setup.svelte";
   import McpCredentialsPanel from "./mcp-credentials-panel.svelte";
   import { isOfficialServer, sourceLabel } from "./mcp-server-utils";
@@ -305,7 +305,11 @@
 {#snippet envTable(rows: EnvRow[])}
   <table class="env-table">
     <thead>
-      <tr><th>Key</th><th>Tags</th><th>Description</th></tr>
+      <tr>
+        <th>Key</th>
+        <th>Tags</th>
+        <th>Description</th>
+      </tr>
     </thead>
     <tbody>
       {#each rows as row (row.key)}
@@ -332,8 +336,8 @@
       {#snippet header()}
         <Dialog.Title>Remove server</Dialog.Title>
         <Dialog.Description>
-          {displayName} will be uninstalled and no longer available to your agents. You can
-          reinstall it from the registry at any time.
+          {displayName} will be uninstalled and no longer available to your agents. You can reinstall
+          it from the registry at any time.
         </Dialog.Description>
       {/snippet}
       {#snippet footer()}
@@ -389,8 +393,8 @@
         </ol>
         {#if streamError}
           <p class="stream-error">
-            Lost the progress stream ({streamError}). Reload to reconnect — the server keeps
-            working in the background.
+            Lost the progress stream ({streamError}). Reload to reconnect — the server keeps working
+            in the background.
           </p>
         {/if}
         <div class="actions-row">
@@ -473,239 +477,226 @@
     {/if}
 
     <div class="section-content">
-        {#key activeSection}
-          <div class="section-inner" in:fade={{ duration: 120 }}>
-            {#if activeSection === "overview"}
-              <section class="section">
-                <div class="overview-header">
-                  <h2 class="section-title">{displayName}</h2>
-                  <div class="badge-row">{@render sourceBadges()}</div>
-                </div>
-                <p class="description" class:faded={!description}>
-                  {description ?? "No description provided"}
-                </p>
-                <div class="header-links">
-                  {#if githubUrl}
-                    <a
-                      class="ext-link"
-                      href={githubUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      <IconSmall.ExternalLink />
-                      GitHub
-                    </a>
-                  {/if}
-                  {#if registryUrl}
-                    <a
-                      class="ext-link"
-                      href={registryUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      <IconSmall.ExternalLink />
-                      Registry record
-                    </a>
-                  {/if}
-                </div>
-                <div class="transport-row">
-                  <span class="tag" data-tone="neutral">{transport.kind}</span>
-                  <code class="transport-value">{transport.value}</code>
-                </div>
-              </section>
+      {#key activeSection}
+        <div class="section-inner" in:fade={{ duration: 120 }}>
+          {#if activeSection === "overview"}
+            <section class="section">
+              <div class="overview-header">
+                <h2 class="section-title">{displayName}</h2>
+                <div class="badge-row">{@render sourceBadges()}</div>
+              </div>
+              <p class="description" class:faded={!description}>
+                {description ?? "No description provided"}
+              </p>
+              <div class="header-links">
+                {#if githubUrl}
+                  <a class="ext-link" href={githubUrl} target="_blank" rel="noopener noreferrer">
+                    <IconSmall.ExternalLink />
+                    GitHub
+                  </a>
+                {/if}
+                {#if registryUrl}
+                  <a class="ext-link" href={registryUrl} target="_blank" rel="noopener noreferrer">
+                    <IconSmall.ExternalLink />
+                    Registry record
+                  </a>
+                {/if}
+              </div>
+              <div class="transport-row">
+                <span class="tag" data-tone="neutral">{transport.kind}</span>
+                <code class="transport-value">{transport.value}</code>
+              </div>
+            </section>
 
-              <section class="section">
-                <h2 class="section-title">How Friday manages this MCP</h2>
-                <p class="section-desc">
-                  On install, Friday's setup doctor reads the server's README and package
-                  metadata to work out what it needs. Credential-bearing variables are routed to
-                  connected integrations; plain settings are stored per-workspace. Anything the
-                  doctor can't place is left for you to configure manually.
-                </p>
+            <section class="section">
+              <h2 class="section-title">How Friday manages this MCP</h2>
+              <p class="section-desc">
+                On install, Friday's setup doctor reads the server's README and package metadata to
+                work out what it needs. Credential-bearing variables are routed to connected
+                integrations; plain settings are stored per-workspace. Anything the doctor can't
+                place is left for you to configure manually.
+              </p>
 
-                {#if report}
-                  <div class="notice-box" data-verdict={report.verdict}>
+              {#if report}
+                <div class="notice-box" data-verdict={report.verdict}>
+                  <span class="notice-icon">
+                    {#if report.verdict === "clean"}
+                      <IconSmall.CheckCircle />
+                    {:else if report.verdict === "attention"}
+                      <IconSmall.InfoCircle />
+                    {:else}
+                      <IconSmall.TriangleExclamation />
+                    {/if}
+                  </span>
+                  <div class="notice-body">
+                    <span class="notice-title">{report.tldr}</span>
+                    {#if report.verdict === "clean"}
+                      <span class="notice-detail">
+                        Self-contained — no extra configuration needed.
+                      </span>
+                    {:else if report.verdict === "attention"}
+                      <span class="notice-detail">
+                        Detected configuration is listed under Config Reference.
+                      </span>
+                    {/if}
+                  </div>
+                </div>
+
+                {#each report.findings as finding, i (i)}
+                  <div class="notice-box" data-severity={finding.severity}>
                     <span class="notice-icon">
-                      {#if report.verdict === "clean"}
-                        <IconSmall.CheckCircle />
-                      {:else if report.verdict === "attention"}
+                      {#if finding.severity === "error"}
+                        <IconSmall.TriangleExclamation />
+                      {:else if finding.severity === "warn"}
                         <IconSmall.InfoCircle />
                       {:else}
-                        <IconSmall.TriangleExclamation />
+                        <IconSmall.InfoCircle />
                       {/if}
                     </span>
                     <div class="notice-body">
-                      <span class="notice-title">{report.tldr}</span>
-                      {#if report.verdict === "clean"}
-                        <span class="notice-detail">
-                          Self-contained — no extra configuration needed.
-                        </span>
-                      {:else if report.verdict === "attention"}
-                        <span class="notice-detail">
-                          Detected configuration is listed under Config Reference.
-                        </span>
+                      <span class="notice-title">{finding.title}</span>
+                      {#if finding.detail}
+                        <span class="notice-detail">{finding.detail}</span>
                       {/if}
                     </div>
                   </div>
+                {/each}
 
-                  {#each report.findings as finding, i (i)}
-                    <div class="notice-box" data-severity={finding.severity}>
-                      <span class="notice-icon">
-                        {#if finding.severity === "error"}
-                          <IconSmall.TriangleExclamation />
-                        {:else if finding.severity === "warn"}
-                          <IconSmall.InfoCircle />
-                        {:else}
-                          <IconSmall.InfoCircle />
-                        {/if}
-                      </span>
-                      <div class="notice-body">
-                        <span class="notice-title">{finding.title}</span>
-                        {#if finding.detail}
-                          <span class="notice-detail">{finding.detail}</span>
-                        {/if}
-                      </div>
-                    </div>
-                  {/each}
-
-                  {#if reportUnknown}
-                    <div class="actions-row">
-                      <Button variant="primary" size="small" onclick={toggleManualConfig}>
-                        {manualConfigOpen ? "Hide manual setup" : "Configure manually"}
+                {#if reportUnknown}
+                  <div class="actions-row">
+                    <Button variant="primary" size="small" onclick={toggleManualConfig}>
+                      {manualConfigOpen ? "Hide manual setup" : "Configure manually"}
+                    </Button>
+                    {#if githubUrl}
+                      <Button
+                        variant="secondary"
+                        size="small"
+                        href={githubUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        {#snippet prepend()}<IconSmall.ExternalLink />{/snippet}
+                        Contact author
                       </Button>
-                      {#if githubUrl}
-                        <Button
-                          variant="secondary"
-                          size="small"
-                          href={githubUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
-                          {#snippet prepend()}<IconSmall.ExternalLink />{/snippet}
-                          Contact author
-                        </Button>
-                      {/if}
-                    </div>
-                    {#if manualConfigOpen}
-                      <ManualConfigSetup
-                        serverId={server.id}
-                        onDone={() => (manualConfigOpenFor = null)}
-                      />
                     {/if}
+                  </div>
+                  {#if manualConfigOpen}
+                    <ManualConfigSetup
+                      serverId={server.id}
+                      onDone={() => (manualConfigOpenFor = null)}
+                    />
                   {/if}
                 {/if}
-              </section>
-            {:else if activeSection === "connections"}
-              <section class="section">
-                <h2 class="section-title">Connections</h2>
-                <p class="section-desc">
-                  The integration credentials this server connects through, and the workspaces
-                  that have it enabled.
-                </p>
-                <div class="sub-block">
-                  <h3 class="sub-title">Credentials</h3>
-                  <p class="sub-desc">
-                    Server-process credentials, managed through Link. If a credential isn't
-                    connected yet, use the connect card to link one.
-                  </p>
-                  <McpCredentialsPanel
-                    serverId={server.id}
-                    configTemplate={server.configTemplate}
-                  />
-                </div>
-                <div class="sub-block">
-                  <h3 class="sub-title">Enabled in these workspaces</h3>
-                  <p class="sub-desc">
-                    Workspaces that currently have this server turned on, and the agents and jobs
-                    using it.
-                  </p>
-                  <McpWorkspaceUsage serverId={server.id} />
-                </div>
-              </section>
-            {:else if activeSection === "configuration"}
-              <section class="section">
-                <h2 class="section-title">Config Reference</h2>
-                <p class="section-desc">
-                  Reference only — these are the environment variables this server reads. The
-                  actual values are set per workspace, in that workspace's settings.
-                </p>
-
-                {#if envRows.length > 0}
-                  <div class="sub-block">
-                    <h3 class="sub-title">Environment variables</h3>
-                    <p class="sub-desc">
-                      Each variable, whether it's required or secret, and where Friday detected
-                      it. Tags carry through to the per-workspace settings UI.
-                    </p>
-                    {@render envTable(envRows)}
-                  </div>
-                {:else}
-                  <p class="empty-line">This server declares no environment variables.</p>
-                {/if}
-
-                <div class="sub-block">
-                  <h3 class="sub-title">Raw config</h3>
-                  <p class="sub-desc">
-                    The exact server config snapshotted into each workspace on enable.
-                  </p>
-                  <button type="button" class="raw-toggle" onclick={toggleRawConfig}>
-                    {#if rawConfigOpen}
-                      <IconSmall.ChevronDown />
-                    {:else}
-                      <IconSmall.ChevronRight />
-                    {/if}
-                    {rawConfigOpen ? "Hide raw config" : "View raw config"}
-                  </button>
-                  {#if rawConfigOpen}
-                    <pre class="raw-block">{rawConfigJson}</pre>
-                  {/if}
-                </div>
-              </section>
-            {:else if activeSection === "tools"}
-              <section class="section">
-                <h2 class="section-title">Testing</h2>
-                <p class="section-desc">
-                  Connect to this server and exercise it directly — browse the tools it exposes,
-                  then invoke one against an optional workspace context to see the real output.
-                  Loading either list opens a connection to the server.
-                </p>
-                <div class="sub-block">
-                  <h3 class="sub-title">Available tools</h3>
-                  <p class="sub-desc">The tools this server exposes, with their input schemas.</p>
-                  <McpToolsSection serverId={server.id} />
-                </div>
-                <div class="sub-block">
-                  <h3 class="sub-title">Invoke a tool</h3>
-                  <p class="sub-desc">
-                    Pick a tool, fill its inputs, and run it. The workspace selector scopes the
-                    call to that workspace's configured credentials and settings.
-                  </p>
-                  <McpToolInvoker serverId={server.id} />
-                </div>
-              </section>
-            {:else if activeSection === "readme"}
-              {#if curatorNotes}
-                <section class="section">
-                  <h2 class="section-title">From the curators</h2>
-                  <div class="readme">
-                    <MarkdownRendered>{@html markdownToHTMLSafe(curatorNotes)}</MarkdownRendered>
-                  </div>
-                </section>
               {/if}
-              <section class="section">
-                <h2 class="section-title">Readme</h2>
-                {#if readme}
-                  <div class="readme">
-                    <MarkdownRendered>{@html markdownToHTMLSafe(readme)}</MarkdownRendered>
-                  </div>
-                {:else}
-                  <p class="section-desc">This server has no README.</p>
+            </section>
+          {:else if activeSection === "connections"}
+            <section class="section">
+              <h2 class="section-title">Connections</h2>
+              <p class="section-desc">
+                The integration credentials this server connects through, and the workspaces that
+                have it enabled.
+              </p>
+              <div class="sub-block">
+                <h3 class="sub-title">Credentials</h3>
+                <p class="sub-desc">
+                  Server-process credentials, managed through Link. If a credential isn't connected
+                  yet, use the connect card to link one.
+                </p>
+                <McpCredentialsPanel serverId={server.id} configTemplate={server.configTemplate} />
+              </div>
+              <div class="sub-block">
+                <h3 class="sub-title">Enabled in these workspaces</h3>
+                <p class="sub-desc">
+                  Workspaces that currently have this server turned on, and the agents and jobs
+                  using it.
+                </p>
+                <McpWorkspaceUsage serverId={server.id} />
+              </div>
+            </section>
+          {:else if activeSection === "configuration"}
+            <section class="section">
+              <h2 class="section-title">Config Reference</h2>
+              <p class="section-desc">
+                Reference only — these are the environment variables this server reads. The actual
+                values are set per workspace, in that workspace's settings.
+              </p>
+
+              {#if envRows.length > 0}
+                <div class="sub-block">
+                  <h3 class="sub-title">Environment variables</h3>
+                  <p class="sub-desc">
+                    Each variable, whether it's required or secret, and where Friday detected it.
+                    Tags carry through to the per-workspace settings UI.
+                  </p>
+                  {@render envTable(envRows)}
+                </div>
+              {:else}
+                <p class="empty-line">This server declares no environment variables.</p>
+              {/if}
+
+              <div class="sub-block">
+                <h3 class="sub-title">Raw config</h3>
+                <p class="sub-desc">
+                  The exact server config snapshotted into each workspace on enable.
+                </p>
+                <button type="button" class="raw-toggle" onclick={toggleRawConfig}>
+                  {#if rawConfigOpen}
+                    <IconSmall.ChevronDown />
+                  {:else}
+                    <IconSmall.ChevronRight />
+                  {/if}
+                  {rawConfigOpen ? "Hide raw config" : "View raw config"}
+                </button>
+                {#if rawConfigOpen}
+                  <pre class="raw-block">{rawConfigJson}</pre>
                 {/if}
+              </div>
+            </section>
+          {:else if activeSection === "tools"}
+            <section class="section">
+              <h2 class="section-title">Testing</h2>
+              <p class="section-desc">
+                Connect to this server and exercise it directly — browse the tools it exposes, then
+                invoke one against an optional workspace context to see the real output. Loading
+                either list opens a connection to the server.
+              </p>
+              <div class="sub-block">
+                <h3 class="sub-title">Available tools</h3>
+                <p class="sub-desc">The tools this server exposes, with their input schemas.</p>
+                <McpToolsSection serverId={server.id} />
+              </div>
+              <div class="sub-block">
+                <h3 class="sub-title">Invoke a tool</h3>
+                <p class="sub-desc">
+                  Pick a tool, fill its inputs, and run it. The workspace selector scopes the call
+                  to that workspace's configured credentials and settings.
+                </p>
+                <McpToolInvoker serverId={server.id} />
+              </div>
+            </section>
+          {:else if activeSection === "readme"}
+            {#if curatorNotes}
+              <section class="section">
+                <h2 class="section-title">From the curators</h2>
+                <div class="readme">
+                  <MarkdownRendered>{@html markdownToHTMLSafe(curatorNotes)}</MarkdownRendered>
+                </div>
               </section>
             {/if}
-          </div>
-        {/key}
-      </div>
+            <section class="section">
+              <h2 class="section-title">Readme</h2>
+              {#if readme}
+                <div class="readme">
+                  <MarkdownRendered>{@html markdownToHTMLSafe(readme)}</MarkdownRendered>
+                </div>
+              {:else}
+                <p class="section-desc">This server has no README.</p>
+              {/if}
+            </section>
+          {/if}
+        </div>
+      {/key}
+    </div>
   </div>
 {/if}
 
