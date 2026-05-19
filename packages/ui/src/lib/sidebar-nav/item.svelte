@@ -62,11 +62,17 @@
         {@render children()}
       </div>
     {:else if href !== undefined}
-      <a class="trigger" {href} {title}>
+      <a class="trigger" {href} {title} aria-current={active ? "page" : undefined}>
         {@render children()}
       </a>
     {:else}
-      <button type="button" class="trigger" {onclick} {title}>
+      <button
+        type="button"
+        class="trigger"
+        {onclick}
+        {title}
+        aria-current={active ? "true" : undefined}
+      >
         {@render children()}
       </button>
     {/if}
