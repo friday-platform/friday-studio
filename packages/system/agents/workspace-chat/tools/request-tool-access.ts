@@ -53,12 +53,16 @@ export function createRequestToolAccessTool(opts: CreateRequestToolAccessToolOpt
       description:
         "Request permission to call a tool that isn't in your allowlist. " +
         "Use when you need a capability you don't currently have. " +
-        'Returns immediately with `{ granted: true, reason: "bypass" }` if the ' +
-        "current workspace has `permissions.dangerouslySkipAllowlist`. " +
+        'Returns immediately with `{ granted: true, persistent: false, reason: "bypass" }` ' +
+        "if the current workspace has `permissions.dangerouslySkipAllowlist`, or " +
+        '`{ granted: true, persistent: true, reason: "persistent_allow" }` if the ' +
+        "user has previously chosen Allow always for this tool. " +
         "Otherwise emits a user-facing elicitation (visible on the Activity " +
         'page) and returns `{ granted: false, reason: "pending_user_approval", ' +
         "elicitationId }` — acknowledge to the user and either route around " +
-        "the missing capability or wait for them to answer.",
+        "the missing capability or wait for them to answer. " +
+        "When `persistent` is `true` future actions in this workspace see the " +
+        "tool in their toolset automatically; `false` means no future-action effect.",
       inputSchema: RequestToolAccessInput,
       execute: async ({ toolName, reason }) => {
         const daemonDangerouslySkipAllowlist =
@@ -74,8 +78,9 @@ export function createRequestToolAccessTool(opts: CreateRequestToolAccessToolOpt
             toolName,
             workspaceId,
             sessionId,
+            grantType: "persistent_allow",
           });
-          return { ok: true, granted: true, reason: "persistent_allow" };
+          return { ok: true, granted: true, persistent: true, reason: "persistent_allow" };
         }
         if (!persistentGrant.ok) {
           logger.warn("request_tool_access persistent grant check failed (chat)", {
@@ -91,8 +96,9 @@ export function createRequestToolAccessTool(opts: CreateRequestToolAccessToolOpt
             reason,
             workspaceId,
             sessionId,
+            grantType: "bypass",
           });
-          return { ok: true, granted: true, reason: "bypass" };
+          return { ok: true, granted: true, persistent: false, reason: "bypass" };
         }
 
         const now = new Date();

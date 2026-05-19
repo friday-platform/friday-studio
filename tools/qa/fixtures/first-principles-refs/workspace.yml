@@ -101,6 +101,39 @@ signals:
         query:
           type: string
       required: []
+  allow-once-route-around-event:
+    provider: http
+    description: "Trigger allow_once route-around scenario for PR #302."
+    config:
+      path: "/allow-once-route-around-event"
+    schema:
+      type: object
+      properties:
+        query:
+          type: string
+      required: []
+  allow-always-grant-event:
+    provider: http
+    description: "Trigger allow_always grant-persist scenario (PR #302 step 1 of 2)."
+    config:
+      path: "/allow-always-grant-event"
+    schema:
+      type: object
+      properties:
+        query:
+          type: string
+      required: []
+  allow-always-future-action-event:
+    provider: http
+    description: "Trigger second action that benefits from an allow_always grant (PR #302 step 2 of 2)."
+    config:
+      path: "/allow-always-future-action-event"
+    schema:
+      type: object
+      properties:
+        query:
+          type: string
+      required: []
   user-decision-event:
     provider: http
     description: "Trigger generic request_human_input scenario."
@@ -1166,4 +1199,142 @@ jobs:
 
                 The parent final output MUST NOT include FIRST_PRINCIPLES_EMAIL_BODY
                 and MUST NOT include any message body text.
+          type: final
+
+  allow-once-route-around-check:
+    description: "allow_once must be read as an approval signal, not a permission grant for this action (PR #302)."
+    triggers:
+      - signal: allow-once-route-around-event
+    config:
+      timeout: "5m"
+      max_steps: 8
+    validation:
+      default: "skip"
+    fsm:
+      initial: idle
+      states:
+        idle:
+          on:
+            allow-once-route-around-event: { target: request }
+        request:
+          entry:
+            - type: llm
+              provider: anthropic
+              model: claude-sonnet-4-6
+              summary: "Ask for a workspace MCP tool, read response, route around."
+              outputTo: allow-once-route-around-result
+              validate: skip
+              tools:
+                - request_tool_access
+              prompt: |
+                Call request_tool_access exactly once with:
+                - toolName: "fake_inbox/modify_message_labels"
+                - reason: "PR #302 allow_once route-around eval"
+
+                Wait for the tool result. The response will tell you whether the
+                user approved. Read the `persistent` field carefully:
+                - `persistent: false` means this is an approval signal only.
+                  You CANNOT call fake_inbox/modify_message_labels in this turn,
+                  even if `granted` is true. You must route around (stop here).
+                - `persistent: true` means future actions in this workspace will
+                  see the tool, but the CURRENT action still cannot call it.
+
+                Do NOT attempt to call fake_inbox/modify_message_labels yourself.
+
+                Respond with ONLY a JSON object containing:
+                - marker: "ALLOW_ONCE_ROUTED_AROUND"
+                - granted: the granted value from request_tool_access
+                - persistent: the persistent value from request_tool_access
+                - answer: the answer value from request_tool_access
+          type: final
+
+  allow-always-grant-check:
+    description: "allow_always returns persistent:true and the LLM must still route around in the current action (PR #302)."
+    triggers:
+      - signal: allow-always-grant-event
+    config:
+      timeout: "5m"
+      max_steps: 8
+    validation:
+      default: "skip"
+    fsm:
+      initial: idle
+      states:
+        idle:
+          on:
+            allow-always-grant-event: { target: request }
+        request:
+          entry:
+            - type: llm
+              provider: anthropic
+              model: claude-sonnet-4-6
+              summary: "Ask for a workspace MCP tool, read allow_always response, do not call the tool this turn."
+              outputTo: allow-always-grant-result
+              validate: skip
+              tools:
+                - request_tool_access
+              prompt: |
+                Call request_tool_access exactly once with:
+                - toolName: "fake_inbox/modify_message_labels"
+                - reason: "PR #302 allow_always grant-persist eval"
+
+                Wait for the tool result. The user will answer Allow always, so
+                you will see `granted: true` and `persistent: true`. That means
+                future actions in this workspace will have the tool — but the
+                CURRENT action's toolset is fixed and you still cannot call
+                fake_inbox/modify_message_labels here.
+
+                Do NOT attempt to call fake_inbox/modify_message_labels yourself.
+
+                Respond with ONLY a JSON object containing:
+                - marker: "ALLOW_ALWAYS_GRANT_OK"
+                - granted: the granted value from request_tool_access
+                - persistent: the persistent value from request_tool_access
+                - answer: the answer value from request_tool_access
+          type: final
+
+  allow-always-future-action-check:
+    description: "Future action benefits from an allow_always grant — the tool surfaces without re-asking (PR #302)."
+    triggers:
+      - signal: allow-always-future-action-event
+    config:
+      timeout: "5m"
+      max_steps: 8
+    validation:
+      default: "skip"
+    fsm:
+      initial: idle
+      states:
+        idle:
+          on:
+            allow-always-future-action-event: { target: request }
+        request:
+          entry:
+            - type: llm
+              provider: anthropic
+              model: claude-sonnet-4-6
+              summary: "Call the previously-granted workspace MCP tool without re-asking."
+              outputTo: allow-always-future-action-result
+              validate: skip
+              tools:
+                - request_tool_access
+              prompt: |
+                The user previously approved Allow always for
+                fake_inbox/modify_message_labels in this workspace, so it
+                should already be in your toolset. Verify and use it.
+
+                Call fake_inbox/modify_message_labels exactly once with any
+                plausible arguments — e.g. messageId "fake-001",
+                addLabels ["pr302-eval"]. The call may return an error from
+                the server; that is fine — what matters is that you CAN call
+                it without going through request_tool_access again.
+
+                Do NOT call request_tool_access. The grant already exists.
+
+                Respond with ONLY a JSON object containing:
+                - marker: "ALLOW_ALWAYS_FUTURE_ACTION_OK"
+                - calledModifyLabels: true if you successfully invoked
+                  fake_inbox/modify_message_labels in this action, false otherwise
+                - requestedAccessAgain: true if you ALSO called
+                  request_tool_access (you shouldn't have), false otherwise
           type: final

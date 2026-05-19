@@ -1478,6 +1478,228 @@ async function runBlockingElicitationScenario(d: DaemonHandle): Promise<EvalResu
   ];
 }
 
+/**
+ * PR #302 — `allow_once` is an approval signal only. The LLM must read
+ * the response's `persistent: false` field, NOT attempt to call the
+ * requested workspace MCP tool in the current action, and route around
+ * cleanly. A regression here means the model believes "Allow once
+ * unlocks the tool this turn" — exactly the misconception the SKILL.md
+ * rewrite + new tool description framing are supposed to prevent.
+ */
+async function runAllowOnceRouteAroundScenario(d: DaemonHandle): Promise<EvalResult[]> {
+  const notes: string[] = [];
+  const metrics: Record<string, unknown> = {};
+  const wsPath = await materializeFixture(d.fridayHome, REFS_FIXTURE, {
+    __FAKE_INBOX_MCP_PATH__: FAKE_INBOX_MCP,
+  });
+  const ws = await registerWorkspace(d, wsPath, { name: "PR302 allow_once route-around" });
+  notes.push(`workspace ${ws.id} registered`);
+
+  const triggerPromise = triggerSignalSSE(d, ws.id, "allow-once-route-around-event", {
+    payload: { query: "allow-once-route-around" },
+    timeoutMs: 8 * 60 * 1000,
+  });
+  const pending = await waitForPendingElicitation(d, ws.id);
+  metrics.pending = pending ?? null;
+  if (pending?.id && typeof pending.id === "string") {
+    metrics.answer = await answerElicitation(d, pending.id, "allow_once");
+  }
+  const trigger = await triggerPromise;
+  recordJobMetrics(metrics, trigger);
+
+  if (!trigger.sessionId) {
+    return [
+      {
+        id: "allow-once-route-around",
+        pass: false,
+        notes: [...notes, "no session id returned"],
+        metrics,
+      },
+    ];
+  }
+
+  const bucket = `WS_DOCS_${ws.id}`;
+  const key = `doc/session/${trigger.sessionId}/allow-once-route-around-check/allow-once-route-around-result`;
+  const doc = await natsKvGetJson(d.natsUrl, bucket, key);
+  const data = (doc?.data as Record<string, unknown> | undefined)?.data as
+    | Record<string, unknown>
+    | undefined;
+  const artifactData = await fetchFirstArtifactPayload(d, data);
+  const payload = parseJsonResponsePayload(artifactData ?? data);
+  const events = await fetchSessionEvents(d, trigger.sessionId);
+  recordEventMetrics(metrics, events);
+
+  const toolNames = events.events
+    .filter((ev) => ev.type === "step:complete" && Array.isArray(ev.toolCalls))
+    .flatMap((ev) =>
+      ((ev as { toolCalls?: Array<{ toolName?: string }> }).toolCalls ?? []).map(
+        (tc) => tc.toolName,
+      ),
+    );
+  metrics.toolNames = toolNames;
+  metrics.data = data ?? null;
+  metrics.artifactData = artifactData ?? null;
+
+  const pass =
+    pending !== null &&
+    payload?.marker === "ALLOW_ONCE_ROUTED_AROUND" &&
+    isTrue(payload?.granted) &&
+    isFalse(payload?.persistent) &&
+    payload?.answer === "allow_once" &&
+    toolNames.includes("request_tool_access") &&
+    !toolNames.includes("modify_message_labels");
+
+  return [
+    {
+      id: "allow-once-route-around",
+      pass,
+      notes: [
+        ...notes,
+        `pending observed: ${pending !== null}`,
+        `marker: ${String(payload?.marker ?? "(missing)")}`,
+        `granted: ${String(payload?.granted ?? "(missing)")}`,
+        `persistent: ${String(payload?.persistent ?? "(missing)")}`,
+        `answer: ${String(payload?.answer ?? "(missing)")}`,
+        `tool calls: ${toolNames.join(",") || "(none)"}`,
+      ],
+      metrics,
+    },
+  ];
+}
+
+/**
+ * PR #302 — `allow_always` returns `persistent: true`. The current
+ * action still cannot call the requested tool (toolset is fixed at
+ * action start) but the grant is persisted and any FUTURE action in the
+ * same workspace must see the tool surface without re-asking. Two
+ * triggers cover both halves of the contract end-to-end:
+ *   - step 1: action that calls `request_tool_access` and routes around
+ *   - step 2: separate action in the same workspace that uses the
+ *     previously-granted tool directly
+ */
+async function runAllowAlwaysFutureFramingScenario(d: DaemonHandle): Promise<EvalResult[]> {
+  const notes: string[] = [];
+  const wsPath = await materializeFixture(d.fridayHome, REFS_FIXTURE, {
+    __FAKE_INBOX_MCP_PATH__: FAKE_INBOX_MCP,
+  });
+  const ws = await registerWorkspace(d, wsPath, { name: "PR302 allow_always future-framing" });
+  notes.push(`workspace ${ws.id} registered`);
+
+  // ── Step 1: trigger grant action, answer allow_always ─────────────────
+  const grantMetrics: Record<string, unknown> = {};
+  const grantTriggerPromise = triggerSignalSSE(d, ws.id, "allow-always-grant-event", {
+    payload: { query: "allow-always-grant" },
+    timeoutMs: 8 * 60 * 1000,
+  });
+  const pending = await waitForPendingElicitation(d, ws.id);
+  grantMetrics.pending = pending ?? null;
+  if (pending?.id && typeof pending.id === "string") {
+    grantMetrics.answer = await answerElicitation(d, pending.id, "allow_always");
+  }
+  const grantTrigger = await grantTriggerPromise;
+  recordJobMetrics(grantMetrics, grantTrigger);
+
+  let grantPass = false;
+  let grantPayload: Record<string, unknown> | null | undefined = null;
+  let grantToolNames: Array<string | undefined> = [];
+  if (grantTrigger.sessionId) {
+    const bucket = `WS_DOCS_${ws.id}`;
+    const key = `doc/session/${grantTrigger.sessionId}/allow-always-grant-check/allow-always-grant-result`;
+    const doc = await natsKvGetJson(d.natsUrl, bucket, key);
+    const data = (doc?.data as Record<string, unknown> | undefined)?.data as
+      | Record<string, unknown>
+      | undefined;
+    const artifactData = await fetchFirstArtifactPayload(d, data);
+    grantPayload = parseJsonResponsePayload(artifactData ?? data);
+    const events = await fetchSessionEvents(d, grantTrigger.sessionId);
+    recordEventMetrics(grantMetrics, events);
+    grantToolNames = events.events
+      .filter((ev) => ev.type === "step:complete" && Array.isArray(ev.toolCalls))
+      .flatMap((ev) =>
+        ((ev as { toolCalls?: Array<{ toolName?: string }> }).toolCalls ?? []).map(
+          (tc) => tc.toolName,
+        ),
+      );
+    grantMetrics.toolNames = grantToolNames;
+    grantMetrics.payload = grantPayload ?? null;
+    grantPass =
+      pending !== null &&
+      grantPayload?.marker === "ALLOW_ALWAYS_GRANT_OK" &&
+      isTrue(grantPayload?.granted) &&
+      isTrue(grantPayload?.persistent) &&
+      grantPayload?.answer === "allow_always" &&
+      grantToolNames.includes("request_tool_access") &&
+      !grantToolNames.includes("modify_message_labels");
+  }
+
+  // ── Step 2: trigger the future action that benefits from the grant ───
+  const futureMetrics: Record<string, unknown> = {};
+  const futureTrigger = await triggerSignalSSE(d, ws.id, "allow-always-future-action-event", {
+    payload: { query: "allow-always-future-action" },
+    timeoutMs: 8 * 60 * 1000,
+  });
+  recordJobMetrics(futureMetrics, futureTrigger);
+
+  let futurePass = false;
+  let futurePayload: Record<string, unknown> | null | undefined = null;
+  let futureToolNames: Array<string | undefined> = [];
+  if (futureTrigger.sessionId) {
+    const bucket = `WS_DOCS_${ws.id}`;
+    const key = `doc/session/${futureTrigger.sessionId}/allow-always-future-action-check/allow-always-future-action-result`;
+    const doc = await natsKvGetJson(d.natsUrl, bucket, key);
+    const data = (doc?.data as Record<string, unknown> | undefined)?.data as
+      | Record<string, unknown>
+      | undefined;
+    const artifactData = await fetchFirstArtifactPayload(d, data);
+    futurePayload = parseJsonResponsePayload(artifactData ?? data);
+    const events = await fetchSessionEvents(d, futureTrigger.sessionId);
+    recordEventMetrics(futureMetrics, events);
+    futureToolNames = events.events
+      .filter((ev) => ev.type === "step:complete" && Array.isArray(ev.toolCalls))
+      .flatMap((ev) =>
+        ((ev as { toolCalls?: Array<{ toolName?: string }> }).toolCalls ?? []).map(
+          (tc) => tc.toolName,
+        ),
+      );
+    futureMetrics.toolNames = futureToolNames;
+    futureMetrics.payload = futurePayload ?? null;
+    futurePass =
+      futurePayload?.marker === "ALLOW_ALWAYS_FUTURE_ACTION_OK" &&
+      isTrue(futurePayload?.calledModifyLabels) &&
+      isFalse(futurePayload?.requestedAccessAgain) &&
+      futureToolNames.includes("modify_message_labels") &&
+      !futureToolNames.includes("request_tool_access");
+  }
+
+  return [
+    {
+      id: "allow-always-grant-persist",
+      pass: grantPass,
+      notes: [
+        ...notes,
+        `pending observed: ${pending !== null}`,
+        `marker: ${String(grantPayload?.marker ?? "(missing)")}`,
+        `granted: ${String(grantPayload?.granted ?? "(missing)")}`,
+        `persistent: ${String(grantPayload?.persistent ?? "(missing)")}`,
+        `answer: ${String(grantPayload?.answer ?? "(missing)")}`,
+        `tool calls: ${grantToolNames.join(",") || "(none)"}`,
+      ],
+      metrics: grantMetrics,
+    },
+    {
+      id: "allow-always-future-action",
+      pass: futurePass,
+      notes: [
+        `marker: ${String(futurePayload?.marker ?? "(missing)")}`,
+        `calledModifyLabels: ${String(futurePayload?.calledModifyLabels ?? "(missing)")}`,
+        `requestedAccessAgain: ${String(futurePayload?.requestedAccessAgain ?? "(missing)")}`,
+        `tool calls: ${futureToolNames.join(",") || "(none)"}`,
+      ],
+      metrics: futureMetrics,
+    },
+  ];
+}
+
 async function runRequestUserDecisionScenario(
   d: DaemonHandle,
   mode: "answer" | "decline" | "expire" = "answer",
@@ -2251,6 +2473,10 @@ async function main() {
     results.push(...(await runUnknownToolScenario(daemon)));
     console.log("\n── blocking elicitation resume ──");
     results.push(...(await runBlockingElicitationScenario(daemon)));
+    console.log("\n── allow_once route-around (PR #302) ──");
+    results.push(...(await runAllowOnceRouteAroundScenario(daemon)));
+    console.log("\n── allow_always future-framing (PR #302) ──");
+    results.push(...(await runAllowAlwaysFutureFramingScenario(daemon)));
     console.log("\n── request user decision HITL ──");
     results.push(...(await runRequestUserDecisionScenario(daemon, "answer")));
     console.log("\n── request user decision decline HITL ──");
