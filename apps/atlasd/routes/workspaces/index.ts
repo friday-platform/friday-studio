@@ -266,8 +266,30 @@ const signalBodySchema = z.object({
  * field to the schema automatically extends the discriminator, no lock-step
  * edit. Anything not in this set at the top level is almost certainly a
  * bare (un-enveloped) payload — see {@link detectUnwrappedSignalBody}.
+ *
+ * Contract: every field on `signalBodySchema` MUST be an envelope-level
+ * routing key (i.e. a key that, if it's the ONLY key on the request body,
+ * makes the body look like an enveloped trigger rather than a webhook
+ * payload). Webhook-payload-shaped concerns — anything an upstream might
+ * realistically set as a top-level field in its own request body — must
+ * NOT be added to this schema; put them on a separate type and stitch
+ * them on after the discriminator decision. Otherwise a real webhook
+ * whose payload top-level key happens to collide with the new field
+ * silently mis-routes to envelope mode.
+ *
+ * Sanity-asserted at module load so a zod-version upgrade that moves
+ * `.shape` (e.g., zod v4 nests it under `.def.shape`) can't silently
+ * collapse the set to `{}` and route every envelope-only request to
+ * webhook mode.
  */
 const SIGNAL_ENVELOPE_KEYS: ReadonlySet<string> = new Set(Object.keys(signalBodySchema.shape));
+if (SIGNAL_ENVELOPE_KEYS.size === 0) {
+  throw new Error(
+    "SIGNAL_ENVELOPE_KEYS derivation collapsed to empty — likely a zod API change " +
+      "(.shape moved or got wrapped). Webhook-mode discriminator would mis-route every " +
+      "envelope-only request. Refusing to start.",
+  );
+}
 
 /**
  * Catch the most common signal-trigger mistake: POSTing the bare payload

@@ -548,20 +548,27 @@ describe("POST /workspaces/:workspaceId/signals/:signalId webhook mode (byte-for
     // no-payload cron/CLI trigger pattern) had no direct test before
     // this. Existing "allows empty body" test exercises the bypass
     // path, not the empty-object discriminator branch.
-    const { app, publishSignalToJetStream } = createTestApp();
+    const { app, publishSignalToJetStream, mockGetNatsConnection } = createTestApp();
     const res = await app.request("/workspaces/ws-1/signals/sig-1", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({}),
     });
-    // Envelope mode → no bypass header → not nowait → would reach the
-    // sync path → mockGetNatsConnection throws → 500. The point is:
-    // NOT 202 "Webhook accepted", NOT publishSignalToJetStream call.
-    // If someone removes the `!isEmptyObject` gate, `{}` mis-routes to
-    // webhook and this test catches it.
+    // Pin the POSITIVE routing decision, not just the absence of the
+    // wrong one. `getNatsConnection` is reached ONLY from sync-envelope
+    // mode (it opens the response-subject subscription before calling
+    // triggerWorkspaceSignal). If the discriminator mis-routes empty
+    // `{}` to webhook mode, the sync path never runs and this mock is
+    // never called. If a future refactor 400s empty bodies before the
+    // discriminator runs, same — never called. So a single
+    // `toHaveBeenCalled()` locks "reached sync envelope mode" in a way
+    // the negative-only assertions ("not Webhook accepted" / "not
+    // publishSignalToJetStream") cannot.
+    expect(mockGetNatsConnection).toHaveBeenCalled();
+    expect(res.status).toBe(500);
     expect(publishSignalToJetStream).not.toHaveBeenCalled();
-    const body = (await res.json().catch(() => undefined)) as { message?: string } | undefined;
-    expect(body?.message).not.toBe("Webhook accepted");
+    const bodyText = await res.text();
+    expect(bodyText).not.toContain("Webhook accepted");
   });
 
   // Discriminator edge cases — `isObjectBody` + `hasEnvelopeKey` +
