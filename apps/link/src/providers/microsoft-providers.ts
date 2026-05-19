@@ -40,12 +40,7 @@ export function createMicrosoftMailProvider(): OAuthProvider {
       // `iss` claim is tenant-scoped (`.../{tid}/v2.0`), which
       // oauth4webapi can't match against a static `as.issuer`. Dropping
       // openid skips id_token issuance and the validation step.
-      scopes: [
-        "offline_access",
-        "User.Read",
-        "Mail.ReadWrite",
-        "Mail.Send",
-      ],
+      scopes: ["offline_access", "User.Read", "Mail.ReadWrite", "Mail.Send"],
       extraAuthParams: { prompt: "select_account" },
     },
     identify: async (tokens) => {
@@ -55,9 +50,7 @@ export function createMicrosoftMailProvider(): OAuthProvider {
       if (!res.ok) {
         throw new Error(`Failed to fetch Microsoft user profile: ${res.status}`);
       }
-      const data = z
-        .object({ userPrincipalName: z.string() })
-        .parse(await res.json());
+      const data = z.object({ userPrincipalName: z.string() }).parse(await res.json());
       return data.userPrincipalName;
     },
   });
