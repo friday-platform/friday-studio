@@ -176,6 +176,62 @@ const googleWorkspaceEntries = Object.fromEntries(
 ) as Record<string, MCPServerMetadata>;
 
 /**
+ * Microsoft Mail entry — wraps `@softeria/ms-365-mcp-server` filtered to mail
+ * tools. The subprocess runs over HTTP and accepts a Microsoft Graph access
+ * token as `Authorization: Bearer <token>` on every request; Link resolves
+ * the token via the `microsoft-mail` OAuth provider and refreshes it
+ * proactively. No client_secret or app-level env is needed — the server
+ * uses the request-scoped token directly for outbound Graph calls.
+ */
+const MICROSOFT_MAIL_PORT = 8101;
+const MICROSOFT_MAIL_URL =
+  process.env.MICROSOFT_MAIL_MCP_URL || `http://localhost:${MICROSOFT_MAIL_PORT}/mcp`;
+const microsoftMailEntry: MCPServerMetadata = {
+  id: "microsoft-mail",
+  name: "Microsoft Mail",
+  urlDomains: ["outlook.office.com", "outlook.live.com"],
+  description:
+    "Read and send mail via Microsoft Graph (Outlook / Microsoft 365) — search messages, read email content, send mail, manage folders. Use for any task touching Microsoft mailboxes.",
+  constraints:
+    "Requires OAuth. Mail-only (read, send, folders, search). Calendar, files, and Teams are separate MCPs.",
+  source: "static",
+  securityRating: "high",
+  configTemplate: {
+    transport: { type: "http", url: MICROSOFT_MAIL_URL },
+    auth: { type: "bearer", token_env: "MICROSOFT_MAIL_ACCESS_TOKEN" },
+    env: {
+      MICROSOFT_MAIL_ACCESS_TOKEN: {
+        from: "link",
+        provider: "microsoft-mail",
+        key: "access_token",
+      },
+    },
+    client_config: { timeout: { progressTimeout: "60s", maxTotalTimeout: "30m" } },
+    startup: {
+      type: "command",
+      command: "npx",
+      args: [
+        "-y",
+        "@softeria/ms-365-mcp-server",
+        "--http",
+        String(MICROSOFT_MAIL_PORT),
+        "--preset",
+        "mail",
+      ],
+      env: {},
+      ready_url: MICROSOFT_MAIL_URL,
+    },
+  },
+  requiredConfig: [
+    {
+      key: "MICROSOFT_MAIL_ACCESS_TOKEN",
+      description: "Microsoft Graph access token from Link",
+      type: "string",
+    },
+  ],
+};
+
+/**
  * Consolidated MCP servers registry
  * Merges data from both blessedMCPServers and mcpServersRegistry
  * with enhanced metadata including requiredConfig
@@ -233,6 +289,7 @@ export const mcpServersRegistry: MCPServersRegistry = {
     },
     // Google Workspace services (generated from GOOGLE_WORKSPACE_SERVICES)
     ...googleWorkspaceEntries,
+    "microsoft-mail": microsoftMailEntry,
   },
-  metadata: { version: "2.2.0", lastUpdated: "2026-04-24" },
+  metadata: { version: "2.3.0", lastUpdated: "2026-05-18" },
 };

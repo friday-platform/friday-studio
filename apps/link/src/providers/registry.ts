@@ -17,6 +17,7 @@ import {
 } from "./google-providers.ts";
 import { createHubSpotProvider } from "./hubspot.ts";
 import { linearProvider } from "./linear.ts";
+import { createMicrosoftMailProvider } from "./microsoft-providers.ts";
 import { notionProvider } from "./notion.ts";
 import { posthogProvider } from "./posthog.ts";
 import { sentryProvider } from "./sentry.ts";
@@ -130,6 +131,7 @@ registry.register(linearProvider);
 registry.register(sentryProvider);
 registry.register(posthogProvider);
 registry.register(snowflakeProvider);
+registry.register(createMicrosoftMailProvider());
 
 const hubspotProvider = createHubSpotProvider();
 if (hubspotProvider) {
