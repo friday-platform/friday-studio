@@ -54,7 +54,12 @@ export function createEnableMcpServerTool(workspaceId: string, logger: Logger): 
           const res = await client
             .workspaceMcp(effectiveWorkspaceId)
             [":serverId"].$put({ param: { serverId } });
-          const body = await res.json();
+          // The status branches below read structured fields off `body`, but the
+          // response isn't always JSON — gateways and proxies surface HTML or
+          // empty payloads on 502/504, and the daemon could regress. Swallow
+          // parse errors so the per-status default text reaches the agent
+          // instead of "Enable failed: Unexpected non-whitespace character...".
+          const body: unknown = await res.json().catch(() => ({}));
 
           if (res.status === 200) {
             const parsed = z

@@ -180,6 +180,36 @@ describe("createEnableMcpServerTool", () => {
     expect(result).toEqual({ success: false, error: "Internal server error" });
   });
 
+  // Gateways (502/504) and misconfigured proxies routinely return HTML or
+  // empty bodies. Before, `res.json()` threw and bubbled to the outer catch,
+  // producing "Enable failed: Unexpected non-whitespace character..." — useless
+  // to the agent. Now the per-status default reaches the caller.
+  it("falls back to per-status default when body is not JSON", async () => {
+    setupMock("ws-1");
+    mockPut.mockResolvedValueOnce({
+      status: 502,
+      json: () => Promise.reject(new SyntaxError("Unexpected token '<' at position 0")),
+    });
+
+    const tools = createEnableMcpServerTool("ws-1", logger);
+    const result = await tools.enable_mcp_server!.execute!({ serverId: "github" }, TOOL_CALL_OPTS);
+
+    expect(result).toEqual({ success: false, error: "Enable failed: 502" });
+  });
+
+  it("falls back to status-specific default on 409 with non-JSON body", async () => {
+    setupMock("ws-1");
+    mockPut.mockResolvedValueOnce({
+      status: 409,
+      json: () => Promise.reject(new SyntaxError("Unexpected end of JSON input")),
+    });
+
+    const tools = createEnableMcpServerTool("ws-1", logger);
+    const result = await tools.enable_mcp_server!.execute!({ serverId: "github" }, TOOL_CALL_OPTS);
+
+    expect(result).toEqual({ success: false, error: "Conflict enabling MCP server." });
+  });
+
   it("returns error when fetch throws", async () => {
     setupMock("ws-1");
     mockPut.mockRejectedValueOnce(new Error("Network failure"));
