@@ -2116,16 +2116,24 @@ const workspacesRoutes = daemonFactory
         parsedRawBody !== null &&
         typeof parsedRawBody === "object" &&
         !Array.isArray(parsedRawBody);
-      const hasEnvelopeKey =
+      const objectKeys = isObjectBody ? Object.keys(parsedRawBody as Record<string, unknown>) : [];
+      // Tight envelope test: body is an object AND has at least one
+      // envelope key AND has NO stray keys (every key is an envelope
+      // key). A "loose" check (any envelope key wins) would silently
+      // mis-route a real webhook like
+      // `{"payload": <object>, "action": "opened", "sender": {...}}`
+      // — common from upstreams that wrap their payload — into envelope
+      // mode, where zValidator strips the stray fields and the agent
+      // sees no webhookBody/webhookHeaders. The tight test routes the
+      // mixed case to webhook mode where it belongs.
+      const allKeysAreEnvelope =
         isObjectBody &&
-        Object.keys(parsedRawBody as Record<string, unknown>).some((k) =>
-          SIGNAL_ENVELOPE_KEYS.has(k),
-        );
-      const isEmptyObject =
-        isObjectBody && Object.keys(parsedRawBody as Record<string, unknown>).length === 0;
+        objectKeys.length > 0 &&
+        objectKeys.every((k) => SIGNAL_ENVELOPE_KEYS.has(k));
+      const isEmptyObject = isObjectBody && objectKeys.length === 0;
       // Empty body / empty {} stays in envelope mode — that's the valid
       // "no-payload signal trigger" today (cron-like CLI invocations).
-      const isWebhook = rawBytes.length > 0 && !hasEnvelopeKey && !isEmptyObject;
+      const isWebhook = rawBytes.length > 0 && !allKeysAreEnvelope && !isEmptyObject;
 
       if (isWebhook) {
         const HOP_BY_HOP = new Set([

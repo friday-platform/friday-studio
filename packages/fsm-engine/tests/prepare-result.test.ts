@@ -1,3 +1,4 @@
+import { Buffer } from "node:buffer";
 import { describe, expect, it } from "vitest";
 import { parsePrepareResult } from "../fsm-engine.ts";
 import type { AgentAction, Context, FSMDefinition, SignalWithContext } from "../types.ts";
@@ -39,6 +40,102 @@ describe("parsePrepareResult", () => {
   it("passes through extra properties", () => {
     const result = parsePrepareResult({ task: "x", extra: "data" });
     expect(result).toHaveProperty("extra", "data");
+  });
+});
+
+describe("Engine: webhook body/headers preservation across actions", () => {
+  // Regression for pass-3 review #1. The seed at fsm-engine.ts ~1082 sets
+  // body/headers on the first prepareResult from sig. The bug: when a
+  // downstream action declares `inputFrom`, the merge at ~1152 used to
+  // spread `inputSnapshot` (which doesn't carry body/headers — it's
+  // computed from document data only) on top of the upstream
+  // prepareResult, overwriting body/headers with undefined. So a two-
+  // state HMAC-verifying job (validate → process) would see
+  // ctx.input.raw["body"] in the FIRST agent but `undefined` in the
+  // SECOND. The fix at ~1152 preserves body/headers explicitly during
+  // the inputFrom merge.
+  it("preserves sig.body / sig.headers across an inputFrom merge", async () => {
+    const captured: Array<{ stateId: string; input: Context["input"] }> = [];
+
+    const fsm: FSMDefinition = {
+      id: "webhook-two-state",
+      initial: "idle",
+      states: {
+        idle: { on: { "gh-pr-comment": { target: "verify" } } },
+        verify: {
+          entry: [{ type: "agent", agentId: "verifier", outputTo: "verify-result" }],
+          on: { VERIFIED: { target: "process" } },
+        },
+        process: {
+          // This is the action that previously dropped body/headers.
+          entry: [
+            {
+              type: "agent",
+              agentId: "processor",
+              outputTo: "process-result",
+              inputFrom: "verify-result",
+            },
+          ],
+          type: "final",
+        },
+      },
+      documentTypes: {
+        "verify-result": { type: "object", properties: { valid: { type: "boolean" } } },
+        "process-result": { type: "object", properties: { done: { type: "boolean" } } },
+      },
+    };
+
+    const { store, scope } = await createTestEngine(fsm, { initialState: "idle" });
+    const { FSMEngine } = await import("../fsm-engine.ts");
+    const engine = new FSMEngine(fsm, {
+      documentStore: store,
+      scope,
+      agentExecutor: async (action: AgentAction, ctx: Context, _signal: SignalWithContext) => {
+        captured.push({ stateId: ctx.state, input: ctx.input });
+        // Verifier emits the transition trigger so the FSM advances to
+        // the `process` state — which is where the previously-broken
+        // inputFrom merge runs.
+        if (action.agentId === "verifier") {
+          await ctx.emit?.({ type: "VERIFIED" });
+        }
+        return {
+          agentId: action.agentId,
+          timestamp: new Date().toISOString(),
+          input: "",
+          ok: true as const,
+          data: { done: true },
+          durationMs: 0,
+        };
+      },
+    });
+    await engine.initialize();
+
+    const githubBodyBase64 = Buffer.from(`{"action":"opened"}`, "utf-8").toString("base64");
+    const githubHeaders = { "x-hub-signature-256": "sha256=abc", "x-github-event": "pull_request" };
+
+    await engine.signal(
+      {
+        type: "gh-pr-comment",
+        data: { action: "opened" },
+        body: githubBodyBase64,
+        headers: githubHeaders,
+      },
+      { sessionId: "s1", workspaceId: "w1" },
+    );
+
+    // Both actions should have captured body + headers in ctx.input.
+    expect(captured).toHaveLength(2);
+    const verifyInput = captured.find((c) => c.stateId === "verify")?.input;
+    const processInput = captured.find((c) => c.stateId === "process")?.input;
+    expect(verifyInput?.body, "first action (no inputFrom) sees body").toBe(githubBodyBase64);
+    expect(verifyInput?.headers, "first action sees headers").toEqual(githubHeaders);
+    expect(
+      processInput?.body,
+      "second action with inputFrom still sees body (was dropped before fix)",
+    ).toBe(githubBodyBase64);
+    expect(processInput?.headers, "second action with inputFrom still sees headers").toEqual(
+      githubHeaders,
+    );
   });
 });
 

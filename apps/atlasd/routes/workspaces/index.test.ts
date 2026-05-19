@@ -199,15 +199,29 @@ describe("POST /workspaces/:workspaceId/signals/:signalId envelope guard", () =>
     );
   });
 
-  test("rejects stray keys even when a valid envelope key is also present", async () => {
-    const { app, triggerWorkspaceSignal } = createTestApp();
+  test("mixed envelope+stray keys routes to webhook mode (tight discriminator)", async () => {
+    // Used to 400 ("stray keys" envelope guard) under the loose
+    // discriminator. Under the tight discriminator (envelope iff ALL
+    // keys are envelope keys), a body with both envelope + stray keys
+    // is ambiguous — and the safer interpretation is "this is a real
+    // webhook that happens to use one of our envelope key names." The
+    // alternative (mis-route to envelope mode + silently strip the
+    // stray keys) caused pass-3 issue #2 for webhooks like
+    // `{payload: {...}, action: "opened"}`.
+    const { app, triggerWorkspaceSignal, publishSignalToJetStream } = createTestApp();
     const res = await post(app, "/workspaces/ws-1/signals/sig-1", {
       streamId: "stream-1",
       input: "hello",
     });
 
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(202);
     expect(triggerWorkspaceSignal).not.toHaveBeenCalled();
+    expect(publishSignalToJetStream).toHaveBeenCalledOnce();
+    const args = publishSignalToJetStream.mock.calls[0]?.[0] as Record<string, unknown>;
+    // The whole body is preserved as the payload — agent sees both
+    // `streamId` and `input` instead of having `input` silently stripped.
+    expect(args.payload).toMatchObject({ streamId: "stream-1", input: "hello" });
+    expect(typeof args.webhookBody).toBe("string");
   });
 
   test("rejects a bare payload on the SSE handler too (Accept: text/event-stream)", async () => {
@@ -556,27 +570,30 @@ describe("POST /workspaces/:workspaceId/signals/:signalId webhook mode (byte-for
     expect(publishSignalToJetStream).not.toHaveBeenCalled();
   });
 
-  test("webhook body with a top-level `payload` key is mis-routed to envelope mode (KNOWN ISSUE #2)", async () => {
-    // Documents the body-shape discriminator's known weakness: ANY top-level
-    // envelope key flips the body to envelope mode, even when other fields
-    // exist that obviously make it a webhook. This is the pernicious case
-    // from the pass-3 review item #2 — a real webhook with `{payload: ...,
-    // action: ..., ...}` gets silently routed to envelope mode, stray keys
-    // are stripped by zValidator, and the agent sees no webhookBody/headers.
-    //
-    // When #2 lands, this test should flip to assert webhook-mode routing.
+  test("webhook body with a top-level `payload` key routes to webhook mode (pass-3 #2 fix)", async () => {
+    // Pass-3 review #2 fix: the tight discriminator (envelope iff ALL
+    // top-level keys are envelope keys) routes mixed bodies to webhook
+    // mode. Previously the loose check (any envelope key wins) would
+    // mis-route a real webhook with `{payload: ..., action: ...}` to
+    // envelope mode and silently strip the stray keys — the agent saw
+    // no webhookBody/webhookHeaders and could not verify HMAC.
+    const githubBody = { payload: { foo: 1 }, action: "opened", sender: { login: "alice" } };
     const { app, publishSignalToJetStream, triggerWorkspaceSignal } = createTestApp();
     const res = await app.request("/workspaces/ws-1/signals/sig-1", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ payload: { foo: 1 }, action: "opened", sender: { login: "alice" } }),
+      body: JSON.stringify(githubBody),
     });
-    // Currently: envelope mode wins → sync path → reaches NATS stub → 500.
-    // (After fixing #2: this should be 202 webhook mode and the action +
-    // sender fields should be preserved in webhookBody.)
-    expect(res.status).toBe(500);
-    expect(publishSignalToJetStream).not.toHaveBeenCalled();
+    expect(res.status).toBe(202);
     expect(triggerWorkspaceSignal).not.toHaveBeenCalled();
+    expect(publishSignalToJetStream).toHaveBeenCalledOnce();
+    const args = publishSignalToJetStream.mock.calls[0]?.[0] as Record<string, unknown>;
+    // Whole body preserved as payload (no zValidator stripping); raw
+    // bytes preserved in webhookBody for HMAC verification.
+    expect(args.payload).toEqual(githubBody);
+    expect(Buffer.from(args.webhookBody as string, "base64").toString("utf-8")).toBe(
+      JSON.stringify(githubBody),
+    );
   });
 });
 

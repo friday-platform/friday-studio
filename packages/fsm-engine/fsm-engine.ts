@@ -1151,7 +1151,20 @@ export class FSMEngine {
       (action.type === "agent" || action.type === "llm") && action.inputFrom !== undefined;
     const effectivePrepareResult: PrepareResult | undefined =
       hasExplicitInputFrom && inputSnapshot
-        ? { ...inputSnapshot, config: { ...prepareResult?.config, ...inputSnapshot.config } }
+        ? {
+            ...inputSnapshot,
+            config: { ...prepareResult?.config, ...inputSnapshot.config },
+            // Webhook-only fields (`body` + `headers`) are signal-context
+            // data, not document data — `getInputSnapshot` doesn't carry
+            // them because it reads document `data` only. Preserve them
+            // explicitly from the upstream prepareResult so HMAC-verifying
+            // agents in the second action of a job (or any action with
+            // `inputFrom`) still see `ctx.input.raw["body"]` /
+            // `ctx.input.raw["headers"]`. Without this, the spread of
+            // `inputSnapshot` overwrites them with `undefined`.
+            ...(prepareResult?.body !== undefined ? { body: prepareResult.body } : {}),
+            ...(prepareResult?.headers !== undefined ? { headers: prepareResult.headers } : {}),
+          }
         : prepareResult;
 
     // Emit action started event
