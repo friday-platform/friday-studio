@@ -533,15 +533,19 @@ export const mcpRegistryRouter = daemonFactory
       );
     }
 
-    // Fast path vs. doctor path. The doctor only runs for a *bare* entry — one
-    // where the registry declared no env vars and translation synthesized no
-    // Link provider either (e.g. an HTTP-remote OAuth server). When the
-    // registry told us what the server needs, or translation did, install
-    // finishes inline with no LLM call.
+    // Fast path vs. doctor path. The doctor only runs for a *bare* entry —
+    // one where we have no signal about what the server needs: the registry
+    // declared no env vars, translation synthesized no Link provider, and no
+    // curator annotation routes credentials to an existing Link provider.
+    // A curated `providerId` means the translator has already wired the
+    // configTemplate to an existing provider, so there is nothing left for the
+    // LLM to analyze.
     const hasDeclaredEnvs =
       upstreamEntry.server.packages?.some((p) => (p.environmentVariables?.length ?? 0) > 0) ??
       false;
-    const needsDoctor = !hasDeclaredEnvs && !translateResult.linkProvider;
+    const hasCuratedProvider = Boolean(getAnnotation(upstreamEntry.server.name)?.providerId);
+    const needsDoctor =
+      !hasDeclaredEnvs && !translateResult.linkProvider && !hasCuratedProvider;
 
     if (!needsDoctor) {
       // Fast path — no LLM call. Fetch the README synchronously, persist ready.
