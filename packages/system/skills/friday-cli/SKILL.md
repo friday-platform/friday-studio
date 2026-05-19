@@ -1,6 +1,6 @@
 ---
 name: friday-cli
-description: "Interact with a running Friday daemon via CLI and HTTP — list/create/modify workspaces, trigger signals, watch sessions, publish skills and agents. Use whenever you need to poke at a local Friday daemon, inspect its state, fire a signal, drive the autopilot / self-modification flywheel, create a workspace programmatically, or validate that a workspace.yml you just authored actually runs. Also use when the task involves `$FRIDAYD_URL`, `deno task atlas`, curl-ing the daemon, or automating Friday itself."
+description: "Interacts with a running Friday daemon via CLI and HTTP — lists/creates/modifies workspaces, triggers signals, watches sessions, publishes skills and agents. Use whenever you need to poke at a local Friday daemon, inspect its state, fire a signal, drive the autopilot / self-modification flywheel, create a workspace programmatically, or validate that a workspace.yml you just authored actually runs. Also use when the task involves `$FRIDAYD_URL`, `deno task atlas`, curl-ing the daemon, or automating Friday itself."
 ---
 
 # Friday CLI & HTTP
@@ -129,21 +129,71 @@ curl -k -sf \
 The signal's `schema` is a JSON Schema — your payload must match it or the
 trigger returns 400.
 
-### 3. Fire a signal and stream the session
+### 3. Fire a signal — three modes
+
+The HTTP signal-trigger endpoint has three response modes. Pick the one that
+matches what the caller actually needs:
+
+**(a) Fire-and-forget — `?nowait=true`** (RECOMMENDED for any caller that
+doesn't need cascade output to compose its response):
 
 ```bash
-deno task atlas signal trigger -n <signal-name> -w <workspace> \
-  --data '{"some":"payload"}' --stream
+curl -k -sf -X POST \
+  "$FRIDAYD_URL/api/workspaces/<id>/signals/<signal-id>?nowait=true" \
+  -H 'Content-Type: application/json' \
+  -d '{"payload":{"some":"value"}}'
+# → 202 {"message":"Signal accepted","status":"accepted","workspaceId":"<id>","signalId":"<signal-id>","correlationId":"..."}
 ```
 
-Or via HTTP with SSE:
+Atlasd publishes to the SIGNALS JetStream subject and returns immediately
+(<100ms). The cascade runs async on the CASCADES consumer. Use this for
+webhooks, cron, fire-and-forget RPC, anything where the HTTP caller is just
+the publisher. The webhook-tunnel uses this internally.
+
+**(b) Synchronous JSON** — caller waits for the cascade to finish;
+response includes `output` + `summary` + `sessionId`. The default mode
+when no `?nowait` is passed:
 
 ```bash
+curl -k -sf -X POST \
+  "$FRIDAYD_URL/api/workspaces/<id>/signals/<signal-id>" \
+  -H 'Content-Type: application/json' \
+  -d '{"payload":{"some":"value"}}'
+# → 200 {"status":"completed","sessionId":"...","output":[...],"summary":"..."}
+```
+
+The right mode whenever the calling code consumes the cascade's result
+— CLI tools that print the agent's output, RPC handlers that build a
+response from the cascade's data, scripts that need `sessionId` to log
+or branch on. The CLI's `signal trigger` defaults to this mode.
+Connection stays open for the cascade duration (up to 10 minutes); be
+aware of upstream timeouts on your side (e.g. browsers, webhook
+platforms typically cap at 30s — for those, prefer (a) nowait).
+
+**(c) Streaming SSE** — same publish, but stream cascade events as they happen:
+
+```bash
+# trigger + stream in one request
 curl -k -N -X POST \
   "$FRIDAYD_URL/api/workspaces/<id>/signals/<signal-id>" \
   -H 'Content-Type: application/json' \
   -H 'Accept: text/event-stream' \
   -d '{"payload":{"some":"value"}}'
+```
+
+Subscribe-then-publish must happen in one handler — the cascade response
+is published to a core-NATS subject (no JetStream replay), so any path
+that publishes first and tries to attach a follower later races against
+fast cascades and silently misses the response. That's why there's no
+`GET /signals/stream/<correlationId>` endpoint: pass `Accept:
+text/event-stream` on the trigger POST instead, and the publisher and
+the SSE forwarder are the same handler.
+
+The CLI wrapper:
+
+```bash
+deno task atlas signal trigger -n <signal-name> -w <workspace> \
+  --data '{"some":"payload"}' --stream
 ```
 
 The payload MUST be wrapped in `{"payload": {...}}` for HTTP. The CLI unwraps

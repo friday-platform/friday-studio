@@ -221,11 +221,14 @@ registry. No compilation step — the agent process is spawned per invocation an
 via NATS request/reply. See the `writing-friday-python-agents` skill for the full authoring flow.
 
 ### `agent exec`
-`agent exec <agent> -i <input> [--url http://localhost:5200] [--env K=V,K2=V2] [--json] [--stream]`
+`agent exec <agent> -i <input> [--url <playground-url>] [--env K=V,K2=V2] [--json] [--stream]`
 
-Executes an agent via the playground. Requires `deno task playground` running
-separately on :5200. Good for testing agents in isolation before wiring them
-into a workspace.
+Executes an agent via the playground. Requires the playground to be running.
+The `--url` default differs by rig — on installed Friday Studio it listens on
+`$FRIDAY_PORT_PLAYGROUND` (e.g. `http://localhost:15200`), on in-tree dev it's
+`http://localhost:5200`. Resolve from your env (`echo $FRIDAY_PORT_PLAYGROUND`,
+or read `EXTERNAL_DAEMON_URL`-style exports) rather than hardcoding the port.
+Good for testing agents in isolation before wiring them into a workspace.
 
 ---
 

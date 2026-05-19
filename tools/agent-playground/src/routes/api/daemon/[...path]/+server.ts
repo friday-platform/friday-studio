@@ -1,7 +1,7 @@
-import { DAEMON_BASE_URL } from "$lib/daemon-url";
+import { effectiveDaemonUrl } from "$lib/server/daemon-url";
 import { buildProxyHandler } from "$lib/server/proxy";
 
-const handler = buildProxyHandler({ upstream: DAEMON_BASE_URL, label: "daemon" });
+const handler = buildProxyHandler({ upstream: effectiveDaemonUrl(), label: "daemon" });
 
 export const GET = handler;
 export const POST = handler;

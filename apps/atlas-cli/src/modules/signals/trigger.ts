@@ -170,6 +170,21 @@ async function triggerSignal(options: TriggerSignalOptions): Promise<TriggerSign
         error: stringifyError(response.error),
       };
     }
+    // POST /signals/:signalId returns a union — completed (sync, the default
+    // mode this caller uses) or accepted (?nowait=true). The CLI doesn't
+    // pass ?nowait, so the runtime path is always completed; the discriminator
+    // is defensive against future shape drift and populates sessionId only
+    // when it's actually present on the envelope.
+    if (response.data.status === "completed") {
+      return {
+        success: true,
+        status: response.data.status,
+        sessionId: response.data.sessionId,
+        duration,
+        workspaceId: options.workspaceId,
+        workspaceName: workspace.name,
+      };
+    }
     return {
       success: true,
       status: response.data.status,

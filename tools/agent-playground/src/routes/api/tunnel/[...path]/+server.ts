@@ -1,7 +1,7 @@
-import { TUNNEL_BASE_URL } from "$lib/daemon-url";
+import { effectiveTunnelUrl } from "$lib/server/daemon-url";
 import { buildProxyHandler } from "$lib/server/proxy";
 
-const handler = buildProxyHandler({ upstream: TUNNEL_BASE_URL, label: "tunnel" });
+const handler = buildProxyHandler({ upstream: effectiveTunnelUrl(), label: "tunnel" });
 
 export const GET = handler;
 export const POST = handler;

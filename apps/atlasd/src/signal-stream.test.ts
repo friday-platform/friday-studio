@@ -1,9 +1,11 @@
+import { Buffer } from "node:buffer";
 import { startNatsTestServer, type TestNatsServer } from "@atlas/core/test-utils/nats-test-server";
 import { connect, type NatsConnection } from "nats";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   awaitSignalCompletion,
   ensureSignalsStream,
+  envelopeToWebhookContext,
   publishSignal,
   SignalConsumer,
   type SignalEnvelope,
@@ -70,6 +72,82 @@ describe("publishSignal + SignalConsumer", () => {
     expect(received[0]?.signalId).toBe("my-signal");
     expect(received[0]?.payload).toEqual({ hello: "world" });
     expect(received[0]?.publishedAt).toBeDefined();
+  }, 15_000);
+
+  // Webhook envelope fields — closes the cross-layer plumbing gap that
+  // only the live E2E catches today. Asserts that webhookBody (base64) +
+  // webhookHeaders (lowercased dict) round-trip through publish → consumer
+  // → SignalEnvelopeSchema.parse intact. If a schema field is renamed or
+  // its optional-handling drifts (e.g. `body: undefined` vs missing key),
+  // this test fails instead of letting the byte-for-byte invariant silently
+  // break for HMAC-verifying agents.
+  it("round-trips webhookBody + webhookHeaders through publishSignal → consumer", async () => {
+    const received: SignalEnvelope[] = [];
+    const consumer = new SignalConsumer(
+      nc,
+      (envelope) => {
+        received.push(envelope);
+        return Promise.resolve();
+      },
+      { name: `test-${crypto.randomUUID()}`, expiresMs: 1000 },
+    );
+    await consumer.start();
+
+    const githubBytes = `{"action":"opened","pull_request":{"number":42}}`;
+    const githubBase64 = Buffer.from(githubBytes, "utf-8").toString("base64");
+    const githubHeaders = {
+      "x-github-event": "pull_request",
+      "x-github-delivery": "72d3162e-cc78-11e3-81ab-4c9367dc0958",
+      "x-hub-signature-256": "sha256=abc123deadbeef",
+      "content-type": "application/json",
+    };
+
+    await publishSignal(nc, {
+      workspaceId: "ws-webhook",
+      signalId: "gh-pr-comment",
+      payload: { action: "opened" },
+      webhookBody: githubBase64,
+      webhookHeaders: githubHeaders,
+    });
+
+    await waitFor(() => received.length === 1, 5000);
+    await consumer.destroy();
+
+    expect(received).toHaveLength(1);
+    expect(received[0]?.webhookBody).toBe(githubBase64);
+    expect(received[0]?.webhookHeaders).toEqual(githubHeaders);
+    // The base64 → bytes round-trip preserves the exact upstream-signed
+    // bytes — this is what makes the agent's HMAC verification possible.
+    const decoded = Buffer.from(received[0]?.webhookBody ?? "", "base64").toString("utf-8");
+    expect(decoded).toBe(githubBytes);
+  }, 15_000);
+
+  it("publishes an envelope WITHOUT webhook fields (non-webhook triggers)", async () => {
+    // Locks the "webhook fields are webhook-only" contract: a CLI / cron /
+    // chat-fired signal must not have webhookBody/webhookHeaders set on
+    // the envelope — otherwise the agent's ctx.input.raw["body"] /
+    // ["headers"] would be polluted by non-HTTP triggers.
+    const received: SignalEnvelope[] = [];
+    const consumer = new SignalConsumer(
+      nc,
+      (envelope) => {
+        received.push(envelope);
+        return Promise.resolve();
+      },
+      { name: `test-${crypto.randomUUID()}`, expiresMs: 1000 },
+    );
+    await consumer.start();
+
+    await publishSignal(nc, {
+      workspaceId: "ws-non-webhook",
+      signalId: "cron-tick",
+      payload: { tick: 1 },
+    });
+    await waitFor(() => received.length === 1, 5000);
+    await consumer.destroy();
+
+    expect(received[0]?.webhookBody).toBeUndefined();
+    expect(received[0]?.webhookHeaders).toBeUndefined();
   }, 15_000);
 
   it("redelivers on forward failure up to maxDeliver, then dead-letters", async () => {
@@ -201,6 +279,53 @@ describe("publishSignal + SignalConsumer", () => {
 
     expect(seen).toEqual(["s-0", "s-1", "s-2", "s-3", "s-4", "s-5"]);
   }, 15_000);
+});
+
+describe("envelopeToWebhookContext", () => {
+  // Pass-4 review #4. CascadeConsumer's dispatcher closure in
+  // atlas-daemon.ts used to inline this mapping, which meant the only way
+  // to verify it was a live JetStream+Hono+workspace E2E (CI-flaky and
+  // slow). Extracting the helper lets us cover all four envelope shapes
+  // in a pure unit test — and locks the runtime contract:
+  //
+  //   webhookContext.body === envelope.webhookBody (no transcoding)
+  //   webhookContext.headers === envelope.webhookHeaders (no lower-casing,
+  //     no rename) — the receiver layer already normalized them
+  //
+  // Returning `undefined` (not `{}`) for non-webhook envelopes is what
+  // keeps `WorkspaceRuntimeSignal.body`/`.headers` undefined so the agent
+  // SDK doesn't surface `ctx.input.raw["body"] === ""` for cron/CLI/chat
+  // triggers.
+  const baseEnvelope: SignalEnvelope = {
+    workspaceId: "ws-1",
+    signalId: "sig-1",
+    payload: {},
+    publishedAt: "2026-05-18T00:00:00Z",
+  };
+
+  it("returns undefined when neither webhookBody nor webhookHeaders is set", () => {
+    expect(envelopeToWebhookContext(baseEnvelope)).toBeUndefined();
+  });
+
+  it("returns { body, headers } when both fields are set", () => {
+    const body = Buffer.from(`{"action":"opened"}`, "utf-8").toString("base64");
+    const headers = { "x-github-event": "pull_request", "x-hub-signature-256": "sha256=abc" };
+    expect(
+      envelopeToWebhookContext({ ...baseEnvelope, webhookBody: body, webhookHeaders: headers }),
+    ).toEqual({ body, headers });
+  });
+
+  it("returns context with only body when only webhookBody is set", () => {
+    const body = "ZGVhZGJlZWY=";
+    const result = envelopeToWebhookContext({ ...baseEnvelope, webhookBody: body });
+    expect(result).toEqual({ body, headers: undefined });
+  });
+
+  it("returns context with only headers when only webhookHeaders is set", () => {
+    const headers = { "x-trace-id": "t1" };
+    const result = envelopeToWebhookContext({ ...baseEnvelope, webhookHeaders: headers });
+    expect(result).toEqual({ body: undefined, headers });
+  });
 });
 
 async function waitFor(predicate: () => boolean, timeoutMs: number): Promise<void> {

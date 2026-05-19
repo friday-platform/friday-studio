@@ -174,12 +174,12 @@ export const SignalDetailedInfoSchema = z.object({
     .optional(),
 });
 
-export const SignalTriggerResponseSchema = z.object({
-  message: z.string(),
-  status: z.string(),
-  workspaceId: z.string(),
-  signalId: z.string(),
-});
+// `SignalTriggerResponseSchema` lived here in earlier versions of the
+// client SDK with a non-discriminated shape (`status: string`). Pass-4
+// fix #1 deletes it and re-routes consumers to the discriminated-union
+// schema in `@atlas/core` so the producer (atlasd) and every consumer
+// share one source of truth. Import via:
+//   `import { SignalTriggerResponseSchema } from "@atlas/core"`.
 
 // Agent schemas
 export const AgentInfoSchema = z.object({

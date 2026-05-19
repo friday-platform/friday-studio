@@ -16,9 +16,12 @@ package main
 var (
 	_ = launchAgentLabel
 	_ = launcherBundleID
+	_ = autostartReasonBundleIDMismatch
+	_ = autostartReasonKeepAliveMismatch
+	_ = autostartReasonExePathMismatch
 )
 
-func enableAutostart() error   { return nil }
-func disableAutostart() error  { return nil }
-func isAutostartEnabled() bool { return false }
-func isAutostartStale() bool   { return false }
+func enableAutostart() error           { return nil }
+func disableAutostart() error          { return nil }
+func isAutostartEnabled() bool         { return false }
+func isAutostartStale() (bool, string) { return false, "" }

@@ -9,9 +9,19 @@ import { defineApiKeyProvider } from "./types.ts";
 const GitHubSecretSchema = z.object({
   access_token: z
     .string()
-    .refine((token) => token.startsWith("ghp_") || token.startsWith("github_pat_"), {
-      message: "Token must start with 'ghp_' (classic PAT) or 'github_pat_' (fine-grained PAT)",
-    }),
+    .refine(
+      (token) =>
+        token.startsWith("ghp_") ||
+        token.startsWith("github_pat_") ||
+        token.startsWith("gho_") ||
+        token.startsWith("ghu_") ||
+        token.startsWith("ghs_") ||
+        token.startsWith("ghr_"),
+      {
+        message:
+          "Token must start with 'ghp_' (classic PAT), 'github_pat_' (fine-grained PAT), or one of the gh CLI / app token prefixes: 'gho_' (user-to-server), 'ghu_' (user-to-user), 'ghs_' (server-to-server), 'ghr_' (refresh)",
+      },
+    ),
 });
 
 /**

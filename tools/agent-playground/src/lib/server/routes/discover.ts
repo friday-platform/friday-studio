@@ -4,12 +4,7 @@ import { Hono } from "hono";
 import JSZip from "jszip";
 import { parse as parseYaml } from "yaml";
 import { z } from "zod";
-// Daemon URL is injected at vite-config time (FRIDAYD_URL or fallback,
-// scheme upgraded to https:// when TLS is detected). We can't read
-// `process.env.FRIDAYD_URL` here directly: SSR routes go through vite's
-// transform which has `define: { "process.env": "{}" }`, collapsing the
-// read to undefined. See ../../daemon-url.ts and vite.config.ts.
-import { DAEMON_BASE_URL as DAEMON_URL } from "../../daemon-url.ts";
+import { effectiveDaemonUrl } from "../daemon-url.ts";
 
 // REPO/PATH/REF/GITHUB_TOKEN are read for completeness but are subject to
 // the same `process.env` wipe at SSR transform time — the env-override
@@ -350,7 +345,7 @@ export const discoverRoute = new Hono()
       `${slug}.zip`,
     );
 
-    const res = await fetch(`${DAEMON_URL}/api/workspaces/import-bundle`, {
+    const res = await fetch(`${effectiveDaemonUrl()}/api/workspaces/import-bundle`, {
       method: "POST",
       body: formData,
     });

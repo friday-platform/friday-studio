@@ -1,20 +1,21 @@
 // webhook-tunnel — receives external webhooks via a Cloudflare tunnel
 // and forwards them to atlasd as workspace signal triggers.
 //
-// URL pattern: /hook/{provider}/{workspaceId}/{signalId}
+// URL pattern: /hook/raw/{workspaceId}/{signalId}
+//
+// The body of the POST becomes the signal payload as-is. No HMAC
+// verification, no event filtering, no field extraction — workspace
+// agents own all of that. There is one provider (`raw`); the URL
+// segment is retained as a stable path prefix so any future provider
+// can be added without breaking existing webhook configurations.
 //
 // Environment:
 //
 //	FRIDAYD_URL      — Daemon API URL (default http://localhost:8080)
-//	WEBHOOK_SECRET  — Shared secret for HMAC verification
-//	                  (auto-generated diceware passphrase if unset)
 //	TUNNEL_PORT     — Local listener port (default 9090)
 //	TUNNEL_TOKEN    — Cloudflare tunnel token for stable URLs (optional)
 //	NO_TUNNEL       — "true" to skip cloudflared (HTTP server only)
-//	WEBHOOK_MAPPINGS_PATH — Override the embedded webhook-mappings.yml
 //	FRIDAY_LOG_LEVEL — trace|debug|info|warn|error|fatal
-//
-// Faithful Go port of apps/webhook-tunnel (TS / Hono / Deno).
 package main
 
 import (
@@ -22,7 +23,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"os/signal"
@@ -42,10 +42,17 @@ import (
 )
 
 // maxBodySize caps request bodies for /hook and /platform routes.
-// 25 MB matches GitHub's documented webhook payload max — the most
-// generous of the common providers. Oversized bodies get 413 before
-// any handler reads them so a hostile caller can't OOM the process.
-const maxBodySize = 25 * 1024 * 1024
+// Sized to land safely under the SIGNALS JetStream stream's
+// `max_msg_size` (default 8 MiB; see FRIDAY_JETSTREAM_MAX_MSG_SIZE in
+// packages/jetstream/src/config.ts). The webhook body rides the stream
+// as base64 (~1.33× inflation) wrapped in a small envelope JSON, so a
+// 4 MiB raw body produces a ~5.4 MiB JetStream message — comfortably
+// inside 8 MiB without surprise 500s at publish. GitHub's documented
+// 25 MiB ceiling is larger than this; payloads above ~4 MiB are
+// rejected here with a clear 413 rather than failing silently at the
+// JetStream layer. Oversized bodies get 413 before any handler reads
+// them so a hostile caller can't OOM the process.
+const maxBodySize = 4 * 1024 * 1024
 
 // shutdownTimeout matches the TS implementation's 25-second drain.
 const shutdownTimeout = 25 * time.Second
@@ -74,9 +81,6 @@ func main() {
 		log.Fatal("config error", "error", err)
 	}
 	cfg = conf
-	if err := provider.Init(); err != nil {
-		log.Fatal("provider init", "error", err)
-	}
 	f, err := forwarder.New(cfg.AtlasdURL, cfg.FridayCA)
 	if err != nil {
 		log.Fatal("forwarder init", "error", err)
@@ -108,8 +112,7 @@ func main() {
 	log.Info("webhook listener starting",
 		"port", cfg.Port,
 		"scheme", scheme,
-		"atlasd_url", cfg.AtlasdURL,
-		"secret_configured", cfg.WebhookSecret != "")
+		"atlasd_url", cfg.AtlasdURL)
 
 	serverErr := make(chan error, 1)
 	go func() {
@@ -131,7 +134,7 @@ func main() {
 		startTunnel(tlsOn)
 	} else {
 		log.Info("tunnel disabled",
-			"local_url", fmt.Sprintf("%s://localhost:%d/hook/{provider}/{workspaceId}/{signalId}", scheme, cfg.Port))
+			"local_url", fmt.Sprintf("%s://localhost:%d/hook/raw/{workspaceId}/{signalId}", scheme, cfg.Port))
 	}
 
 	stop := make(chan os.Signal, 1)
@@ -193,13 +196,11 @@ func printTunnelBanner(tunnelURL string) {
 	fmt.Println()
 	fmt.Printf("  Public URL:  %s\n", tunnelURL)
 	fmt.Println()
-	fmt.Println("  Register webhooks using:")
-	fmt.Printf("    %s/hook/{provider}/{workspaceId}/{signalId}\n", tunnelURL)
+	fmt.Println("  Register webhooks at:")
+	fmt.Printf("    %s/hook/raw/{workspaceId}/{signalId}\n", tunnelURL)
 	fmt.Println()
-	fmt.Println("  Examples:")
-	fmt.Printf("    GitHub:     %s/hook/github/{workspaceId}/review-pr\n", tunnelURL)
-	fmt.Printf("    Bitbucket:  %s/hook/bitbucket/{workspaceId}/review-pr\n", tunnelURL)
-	fmt.Printf("    Raw:        %s/hook/raw/{workspaceId}/{signalId}\n", tunnelURL)
+	fmt.Println("  The body of the POST becomes the signal payload as-is.")
+	fmt.Println("  The workspace agent owns parsing and any HMAC verification.")
 	fmt.Println()
 	fmt.Println("  Auto-reconnect: enabled (process monitor + health probe)")
 	fmt.Println("================================================================")
@@ -291,16 +292,10 @@ func handleStatus(w http.ResponseWriter, _ *http.Request) {
 			lastProbeAt = &s
 		}
 	}
-	var secret *string
-	if cfg.WebhookSecret != "" {
-		s := cfg.WebhookSecret
-		secret = &s
-	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"url":          url,
-		"secret":       secret,
-		"providers":    provider.List(),
-		"pattern":      "/hook/{provider}/{workspaceId}/{signalId}",
+		"providers":    provider.Names(),
+		"pattern":      "/hook/raw/{workspaceId}/{signalId}",
 		"active":       alive,
 		"tunnelAlive":  tunnelAlive,
 		"restartCount": restartCount,
@@ -317,89 +312,55 @@ func handleRoot(w http.ResponseWriter, _ *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"service":   "webhook-tunnel",
-		"providers": provider.List(),
-		"pattern":   "/hook/{provider}/{workspaceId}/{signalId}",
+		"providers": provider.Names(),
+		"pattern":   "/hook/raw/{workspaceId}/{signalId}",
 		"url":       url,
 	})
 }
 
+// handleHook reverse-proxies the upstream webhook POST byte-for-byte to
+// atlasd. Body bytes, headers, and query string flow through unchanged;
+// only the URL host + path are rewritten. This is what lets a workspace
+// agent receive a request byte-identical to what GitHub / Bitbucket /
+// Jira sent and verify HMAC against the exact upstream-signed bytes.
+//
+// Provider-name validation lives here (not in the proxy) so we can
+// short-circuit obviously-wrong URLs with a clear 400 instead of
+// forwarding to atlasd and surfacing its (less specific) error.
 func handleHook(w http.ResponseWriter, r *http.Request) {
 	providerName := chi.URLParam(r, "provider")
 	workspaceID := chi.URLParam(r, "workspaceId")
 	signalID := chi.URLParam(r, "signalId")
 
-	h := provider.Get(providerName)
-	if h == nil {
+	if !provider.IsValid(providerName) {
 		writeJSONError(w, http.StatusBadRequest,
 			fmt.Sprintf("Unknown provider: %s. Available: %s",
-				providerName, strings.Join(provider.List(), ", ")))
-		return
-	}
-
-	// Read body once into bytes — verify + transform both consume from
-	// the same []byte. (Go net/http does NOT buffer req.Body, unlike
-	// Hono.) MaxBytesReader returns 413 on overflow before we read.
-	r.Body = http.MaxBytesReader(w, r.Body, maxBodySize)
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		var mre *http.MaxBytesError
-		if errors.As(err, &mre) {
-			writeJSONError(w, http.StatusRequestEntityTooLarge,
-				fmt.Sprintf("body exceeds %d bytes", maxBodySize))
-			return
-		}
-		writeJSONError(w, http.StatusBadRequest, "read body: "+err.Error())
-		return
-	}
-
-	if vErr := h.Verify(r.Header, body, []byte(cfg.WebhookSecret)); vErr != nil {
-		log.Error("signature verification failed",
-			"provider", providerName, "error", vErr)
-		writeJSONError(w, http.StatusUnauthorized, vErr.Error())
-		return
-	}
-
-	payload, desc, tErr := h.Transform(r.Header, body)
-	if tErr != nil {
-		writeJSONError(w, http.StatusBadRequest, tErr.Error())
-		return
-	}
-	if payload == nil {
-		log.Debug("event skipped",
-			"provider", providerName, "reason", "irrelevant event")
-		writeJSON(w, http.StatusOK, map[string]any{
-			"status": "skipped", "reason": "irrelevant event",
-		})
+				providerName, strings.Join(provider.Names(), ", ")))
 		return
 	}
 
 	log.Info("webhook received",
 		"provider", providerName,
-		"description", desc,
 		"workspace_id", workspaceID,
 		"signal_id", signalID)
 
-	sessionID, fErr := fwd.Forward(workspaceID, signalID, payload)
-	if fErr != nil {
-		log.Error("forward to atlasd failed",
-			"provider", providerName,
-			"workspace_id", workspaceID,
-			"signal_id", signalID,
-			"error", fErr)
-		writeJSONError(w, http.StatusBadGateway,
-			fmt.Sprintf("Cannot reach atlasd: %v", fErr))
+	// Cheap pre-check: if Content-Length is advertised and exceeds the
+	// cap, reject with 413 before we start streaming bytes. Mid-stream
+	// overflow (chunked encoding, or a lying Content-Length) falls back
+	// to MaxBytesReader below — httputil.ReverseProxy converts that
+	// into a 502, which is less precise but still bounded.
+	if r.ContentLength > maxBodySize {
+		writeJSONError(w, http.StatusRequestEntityTooLarge,
+			fmt.Sprintf(
+				"body exceeds %d bytes (%d MiB) — the cap is sized to leave "+
+					"headroom under atlasd's JetStream max_msg_size after base64 "+
+					"+ envelope overhead. Split the webhook upstream or raise "+
+					"FRIDAY_JETSTREAM_MAX_MSG_SIZE if you need a larger ceiling.",
+				maxBodySize, maxBodySize/(1024*1024)))
 		return
 	}
-	log.Info("signal triggered",
-		"provider", providerName,
-		"workspace_id", workspaceID,
-		"signal_id", signalID,
-		"session_id", sessionID)
-	resp := map[string]any{"status": "forwarded"}
-	if sessionID != "" {
-		resp["sessionId"] = sessionID
-	}
-	writeJSON(w, http.StatusOK, resp)
+	r.Body = http.MaxBytesReader(w, r.Body, maxBodySize)
+	fwd.WebhookProxyHandler().ServeHTTP(w, r)
 }
 
 // wrapMaxBytes applies the body-size cap to the platform proxy so a

@@ -102,7 +102,14 @@ const PLATFORM_TOOL_ALLOWLIST = LLM_AGENT_ALLOWED_PLATFORM_TOOLS;
 const FSMStateSchema = z.object({ state: z.string() });
 
 const PrepareResultSchema = z
-  .object({ task: z.string().optional(), config: z.record(z.string(), z.unknown()).optional() })
+  .object({
+    task: z.string().optional(),
+    config: z.record(z.string(), z.unknown()).optional(),
+    // Webhook passthrough — only set for HTTP-tunnel-triggered signals so
+    // the agent can recompute HMAC against the exact upstream bytes.
+    body: z.string().optional(),
+    headers: z.record(z.string(), z.string()).optional(),
+  })
   .passthrough();
 
 type PrepareResult = z.infer<typeof PrepareResultSchema>;
@@ -188,8 +195,18 @@ export function parsePrepareResult(raw: unknown): PrepareResult | undefined {
     return undefined;
   }
 
-  // Filter out empty results (neither task nor config present)
-  if (parsed.data.task == null && parsed.data.config == null) {
+  // Filter out empty results (no task, no config, AND no webhook-only
+  // fields). Webhook-triggered signals can land with body/headers but
+  // empty config (e.g., a code action that returns nothing structural
+  // after the seed) — discarding them here would silently drop the
+  // HMAC-verification material on `__lastPrepare` carryover, same
+  // regression class as the pass-3 inputFrom merge bug.
+  if (
+    parsed.data.task == null &&
+    parsed.data.config == null &&
+    parsed.data.body == null &&
+    parsed.data.headers == null
+  ) {
     return undefined;
   }
 
@@ -1082,6 +1099,12 @@ export class FSMEngine {
             ? (candidate.payload as Record<string, unknown>)
             : candidate;
         prepareResult = { config: payload };
+        // Webhook-only fields ride alongside `data` on the signal (not inside
+        // it) so the upstream payload stays unpolluted. Surface them at the
+        // top level of input so the agent reads `ctx.input.raw["body"]` /
+        // `ctx.input.raw["headers"]` rather than digging into config.
+        if (sig.body !== undefined) prepareResult.body = sig.body;
+        if (sig.headers !== undefined) prepareResult.headers = sig.headers;
       }
       for (const action of actions) {
         prepareResult = await this.executeAction(
@@ -1138,7 +1161,20 @@ export class FSMEngine {
       (action.type === "agent" || action.type === "llm") && action.inputFrom !== undefined;
     const effectivePrepareResult: PrepareResult | undefined =
       hasExplicitInputFrom && inputSnapshot
-        ? { ...inputSnapshot, config: { ...prepareResult?.config, ...inputSnapshot.config } }
+        ? {
+            ...inputSnapshot,
+            config: { ...prepareResult?.config, ...inputSnapshot.config },
+            // Webhook-only fields (`body` + `headers`) are signal-context
+            // data, not document data — `getInputSnapshot` doesn't carry
+            // them because it reads document `data` only. Preserve them
+            // explicitly from the upstream prepareResult so HMAC-verifying
+            // agents in the second action of a job (or any action with
+            // `inputFrom`) still see `ctx.input.raw["body"]` /
+            // `ctx.input.raw["headers"]`. Without this, the spread of
+            // `inputSnapshot` overwrites them with `undefined`.
+            ...(prepareResult?.body !== undefined ? { body: prepareResult.body } : {}),
+            ...(prepareResult?.headers !== undefined ? { headers: prepareResult.headers } : {}),
+          }
         : prepareResult;
 
     // Emit action started event

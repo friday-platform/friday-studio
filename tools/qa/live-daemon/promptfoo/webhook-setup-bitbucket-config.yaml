@@ -1,0 +1,44 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+
+description: |
+  Friday workspace-chat webhook-setup eval — locks the contract that
+  workspace-chat produces correct Bitbucket wiring instructions when the
+  wiring-external-webhooks skill is loaded. 12 scenarios cover the
+  setup walkthrough, env-var correction, /status as first debug step,
+  no-bypass on test-webhook, the three signal modes (nowait / sync /
+  SSE-on-trigger), current provider list, atlasd-URL-fallback rejection,
+  signal-schema additionalProperties rule, and the GitHub UI walkthrough.
+  Two control variants on the setup walkthrough:
+
+    - with-skill: skill content in system prompt; must pass every check.
+    - without-skill: control. Must fail at least one check; proves the
+      skill is the knowledge carrier, not the base model.
+
+  Direct-Anthropic-call shape (no daemon), same as secret-input-guard.ts
+  and connect-service-on-auth-error.ts. ~15s per scenario; ~3 min full.
+
+  Foot-guns the skill prevents (and that this eval keeps locked):
+  inventing BITBUCKET_WEBHOOK_SECRET (correct var is WEBHOOK_SECRET),
+  writing a webhook-mappings.json with the wrong shape, suggesting
+  /hook/raw/ as a sig-verification bypass, recommending a Python sidecar
+  receiver, and pushing the broken nowait-then-follow SSE pattern.
+
+prompts:
+  - '{{scenarioId}}'
+
+providers:
+  - id: file://webhook-setup-bitbucket-provider.cjs
+    label: friday-webhook-setup-bitbucket
+
+defaultTest:
+  assert:
+    - type: is-json
+    - type: javascript
+      value: |
+        const result = JSON.parse(output);
+        if (result.pass !== true) {
+          throw new Error(`${result.id} failed: ${(result.notes || []).join('; ')}`);
+        }
+        return true;
+
+tests: file://webhook-setup-bitbucket-tests.yaml

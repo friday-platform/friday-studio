@@ -120,7 +120,10 @@
           return;
         }
         const data = await res.json();
-        if (data.sessionId) {
+        // Response can be {status:"completed",sessionId,...} (default sync)
+        // or {status:"accepted",correlationId,...} (?nowait=true). This
+        // dialog uses sync mode (no nowait), so navigate to the session.
+        if (data.status === "completed" && data.sessionId) {
           goto(`/platform/${workspaceId}/sessions/${data.sessionId}`);
         }
       })

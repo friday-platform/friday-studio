@@ -28,6 +28,20 @@ const launchAgentLabel = "ai.hellofriday.studio"
 // suffixed value and rewrites the plist on next launcher start.
 const launcherBundleID = "ai.hellofriday.studio"
 
+// Reason tags returned by isAutostartStale() and logged alongside the
+// "autostart entry stale; rewriting" line in main.go. These flow into
+// user telemetry/support logs, so renames are an observability-contract
+// break — keep production and tests pointing at the same const.
+//
+// Naming convention: <subsystem>_mismatch. All three are platform-
+// specific (darwin uses the first two, windows the third), but the
+// consts live here so the package builds on all platforms.
+const (
+	autostartReasonBundleIDMismatch  = "bundle_id_mismatch"
+	autostartReasonKeepAliveMismatch = "keepalive_mismatch"
+	autostartReasonExePathMismatch   = "exe_path_mismatch"
+)
+
 // bundledAgentSDKVersion pins the friday-agent-sdk PyPI version that
 // the daemon spawns user agents against (apps/atlasd/src/agent-spawn.ts
 // reads this via FRIDAY_AGENT_SDK_VERSION). Bumping is a deliberate

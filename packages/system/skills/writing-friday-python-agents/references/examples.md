@@ -5,6 +5,7 @@ capability pattern.
 
 ## Table of Contents
 
+- [Tier 0: Reading Signal Payloads (HTTP / webhook signal-direct)](#tier-0-reading-signal-payloads)
 - [Tier 1: Minimal Agent (echo)](#tier-1-minimal-agent)
 - [Tier 2: LLM Generation](#tier-2-llm-generation)
 - [Tier 3: HTTP API Integration](#tier-3-http-api-integration)
@@ -12,6 +13,86 @@ capability pattern.
 - [Tier 5: Multi-Operation Dispatch](#tier-5-multi-operation-dispatch)
 - [Tier 6: Consuming Upstream Step Output (ctx.input)](#tier-6-consuming-upstream-step-output)
 - [Patterns Summary](#patterns-summary)
+
+---
+
+## Tier 0: Reading Signal Payloads
+
+When an HTTP signal fires your agent directly (no upstream FSM step,
+no `inputFrom`), the request body lands in `ctx.input.config`. This is
+the most common case for webhook handlers — Bitbucket / Jira / Stripe /
+anything fired through `/hook/raw/{workspaceId}/{signalId}` ends up
+here.
+
+**Do NOT use `parse_input(prompt)` for the signal payload** — that
+function scrapes JSON out of the enriched prompt string, which holds the
+agent's action config (`{config: {prompt, outputTo, ...}}`), not the
+webhook body. Reading `prompt` returns top-level key `config` and you
+end up parsing the wrong dict.
+
+The right pattern:
+
+```python
+from friday_agent_sdk import agent, ok, err, AgentContext, run
+
+@agent(id="echo-webhook", version="1.0.0", description="Echo the webhook body")
+def execute(prompt: str, ctx: AgentContext):
+    # ctx.input.config: signal payload (auto-seeded from the trigger).
+    # Falls back to ctx.input.raw if a different invocation path filled it.
+    payload = ctx.input.config or ctx.input.raw
+    if not isinstance(payload, dict):
+        return err(f"Expected JSON object payload, got {type(payload).__name__}")
+
+    # Now read fields from the actual webhook body.
+    summary = f"Got webhook with top-level keys: {list(payload.keys())}"
+    return ok({"summary": summary, "payload": payload})
+
+
+if __name__ == "__main__":
+    run()
+```
+
+Why both? `ctx.input.config` is the canonical slot for signal-direct
+invocations and `inputFrom`-chained steps. `ctx.input.raw` is the
+unwrapped root — present when the runtime didn't wrap the payload under
+`config`. The `or` covers both safely.
+
+Workspace wiring for this case:
+
+```yaml
+signals:
+  my-webhook:
+    provider: http
+    config: { path: /my-webhook }
+    schema: { type: object, additionalProperties: true }
+
+jobs:
+  handle-webhook:
+    triggers: [{ signal: my-webhook }]
+    fsm:
+      initial: idle
+      states:
+        idle:
+          'on':
+            my-webhook: { target: process }
+        process:
+          entry:
+            - type: agent
+              agentId: echo-webhook
+              outputTo: webhook-result
+            - type: emit
+              event: DONE
+          'on':
+            DONE: { target: done }
+        done:
+          type: final
+```
+
+Note the FSM has `initial: idle` (not the agent's state). The signal
+triggers a transition from `idle → process`, and the entry action runs
+the agent. Using `initial: process` with the agent in entry triggers
+"Missing sessionId in signal context" because the runtime hasn't bound
+signal context to the initial-state entry actions yet.
 
 ---
 

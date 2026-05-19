@@ -2,7 +2,7 @@ import { stat } from "node:fs/promises";
 import { join } from "node:path";
 import process, { env } from "node:process";
 import { JetStreamMemoryAdapter } from "@atlas/adapters-md";
-import type { AgentRegistry as AgentRegistryType, AtlasUIMessageChunk } from "@atlas/agent-sdk";
+import type { AgentRegistry as AgentRegistryType } from "@atlas/agent-sdk";
 import type { ConcurrencyPolicy } from "@atlas/config";
 import { FilesystemAtlasConfigSource } from "@atlas/config/server";
 import {
@@ -45,6 +45,7 @@ import { getFridayHome } from "@atlas/utils/paths.server";
 import {
   createJetStreamKVStorage,
   createRegistryStorageJS,
+  type TriggerSignalOpts,
   validateMCPEnvironmentForWorkspace,
   WorkspaceManager,
   WorkspaceRuntime,
@@ -126,6 +127,7 @@ import { CronSignalRegistrar } from "./signal-registrars/cron-registrar.ts";
 import { FsWatchSignalRegistrar } from "./signal-registrars/fs-watch-registrar.ts";
 import {
   ensureSignalsStream,
+  envelopeToWebhookContext,
   type PublishSignalOpts,
   publishSignal,
   SignalConsumer,
@@ -802,19 +804,26 @@ export class AtlasDaemon {
       nc,
       async (envelope, ctx) => {
         try {
+          // `envelopeToWebhookContext` extracts the byte-for-byte webhook
+          // fields (body + headers, set only by the /signals/:sig/webhook
+          // endpoint that fronts the tunnel proxy) into the opts-bag shape
+          // `triggerWorkspaceSignal` expects. Returns `undefined` for
+          // non-webhook envelopes so the runtime signal stays clean.
           return await this.triggerWorkspaceSignal(
             envelope.workspaceId,
             envelope.signalId,
             envelope.payload,
-            envelope.streamId,
-            ctx.onStreamEvent,
-            undefined,
-            ctx.abortSignal,
-            // Reuse the existing `sourceSessionId` envelope field as the
-            // parent linkage. It was wired through on publish but never
-            // consumed — Phase 11 makes it carry across into
-            // `SessionSummary.parentSessionId`.
-            envelope.sourceSessionId,
+            {
+              streamId: envelope.streamId,
+              onStreamEvent: ctx.onStreamEvent,
+              abortSignal: ctx.abortSignal,
+              // Reuse the existing `sourceSessionId` envelope field as the
+              // parent linkage. It was wired through on publish but never
+              // consumed — Phase 11 makes it carry across into
+              // `SessionSummary.parentSessionId`.
+              parentSessionId: envelope.sourceSessionId,
+              webhookContext: envelopeToWebhookContext(envelope),
+            },
           );
         } catch (err) {
           if (err instanceof SessionFailedError) {
@@ -2135,14 +2144,11 @@ export class AtlasDaemon {
       triggerFn: async (signalId, signalData, streamId, onStreamEvent, abortSignal) => {
         const runtime = await this.getOrCreateWorkspaceRuntime(workspaceId);
         try {
-          const session = await runtime.triggerSignalWithSession(
-            signalId,
-            signalData,
+          const session = await runtime.triggerSignalWithSession(signalId, signalData, {
             streamId,
             onStreamEvent,
-            undefined,
             abortSignal,
-          );
+          });
           return { sessionId: session.id };
         } finally {
           runtime.shutdown().catch((err) => {
@@ -2169,27 +2175,16 @@ export class AtlasDaemon {
    * @param workspaceId - Workspace ID to trigger signal in
    * @param signalId - Signal ID to trigger
    * @param payload - Signal payload data
-   * @param streamId - Optional stream ID for conversation context
-   * @param onStreamEvent - Optional callback for streaming responses (used by Discord, web chat, etc)
-   * @param skipStates - Optional state IDs to skip during FSM execution
-   * @param abortSignal - Wired by CascadeConsumer for the `replace` policy — aborts the cascade in favour of a newer envelope
+   * @param opts - Trailing optional context (streamId, onStreamEvent,
+   *   skipStates, abortSignal, parentSessionId, webhookContext). See
+   *   `TriggerSignalOpts` in packages/workspace/src/runtime.ts.
    * @returns Session ID for tracking the triggered signal
    */
   public async triggerWorkspaceSignal(
     workspaceId: string,
     signalId: string,
     payload?: Record<string, unknown>,
-    streamId?: string,
-    onStreamEvent?: (chunk: AtlasUIMessageChunk) => void,
-    skipStates?: string[],
-    abortSignal?: AbortSignal,
-    /**
-     * Parent session id when this signal is being fired from inside
-     * another session (chat-spawned-job, FSM-emit-and-await, etc.).
-     * Threads through to `SessionSummary.parentSessionId` so the
-     * spawned session records its parent. Phase 11 provenance.
-     */
-    parentSessionId?: string,
+    opts: TriggerSignalOpts = {},
   ): Promise<{
     sessionId: string;
     output: Array<{ id: string; type: string; data: Record<string, unknown> }>;
@@ -2210,15 +2205,7 @@ export class AtlasDaemon {
   }> {
     const runtime = await this.getOrCreateWorkspaceRuntime(workspaceId);
     try {
-      const result = await runtime.triggerSignalWithResult(
-        signalId,
-        payload || {},
-        streamId,
-        onStreamEvent,
-        skipStates,
-        abortSignal,
-        parentSessionId,
-      );
+      const result = await runtime.triggerSignalWithResult(signalId, payload || {}, opts);
       const session = result.session;
 
       // Record signal trigger metric by provider type (http, schedule, slack, etc.)
@@ -2858,19 +2845,50 @@ export class AtlasDaemon {
       }
     }
 
-    // Enforce session limit (LRU eviction)
+    // Enforce session limit (LRU eviction).
+    //
+    // Two-pass strategy:
+    //   1. Prefer evicting sessions with no active requests (clean tear-down).
+    //   2. If we're still over the limit, force-evict the LRU sessions even
+    //      if they have in-flight requests — otherwise long-lived SSE/MCP
+    //      streams (whose `activeRequests` never drops to zero until the
+    //      client disconnects) pin the map forever, the warning fires every
+    //      60s with `evictionCount: 0`, and new sessions get crowded out.
     if (this.agentSessions.size > this.MAX_AGENT_SESSIONS) {
-      const sortedSessions = Array.from(this.agentSessions.entries())
-        .filter(([, session]) => session.activeRequests === 0)
-        .sort((a, b) => a[1].lastUsed - b[1].lastUsed);
+      const overage = this.agentSessions.size - this.MAX_AGENT_SESSIONS;
 
-      const toEvict = sortedSessions.slice(0, this.agentSessions.size - this.MAX_AGENT_SESSIONS);
+      const sortedByLastUsed = Array.from(this.agentSessions.entries()).sort(
+        (a, b) => a[1].lastUsed - b[1].lastUsed,
+      );
 
-      logger.warn("Evicting LRU agent sessions due to limit", {
+      const idleFirst = sortedByLastUsed.filter(([, s]) => s.activeRequests === 0);
+      const toEvictIdle = idleFirst.slice(0, overage);
+
+      const remainingOverage = overage - toEvictIdle.length;
+      const evictedIdleIds = new Set(toEvictIdle.map(([id]) => id));
+      const toEvictActive =
+        remainingOverage > 0
+          ? sortedByLastUsed.filter(([id]) => !evictedIdleIds.has(id)).slice(0, remainingOverage)
+          : [];
+
+      const toEvict = [...toEvictIdle, ...toEvictActive];
+
+      // Force-evicting an active session aborts the client's in-flight MCP
+      // stream — escalate to `error` so on-call notices a user-visible
+      // disconnect rather than dismissing it as benign idle cleanup.
+      const evictionContext = {
         evictionCount: toEvict.length,
+        idleEvicted: toEvictIdle.length,
+        activeEvicted: toEvictActive.length,
+        evictedSessionIds: toEvict.map(([id]) => id),
         totalSessions: this.agentSessions.size,
         maxSessions: this.MAX_AGENT_SESSIONS,
-      });
+      };
+      if (toEvictActive.length > 0) {
+        logger.error("Evicting LRU agent sessions due to limit", evictionContext);
+      } else {
+        logger.warn("Evicting LRU agent sessions due to limit", evictionContext);
+      }
 
       for (const [sessionId] of toEvict) {
         await this.cleanupAgentSession(sessionId);
@@ -2927,22 +2945,44 @@ export class AtlasDaemon {
       }
     }
 
-    // Enforce session limit (LRU eviction)
+    // Enforce session limit (LRU eviction). See `performAgentSessionCleanup`
+    // for the two-pass rationale — long-lived SSE streams keep
+    // `activeRequests > 0` and would otherwise pin the map indefinitely,
+    // causing the eviction warning to fire every 60s with no progress.
     if (this.platformMcpSessions.size > this.MAX_PLATFORM_SESSIONS) {
-      const sortedSessions = Array.from(this.platformMcpSessions.entries())
-        .filter(([, session]) => session.activeRequests === 0)
-        .sort((a, b) => a[1].lastUsed - b[1].lastUsed);
+      const overage = this.platformMcpSessions.size - this.MAX_PLATFORM_SESSIONS;
 
-      const toEvict = sortedSessions.slice(
-        0,
-        this.platformMcpSessions.size - this.MAX_PLATFORM_SESSIONS,
+      const sortedByLastUsed = Array.from(this.platformMcpSessions.entries()).sort(
+        (a, b) => a[1].lastUsed - b[1].lastUsed,
       );
 
-      logger.warn("Evicting LRU platform sessions due to limit", {
+      const idleFirst = sortedByLastUsed.filter(([, s]) => s.activeRequests === 0);
+      const toEvictIdle = idleFirst.slice(0, overage);
+
+      const remainingOverage = overage - toEvictIdle.length;
+      const evictedIdleIds = new Set(toEvictIdle.map(([id]) => id));
+      const toEvictActive =
+        remainingOverage > 0
+          ? sortedByLastUsed.filter(([id]) => !evictedIdleIds.has(id)).slice(0, remainingOverage)
+          : [];
+
+      const toEvict = [...toEvictIdle, ...toEvictActive];
+
+      // See `performAgentSessionCleanup` — `error` when we're killing
+      // in-flight streams, `warn` for clean idle eviction.
+      const evictionContext = {
         evictionCount: toEvict.length,
+        idleEvicted: toEvictIdle.length,
+        activeEvicted: toEvictActive.length,
+        evictedSessionIds: toEvict.map(([id]) => id),
         totalSessions: this.platformMcpSessions.size,
         maxSessions: this.MAX_PLATFORM_SESSIONS,
-      });
+      };
+      if (toEvictActive.length > 0) {
+        logger.error("Evicting LRU platform sessions due to limit", evictionContext);
+      } else {
+        logger.warn("Evicting LRU platform sessions due to limit", evictionContext);
+      }
 
       for (const [sessionId] of toEvict) {
         await this.cleanupPlatformSession(sessionId);
