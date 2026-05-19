@@ -47,11 +47,15 @@ export function createEnvTools(opts: CreateEnvToolsOpts): AtlasTools {
         "Propose setting one or more environment variables. Does NOT write immediately — it " +
         "raises a confirmation card in chat; the user reviews the keys and values and confirms " +
         "or denies, and the daemon applies the write on confirm. `workspace` scope (default) " +
-        "writes the current workspace's `.env`; `global` writes the daemon's `.env`. The " +
-        "workspace `.env` is for non-secret values — route real credentials through a connected " +
-        "integration (Link) instead. Use this to set MCP server env vars (e.g. a workspace " +
-        "slug or a log path). Returns immediately as `pending_confirmation`; call `env_get` on " +
-        "a later turn to verify.",
+        "writes the current workspace's `.env`; `global` writes the daemon's `.env`. " +
+        "For secret-bearing keys (anything matching token/key/secret/password/credential) pass " +
+        'an empty string `""` as the value — the confirmation card lets the user type the real ' +
+        "secret directly, so the value never enters chat history. Exception: if the user already " +
+        "typed the literal value in chat, pass it through so they don't have to retype it (the " +
+        "value is already in the transcript, so passing it gains no further privacy). For " +
+        "non-secret values (e.g. a workspace slug, a log path, an API base URL) pass the literal " +
+        "value. Returns immediately as `pending_confirmation`; call `env_get` on a later turn to " +
+        "verify.",
       inputSchema: z.object({
         scope: z
           .enum(["workspace", "global"])
@@ -63,9 +67,17 @@ export function createEnvTools(opts: CreateEnvToolsOpts): AtlasTools {
             z.string().regex(/^[^\r\n]*$/, "env var values must not contain newlines"),
           )
           .refine((v) => Object.keys(v).length > 0, "provide at least one env var to set")
-          .describe("Environment variables to set, as a { KEY: value } map"),
+          .describe(
+            'Environment variables as a { KEY: value } map. Pass `""` for secret-bearing ' +
+              "keys so the user can fill in the real value via the confirmation card — unless " +
+              "they already typed the literal value in chat, in which case pass it through.",
+          ),
       }),
       execute: async ({ scope, vars }) => {
+        // Load-bearing assumption: "secret never enters chat history" relies on
+        // the LLM following the tool description and passing `""` for secret-
+        // looking keys. The server does not enforce it — if the model passes
+        // a real secret here it ends up in `pendingTool.args` (chat history).
         const keys = Object.keys(vars);
         logger.info("env_set (chat) called", { scope, workspaceId, keys });
 
@@ -127,8 +139,9 @@ export function createEnvTools(opts: CreateEnvToolsOpts): AtlasTools {
               ? {
                   secretLookingKeys,
                   note:
-                    "Some keys look secret-bearing. The workspace .env is for non-secret values — " +
-                    "consider connecting an integration (Link) for real credentials.",
+                    "Some keys look secret-bearing — the user will type the real value in the " +
+                    "confirmation card so it stays out of chat. For real third-party credentials, " +
+                    "consider a connected integration (Link) instead of `.env`.",
                 }
               : {}),
           };

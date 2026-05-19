@@ -423,7 +423,7 @@
     background-color: var(--color-surface-2);
     border-radius: var(--radius-1);
     color: color-mix(in srgb, var(--color-text), transparent 35%);
-    font-size: var(--font-size-0);
+    font-size: var(--font-size-1);
     padding: 0 var(--size-1-5);
   }
 
@@ -464,7 +464,7 @@
     border: 1px solid var(--color-border-1);
     border-radius: var(--radius-1);
     font-family: var(--font-family-mono);
-    font-size: var(--font-size-0);
+    font-size: var(--font-size-1);
     padding: 0 var(--size-1);
   }
 </style>

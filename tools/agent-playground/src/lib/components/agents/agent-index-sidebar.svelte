@@ -148,7 +148,7 @@
 
   .section-badge {
     color: color-mix(in srgb, var(--color-text), transparent 60%);
-    font-size: var(--font-size-0);
+    font-size: var(--font-size-1);
     font-variant-numeric: tabular-nums;
     margin-inline-start: auto;
   }
@@ -244,7 +244,7 @@
   .agent-impl {
     color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-family: var(--font-family-monospace);
-    font-size: var(--font-size-00);
+    font-size: var(--font-size-1);
   }
 
 </style>

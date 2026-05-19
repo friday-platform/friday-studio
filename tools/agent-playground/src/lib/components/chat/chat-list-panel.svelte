@@ -490,7 +490,7 @@
   .item-time {
     color: var(--text-faded);
     flex-shrink: 0;
-    font-size: var(--font-size-0);
+    font-size: var(--font-size-1);
     /* Fixed-width slot so the on-hover trash icon (same width, centered)
        swaps in over the same visual span without shifting. */
     inline-size: 24px;

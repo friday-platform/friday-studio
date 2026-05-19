@@ -108,6 +108,13 @@ export function useAnswerElicitation() {
       value: string;
       note?: string;
       answeredBy?: string;
+      /**
+       * env-write only — user-typed values (e.g. the real secret for a key
+       * the agent proposed as `""`). Carried in the answer payload so the
+       * value never enters chat history; the daemon merges it over the
+       * proposed vars before committing the write.
+       */
+      varsOverride?: Record<string, string>;
     }): Promise<Elicitation> => {
       const { id, ...body } = input;
       const res = await fetch(`/api/daemon/api/elicitations/${encodeURIComponent(id)}/answer`, {

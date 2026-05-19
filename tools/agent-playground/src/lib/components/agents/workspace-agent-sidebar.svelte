@@ -227,7 +227,7 @@
   .usage-job-label {
     color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-family: var(--font-family-monospace);
-    font-size: var(--font-size-0);
+    font-size: var(--font-size-1);
     font-weight: var(--font-weight-5);
     letter-spacing: var(--font-letterspacing-2);
     text-transform: uppercase;

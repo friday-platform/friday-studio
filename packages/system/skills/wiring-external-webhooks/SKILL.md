@@ -35,17 +35,28 @@ cloudflared, the upstream cannot reach it from the public internet,
 and recommending it is the original foot-gun that motivated this
 skill. If you cannot reach `/status` from your environment to fetch
 the real tunnel URL (run_code does not always have network access to
-localhost:9090), **STOP and ask the user to run the `/status` curl
+the local tunnel), **STOP and ask the user to run the `/status` curl
 themselves and paste the URL back** — do not synthesize a host or
 fall back to the `/api/workspaces/...` path.
 
 ## Get the tunnel URL in one call
 
+The local webhook-tunnel listens on whatever `$EXTERNAL_TUNNEL_URL`
+points at (the launcher / playground exports this; default is
+`https://localhost:9090` on bare-dev rigs). Always read it from the
+env — do not hardcode the port, it differs per rig:
+
 ```bash
-curl -sk https://localhost:9090/status | jq
+curl -sk "${EXTERNAL_TUNNEL_URL:-https://localhost:9090}/status" | jq
 # → { "url": "https://...trycloudflare.com",
 #     "providers": ["raw"], "pattern": "/hook/raw/{workspaceId}/{signalId}", ... }
 ```
+
+If that returns empty (exit 0 but no body), the port is wrong for
+this rig. Run `echo "$EXTERNAL_TUNNEL_URL"` to confirm what the
+launcher set, or `ps auxww | grep cloudflared` to read the `--url`
+flag the tunnel was started with — that's the actual local port.
+Do NOT silently move on; the URL is the whole point of this skill.
 
 `/status` is the single source of truth — it shows the current
 `trycloudflare` URL (rotates on tunnel restart) and confirms the

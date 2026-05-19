@@ -719,8 +719,8 @@ func autostartSelfRegister() error {
 		return nil
 	}
 	// Already initialized — staleness repair pass.
-	if isAutostartStale() {
-		log.Info("autostart entry stale; rewriting")
+	if stale, reason := isAutostartStale(); stale {
+		log.Info("autostart entry stale; rewriting", "reason", reason)
 		if err := enableAutostart(); err != nil {
 			return fmt.Errorf("enableAutostart (staleness): %w", err)
 		}

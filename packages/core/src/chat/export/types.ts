@@ -112,4 +112,17 @@ export type Segment =
       paths: string[];
       filenames: string[];
       mimeTypes: string[];
+    }
+  | {
+      /**
+       * Inline acknowledgement emitted when the user confirms an `env_set`
+       * elicitation. Carries the scope + the keys that were written so the
+       * chat can render a compact "Set N variable(s)" pill instead of a
+       * synthetic "You: Set FOO" bubble. The agent still receives the
+       * structured signal via `data-env-applied`'s `convertDataPart`
+       * conversion — this segment is UI-only.
+       */
+      type: "env-applied";
+      scope: "workspace" | "global";
+      keys: string[];
     };

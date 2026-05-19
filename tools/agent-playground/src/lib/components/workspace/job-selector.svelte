@@ -88,7 +88,7 @@
     background-color: color-mix(in srgb, var(--color-text), transparent 85%);
     border-radius: var(--radius-round);
     color: color-mix(in srgb, var(--color-text), transparent 30%);
-    font-size: var(--font-size-0);
+    font-size: var(--font-size-1);
     font-weight: var(--font-weight-5);
     min-inline-size: 18px;
     padding: 0 var(--size-1);

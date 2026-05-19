@@ -185,18 +185,18 @@
   .field-type {
     color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-family: var(--font-family-monospace);
-    font-size: var(--font-size-0);
+    font-size: var(--font-size-1);
   }
 
   .field-required {
     color: var(--color-warning);
-    font-size: var(--font-size-0);
+    font-size: var(--font-size-1);
     font-weight: var(--font-weight-5);
   }
 
   .field-desc {
     color: color-mix(in srgb, var(--color-text), transparent 25%);
-    font-size: var(--font-size-0);
+    font-size: var(--font-size-1);
     font-style: italic;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -213,12 +213,12 @@
 
   .triggers-label {
     color: color-mix(in srgb, var(--color-text), transparent 25%);
-    font-size: var(--font-size-0);
+    font-size: var(--font-size-1);
   }
 
   .job-name {
     color: color-mix(in srgb, var(--color-text), transparent 20%);
     font-family: var(--font-family-monospace);
-    font-size: var(--font-size-0);
+    font-size: var(--font-size-1);
   }
 </style>

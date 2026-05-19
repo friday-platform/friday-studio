@@ -12,4 +12,4 @@
   import ActivityView from "./(components)/activity-view.svelte";
 </script>
 
-<ActivityView workspaceId={null} title="Activity" />
+<ActivityView workspaceId={null} title="Activity" subtitle="Signal activity for jobs and agents" />

@@ -11,17 +11,26 @@
   import { deriveAgentJobUsage, type AgentStepRef } from "@atlas/config/agent-job-usage";
   import { deriveDataContracts, type DataContract } from "@atlas/config/data-contracts";
   import { deriveWorkspaceAgents, type WorkspaceAgent } from "@atlas/config/workspace-agents";
-  import { Icons } from "@atlas/ui";
+  import { Icons, PageLayout } from "@atlas/ui";
   import { createQuery } from "@tanstack/svelte-query";
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
   import AgentIoSchemas from "$lib/components/agents/agent-io-schemas.svelte";
-  import WorkspaceBreadcrumb from "$lib/components/workspace/workspace-breadcrumb.svelte";
   import InlineBadge from "$lib/components/shared/inline-badge.svelte";
   import { integrationQueries, workspaceQueries, type IntegrationStatus } from "$lib/queries";
 
   const workspaceId = $derived(page.params.workspaceId ?? null);
   const configQuery = createQuery(() => workspaceQueries.config(workspaceId));
+
+  const workspaceName = $derived(configQuery.data?.config?.workspace?.name ?? workspaceId ?? "");
+  const crumbs = $derived(
+    workspaceId
+      ? [
+          { label: workspaceName, href: `/platform/${workspaceId}` },
+          { label: "Agents" },
+        ]
+      : [{ label: "Agents" }],
+  );
 
   const workspaceAgents = $derived.by(() => {
     const data = configQuery.data;
@@ -186,19 +195,15 @@
   }
 </script>
 
-<div class="agents-page">
-  {#if workspaceId}
-    <WorkspaceBreadcrumb {workspaceId} />
-  {/if}
+<PageLayout.Root>
+  <PageLayout.Breadcrumbs {crumbs} />
+  <PageLayout.Body>
+    <PageLayout.Content>
+      <p class="page-description">
+        Agents handle individual steps in your workspace jobs. Each one runs a specific task.
+      </p>
 
-  <header class="page-header">
-    <h1>Agents</h1>
-    <p class="page-subtitle">
-      Agents handle individual steps in your workspace jobs. Each one runs a specific task.
-    </p>
-  </header>
-
-  {#if configQuery.isLoading}
+      {#if configQuery.isLoading}
     <div class="empty-state">
       <p>Loading agents...</p>
     </div>
@@ -352,31 +357,16 @@
       {/each}
     </div>
   {/if}
-</div>
+    </PageLayout.Content>
+  </PageLayout.Body>
+</PageLayout.Root>
 
 <style>
-  .agents-page {
-    display: flex;
-    flex-direction: column;
-    gap: var(--size-6);
-    padding: var(--size-8) var(--size-10);
-  }
-
-  .page-header {
-    display: flex;
-    flex-direction: column;
-    gap: var(--size-1);
-
-    h1 {
-      font-size: var(--font-size-7);
-      font-weight: var(--font-weight-6);
-    }
-  }
-
-  .page-subtitle {
+  .page-description {
     color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-3);
     line-height: 1.5;
+    margin: 0 0 var(--size-6);
     max-inline-size: 50ch;
   }
 
@@ -650,7 +640,7 @@
     border-radius: var(--radius-1);
     color: var(--color-text);
     font-family: var(--font-family-monospace);
-    font-size: var(--font-size-0);
+    font-size: var(--font-size-1);
     font-weight: var(--font-weight-5);
     padding: var(--size-0-5) var(--size-1);
   }

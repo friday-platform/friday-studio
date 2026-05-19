@@ -5,8 +5,10 @@
   import { browser } from "$app/environment";
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
+  import "@atlas/ui/reset.css";
   import "@atlas/ui/tokens.css";
   import "@atlas/ui/colors.css";
+  import "@atlas/ui/utilities.css";
   import "../app.css";
   import { getOnboardingState } from "$lib/api/me.ts";
   import favicon from "$lib/assets/favicon.png";

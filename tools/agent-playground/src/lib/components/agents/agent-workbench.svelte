@@ -625,7 +625,7 @@
     background: var(--color-surface-2);
     border-radius: var(--radius-1);
     font-family: var(--font-family-mono, monospace);
-    font-size: var(--font-size-0);
+    font-size: var(--font-size-1);
     padding: 0 var(--size-1);
   }
 
