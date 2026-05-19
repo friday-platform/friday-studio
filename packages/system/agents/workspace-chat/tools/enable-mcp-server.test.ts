@@ -104,6 +104,46 @@ describe("createEnableMcpServerTool", () => {
     expect(result).toEqual({ success: false, error: 'Server "github" not found in catalog.' });
   });
 
+  // The server-side handler at apps/atlasd/routes/workspaces/mcp.ts:282 returns
+  // `{ success: false, error: "needs_manual_config", serverId }` with NO `message`
+  // field. Reading only `errorBody.message` collapses it to the generic
+  // "Conflict enabling MCP server." string — exactly the misleading wording that
+  // sent Friday hunting for a credential-binding fix during the Notion incident.
+  it("returns server's structured error code on 409 when no message field", async () => {
+    setupMock("ws-1");
+    mockPut.mockResolvedValueOnce({
+      status: 409,
+      json: () =>
+        Promise.resolve({ success: false, error: "needs_manual_config", serverId: "com-notion-mcp" }),
+    });
+
+    const tools = createEnableMcpServerTool("ws-1", logger);
+    const result = await tools.enable_mcp_server!.execute!(
+      { serverId: "com-notion-mcp" },
+      TOOL_CALL_OPTS,
+    );
+
+    expect(result).toEqual({ success: false, error: "needs_manual_config" });
+  });
+
+  it("prefers server's message field on 409 when both are present", async () => {
+    setupMock("ws-1");
+    mockPut.mockResolvedValueOnce({
+      status: 409,
+      json: () =>
+        Promise.resolve({
+          success: false,
+          error: "conflict",
+          message: "Operation conflicts with existing entity",
+        }),
+    });
+
+    const tools = createEnableMcpServerTool("ws-1", logger);
+    const result = await tools.enable_mcp_server!.execute!({ serverId: "github" }, TOOL_CALL_OPTS);
+
+    expect(result).toEqual({ success: false, error: "Operation conflicts with existing entity" });
+  });
+
   it("returns error on 422 blueprint", async () => {
     setupMock("ws-1");
     mockPut.mockResolvedValueOnce({
