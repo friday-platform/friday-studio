@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -82,6 +83,44 @@ func TestSupervisedProcessesPinSet(t *testing.T) {
 		if got[i] != want[i] {
 			t.Errorf("supervisedProcesses[%d] = %q, want %q", i, got[i], want[i])
 		}
+	}
+}
+
+// TestFridayLivenessListener_DefaultPort pins the friday daemon's
+// dedicated liveness listener wiring when no port override is set.
+// The launcher probes `<port>+1` (here 8081) rather than the main
+// `/health` route on the agent-bearing listener, because under MCP
+// fan-out the main route's microtask slice can starve and trip the
+// readiness watchdog into restarting the whole daemon. atlas-cli
+// must receive `--health-port` so the supervised binary binds the
+// same port the launcher polls — without this flag the daemon would
+// fall back to its own `mainPort + 1` default, which matches today
+// but would silently drift if the daemon's default port ever moved.
+// See AtlasDaemonOptions.healthPort in apps/atlasd/src/atlas-daemon.ts.
+func TestFridayLivenessListener_DefaultPort(t *testing.T) {
+	t.Setenv("FRIDAY_PORT_FRIDAY", "")
+	specs := supervisedProcesses("/tmp/dummy-bin")
+	var friday *processSpec
+	for i := range specs {
+		if specs[i].name == "friday" {
+			friday = &specs[i]
+			break
+		}
+	}
+	if friday == nil {
+		t.Fatal("friday not found in supervisedProcesses")
+	}
+	if friday.healthPort != "8081" {
+		t.Errorf("friday healthPort = %q, want %q (default 8080 + 1)",
+			friday.healthPort, "8081")
+	}
+	if friday.healthPath != "/" {
+		t.Errorf("friday healthPath = %q, want %q (dedicated listener responds to any path)",
+			friday.healthPath, "/")
+	}
+	joined := strings.Join(friday.args, " ")
+	if !strings.Contains(joined, "--health-port 8081") {
+		t.Errorf("friday args missing %q\ngot: %s", "--health-port 8081", joined)
 	}
 }
 

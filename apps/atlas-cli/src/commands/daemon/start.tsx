@@ -64,6 +64,7 @@ function buildDaemonArgs(argv: StartArgs): string[] {
     "start",
     "--port",
     (argv.port || 8080).toString(),
+    ...(argv.healthPort !== undefined ? ["--health-port", argv.healthPort.toString()] : []),
     "--hostname",
     argv.hostname || "127.0.0.1",
     ...(argv.logLevel ? ["--log-level", argv.logLevel] : []),
@@ -214,6 +215,7 @@ async function reExecWithOtel(atlasKey: string): Promise<never> {
 
 interface StartArgs {
   port?: number;
+  healthPort?: number;
   hostname?: string;
   detached?: boolean;
   logLevel?: string;
@@ -237,6 +239,10 @@ export function builder(y: YargsInstance) {
       alias: "p",
       describe: "Port to run the daemon on",
       default: 8080,
+    })
+    .option("health-port", {
+      type: "number",
+      describe: "Dedicated liveness listener port (defaults to <port>+1). Set to 0 to disable.",
     })
     .option("hostname", { type: "string", describe: "Hostname to bind to", default: "127.0.0.1" })
     .option("detached", {
@@ -628,12 +634,17 @@ async function startForeground(argv: StartArgs): Promise<void> {
     }
   }
   const corsOrigin = tlsCert ? "https://127.0.0.1:1420" : "http://127.0.0.1:1420";
+  // Default the liveness listener to <port>+1. `--health-port 0` opts out
+  // (single-listener mode, pre-fix behavior). Any other value overrides.
+  const mainPort = argv.port ?? 8080;
+  const healthPort = argv.healthPort === undefined ? mainPort + 1 : argv.healthPort;
   const daemon = new AtlasDaemon({
     port: argv.port,
     hostname: argv.hostname,
     cors: [corsOrigin],
     tlsCert,
     tlsKey,
+    healthPort: healthPort > 0 ? healthPort : undefined,
   });
 
   // Catch unhandled promise rejections so a single async error

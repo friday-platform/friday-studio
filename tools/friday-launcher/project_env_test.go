@@ -260,12 +260,20 @@ func TestSupervisedProcesses_PortOverridesPropagate(t *testing.T) {
 	cases := []struct {
 		name string
 		// One of args / env must contain the wantSubstring.
-		check    string
-		wantArg  string // exact-arg expectation: presence of the literal token in args
+		check string
+		// wantArgs lists literal "<flag> <value>" substrings the joined
+		// args string must contain. Used for friday (which carries both
+		// --port and --health-port) so the test fails if either flag
+		// stops being propagated.
+		wantArgs []string
 		wantEnv  string // KEY=VAL expectation: presence in env
 		wantPort string // healthPort
 	}{
-		{name: "friday", check: "args", wantArg: "--port", wantPort: "18080"},
+		// friday's liveness listener moves with the main port. The launcher
+		// probes <port>+1 (the dedicated, middleware-bypassing socket), and
+		// passes both --port (main) and --health-port (liveness) to the CLI
+		// so the supervised daemon binds what the probe expects.
+		{name: "friday", check: "args", wantArgs: []string{"--port 18080", "--health-port 18081"}, wantPort: "18081"},
 		{name: "link", check: "env", wantEnv: "LINK_PORT=13100", wantPort: "13100"},
 		{name: "webhook-tunnel", check: "env", wantEnv: "TUNNEL_PORT=19090", wantPort: "19090"},
 		{name: "playground", check: "env", wantEnv: "PLAYGROUND_PORT=15200", wantPort: "15200"},
@@ -290,13 +298,12 @@ func TestSupervisedProcesses_PortOverridesPropagate(t *testing.T) {
 
 		switch tc.check {
 		case "args":
-			// For friday, both the flag and the value must appear, and
-			// the value must immediately follow the flag.
 			joined := strings.Join(found.args, " ")
-			want := tc.wantArg + " " + tc.wantPort
-			if !strings.Contains(joined, want) {
-				t.Errorf("service %q: args missing %q\ngot: %s",
-					tc.name, want, joined)
+			for _, want := range tc.wantArgs {
+				if !strings.Contains(joined, want) {
+					t.Errorf("service %q: args missing %q\ngot: %s",
+						tc.name, want, joined)
+				}
 			}
 		case "env":
 			if !slices.Contains(found.env, tc.wantEnv) {

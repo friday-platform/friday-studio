@@ -162,6 +162,13 @@ export interface AtlasDaemonOptions {
   // from FRIDAY_TLS_CERT / FRIDAY_TLS_KEY paths.
   tlsCert?: string;
   tlsKey?: string;
+  // Dedicated liveness listener port. When set (and != port), a second
+  // `Deno.serve` binds here with a static "ok" handler — no Hono, no
+  // middleware, no shared state. The launcher's readiness probe targets
+  // this socket so a single misbehaving MCP server or a saturated agent
+  // path on the main listener can't trip the watchdog and force a
+  // restart while the rest of the daemon is still healthy.
+  healthPort?: number;
 }
 
 const INTERNAL_SIGNAL_BYPASS_TOKEN_ENV = "FRIDAY_INTERNAL_SIGNAL_BYPASS_TOKEN";
@@ -291,6 +298,13 @@ export class AtlasDaemon {
   // step ceiling. Wired into both Deno.serve sites; aborted from the http
   // drain step below.
   private serverAbortController = new AbortController();
+  // Dedicated liveness listener (see AtlasDaemonOptions.healthPort). Bound
+  // on its own socket with a handler that bypasses Hono, middleware, and
+  // every shared-state lookup. Drained in phase 1 alongside the main HTTP
+  // server but with its own abort controller so an overrun on the main
+  // drain doesn't reach back through this socket.
+  private healthServer: Deno.HttpServer | null = null;
+  private healthServerAbortController = new AbortController();
   private signalHandlers: Array<{ signal: Deno.Signal; handler: () => void }> = [];
   private isInitialized = false;
   private platformModels: PlatformModels | null = null;
@@ -2367,6 +2381,8 @@ export class AtlasDaemon {
       this.app.fetch,
     );
 
+    this.startHealthListener(hostname, tls, scheme);
+
     // Start the Discord Gateway service AFTER the HTTP server is listening —
     // its forwardUrl points at ourselves, so the route target must exist first.
     this.maybeStartDiscordGateway().catch((error) => {
@@ -2374,6 +2390,59 @@ export class AtlasDaemon {
     });
 
     await this.server.finished;
+  }
+
+  /**
+   * Bind the dedicated liveness listener on `options.healthPort`, if set.
+   *
+   * The handler returns a static `Response("ok")` for every request — no
+   * Hono routing, no middleware, no `c.get("app")` lookup, no async work.
+   * The point is to give the launcher's readiness probe a socket that
+   * stays answerable even when the main listener's event-loop slice is
+   * starved by MCP fan-out, NATS-request backpressure, or agent streaming.
+   *
+   * The two listeners share one V8 isolate so they aren't truly isolated,
+   * but Deno's Tokio-side accept loop runs them as independent tasks and
+   * the static-Response fast path is the lightest possible JS work — it
+   * wins the microtask race that a Hono-routed handler would lose.
+   *
+   * No-op when `healthPort` is unset or equal to `port` — the main
+   * `/health` route still serves general clients (atlas-cli, the UI).
+   */
+  private startHealthListener(
+    hostname: string,
+    tls: { cert: string; key: string } | null,
+    scheme: string,
+  ): void {
+    const healthPort = this.options.healthPort;
+    if (!healthPort || healthPort === this.options.port) return;
+
+    try {
+      this.healthServer = Deno.serve(
+        {
+          port: healthPort,
+          hostname,
+          signal: this.healthServerAbortController.signal,
+          ...(tls ?? {}),
+          onListen: ({ hostname, port }) => {
+            logger.info("Liveness listener running", { hostname, port, scheme });
+          },
+          onError: (error) => {
+            logger.warn("Liveness listener handler error", { error: String(error) });
+            return new Response("err", { status: 500 });
+          },
+        },
+        () => new Response("ok"),
+      );
+    } catch (error) {
+      // Bind failure (port in use, permission) is non-fatal — the main
+      // /health route still works, the launcher just loses the resilient
+      // path. Log loudly so an operator can fix the port collision.
+      logger.error("Liveness listener bind failed", {
+        healthPort,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   async startNonBlocking(): Promise<{ finished: Promise<void> }> {
@@ -2411,6 +2480,8 @@ export class AtlasDaemon {
     );
 
     await readyPromise;
+
+    this.startHealthListener(hostname, tls, scheme);
 
     // Start the Discord Gateway service AFTER the HTTP server is listening —
     // its forwardUrl points at ourselves, so the route target must exist first.
@@ -2575,6 +2646,20 @@ export class AtlasDaemon {
         },
         3000,
       ),
+      withShutdownTimeout(
+        "liveness listener drain",
+        (signal) => {
+          signal.addEventListener(
+            "abort",
+            () => {
+              this.healthServerAbortController.abort(signal.reason);
+            },
+            { once: true },
+          );
+          return this.healthServer?.shutdown() ?? Promise.resolve();
+        },
+        1000,
+      ),
       withShutdownTimeout("discord gateway", this.discordGatewayService?.stop(), 1500),
       // Stop the SIGNALS forwarder first so no new envelopes land on
       // CASCADES while the cascade consumer is draining.
@@ -2591,6 +2676,7 @@ export class AtlasDaemon {
       withShutdownTimeout("tool workers", Promise.all(this.toolWorkers.map((w) => w.stop())), 1500),
     ]);
     this.server = null;
+    this.healthServer = null;
     this.discordGatewayService = null;
     this.signalConsumer = null;
     this.cascadeConsumer = null;
