@@ -2612,10 +2612,7 @@ describe("MCP Registry Routes", () => {
       // prewarm, mockCreateMCPTools' returned promise would have already
       // rejected and `resolvePrewarm` would be useless.
       expect(resolvePrewarm).toBeDefined();
-      resolvePrewarm?.({
-        tools: { "warmed-tool": { description: "warmed" } },
-        disconnected: [],
-      });
+      resolvePrewarm?.({ tools: { "warmed-tool": { description: "warmed" } }, disconnected: [] });
       await _flushPrewarmsForTest();
       expect(mockCreateMCPTools.mock.calls.length).toBe(1);
     });

@@ -2,10 +2,7 @@ import type { MCPServerConfig } from "@atlas/agent-sdk";
 import { createLogger } from "@atlas/logger";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-type MockTool = {
-  description?: string;
-  inputSchema?: { jsonSchema?: Record<string, unknown> };
-};
+type MockTool = { description?: string; inputSchema?: { jsonSchema?: Record<string, unknown> } };
 type MockDisconnected = { serverId: string; kind: string; message: string };
 
 const mockCreateMCPTools =
@@ -27,9 +24,7 @@ vi.mock("@atlas/mcp", () => ({
 
 const { probeAndExtract } = await import("./mcp-tool-cache.ts");
 
-const config: MCPServerConfig = {
-  transport: { type: "stdio", command: "echo", args: ["hello"] },
-};
+const config: MCPServerConfig = { transport: { type: "stdio", command: "echo", args: ["hello"] } };
 const logger = createLogger({ test: "mcp-tool-cache" });
 
 beforeEach(() => {

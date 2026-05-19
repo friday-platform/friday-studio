@@ -158,9 +158,7 @@ export async function probeAndExtract(
 ): Promise<CachedTool[]> {
   const timeoutSignal = AbortSignal.timeout(timeoutMs);
   const composedSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
-  const result = await createMCPTools({ [serverId]: config }, logger, {
-    signal: composedSignal,
-  });
+  const result = await createMCPTools({ [serverId]: config }, logger, { signal: composedSignal });
   // createMCPTools does not throw on missing/expired credentials — it routes
   // the server into `disconnected` with an empty tools map. For a single-
   // server probe, any disconnected entry means *this* probe failed.
