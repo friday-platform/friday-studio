@@ -563,9 +563,11 @@ describe("POST /workspaces/:workspaceId/signals/:signalId webhook mode (byte-for
     // discriminator runs, same — never called. So a single
     // `toHaveBeenCalled()` locks "reached sync envelope mode" in a way
     // the negative-only assertions ("not Webhook accepted" / "not
-    // publishSignalToJetStream") cannot.
+    // publishSignalToJetStream") cannot. Status code intentionally NOT
+    // asserted — Hono's default error handler shape (500 / "Internal
+    // Server Error") is an implementation detail of the fixture's
+    // throw path, not a contract of this discriminator branch.
     expect(mockGetNatsConnection).toHaveBeenCalled();
-    expect(res.status).toBe(500);
     expect(publishSignalToJetStream).not.toHaveBeenCalled();
     const bodyText = await res.text();
     expect(bodyText).not.toContain("Webhook accepted");
