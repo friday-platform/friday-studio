@@ -205,7 +205,7 @@ cmd_publish() {
   fi
 
   echo "→ Run $run_id:"
-  gh run view "$run_id" --json displayTitle,headBranch,createdAt,status,conclusion \
+  GH_PAGER=cat gh run view "$run_id" --json displayTitle,headBranch,createdAt,status,conclusion \
     --template '  Title  : {{ .displayTitle }}
   Branch : {{ .headBranch }}
   When   : {{ .createdAt }}
