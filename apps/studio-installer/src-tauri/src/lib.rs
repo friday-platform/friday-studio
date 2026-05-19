@@ -3,6 +3,10 @@
 pub mod commands;
 // Shared helpers used by multiple commands. Public for integration tests.
 pub mod friday_home;
+// Test-only shared helpers (process-wide locks for env-mutating tests).
+// `cfg(test)` so it doesn't ship in release binaries.
+#[cfg(test)]
+pub(crate) mod test_support;
 
 use commands::{
     check_running::check_running_processes,

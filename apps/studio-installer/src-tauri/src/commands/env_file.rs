@@ -1215,18 +1215,8 @@ mod friday_yml_tests {
 #[cfg(test)]
 mod apply_platform_vars_tests {
     use super::*;
-    use std::sync::{Mutex, OnceLock};
+    use crate::test_support::env_lock;
     use tempfile::TempDir;
-
-    // Serialize tests that mutate FRIDAY_LAUNCHER_HOME. Cargo runs
-    // tests in parallel by default and two of these would race the
-    // shared env var.
-    fn env_lock() -> std::sync::MutexGuard<'static, ()> {
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(()))
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-    }
 
     fn build_existing_keys(lines: &[(Option<String>, String)]) -> HashMap<String, usize> {
         lines
