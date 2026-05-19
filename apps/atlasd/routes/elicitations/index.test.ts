@@ -136,7 +136,18 @@ function makeElicitation(overrides: Record<string, unknown> = {}) {
 }
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  // `vi.clearAllMocks()` resets call history but does NOT drain
+  // `mockResolvedValueOnce` queues. A leftover queued stub from a prior
+  // test would silently feed the next one. Explicitly `mockReset()` each
+  // hoisted mock fn so the queues come back empty.
+  mockElicitationStorage.create.mockReset();
+  mockElicitationStorage.get.mockReset();
+  mockElicitationStorage.list.mockReset();
+  mockElicitationStorage.answer.mockReset();
+  mockElicitationStorage.decline.mockReset();
+  mockToolAccessGrants.grantAlways.mockReset();
+  mockCommitGlobalEnvWrite.mockReset();
+  mockSetEnvFileVar.mockReset();
   mockToolAccessGrants.grantAlways.mockResolvedValue(
     success({
       workspaceId: "ws_1",
@@ -358,6 +369,7 @@ describe("POST /:id/answer", () => {
     test.each([
       "answered",
       "expired",
+      "declined",
     ] as const)("%s env-write confirm is rejected before committing", async (status) => {
       const terminal = envWriteElicitation(
         { scope: "workspace", vars: { API_KEY: "" } },
@@ -448,6 +460,10 @@ describe("POST /:id/answer", () => {
       // confirmation card sends the user-typed real value via varsOverride.
       // The real secret never appears in pendingTool.args (chat history),
       // only in the answer payload and the on-disk .env write.
+      // Secret contains a `"` so the leak-detection check below has to
+      // account for JSON escaping — a naive substring search on the raw
+      // value would silently pass even if the secret were serialized.
+      const secret = 'real-"secret"-from-card';
       const pending = envWriteElicitation({
         scope: "workspace",
         vars: { BITBUCKET_WEBHOOK_SECRET: "", LOG_DIR: "/var/log" },
@@ -462,7 +478,7 @@ describe("POST /:id/answer", () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           value: "confirm",
-          varsOverride: { BITBUCKET_WEBHOOK_SECRET: "real-secret-from-card" },
+          varsOverride: { BITBUCKET_WEBHOOK_SECRET: secret },
         }),
       });
 
@@ -470,7 +486,7 @@ describe("POST /:id/answer", () => {
       expect(mockSetEnvFileVar).toHaveBeenCalledWith(
         "/tmp/ws_1/.env",
         "BITBUCKET_WEBHOOK_SECRET",
-        "real-secret-from-card",
+        secret,
       );
       // Non-overridden key keeps its proposed value.
       expect(mockSetEnvFileVar).toHaveBeenCalledWith("/tmp/ws_1/.env", "LOG_DIR", "/var/log");
@@ -479,7 +495,13 @@ describe("POST /:id/answer", () => {
       };
       expect(answerInput.answer).toEqual(expect.objectContaining({ value: "confirm" }));
       expect(answerInput.answer).not.toHaveProperty("varsOverride");
-      expect(JSON.stringify(answerInput.answer)).not.toContain("real-secret-from-card");
+      // Defense-in-depth: if a regression slipped the secret onto a
+      // different field of the answer envelope, it would surface here in
+      // JSON-escaped form (`real-\"secret\"-from-card`). Asserting on
+      // that form keeps the check honest regardless of how the value
+      // gets serialized.
+      const serialized = JSON.stringify(answerInput.answer);
+      expect(serialized).not.toContain(JSON.stringify(secret).slice(1, -1));
     });
 
     test("varsOverride cannot inject a key not in the proposal", async () => {

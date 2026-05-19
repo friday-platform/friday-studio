@@ -341,6 +341,17 @@ elicitationApp.post(
       // Note: `userValues` on the confirmation card is in-memory only — on
       // commit failure + page refresh, the user has to retype any secret
       // they entered. Acceptable because commit failure is rare.
+      //
+      // Small TOCTOU window: the `status !== "pending"` check below is a
+      // pre-check; the authoritative CAS happens inside
+      // `ElicitationStorage.answer` → `transitionPending`. Two concurrent
+      // `/answer` requests for the same id can both pass this gate and
+      // both call `commitEnvWriteElicitation` before the CAS resolves —
+      // exactly one envelope update wins, but the loser's `setEnvFileVar`
+      // may have run second and overwritten disk. Needs network retries
+      // or a double-submit to manifest; the resulting state is
+      // "answered=A, .env=B" until the next write. Not worth a distributed
+      // lock today — the cost-to-likelihood ratio favors documenting it.
       if (got.data.kind === "env-write" && body.value === "confirm") {
         if (got.data.status !== "pending") {
           return c.json(
