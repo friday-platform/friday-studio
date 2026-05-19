@@ -239,18 +239,35 @@ function rejectUnauthorizedSignalBypass() {
   return { error: "bypassConcurrency is internal to workspace-chat job tools" };
 }
 
+const signalBodySchema = z.object({
+  payload: z.record(z.string(), z.unknown()).optional(),
+  streamId: z.string().optional(),
+  skipStates: z.array(z.string()).optional(),
+  /**
+   * Internal: workspace-chat job tools set this so interactive chat-spawned
+   * jobs bypass the JetStream cascade concurrency gate. User-facing HTTP
+   * triggers still go through the per-signal skip/queue/concurrent/replace
+   * policy.
+   */
+  bypassConcurrency: z.boolean().optional(),
+  /**
+   * Parent session id, when this signal is being fired from inside another
+   * session (chat-spawned-job, signal-trigger-from-FSM). Forwarded to the
+   * runtime so the spawned session's `SessionSummary.parentSessionId` is
+   * populated. Phase 11 of the fan-out-without-fan-in plan — provenance
+   * data layer for crystallization.
+   */
+  parentSessionId: z.string().optional(),
+});
+
 /**
- * Envelope keys recognized on a signal-trigger request body. Anything else at
- * the top level is almost certainly a bare (un-enveloped) payload — see
- * {@link detectUnwrappedSignalBody}.
+ * Envelope keys recognized on a signal-trigger request body. Derived from
+ * `signalBodySchema.shape` so there's a single source of truth — adding a
+ * field to the schema automatically extends the discriminator, no lock-step
+ * edit. Anything not in this set at the top level is almost certainly a
+ * bare (un-enveloped) payload — see {@link detectUnwrappedSignalBody}.
  */
-const SIGNAL_ENVELOPE_KEYS = new Set([
-  "payload",
-  "streamId",
-  "skipStates",
-  "bypassConcurrency",
-  "parentSessionId",
-]);
+const SIGNAL_ENVELOPE_KEYS: ReadonlySet<string> = new Set(Object.keys(signalBodySchema.shape));
 
 /**
  * Catch the most common signal-trigger mistake: POSTing the bare payload
@@ -282,27 +299,6 @@ function detectUnwrappedSignalBody(rawBody: unknown): string | null {
     `wrap them as {"payload": {${strayKeys.map((k) => `"${k}": ...`).join(", ")}}}.`
   );
 }
-
-const signalBodySchema = z.object({
-  payload: z.record(z.string(), z.unknown()).optional(),
-  streamId: z.string().optional(),
-  skipStates: z.array(z.string()).optional(),
-  /**
-   * Internal: workspace-chat job tools set this so interactive chat-spawned
-   * jobs bypass the JetStream cascade concurrency gate. User-facing HTTP
-   * triggers still go through the per-signal skip/queue/concurrent/replace
-   * policy.
-   */
-  bypassConcurrency: z.boolean().optional(),
-  /**
-   * Parent session id, when this signal is being fired from inside another
-   * session (chat-spawned-job, signal-trigger-from-FSM). Forwarded to the
-   * runtime so the spawned session's `SessionSummary.parentSessionId` is
-   * populated. Phase 11 of the fan-out-without-fan-in plan — provenance
-   * data layer for crystallization.
-   */
-  parentSessionId: z.string().optional(),
-});
 
 export * from "./schemas.ts";
 
@@ -2136,6 +2132,14 @@ const workspacesRoutes = daemonFactory
       const isWebhook = rawBytes.length > 0 && !allKeysAreEnvelope && !isEmptyObject;
 
       if (isWebhook) {
+        // RFC 7230 §6.1 hop-by-hop headers + `host`/`content-length`
+        // (auto-set per request hop). Deliberately does NOT include
+        // `authorization` or `cookie`: webhook providers commonly carry
+        // their signature material in `authorization`-shaped headers
+        // (Stripe-Signature, Slack timestamp+sig, GitHub variants) and
+        // agents need them intact to verify the upstream — stripping
+        // them would silently break HMAC. Agents must not log raw
+        // headers; that's the contract that keeps this safe.
         const HOP_BY_HOP = new Set([
           "host",
           "connection",
