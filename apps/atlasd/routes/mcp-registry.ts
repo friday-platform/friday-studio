@@ -544,8 +544,7 @@ export const mcpRegistryRouter = daemonFactory
       upstreamEntry.server.packages?.some((p) => (p.environmentVariables?.length ?? 0) > 0) ??
       false;
     const hasCuratedProvider = Boolean(getAnnotation(upstreamEntry.server.name)?.providerId);
-    const needsDoctor =
-      !hasDeclaredEnvs && !translateResult.linkProvider && !hasCuratedProvider;
+    const needsDoctor = !hasDeclaredEnvs && !translateResult.linkProvider && !hasCuratedProvider;
 
     if (!needsDoctor) {
       // Fast path — no LLM call. Fetch the README synchronously, persist ready.

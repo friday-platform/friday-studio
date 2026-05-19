@@ -114,7 +114,11 @@ describe("createEnableMcpServerTool", () => {
     mockPut.mockResolvedValueOnce({
       status: 409,
       json: () =>
-        Promise.resolve({ success: false, error: "needs_manual_config", serverId: "com-notion-mcp" }),
+        Promise.resolve({
+          success: false,
+          error: "needs_manual_config",
+          serverId: "com-notion-mcp",
+        }),
     });
 
     const tools = createEnableMcpServerTool("ws-1", logger);
