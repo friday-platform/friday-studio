@@ -2,9 +2,6 @@ package main
 
 import (
 	"bytes"
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -13,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/friday-platform/friday-studio/tools/webhook-tunnel/forwarder"
-	"github.com/friday-platform/friday-studio/tools/webhook-tunnel/provider"
 )
 
 // setupTestServer starts the same routes main() does, with NO_TUNNEL=true
@@ -21,13 +17,9 @@ import (
 func setupTestServer(t *testing.T, atlasdURL string) string {
 	t.Helper()
 	cfg = &Config{
-		AtlasdURL:     atlasdURL,
-		WebhookSecret: "test-secret",
-		Port:          0,
-		NoTunnel:      true,
-	}
-	if err := provider.Init(); err != nil {
-		t.Fatalf("provider init: %v", err)
+		AtlasdURL: atlasdURL,
+		Port:      0,
+		NoTunnel:  true,
 	}
 	f, err := forwarder.New(atlasdURL, "")
 	if err != nil {
@@ -79,96 +71,191 @@ func TestStatusEndpointHasAllSevenFields(t *testing.T) {
 	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	// Locked contract: these 8 keys MUST be present (matches TS).
-	want := []string{"url", "secret", "providers", "pattern", "active", "tunnelAlive", "restartCount", "lastProbeAt"}
+	// Locked contract: these keys MUST be present.
+	want := []string{"url", "providers", "pattern", "active", "tunnelAlive", "restartCount", "lastProbeAt"}
 	for _, k := range want {
 		if _, ok := got[k]; !ok {
 			t.Errorf("missing /status field %q in %v", k, got)
 		}
 	}
-	// Spot-check types.
-	if got["pattern"] != "/hook/{provider}/{workspaceId}/{signalId}" {
+	if got["pattern"] != "/hook/raw/{workspaceId}/{signalId}" {
 		t.Errorf("pattern mismatch: %v", got["pattern"])
 	}
 	if _, ok := got["providers"].([]any); !ok {
 		t.Errorf("providers should be array, got %T", got["providers"])
 	}
-	if got["secret"] != "test-secret" {
-		t.Errorf("secret mismatch: %v", got["secret"])
+	// `secret` is no longer part of the contract — the tunnel does no HMAC.
+	if _, ok := got["secret"]; ok {
+		t.Errorf("secret should not appear in /status (tunnel no longer holds an HMAC secret)")
 	}
 }
 
-func TestHookValidSignature(t *testing.T) {
+// TestHookForwardsByteForByte locks the load-bearing tunnel property:
+// the request that arrives on /hook/raw/{ws}/{sig} reaches atlasd with
+// body bytes and headers preserved verbatim — only the URL host + path
+// are rewritten. This is what makes downstream HMAC verification work.
+func TestHookForwardsByteForByte(t *testing.T) {
+	var (
+		seenPath string
+		seenBody []byte
+		seenSig  string
+		seenEv   string
+		seenCT   string
+	)
 	atlasd := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/workspaces/ws-1/signals/sig-1" {
-			t.Errorf("atlasd path: %s", r.URL.Path)
-		}
-		_, _ = w.Write([]byte(`{"sessionId":"sess-99"}`))
+		seenPath = r.URL.Path
+		seenBody, _ = io.ReadAll(r.Body)
+		seenSig = r.Header.Get("X-Hub-Signature-256")
+		seenEv = r.Header.Get("X-GitHub-Event")
+		seenCT = r.Header.Get("Content-Type")
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(`{"status":"accepted","correlationId":"corr-1"}`))
 	}))
 	defer atlasd.Close()
 	base := setupTestServer(t, atlasd.URL)
 
-	body := []byte(`{"action":"opened","pull_request":{"html_url":"https://x/y"}}`)
-	mac := hmac.New(sha256.New, []byte("test-secret"))
-	mac.Write(body)
-	sig := "sha256=" + hex.EncodeToString(mac.Sum(nil))
-
+	// Realistic GitHub pull_request webhook payload + standard headers.
+	body := []byte(`{"action":"opened","pull_request":{"number":42,"title":"Add widget"},"repository":{"full_name":"acme/widgets"},"sender":{"login":"alice"}}`)
 	req, _ := http.NewRequest(http.MethodPost,
-		base+"/hook/github/ws-1/sig-1", bytes.NewReader(body))
+		base+"/hook/raw/ws-1/sig-1", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-GitHub-Event", "pull_request")
-	req.Header.Set("X-Hub-Signature-256", sig)
+	req.Header.Set("X-Hub-Signature-256", "sha256=abcdef0123456789")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("do: %v", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode != http.StatusAccepted {
 		respBody, _ := io.ReadAll(resp.Body)
 		t.Fatalf("status %d, body %s", resp.StatusCode, respBody)
 	}
-	var got map[string]any
-	_ = json.NewDecoder(resp.Body).Decode(&got)
-	if got["status"] != "forwarded" {
-		t.Errorf("status: %v", got["status"])
+	if seenPath != "/api/workspaces/ws-1/signals/sig-1" {
+		t.Errorf("atlasd received unexpected path: %s", seenPath)
 	}
-	if got["sessionId"] != "sess-99" {
-		t.Errorf("sessionId: %v", got["sessionId"])
+	// Byte-for-byte body preservation is the core invariant.
+	if !bytes.Equal(seenBody, body) {
+		t.Errorf("body bytes mismatch\n  want: %s\n  got:  %s", body, seenBody)
+	}
+	if seenSig != "sha256=abcdef0123456789" {
+		t.Errorf("X-Hub-Signature-256 lost or mutated: %q", seenSig)
+	}
+	if seenEv != "pull_request" {
+		t.Errorf("X-GitHub-Event lost or mutated: %q", seenEv)
+	}
+	if seenCT != "application/json" {
+		t.Errorf("Content-Type lost or mutated: %q", seenCT)
 	}
 }
 
-func TestHookInvalidSignature(t *testing.T) {
-	base := setupTestServer(t, "http://invalid:0")
-	body := []byte(`{"action":"opened","pull_request":{"html_url":"x"}}`)
-	req, _ := http.NewRequest(http.MethodPost,
-		base+"/hook/github/ws/sig", bytes.NewReader(body))
-	req.Header.Set("X-GitHub-Event", "pull_request")
-	req.Header.Set("X-Hub-Signature-256", "sha256=deadbeef")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("do: %v", err)
+// TestHookForwardsByteForByte_NonAscii locks the byte-for-byte invariant
+// against the failure mode that ASCII tests don't catch: multi-byte
+// UTF-8 + raw non-UTF-8 bytes. HMAC is computed over the literal byte
+// stream, so a tunnel that ASCII-round-trips correctly can still silently
+// re-encode an emoji (UTF-8 normalization) or drop a 0xff byte. This
+// test fires both shapes through and asserts `bytes.Equal`.
+func TestHookForwardsByteForByte_NonAscii(t *testing.T) {
+	var seenBody []byte
+	atlasd := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seenBody, _ = io.ReadAll(r.Body)
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(`{"status":"accepted","correlationId":"c"}`))
+	}))
+	defer atlasd.Close()
+	base := setupTestServer(t, atlasd.URL)
+
+	cases := []struct {
+		name string
+		body []byte
+	}{
+		{
+			// GitHub-style JSON with multi-byte UTF-8 (Polish diacritics +
+			// composed accents + emoji). Re-encoding via `string()`
+			// round-trip would silently mutate these.
+			name: "utf8-multibyte",
+			body: []byte(`{"actor":"Łukasz Żelazny 👋","note":"żółw — łódź — ✓"}`),
+		},
+		{
+			// Non-UTF-8 bytes — webhook providers occasionally embed
+			// binary blobs (form-encoded uploads, signature pre-images).
+			// Byte preservation through the tunnel must hold.
+			name: "binary-bytes",
+			body: []byte{0x7B, 0x22, 0x6B, 0x22, 0x3A, 0x22, 0x00, 0x01, 0xFF, 0xFE, 0x22, 0x7D},
+		},
 	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("expected 401, got %d", resp.StatusCode)
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			seenBody = nil
+			req, _ := http.NewRequest(http.MethodPost,
+				base+"/hook/raw/ws/sig", bytes.NewReader(c.body))
+			req.Header.Set("Content-Type", "application/octet-stream")
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatalf("do: %v", err)
+			}
+			_ = resp.Body.Close()
+			if resp.StatusCode != http.StatusAccepted {
+				t.Fatalf("status %d", resp.StatusCode)
+			}
+			if !bytes.Equal(seenBody, c.body) {
+				t.Errorf("body bytes mismatch:\n  want: %x\n  got:  %x", c.body, seenBody)
+			}
+		})
 	}
 }
 
 func TestHookUnknownProvider(t *testing.T) {
 	base := setupTestServer(t, "http://invalid:0")
-	resp, err := http.Post(base+"/hook/martian/ws/sig",
-		"application/json", strings.NewReader(`{}`))
+	// The realistic failure mode after PR #354's provider collapse is a
+	// caller still POSTing to the pre-PR URLs (/hook/github/, /hook/bitbucket/,
+	// /hook/jira/). Each should 400 with a body that names both the
+	// invalid provider AND `raw` so the operator sees the migration
+	// path. `martian` is a control for arbitrary unknown names.
+	for _, providerName := range []string{"github", "bitbucket", "jira", "martian"} {
+		t.Run(providerName, func(t *testing.T) {
+			resp, err := http.Post(base+"/hook/"+providerName+"/ws/sig",
+				"application/json", strings.NewReader(`{}`))
+			if err != nil {
+				t.Fatalf("post: %v", err)
+			}
+			defer func() { _ = resp.Body.Close() }()
+			if resp.StatusCode != http.StatusBadRequest {
+				t.Fatalf("expected 400, got %d", resp.StatusCode)
+			}
+			body, _ := io.ReadAll(resp.Body)
+			s := string(body)
+			if !strings.Contains(s, providerName) {
+				t.Errorf("response should name the rejected provider %q: %s", providerName, s)
+			}
+			if !strings.Contains(s, "raw") {
+				t.Errorf("response should mention `raw` (the only valid provider): %s", s)
+			}
+		})
+	}
+}
+
+// TestHookAtlasdUnreachable covers the most common operational failure
+// of the tunnel: atlasd is down / not yet up / network-partitioned.
+// httputil.ReverseProxy surfaces dial failures as 502 Bad Gateway —
+// asserting that here means an operator who curls the tunnel during an
+// atlasd outage sees a clear status code, not a hang or a misleading 500.
+func TestHookAtlasdUnreachable(t *testing.T) {
+	// 127.0.0.1:1 is reliably refused on every host (port 1 is reserved).
+	base := setupTestServer(t, "http://127.0.0.1:1")
+	resp, err := http.Post(base+"/hook/raw/ws/sig",
+		"application/json", strings.NewReader(`{"a":1}`))
 	if err != nil {
-		t.Fatalf("post: %v", err)
+		t.Fatalf("do: %v", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d", resp.StatusCode)
+	if resp.StatusCode != http.StatusBadGateway {
+		t.Fatalf("expected 502, got %d", resp.StatusCode)
 	}
 }
 
 func TestHookOversizedRejectedAs413(t *testing.T) {
 	base := setupTestServer(t, "http://invalid:0")
-	// 25 MB + 1 byte
+	// One byte over the cap.
 	body := bytes.Repeat([]byte("a"), maxBodySize+1)
 	req, _ := http.NewRequest(http.MethodPost,
 		base+"/hook/raw/ws/sig", bytes.NewReader(body))
@@ -179,28 +266,5 @@ func TestHookOversizedRejectedAs413(t *testing.T) {
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusRequestEntityTooLarge {
 		t.Fatalf("expected 413, got %d", resp.StatusCode)
-	}
-}
-
-func TestHookRawForwarded(t *testing.T) {
-	atlasd := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var body map[string]any
-		_ = json.NewDecoder(r.Body).Decode(&body)
-		payload, _ := body["payload"].(map[string]any)
-		if payload["foo"] != "bar" {
-			t.Errorf("payload: %v", payload)
-		}
-		_, _ = w.Write([]byte(`{}`))
-	}))
-	defer atlasd.Close()
-	base := setupTestServer(t, atlasd.URL)
-	resp, err := http.Post(base+"/hook/raw/w/s",
-		"application/json", strings.NewReader(`{"foo":"bar"}`))
-	if err != nil {
-		t.Fatalf("post: %v", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("status %d", resp.StatusCode)
 	}
 }

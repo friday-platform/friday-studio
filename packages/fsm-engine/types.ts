@@ -146,8 +146,21 @@ export interface Context {
   state: string;
   results: Record<string, Record<string, unknown>>;
   setResult?: (key: string, data: Record<string, unknown>) => void;
-  /** Structured input from the triggering signal or a preceding prepare result */
-  input?: { task?: string; config?: Record<string, unknown> };
+  /**
+   * Structured input from the triggering signal or a preceding prepare result.
+   * - `task` / `config` are the canonical fields populated by every signal.
+   * - `body` / `headers` are populated only by webhook-triggered signals (the
+   *   tunnel forwards them byte-for-byte from the upstream HTTP request so an
+   *   agent can verify HMAC against the exact bytes the upstream signed).
+   *   `body` is base64-encoded; the agent decodes back to bytes for HMAC.
+   *   `headers` keys are lowercased.
+   */
+  input?: {
+    task?: string;
+    config?: Record<string, unknown>;
+    body?: string;
+    headers?: Record<string, string>;
+  };
   emit?: (signal: Signal) => Promise<void>;
 
   /** @deprecated Use context.results instead */
@@ -163,6 +176,20 @@ export interface Context {
 export interface Signal {
   type: string;
   data?: Record<string, unknown>;
+  /**
+   * Base64-encoded original webhook request body. Set only when the signal
+   * was triggered by an inbound HTTP webhook routed through Friday's
+   * webhook-tunnel. Workspace agents read this (decoded to bytes) to verify
+   * HMAC signatures against the exact bytes the upstream signed. Absent for
+   * cron / chat / system / FSM-emitted signals.
+   */
+  body?: string;
+  /**
+   * Original webhook request headers (lowercased keys, single value per key).
+   * Set only for webhook-triggered signals. Used by workspace agents to read
+   * signature headers (`x-hub-signature-256`, etc.) and event-type headers.
+   */
+  headers?: Record<string, string>;
 }
 
 /**

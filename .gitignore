@@ -103,6 +103,11 @@ opensrc/
 tools/friday-launcher/friday-launcher
 /friday-launcher
 
+# webhook-tunnel build artifact (`go build .` from tools/webhook-tunnel
+# leaves the binary next to the sources by default — gitignore it so a
+# stray `git add .` can't sneak it into a commit).
+tools/webhook-tunnel/webhook-tunnel
+
 docs/
 doc/
 
