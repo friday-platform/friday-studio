@@ -4,11 +4,17 @@
   import { createQuery } from "@tanstack/svelte-query";
   import { page } from "$app/state";
   import { elicitationQueries, useAnswerElicitation } from "$lib/queries/elicitation-queries.ts";
+  import { workspaceQueries } from "$lib/queries/workspace-queries.ts";
   import {
     buildVarsOverride,
     hasMissingSecretValue,
     isSecretKey,
   } from "./env-set-tool-card.ts";
+  import {
+    findDeclaredVariableForKey,
+    validateProposedValue,
+    type VariableValidationResult,
+  } from "./env-write-variable-awareness.ts";
   import { readElicitationIdFromToolOutput } from "./human-input-matcher.ts";
   import { isInProgress } from "./tool-call-utils.ts";
   import type { ToolCallDisplay } from "./types.ts";
@@ -71,6 +77,41 @@
   const entries = $derived(Object.entries(proposal?.vars ?? {}));
   const hasSecretLooking = $derived(entries.some(([k]) => isSecretKey(k)));
 
+  // Variable-awareness layers on top of the existing raw rendering. Only
+  // applies when the write targets the workspace `.env` — the global `.env`
+  // has no per-workspace declarations to consult.
+  const configQuery = createQuery(() =>
+    workspaceQueries.config(scope === "workspace" ? (routeWorkspaceId ?? null) : null),
+  );
+  const declarations = $derived(configQuery.data?.config?.variables);
+
+  interface EnrichedEntry {
+    key: string;
+    value: string;
+    secret: boolean;
+    declaredName: string | null;
+    description: string | undefined;
+    validation: VariableValidationResult | null;
+  }
+
+  const enrichedEntries = $derived<EnrichedEntry[]>(
+    entries.map(([key, value]) => {
+      const match = findDeclaredVariableForKey(declarations, key);
+      return {
+        key,
+        value,
+        secret: isSecretKey(key),
+        declaredName: match?.name ?? null,
+        description: match?.declaration.description,
+        validation: match ? validateProposedValue(match.declaration, value) : null,
+      };
+    }),
+  );
+
+  const hasValidationFailure = $derived(
+    enrichedEntries.some((e) => e.validation && !e.validation.ok),
+  );
+
   const status = $derived<Elicitation["status"] | null>(matched?.status ?? null);
   const answerValue = $derived(matched?.answer?.value ?? null);
   const isPending = $derived(status === "pending");
@@ -107,6 +148,7 @@
 
   function answer(value: "confirm" | "deny"): void {
     if (!matched || !isPending || inFlight) return;
+    if (value === "confirm" && hasValidationFailure) return;
     if (value === "confirm" && missingSecretValue) return;
     // `varsOverride` carries the user's final value for every proposed
     // key — secret-bearing keys get the real value the user typed (kept
@@ -232,42 +274,53 @@
     </p>
   {:else}
     <div class="var-list">
-      {#each entries as [key, value] (key)}
-        {@const secret = isSecretKey(key)}
-        {@const maskApplied = !isPending && secret && !revealed[key]}
-        <div class="var-row">
-          <code class="var-key">{key}</code>
-          <input
-            class="var-value"
-            type={secret && !revealed[key] ? "password" : "text"}
-            value={maskApplied ? "********" : (userValues[key] ?? value)}
-            placeholder="Enter value"
-            autocomplete="off"
-            spellcheck="false"
-            disabled={!isPending || inFlight}
-            oninput={(e) => {
-              userValues = { ...userValues, [key]: e.currentTarget.value };
-            }}
-          />
-          {#if secret}
-            <button
-              type="button"
-              class="reveal"
-              aria-label={revealed[key] ? "Hide value" : "Show value"}
-              onclick={() => {
-                const next = !revealed[key];
-                revealed = { ...revealed, [key]: next };
-                // On applied cards the in-memory value is gone after a
-                // page refresh; lazily fetch what's actually in .env so
-                // the eyeball click is the explicit "show me" gesture
-                // that triggers the read.
-                if (next && applied && !(userValues[key] ?? "").length) {
-                  void fetchAppliedValue(key);
-                }
+      {#each enrichedEntries as entry (entry.key)}
+        {@const maskApplied = !isPending && entry.secret && !revealed[entry.key]}
+        <div class="var-group">
+          {#if entry.description}
+            <p class="var-description">{entry.description}</p>
+          {/if}
+          <div class="var-row" class:invalid={entry.validation?.ok === false}>
+            <code class="var-key">{entry.key}</code>
+            <input
+              class="var-value"
+              type={entry.secret && !revealed[entry.key] ? "password" : "text"}
+              value={maskApplied ? "********" : (userValues[entry.key] ?? entry.value)}
+              placeholder="Enter value"
+              autocomplete="off"
+              spellcheck="false"
+              disabled={!isPending || inFlight}
+              oninput={(e) => {
+                userValues = { ...userValues, [entry.key]: e.currentTarget.value };
               }}
-            >
-              {#if revealed[key]}<Icons.Eye />{:else}<Icons.EyeClosed />{/if}
-            </button>
+            />
+            {#if entry.secret}
+              <button
+                type="button"
+                class="reveal"
+                aria-label={revealed[entry.key] ? "Hide value" : "Show value"}
+                onclick={() => {
+                  const next = !revealed[entry.key];
+                  revealed = { ...revealed, [entry.key]: next };
+                  // On applied cards the in-memory value is gone after a
+                  // page refresh; lazily fetch what's actually in .env so
+                  // the eyeball click is the explicit "show me" gesture
+                  // that triggers the read.
+                  if (next && applied && !(userValues[entry.key] ?? "").length) {
+                    void fetchAppliedValue(entry.key);
+                  }
+                }}
+              >
+                {#if revealed[entry.key]}<Icons.Eye />{:else}<Icons.EyeClosed />{/if}
+              </button>
+            {/if}
+          </div>
+          {#if entry.validation && !entry.validation.ok}
+            <p class="validation-error" role="alert">
+              Doesn't match the declared schema for
+              <code>{entry.declaredName}</code>
+              : {entry.validation.message}
+            </p>
           {/if}
         </div>
       {/each}
@@ -288,24 +341,34 @@
           </Button>
           <Tooltip
             as="span"
-            label={missingSecretValue ? "Fill in any blank values." : undefined}
+            label={missingSecretValue
+              ? "Fill in any blank values."
+              : hasValidationFailure
+                ? "Resolve schema validation errors above."
+                : undefined}
           >
             <Button
               onclick={() => answer("confirm")}
-              disabled={!matched || inFlight || missingSecretValue}
+              disabled={!matched || inFlight || missingSecretValue || hasValidationFailure}
             >
               {answerMutation.isPending ? "Applying…" : "Confirm"}
             </Button>
           </Tooltip>
         </div>
       </div>
-    {:else if hasSecretLooking}
-      <p class="hint">Credential-bearing values stay out of chat history.</p>
-    {/if}
-
-    {#if !isPending && status === "declined"}
-      <p class="hint terminal">Declined — nothing was written.</p>
-    {:else if !status}
+    {:else if status}
+      <p class="hint terminal">
+        {#if applied}
+          Applied — {entries.length} variable{entries.length === 1 ? "" : "s"} written.
+        {:else if status === "answered"}
+          Denied — nothing was written.
+        {:else if status === "declined"}
+          Declined — nothing was written.
+        {:else}
+          Expired — nothing was written.
+        {/if}
+      </p>
+    {:else}
       <p class="hint">Syncing with Activity…</p>
     {/if}
 
@@ -392,14 +455,28 @@
     color: var(--red-primary);
   }
 
-  /* Grid + subgrid so the key column lines up across rows — without
-     subgrid each row's flex layout would size its key cell to its own
-     content, leaving multi-row cards visually jagged on the divider. */
+  /* Flex column of var-groups (description + row + validation). Each row
+     owns its own grid template so the key/input/reveal columns are
+     self-contained — the description prose above each row prevents
+     cross-row subgrid alignment from being useful here. */
   .var-list {
-    display: grid;
-    gap: var(--size-1-5);
-    grid-template-columns: max-content 1fr auto;
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-2);
     margin-block: var(--size-2);
+  }
+
+  .var-group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-1);
+  }
+
+  .var-description {
+    color: color-mix(in srgb, var(--text), transparent 25%);
+    font-size: var(--font-size-1);
+    line-height: 1.4;
+    margin: 0;
   }
 
   /* Single bordered envelope: key label slot, divider, input, optional
@@ -411,13 +488,27 @@
     border: 1px solid var(--color-border-1);
     border-radius: var(--radius-2);
     display: grid;
-    grid-column: 1 / -1;
-    grid-template-columns: subgrid;
+    grid-template-columns: max-content 1fr auto;
     transition: border-color 150ms ease;
   }
 
   .var-row:focus-within {
     border-color: color-mix(in oklch, var(--color-text), transparent 60%);
+  }
+
+  .var-row.invalid {
+    border-color: var(--red-primary);
+  }
+
+  .validation-error {
+    color: var(--red-primary);
+    font-size: var(--font-size-1);
+    line-height: 1.35;
+    margin: 0;
+  }
+
+  .validation-error code {
+    font-size: var(--font-size-0, 11px);
   }
 
   .var-key {

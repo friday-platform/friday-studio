@@ -258,9 +258,14 @@ export class JetStreamElicitationStorageAdapter implements ElicitationStorageAda
       if (current.status !== "pending") {
         return fail(`Elicitation ${id} already in terminal state: ${current.status}`);
       }
-      const expiresAtMs = new Date(current.expiresAt).getTime();
-      if (Date.now() > expiresAtMs + TERMINAL_ANSWER_GRACE_MS) {
-        return fail(`Elicitation ${id} already expired`);
+      // `workspace-setup` may sit unanswered for days — see
+      // `expirePending` and `deriveExpired` for the sweep/read exemptions.
+      // Mirror them here so a delayed answer isn't rejected as expired.
+      if (current.kind !== "workspace-setup") {
+        const expiresAtMs = new Date(current.expiresAt).getTime();
+        if (Date.now() > expiresAtMs + TERMINAL_ANSWER_GRACE_MS) {
+          return fail(`Elicitation ${id} already expired`);
+        }
       }
 
       const next = ElicitationSchema.parse(makeNext(current));
@@ -363,6 +368,10 @@ export class JetStreamElicitationStorageAdapter implements ElicitationStorageAda
           continue;
         }
         if (elicitation.status !== "pending") continue; // idempotent
+        // `workspace-setup` may sit unanswered for days while the user
+        // wires up credentials or hunts down a value; the 30-minute
+        // sweep would silently kill those flows.
+        if (elicitation.kind === "workspace-setup") continue;
         if (new Date(elicitation.expiresAt).getTime() > now.getTime()) continue; // not yet due
 
         const next: Elicitation = { ...elicitation, status: "expired" };
@@ -436,6 +445,7 @@ export class JetStreamElicitationStorageAdapter implements ElicitationStorageAda
  */
 function deriveExpired(elicitation: Elicitation, now: Date): Elicitation {
   if (elicitation.status !== "pending") return elicitation;
+  if (elicitation.kind === "workspace-setup") return elicitation;
   if (new Date(elicitation.expiresAt).getTime() > now.getTime()) {
     return elicitation;
   }

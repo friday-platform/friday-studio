@@ -49,12 +49,19 @@ import { resolveVisibleSkills, SkillStorage } from "@atlas/skills";
 import { FilesystemWorkspaceCreationAdapter } from "@atlas/storage";
 import { ColorSchema, isErrnoException, stringifyError } from "@atlas/utils";
 import { getFridayHome } from "@atlas/utils/paths.server";
+import {
+  loadWorkspaceEnv,
+  type SetupRequirementsResult,
+  StaleCredentialIdAtImportError,
+} from "@atlas/workspace";
 import { zValidator } from "@hono/zod-validator";
 import { encodeBase64 } from "@std/encoding/base64";
 import { parse, stringify } from "@std/yaml";
+import type { Context } from "hono";
 import { z } from "zod";
+import { assembleLinkCredentialState } from "../../src/assemble-link-credential-state.ts";
 import { requireDevEnv } from "../../src/dev-only.ts";
-import type { AppContext } from "../../src/factory.ts";
+import type { AppContext, AppVariables } from "../../src/factory.ts";
 import { daemonFactory, KERNEL_WORKSPACE_ID } from "../../src/factory.ts";
 import {
   CommunicatorKindSchema,
@@ -66,6 +73,8 @@ import {
   wireCommunicator,
 } from "../../src/services/communicator-wiring.ts";
 import { publishSessionCancel } from "../../src/session-dispatch-registry.ts";
+import { buildSetupRequired409Body } from "../../src/setup-required-gate.ts";
+import { getOrComputeSetupRequirements } from "../../src/setup-requirements-cache.ts";
 import { awaitSignalCompletion, publishSignalCancellation } from "../../src/signal-stream.ts";
 import {
   getAccessibleWorkspaceIds,
@@ -102,6 +111,7 @@ import {
   createWorkspaceFromConfigSchema,
   updateWorkspaceConfigSchema,
 } from "./schemas.ts";
+import { recoverBootstrapSessionIfDeleted, spawnBootstrapSessionIfNeeded } from "./setup-spawn.ts";
 
 /**
  * Daemon-backed validation context for `validateWorkspaceConfig`.
@@ -403,6 +413,55 @@ export function extractJobIntegrations(
  */
 export { injectBundledAgentRefs } from "./inject-bundled-agents.ts";
 
+/**
+ * Per-request setup-requirements derivation for one workspace.
+ *
+ * GET endpoints surface `requires_setup` + `setup_requirements` so the
+ * sidebar badge, re-setup banner, and chat-redirect logic can branch
+ * without re-deriving on the client. Memoized on the Hono context so
+ * multiple consults in one request (list endpoint already iterates;
+ * future callers like the system-prompt builder may pile on) cost a
+ * single derivation per workspace.
+ *
+ * `allowStaleIdRecovery: true` — GET endpoints run post-import, so a
+ * pinned credential id that no longer resolves is a recoverable form
+ * requirement, not a hard error.
+ */
+async function deriveSetupRequirements(
+  c: Context<AppVariables>,
+  manager: ReturnType<AppContext["getWorkspaceManager"]>,
+  workspaceId: string,
+  workspacePath: string,
+): Promise<SetupRequirementsResult> {
+  return await getOrComputeSetupRequirements(c, workspaceId, async () => {
+    const merged = await manager.getWorkspaceConfig(workspaceId);
+    if (!merged) {
+      // No config on disk (cross-home masked, deleted, or system workspace
+      // with no config). Derivation on an empty config returns no
+      // requirements — bypass `assembleLinkCredentialState` since there's
+      // nothing to look up.
+      return {
+        parsedConfig: { version: "1.0", workspace: { name: workspaceId } },
+        envSnapshot: {},
+        linkCredentials: {
+          defaultByProvider: {},
+          resolvedIds: new Set(),
+          providerErrors: new Set(),
+        },
+        options: { allowStaleIdRecovery: true },
+      };
+    }
+    const envSnapshot = loadWorkspaceEnv(workspacePath);
+    const linkCredentials = await assembleLinkCredentialState(merged.workspace);
+    return {
+      parsedConfig: merged.workspace,
+      envSnapshot,
+      linkCredentials,
+      options: { allowStaleIdRecovery: true },
+    };
+  });
+}
+
 // Create and mount routes
 const workspacesRoutes = daemonFactory
   .createApp()
@@ -420,13 +479,43 @@ const workspacesRoutes = daemonFactory
       const workspaces = ctx.exposeKernel
         ? visible
         : visible.filter((w) => w.id !== KERNEL_WORKSPACE_ID);
-      const response = workspaces
-        .map((w) => ({
-          ...w,
-          description: w.metadata?.description,
-          type: w.metadata?.ephemeral ? "ephemeral" : "persistent",
-          canonical: w.metadata?.canonical,
-        }))
+      const setupResults = await Promise.all(
+        workspaces.map((w) => deriveSetupRequirements(c, manager, w.id, w.path)),
+      );
+      const recovered = await Promise.all(
+        workspaces.map((w, i) => {
+          const setup = setupResults[i];
+          if (!setup?.requires_setup) return Promise.resolve(w);
+          return recoverBootstrapSessionIfDeleted({
+            manager,
+            workspace: w,
+            setupRequirements: setup.setup_requirements,
+            userId,
+          }).then((result) =>
+            result.recovered
+              ? {
+                  ...w,
+                  metadata: {
+                    ...(w.metadata ?? {}),
+                    active_setup_session_id: result.bootstrap_session_id,
+                  },
+                }
+              : w,
+          );
+        }),
+      );
+      const response = recovered
+        .map((w, i) => {
+          const setup = setupResults[i] ?? { requires_setup: false, setup_requirements: [] };
+          return {
+            ...w,
+            description: w.metadata?.description,
+            type: w.metadata?.ephemeral ? "ephemeral" : "persistent",
+            canonical: w.metadata?.canonical,
+            requires_setup: setup.requires_setup,
+            setup_requirements: setup.setup_requirements,
+          };
+        })
         .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
       return c.json(response);
     } catch (error) {
@@ -616,9 +705,10 @@ const workspacesRoutes = daemonFactory
           );
         }
 
-        // Track unresolved provider refs for requires_setup flag, but keep them
-        // in the config — they're declarative requirements the setup page needs
-        // to show Connect buttons for MCP server credentials.
+        // Track unresolved provider refs so the importer can surface them in
+        // the response. Provider-only refs stay in the written YAML — they're
+        // declarative requirements that live-derivation picks up on subsequent
+        // reads via `resolveWorkspaceSetupRequirements`.
         if (unresolvedProviders.length > 0) {
           unresolvedCredentialPaths = providerOnlyRefs
             .filter((ref) => unresolvedProviders.includes(ref.provider))
@@ -690,17 +780,42 @@ const workspacesRoutes = daemonFactory
           skipEnvValidation: hasUnresolvedCredentials,
         });
 
-        // Set requires_setup flag if any credentials are missing or were stripped
-        if (hasUnresolvedCredentials && created) {
-          await manager.updateWorkspaceStatus(workspace.id, workspace.status, {
-            metadata: { ...workspace.metadata, requires_setup: true },
-          });
-          workspace.metadata = { ...workspace.metadata, requires_setup: true };
-        }
+        // `requires_setup` is no longer stored on workspace metadata — it's
+        // live-derived per request from parsed config + env + Link state via
+        // `resolveWorkspaceSetupRequirements`. The importer still tells the
+        // caller which credential paths are unresolved (below) so the UI can
+        // route into the setup form without re-deriving.
 
         // Resources subsystem was deleted (Ledger). Any incoming `resources:`
         // block in the imported config is silently dropped — no-op in the new
         // world. The schema parser also strips it before we get here.
+
+        let bootstrapSpawn: Awaited<ReturnType<typeof spawnBootstrapSessionIfNeeded>>;
+        try {
+          bootstrapSpawn = await spawnBootstrapSessionIfNeeded({
+            manager,
+            workspaceId: workspace.id,
+            workspacePath,
+            parsedConfig: validatedConfig,
+            userId: userId ?? "",
+            existingMetadata: workspace.metadata,
+          });
+        } catch (spawnError) {
+          if (spawnError instanceof StaleCredentialIdAtImportError) {
+            return c.json(
+              {
+                success: false,
+                error: "stale_credential_id_at_import",
+                message: spawnError.message,
+                credentialId: spawnError.credentialId,
+                provider: spawnError.provider,
+                path: spawnError.path,
+              },
+              400,
+            );
+          }
+          throw spawnError;
+        }
 
         return c.json(
           {
@@ -718,6 +833,9 @@ const workspacesRoutes = daemonFactory
               : {}),
             ...(unresolvedCredentialPaths && unresolvedCredentialPaths.length > 0
               ? { unresolvedCredentials: unresolvedCredentialPaths }
+              : {}),
+            ...(bootstrapSpawn.bootstrap_session_id
+              ? { bootstrapSessionId: bootstrapSpawn.bootstrap_session_id }
               : {}),
           },
           201,
@@ -973,6 +1091,7 @@ const workspacesRoutes = daemonFactory
         name: string;
         path: string;
         memory?: { kind: string; path?: string; reason?: string };
+        bootstrapSessionId?: string;
         agentsInstalled?: number;
         agentsSkipped?: number;
       }> = [];
@@ -1002,6 +1121,30 @@ const workspacesRoutes = daemonFactory
             atlasHome,
             newWorkspaceId: registered.workspace.id,
           });
+
+          let bootstrapSessionId: string | undefined;
+          const merged = await manager.getWorkspaceConfig(registered.workspace.id);
+          if (merged) {
+            try {
+              const spawn = await spawnBootstrapSessionIfNeeded({
+                manager,
+                workspaceId: registered.workspace.id,
+                workspacePath: registered.workspace.path,
+                parsedConfig: merged.workspace,
+                userId,
+                existingMetadata: registered.workspace.metadata,
+              });
+              bootstrapSessionId = spawn.bootstrap_session_id;
+            } catch (spawnError) {
+              if (spawnError instanceof StaleCredentialIdAtImportError) {
+                await rm(entry.path, { recursive: true, force: true });
+                errors.push({ name: entry.name, error: "stale_credential_id_at_import" });
+                continue;
+              }
+              throw spawnError;
+            }
+          }
+
           const agents = await installImportedAgents({
             targetDir: entry.path,
             primitives: entry.primitives,
@@ -1014,6 +1157,7 @@ const workspacesRoutes = daemonFactory
             name: entry.name,
             path: entry.path,
             memory,
+            ...(bootstrapSessionId ? { bootstrapSessionId } : {}),
             agentsInstalled: agents.installed.length,
             agentsSkipped: agents.skipped.length,
           });
@@ -1066,6 +1210,8 @@ const workspacesRoutes = daemonFactory
     try {
       const ctx = c.get("app");
       const manager = ctx.getWorkspaceManager();
+      const userId = c.get("userId");
+      if (!userId) return c.json({ error: "Unauthorized" }, 401);
       const workspace =
         (await manager.find({ id: workspaceId })) || (await manager.find({ name: workspaceId }));
       if (!workspace) {
@@ -1074,13 +1220,35 @@ const workspacesRoutes = daemonFactory
 
       // Load workspace configuration
       const config = await manager.getWorkspaceConfig(workspace.id);
+      const setup = await deriveSetupRequirements(c, manager, workspace.id, workspace.path);
+
+      let effectiveWorkspace = workspace;
+      if (setup.requires_setup) {
+        const recovery = await recoverBootstrapSessionIfDeleted({
+          manager,
+          workspace,
+          setupRequirements: setup.setup_requirements,
+          userId,
+        });
+        if (recovery.recovered) {
+          effectiveWorkspace = {
+            ...workspace,
+            metadata: {
+              ...(workspace.metadata ?? {}),
+              active_setup_session_id: recovery.bootstrap_session_id,
+            },
+          };
+        }
+      }
 
       return c.json(
         {
-          ...workspace,
-          description: workspace.metadata?.description,
-          type: workspace.metadata?.ephemeral ? "ephemeral" : "persistent",
+          ...effectiveWorkspace,
+          description: effectiveWorkspace.metadata?.description,
+          type: effectiveWorkspace.metadata?.ephemeral ? "ephemeral" : "persistent",
           config: config?.workspace || null,
+          requires_setup: setup.requires_setup,
+          setup_requirements: setup.setup_requirements,
         },
         200,
       );
@@ -1272,6 +1440,37 @@ const workspacesRoutes = daemonFactory
         newWorkspaceId: registered.workspace.id,
       });
 
+      const merged = await manager.getWorkspaceConfig(registered.workspace.id);
+      let bootstrapSessionId: string | undefined;
+      if (merged) {
+        try {
+          const spawn = await spawnBootstrapSessionIfNeeded({
+            manager,
+            workspaceId: registered.workspace.id,
+            workspacePath: registered.workspace.path,
+            parsedConfig: merged.workspace,
+            userId,
+            existingMetadata: registered.workspace.metadata,
+          });
+          bootstrapSessionId = spawn.bootstrap_session_id;
+        } catch (spawnError) {
+          if (spawnError instanceof StaleCredentialIdAtImportError) {
+            await rm(targetDir, { recursive: true, force: true });
+            return c.json(
+              {
+                error: "stale_credential_id_at_import",
+                message: spawnError.message,
+                credentialId: spawnError.credentialId,
+                provider: spawnError.provider,
+                path: spawnError.path,
+              },
+              400,
+            );
+          }
+          throw spawnError;
+        }
+      }
+
       // Bundled user agents land at `<targetDir>/agents/<name>/` — invisible
       // to the AgentRegistry, which only scans `<atlasHome>/agents/`. Install
       // them into the global dir and reload so the imported workspace.yml's
@@ -1298,6 +1497,7 @@ const workspacesRoutes = daemonFactory
         name: result.lockfile.workspace.name,
         primitives: result.primitives,
         memory,
+        ...(bootstrapSessionId ? { bootstrapSessionId } : {}),
         agentsInstalled: agents.installed.length,
         agentsSkipped: agents.skipped.length,
       });
@@ -1541,57 +1741,6 @@ const workspacesRoutes = daemonFactory
       }
     },
   )
-  // Complete workspace setup (verify all credentials are connected)
-  .post(
-    "/:workspaceId/setup/complete",
-    zValidator("param", z.object({ workspaceId: z.string() })),
-    async (c) => {
-      const { workspaceId } = c.req.valid("param");
-      await requireWorkspaceAdmin(c, workspaceId);
-      const ctx = c.get("app");
-
-      try {
-        const manager = ctx.getWorkspaceManager();
-        const workspace = await manager.find({ id: workspaceId });
-        if (!workspace) {
-          return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
-        }
-
-        const config = await manager.getWorkspaceConfig(workspace.id);
-        if (!config) {
-          return c.json({ error: "Failed to load workspace configuration" }, 500);
-        }
-
-        const credentials = extractCredentials(config.workspace);
-
-        // Group by provider and check each has a credentialId
-        const byProvider = new Map<string, boolean>();
-        for (const cred of credentials) {
-          if (!cred.provider) continue;
-          const currentlyConnected = byProvider.get(cred.provider) ?? true;
-          byProvider.set(cred.provider, currentlyConnected && !!cred.credentialId);
-        }
-
-        const missingProviders = [...byProvider.entries()]
-          .filter(([, connected]) => !connected)
-          .map(([provider]) => provider);
-
-        if (missingProviders.length > 0) {
-          return c.json({ error: "incomplete_setup", missingProviders }, 422);
-        }
-
-        // All credentials connected — clear requires_setup
-        const newMetadata = { ...workspace.metadata, requires_setup: false };
-        await manager.updateWorkspaceStatus(workspaceId, workspace.status, {
-          metadata: newMetadata,
-        });
-
-        return c.json({ ok: true }, 200);
-      } catch (error) {
-        return c.json({ error: `Failed to complete setup: ${stringifyError(error)}` }, 500);
-      }
-    },
-  )
   // Connect a communicator (slack/telegram/discord/teams/whatsapp) to a
   // workspace. Wires the credential to the workspace via Link's
   // communicator_wiring table (single source of truth for secrets) and adds
@@ -1761,6 +1910,18 @@ const workspacesRoutes = daemonFactory
     const workspace = await manager.find({ id: workspaceId });
     if (!workspace) {
       return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
+    }
+
+    // Decision 7 — setup gate. Webhook clients (the audience for HTTP
+    // triggers) treat 409 as non-retryable, so this is preferred over the
+    // queue-then-error path. Internal bypass callers are not exempt: chat
+    // goes through `triggerSignalWithSession` directly and never hits this
+    // route, so a `bypassConcurrency` POST here is still an HTTP audience.
+    {
+      const setup = await deriveSetupRequirements(c, manager, workspaceId, workspace.path);
+      if (setup.requires_setup) {
+        return c.json(buildSetupRequired409Body(workspaceId), 409);
+      }
     }
 
     const encoder = new TextEncoder();
@@ -2239,6 +2400,21 @@ const workspacesRoutes = daemonFactory
       if (payload === undefined) {
         const envelopeError = detectUnwrappedSignalBody(parsedRawBody);
         if (envelopeError) return c.json({ error: envelopeError }, 400);
+      }
+
+      // Decision 7 — setup gate. Returns 409 (non-retryable) so webhook
+      // clients don't keep hammering a setup-required workspace. Skipped
+      // when the workspace doesn't exist; the existing publish path
+      // surfaces "unknown workspace" via the cascade dispatcher.
+      {
+        const manager = ctx.daemon.getWorkspaceManager();
+        const workspace = await manager.find({ id: workspaceId });
+        if (workspace) {
+          const setup = await deriveSetupRequirements(c, manager, workspaceId, workspace.path);
+          if (setup?.requires_setup) {
+            return c.json(buildSetupRequired409Body(workspaceId), 409);
+          }
+        }
       }
 
       if (bypassConcurrency) {

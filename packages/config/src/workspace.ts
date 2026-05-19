@@ -112,6 +112,67 @@ export function parseMemoryMountSource(source: string): {
 }
 
 // ==============================================================================
+// VARIABLE SCHEMAS (workspace.yml `variables:` block)
+// ==============================================================================
+
+const VariableStringSchemaSchema = z.strictObject({
+  type: z.literal("string"),
+  format: z.string().optional(),
+  pattern: z.string().optional(),
+  enum: z.array(z.string()).optional(),
+  minLength: z.number().int().nonnegative().optional(),
+  maxLength: z.number().int().nonnegative().optional(),
+  default: z.string().optional(),
+});
+
+const VariableNumberSchemaSchema = z.strictObject({
+  type: z.literal("number"),
+  enum: z.array(z.number()).optional(),
+  minimum: z.number().optional(),
+  maximum: z.number().optional(),
+  default: z.number().optional(),
+});
+
+const VariableIntegerSchemaSchema = z.strictObject({
+  type: z.literal("integer"),
+  enum: z.array(z.number().int()).optional(),
+  minimum: z.number().int().optional(),
+  maximum: z.number().int().optional(),
+  default: z.number().int().optional(),
+});
+
+const VariableBooleanSchemaSchema = z.strictObject({
+  type: z.literal("boolean"),
+  enum: z.array(z.boolean()).optional(),
+  default: z.boolean().optional(),
+});
+
+/**
+ * v1-restricted JSON Schema subset for workspace `variables:` entries.
+ *
+ * Root type is one of `string`, `number`, `integer`, `boolean`. Allowed
+ * constraint keywords are listed per-type via `strictObject` — unsupported
+ * features (`array`, `object`, `$ref`, `oneOf`/`anyOf`/`allOf`, conditionals,
+ * `patternProperties`, `items`, `properties`, …) reject at parse time.
+ */
+export const VariableSchemaSchema = z.discriminatedUnion("type", [
+  VariableStringSchemaSchema,
+  VariableNumberSchemaSchema,
+  VariableIntegerSchemaSchema,
+  VariableBooleanSchemaSchema,
+]);
+
+export type VariableSchema = z.infer<typeof VariableSchemaSchema>;
+
+export const VariableDeclarationSchema = z.strictObject({
+  description: z.string().optional(),
+  schema: VariableSchemaSchema,
+  default: z.unknown().optional(),
+});
+
+export type VariableDeclaration = z.infer<typeof VariableDeclarationSchema>;
+
+// ==============================================================================
 // WORKSPACE CONFIGURATION (workspace.yml)
 // ==============================================================================
 
@@ -135,6 +196,7 @@ import { DelegationBudgetSchema } from "./delegation.ts";
 export const WorkspaceConfigSchema = z.strictObject({
   version: z.literal("1.0").describe("Configuration version (currently '1.0')"),
   workspace: WorkspaceIdentitySchema,
+  variables: z.record(z.string(), VariableDeclarationSchema).optional(),
   server: ServerConfigSchema.optional(),
   tools: ToolsConfigSchema.optional(),
   skills: z.array(SkillEntrySchema).optional(),

@@ -23,12 +23,22 @@ const WorkspaceSummarySchema = z.object({
   metadata: z
     .object({
       color: z.string().optional(),
+      active_setup_session_id: z.string().nullable().optional(),
     })
+    .passthrough()
     .optional(),
+  requires_setup: z.boolean().default(false),
 });
 
 /** Workspace summary as returned by `GET /api/daemon/api/workspaces`. */
 export type WorkspaceSummary = z.infer<typeof WorkspaceSummarySchema>;
+
+const WorkspaceDetailSchema = WorkspaceSummarySchema.extend({
+  setup_requirements: z.array(z.unknown()).default([]),
+});
+
+/** Workspace detail as returned by `GET /api/daemon/api/workspaces/:id`. */
+export type WorkspaceDetail = z.infer<typeof WorkspaceDetailSchema>;
 
 /** Enriched workspace with a resolved display name. */
 export type Workspace = WorkspaceSummary & {
@@ -163,6 +173,27 @@ export const workspaceQueries = {
           }),
         );
       },
+      staleTime: 30_000,
+    }),
+
+  /**
+   * Workspace detail including `requires_setup`, `setup_requirements`, and
+   * `metadata.active_setup_session_id`. Drives the re-setup banner and the
+   * initial-setup chat redirect.
+   */
+  detail: (workspaceId: string | null) =>
+    queryOptions({
+      queryKey: ["daemon", "workspace", workspaceId, "detail"] as const,
+      queryFn: workspaceId
+        ? async (): Promise<WorkspaceDetail> => {
+            const client = getDaemonClient();
+            const res = await client.workspace[":workspaceId"].$get({
+              param: { workspaceId },
+            });
+            if (!res.ok) throw new Error(`Failed to fetch workspace: ${res.status}`);
+            return WorkspaceDetailSchema.parse(await res.json());
+          }
+        : skipToken,
       staleTime: 30_000,
     }),
 

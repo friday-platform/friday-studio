@@ -165,6 +165,20 @@ describe("getSystemBlocks block-4 (volatile workspace inventory)", () => {
     expect(blocks.block2).toBe("");
     expect(blocks.block4).toContain(workspaceSection);
   });
+
+  it("prepends the setup-status block to block 4 (volatile tier, ahead of inventory)", () => {
+    const setupStatus = "[WORKSPACE SETUP STATUS]\nstub bullets";
+    const blocks = getSystemBlocks(workspaceSection, { setupStatus });
+    expect(blocks.block4.startsWith(setupStatus)).toBe(true);
+    expect(blocks.block4).toContain(workspaceSection);
+    expect(blocks.block2).not.toContain(setupStatus);
+    expect(blocks.block3).not.toContain(setupStatus);
+  });
+
+  it("omits the setup-status block when option is empty (fully-configured / initial-setup state)", () => {
+    const blocks = getSystemBlocks(workspaceSection, { setupStatus: "" });
+    expect(blocks.block4).toBe(workspaceSection);
+  });
 });
 
 describe("flattenSystemBlocks", () => {

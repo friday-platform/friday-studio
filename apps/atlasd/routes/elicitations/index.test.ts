@@ -87,6 +87,19 @@ vi.mock("@atlas/workspace", async (importOriginal) => ({
   setEnvFileVar: mockSetEnvFileVar,
 }));
 
+// `workspace-setup` confirmations route through the setup-answer-handler.
+// Mock the handler at module boundary so the route tests can assert the
+// dispatch shape (the 400-on-validation-failure, 500-on-commit-failure, and
+// post-commit signal restart paths) without rebuilding the full Link +
+// draft-mutation stack inside this test file.
+const { mockCommitWorkspaceSetupAnswer } = vi.hoisted(() => ({
+  mockCommitWorkspaceSetupAnswer: vi.fn(),
+}));
+
+vi.mock("../../src/setup-answer-handler.ts", () => ({
+  commitWorkspaceSetupAnswer: mockCommitWorkspaceSetupAnswer,
+}));
+
 // Import AFTER the mock so the route binds to the mocked facade.
 import { elicitationApp as rawElicitationApp } from "./index.ts";
 
@@ -97,22 +110,36 @@ import { elicitationApp as rawElicitationApp } from "./index.ts";
 // ---------------------------------------------------------------------------
 
 interface MockWorkspaceManager {
-  find: (q: { id: string }) => Promise<{ id: string; path: string } | null>;
+  find: (q: { id: string }) => Promise<{ id: string; path: string; configPath: string } | null>;
+  getWorkspaceConfig: (
+    id: string,
+  ) => Promise<{ atlas: null; workspace: { version: "1.0"; workspace: { name: string } } } | null>;
+  handleWorkspaceConfigChange: (
+    workspace: { id: string; path: string; configPath: string },
+    filePath: string,
+  ) => Promise<void>;
 }
 type MockContext = {
   daemon: { getNatsConnection: () => null };
   getWorkspaceManager: () => MockWorkspaceManager;
 };
 
+function defaultWorkspaceManager(): MockWorkspaceManager {
+  return {
+    find: ({ id }: { id: string }) =>
+      Promise.resolve({ id, path: `/tmp/${id}`, configPath: `/tmp/${id}/workspace.yml` }),
+    getWorkspaceConfig: (id: string) =>
+      Promise.resolve({ atlas: null, workspace: { version: "1.0", workspace: { name: id } } }),
+    handleWorkspaceConfigChange: () => Promise.resolve(),
+  };
+}
+
 function createTestApp(workspaceManager?: MockWorkspaceManager) {
   const app = new Hono<{ Variables: { app: MockContext; userId?: string } }>();
   app.use("*", async (c, next) => {
     c.set("app", {
       daemon: { getNatsConnection: () => null },
-      getWorkspaceManager: () =>
-        workspaceManager ?? {
-          find: ({ id }: { id: string }) => Promise.resolve({ id, path: `/tmp/${id}` }),
-        },
+      getWorkspaceManager: () => workspaceManager ?? defaultWorkspaceManager(),
     });
     c.set("userId", "test-user");
     await next();
@@ -628,6 +655,156 @@ describe("POST /:id/answer", () => {
       expect(mockCommitGlobalEnvWrite).not.toHaveBeenCalled();
       expect(mockSetEnvFileVar).not.toHaveBeenCalled();
       expect(mockElicitationStorage.answer).toHaveBeenCalled();
+    });
+  });
+
+  // ── workspace-setup confirmations: pre-flight, commit, then restart ──
+  describe("workspace-setup confirmations", () => {
+    function setupElicitation() {
+      return makeElicitation({ kind: "workspace-setup", question: "Configure workspace" });
+    }
+
+    const validBody = {
+      value: {
+        variableValues: { email_recipient: "user@example.com" },
+        credentialChoices: { gmail: "cred_gmail" },
+      },
+    };
+
+    test("happy path: handler commits, signals restart, elicitation marked answered", async () => {
+      const pending = setupElicitation();
+      mockElicitationStorage.get.mockResolvedValueOnce(success(pending));
+      mockElicitationStorage.answer.mockResolvedValueOnce(
+        success(makeElicitation({ kind: "workspace-setup", status: "answered" })),
+      );
+      mockCommitWorkspaceSetupAnswer.mockResolvedValueOnce({
+        ok: true,
+        committedKeys: ["EMAIL_RECIPIENT"],
+      });
+      const restart = vi.fn().mockResolvedValue(undefined);
+      const wm: MockWorkspaceManager = {
+        ...defaultWorkspaceManager(),
+        handleWorkspaceConfigChange: restart,
+      };
+
+      const res = await createTestApp(wm).request("/elc_1/answer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(validBody),
+      });
+
+      expect(res.status).toBe(200);
+      expect(mockCommitWorkspaceSetupAnswer).toHaveBeenCalledTimes(1);
+      // Ordering: handler runs strictly before `answer`.
+      const commitOrder = mockCommitWorkspaceSetupAnswer.mock.invocationCallOrder[0] ?? Infinity;
+      const answerOrder = mockElicitationStorage.answer.mock.invocationCallOrder[0] ?? Infinity;
+      expect(commitOrder).toBeLessThan(answerOrder);
+      // Signals restart after commit.
+      expect(restart).toHaveBeenCalledTimes(1);
+    });
+
+    test("pre-flight validation failure 400s with per-field errors and skips `answer`", async () => {
+      const pending = setupElicitation();
+      mockElicitationStorage.get.mockResolvedValueOnce(success(pending));
+      mockCommitWorkspaceSetupAnswer.mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        errors: { variables: { email_recipient: "Invalid email" }, credentials: {} },
+      });
+
+      const res = await createTestApp().request("/elc_1/answer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(validBody),
+      });
+
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as { error: string; variables: Record<string, string> };
+      expect(body.error).toBe("validation_failed");
+      expect(body.variables.email_recipient).toBe("Invalid email");
+      expect(mockElicitationStorage.answer).not.toHaveBeenCalled();
+    });
+
+    test("post-pre-flight commit failure 500s with the committed-keys list, leaves elicitation pending", async () => {
+      const pending = setupElicitation();
+      mockElicitationStorage.get.mockResolvedValueOnce(success(pending));
+      mockCommitWorkspaceSetupAnswer.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        message: "credential pin failed: not_found",
+        committedKeys: ["EMAIL_RECIPIENT"],
+      });
+
+      const res = await createTestApp().request("/elc_1/answer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(validBody),
+      });
+
+      expect(res.status).toBe(500);
+      const body = (await res.json()) as { error: string; committedKeys: string[] };
+      expect(body.committedKeys).toEqual(["EMAIL_RECIPIENT"]);
+      expect(body.error).toContain("credential pin failed");
+      expect(mockElicitationStorage.answer).not.toHaveBeenCalled();
+    });
+
+    test("returns 500 when the workspace is gone before commit", async () => {
+      const pending = setupElicitation();
+      mockElicitationStorage.get.mockResolvedValueOnce(success(pending));
+      const wm: MockWorkspaceManager = {
+        ...defaultWorkspaceManager(),
+        find: () => Promise.resolve(null),
+      };
+
+      const res = await createTestApp(wm).request("/elc_1/answer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(validBody),
+      });
+
+      expect(res.status).toBe(500);
+      expect(mockCommitWorkspaceSetupAnswer).not.toHaveBeenCalled();
+      expect(mockElicitationStorage.answer).not.toHaveBeenCalled();
+    });
+
+    test("a signal-restart hiccup does NOT block marking the elicitation answered", async () => {
+      const pending = setupElicitation();
+      mockElicitationStorage.get.mockResolvedValueOnce(success(pending));
+      mockElicitationStorage.answer.mockResolvedValueOnce(
+        success(makeElicitation({ kind: "workspace-setup", status: "answered" })),
+      );
+      mockCommitWorkspaceSetupAnswer.mockResolvedValueOnce({
+        ok: true,
+        committedKeys: ["EMAIL_RECIPIENT"],
+      });
+      const wm: MockWorkspaceManager = {
+        ...defaultWorkspaceManager(),
+        handleWorkspaceConfigChange: () => Promise.reject(new Error("registrar offline")),
+      };
+
+      const res = await createTestApp(wm).request("/elc_1/answer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(validBody),
+      });
+
+      expect(res.status).toBe(200);
+      expect(mockElicitationStorage.answer).toHaveBeenCalled();
+    });
+
+    test("rejects a malformed workspace-setup value with 400 before dispatching to the handler", async () => {
+      const pending = setupElicitation();
+      mockElicitationStorage.get.mockResolvedValueOnce(success(pending));
+
+      const res = await createTestApp().request("/elc_1/answer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ value: "not-a-structured-payload" }),
+      });
+
+      expect(res.status).toBe(400);
+      expect(mockCommitWorkspaceSetupAnswer).not.toHaveBeenCalled();
+      expect(mockElicitationStorage.answer).not.toHaveBeenCalled();
     });
   });
 });

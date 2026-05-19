@@ -124,7 +124,11 @@ import { compileExecutionToFsm, ExecutionCompileError } from "./execution-to-fsm
 import { assertGlobalWriteAllowed, isGlobalWriteAttempt } from "./global-scope-guard.ts";
 import { MountSourceNotFoundError } from "./mount-errors.ts";
 import { MountedStoreBinding } from "./mounted-store-binding.ts";
-import { interpolateConfig, resolveWorkspaceVariables } from "./variable-interpolation.ts";
+import {
+  interpolateConfig,
+  resolveDeclaredVariables,
+  resolveWorkspaceVariables,
+} from "./variable-interpolation.ts";
 import { loadWorkspaceEnv } from "./workspace-env.ts";
 
 /**
@@ -1411,9 +1415,19 @@ export class WorkspaceRuntime {
       this.options.daemonUrl,
     );
     if (wsVars) {
-      this.config = { ...this.config, workspace: interpolateConfig(this.config.workspace, wsVars) };
+      const declaredVars = resolveDeclaredVariables(
+        this.config.workspace.variables,
+        loadWorkspaceEnv(workspacePath),
+      );
+      this.config = {
+        ...this.config,
+        workspace: interpolateConfig(this.config.workspace, wsVars, declaredVars),
+      };
       if (this.config.atlas) {
-        this.config = { ...this.config, atlas: interpolateConfig(this.config.atlas, wsVars) };
+        this.config = {
+          ...this.config,
+          atlas: interpolateConfig(this.config.atlas, wsVars, declaredVars),
+        };
       }
     }
 

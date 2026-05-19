@@ -394,6 +394,31 @@ describe("JetStreamElicitationStorageAdapter — expirePending sweep", () => {
     expect(second.data.skipped).not.toContain(created.data.id);
   });
 
+  it("leaves a past-deadline workspace-setup entry untouched (exempt from sweep)", async () => {
+    const adapter = new JetStreamElicitationStorageAdapter(nc);
+    const created = await adapter.create(
+      baseInput({
+        workspaceId: `ws-setup-sweep-${crypto.randomUUID()}`,
+        kind: "workspace-setup",
+        question: "Finish setup for this workspace",
+        expiresAt: expiresIn(200),
+      }),
+    );
+    expect.assert(created.ok === true);
+
+    // Sweep with a "now" far past the (intentionally tight) deadline.
+    // Workspace setup may sit unanswered for days — the sweep must skip it.
+    const fakeNow = new Date(Date.parse(created.data.expiresAt) + 7 * 24 * 60 * 60 * 1000);
+    const swept = await adapter.expirePending({ now: fakeNow });
+    expect.assert(swept.ok === true);
+    expect(swept.data.expired).not.toContain(created.data.id);
+
+    const got = await adapter.get({ id: created.data.id });
+    expect.assert(got.ok === true);
+    // Both durable state and read-time derivation must stay `pending`.
+    expect(got.data?.status).toBe("pending");
+  });
+
   it("CAS-skips when a concurrent answer wins the race", async () => {
     // Race the answer in BEFORE the sweep starts. With the answer
     // already landed, the entry is no longer `pending` so the sweep
@@ -420,6 +445,53 @@ describe("JetStreamElicitationStorageAdapter — expirePending sweep", () => {
     const got = await adapter.get({ id: created.data.id });
     expect.assert(got.ok === true);
     expect(got.data?.status).toBe("answered");
+  });
+});
+
+describe("JetStreamElicitationStorageAdapter — workspace-setup exemptions", () => {
+  it("get() leaves a past-deadline workspace-setup entry as `pending` (no read-time expiry)", async () => {
+    const adapter = new JetStreamElicitationStorageAdapter(nc);
+    const created = await adapter.create(
+      baseInput({
+        workspaceId: `ws-setup-rt-${crypto.randomUUID()}`,
+        kind: "workspace-setup",
+        question: "Finish setup",
+        expiresAt: expiresIn(100),
+      }),
+    );
+    expect.assert(created.ok === true);
+
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    const got = await adapter.get({ id: created.data.id });
+    expect.assert(got.ok === true);
+    expect(got.data?.status).toBe("pending");
+  });
+
+  it("answer() accepts a workspace-setup response long past the deadline", async () => {
+    const adapter = new JetStreamElicitationStorageAdapter(nc);
+    const created = await adapter.create(
+      baseInput({
+        workspaceId: `ws-setup-late-${crypto.randomUUID()}`,
+        kind: "workspace-setup",
+        question: "Finish setup",
+        // Already expired by the time we answer below.
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
+      }),
+    );
+    expect.assert(created.ok === true);
+
+    const answered = await adapter.answer({
+      id: created.data.id,
+      answer: {
+        value: {
+          variableValues: { region: "us-east-1" },
+          credentialChoices: { gmail: "cred_abc" },
+        },
+        answeredAt: new Date().toISOString(),
+      },
+    });
+    expect.assert(answered.ok === true);
+    expect(answered.data.status).toBe("answered");
   });
 });
 

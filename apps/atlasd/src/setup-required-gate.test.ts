@@ -1,0 +1,118 @@
+/**
+ * Tests for the cascade-worker / communicator setup-gate path.
+ *
+ * `evaluateWorkspaceSetupGate` is the context-free derivation used by
+ * `triggerWorkspaceSignal` (schedule + fs-watch + queued HTTP) and the
+ * communicator inbound handler. These tests exercise the gate end-to-end
+ * with stubbed Link calls + stubbed workspace manager so we know:
+ *   - unfilled declared variables flip the gate true
+ *   - a fully-filled workspace clears the gate
+ *   - missing workspace → null (caller has nothing to gate)
+ *
+ * The 409 body construction is covered separately by the HTTP route's own
+ * integration test in `routes/workspaces/index.test.ts`.
+ */
+
+import type { WorkspaceManager } from "@atlas/workspace";
+import { describe, expect, test, vi } from "vitest";
+
+vi.mock("@atlas/workspace", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@atlas/workspace")>();
+  return { ...original, loadWorkspaceEnv: vi.fn(() => ({})) };
+});
+
+const { mockResolveCredentialsByProvider, mockFetchLinkCredential } = vi.hoisted(() => ({
+  mockResolveCredentialsByProvider: vi.fn(),
+  mockFetchLinkCredential: vi.fn(),
+}));
+
+vi.mock("@atlas/core/mcp-registry/credential-resolver", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@atlas/core/mcp-registry/credential-resolver")>()),
+  resolveCredentialsByProvider: mockResolveCredentialsByProvider,
+  fetchLinkCredential: mockFetchLinkCredential,
+}));
+
+import {
+  buildSetupRequired409Body,
+  buildWorkspaceSetupUrl,
+  evaluateWorkspaceSetupGate,
+  SETUP_REQUIRED_ERROR_CODE,
+  WorkspaceSetupRequiredError,
+} from "./setup-required-gate.ts";
+
+function makeManager(args: {
+  workspace: object | null;
+  config: Record<string, unknown> | null;
+}): WorkspaceManager {
+  return {
+    find: vi.fn().mockResolvedValue(args.workspace),
+    getWorkspaceConfig: vi.fn().mockResolvedValue(args.config),
+  } as unknown as WorkspaceManager;
+}
+
+describe("evaluateWorkspaceSetupGate", () => {
+  test("returns null when workspace is missing", async () => {
+    const manager = makeManager({ workspace: null, config: null });
+    const result = await evaluateWorkspaceSetupGate(manager, "ws-missing");
+    expect(result).toBeNull();
+  });
+
+  test("returns null when workspace config is missing", async () => {
+    const manager = makeManager({ workspace: { id: "ws-1", path: "/tmp/ws-1" }, config: null });
+    const result = await evaluateWorkspaceSetupGate(manager, "ws-1");
+    expect(result).toBeNull();
+  });
+
+  test("flips requires_setup true when a declared variable is unfilled", async () => {
+    const manager = makeManager({
+      workspace: { id: "ws-1", path: "/tmp/ws-1" },
+      config: {
+        workspace: {
+          version: "1.0",
+          workspace: { name: "Test" },
+          variables: {
+            email_recipient: {
+              description: "Where to send the report",
+              schema: { type: "string", minLength: 1 },
+            },
+          },
+        },
+      },
+    });
+    const result = await evaluateWorkspaceSetupGate(manager, "ws-1");
+    expect(result).toEqual({ requires_setup: true, setupUrl: buildWorkspaceSetupUrl("ws-1") });
+  });
+
+  test("clears when there are no variable or credential requirements", async () => {
+    const manager = makeManager({
+      workspace: { id: "ws-2", path: "/tmp/ws-2" },
+      config: { workspace: { version: "1.0", workspace: { name: "Test" } } },
+    });
+    const result = await evaluateWorkspaceSetupGate(manager, "ws-2");
+    expect(result).toEqual({ requires_setup: false });
+  });
+});
+
+describe("buildSetupRequired409Body / WorkspaceSetupRequiredError", () => {
+  test("body shape locks in the keys webhook clients depend on", () => {
+    const body = buildSetupRequired409Body("ws-x");
+    expect(body.error).toBe(SETUP_REQUIRED_ERROR_CODE);
+    expect(body.error).toBe("workspace_setup_required");
+    expect(typeof body.message).toBe("string");
+    expect(body.message.length).toBeGreaterThan(0);
+    expect(body.setup_url).toContain("/workspaces/ws-x/chat");
+  });
+
+  test("typed error preserves workspace + provider context", () => {
+    const err = new WorkspaceSetupRequiredError({
+      workspaceId: "ws-y",
+      setupUrl: "http://daemon/workspaces/ws-y/chat",
+      signalProvider: "schedule",
+    });
+    expect(err).toBeInstanceOf(Error);
+    expect(err.code).toBe("workspace_setup_required");
+    expect(err.workspaceId).toBe("ws-y");
+    expect(err.signalProvider).toBe("schedule");
+    expect(err.setupUrl).toContain("/workspaces/ws-y/chat");
+  });
+});
