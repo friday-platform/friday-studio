@@ -6,6 +6,14 @@
  * @module
  */
 
+/** Key-name heuristic — kept in sync with the env tools' shared.ts. */
+const SECRET_KEY_RE = /password|secret|token|key|credential/i;
+
+/** True when the env var name looks credential-bearing. */
+export function isSecretKey(key: string): boolean {
+  return SECRET_KEY_RE.test(key);
+}
+
 /**
  * Build the `varsOverride` payload for an env-write confirmation.
  *
@@ -29,4 +37,22 @@ export function buildVarsOverride(
     out[key] = userValues[key] ?? proposed;
   }
   return out;
+}
+
+/**
+ * The card's only client-side gate against confirming with an empty secret —
+ * the server schema accepts `z.string()` (empty included), so this is the
+ * single line preventing blank-confirm of a credential-bearing key.
+ *
+ * Returns true when any secret-looking key in the proposal has no
+ * non-whitespace user-typed value. Whitespace-only counts as missing.
+ *
+ * @param entries - The proposed `[key, value]` pairs from the elicitation.
+ * @param userValues - User-typed values keyed by env var name.
+ */
+export function hasMissingSecretValue(
+  entries: ReadonlyArray<readonly [string, string]>,
+  userValues: Readonly<Record<string, string>>,
+): boolean {
+  return entries.some(([k]) => isSecretKey(k) && !(userValues[k] ?? "").trim().length);
 }

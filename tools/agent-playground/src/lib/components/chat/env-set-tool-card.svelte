@@ -4,7 +4,11 @@
   import { createQuery } from "@tanstack/svelte-query";
   import { page } from "$app/state";
   import { elicitationQueries, useAnswerElicitation } from "$lib/queries/elicitation-queries.ts";
-  import { buildVarsOverride } from "./env-set-tool-card.ts";
+  import {
+    buildVarsOverride,
+    hasMissingSecretValue,
+    isSecretKey,
+  } from "./env-set-tool-card.ts";
   import { readElicitationIdFromToolOutput } from "./human-input-matcher.ts";
   import { isInProgress } from "./tool-call-utils.ts";
   import type { ToolCallDisplay } from "./types.ts";
@@ -21,10 +25,6 @@
   }
 
   const { call, onApplied }: Props = $props();
-
-  /** Key-name heuristic — kept in sync with the env tools' shared.ts. */
-  const SECRET_KEY_RE = /password|secret|token|key|credential/i;
-  const isSecretKey = (key: string): boolean => SECRET_KEY_RE.test(key);
 
   function isRecord(v: unknown): v is Record<string, unknown> {
     return typeof v === "object" && v !== null;
@@ -100,9 +100,7 @@
   });
 
   /** Confirm is blocked while any secret-looking key is empty (or whitespace-only). */
-  const missingSecretValue = $derived(
-    entries.some(([k]) => isSecretKey(k) && !(userValues[k] ?? "").trim().length),
-  );
+  const missingSecretValue = $derived(hasMissingSecretValue(entries, userValues));
 
   const answerMutation = useAnswerElicitation();
   const inFlight = $derived(answerMutation.isPending);
@@ -130,12 +128,16 @@
   }
 
   /**
-   * Pull the current value of a secret-bearing key from the daemon's env
-   * endpoint (which returns the real value — only the agent-facing
-   * `env_get` tool masks). Used to reveal what the user typed into an
-   * applied card after a page refresh, without persisting the value on
-   * the elicitation answer record. The value travels: card → daemon →
-   * `.env` → daemon → card, never touching the chat message stream.
+   * Pull the current value of a proposed key from the daemon's env endpoint
+   * (which returns the real value — only the agent-facing `env_get` tool
+   * masks). Used so an applied card shows what actually hit `.env` instead
+   * of replaying the proposal after a page refresh — the user's override
+   * lives only in component state, so without this round-trip the input
+   * would silently lie about what was committed. The value travels:
+   * card → daemon → `.env` → daemon → card, never touching the chat
+   * message stream. Triggered eagerly on mount for non-secret keys (no
+   * privacy reason to defer) and lazily on the reveal button for secret
+   * keys (the eyeball click is the explicit "show me" gesture).
    */
   async function fetchAppliedValue(key: string): Promise<void> {
     if (!applied) return;
@@ -159,6 +161,26 @@
       // Silent — the input stays empty, user can click reveal again to retry.
     }
   }
+
+  // Once an env-write lands as `applied`, eagerly fetch every non-secret
+  // key's current disk value so the input reflects what's in `.env`, not
+  // the stale proposal. Without this, a user-edited non-secret value
+  // (e.g. LOG_DIR corrected from `/var/log` to `/srv/log`) shows the
+  // agent's original after a refresh while disk holds the user's edit.
+  // Secret keys stay lazy (reveal-button-driven) so the value isn't
+  // pulled into memory until the user explicitly asks for it.
+  // Plain Set, not `$state` — this is a side-effect dedup tracker, no
+  // reactivity needed.
+  const fetchedAppliedKeys = new Set<string>();
+  $effect(() => {
+    if (!applied) return;
+    for (const [key] of entries) {
+      if (isSecretKey(key)) continue;
+      if (fetchedAppliedKeys.has(key)) continue;
+      fetchedAppliedKeys.add(key);
+      void fetchAppliedValue(key);
+    }
+  });
 
   /** Status pill text — drives the one terminal-state line. */
   const statusLabel = $derived.by(() => {

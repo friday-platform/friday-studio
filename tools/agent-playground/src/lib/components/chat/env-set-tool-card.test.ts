@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildVarsOverride } from "./env-set-tool-card.ts";
+import { buildVarsOverride, hasMissingSecretValue, isSecretKey } from "./env-set-tool-card.ts";
 
 describe("buildVarsOverride", () => {
   it("uses the user-typed value when present", () => {
@@ -52,5 +52,66 @@ describe("buildVarsOverride", () => {
   it("preserves whitespace-only user values", () => {
     const out = buildVarsOverride([["API_KEY", ""]], { API_KEY: "   " });
     expect(out).toEqual({ API_KEY: "   " });
+  });
+});
+
+describe("hasMissingSecretValue", () => {
+  it("is true when a secret-looking key has no user value", () => {
+    expect(hasMissingSecretValue([["API_KEY", ""]], {})).toBe(true);
+  });
+
+  it("is false once a real value lands for the secret key", () => {
+    expect(hasMissingSecretValue([["API_KEY", ""]], { API_KEY: "sk-real" })).toBe(false);
+  });
+
+  it("treats whitespace-only secret values as missing", () => {
+    // Whitespace passes the server's no-newline regex and would
+    // commit. The trim() inside the gate is what keeps this from
+    // becoming a silent blank-confirm of a credential-bearing key.
+    expect(hasMissingSecretValue([["API_KEY", ""]], { API_KEY: "   " })).toBe(true);
+  });
+
+  it("ignores non-secret keys", () => {
+    expect(hasMissingSecretValue([["LOG_DIR", ""]], {})).toBe(false);
+  });
+
+  it("is true if any secret key is empty in a mixed payload", () => {
+    expect(
+      hasMissingSecretValue(
+        [
+          ["LOG_DIR", "/var/log"],
+          ["API_KEY", ""],
+        ],
+        { LOG_DIR: "/var/log" },
+      ),
+    ).toBe(true);
+  });
+
+  it("is false when every secret key has a real value", () => {
+    expect(
+      hasMissingSecretValue(
+        [
+          ["LOG_DIR", ""],
+          ["API_KEY", ""],
+          ["DB_PASSWORD", ""],
+        ],
+        { API_KEY: "sk-real", DB_PASSWORD: "hunter2" },
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("isSecretKey", () => {
+  it.each([
+    ["API_KEY", true],
+    ["DB_PASSWORD", true],
+    ["GITHUB_TOKEN", true],
+    ["WEBHOOK_SECRET", true],
+    ["AWS_CREDENTIAL", true],
+    ["LOG_DIR", false],
+    ["PORT", false],
+    ["BASE_URL", false],
+  ])("classifies %s as %s", (key, expected) => {
+    expect(isSecretKey(key)).toBe(expected);
   });
 });
