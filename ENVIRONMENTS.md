@@ -184,7 +184,7 @@ credential service.
 
 | Var | What it controls | Default |
 |---|---|---|
-| `FRIDAY_LOG_LEVEL` | `trace`, `debug`, `info`, `warn`, `error`, `fatal` | `info` |
+| `FRIDAY_LOG_LEVEL` | `trace`, `debug`, `info`, `warn`, `error`, `fatal` | Studio installer writes `warn`; bare CLI / `deno task atlas` falls through to `debug`. |
 | `FRIDAY_LOGS_DIR` | Override the logs directory | `<FRIDAY_HOME>/logs` |
 
 ---
