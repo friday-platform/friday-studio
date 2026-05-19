@@ -144,7 +144,7 @@
 
   .stat-label {
     color: color-mix(in srgb, var(--color-text), transparent 25%);
-    font-size: var(--font-size-0);
+    font-size: var(--font-size-1);
     letter-spacing: var(--font-letterspacing-2);
     text-transform: uppercase;
   }

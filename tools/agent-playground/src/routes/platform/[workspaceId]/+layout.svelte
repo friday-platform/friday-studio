@@ -3,7 +3,7 @@
   import { humanizeStepName } from "@atlas/config/pipeline-utils";
   import { deriveTopology } from "@atlas/config/topology";
   import { deriveWorkspaceAgents } from "@atlas/config/workspace-agents";
-  import { Page } from "@atlas/ui";
+  import { PageLayout } from "@atlas/ui";
   import { createQuery } from "@tanstack/svelte-query";
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
@@ -142,12 +142,10 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <svelte:window onkeydown={handleKeydown} />
 
-<Page.Root>
-  <Page.Content scrollable={!isChat && !isSettings} padded={false}>
-    {@render children?.()}
-  </Page.Content>
+<PageLayout.Root>
+  {@render children?.()}
   {#if !isSessionDetail && !isSignalDetail && !isOverview && !isEdit && !isChat && !isChatDebug && !isActivity && !isSettings}
-    <Page.Sidebar>
+    <PageLayout.Sidebar>
       {#if isAgents}
         <AgentIndexSidebar agents={workspaceAgents} {providerStatus} />
       {:else if isJobs}
@@ -178,9 +176,9 @@
           {/if}
         {/key}
       {/if}
-    </Page.Sidebar>
+    </PageLayout.Sidebar>
   {/if}
-</Page.Root>
+</PageLayout.Root>
 
 <style>
   .sidebar-section {

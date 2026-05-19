@@ -6,10 +6,10 @@
 </script>
 
 <nav class="component" data-friday-pagelayout-title aria-label="Breadcrumb">
-  <ol>
+  <ol class="text">
     {#each crumbs as crumb, i (i)}
       {@const isLast = i === crumbs.length - 1}
-      <li class:current={isLast}>
+      <li class={isLast ? "current text-bright" : "text-faded"}>
         {#if crumb.href && !isLast}
           <a href={crumb.href}>{crumb.label}</a>
         {:else}
@@ -17,7 +17,7 @@
         {/if}
       </li>
       {#if !isLast}
-        <li class="sep" aria-hidden="true">/</li>
+        <li class="sep text-faded" aria-hidden="true">/</li>
       {/if}
     {/each}
   </ol>
@@ -41,7 +41,6 @@
   ol {
     align-items: center;
     display: flex;
-    font-size: var(--font-size-4);
     font-weight: var(--font-weight-5);
     gap: 8px;
     line-height: 1.2;
@@ -50,17 +49,8 @@
     padding: 0;
   }
 
-  li {
-    color: var(--text-faded);
-  }
-
-  li.current {
-    color: var(--text-bright);
-  }
-
   li a {
     color: inherit;
-    text-decoration: none;
   }
 
   li a:hover {

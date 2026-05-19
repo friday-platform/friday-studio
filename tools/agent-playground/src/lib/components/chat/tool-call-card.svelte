@@ -510,7 +510,7 @@
     align-items: center;
     display: inline-flex;
     flex-shrink: 0;
-    font-size: var(--font-size-0, 11px);
+    font-size: var(--font-size-1, 11px);
     gap: 5px;
     white-space: nowrap;
     --indicator-color: var(--text-faded);
@@ -562,7 +562,7 @@
   .tool-card-name {
     color: var(--text-faded);
     font-family: var(--font-family-mono, ui-monospace, monospace);
-    font-size: var(--font-size-0, 11px);
+    font-size: var(--font-size-1, 11px);
     font-weight: var(--font-weight-5);
     opacity: 0.6;
   }
@@ -570,7 +570,7 @@
   .tool-card-meta {
     color: var(--text-faded);
     font-family: var(--font-family-mono, ui-monospace, monospace);
-    font-size: var(--font-size-0, 11px);
+    font-size: var(--font-size-1, 11px);
     opacity: 0.4;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -597,7 +597,7 @@
     cursor: pointer;
     display: flex;
     font-family: var(--font-family-mono, ui-monospace, monospace);
-    font-size: var(--font-size-0, 11px);
+    font-size: var(--font-size-1, 11px);
     gap: var(--size-1);
     inline-size: max-content;
     list-style: none;
@@ -646,7 +646,7 @@
     background-color: var(--surface-bright);
     border-radius: var(--radius-1);
     font-family: var(--font-family-mono, ui-monospace, monospace);
-    font-size: var(--font-size-0, 11px);
+    font-size: var(--font-size-1, 11px);
     margin-block-start: var(--size-1);
     max-block-size: 400px;
     overflow: auto;
@@ -694,7 +694,7 @@
 
   .tool-card-details :global(pre.shiki code) {
     font-family: var(--font-family-mono, ui-monospace, monospace);
-    font-size: var(--font-size-0, 11px);
+    font-size: var(--font-size-1, 11px);
   }
 
   /* ─── Connect service override ─────────────────────────────────────── */

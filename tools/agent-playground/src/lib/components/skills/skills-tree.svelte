@@ -267,7 +267,7 @@
     block-size: var(--size-4);
     color: color-mix(in srgb, var(--color-text), transparent 45%);
     display: flex;
-    font-size: var(--font-size-0);
+    font-size: var(--font-size-1);
     font-weight: var(--font-weight-6);
     gap: var(--size-1);
     letter-spacing: 0.04em;
@@ -295,7 +295,7 @@
 
   .namespace-count {
     color: color-mix(in srgb, var(--color-text), transparent 65%);
-    font-size: var(--font-size-0);
+    font-size: var(--font-size-1);
     font-variant-numeric: tabular-nums;
   }
 
@@ -344,7 +344,7 @@
     border-radius: var(--radius-2);
     color: color-mix(in srgb, var(--color-text), transparent 30%);
     flex-shrink: 0;
-    font-size: var(--font-size-0);
+    font-size: var(--font-size-1);
     font-weight: var(--font-weight-5);
     letter-spacing: 0.02em;
     padding: 1px var(--size-1);

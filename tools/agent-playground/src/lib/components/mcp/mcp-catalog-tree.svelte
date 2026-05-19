@@ -293,7 +293,7 @@
     border-radius: var(--radius-2);
     color: var(--badge-tone);
     flex-shrink: 0;
-    font-size: var(--font-size-0);
+    font-size: var(--font-size-1);
     font-weight: var(--font-weight-5);
     padding: 1px var(--size-1-5);
     white-space: nowrap;

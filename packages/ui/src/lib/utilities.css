@@ -1,0 +1,127 @@
+/*
+ * Utility classes — CUBE CSS-style global helpers.
+ *
+ * `.text-*` are single-property font-size helpers, anchored on `.text` = 14px
+ * (--font-size-4). The smaller-end aliases (-2xs, -3xs) cover the dense label
+ * sizes that dominate the app today.
+ *
+ * `.button` is a Block (in CUBE terms): the cluster of styles that defines a
+ * button, with `.variant-*`, `.size-*`, and `.cursor-*` modifiers. Mirrors
+ * button.svelte so the same markup works outside the Svelte component.
+ */
+
+/* Text sizes ─────────────────────────────────────────────────────────── */
+.text-2xs { font-size: var(--font-size-1); }  /* 11px */
+.text-xs  { font-size: var(--font-size-2); }  /* 12px */
+.text-sm  { font-size: var(--font-size-3); }  /* 13px */
+.text     { font-size: var(--font-size-4); }  /* 14px — base */
+.text-md  { font-size: var(--font-size-5); }  /* 15px */
+.text-lg  { font-size: var(--font-size-6); }  /* 16px */
+.text-xl  { font-size: var(--font-size-7); }  /* 18px */
+.text-2xl { font-size: var(--font-size-8); }  /* 21px */
+
+/* Text colors ────────────────────────────────────────────────────────── */
+.text-bright { color: var(--text-bright); }
+.text-faded  { color: var(--text-faded); }
+
+/* Button ─────────────────────────────────────────────────────────────── */
+.button {
+  align-items: center;
+  block-size: var(--size-6-5);
+  border-radius: var(--radius-2-5);
+  color: var(--text-bright);
+  cursor: default;
+  display: inline flex;
+  flex: none;
+  font-size: var(--font-size-3);
+  font-weight: var(--font-weight-5);
+  gap: var(--size-1);
+  inline-size: max-content;
+  justify-content: center;
+  line-height: var(--font-lineheight-0);
+  min-inline-size: var(--size-12);
+  padding-inline: var(--size-3);
+  transition: all 150ms ease;
+  -webkit-user-select: none;
+  user-select: none;
+  white-space: initial;
+
+  &:focus-visible {
+    outline: 1px solid var(--color-text);
+    z-index: var(--layer-1);
+  }
+
+  &.cursor-hand,
+  &[href] {
+    cursor: pointer;
+  }
+
+  &[href].cursor-default {
+    cursor: default;
+  }
+
+  &[disabled=""],
+  &[disabled="true"] {
+    color: var(--text-faded);
+    pointer-events: none;
+  }
+
+  & .contents {
+    position: relative;
+    z-index: 1;
+  }
+
+  & .prepend {
+    color: var(--text-faded);
+    transition: color 150ms ease;
+  }
+
+  & .append {
+    opacity: 0.4;
+    transform: translate3d(0, 0, 0);
+    transition: all 150ms ease;
+  }
+
+  /* Variants */
+  &.variant-primary {
+    background: var(--surface);
+    box-shadow: var(--shadow-1);
+  }
+
+  &.variant-secondary {
+    background-color: var(--highlight-bright);
+
+    &:hover {
+      background-color: color-mix(in srgb, var(--highlight-bright), var(--text) 5%);
+    }
+  }
+
+  &.variant-destructive {
+    background-color: var(--highlight-bright);
+    color: var(--red-primary);
+
+    &:hover {
+      background-color: color-mix(in srgb, var(--highlight-bright), var(--text) 5%);
+    }
+  }
+
+  &.variant-none {
+    padding-inline: unset;
+
+    &:hover .prepend {
+      color: var(--text-bright);
+    }
+  }
+
+  /* Sizes */
+  &.size-small {
+    font-size: var(--font-size-2);
+  }
+
+  &.size-icon {
+    block-size: var(--size-6);
+    inline-size: var(--size-6);
+    min-inline-size: unset;
+    padding-inline: 0;
+  }
+}

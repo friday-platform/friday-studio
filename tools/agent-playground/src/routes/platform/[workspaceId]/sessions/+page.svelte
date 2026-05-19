@@ -1,15 +1,25 @@
 <script lang="ts">
   import { extractInitialStateIds, filterNoiseNodes } from "@atlas/config/pipeline-utils";
   import { deriveTopology } from "@atlas/config/topology";
+  import { PageLayout } from "@atlas/ui";
   import { createQuery } from "@tanstack/svelte-query";
   import { page } from "$app/state";
   import SessionProgressCard from "$lib/components/session/session-progress-card.svelte";
-  import WorkspaceBreadcrumb from "$lib/components/workspace/workspace-breadcrumb.svelte";
   import { sessionQueries, workspaceQueries } from "$lib/queries";
 
   const workspaceId = $derived(page.params.workspaceId ?? null);
 
   const configQuery = createQuery(() => workspaceQueries.config(workspaceId));
+
+  const workspaceName = $derived(configQuery.data?.config?.workspace?.name ?? workspaceId ?? "");
+  const crumbs = $derived(
+    workspaceId
+      ? [
+          { label: workspaceName, href: `/platform/${workspaceId}` },
+          { label: "Runs" },
+        ]
+      : [{ label: "Runs" }],
+  );
   const sessions = createQuery(() => ({
     ...sessionQueries.list(workspaceId),
     refetchInterval: 5_000,
@@ -35,15 +45,10 @@
   });
 </script>
 
-<div class="sessions-page">
-  {#if workspaceId}
-    <WorkspaceBreadcrumb {workspaceId} />
-  {/if}
-
-  <header class="page-header">
-    <h1>Runs</h1>
-  </header>
-
+<PageLayout.Root>
+  <PageLayout.Breadcrumbs {crumbs} />
+  <PageLayout.Body>
+    <PageLayout.Content>
   {#if !workspaceId}
     <div class="empty-state">
       <p>No workspace selected</p>
@@ -72,21 +77,11 @@
       <p>Loading workspace config...</p>
     </div>
   {/if}
-</div>
+    </PageLayout.Content>
+  </PageLayout.Body>
+</PageLayout.Root>
 
 <style>
-  .sessions-page {
-    display: flex;
-    flex-direction: column;
-    gap: var(--size-6);
-    padding: var(--size-8) var(--size-10);
-  }
-
-  .page-header h1 {
-    font-size: var(--font-size-7);
-    font-weight: var(--font-weight-6);
-  }
-
   .empty-state {
     align-items: center;
     color: color-mix(in srgb, var(--color-text), transparent 25%);

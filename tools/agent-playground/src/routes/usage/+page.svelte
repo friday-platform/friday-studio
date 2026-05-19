@@ -378,7 +378,7 @@
 </script>
 
 <PageLayout.Root>
-  <PageLayout.Title>Usage</PageLayout.Title>
+  <PageLayout.Title subtitle="Token and cost estimates">Usage</PageLayout.Title>
   <PageLayout.Body>
     <PageLayout.Content>
       <div class="filters">

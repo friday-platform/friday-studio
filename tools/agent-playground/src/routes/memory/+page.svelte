@@ -4,6 +4,7 @@
   // redirect on ?ws=foo. Replaced with a plain anchor in the empty-state UI
   // that the user clicks if they arrived with a query param. Same UX, no
   // navigation loop. See docs/never-again/2026-04-02-effect-goto-loops.md
+  import { PageLayout } from "@atlas/ui";
   import { createQuery } from "@tanstack/svelte-query";
   import { memoryQueries, workspaceQueries } from "$lib/queries";
 
@@ -54,13 +55,12 @@
   const workspacesError = $derived(workspacesQuery.error);
 </script>
 
-<div class="memory-root">
-  <header class="page-header">
-    <h1>Memory</h1>
-    <p class="subtitle">Browse workspace memories</p>
-  </header>
-
-  {#if isWorkspacesLoading}
+<PageLayout.Root>
+  <PageLayout.Title subtitle="Browse workspace memories">Memory</PageLayout.Title>
+  <PageLayout.Body>
+    <PageLayout.Content>
+      <div class="memory-content">
+        {#if isWorkspacesLoading}
     <div class="loading">Loading workspaces…</div>
   {:else if workspacesError}
     <div class="error-banner">
@@ -115,32 +115,18 @@
       </ul>
     {/if}
   {/if}
-</div>
+      </div>
+    </PageLayout.Content>
+  </PageLayout.Body>
+</PageLayout.Root>
 
 <style>
-  .memory-root {
+  .memory-content {
     display: flex;
     flex-direction: column;
     gap: var(--size-6);
     max-inline-size: 640px;
     margin-inline: auto;
-    padding: var(--size-10) var(--size-6);
-  }
-
-  .page-header {
-    display: flex;
-    flex-direction: column;
-    gap: var(--size-1);
-  }
-
-  .page-header h1 {
-    font-size: var(--font-size-6);
-    font-weight: var(--font-weight-7);
-  }
-
-  .subtitle {
-    color: color-mix(in srgb, var(--color-text), transparent 35%);
-    font-size: var(--font-size-2);
   }
 
   .tab-bar {
@@ -177,7 +163,7 @@
     background: color-mix(in srgb, var(--color-accent, #1171df), transparent 80%);
     border-radius: var(--radius-round);
     color: var(--color-accent, #1171df);
-    font-size: var(--font-size-0);
+    font-size: var(--font-size-1);
     font-weight: var(--font-weight-6);
     min-inline-size: var(--size-4);
     padding-inline: var(--size-1);

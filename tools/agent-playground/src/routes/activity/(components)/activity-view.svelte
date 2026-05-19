@@ -43,9 +43,11 @@
     workspaceId: string | null;
     /** Title shown at the top of the page. */
     title: string;
+    /** Optional subtitle rendered under the title. */
+    subtitle?: string;
   };
 
-  let { workspaceId, title }: Props = $props();
+  let { workspaceId, title, subtitle }: Props = $props();
 
   const queryClient = useQueryClient();
 
@@ -216,7 +218,7 @@
 </script>
 
 <PageLayout.Root>
-  <PageLayout.Title>{title}</PageLayout.Title>
+  <PageLayout.Title {subtitle}>{title}</PageLayout.Title>
   <PageLayout.Body>
     <PageLayout.Content>
       {#if listQuery.isLoading}
