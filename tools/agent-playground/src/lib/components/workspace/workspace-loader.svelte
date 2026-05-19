@@ -71,6 +71,17 @@
     dragOver = false;
   }
 
+  function isYamlFile(file: File): boolean {
+    return file.name.endsWith(".yml") || file.name.endsWith(".yaml");
+  }
+
+  function isZipFile(file: File): boolean {
+    // Some browsers (notably Safari on macOS) report zips with `type: ""`
+    // depending on how they were created, so trust the extension as a
+    // fallback and only treat the MIME type as a positive confirmation.
+    return file.name.endsWith(".zip") || file.type === "application/zip";
+  }
+
   async function handleDrop(e: DragEvent) {
     e.preventDefault();
     dragOver = false;
@@ -79,8 +90,8 @@
     const file = e.dataTransfer?.files[0];
     if (!file) return;
 
-    if (!file.name.endsWith(".yml") && !file.name.endsWith(".yaml")) {
-      error = "Please drop a .yml or .yaml file";
+    if (!isYamlFile(file) && !isZipFile(file)) {
+      error = "Please drop a .yml, .yaml, or .zip file";
       return;
     }
 
@@ -99,46 +110,90 @@
   async function loadFile(file: File) {
     loading = true;
     try {
-      const text = await file.text();
-      const config: unknown = parseYaml(text);
-
-      if (!config || typeof config !== "object") {
-        error = "Invalid YAML: expected an object";
+      if (isZipFile(file)) {
+        await importBundle(file);
         return;
       }
-
-      const name = (config as Record<string, unknown>).name;
-      const workspaceName =
-        typeof name === "string" ? name : file.name.replace(/\.(yml|yaml)$/, "");
-
-      const res = await client.workspace.create.$post({
-        json: { config: config as Record<string, unknown>, workspaceName },
-      });
-
-      if (!res.ok) {
-        error = await formatCreateError(res);
-        return;
-      }
-
-      const result: unknown = await res.json();
-      const parsed = z.object({
-        workspace: z.object({ id: z.string() }),
-      }).passthrough().safeParse(result);
-
-      if (!parsed.success) {
-        console.warn("Workspace created but response shape unexpected:", parsed.error);
-      }
-
-      await queryClient.invalidateQueries({ queryKey: workspaceQueries.all() });
-
-      onclose?.();
-
-      goto(`/platform/${parsed.success ? parsed.data.workspace.id : ""}`);
+      await createFromYaml(file);
     } catch (err) {
-      error = err instanceof Error ? err.message : "Failed to parse YAML";
+      error = err instanceof Error ? err.message : "Failed to load workspace";
     } finally {
       loading = false;
     }
+  }
+
+  async function createFromYaml(file: File) {
+    const text = await file.text();
+    const config: unknown = parseYaml(text);
+
+    if (!config || typeof config !== "object") {
+      error = "Invalid YAML: expected an object";
+      return;
+    }
+
+    const name = (config as Record<string, unknown>).name;
+    const workspaceName =
+      typeof name === "string" ? name : file.name.replace(/\.(yml|yaml)$/, "");
+
+    const res = await client.workspace.create.$post({
+      json: { config: config as Record<string, unknown>, workspaceName },
+    });
+
+    if (!res.ok) {
+      error = await formatCreateError(res);
+      return;
+    }
+
+    const result: unknown = await res.json();
+    const parsed = z.object({
+      workspace: z.object({ id: z.string() }),
+    }).passthrough().safeParse(result);
+
+    if (!parsed.success) {
+      console.warn("Workspace created but response shape unexpected:", parsed.error);
+    }
+
+    await queryClient.invalidateQueries({ queryKey: workspaceQueries.all() });
+
+    onclose?.();
+
+    goto(`/platform/${parsed.success ? parsed.data.workspace.id : ""}`);
+  }
+
+  // The single-workspace import endpoint accepts the same zip shape that
+  // Settings > Import a workspace produces (`POST /api/workspaces/import-bundle`
+  // with `multipart/form-data` field `bundle`). A full-export archive (many
+  // workspaces in one zip) goes through a separate endpoint and is intentionally
+  // not handled here — that bulk-migration flow stays in Settings.
+  const ImportBundleSchema = z.object({
+    workspaceId: z.string().optional(),
+    error: z.string().optional(),
+  }).passthrough();
+
+  async function importBundle(file: File) {
+    const form = new FormData();
+    form.set("bundle", file);
+    const res = await fetch("/api/daemon/api/workspaces/import-bundle", {
+      method: "POST",
+      body: form,
+    });
+
+    const body = (await res.json().catch(() => ({}))) as unknown;
+    const parsed = ImportBundleSchema.safeParse(body);
+
+    if (!res.ok) {
+      error = parsed.success && parsed.data.error
+        ? parsed.data.error
+        : `Import failed (HTTP ${res.status})`;
+      return;
+    }
+
+    await queryClient.invalidateQueries({ queryKey: workspaceQueries.all() });
+
+    onclose?.();
+
+    const workspaceId = parsed.success ? parsed.data.workspaceId : undefined;
+    goto(`/platform/${workspaceId ?? ""}`);
   }
 </script>
 
@@ -156,7 +211,7 @@
     {#if loading}
       <p class="drop-label">Loading workspace...</p>
     {:else}
-      <p class="drop-label">Drop a workspace.yml here, or click to browse</p>
+      <p class="drop-label">Drop a workspace.yml or .zip here, or click to browse</p>
     {/if}
 
     {#if error}
@@ -164,7 +219,12 @@
     {/if}
   </div>
 
-  <input type="file" accept=".yml,.yaml" hidden onchange={handleFileInput} />
+  <input
+    type="file"
+    accept=".yml,.yaml,.zip,application/zip"
+    hidden
+    onchange={handleFileInput}
+  />
 
   {#if !inline && onclose}
     <button type="button" class="close-btn" onclick={onclose}>Close</button>
