@@ -1,3 +1,4 @@
+import process from "node:process";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { deriveConnectionId, resolveTunnelUrl } from "./communicator-wiring.ts";
 
@@ -17,17 +18,21 @@ vi.mock("@atlas/core/mcp-registry/credential-resolver", async (importOriginal) =
 
 describe("resolveTunnelUrl", () => {
   let fetchMock: ReturnType<typeof vi.fn>;
+  const savedEnv = { EXTERNAL_TUNNEL_URL: process.env.EXTERNAL_TUNNEL_URL };
 
   beforeEach(() => {
     fetchMock = vi.fn<(url: string) => Promise<Response>>();
     vi.stubGlobal("fetch", fetchMock);
+    delete process.env.EXTERNAL_TUNNEL_URL;
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    if (savedEnv.EXTERNAL_TUNNEL_URL === undefined) delete process.env.EXTERNAL_TUNNEL_URL;
+    else process.env.EXTERNAL_TUNNEL_URL = savedEnv.EXTERNAL_TUNNEL_URL;
   });
 
-  it("returns the public tunnel URL from /status", async () => {
+  it("returns the public tunnel URL from /status (default port)", async () => {
     fetchMock.mockResolvedValueOnce(
       new Response(
         JSON.stringify({ url: "https://abc-tunnel.cloudflare.example.com", secret: null }),
@@ -37,7 +42,30 @@ describe("resolveTunnelUrl", () => {
 
     const url = await resolveTunnelUrl();
     expect(url).toBe("https://abc-tunnel.cloudflare.example.com");
+    // No env var → default dev-rig listener (matches
+    // tools/webhook-tunnel/config.go's default port).
     expect(fetchMock).toHaveBeenCalledWith("http://localhost:9090/status");
+  });
+
+  // Installed-launcher rig: EXTERNAL_TUNNEL_URL is set by
+  // `tools/friday-launcher/cert_env.go` for every child process. Bare 9090
+  // has nothing listening because the launcher remaps webhook-tunnel to
+  // e.g. 19090. The original bug (chat_mCiYnHbUQs, 2026-05-18) was that
+  // this function ignored EXTERNAL_TUNNEL_URL and fell through to 9090.
+  it("uses EXTERNAL_TUNNEL_URL when the launcher exports it (installed rig)", async () => {
+    process.env.EXTERNAL_TUNNEL_URL = "https://localhost:19090";
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ url: "https://merit-rose.trycloudflare.com" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const url = await resolveTunnelUrl();
+    expect(url).toBe("https://merit-rose.trycloudflare.com");
+    expect(fetchMock).toHaveBeenCalledWith("https://localhost:19090/status");
+    // Negative: must NOT call the bare-default port when launcher remaps it.
+    expect(fetchMock).not.toHaveBeenCalledWith("http://localhost:9090/status");
   });
 
   it("throws a clear error when the tunnel is unreachable (network error)", async () => {
