@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { PageLayout } from "@atlas/ui";
   import { invalidateAll } from "$app/navigation";
   import type { PageData } from "./$types";
 
@@ -213,6 +214,7 @@
   </button>
 {/snippet}
 
+<PageLayout.Body>
 <div class="page">
   <header class="page-head">
     <div class="title-row">
@@ -617,6 +619,7 @@
     </section>
   {/if}
 </div>
+</PageLayout.Body>
 
 <style>
   /* Style tokens come from `packages/ui/src/lib/colors.css` —
@@ -654,10 +657,11 @@
   .page-head {
     background: var(--surface);
     border-block-end: 1px solid var(--border);
-    margin-block-end: var(--size-2);
+    inset-block-start: 0;
+    inset-inline: 0;
     padding-block: var(--size-2);
-    position: sticky;
-    top: 0;
+    padding-inline: var(--size-12);
+    position: absolute;
     z-index: 10;
   }
   .title-row {

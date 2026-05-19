@@ -38,6 +38,7 @@
       class:truncated={descriptionTruncated}
       role="button"
       tabindex="0"
+      aria-expanded={!descriptionTruncated}
       onclick={() => (descriptionTruncated = !descriptionTruncated)}
       onkeydown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
@@ -76,6 +77,12 @@
   .description {
     cursor: pointer;
     max-inline-size: 60ch;
+    transition: color 0.1s ease;
+
+    &:hover,
+    &:focus-visible {
+      color: var(--text);
+    }
 
     &.truncated {
       overflow: hidden;

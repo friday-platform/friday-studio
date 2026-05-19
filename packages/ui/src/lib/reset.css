@@ -45,10 +45,6 @@ ul {
   border-width: 0;
   box-sizing: border-box;
 }
-::after,
-::before {
-  --tw-content: "";
-}
 :host,
 html {
   -moz-tab-size: 4;
