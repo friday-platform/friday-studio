@@ -34,23 +34,33 @@ export function createMicrosoftMailProvider(): OAuthProvider {
       // generates PKCE automatically and selects oauth.None() client auth
       // when clientSecret is unset.
       //
-      // No `openid` / `profile` / `email`: identity comes from a Graph
-      // `/me` call against the access token (User.Read covers it). With
-      // openid, Microsoft's `/common` endpoint returns an id_token whose
-      // `iss` claim is tenant-scoped (`.../{tid}/v2.0`), which
-      // oauth4webapi can't match against a static `as.issuer`. Dropping
-      // openid skips id_token issuance and the validation step.
+      // Request set is Graph resource scopes only — do NOT add `openid`,
+      // `profile`, or `email` here. Microsoft's `/common` endpoint
+      // rejects mixed Graph + OIDC scope requests on this multi-tenant
+      // public client (`access_denied` from the consent screen).
+      // Empirically, Microsoft still grants `openid profile email`
+      // alongside `User.Read` in the resulting token's `scp` claim —
+      // they're auto-augmented server-side. Identity comes from a Graph
+      // `/me` call against the access token; no id_token is issued
+      // because Link uses plain `response_type=code` without `nonce`.
       scopes: ["offline_access", "User.Read", "Mail.ReadWrite", "Mail.Send"],
       extraAuthParams: { prompt: "select_account" },
     },
     identify: async (tokens) => {
-      const res = await fetch("https://graph.microsoft.com/v1.0/me", {
+      // Returns `userPrincipalName` (email-shaped) over the immutable `id`
+      // GUID intentionally: Link uses this same string as the connection's
+      // display label, and a bare GUID is unreadable in the UI. Linear's
+      // provider makes the same trade-off (`user.email ?? user.id`). The
+      // cost is a duplicate credential row if an admin renames the UPN —
+      // recoverable by reconnecting once. Switch to `id` if/when Link
+      // splits userIdentifier from label.
+      const res = await fetch("https://graph.microsoft.com/v1.0/me?$select=userPrincipalName", {
         headers: { Authorization: `Bearer ${tokens.access_token}` },
       });
       if (!res.ok) {
         throw new Error(`Failed to fetch Microsoft user profile: ${res.status}`);
       }
-      const data = z.object({ userPrincipalName: z.string() }).parse(await res.json());
+      const data = z.object({ userPrincipalName: z.string().min(1) }).parse(await res.json());
       return data.userPrincipalName;
     },
   });
