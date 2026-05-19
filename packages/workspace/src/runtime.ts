@@ -246,6 +246,50 @@ interface WorkspaceRuntimeSignal {
    * provenance for crystallization. Absent for root sessions.
    */
   parentSessionId?: string;
+  /**
+   * Base64-encoded original webhook request body. Only set for signals
+   * fired through Friday's webhook-tunnel (the byte-for-byte HTTP proxy).
+   * Surfaces to the agent as `ctx.input.raw["body"]` so HMAC verification
+   * against the exact upstream-signed bytes is possible.
+   */
+  body?: string;
+  /**
+   * Original webhook request headers (lowercased keys). Only set for
+   * webhook-triggered signals. Surfaces to the agent as
+   * `ctx.input.raw["headers"]`.
+   */
+  headers?: Record<string, string>;
+}
+
+/**
+ * Trailing-options bag for the three trigger entrypoints
+ * (`triggerSignalWithSession`, `triggerSignalWithResult`, and atlasd's
+ * `triggerWorkspaceSignal`). Collected into one object instead of a long
+ * positional list so the next "we need to thread X through" feature
+ * doesn't compound the positional drift — and so call sites that only
+ * need one field don't have to pass `undefined` for the others.
+ */
+export interface TriggerSignalOpts {
+  streamId?: string;
+  onStreamEvent?: (chunk: AtlasUIMessageChunk) => void;
+  skipStates?: string[];
+  abortSignal?: AbortSignal;
+  /**
+   * Parent session id when this signal is being fired from inside
+   * another session (chat-spawned-job, FSM-emit-and-await, etc.).
+   * Threads through to `SessionSummary.parentSessionId` so the spawned
+   * session records its parent. Phase 11 provenance.
+   */
+  parentSessionId?: string;
+  /**
+   * Webhook-only context (base64 body + lowercased headers) preserved
+   * byte-for-byte from the upstream HTTP request when the signal was
+   * fired via Friday's webhook-tunnel. Surfaces to the agent as
+   * `ctx.input.raw["body"]` / `ctx.input.raw["headers"]` so HMAC
+   * verification against the exact upstream bytes is possible. Absent
+   * for cron / chat / system / FSM-emitted signals.
+   */
+  webhookContext?: { body?: string; headers?: Record<string, string> };
 }
 
 /** Minimal workspace info needed by WorkspaceRuntimeInit (internal use only) */
@@ -2038,7 +2082,16 @@ export class WorkspaceRuntime {
         // non-cooperative work, the await rejects immediately on cancel,
         // releasing this session and the cascade-stream slot above it.
         const enginePromise = engine.signal(
-          { type: signal.id, data: signal.data || {} },
+          {
+            type: signal.id,
+            data: signal.data || {},
+            // Webhook-only passthrough — preserved byte-for-byte from the
+            // upstream HTTP request when the signal came in via the tunnel.
+            // FSM engine surfaces these to the agent as
+            // `ctx.input.raw["body"]` / `ctx.input.raw["headers"]`.
+            body: signal.body,
+            headers: signal.headers,
+          },
           {
             sessionId: session.id,
             workspaceId: this.workspace.id,
@@ -3396,40 +3449,20 @@ export class WorkspaceRuntime {
   async triggerSignalWithSession(
     signalName: string,
     payload?: Record<string, unknown>,
-    streamId?: string,
-    onStreamEvent?: (chunk: AtlasUIMessageChunk) => void,
-    skipStates?: string[],
-    abortSignal?: AbortSignal,
-    /**
-     * Parent session id; threads through to
-     * `SessionSummary.parentSessionId` so chat→job and similar parent
-     * linkages are recoverable from session history. Phase 11 of the
-     * fan-out-without-fan-in plan.
-     */
-    parentSessionId?: string,
+    opts: TriggerSignalOpts = {},
   ): Promise<IWorkspaceSession> {
-    const result = await this.triggerSignalWithResult(
-      signalName,
-      payload,
-      streamId,
-      onStreamEvent,
-      skipStates,
-      abortSignal,
-      parentSessionId,
-    );
+    const result = await this.triggerSignalWithResult(signalName, payload, opts);
     return result.session;
   }
 
   async triggerSignalWithResult(
     signalName: string,
     payload?: Record<string, unknown>,
-    streamId?: string,
-    onStreamEvent?: (chunk: AtlasUIMessageChunk) => void,
-    skipStates?: string[],
-    abortSignal?: AbortSignal,
-    parentSessionId?: string,
+    opts: TriggerSignalOpts = {},
   ): Promise<WorkspaceSignalRunResult> {
-    // Top-level `streamId` arg wins over any payload.streamId. The runtime
+    const { streamId, onStreamEvent, skipStates, abortSignal, parentSessionId, webhookContext } =
+      opts;
+    // Top-level `streamId` opt wins over any payload.streamId. The runtime
     // reads the merged value via `signal.data.streamId` (see processSignalForJob
     // ~line 1595 where streamId is derived). Both surfaces stay supported so
     // existing callers (chat-SDK, job-tools forwarding) keep working.
@@ -3443,6 +3476,8 @@ export class WorkspaceRuntime {
       data,
       timestamp: new Date(),
       parentSessionId,
+      body: webhookContext?.body,
+      headers: webhookContext?.headers,
     };
 
     await this.ensureInitialized();

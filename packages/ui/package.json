@@ -39,7 +39,9 @@
       "svelte": "./src/lib/markdown/markdown.ts",
       "default": "./src/lib/markdown/markdown.ts"
     },
+    "./reset.css": "./src/lib/reset.css",
     "./tokens.css": "./src/lib/tokens.css",
+    "./utilities.css": "./src/lib/utilities.css",
     "./eslint": "./eslint.config.base.js",
     "./prettier": "./prettier.config.js"
   },
@@ -47,7 +49,7 @@
     "svelte": "^5.0.0"
   },
   "dependencies": {
-    "@tanstack/svelte-table": "^9.0.0-alpha.41",
+    "@tanstack/svelte-table": "^9.0.0-alpha.48",
     "@lezer/common": "^1.5.2",
     "@lezer/markdown": "^1.6.3",
     "@melt-ui/svelte": "^0.86.6",
@@ -60,7 +62,7 @@
     "@eslint/js": "^10.0.1",
     "@ianvs/prettier-plugin-sort-imports": "^4.7.1",
     "@sveltejs/adapter-auto": "^7.0.1",
-    "@sveltejs/kit": "^2.59.0",
+    "@sveltejs/kit": "^2.60.1",
     "@sveltejs/package": "^2.5.7",
     "@sveltejs/vite-plugin-svelte": "^6.2.4",
     "@types/node": "^25",
@@ -69,15 +71,15 @@
     "eslint-plugin-svelte": "^3.17.1",
     "globals": "^17.6.0",
     "prettier": "^3.8.3",
-    "prettier-plugin-svelte": "^3.5.1",
+    "prettier-plugin-svelte": "^3.5.2",
     "publint": "^0.3.18",
-    "svelte": "^5.55.5",
+    "svelte": "^5.55.8",
     "svelte-check": "^4.4.7",
-    "svelte-eslint-parser": "^1.6.0",
+    "svelte-eslint-parser": "^1.6.1",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.59.2",
-    "vite": "^7.3.2",
-    "vitest": "^4.1.0"
+    "typescript-eslint": "^8.59.3",
+    "vite": "^7.3.3",
+    "vitest": "^4.1.6"
   },
   "keywords": [
     "svelte"

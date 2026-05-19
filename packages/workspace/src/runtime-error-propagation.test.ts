@@ -181,12 +181,11 @@ describe("session error propagation", () => {
       const sessionPromise = runtime.triggerSignalWithSession(
         "test-signal",
         {},
-        undefined,
-        (chunk) => {
-          outerEvents.push(chunk as { type: string });
+        {
+          onStreamEvent: (chunk) => {
+            outerEvents.push(chunk as { type: string });
+          },
         },
-        undefined,
-        undefined,
       );
 
       // Wait until the controller is registered, then cancel.
@@ -261,10 +260,7 @@ describe("session error propagation", () => {
       return runtime.triggerSignalWithSession(
         "test-signal",
         {},
-        undefined,
-        undefined,
-        undefined,
-        controller.signal,
+        { abortSignal: controller.signal },
       );
     });
 

@@ -163,7 +163,18 @@ function makeElicitation(overrides: Record<string, unknown> = {}) {
 }
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  // `vi.clearAllMocks()` resets call history but does NOT drain
+  // `mockResolvedValueOnce` queues. A leftover queued stub from a prior
+  // test would silently feed the next one. Explicitly `mockReset()` each
+  // hoisted mock fn so the queues come back empty.
+  mockElicitationStorage.create.mockReset();
+  mockElicitationStorage.get.mockReset();
+  mockElicitationStorage.list.mockReset();
+  mockElicitationStorage.answer.mockReset();
+  mockElicitationStorage.decline.mockReset();
+  mockToolAccessGrants.grantAlways.mockReset();
+  mockCommitGlobalEnvWrite.mockReset();
+  mockSetEnvFileVar.mockReset();
   mockToolAccessGrants.grantAlways.mockResolvedValue(
     success({
       workspaceId: "ws_1",
@@ -333,8 +344,15 @@ describe("POST /:id/answer", () => {
 
   // ── env-write confirmations: the write must land *before* `answer` ──────
   describe("env-write confirmations", () => {
-    function envWriteElicitation(args: Record<string, unknown>) {
-      return makeElicitation({ kind: "env-write", pendingTool: { name: "env_set", args } });
+    function envWriteElicitation(
+      args: Record<string, unknown>,
+      overrides: Record<string, unknown> = {},
+    ) {
+      return makeElicitation({
+        kind: "env-write",
+        pendingTool: { name: "env_set", args },
+        ...overrides,
+      });
     }
 
     test("global confirm commits the write before marking answered", async () => {
@@ -372,6 +390,29 @@ describe("POST /:id/answer", () => {
       });
 
       expect(res.status).toBe(500);
+      expect(mockElicitationStorage.answer).not.toHaveBeenCalled();
+    });
+
+    test.each([
+      "answered",
+      "expired",
+      "declined",
+    ] as const)("%s env-write confirm is rejected before committing", async (status) => {
+      const terminal = envWriteElicitation(
+        { scope: "workspace", vars: { API_KEY: "" } },
+        { status },
+      );
+      mockElicitationStorage.get.mockResolvedValueOnce(success(terminal));
+
+      const res = await createTestApp().request("/elc_1/answer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ value: "confirm", varsOverride: { API_KEY: "stale-secret" } }),
+      });
+
+      expect(res.status).toBe(500);
+      expect(mockSetEnvFileVar).not.toHaveBeenCalled();
+      expect(mockCommitGlobalEnvWrite).not.toHaveBeenCalled();
       expect(mockElicitationStorage.answer).not.toHaveBeenCalled();
     });
 
@@ -438,6 +479,162 @@ describe("POST /:id/answer", () => {
 
       expect(res.status).toBe(500);
       expect(mockCommitGlobalEnvWrite).not.toHaveBeenCalled();
+      expect(mockElicitationStorage.answer).not.toHaveBeenCalled();
+    });
+
+    test("varsOverride replaces the proposed value for matching keys", async () => {
+      // Agent proposed an empty placeholder for a secret-looking key; the
+      // confirmation card sends the user-typed real value via varsOverride.
+      // The real secret never appears in pendingTool.args (chat history),
+      // only in the answer payload and the on-disk .env write.
+      // Secret contains a `"` so the leak-detection check below has to
+      // account for JSON escaping — a naive substring search on the raw
+      // value would silently pass even if the secret were serialized.
+      const secret = 'real-"secret"-from-card';
+      const pending = envWriteElicitation({
+        scope: "workspace",
+        vars: { BITBUCKET_WEBHOOK_SECRET: "", LOG_DIR: "/var/log" },
+      });
+      mockElicitationStorage.get.mockResolvedValueOnce(success(pending));
+      mockElicitationStorage.answer.mockResolvedValueOnce(
+        success(makeElicitation({ kind: "env-write", status: "answered" })),
+      );
+
+      const res = await createTestApp().request("/elc_1/answer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          value: "confirm",
+          varsOverride: { BITBUCKET_WEBHOOK_SECRET: secret },
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      expect(mockSetEnvFileVar).toHaveBeenCalledWith(
+        "/tmp/ws_1/.env",
+        "BITBUCKET_WEBHOOK_SECRET",
+        secret,
+      );
+      // Non-overridden key keeps its proposed value.
+      expect(mockSetEnvFileVar).toHaveBeenCalledWith("/tmp/ws_1/.env", "LOG_DIR", "/var/log");
+      const answerInput = mockElicitationStorage.answer.mock.calls[0]?.[0] as {
+        answer: Record<string, unknown>;
+      };
+      expect(answerInput.answer).toEqual(expect.objectContaining({ value: "confirm" }));
+      expect(answerInput.answer).not.toHaveProperty("varsOverride");
+      // Defense-in-depth: if a regression slipped the secret onto a
+      // different field of the answer envelope, it would surface here in
+      // JSON-escaped form (`real-\"secret\"-from-card`). Asserting on
+      // that form keeps the check honest regardless of how the value
+      // gets serialized.
+      const serialized = JSON.stringify(answerInput.answer);
+      expect(serialized).not.toContain(JSON.stringify(secret).slice(1, -1));
+    });
+
+    test("varsOverride cannot inject a key not in the proposal", async () => {
+      const pending = envWriteElicitation({ scope: "workspace", vars: { LOG_DIR: "/var/log" } });
+      mockElicitationStorage.get.mockResolvedValueOnce(success(pending));
+      mockElicitationStorage.answer.mockResolvedValueOnce(
+        success(makeElicitation({ kind: "env-write", status: "answered" })),
+      );
+
+      const res = await createTestApp().request("/elc_1/answer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ value: "confirm", varsOverride: { SMUGGLED_KEY: "x" } }),
+      });
+
+      expect(res.status).toBe(200);
+      expect(mockSetEnvFileVar).toHaveBeenCalledWith("/tmp/ws_1/.env", "LOG_DIR", "/var/log");
+      expect(mockSetEnvFileVar).not.toHaveBeenCalledWith(
+        "/tmp/ws_1/.env",
+        "SMUGGLED_KEY",
+        expect.anything(),
+      );
+      expect(mockSetEnvFileVar).toHaveBeenCalledTimes(1);
+    });
+
+    test("rejects a varsOverride value containing a newline", async () => {
+      // Validator runs before the handler — no need to queue a `get` mock,
+      // and queuing one would leak into the next test (mockResolvedValueOnce
+      // queues survive `vi.clearAllMocks()`).
+      const res = await createTestApp().request("/elc_1/answer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ value: "confirm", varsOverride: { API_KEY: "line1\nline2" } }),
+      });
+
+      expect(res.status).toBe(400);
+      expect(mockElicitationStorage.get).not.toHaveBeenCalled();
+      expect(mockSetEnvFileVar).not.toHaveBeenCalled();
+      expect(mockElicitationStorage.answer).not.toHaveBeenCalled();
+    });
+
+    test("mixed override: both secret and non-secret keys take the user-typed value", async () => {
+      // The card edits every value, so SECRET_TOKEN gets its real value
+      // and LOG_DIR can be corrected by the user before confirm.
+      const pending = envWriteElicitation({
+        scope: "workspace",
+        vars: { SECRET_TOKEN: "", LOG_DIR: "/var/log" },
+      });
+      mockElicitationStorage.get.mockResolvedValueOnce(success(pending));
+      mockElicitationStorage.answer.mockResolvedValueOnce(
+        success(makeElicitation({ kind: "env-write", status: "answered" })),
+      );
+
+      const res = await createTestApp().request("/elc_1/answer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          value: "confirm",
+          varsOverride: { SECRET_TOKEN: "real-secret", LOG_DIR: "/srv/log" },
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      expect(mockSetEnvFileVar).toHaveBeenCalledWith(
+        "/tmp/ws_1/.env",
+        "SECRET_TOKEN",
+        "real-secret",
+      );
+      expect(mockSetEnvFileVar).toHaveBeenCalledWith("/tmp/ws_1/.env", "LOG_DIR", "/srv/log");
+      expect(mockSetEnvFileVar).toHaveBeenCalledTimes(2);
+    });
+
+    test("varsOverride applies to a non-secret-looking key when its key is in the proposal", async () => {
+      // The card edits every proposed value, so the user can correct a typo
+      // or fill in a value the agent left blank without round-tripping
+      // through chat. Server gate is `Object.hasOwn` on the proposal — the
+      // override can change a value but never inject a new key.
+      const pending = envWriteElicitation({ scope: "workspace", vars: { LOG_DIR: "/var/log" } });
+      mockElicitationStorage.get.mockResolvedValueOnce(success(pending));
+      mockElicitationStorage.answer.mockResolvedValueOnce(
+        success(makeElicitation({ kind: "env-write", status: "answered" })),
+      );
+
+      const res = await createTestApp().request("/elc_1/answer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ value: "confirm", varsOverride: { LOG_DIR: "/etc/log" } }),
+      });
+
+      expect(res.status).toBe(200);
+      expect(mockSetEnvFileVar).toHaveBeenCalledWith("/tmp/ws_1/.env", "LOG_DIR", "/etc/log");
+      expect(mockSetEnvFileVar).toHaveBeenCalledTimes(1);
+    });
+
+    test("rejects a varsOverride key that is not a POSIX identifier", async () => {
+      // Schema-layer test — mirrors the newline-value test above. Leading
+      // digit fails the key regex; the handler never runs.
+      const res = await createTestApp().request("/elc_1/answer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ value: "confirm", varsOverride: { "1bad": "v" } }),
+      });
+
+      expect(res.status).toBe(400);
+      expect(mockElicitationStorage.get).not.toHaveBeenCalled();
+      expect(mockSetEnvFileVar).not.toHaveBeenCalled();
       expect(mockElicitationStorage.answer).not.toHaveBeenCalled();
     });
 

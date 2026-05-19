@@ -55,6 +55,7 @@ import {
   StaleCredentialIdAtImportError,
 } from "@atlas/workspace";
 import { zValidator } from "@hono/zod-validator";
+import { encodeBase64 } from "@std/encoding/base64";
 import { parse, stringify } from "@std/yaml";
 import type { Context } from "hono";
 import { z } from "zod";
@@ -82,6 +83,7 @@ import {
 } from "../../src/workspace-authz.ts";
 import {
   buildWorkspaceBundleBytes,
+  installImportedAgents,
   isOnDiskWorkspace,
   materializeImportedMemory,
 } from "./bundle-helpers.ts";
@@ -247,18 +249,57 @@ function rejectUnauthorizedSignalBypass() {
   return { error: "bypassConcurrency is internal to workspace-chat job tools" };
 }
 
+const signalBodySchema = z.object({
+  payload: z.record(z.string(), z.unknown()).optional(),
+  streamId: z.string().optional(),
+  skipStates: z.array(z.string()).optional(),
+  /**
+   * Internal: workspace-chat job tools set this so interactive chat-spawned
+   * jobs bypass the JetStream cascade concurrency gate. User-facing HTTP
+   * triggers still go through the per-signal skip/queue/concurrent/replace
+   * policy.
+   */
+  bypassConcurrency: z.boolean().optional(),
+  /**
+   * Parent session id, when this signal is being fired from inside another
+   * session (chat-spawned-job, signal-trigger-from-FSM). Forwarded to the
+   * runtime so the spawned session's `SessionSummary.parentSessionId` is
+   * populated. Phase 11 of the fan-out-without-fan-in plan — provenance
+   * data layer for crystallization.
+   */
+  parentSessionId: z.string().optional(),
+});
+
 /**
- * Envelope keys recognized on a signal-trigger request body. Anything else at
- * the top level is almost certainly a bare (un-enveloped) payload — see
- * {@link detectUnwrappedSignalBody}.
+ * Envelope keys recognized on a signal-trigger request body. Derived from
+ * `signalBodySchema.shape` so there's a single source of truth — adding a
+ * field to the schema automatically extends the discriminator, no lock-step
+ * edit. Anything not in this set at the top level is almost certainly a
+ * bare (un-enveloped) payload — see {@link detectUnwrappedSignalBody}.
+ *
+ * Contract: every field on `signalBodySchema` MUST be an envelope-level
+ * routing key (i.e. a key that, if it's the ONLY key on the request body,
+ * makes the body look like an enveloped trigger rather than a webhook
+ * payload). Webhook-payload-shaped concerns — anything an upstream might
+ * realistically set as a top-level field in its own request body — must
+ * NOT be added to this schema; put them on a separate type and stitch
+ * them on after the discriminator decision. Otherwise a real webhook
+ * whose payload top-level key happens to collide with the new field
+ * silently mis-routes to envelope mode.
+ *
+ * Sanity-asserted at module load so a zod-version upgrade that moves
+ * `.shape` (e.g., zod v4 nests it under `.def.shape`) can't silently
+ * collapse the set to `{}` and route every envelope-only request to
+ * webhook mode.
  */
-const SIGNAL_ENVELOPE_KEYS = new Set([
-  "payload",
-  "streamId",
-  "skipStates",
-  "bypassConcurrency",
-  "parentSessionId",
-]);
+const SIGNAL_ENVELOPE_KEYS: ReadonlySet<string> = new Set(Object.keys(signalBodySchema.shape));
+if (SIGNAL_ENVELOPE_KEYS.size === 0) {
+  throw new Error(
+    "SIGNAL_ENVELOPE_KEYS derivation collapsed to empty — likely a zod API change " +
+      "(.shape moved or got wrapped). Webhook-mode discriminator would mis-route every " +
+      "envelope-only request. Refusing to start.",
+  );
+}
 
 /**
  * Catch the most common signal-trigger mistake: POSTing the bare payload
@@ -290,27 +331,6 @@ function detectUnwrappedSignalBody(rawBody: unknown): string | null {
     `wrap them as {"payload": {${strayKeys.map((k) => `"${k}": ...`).join(", ")}}}.`
   );
 }
-
-const signalBodySchema = z.object({
-  payload: z.record(z.string(), z.unknown()).optional(),
-  streamId: z.string().optional(),
-  skipStates: z.array(z.string()).optional(),
-  /**
-   * Internal: workspace-chat job tools set this so interactive chat-spawned
-   * jobs bypass the JetStream cascade concurrency gate. User-facing HTTP
-   * triggers still go through the per-signal skip/queue/concurrent/replace
-   * policy.
-   */
-  bypassConcurrency: z.boolean().optional(),
-  /**
-   * Parent session id, when this signal is being fired from inside another
-   * session (chat-spawned-job, signal-trigger-from-FSM). Forwarded to the
-   * runtime so the spawned session's `SessionSummary.parentSessionId` is
-   * populated. Phase 11 of the fan-out-without-fan-in plan — provenance
-   * data layer for crystallization.
-   */
-  parentSessionId: z.string().optional(),
-});
 
 export * from "./schemas.ts";
 
@@ -1072,8 +1092,11 @@ const workspacesRoutes = daemonFactory
         path: string;
         memory?: { kind: string; path?: string; reason?: string };
         bootstrapSessionId?: string;
+        agentsInstalled?: number;
+        agentsSkipped?: number;
       }> = [];
       const errors: Array<{ name: string; error: string }> = [...result.errors];
+      let installedAnyAgents = false;
       for (const entry of result.imported) {
         try {
           const validation = await validateImportedWorkspace(
@@ -1122,15 +1145,33 @@ const workspacesRoutes = daemonFactory
             }
           }
 
+          const agents = await installImportedAgents({
+            targetDir: entry.path,
+            primitives: entry.primitives,
+            atlasHome,
+            logger: importLogger,
+          });
+          if (agents.installed.length > 0) installedAnyAgents = true;
           imported.push({
             workspaceId: registered.workspace.id,
             name: entry.name,
             path: entry.path,
             memory,
             ...(bootstrapSessionId ? { bootstrapSessionId } : {}),
+            agentsInstalled: agents.installed.length,
+            agentsSkipped: agents.skipped.length,
           });
         } catch (err) {
           errors.push({ name: entry.name, error: stringifyError(err) });
+        }
+      }
+      if (installedAnyAgents) {
+        try {
+          await ctx.getAgentRegistry()?.reload();
+        } catch (error) {
+          importLogger.warn("Agent registry reload after bundle-all import failed", {
+            error: stringifyError(error),
+          });
         }
       }
 
@@ -1430,6 +1471,26 @@ const workspacesRoutes = daemonFactory
         }
       }
 
+      // Bundled user agents land at `<targetDir>/agents/<name>/` — invisible
+      // to the AgentRegistry, which only scans `<atlasHome>/agents/`. Install
+      // them into the global dir and reload so the imported workspace.yml's
+      // `type: user` references resolve at runtime.
+      const agents = await installImportedAgents({
+        targetDir,
+        primitives: result.primitives,
+        atlasHome,
+        logger: importLogger,
+      });
+      if (agents.installed.length > 0) {
+        try {
+          await ctx.getAgentRegistry()?.reload();
+        } catch (error) {
+          importLogger.warn("Agent registry reload after import failed", {
+            error: stringifyError(error),
+          });
+        }
+      }
+
       return c.json({
         workspaceId: registered.workspace.id,
         path: targetDir,
@@ -1437,6 +1498,8 @@ const workspacesRoutes = daemonFactory
         primitives: result.primitives,
         memory,
         ...(bootstrapSessionId ? { bootstrapSessionId } : {}),
+        agentsInstalled: agents.installed.length,
+        agentsSkipped: agents.skipped.length,
       });
     } catch (error) {
       const errorMessage = stringifyError(error);
@@ -1893,11 +1956,12 @@ const workspacesRoutes = daemonFactory
               workspaceId,
               signalId,
               body.payload,
-              body.streamId,
-              forwardChunk,
-              undefined,
-              clientAbort,
-              body.parentSessionId,
+              {
+                streamId: body.streamId,
+                onStreamEvent: forwardChunk,
+                abortSignal: clientAbort,
+                parentSessionId: body.parentSessionId,
+              },
             );
             safeEnqueue(
               encoder.encode(
@@ -2204,6 +2268,120 @@ const workspacesRoutes = daemonFactory
     zValidator("json", signalBodySchema),
     async (c) => {
       const { workspaceId, signalId } = c.req.valid("param");
+      const ctx = c.get("app");
+
+      // ────── Webhook-mode fast path ──────
+      // The webhook-tunnel reverse-proxies upstream POSTs into this endpoint
+      // with the body bytes + request headers preserved verbatim. The body
+      // never carries an envelope wrapper — it's the upstream's actual
+      // payload (e.g. `{"action":"opened","repository":{...}}` from GitHub).
+      // Discriminator: if the parsed body has NO envelope keys (payload,
+      // streamId, skipStates, bypassConcurrency, parentSessionId), it's a
+      // webhook. We capture the raw bytes (base64) + lowercased headers and
+      // dispatch via nowait so the agent can verify HMAC against the exact
+      // bytes the upstream signed.
+      const rawBytes = new Uint8Array(await c.req.arrayBuffer());
+      let parsedRawBody: unknown;
+      if (rawBytes.length > 0) {
+        try {
+          const text = new TextDecoder("utf-8", { fatal: true }).decode(rawBytes);
+          parsedRawBody = JSON.parse(text);
+        } catch {
+          // Non-JSON or non-UTF-8 body — treat as webhook (some upstreams
+          // send form-encoded or binary data).
+        }
+      }
+      const isObjectBody =
+        parsedRawBody !== null &&
+        typeof parsedRawBody === "object" &&
+        !Array.isArray(parsedRawBody);
+      const objectKeys = isObjectBody ? Object.keys(parsedRawBody as Record<string, unknown>) : [];
+      // Tight envelope test: body is an object AND has at least one
+      // envelope key AND has NO stray keys (every key is an envelope
+      // key). A "loose" check (any envelope key wins) would silently
+      // mis-route a real webhook like
+      // `{"payload": <object>, "action": "opened", "sender": {...}}`
+      // — common from upstreams that wrap their payload — into envelope
+      // mode, where zValidator strips the stray fields and the agent
+      // sees no webhookBody/webhookHeaders. The tight test routes the
+      // mixed case to webhook mode where it belongs.
+      const allKeysAreEnvelope =
+        isObjectBody &&
+        objectKeys.length > 0 &&
+        objectKeys.every((k) => SIGNAL_ENVELOPE_KEYS.has(k));
+      const isEmptyObject = isObjectBody && objectKeys.length === 0;
+      // Empty body / empty {} stays in envelope mode — that's the valid
+      // "no-payload signal trigger" today (cron-like CLI invocations).
+      const isWebhook = rawBytes.length > 0 && !allKeysAreEnvelope && !isEmptyObject;
+
+      if (isWebhook) {
+        // RFC 7230 §6.1 hop-by-hop headers + `host`/`content-length`
+        // (auto-set per request hop). Deliberately does NOT include
+        // `authorization` or `cookie`: webhook providers commonly carry
+        // their signature material in `authorization`-shaped headers
+        // (Stripe-Signature, Slack timestamp+sig, GitHub variants) and
+        // agents need them intact to verify the upstream — stripping
+        // them would silently break HMAC. Agents must not log raw
+        // headers; that's the contract that keeps this safe.
+        const HOP_BY_HOP = new Set([
+          "host",
+          "connection",
+          "keep-alive",
+          "proxy-authenticate",
+          "proxy-authorization",
+          "te",
+          "trailer",
+          "transfer-encoding",
+          "upgrade",
+          "content-length",
+        ]);
+        const webhookHeaders: Record<string, string> = {};
+        c.req.raw.headers.forEach((value, key) => {
+          const lower = key.toLowerCase();
+          if (!HOP_BY_HOP.has(lower)) webhookHeaders[lower] = value;
+        });
+        // Best-effort parsed view of the body — agents that just want
+        // structured access via `ctx.input.config.<field>` get it without
+        // touching raw bytes. HMAC-verifying agents read the raw bytes
+        // from `ctx.input.raw["body"]`. If the body isn't an object,
+        // payload stays undefined (the agent owns parsing).
+        const payload = isObjectBody ? (parsedRawBody as Record<string, unknown>) : undefined;
+        const correlationId = crypto.randomUUID();
+        try {
+          await ctx.daemon.publishSignalToJetStream({
+            workspaceId,
+            signalId,
+            payload,
+            correlationId,
+            webhookBody: encodeBase64(rawBytes),
+            webhookHeaders,
+          });
+          return c.json(
+            {
+              message: "Webhook accepted",
+              status: "accepted" as const,
+              workspaceId,
+              signalId,
+              correlationId,
+            },
+            202,
+          );
+        } catch (error) {
+          const errorMessage = stringifyError(error);
+          logger.error("Failed to publish webhook signal", {
+            error,
+            workspaceId,
+            signalId,
+            correlationId,
+          });
+          return c.json(
+            { error: `Failed to publish webhook signal: ${errorMessage}`, workspaceId, signalId },
+            500,
+          );
+        }
+      }
+
+      // ────── Envelope mode (CLI / MCP / chat-tools) ──────
       await requireWorkspaceMember(c, workspaceId);
       const {
         payload,
@@ -2212,13 +2390,17 @@ const workspacesRoutes = daemonFactory
         parentSessionId,
         bypassConcurrency,
       } = c.req.valid("json");
+
+      // Envelope guard: catch mixed-shape mistakes — e.g. a caller who set
+      // `streamId` (an envelope key) but also dropped raw payload fields
+      // at the top level without wrapping them in `{payload: ...}`. The
+      // mistake is invisible after zValidator strips unknown keys, so
+      // surface it here with a clear error instead of running a cascade
+      // with a half-empty payload.
       if (payload === undefined) {
-        // Hono caches the parsed body — re-reading here is the same object
-        // zValidator already consumed, just with unknown keys still visible.
-        const envelopeError = detectUnwrappedSignalBody(await c.req.json());
+        const envelopeError = detectUnwrappedSignalBody(parsedRawBody);
         if (envelopeError) return c.json({ error: envelopeError }, 400);
       }
-      const ctx = c.get("app");
 
       // Decision 7 — setup gate. Returns 409 (non-retryable) so webhook
       // clients don't keep hammering a setup-required workspace. Skipped
@@ -2240,16 +2422,12 @@ const workspacesRoutes = daemonFactory
           return c.json(rejectUnauthorizedSignalBypass(), 403);
         }
         try {
-          const result = await ctx.daemon.triggerWorkspaceSignal(
-            workspaceId,
-            signalId,
-            payload,
+          const result = await ctx.daemon.triggerWorkspaceSignal(workspaceId, signalId, payload, {
             streamId,
-            undefined,
-            _skipStates,
-            c.req.raw.signal,
+            skipStates: _skipStates,
+            abortSignal: c.req.raw.signal,
             parentSessionId,
-          );
+          });
           return c.json({
             message: "Signal completed",
             status: "completed" as const,
@@ -2268,6 +2446,77 @@ const workspacesRoutes = daemonFactory
       }
 
       const correlationId = crypto.randomUUID();
+
+      // ?nowait=true (fire-and-forget): publish to SIGNALS stream and return 202
+      // immediately with a correlationId. The cascade runs async on CASCADES
+      // regardless — we just choose not to hold the HTTP response open for it.
+      // Matches the architecture the bus was already built for (publish-ack,
+      // decoupled consumer) without the synchronous shim.
+      //
+      // bypassConcurrency above is the legacy sync path for interactive chat;
+      // nowait is the opposite — fire and return for callers like the
+      // webhook-tunnel that don't need cascade output to respond to upstream.
+      //
+      // No follow-by-correlationId endpoint: the cascade response is published
+      // to a core-NATS subject (no JetStream replay), so a follow-up GET
+      // arriving after the response was published would silently miss it.
+      // Callers that need to watch progress must use the in-handler SSE path
+      // (Accept: text/event-stream on the POST below) which subscribes
+      // BEFORE publishing.
+      //
+      // Precedence with `Accept: text/event-stream`: the SSE middleware
+      // (registered earlier in this same chain, line ~1712) short-circuits
+      // before this handler runs whenever the Accept header is set, so an
+      // `Accept: text/event-stream` request with `?nowait=true` reaches
+      // the SSE branch — Accept wins, ?nowait is ignored. That's locked
+      // by `sse+nowait → SSE wins` test in index.test.ts.
+      // One canonical spelling — `?nowait=true`. Other variants
+      // (`nowait=1`, `wait=false`, `wait=0`) were never required by any
+      // caller (the only consumer is the webhook-tunnel, which now
+      // routes through webhook mode and doesn't use this query at all)
+      // and they invite the next "why does `wait=0` work but `wait=no`
+      // doesn't?" question.
+      const nowait = c.req.query("nowait") === "true";
+      if (nowait) {
+        try {
+          await ctx.daemon.publishSignalToJetStream({
+            workspaceId,
+            signalId,
+            payload,
+            streamId,
+            sourceSessionId: parentSessionId,
+            correlationId,
+          });
+          return c.json(
+            {
+              message: "Signal accepted",
+              status: "accepted" as const,
+              workspaceId,
+              signalId,
+              correlationId,
+            },
+            202,
+          );
+        } catch (error) {
+          const errorMessage = stringifyError(error);
+          logger.error("Failed to publish signal (nowait)", {
+            error,
+            workspaceId,
+            signalId,
+            correlationId,
+          });
+          return c.json(
+            {
+              error: `Failed to publish signal to JetStream: ${errorMessage}`,
+              workspaceId,
+              signalId,
+            },
+            500,
+          );
+        }
+      }
+
+      // Default (synchronous) path follows.
       const nc = ctx.daemon.getNatsConnection();
 
       // Same client-disconnect-cancels-spawned-session protection as the SSE

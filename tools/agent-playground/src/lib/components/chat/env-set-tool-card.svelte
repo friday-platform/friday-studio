@@ -1,11 +1,15 @@
 <script lang="ts">
   import type { Elicitation } from "@atlas/core/elicitations/model";
-  import { Button, Icons } from "@atlas/ui";
+  import { Button, Icons, Tooltip } from "@atlas/ui";
   import { createQuery } from "@tanstack/svelte-query";
-  import { resolve } from "$app/paths";
   import { page } from "$app/state";
   import { elicitationQueries, useAnswerElicitation } from "$lib/queries/elicitation-queries.ts";
   import { workspaceQueries } from "$lib/queries/workspace-queries.ts";
+  import {
+    buildVarsOverride,
+    hasMissingSecretValue,
+    isSecretKey,
+  } from "./env-set-tool-card.ts";
   import {
     findDeclaredVariableForKey,
     validateProposedValue,
@@ -27,10 +31,6 @@
   }
 
   const { call, onApplied }: Props = $props();
-
-  /** Key-name heuristic — kept in sync with the env tools' shared.ts. */
-  const SECRET_KEY_RE = /password|secret|token|key|credential/i;
-  const isSecretKey = (key: string): boolean => SECRET_KEY_RE.test(key);
 
   function isRecord(v: unknown): v is Record<string, unknown> {
     return typeof v === "object" && v !== null;
@@ -120,21 +120,44 @@
   // Reveal state for secret-looking values, keyed by env var name.
   let revealed = $state<Record<string, boolean>>({});
 
+  // User-typed values for every key in the proposal. The agent should
+  // propose `""` for secret-bearing keys (see env_set tool description) so
+  // the user types the real value here; non-secret keys come pre-filled
+  // with the agent's literal value but stay editable so the user can fix
+  // a typo or fill in a value the agent left blank without round-tripping
+  // through chat. Either way, `varsOverride` carries the final committed
+  // value so what the user sees in the card is what hits `.env`.
+  // Note: component-state only. If the commit fails server-side and the
+  // user refreshes, they retype any secret they entered — failure rate is
+  // low enough that we accept the tradeoff over persisting plaintext to
+  // sessionStorage.
+  let userValues = $state<Record<string, string>>({});
+  $effect(() => {
+    for (const [key, value] of entries) {
+      if (!(key in userValues)) {
+        userValues = { ...userValues, [key]: value };
+      }
+    }
+  });
+
+  /** Confirm is blocked while any secret-looking key is empty (or whitespace-only). */
+  const missingSecretValue = $derived(hasMissingSecretValue(entries, userValues));
+
   const answerMutation = useAnswerElicitation();
   const inFlight = $derived(answerMutation.isPending);
-
-  const activityHref = $derived.by(() => {
-    const base = routeWorkspaceId
-      ? resolve("/platform/[workspaceId]/activity", { workspaceId: routeWorkspaceId })
-      : resolve("/activity", {});
-    return matched?.id ? `${base}?elicitationId=${encodeURIComponent(matched.id)}` : base;
-  });
 
   function answer(value: "confirm" | "deny"): void {
     if (!matched || !isPending || inFlight) return;
     if (value === "confirm" && hasValidationFailure) return;
+    if (value === "confirm" && missingSecretValue) return;
+    // `varsOverride` carries the user's final value for every proposed
+    // key — secret-bearing keys get the real value the user typed (kept
+    // out of chat history because the agent proposed `""`), and non-
+    // secret keys get whatever the user left or edited in the card.
+    const varsOverride = buildVarsOverride(entries, userValues);
+    const hasOverride = value === "confirm" && Object.keys(varsOverride).length > 0;
     answerMutation.mutate(
-      { id: matched.id, value },
+      hasOverride ? { id: matched.id, value, varsOverride } : { id: matched.id, value },
       {
         onSuccess: () => {
           // Tickle the chat only on confirm — deny shouldn't wake the agent.
@@ -145,6 +168,61 @@
       },
     );
   }
+
+  /**
+   * Pull the current value of a proposed key from the daemon's env endpoint
+   * (which returns the real value — only the agent-facing `env_get` tool
+   * masks). Used so an applied card shows what actually hit `.env` instead
+   * of replaying the proposal after a page refresh — the user's override
+   * lives only in component state, so without this round-trip the input
+   * would silently lie about what was committed. The value travels:
+   * card → daemon → `.env` → daemon → card, never touching the chat
+   * message stream. Triggered eagerly on mount for non-secret keys (no
+   * privacy reason to defer) and lazily on the reveal button for secret
+   * keys (the eyeball click is the explicit "show me" gesture).
+   */
+  async function fetchAppliedValue(key: string): Promise<void> {
+    if (!applied) return;
+    // Playground proxies daemon calls through `/api/daemon/*` — the
+    // SvelteKit catch-all strips that prefix and forwards to atlasd.
+    const base =
+      scope === "global"
+        ? "/api/daemon/api/config/env"
+        : routeWorkspaceId
+          ? `/api/daemon/api/workspaces/${encodeURIComponent(routeWorkspaceId)}/env`
+          : null;
+    if (!base) return;
+    try {
+      const res = await fetch(`${base}/${encodeURIComponent(key)}`);
+      if (!res.ok) return;
+      const body = (await res.json()) as { success?: boolean; value?: string };
+      if (body.success && typeof body.value === "string") {
+        userValues = { ...userValues, [key]: body.value };
+      }
+    } catch {
+      // Silent — the input stays empty, user can click reveal again to retry.
+    }
+  }
+
+  // Once an env-write lands as `applied`, eagerly fetch every non-secret
+  // key's current disk value so the input reflects what's in `.env`, not
+  // the stale proposal. Without this, a user-edited non-secret value
+  // (e.g. LOG_DIR corrected from `/var/log` to `/srv/log`) shows the
+  // agent's original after a refresh while disk holds the user's edit.
+  // Secret keys stay lazy (reveal-button-driven) so the value isn't
+  // pulled into memory until the user explicitly asks for it.
+  // Plain Set, not `$state` — this is a side-effect dedup tracker, no
+  // reactivity needed.
+  const fetchedAppliedKeys = new Set<string>();
+  $effect(() => {
+    if (!applied) return;
+    for (const [key] of entries) {
+      if (isSecretKey(key)) continue;
+      if (fetchedAppliedKeys.has(key)) continue;
+      fetchedAppliedKeys.add(key);
+      void fetchAppliedValue(key);
+    }
+  });
 
   /** Status pill text — drives the one terminal-state line. */
   const statusLabel = $derived.by(() => {
@@ -163,49 +241,78 @@
 -->
 <div class="env-set-card" class:pending={isPending}>
   <div class="card-header">
-    <span class="eyebrow">Environment write</span>
-    <span class="status" class:status-pending={statusLabel === "pending"}>{statusLabel}</span>
+    <h3 class="card-title">
+      {#if isInProgress(call.state) || !proposal}
+        Environment write
+      {:else}
+        Set {entries.length} {scope === "global" ? "global" : "workspace"} environment
+        variable{entries.length === 1 ? "" : "s"}
+      {/if}
+    </h3>
+    <Tooltip
+      as="span"
+      label={statusLabel === "expired"
+        ? "Confirmations expire after 30 minutes. Ask the agent to set this again."
+        : undefined}
+    >
+      <span
+        class="status"
+        class:status-pending={statusLabel === "pending"}
+        class:status-applied={statusLabel === "applied"}
+        class:status-denied={statusLabel === "denied"}
+      >
+        {statusLabel}
+      </span>
+    </Tooltip>
   </div>
 
   {#if isInProgress(call.state)}
-    <p class="hint">Preparing environment write…</p>
+    <p class="hint">Preparing…</p>
   {:else if !proposal}
     <p class="hint">
       {matched ? "No variables in this request." : "Syncing with Activity…"}
     </p>
   {:else}
-    <div class="scope-line">
-      Set {entries.length} variable{entries.length === 1 ? "" : "s"} in
-      <code>{scope === "global" ? "the global .env" : "this workspace's .env"}</code>
-    </div>
-
     <div class="var-list">
       {#each enrichedEntries as entry (entry.key)}
+        {@const maskApplied = !isPending && entry.secret && !revealed[entry.key]}
         <div class="var-group">
           {#if entry.description}
             <p class="var-description">{entry.description}</p>
           {/if}
           <div class="var-row" class:invalid={entry.validation?.ok === false}>
             <code class="var-key">{entry.key}</code>
+            <input
+              class="var-value"
+              type={entry.secret && !revealed[entry.key] ? "password" : "text"}
+              value={maskApplied ? "********" : (userValues[entry.key] ?? entry.value)}
+              placeholder="Enter value"
+              autocomplete="off"
+              spellcheck="false"
+              disabled={!isPending || inFlight}
+              oninput={(e) => {
+                userValues = { ...userValues, [entry.key]: e.currentTarget.value };
+              }}
+            />
             {#if entry.secret}
-              <input
-                class="var-value"
-                type={revealed[entry.key] ? "text" : "password"}
-                value={entry.value}
-                readonly
-              />
               <button
                 type="button"
                 class="reveal"
                 aria-label={revealed[entry.key] ? "Hide value" : "Show value"}
                 onclick={() => {
-                  revealed = { ...revealed, [entry.key]: !revealed[entry.key] };
+                  const next = !revealed[entry.key];
+                  revealed = { ...revealed, [entry.key]: next };
+                  // On applied cards the in-memory value is gone after a
+                  // page refresh; lazily fetch what's actually in .env so
+                  // the eyeball click is the explicit "show me" gesture
+                  // that triggers the read.
+                  if (next && applied && !(userValues[entry.key] ?? "").length) {
+                    void fetchAppliedValue(entry.key);
+                  }
                 }}
               >
                 {#if revealed[entry.key]}<Icons.Eye />{:else}<Icons.EyeClosed />{/if}
               </button>
-            {:else}
-              <code class="var-value plain">{entry.value}</code>
             {/if}
           </div>
           {#if entry.validation && !entry.validation.ok}
@@ -219,29 +326,35 @@
       {/each}
     </div>
 
-    {#if hasSecretLooking}
-      <p class="hint secret-hint">
-        Some keys look credential-bearing. The workspace <code>.env</code>
-         is for non-secret values — consider connecting an integration (Link) for real credentials.
-      </p>
-    {/if}
-
     {#if isPending}
       <div class="actions">
-        <Button
-          onclick={() => answer("confirm")}
-          disabled={!matched || inFlight || hasValidationFailure}
-        >
-          {answerMutation.isPending ? "Applying…" : "Confirm"}
-        </Button>
-        <Button
-          variant="destructive"
-          onclick={() => answer("deny")}
-          disabled={!matched || inFlight}
-        >
-          Deny
-        </Button>
-        <Button href={activityHref} variant="none">Open Activity</Button>
+        {#if hasSecretLooking}
+          <p class="hint actions-hint">Credential-bearing values stay out of chat history.</p>
+        {/if}
+        <div class="actions-buttons">
+          <Button
+            variant="none"
+            onclick={() => answer("deny")}
+            disabled={!matched || inFlight}
+          >
+            Deny
+          </Button>
+          <Tooltip
+            as="span"
+            label={missingSecretValue
+              ? "Fill in any blank values."
+              : hasValidationFailure
+                ? "Resolve schema validation errors above."
+                : undefined}
+          >
+            <Button
+              onclick={() => answer("confirm")}
+              disabled={!matched || inFlight || missingSecretValue || hasValidationFailure}
+            >
+              {answerMutation.isPending ? "Applying…" : "Confirm"}
+            </Button>
+          </Tooltip>
+        </div>
       </div>
     {:else if status}
       <p class="hint terminal">
@@ -266,63 +379,91 @@
 </div>
 
 <style>
+  /* Definitive width so the card renders identically regardless of
+     what's beside it in the same message column. `min-inline-size`
+     pushes the parent `.message.assistant` (now `width: fit-content`)
+     to grow to at least the card's width, so a short sibling text
+     bubble can't squeeze the card narrower. `align-self: flex-start`
+     keeps the card from stretching when the parent ends up wider. */
   .env-set-card {
-    background-color: color-mix(in srgb, var(--blue-primary), transparent 92%);
-    border: 1px solid color-mix(in srgb, var(--blue-primary), transparent 60%);
+    align-self: flex-start;
+    background-color: var(--surface-dark);
+    border: 1px solid transparent;
     border-radius: var(--radius-3);
     display: flex;
     flex-direction: column;
-    gap: var(--size-2);
+    gap: var(--size-3);
+    inline-size: var(--size-128);
+    margin-block-end: var(--size-4);
+    min-inline-size: 0;
     padding: var(--size-3);
   }
 
+  /* Pending: a soft inset ring in --color-info — the codebase's
+     "this element is active/selected" convention (pipeline-diagram,
+     job-selector, model-chain). */
   .env-set-card.pending {
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--blue-primary), transparent 75%);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-info), transparent 50%);
   }
 
   .card-header {
-    align-items: center;
+    align-items: baseline;
     display: flex;
     gap: var(--size-2);
+    justify-content: space-between;
   }
 
-  .eyebrow {
-    color: color-mix(in srgb, var(--text), transparent 35%);
-    font-size: var(--font-size-0, 11px);
-    font-weight: var(--font-weight-7);
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
+  /* Single title slot — replaces the old monospace-uppercase eyebrow +
+     separate scope line. Sentence-case sans-serif keeps the card on one
+     typographic register; monospace only appears for the `.env` identifier
+     inline below. */
+  .card-title {
+    color: var(--text-bright);
+    font-size: var(--font-size-2);
+    font-weight: var(--font-weight-5);
+    line-height: 1.35;
+    margin: 0;
   }
 
+  /* Status badge — matches the project's .badge convention in
+     MemoryEntryTable.svelte: small radius, sentence case, regular
+     weight, no letter-spacing. */
   .status {
-    background-color: color-mix(in srgb, var(--text), transparent 88%);
-    border-radius: var(--radius-round);
-    color: color-mix(in srgb, var(--text), transparent 30%);
-    font-size: var(--font-size-0, 11px);
-    font-weight: var(--font-weight-6);
-    padding: 1px var(--size-2);
+    background-color: color-mix(in srgb, var(--color-text), transparent 88%);
+    border-radius: var(--radius-1);
+    color: var(--text-faded);
+    display: inline-block;
+    flex-shrink: 0;
+    font-size: var(--font-size-1);
+    font-weight: var(--font-weight-5);
+    padding: 1px var(--size-1-5);
+    text-transform: capitalize;
   }
 
   .status-pending {
-    background-color: color-mix(in srgb, var(--blue-primary), transparent 75%);
-    color: color-mix(in srgb, var(--blue-primary), black 35%);
+    background-color: color-mix(in srgb, var(--color-info), transparent 85%);
+    color: var(--color-info);
   }
 
-  .scope-line {
-    color: var(--text-bright);
-    font-size: var(--font-size-2);
-    font-weight: var(--font-weight-6);
-    line-height: 1.35;
+  .status-applied {
+    background-color: color-mix(in srgb, var(--green-primary), transparent 85%);
+    color: var(--green-primary);
   }
 
-  .scope-line code {
-    font-weight: var(--font-weight-4);
+  .status-denied {
+    background-color: color-mix(in srgb, var(--red-primary), transparent 85%);
+    color: var(--red-primary);
   }
 
+  /* Flex column of var-groups (description + row + validation). Each row
+     owns its own grid template so the key/input/reveal columns are
+     self-contained — the description prose above each row prevents
+     cross-row subgrid alignment from being useful here. */
   .var-list {
     display: flex;
     flex-direction: column;
     gap: var(--size-2);
+    margin-block: var(--size-2);
   }
 
   .var-group {
@@ -338,14 +479,21 @@
     margin: 0;
   }
 
+  /* Single bordered envelope: key label slot, divider, input, optional
+     reveal — all share one affordance. Focus is owned by the row via
+     :focus-within so the border highlights as a unit. */
   .var-row {
-    align-items: center;
-    background-color: var(--surface);
-    border: 1px solid var(--border);
+    align-items: stretch;
+    background-color: var(--color-surface-2);
+    border: 1px solid var(--color-border-1);
     border-radius: var(--radius-2);
-    display: flex;
-    gap: var(--size-2);
-    padding: var(--size-1-5) var(--size-2);
+    display: grid;
+    grid-template-columns: max-content 1fr auto;
+    transition: border-color 150ms ease;
+  }
+
+  .var-row:focus-within {
+    border-color: color-mix(in oklch, var(--color-text), transparent 60%);
   }
 
   .var-row.invalid {
@@ -364,28 +512,45 @@
   }
 
   .var-key {
+    align-items: center;
+    border-inline-end: 1px solid var(--color-border-1);
     color: var(--text-bright);
+    display: inline-flex;
     flex-shrink: 0;
     font-size: var(--font-size-1);
+    padding: var(--size-1-5) var(--size-2-5);
+    transition: border-color 150ms ease;
   }
 
+  .var-row:focus-within .var-key {
+    border-inline-end-color: color-mix(in oklch, var(--color-text), transparent 60%);
+  }
+
+  /* Transparent input — the parent .var-row owns the border + fill, so
+     the input dissolves into the envelope and only its text + caret read. */
   .var-value {
-    background-color: var(--surface-dark);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-1);
-    color: var(--text);
-    flex: 1;
-    font: inherit;
-    font-family: var(--font-family-mono, ui-monospace, monospace);
+    background: transparent;
+    border: none;
+    color: var(--color-text);
+    font-family: var(--font-family-monospace);
     font-size: var(--font-size-1);
     min-inline-size: 0;
-    padding: var(--size-1) var(--size-1-5);
+    padding: var(--size-1-5) var(--size-2-5);
   }
 
-  .var-value.plain {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  /* When the row has no reveal button (non-secret keys), let the input
+     fill the trailing column so the row reads as `key | input` rather
+     than `key | input | empty`. */
+  .var-row:not(:has(.reveal)) .var-value {
+    grid-column: 2 / -1;
+  }
+
+  .var-value:focus {
+    outline: none;
+  }
+
+  .var-value::placeholder {
+    color: color-mix(in oklch, var(--color-text), transparent 50%);
   }
 
   .reveal {
@@ -396,21 +561,37 @@
     cursor: pointer;
     display: inline-flex;
     flex-shrink: 0;
-    inline-size: 16px;
-    block-size: 16px;
-    padding: 0;
+    padding: var(--size-1) var(--size-2);
+  }
+
+  .reveal:hover {
+    color: var(--color-text);
   }
 
   .reveal :global(svg) {
-    inline-size: 100%;
-    block-size: 100%;
+    inline-size: 14px;
+    block-size: 14px;
   }
 
+  /* Footer row: hint (left, muted) + buttons (right). The buttons use
+     margin-inline-start: auto so they stay right-aligned whether or not
+     the hint is present. */
   .actions {
     align-items: center;
     display: flex;
     flex-wrap: wrap;
     gap: var(--size-2);
+  }
+
+  .actions-hint {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+  }
+
+  .actions-buttons {
+    display: flex;
+    gap: var(--size-1-5);
+    margin-inline-start: auto;
   }
 
   .hint,
@@ -420,15 +601,7 @@
   }
 
   .hint {
-    color: color-mix(in srgb, var(--text), transparent 45%);
-  }
-
-  .hint code {
-    font-size: var(--font-size-0, 11px);
-  }
-
-  .secret-hint {
-    color: color-mix(in srgb, var(--yellow-primary), black 25%);
+    color: var(--text-faded);
   }
 
   .terminal {

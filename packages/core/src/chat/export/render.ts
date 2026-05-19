@@ -559,6 +559,26 @@ export function buildSegments(msg: AtlasUIMessage): Segment[] {
       continue;
     }
 
+    if (type === "data-env-applied") {
+      // Emit a dedicated segment so the chat list can render a "Set N
+      // variable(s)" pill instead of a synthetic user-text bubble. The
+      // agent receives the structured signal as text via `convertDataPart`
+      // server-side; this branch is UI-only.
+      if (isRecord(part.data)) {
+        const rawKeys = part.data.keys;
+        const keys = Array.isArray(rawKeys)
+          ? rawKeys.filter((v): v is string => typeof v === "string")
+          : [];
+        const scope: "workspace" | "global" = part.data.scope === "global" ? "global" : "workspace";
+        if (keys.length > 0) {
+          flushText();
+          flushBurst();
+          segments.push({ type: "env-applied", scope, keys });
+        }
+      }
+      continue;
+    }
+
     if (type === "data-file-attached") {
       // The chat-message-list renders one file chip per path. Flush any
       // pending text/tool buffers first so the chips land in the correct

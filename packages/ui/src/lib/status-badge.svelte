@@ -55,7 +55,7 @@
   .status-badge {
     border-radius: var(--radius-1);
     display: inline-flex;
-    font-size: var(--font-size-0);
+    font-size: var(--font-size-1);
     font-weight: var(--font-weight-5);
     inline-size: fit-content;
     letter-spacing: 0.04em;

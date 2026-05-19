@@ -4,7 +4,14 @@
  * used by both `platform-models.ts` and `fsm-engine`'s adapter.
  */
 
-export const REGISTRY_PROVIDERS = ["anthropic", "claude-code", "google", "groq", "openai"] as const;
+export const REGISTRY_PROVIDERS = [
+  "anthropic",
+  "claude-code",
+  "google",
+  "groq",
+  "openai",
+  "openrouter",
+] as const;
 
 export type RegistryProvider = (typeof REGISTRY_PROVIDERS)[number];
 
@@ -18,7 +25,8 @@ export type RegistryModelId =
   | `claude-code:${string}`
   | `google:${string}`
   | `groq:${string}`
-  | `openai:${string}`;
+  | `openai:${string}`
+  | `openrouter:${string}`;
 
 export function isRegistryProvider(p: string): p is RegistryProvider {
   return (REGISTRY_PROVIDERS as readonly string[]).includes(p);
@@ -40,5 +48,7 @@ export function buildRegistryModelId(provider: RegistryProvider, model: string):
       return `groq:${model}`;
     case "openai":
       return `openai:${model}`;
+    case "openrouter":
+      return `openrouter:${model}`;
   }
 }

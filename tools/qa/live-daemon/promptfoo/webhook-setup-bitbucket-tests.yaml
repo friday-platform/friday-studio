@@ -1,0 +1,67 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+
+# Twelve scenarios exercise the wiring-external-webhooks skill across the
+# 2026-05-15 chat-dump failure modes. Positive variants must pass every
+# check; the without-skill control must fail at least one Friday-specific
+# positive-knowledge check (proves the skill is the carrier). Scenario
+# list is sourced from `main()` in scenarios/webhook-setup-bitbucket.ts.
+#
+# Negative-polarity checks across the variants cover:
+#   - wrong env vars (BITBUCKET_/JIRA_/GITHUB_WEBHOOK_SECRET)
+#   - deprecated /hook/bitbucket/ + /hook/github/ + /hook/jira/ URLs
+#   - atlasd direct path /api/workspaces/.../signals/...
+#   - Python/Node sidecar recommendation (Marc's chat ended up here)
+#   - hand-rolled cloudflared/ngrok/tunnel install
+#   - blame-the-restart misdiagnosis
+#   - "restart the daemon" as the FIRST debug step (real first step is /status)
+#   - curl-localhost-bypass tests
+#   - hallucinated Bitbucket event names (allowlist of real x-event-key values)
+#   - broken nowait+follow-by-correlationId pattern (no such GET endpoint)
+
+- description: workspace-chat gives correct Bitbucket setup guidance WITH wiring-external-webhooks skill loaded
+  vars:
+    scenarioId: with-skill
+
+- description: control — bare prompt without the skill must fail at least one setup-guidance check
+  vars:
+    scenarioId: without-skill
+
+- description: user mentions BITBUCKET_WEBHOOK_SECRET — agent corrects without doubling down on wrong var or blaming the restart
+  vars:
+    scenarioId: corrects-wrong-env-var
+
+- description: webhook isn't firing — agent surfaces /status as first step (NOT restart, NOT localhost bypass)
+  vars:
+    scenarioId: points-at-status-first
+
+- description: user wants to test the webhook — agent offers real test (curl through tunnel, Bitbucket Test connectivity, atlas signal trigger) without recommending sidecar/bypass/hallucinated event names
+  vars:
+    scenarioId: test-webhook-no-bypass
+
+- description: user wants to fire a signal without waiting — agent recommends ?nowait=true + 202/correlationId pattern (NOT raise timeout, NOT long poll, NOT sidecar)
+  vars:
+    scenarioId: recommends-nowait-pattern
+
+- description: user's CLI tool needs the cascade output — agent recommends the default sync mode (200 + completed), NOT nowait, NOT polling
+  vars:
+    scenarioId: recommends-sync-for-output
+
+- description: user is building a UI that watches cascade progress live — agent recommends SSE on the trigger POST (Accept: text/event-stream), NOT polling, NOT parsing the sync output, NOT a follow-up GET /signals/stream/{correlationId} (no such endpoint exists)
+  vars:
+    scenarioId: recommends-sse-for-progress
+
+- description: user asks which webhook providers Friday's tunnel supports — agent names raw as the only built-in, does NOT list bitbucket/jira/github as built-ins, does NOT cite removal dates, does NOT recommend WEBHOOK_MAPPINGS_PATH as a way to register others
+  vars:
+    scenarioId: lists-current-providers
+
+- description: user reports /status is unreachable from run_code and asks for the webhook URL — agent must NOT synthesize /api/workspaces/.../signals/ as the public URL; instead emit /hook/raw/ pattern with a tunnel-host placeholder OR ask the user to fetch the tunnel URL via /status themselves
+  vars:
+    scenarioId: no-atlasd-url-fallback
+
+- description: user asks for the workspace.yml signal block for a raw webhook — agent must include `additionalProperties: true` (or use the bare top-level schema) so Zod doesn't silently strip nested webhook fields; must NOT declare nested `actor`/`comment`/`pullrequest`/`repository` as `type: object` without additionalProperties
+  vars:
+    scenarioId: webhook-signal-schema-passes-body
+
+- description: GitHub setup walkthrough — agent gives /hook/raw/ URL, application/json content type, names github events (issue_comment / pull_request / push / etc.), points at /status, no atlasd-direct URL recommendation, no hand-rolled tunnel install
+  vars:
+    scenarioId: github-setup-walkthrough

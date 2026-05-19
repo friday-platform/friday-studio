@@ -4,7 +4,7 @@ go 1.26
 
 require (
 	fyne.io/systray v1.12.1
-	github.com/aymanbagabas/go-pty v0.2.2
+	github.com/aymanbagabas/go-pty v0.2.3
 	github.com/caarlos0/env/v11 v11.4.1
 	github.com/coder/websocket v1.8.14
 	github.com/f1bonacc1/process-compose v1.110.0
@@ -15,7 +15,6 @@ require (
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/sys v0.44.0
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
-	gopkg.in/yaml.v3 v3.0.1
 	howett.net/plist v1.0.1
 )
 
@@ -54,9 +53,10 @@ require (
 	github.com/sirupsen/logrus v1.9.4 // indirect
 	github.com/tklauser/go-sysconf v0.3.16 // indirect
 	github.com/tklauser/numcpus v0.11.0 // indirect
-	github.com/u-root/u-root v0.11.0 // indirect
+	github.com/u-root/u-root v0.16.0 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
-	golang.org/x/crypto v0.50.0 // indirect
-	golang.org/x/term v0.42.0 // indirect
-	golang.org/x/text v0.36.0 // indirect
+	golang.org/x/crypto v0.51.0 // indirect
+	golang.org/x/term v0.43.0 // indirect
+	golang.org/x/text v0.37.0 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

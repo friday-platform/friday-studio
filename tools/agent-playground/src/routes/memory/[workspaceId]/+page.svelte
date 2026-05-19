@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { PageLayout } from "@atlas/ui";
   import { createQuery } from "@tanstack/svelte-query";
   import { page } from "$app/state";
   import { memoryQueries, workspaceQueries } from "$lib/queries";
@@ -9,6 +10,10 @@
     (configQuery.data?.config?.workspace as Record<string, unknown> | undefined)?.name as string | undefined
       ?? workspaceId,
   );
+  const crumbs = $derived([
+    { label: "Memory", href: "/memory" },
+    { label: workspaceName },
+  ]);
 
   const enrichedQuery = createQuery(() => workspaceQueries.enriched());
 
@@ -63,18 +68,12 @@
   }
 </script>
 
-<div class="memory-list">
-  <header class="page-header">
-    <nav class="breadcrumb">
-      <a href="/memory">Memory</a>
-      <span class="sep">/</span>
-      <span>{workspaceName}</span>
-    </nav>
-    <h1>{workspaceName}</h1>
-    <p class="subtitle">Narrative memories in this workspace</p>
-  </header>
-
-  {#if isMemoriesLoading}
+<PageLayout.Root>
+  <PageLayout.Breadcrumbs {crumbs} />
+  <PageLayout.Body>
+    <PageLayout.Content>
+      <div class="memory-content">
+        {#if isMemoriesLoading}
     <div class="loading">Loading memories…</div>
   {:else if memoriesError}
     <div class="error-banner">
@@ -108,51 +107,18 @@
       {/each}
     </ul>
   {/if}
-</div>
+      </div>
+    </PageLayout.Content>
+  </PageLayout.Body>
+</PageLayout.Root>
 
 <style>
-  .memory-list {
+  .memory-content {
     display: flex;
     flex-direction: column;
     gap: var(--size-6);
     max-inline-size: 640px;
     margin-inline: auto;
-    padding: var(--size-10) var(--size-6);
-  }
-
-  .page-header {
-    display: flex;
-    flex-direction: column;
-    gap: var(--size-1);
-  }
-
-  .breadcrumb {
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
-    font-size: var(--font-size-1);
-  }
-
-  .breadcrumb a {
-    color: inherit;
-    text-decoration: underline;
-    text-underline-offset: 2px;
-
-    &:hover {
-      color: var(--color-text);
-    }
-  }
-
-  .sep {
-    margin-inline: var(--size-1);
-  }
-
-  .page-header h1 {
-    font-size: var(--font-size-6);
-    font-weight: var(--font-weight-7);
-  }
-
-  .subtitle {
-    color: color-mix(in srgb, var(--color-text), transparent 35%);
-    font-size: var(--font-size-2);
   }
 
   .loading,

@@ -104,17 +104,15 @@
     ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
     monospace;
 
-  /* Font sizes */
-  --font-size-0: calc(0.625rem * var(--text-scale));
-  --font-size-1: calc(0.6875rem * var(--text-scale));
-  --font-size-2: calc(0.75rem * var(--text-scale));
-  --font-size-2-5: calc(0.78125rem * var(--text-scale));
-  --font-size-3: calc(0.8125rem * var(--text-scale));
-  --font-size-4: calc(0.875rem * var(--text-scale));
-  --font-size-5: calc(0.9375rem * var(--text-scale));
-  --font-size-6: calc(1rem * var(--text-scale));
-  --font-size-7: calc(1.125rem * var(--text-scale));
-  --font-size-8: calc(1.3125rem * var(--text-scale));
+  /* Font sizes — base is --font-size-4 (14px). Eight supported sizes. */
+  --font-size-1: calc(0.6875rem * var(--text-scale));  /* 11px */
+  --font-size-2: calc(0.75rem * var(--text-scale));    /* 12px */
+  --font-size-3: calc(0.8125rem * var(--text-scale));  /* 13px */
+  --font-size-4: calc(0.875rem * var(--text-scale));   /* 14px — base */
+  --font-size-5: calc(0.9375rem * var(--text-scale));  /* 15px */
+  --font-size-6: calc(1rem * var(--text-scale));       /* 16px */
+  --font-size-7: calc(1.125rem * var(--text-scale));   /* 18px */
+  --font-size-8: calc(1.3125rem * var(--text-scale));  /* 21px */
 
   /* Font weight */
   --font-weight-4: 400;

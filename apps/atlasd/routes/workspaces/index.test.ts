@@ -5,8 +5,10 @@
  * Tests that zValidator rejects invalid payloads before handlers execute.
  */
 
+import { Buffer } from "node:buffer";
 import process from "node:process";
 import type { WorkspaceConfig } from "@atlas/config";
+import { SignalTriggerResponseSchema } from "@atlas/core";
 import { startNatsTestServer, type TestNatsServer } from "@atlas/core/test-utils/nats-test-server";
 import { createStubPlatformModels } from "@atlas/llm";
 import type { WorkspaceManager } from "@atlas/workspace";
@@ -76,6 +78,16 @@ function createTestApp(options: { workspace?: { id: string; path: string } | nul
   const triggerWorkspaceSignal = vi
     .fn()
     .mockResolvedValue({ sessionId: "sess-1", output: [], artifactIds: [], summary: "" });
+  const publishSignalToJetStream = vi.fn().mockResolvedValue(undefined);
+  // Sync mode reaches `ctx.daemon.getNatsConnection()` to open the
+  // response-subject subscription. Tests don't have a real NATS server,
+  // so by default this throws — turning sync-mode entry into a
+  // deterministic, observable signal (the only sync-mode test that
+  // overrides this is the canonical-spelling-discriminator one, which
+  // catches the sentinel error).
+  const mockGetNatsConnection = vi.fn(() => {
+    throw new Error("sync-mode NATS not stubbed in this test");
+  });
 
   const mockContext: AppContext = {
     startTime: Date.now(),
@@ -87,6 +99,8 @@ function createTestApp(options: { workspace?: { id: string; path: string } | nul
     daemon: {
       getWorkspaceManager: () => mockWorkspaceManager,
       triggerWorkspaceSignal,
+      publishSignalToJetStream,
+      getNatsConnection: mockGetNatsConnection,
     } as unknown as AppContext["daemon"],
     streamRegistry: {} as AppContext["streamRegistry"],
     chatTurnRegistry: {} as AppContext["chatTurnRegistry"],
@@ -105,7 +119,13 @@ function createTestApp(options: { workspace?: { id: string; path: string } | nul
   });
   app.route("/workspaces", workspacesRoutes);
 
-  return { app, mockWorkspaceManager, triggerWorkspaceSignal };
+  return {
+    app,
+    mockWorkspaceManager,
+    triggerWorkspaceSignal,
+    publishSignalToJetStream,
+    mockGetNatsConnection,
+  };
 }
 
 function post(
@@ -168,26 +188,61 @@ describe("POST /workspaces/:workspaceId/signals/:signalId bypass guard", () => {
 });
 
 describe("POST /workspaces/:workspaceId/signals/:signalId envelope guard", () => {
-  test("rejects a bare (un-enveloped) payload with a clear envelope error", async () => {
-    const { app, triggerWorkspaceSignal } = createTestApp();
+  test("a bare body (no envelope keys) routes to webhook mode — bytes preserved, 202 returned", async () => {
+    // Same body shape that used to 400 with the envelope guard. Under
+    // the byte-for-byte reverse-proxy design, a body without any
+    // envelope key is a webhook payload: the dispatch happens via nowait
+    // (cascade runs async) and the raw bytes + headers ride in the
+    // envelope so the agent can verify HMAC against them.
+    const { app, triggerWorkspaceSignal, publishSignalToJetStream } = createTestApp();
     const res = await post(app, "/workspaces/ws-1/signals/sig-1", { input: "hello" });
 
-    expect(res.status).toBe(400);
-    const body = (await res.json()) as { error: string };
-    expect(body.error).toContain('{"payload"');
-    expect(body.error).toContain("input");
+    expect(res.status).toBe(202);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body).toMatchObject({
+      message: "Webhook accepted",
+      status: "accepted",
+      workspaceId: "ws-1",
+      signalId: "sig-1",
+    });
     expect(triggerWorkspaceSignal).not.toHaveBeenCalled();
+    expect(publishSignalToJetStream).toHaveBeenCalledOnce();
+    const publishArgs = publishSignalToJetStream.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(publishArgs).toMatchObject({
+      workspaceId: "ws-1",
+      signalId: "sig-1",
+      payload: { input: "hello" },
+    });
+    // Body is base64-encoded for byte-fidelity.
+    expect(typeof publishArgs.webhookBody).toBe("string");
+    expect(Buffer.from(publishArgs.webhookBody as string, "base64").toString("utf-8")).toBe(
+      '{"input":"hello"}',
+    );
   });
 
-  test("rejects stray keys even when a valid envelope key is also present", async () => {
-    const { app, triggerWorkspaceSignal } = createTestApp();
+  test("mixed envelope+stray keys routes to webhook mode (tight discriminator)", async () => {
+    // Used to 400 ("stray keys" envelope guard) under the loose
+    // discriminator. Under the tight discriminator (envelope iff ALL
+    // keys are envelope keys), a body with both envelope + stray keys
+    // is ambiguous — and the safer interpretation is "this is a real
+    // webhook that happens to use one of our envelope key names." The
+    // alternative (mis-route to envelope mode + silently strip the
+    // stray keys) caused pass-3 issue #2 for webhooks like
+    // `{payload: {...}, action: "opened"}`.
+    const { app, triggerWorkspaceSignal, publishSignalToJetStream } = createTestApp();
     const res = await post(app, "/workspaces/ws-1/signals/sig-1", {
       streamId: "stream-1",
       input: "hello",
     });
 
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(202);
     expect(triggerWorkspaceSignal).not.toHaveBeenCalled();
+    expect(publishSignalToJetStream).toHaveBeenCalledOnce();
+    const args = publishSignalToJetStream.mock.calls[0]?.[0] as Record<string, unknown>;
+    // The whole body is preserved as the payload — agent sees both
+    // `streamId` and `input` instead of having `input` silently stripped.
+    expect(args.payload).toMatchObject({ streamId: "stream-1", input: "hello" });
+    expect(typeof args.webhookBody).toBe("string");
   });
 
   test("rejects a bare payload on the SSE handler too (Accept: text/event-stream)", async () => {
@@ -314,6 +369,368 @@ describe("POST /workspaces/:workspaceId/signals/:signalId — Decision 7 setup g
       if (previous === undefined) delete process.env[INTERNAL_SIGNAL_BYPASS_TOKEN_ENV];
       else process.env[INTERNAL_SIGNAL_BYPASS_TOKEN_ENV] = previous;
     }
+  });
+});
+
+
+// The 202 "accepted" envelope below is consumed by FOUR downstream callers:
+//   - apps/atlas-cli/src/modules/signals/trigger.ts
+//   - packages/mcp-server/src/tools/signals/trigger.ts
+//   - packages/system/agents/workspace-chat/tools/job-tools.ts
+//   - tools/agent-playground/src/lib/components/workspace/run-job-dialog.svelte
+// All four discriminate on `data.status === "accepted"` and read `correlationId`.
+// These tests pin the exact field names and types so a route-side refactor
+// can't silently break the discriminator in all four consumers.
+describe("POST /workspaces/:workspaceId/signals/:signalId ?nowait=true publish-ack contract", () => {
+  const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+  test("?nowait=true returns 202 with the {status:'accepted', correlationId, workspaceId, signalId, message} envelope", async () => {
+    const { app, publishSignalToJetStream, triggerWorkspaceSignal } = createTestApp();
+    const res = await app.request("/workspaces/ws-1/signals/sig-1?nowait=true", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ payload: { hello: "world" } }),
+    });
+
+    expect(res.status).toBe(202);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body).toMatchObject({
+      message: "Signal accepted",
+      status: "accepted",
+      workspaceId: "ws-1",
+      signalId: "sig-1",
+    });
+    expect(body.correlationId).toMatch(UUID_V4);
+    // nowait must NOT fall through to the sync cascade path
+    expect(triggerWorkspaceSignal).not.toHaveBeenCalled();
+    expect(publishSignalToJetStream).toHaveBeenCalledOnce();
+    const publishArgs = publishSignalToJetStream.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(publishArgs).toMatchObject({
+      workspaceId: "ws-1",
+      signalId: "sig-1",
+      payload: { hello: "world" },
+    });
+    expect(publishArgs.correlationId).toBe(body.correlationId);
+  });
+
+  test("only ?nowait=true is recognized — non-canonical spellings fall through to sync mode", async () => {
+    // Locks the canonical-spelling decision: spelling variants like
+    // `nowait=1`, `wait=false`, `wait=0` used to be aliases. They were
+    // never required by any caller (the only nowait consumer was the
+    // webhook-tunnel, which now uses webhook mode entirely) and they
+    // invite spelling-mistake confusion.
+    //
+    // Positive assertion shape: `getNatsConnection` is called only on
+    // the sync path (the nowait branch returns 202 before opening any
+    // NATS subscription). So observing a call to mockGetNatsConnection
+    // for a given spelling = proof that spelling fell through to sync.
+    // Deterministic — no race-window timeout, no "absence of behavior"
+    // negative check.
+    for (const query of ["?nowait=1", "?wait=false", "?wait=0", "?nowait=yes"]) {
+      const { app, publishSignalToJetStream, mockGetNatsConnection } = createTestApp();
+      // The default mock throws; Hono converts to 500. We don't care
+      // about the response shape — only that the sync path was reached.
+      await app.request(`/workspaces/ws-1/signals/sig-1${query}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ payload: {} }),
+      });
+      expect(
+        mockGetNatsConnection,
+        `non-canonical ${query} should reach sync path (getNatsConnection called)`,
+      ).toHaveBeenCalled();
+      expect(
+        publishSignalToJetStream,
+        `non-canonical ${query} must NOT take the nowait branch`,
+      ).not.toHaveBeenCalled();
+    }
+  });
+
+  test("returns 500 with a structured error envelope when publishSignalToJetStream throws", async () => {
+    const { app, publishSignalToJetStream } = createTestApp();
+    publishSignalToJetStream.mockRejectedValueOnce(new Error("JetStream unavailable"));
+    const res = await app.request("/workspaces/ws-1/signals/sig-1?nowait=true", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ payload: {} }),
+    });
+
+    expect(res.status).toBe(500);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body).toMatchObject({ workspaceId: "ws-1", signalId: "sig-1" });
+    expect(typeof body.error).toBe("string");
+    expect(body.error as string).toContain("JetStream unavailable");
+  });
+
+  test("?nowait=true 202 body conforms to the shared SignalTriggerResponseSchema", async () => {
+    // Producer-side lock: the response shape this route emits is now
+    // declared once in @atlas/core and consumed by mcp-server (and the
+    // other discriminator call sites). If atlasd ever changes the
+    // emitted shape without updating the schema, this Zod parse fails
+    // — caught at producer test time, not in a consumer's runtime parse
+    // weeks later.
+    const { app } = createTestApp();
+    const res = await app.request("/workspaces/ws-1/signals/sig-1?nowait=true", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ payload: { hello: "world" } }),
+    });
+    expect(res.status).toBe(202);
+    const body = await res.json();
+    const parsed = SignalTriggerResponseSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new Error(
+        `Atlasd 202 body does not match SignalTriggerResponseSchema: ${parsed.error.message}`,
+      );
+    }
+    expect(parsed.data.status).toBe("accepted");
+  });
+
+  test("Accept: text/event-stream wins over ?nowait=true (SSE handler short-circuits first)", async () => {
+    // Topology lock: the SSE handler is a SEPARATE .post() registration
+    // earlier in the route chain that branches on Accept header before
+    // the JSON handler's nowait check runs. So a caller that asks for
+    // both SSE AND nowait gets SSE — not a 202 publish-only response.
+    // This pins the precedence so a future refactor can't silently flip it.
+    const { app, publishSignalToJetStream, triggerWorkspaceSignal } = createTestApp();
+    const res = await app.request("/workspaces/ws-1/signals/sig-1?nowait=true", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+      body: JSON.stringify({ input: "hello" }),
+    });
+    // The SSE handler rejects un-enveloped bodies with 400 + the specific
+    // envelope-guard string from `detectUnwrappedSignalBody`. Asserting
+    // that string (not just the 400) proves we hit the SSE handler's
+    // envelope guard, not some other 400 path — if the SSE handler ever
+    // relaxes its guard, this test fails loudly instead of silently
+    // degrading to "got 400 from somewhere."
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error?: string };
+    expect(body.error ?? "").toMatch(/wrap the payload|un-enveloped/i);
+    expect(publishSignalToJetStream).not.toHaveBeenCalled();
+    expect(triggerWorkspaceSignal).not.toHaveBeenCalled();
+  });
+});
+
+// Webhook-mode tests — the byte-for-byte reverse-proxy path. The tunnel
+// (apps/atlas-cli ⟶ atlasd via cloudflared) forwards upstream HTTP bytes
+// unchanged. Body shape is the discriminator: no envelope keys → webhook
+// mode, dispatch via nowait with the raw bytes (base64) + headers
+// (lowercased) preserved on the JetStream envelope. The agent then
+// recomputes HMAC against ctx.input.raw["body"] using
+// ctx.input.raw["headers"]["x-hub-signature-256"].
+describe("POST /workspaces/:workspaceId/signals/:signalId webhook mode (byte-for-byte)", () => {
+  test("forwards a GitHub-style webhook with headers + raw body preserved", async () => {
+    const { app, publishSignalToJetStream } = createTestApp();
+    const githubBody = `{"action":"opened","pull_request":{"number":42},"repository":{"full_name":"acme/widgets"}}`;
+    const res = await app.request("/workspaces/ws-1/signals/pr-opened", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-GitHub-Event": "pull_request",
+        "X-GitHub-Delivery": "72d3162e-cc78-11e3-81ab-4c9367dc0958",
+        "X-Hub-Signature-256": "sha256=abc123deadbeef",
+        "User-Agent": "GitHub-Hookshot/abc",
+        // Hop-by-hop headers explicitly set on the request so the
+        // `not.toHaveProperty` assertions below actually test that the
+        // HOP_BY_HOP filter strips them. Without these in the request,
+        // the assertions used to pass trivially because the synthetic
+        // `app.request()` Request doesn't auto-populate these headers
+        // — see pass-4 review item #3.
+        Connection: "keep-alive",
+        "Keep-Alive": "timeout=5",
+        "Transfer-Encoding": "chunked",
+        "Proxy-Authorization": "Basic abc",
+      },
+      body: githubBody,
+    });
+    expect(res.status).toBe(202);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body).toMatchObject({
+      message: "Webhook accepted",
+      status: "accepted",
+      workspaceId: "ws-1",
+      signalId: "pr-opened",
+    });
+    expect(publishSignalToJetStream).toHaveBeenCalledOnce();
+    const args = publishSignalToJetStream.mock.calls[0]?.[0] as Record<string, unknown>;
+    // Body bytes round-trip via base64 — recomputing HMAC over decoded
+    // bytes will match the upstream signature.
+    expect(Buffer.from(args.webhookBody as string, "base64").toString("utf-8")).toBe(githubBody);
+    // Headers preserved with lowercased keys, hop-by-hop stripped.
+    const headers = args.webhookHeaders as Record<string, string>;
+    expect(headers["x-github-event"]).toBe("pull_request");
+    expect(headers["x-github-delivery"]).toBe("72d3162e-cc78-11e3-81ab-4c9367dc0958");
+    expect(headers["x-hub-signature-256"]).toBe("sha256=abc123deadbeef");
+    expect(headers["user-agent"]).toBe("GitHub-Hookshot/abc");
+    expect(headers["content-type"]).toBe("application/json");
+    // Hop-by-hop headers (set explicitly above) must NOT survive the
+    // filter — these were the test gap that pass-4 #3 surfaced.
+    expect(headers).not.toHaveProperty("connection");
+    expect(headers).not.toHaveProperty("keep-alive");
+    expect(headers).not.toHaveProperty("transfer-encoding");
+    expect(headers).not.toHaveProperty("proxy-authorization");
+    expect(headers).not.toHaveProperty("content-length");
+    expect(headers).not.toHaveProperty("host");
+    // Parsed view also set for agents that want structured access.
+    expect(args.payload).toMatchObject({ action: "opened" });
+  });
+
+  test("non-JSON body still rides through with payload undefined", async () => {
+    // Some upstreams (e.g. Stripe, Twilio) sign form-encoded or other
+    // non-JSON payloads. The agent owns parsing; we just preserve bytes.
+    const { app, publishSignalToJetStream } = createTestApp();
+    const formBody = "event=charge.succeeded&id=ch_123&amount=2000";
+    const res = await app.request("/workspaces/ws-1/signals/stripe-evt", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: formBody,
+    });
+    expect(res.status).toBe(202);
+    const args = publishSignalToJetStream.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(Buffer.from(args.webhookBody as string, "base64").toString("utf-8")).toBe(formBody);
+    expect(args.payload).toBeUndefined();
+  });
+
+  test("envelope-shape bodies skip webhook mode (regression guard)", async () => {
+    // {payload: ...} → envelope mode, NOT webhook mode. The agent SDK's
+    // ctx.input.config still works the same way for CLI/MCP callers.
+    const previous = process.env[INTERNAL_SIGNAL_BYPASS_TOKEN_ENV];
+    process.env[INTERNAL_SIGNAL_BYPASS_TOKEN_ENV] = "test-token";
+    try {
+      const { app, triggerWorkspaceSignal, publishSignalToJetStream } = createTestApp();
+      const res = await post(
+        app,
+        "/workspaces/ws-1/signals/sig-1",
+        { payload: { input: "hello" }, bypassConcurrency: true },
+        { [INTERNAL_SIGNAL_BYPASS_HEADER]: "test-token" },
+      );
+      expect(res.status).toBe(200);
+      expect(triggerWorkspaceSignal).toHaveBeenCalledOnce();
+      expect(publishSignalToJetStream).not.toHaveBeenCalled();
+    } finally {
+      if (previous === undefined) delete process.env[INTERNAL_SIGNAL_BYPASS_TOKEN_ENV];
+      else process.env[INTERNAL_SIGNAL_BYPASS_TOKEN_ENV] = previous;
+    }
+  });
+
+  test("envelope publish does NOT carry webhookBody / webhookHeaders", async () => {
+    // Non-webhook envelope callers (CLI nowait) get the same envelope as
+    // before — no spurious webhookBody/webhookHeaders polluting the
+    // agent's input. Locks the "webhook fields are webhook-only" contract.
+    const { app, publishSignalToJetStream } = createTestApp();
+    const res = await app.request("/workspaces/ws-1/signals/sig-1?nowait=true", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ payload: { hello: "world" } }),
+    });
+    expect(res.status).toBe(202);
+    expect(publishSignalToJetStream).toHaveBeenCalledOnce();
+    const args = publishSignalToJetStream.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(args).not.toHaveProperty("webhookBody");
+    expect(args).not.toHaveProperty("webhookHeaders");
+  });
+
+  test("empty `{}` body routes to envelope mode, not webhook (isEmptyObject branch)", async () => {
+    // Pass-4 fix #5: the discriminator has three predicates —
+    // isObjectBody, allKeysAreEnvelope, isEmptyObject. The third one
+    // (the gate that keeps `{}` in envelope mode — the valid
+    // no-payload cron/CLI trigger pattern) had no direct test before
+    // this. Existing "allows empty body" test exercises the bypass
+    // path, not the empty-object discriminator branch.
+    const { app, publishSignalToJetStream, mockGetNatsConnection } = createTestApp();
+    const res = await app.request("/workspaces/ws-1/signals/sig-1", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    // Pin the POSITIVE routing decision, not just the absence of the
+    // wrong one. `getNatsConnection` is reached ONLY from sync-envelope
+    // mode (it opens the response-subject subscription before calling
+    // triggerWorkspaceSignal). If the discriminator mis-routes empty
+    // `{}` to webhook mode, the sync path never runs and this mock is
+    // never called. If a future refactor 400s empty bodies before the
+    // discriminator runs, same — never called. So a single
+    // `toHaveBeenCalled()` locks "reached sync envelope mode" in a way
+    // the negative-only assertions ("not Webhook accepted" / "not
+    // publishSignalToJetStream") cannot. Status code intentionally NOT
+    // asserted — Hono's default error handler shape (500 / "Internal
+    // Server Error") is an implementation detail of the fixture's
+    // throw path, not a contract of this discriminator branch.
+    expect(mockGetNatsConnection).toHaveBeenCalled();
+    expect(publishSignalToJetStream).not.toHaveBeenCalled();
+    const bodyText = await res.text();
+    expect(bodyText).not.toContain("Webhook accepted");
+  });
+
+  // Discriminator edge cases — `isObjectBody` + `hasEnvelopeKey` +
+  // `isEmptyObject` carry the entire webhook-vs-envelope routing decision.
+  // These cover realistic upstream inputs at the edges.
+  //
+  // CURRENT BEHAVIOR: atlasd's `zValidator("json", signalBodySchema)`
+  // middleware rejects non-object bodies (array / primitive / etc.) with
+  // 400 BEFORE the webhook-mode discriminator runs. In practice every
+  // webhook provider we care about (GitHub, Bitbucket, Jira, Stripe,
+  // Slack, etc.) sends JSON objects, so this is a reasonable line. The
+  // tests below lock that line — a future change that loosens
+  // signalBodySchema to allow non-objects would need to update them.
+  test("array body rejected with 400 (zValidator catches before discriminator)", async () => {
+    const { app, publishSignalToJetStream } = createTestApp();
+    const res = await app.request("/workspaces/ws-1/signals/sig-1", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify([{ event: "x" }, { event: "y" }]),
+    });
+    expect(res.status).toBe(400);
+    expect(publishSignalToJetStream).not.toHaveBeenCalled();
+  });
+
+  test("JSON primitive body (string) rejected with 400", async () => {
+    const { app, publishSignalToJetStream } = createTestApp();
+    const res = await app.request("/workspaces/ws-1/signals/sig-1", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: `"ping"`,
+    });
+    expect(res.status).toBe(400);
+    expect(publishSignalToJetStream).not.toHaveBeenCalled();
+  });
+
+  test("JSON primitive body (number) rejected with 400", async () => {
+    const { app, publishSignalToJetStream } = createTestApp();
+    const res = await app.request("/workspaces/ws-1/signals/sig-1", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: `42`,
+    });
+    expect(res.status).toBe(400);
+    expect(publishSignalToJetStream).not.toHaveBeenCalled();
+  });
+
+  test("webhook body with a top-level `payload` key routes to webhook mode (pass-3 #2 fix)", async () => {
+    // Pass-3 review #2 fix: the tight discriminator (envelope iff ALL
+    // top-level keys are envelope keys) routes mixed bodies to webhook
+    // mode. Previously the loose check (any envelope key wins) would
+    // mis-route a real webhook with `{payload: ..., action: ...}` to
+    // envelope mode and silently strip the stray keys — the agent saw
+    // no webhookBody/webhookHeaders and could not verify HMAC.
+    const githubBody = { payload: { foo: 1 }, action: "opened", sender: { login: "alice" } };
+    const { app, publishSignalToJetStream, triggerWorkspaceSignal } = createTestApp();
+    const res = await app.request("/workspaces/ws-1/signals/sig-1", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(githubBody),
+    });
+    expect(res.status).toBe(202);
+    expect(triggerWorkspaceSignal).not.toHaveBeenCalled();
+    expect(publishSignalToJetStream).toHaveBeenCalledOnce();
+    const args = publishSignalToJetStream.mock.calls[0]?.[0] as Record<string, unknown>;
+    // Whole body preserved as payload (no zValidator stripping); raw
+    // bytes preserved in webhookBody for HMAC verification.
+    expect(args.payload).toEqual(githubBody);
+    expect(Buffer.from(args.webhookBody as string, "base64").toString("utf-8")).toBe(
+      JSON.stringify(githubBody),
+    );
   });
 });
 

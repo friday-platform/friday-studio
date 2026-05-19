@@ -124,3 +124,19 @@
   --green-primary: light-dark(var(--green-300), var(--green-600));
   --purple-primary: light-dark(var(--purple-300), var(--purple-600));
 }
+
+/* Accent colors for markdown — maps blue family to accent variables */
+:root {
+  --accent-1: light-dark(hsl(216 20% 95%), hsl(210 9% 9%));
+  --accent-2: hsl(212 97% 49%);
+  --accent-3: light-dark(hsl(212 97% 27%), hsl(212 96% 78%));
+
+  /* Extended syntax highlighting palette (not in @atlas/ui tokens) */
+  --brown-3: light-dark(hsl(35 49% 21%), hsl(34 49% 61%));
+  --red-3: light-dark(hsl(24 96% 33%), hsl(24 96% 78%));
+  --green-3: light-dark(hsl(99 78% 20%), hsl(100 79% 78%));
+
+  /* Editor text opacity variants — based on --color-text for each mode */
+  --editor-muted: light-dark(hsl(230 32% 14% / 0.5), hsl(40 12% 95% / 0.4));
+  --editor-dimmed: light-dark(hsl(230 32% 14% / 0.7), hsl(40 12% 95% / 0.55));
+}

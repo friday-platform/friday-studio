@@ -448,6 +448,196 @@ describe("AtlasDaemon idle/session cleanup", () => {
     expect(agentSessions.has("agent-session")).toBe(false);
     expect(platformSessions.has("platform-session")).toBe(false);
   });
+
+  it("force-evicts LRU platform sessions when no idle candidates exist and we're over the limit", async () => {
+    // Reproduces the production starvation: long-lived SSE/MCP streams keep
+    // `activeRequests > 0` forever, so the old eviction path filtered them
+    // ALL out and `toEvict.length` was always 0 — the warning fired every
+    // 60s with no progress and the map grew unbounded.
+    const daemon = new AtlasDaemon({ port: 0 });
+    const sessions = (
+      daemon as unknown as { platformMcpSessions: Map<string, Record<string, unknown>> }
+    ).platformMcpSessions;
+    const maxSessions = (daemon as unknown as { MAX_PLATFORM_SESSIONS: number })
+      .MAX_PLATFORM_SESSIONS;
+
+    const closes: Array<ReturnType<typeof vi.fn>> = [];
+    const now = Date.now();
+    // Fill the map past the limit, all sessions in-flight (activeRequests > 0).
+    for (let i = 0; i < maxSessions + 5; i++) {
+      const close = vi.fn().mockResolvedValue(undefined);
+      closes.push(close);
+      sessions.set(`active-session-${i}`, {
+        server: {},
+        transport: { close, onclose: () => undefined },
+        createdAt: now - (maxSessions + 5 - i) * 1000,
+        lastUsed: now - (maxSessions + 5 - i) * 1000, // earliest is i=0
+        activeRequests: 1,
+      });
+    }
+    expect(sessions.size).toBe(maxSessions + 5);
+
+    await (
+      daemon as unknown as { performPlatformSessionCleanup: () => Promise<void> }
+    ).performPlatformSessionCleanup();
+
+    // Down to the limit exactly, evicted the 5 LRU (oldest lastUsed).
+    expect(sessions.size).toBe(maxSessions);
+    for (let i = 0; i < 5; i++) {
+      expect(sessions.has(`active-session-${i}`)).toBe(false);
+      expect(closes[i]).toHaveBeenCalledOnce();
+    }
+    for (let i = 5; i < maxSessions + 5; i++) {
+      expect(sessions.has(`active-session-${i}`)).toBe(true);
+    }
+  });
+
+  it("prefers idle platform sessions over active ones when evicting", async () => {
+    const daemon = new AtlasDaemon({ port: 0 });
+    const sessions = (
+      daemon as unknown as { platformMcpSessions: Map<string, Record<string, unknown>> }
+    ).platformMcpSessions;
+    const maxSessions = (daemon as unknown as { MAX_PLATFORM_SESSIONS: number })
+      .MAX_PLATFORM_SESSIONS;
+
+    const now = Date.now();
+    // 3 over the limit. The oldest 2 are *active*, but there are 2 *idle*
+    // sessions in the middle — the idle ones should go first even though
+    // they're newer, then we still need 1 more from the active LRU pool.
+    const activeOldClose = vi.fn().mockResolvedValue(undefined);
+    sessions.set("active-oldest", {
+      server: {},
+      transport: { close: activeOldClose, onclose: () => undefined },
+      createdAt: now - 100_000,
+      lastUsed: now - 100_000,
+      activeRequests: 1,
+    });
+    const activeOlderClose = vi.fn().mockResolvedValue(undefined);
+    sessions.set("active-older", {
+      server: {},
+      transport: { close: activeOlderClose, onclose: () => undefined },
+      createdAt: now - 90_000,
+      lastUsed: now - 90_000,
+      activeRequests: 1,
+    });
+    const idle1Close = vi.fn().mockResolvedValue(undefined);
+    sessions.set("idle-mid-1", {
+      server: {},
+      transport: { close: idle1Close, onclose: () => undefined },
+      createdAt: now - 60_000,
+      lastUsed: now - 60_000,
+      activeRequests: 0,
+    });
+    const idle2Close = vi.fn().mockResolvedValue(undefined);
+    sessions.set("idle-mid-2", {
+      server: {},
+      transport: { close: idle2Close, onclose: () => undefined },
+      createdAt: now - 50_000,
+      lastUsed: now - 50_000,
+      activeRequests: 0,
+    });
+
+    // Fill the rest with active recent sessions (we don't want them evicted).
+    for (let i = 0; i < maxSessions - 1; i++) {
+      sessions.set(`active-recent-${i}`, {
+        server: {},
+        transport: { close: vi.fn().mockResolvedValue(undefined), onclose: () => undefined },
+        createdAt: now - i,
+        lastUsed: now - i,
+        activeRequests: 1,
+      });
+    }
+    expect(sessions.size).toBe(maxSessions + 3);
+
+    await (
+      daemon as unknown as { performPlatformSessionCleanup: () => Promise<void> }
+    ).performPlatformSessionCleanup();
+
+    expect(sessions.size).toBe(maxSessions);
+    // Both idle ones evicted (preferred), plus the oldest active one as fallback.
+    expect(sessions.has("idle-mid-1")).toBe(false);
+    expect(sessions.has("idle-mid-2")).toBe(false);
+    expect(sessions.has("active-oldest")).toBe(false);
+    expect(sessions.has("active-older")).toBe(true);
+    expect(idle1Close).toHaveBeenCalledOnce();
+    expect(idle2Close).toHaveBeenCalledOnce();
+    expect(activeOldClose).toHaveBeenCalledOnce();
+    expect(activeOlderClose).not.toHaveBeenCalled();
+  });
+
+  it("force-evicts LRU agent sessions when no idle candidates exist", async () => {
+    // Symmetric coverage for the agent path — same bug, same fix.
+    const daemon = new AtlasDaemon({ port: 0 });
+    const sessions = (daemon as unknown as { agentSessions: Map<string, Record<string, unknown>> })
+      .agentSessions;
+    const maxSessions = (daemon as unknown as { MAX_AGENT_SESSIONS: number }).MAX_AGENT_SESSIONS;
+
+    const closes: Array<ReturnType<typeof vi.fn>> = [];
+    const stops: Array<ReturnType<typeof vi.fn>> = [];
+    const now = Date.now();
+    for (let i = 0; i < maxSessions + 3; i++) {
+      const close = vi.fn().mockResolvedValue(undefined);
+      const stop = vi.fn().mockResolvedValue(undefined);
+      closes.push(close);
+      stops.push(stop);
+      sessions.set(`active-agent-${i}`, {
+        server: { stop },
+        transport: { close, onclose: () => undefined },
+        createdAt: now - (maxSessions + 3 - i) * 1000,
+        lastUsed: now - (maxSessions + 3 - i) * 1000,
+        activeRequests: 1,
+      });
+    }
+    expect(sessions.size).toBe(maxSessions + 3);
+
+    await (
+      daemon as unknown as { performAgentSessionCleanup: () => Promise<void> }
+    ).performAgentSessionCleanup();
+
+    expect(sessions.size).toBe(maxSessions);
+    for (let i = 0; i < 3; i++) {
+      expect(sessions.has(`active-agent-${i}`)).toBe(false);
+      expect(closes[i]).toHaveBeenCalledOnce();
+      expect(stops[i]).toHaveBeenCalledOnce();
+    }
+    for (let i = 3; i < maxSessions + 3; i++) {
+      expect(sessions.has(`active-agent-${i}`)).toBe(true);
+    }
+  });
+
+  it("does not evict anything when at or under the platform session limit", async () => {
+    // Regression guard: the new force-evict path must NOT kick in unless
+    // we're strictly over the limit.
+    const daemon = new AtlasDaemon({ port: 0 });
+    const sessions = (
+      daemon as unknown as { platformMcpSessions: Map<string, Record<string, unknown>> }
+    ).platformMcpSessions;
+    const maxSessions = (daemon as unknown as { MAX_PLATFORM_SESSIONS: number })
+      .MAX_PLATFORM_SESSIONS;
+
+    const closes: Array<ReturnType<typeof vi.fn>> = [];
+    for (let i = 0; i < maxSessions; i++) {
+      const close = vi.fn().mockResolvedValue(undefined);
+      closes.push(close);
+      sessions.set(`session-${i}`, {
+        server: {},
+        transport: { close, onclose: () => undefined },
+        createdAt: Date.now(),
+        lastUsed: Date.now(),
+        activeRequests: 1,
+      });
+    }
+    expect(sessions.size).toBe(maxSessions);
+
+    await (
+      daemon as unknown as { performPlatformSessionCleanup: () => Promise<void> }
+    ).performPlatformSessionCleanup();
+
+    expect(sessions.size).toBe(maxSessions);
+    for (const close of closes) {
+      expect(close).not.toHaveBeenCalled();
+    }
+  });
 });
 
 describe("AtlasDaemon.shutdown stops the Discord Gateway service", () => {

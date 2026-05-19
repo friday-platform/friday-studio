@@ -201,7 +201,7 @@
 
   .loading-indicator {
     color: color-mix(in srgb, var(--color-text), transparent 25%);
-    font-size: var(--font-size-0);
+    font-size: var(--font-size-1);
     font-style: italic;
   }
 </style>

@@ -173,7 +173,7 @@
 
   .signal-chip {
     border-radius: var(--radius-1);
-    font-size: var(--font-size-0);
+    font-size: var(--font-size-1);
     font-weight: var(--font-weight-5);
     letter-spacing: 0.04em;
     padding: 2px 6px;

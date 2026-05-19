@@ -35,17 +35,7 @@ pub fn friday_home_dir() -> Result<PathBuf, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// Serialize tests that mutate FRIDAY_LAUNCHER_HOME / HOME so parallel
-    /// runs within the same process don't see each other's env state.
-    /// Cargo runs tests in parallel by default (one thread per test).
-    fn env_lock() -> std::sync::MutexGuard<'static, ()> {
-        use std::sync::{Mutex, OnceLock};
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(()))
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-    }
+    use crate::test_support::env_lock;
 
     fn snapshot_and_remove(key: &str) -> Option<String> {
         let prior = std::env::var(key).ok();

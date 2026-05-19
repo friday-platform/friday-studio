@@ -355,6 +355,31 @@ describe("createJobTools execute", () => {
     });
   });
 
+  it("surfaces a clear error when the trigger returns the accepted (nowait) envelope", async () => {
+    // Job tools always use the sync path — they don't pass ?nowait=true.
+    // The "accepted" branch is a safety guard for if the route default ever
+    // flips to async. We want the chat agent to see an explicit failure
+    // rather than silently dropping into "no sessionId, no output".
+    mockParseResult.mockResolvedValueOnce({
+      ok: true,
+      data: { status: "accepted", correlationId: "corr-async-1" },
+    });
+
+    const { execute, logger } = buildTool();
+    const result = await execute({ prompt: "deploy" }, TOOL_CALL_OPTS);
+
+    expect(result).toEqual({
+      success: false,
+      status: "accepted",
+      error:
+        "Job 'deploy-app' returned status: accepted. Job tools require the synchronous trigger response (do not pass ?nowait=true).",
+    });
+    expect(logger.error).toHaveBeenCalledWith(
+      "Job tool received nowait (accepted) response — expected synchronous completion",
+      expect.objectContaining({ jobName: "deploy-app", status: "accepted" }),
+    );
+  });
+
   it("passes payload to execution endpoint", async () => {
     mockParseResult.mockResolvedValueOnce({
       ok: true,
@@ -644,15 +669,6 @@ describe("createJobTools execute (SSE streaming)", () => {
       merge: vi.fn(),
       onError: vi.fn(),
     };
-    createJobTools(
-      "ws-test",
-      { "deploy-app": makeJob({ triggers: [{ signal: "deploy-signal" }] }) },
-      {},
-      logger,
-      "parent-stream-123",
-      writer,
-    );
-
     globalThis.fetch = vi.fn(() =>
       makeMockFetchResponse([
         `data: ${JSON.stringify({

@@ -28,7 +28,13 @@ import { z } from "zod";
 
 const STREAM_NAME = "SIGNALS";
 const SCHEMA_VERSION = "1";
-const DEFAULT_MAX_MSG_SIZE = 1 * 1024 * 1024;
+// 8 MiB matches the FRIDAY_JETSTREAM_MAX_MSG_SIZE env default in
+// packages/jetstream/src/config.ts. The previous 1 MiB was only used
+// when a caller created the SIGNALS stream without passing limits
+// (test code paths), and it was tighter than production — so a test
+// publishing a base64-encoded webhook body could pass against values
+// that would 500 on a real daemon. Keep them aligned.
+const DEFAULT_MAX_MSG_SIZE = 8 * 1024 * 1024;
 const DEFAULT_MAX_AGE_NS = 7 * 24 * 60 * 60 * 1_000_000_000; // 7 days
 const DEFAULT_DUPLICATE_WINDOW_NS = 5 * 60 * 1_000_000_000; // 5 min — covers cron-tick double-fires
 
@@ -75,9 +81,50 @@ export const SignalEnvelopeSchema = z.object({
    * trigger, future cross-cascade emit-and-await) can subscribe and unblock.
    */
   correlationId: z.string().optional(),
+  /**
+   * Base64-encoded original webhook request body. Preserved byte-for-byte
+   * so a workspace agent can recompute the HMAC over the exact bytes the
+   * upstream (GitHub / Bitbucket / etc) signed. Base64 (not raw UTF-8) so
+   * non-UTF-8 payloads survive intact. Only set for webhook-triggered
+   * signals; absent for cron / system / chat-emitted signals. Surfaces to
+   * agents as `ctx.input.raw["body"]` (decoded back to bytes).
+   */
+  webhookBody: z.string().optional(),
+  /**
+   * Original webhook request headers — lowercased keys, single value per
+   * key. GitHub / Bitbucket / Jira don't send multi-value headers for
+   * webhooks; if a provider ever does, the first value wins. Lowercase
+   * keys match the gidgethub / githubkit / WSGI convention so a Python
+   * agent can do `headers["x-hub-signature-256"]` without case dancing.
+   * Surfaces to agents as `ctx.input.raw["headers"]`.
+   */
+  webhookHeaders: z.record(z.string(), z.string()).optional(),
 });
 
 export type SignalEnvelope = z.infer<typeof SignalEnvelopeSchema>;
+
+/**
+ * Extract `{ body, headers }` from a SignalEnvelope when either webhook
+ * field is set, otherwise `undefined`. Pure function — the CascadeConsumer
+ * dispatcher in atlas-daemon.ts uses it to build the `webhookContext`
+ * arg passed to `triggerWorkspaceSignal`. Extracted so the dispatcher's
+ * envelope→opts mapping is unit-testable without standing up the full
+ * Hono + JetStream + workspace runtime stack.
+ *
+ * Returning `undefined` (not an empty object) for non-webhook envelopes
+ * is the contract `WorkspaceRuntimeSignal.body`/`.headers` rely on to
+ * stay `undefined` — anything else would pollute non-webhook signals
+ * with empty strings/objects that the agent SDK would surface as
+ * `ctx.input.raw["body"] === ""`.
+ */
+export function envelopeToWebhookContext(
+  envelope: SignalEnvelope,
+): { body?: string; headers?: Record<string, string> } | undefined {
+  if (envelope.webhookBody === undefined && envelope.webhookHeaders === undefined) {
+    return undefined;
+  }
+  return { body: envelope.webhookBody, headers: envelope.webhookHeaders };
+}
 
 /** Result published by SignalConsumer to the response subject. */
 export const SignalResponseSchema = z.discriminatedUnion("ok", [
@@ -153,6 +200,10 @@ export interface PublishSignalOpts {
    * `awaitSignalCompletion` (or your own `nc.subscribe`) to receive it.
    */
   correlationId?: string;
+  /** See SignalEnvelopeSchema.webhookBody. */
+  webhookBody?: string;
+  /** See SignalEnvelopeSchema.webhookHeaders. */
+  webhookHeaders?: Record<string, string>;
 }
 
 /**
@@ -180,6 +231,8 @@ export async function publishSignal(
     publishedAt,
     traceId: opts.traceId,
     correlationId: opts.correlationId,
+    webhookBody: opts.webhookBody,
+    webhookHeaders: opts.webhookHeaders,
   };
 
   const h = natsHeaders();

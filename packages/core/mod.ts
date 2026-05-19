@@ -154,6 +154,12 @@ export {
   initialSessionView,
   reduceSessionEvent,
 } from "./src/session/session-reducer.ts";
+// Signal trigger response — shared producer/consumer schema for the
+// 2xx body shape from POST /api/workspaces/:ws/signals/:sig.
+export {
+  type SignalTriggerResponse,
+  SignalTriggerResponseSchema,
+} from "./src/signal-trigger-response.ts";
 // Stream Emitters
 export {
   CallbackStreamEmitter,

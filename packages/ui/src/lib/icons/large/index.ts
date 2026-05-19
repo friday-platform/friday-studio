@@ -1,5 +1,7 @@
 import type { Component } from "svelte";
+import ArrowsRotate from "./arrows-rotate.svelte";
 import Chip from "./chip.svelte";
+import Clock from "./clock.svelte";
 import Compass from "./compass.svelte";
 import DiamondCheck from "./diamond-check.svelte";
 import Gear from "./gear.svelte";
@@ -10,7 +12,9 @@ import Wrench from './wrench.svelte';
 import Write from "./write.svelte";
 
 export const IconLarge: Record<string, Component> = {
+  ArrowsRotate,
   Chip,
+  Clock,
   Compass,
   DiamondCheck,
   Gear,

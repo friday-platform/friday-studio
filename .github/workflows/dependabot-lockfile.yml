@@ -1,5 +1,16 @@
-name: Update Deno lockfile for Dependabot PRs
+name: Sync Deno lockfile + deno.json for Dependabot PRs
 
+# Runs after Dependabot updates package.json. Does three things:
+#   1. `deno install` so deno.lock matches the new package.json.
+#   2. Syncs `npm:<pkg>@<ver>` pins in every deno.json to whatever the
+#      workspace package.json files now declare — without this a group bump
+#      like `hono` lands in package.json but deno.json stays on the old
+#      version, producing dual-package-hazard typecheck failures.
+#   3. Re-runs `npm install --package-lock-only` in apps/studio-installer,
+#      which has its own standalone package-lock.json (isolated from the npm
+#      workspace) used by studio-installer-build.yml — Dependabot bumps
+#      package.json there but leaves the lockfile, breaking `npm ci`.
+#
 # Triggered as pull_request_target so the workflow runs with secrets, then
 # checks out and pushes via DEPENDABOT_PAT (a classic PAT with `repo` scope,
 # stored in 1Password as "GitHub PAT — dependabot-lockfile-sync").
@@ -56,11 +67,33 @@ jobs:
       - name: Update lockfile
         run: deno install
 
+      # Sync npm version pins in deno.json files to match package.json. Without
+      # this, a group bump like `hono` lands in every package.json but leaves
+      # deno.json on the old version — typecheck then fails with dual-package
+      # hazards (two copies of the same lib). See scripts/sync-deno-json-npm-versions.ts.
+      - name: Sync deno.json npm versions
+        run: deno run --allow-read --allow-write scripts/sync-deno-json-npm-versions.ts
+
+      - name: Re-install after deno.json sync
+        run: deno install
+
+      # Sync apps/studio-installer/package-lock.json. The installer has its own
+      # standalone lockfile (not part of the npm workspace) consumed by
+      # studio-installer-build.yml via `npm ci`. Dependabot updates the
+      # package.json there but leaves the lockfile stale, breaking the build.
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+
+      - name: Sync studio-installer package-lock.json
+        run: npm install --package-lock-only --prefix apps/studio-installer
+
       - name: Commit lockfile changes
         uses: stefanzweifel/git-auto-commit-action@v7
         with:
-          commit_message: "chore: update deno.lock [dependabot skip]"
-          file_pattern: "deno.lock"
+          commit_message: "chore: sync deno.lock + deno.json + studio-installer lock [dependabot skip]"
+          file_pattern: "deno.lock deno.json deno.jsonc **/deno.json **/deno.jsonc apps/studio-installer/package-lock.json"
           commit_user_name: "github-actions[bot]"
           commit_user_email: "41898282+github-actions[bot]@users.noreply.github.com"
           push_options: "--force-with-lease"

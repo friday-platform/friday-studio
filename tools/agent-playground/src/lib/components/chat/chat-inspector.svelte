@@ -1261,7 +1261,7 @@
   .badge {
     background-color: color-mix(in srgb, var(--color-text), transparent 85%);
     border-radius: var(--radius-round);
-    font-size: var(--font-size-0);
+    font-size: var(--font-size-1);
     min-inline-size: 18px;
     padding: 1px 5px;
     text-align: center;
@@ -1280,7 +1280,7 @@
 
   .section h4 {
     color: color-mix(in srgb, var(--color-text), transparent 30%);
-    font-size: var(--font-size-0);
+    font-size: var(--font-size-1);
     font-weight: var(--font-weight-6);
     letter-spacing: 0.06em;
     margin-block-end: var(--size-2);
@@ -1345,7 +1345,7 @@
   .block-meta {
     color: color-mix(in srgb, var(--color-text), transparent 40%);
     display: flex;
-    font-size: var(--font-size-0);
+    font-size: var(--font-size-1);
     gap: var(--size-3);
     margin-block-start: var(--size-1);
   }
@@ -1361,7 +1361,7 @@
   .block-details summary {
     color: color-mix(in srgb, var(--color-text), transparent 50%);
     cursor: pointer;
-    font-size: var(--font-size-0);
+    font-size: var(--font-size-1);
     user-select: none;
   }
 
@@ -1370,7 +1370,7 @@
     border-radius: var(--radius-1, 0.3rem);
     color: var(--text);
     font-family: var(--font-family-mono, ui-monospace, monospace);
-    font-size: var(--font-size-0);
+    font-size: var(--font-size-1);
     line-height: 1.4;
     margin: var(--size-1) 0 0;
     max-block-size: 60vh;
@@ -1407,7 +1407,7 @@
 
   .sub-label {
     color: color-mix(in srgb, var(--color-text), transparent 45%);
-    font-size: var(--font-size-0);
+    font-size: var(--font-size-1);
     letter-spacing: 0.03em;
     margin-block: var(--size-2) var(--size-1);
     text-transform: uppercase;
@@ -1422,7 +1422,7 @@
   .skill-row-compact {
     align-items: center;
     display: flex;
-    font-size: var(--font-size-0);
+    font-size: var(--font-size-1);
     gap: var(--size-2);
     padding: 2px 0;
   }
@@ -1437,7 +1437,7 @@
   .skill-meta {
     color: color-mix(in srgb, var(--color-text), transparent 55%);
     flex-shrink: 0;
-    font-size: var(--font-size-0);
+    font-size: var(--font-size-1);
   }
 
   .badge-system {
@@ -1478,7 +1478,7 @@
   }
 
   .stat {
-    font-size: var(--font-size-0);
+    font-size: var(--font-size-1);
   }
 
   .stat.ok {
@@ -1517,7 +1517,7 @@
 
   .call-headline {
     color: var(--color-text);
-    font-size: var(--font-size-0);
+    font-size: var(--font-size-1);
     line-height: 1.4;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -1532,11 +1532,11 @@
 
   .call-meta dt {
     color: color-mix(in srgb, var(--color-text), transparent 50%);
-    font-size: var(--font-size-0);
+    font-size: var(--font-size-1);
   }
 
   .call-meta dd {
-    font-size: var(--font-size-0);
+    font-size: var(--font-size-1);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -1544,14 +1544,14 @@
 
   .call-error {
     color: var(--color-error);
-    font-size: var(--font-size-0);
+    font-size: var(--font-size-1);
     line-height: 1.4;
     word-break: break-word;
   }
 
   .mono-sm {
     font-family: var(--font-family-mono, ui-monospace, monospace);
-    font-size: var(--font-size-0);
+    font-size: var(--font-size-1);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -1618,7 +1618,7 @@
   .search-result {
     display: flex;
     flex-direction: column;
-    font-size: var(--font-size-0);
+    font-size: var(--font-size-1);
     gap: 0;
   }
 
@@ -1737,7 +1737,7 @@
     color: color-mix(in srgb, var(--color-text), transparent 40%);
     flex-shrink: 0;
     font-family: var(--font-family-mono, ui-monospace, monospace);
-    font-size: var(--font-size-0);
+    font-size: var(--font-size-1);
   }
 
   .waterfall-total.active {
@@ -1759,7 +1759,7 @@
     align-items: center;
     border-radius: 3px;
     display: flex;
-    font-size: var(--font-size-0);
+    font-size: var(--font-size-1);
     gap: var(--size-1);
     justify-content: space-between;
     overflow: hidden;
@@ -1841,7 +1841,7 @@
     background-color: light-dark(hsl(220 12% 97%), color-mix(in srgb, var(--color-surface-1), transparent 30%));
     border-radius: var(--radius-2);
     font-family: var(--font-family-mono, ui-monospace, monospace);
-    font-size: var(--font-size-0);
+    font-size: var(--font-size-1);
     line-height: 1.5;
     margin-block-start: var(--size-1);
     max-block-size: 400px;

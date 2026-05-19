@@ -680,7 +680,7 @@
   .tool-duration {
     color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-family: var(--font-mono);
-    font-size: var(--font-size-0);
+    font-size: var(--font-size-1);
     margin-inline-start: auto;
   }
 

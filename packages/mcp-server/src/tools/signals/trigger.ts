@@ -5,11 +5,51 @@
 
 import { client, parseResult } from "@atlas/client/v2";
 import { validateSignalPayload } from "@atlas/config";
+// Shared producer/consumer schema — atlasd's route handler is the source
+// of truth; this consumer-side runtime parse catches drift on schema
+// rename / new status / missing required field before the malformed
+// envelope reaches the LLM client.
+import { type SignalTriggerResponse, SignalTriggerResponseSchema } from "@atlas/core";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { ToolContext } from "../types.ts";
 import { createErrorResponse, createSuccessResponse } from "../utils.ts";
 import { hasArtifactRefFields, resolveArtifactRefs } from "./resolve-artifact-refs.ts";
+
+/**
+ * Pure function — maps an atlasd signal-trigger response into the MCP
+ * tool's response envelope. Extracted so the discriminator behavior is
+ * unit-testable without standing up the full Hono RPC + MCP server stack.
+ */
+export function mapSignalTriggerResponse(
+  workspaceId: string,
+  signalId: string,
+  response: SignalTriggerResponse,
+): { kind: "success"; payload: Record<string, unknown> } {
+  if (response.status === "completed") {
+    return {
+      kind: "success",
+      payload: {
+        workspaceId,
+        signalId,
+        sessionId: response.sessionId,
+        status: "triggered" as const,
+        message: `Signal '${signalId}' triggered successfully on workspace '${workspaceId}'`,
+      },
+    };
+  }
+  // status === "accepted" (exhaustive — TS narrows after the if above)
+  return {
+    kind: "success",
+    payload: {
+      workspaceId,
+      signalId,
+      status: "accepted" as const,
+      correlationId: response.correlationId,
+      message: `Signal '${signalId}' accepted on workspace '${workspaceId}' (async).`,
+    },
+  };
+}
 
 export function registerSignalTriggerTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
@@ -147,21 +187,31 @@ export function registerSignalTriggerTool(server: McpServer, ctx: ToolContext) {
           );
         }
 
-        const response = result.data;
-
-        ctx.logger.info("Signal triggered successfully", {
-          workspaceId,
-          signalId,
-          sessionId: response.sessionId,
-        });
-
-        return createSuccessResponse({
-          workspaceId,
-          signalId,
-          sessionId: response.sessionId,
-          status: "triggered",
-          message: `Signal '${signalId}' triggered successfully on workspace '${workspaceId}'`,
-        });
+        // Runtime-validate atlasd's response shape at the seam instead
+        // of `as`-casting. Schema drift (renamed field, new status) gets
+        // caught here with a clear error instead of feeding a malformed
+        // envelope to the LLM client.
+        const parsed = SignalTriggerResponseSchema.safeParse(result.data);
+        if (!parsed.success) {
+          ctx.logger.error("Atlasd signal-trigger response shape drifted", {
+            workspaceId,
+            signalId,
+            zodError: parsed.error.message,
+            rawData: result.data,
+          });
+          return createErrorResponse(
+            `Atlasd returned an unexpected signal-trigger response shape — ` +
+              `the MCP tool's contract assumes status ∈ {completed, accepted} ` +
+              `but got: ${parsed.error.message}`,
+          );
+        }
+        const mapped = mapSignalTriggerResponse(workspaceId, signalId, parsed.data);
+        if (mapped.payload.status === "accepted") {
+          ctx.logger.warn("Signal trigger returned non-completed status", mapped.payload);
+        } else {
+          ctx.logger.info("Signal triggered successfully", mapped.payload);
+        }
+        return createSuccessResponse(mapped.payload);
       } catch (error) {
         ctx.logger.error("Error triggering signal", { workspaceId, signalId, error });
         return createErrorResponse(
