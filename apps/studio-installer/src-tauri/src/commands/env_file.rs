@@ -205,6 +205,11 @@ fn apply_platform_vars(
     // may also include user-controlled hostnames or schemes.
     let platform_vars: Vec<(&str, String)> = vec![
         ("FRIDAY_ENV", "dev".to_string()),
+        // Installed builds default to `warn` so the supervised
+        // processes don't flood logs with per-token MCP stream-event
+        // debug lines. Customers debugging an issue can override this
+        // in `.env` or by exporting `FRIDAY_LOG_LEVEL` before launch.
+        ("FRIDAY_LOG_LEVEL", "warn".to_string()),
         ("LINK_DEV_MODE", "true".to_string()),
         ("FRIDAY_PORT_FRIDAY", "18080".to_string()),
         ("FRIDAY_PORT_LINK", "13100".to_string()),
