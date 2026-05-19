@@ -91,7 +91,12 @@ export function withTimeout<T>(
   makeError: (actualDurationMs: number) => Error,
   signal?: AbortSignal,
 ): Promise<T> {
-  if (signal?.aborted) return Promise.reject(signal.reason);
+  if (signal?.aborted) {
+    // Caller already constructed `promise`; swallow any future rejection so
+    // it doesn't bubble up as an unhandled rejection after we short-circuit.
+    promise.catch(() => {});
+    return Promise.reject(signal.reason);
+  }
   const startedAt = Date.now();
   let timer: ReturnType<typeof setTimeout> | undefined;
   let onAbort: (() => void) | undefined;
@@ -112,6 +117,12 @@ export function withTimeout<T>(
       signal.addEventListener("abort", onAbort);
     }
   });
+  // If the timer or signal wins the race, the inner promise is orphaned and
+  // may reject later (e.g. when `attemptStdio`'s post-abort signal check
+  // throws). Attach a no-op handler so that orphan doesn't bubble up as an
+  // unhandled rejection — the race result already settled with the right
+  // reason for the caller.
+  promise.catch(() => {});
   return Promise.race([promise.finally(cleanup), timeoutPromise]);
 }
 
@@ -220,6 +231,7 @@ export async function createMCPTools(
           serverId,
           logger,
           options?.envOverlay,
+          signal,
         );
         const filtered = filterTools(connected.tools, config.tools);
         const prefixed = options?.toolPrefix
@@ -432,6 +444,10 @@ interface ConnectedServer {
 /**
  * Connect a single MCP server with a hard timeout on the full handshake +
  * listTools sequence. No retry — a hung server is not a transient failure.
+ *
+ * Combines the optional external `signal` with an internal controller that
+ * aborts when the timer fires, so the downstream abort listener in
+ * `attemptStdio` kills the spawned child on both abort and timeout paths.
  */
 function connectServerWithTimeout(
   config: MCPServerConfig,
@@ -439,12 +455,26 @@ function connectServerWithTimeout(
   serverId: string,
   logger: Logger,
   envOverlay?: Record<string, string>,
+  signal?: AbortSignal,
 ): Promise<ConnectedServer> {
+  const timeoutController = new AbortController();
+  const downstreamSignal = signal
+    ? AbortSignal.any([signal, timeoutController.signal])
+    : timeoutController.signal;
   return withTimeout(
-    connectServer(config, resolvedEnv, serverId, logger, envOverlay),
+    connectServer(config, resolvedEnv, serverId, logger, envOverlay, downstreamSignal),
     LIST_TOOLS_TIMEOUT_MS,
-    (actualDurationMs) =>
-      new MCPTimeoutError(serverId, "list_tools", LIST_TOOLS_TIMEOUT_MS, actualDurationMs),
+    (actualDurationMs) => {
+      const err = new MCPTimeoutError(
+        serverId,
+        "list_tools",
+        LIST_TOOLS_TIMEOUT_MS,
+        actualDurationMs,
+      );
+      timeoutController.abort(err);
+      return err;
+    },
+    signal,
   );
 }
 
@@ -455,13 +485,14 @@ async function connectServer(
   serverId: string,
   logger: Logger,
   envOverlay?: Record<string, string>,
+  signal?: AbortSignal,
 ): Promise<ConnectedServer> {
   const { transport } = config;
   switch (transport.type) {
     case "stdio":
-      return await connectStdio(transport, resolvedEnv, serverId, logger);
+      return await connectStdio(transport, resolvedEnv, serverId, logger, signal);
     case "http":
-      return await connectHttp(config, resolvedEnv, serverId, logger, { envOverlay });
+      return await connectHttp(config, resolvedEnv, serverId, logger, { envOverlay }, signal);
   }
 }
 
@@ -490,7 +521,10 @@ async function attemptStdio(
   command: string,
   args: readonly string[],
   env: Record<string, string>,
+  signal?: AbortSignal,
 ): Promise<StdioAttempt> {
+  if (signal?.aborted) throw signal.reason;
+
   // Pipe subprocess stderr through a temp file so we can read it on failure.
   // Two simpler approaches don't work reliably:
   //   - Passing an in-memory Writable: Deno's node:child_process compat
@@ -526,6 +560,26 @@ async function attemptStdio(
       const stderr = readStderr();
       const error = err instanceof Error ? err : new Error(String(err));
       return { ok: false, error, stderr };
+    }
+
+    // Close the race window between createMCPClient resolving and the abort
+    // listener attaching: if the signal aborted while the handshake was in
+    // flight, kill the just-spawned child before returning.
+    if (signal?.aborted) {
+      await client.close().catch(() => {});
+      throw signal.reason;
+    }
+    if (signal) {
+      // One-shot listener that survives attemptStdio's return. Kills the spawned
+      // child via StdioMCPTransport.close() → AbortController.abort() → SIGTERM.
+      // On success (ok:true) the caller owns the client and may dispose normally;
+      // a late signal abort still fires this listener and closes the child.
+      // On failure paths below, the catch already calls client.close() — a later
+      // listener fire is a no-op (close is idempotent). { once: true } means the
+      // listener auto-removes after firing, and the signal is request-scoped so
+      // it (and an unfired listener) is GC'd when the request ends.
+      const c = client;
+      signal.addEventListener("abort", () => c.close().catch(() => {}), { once: true });
     }
 
     // Verify the subprocess is actually responding AND capture tools in one call.
@@ -614,6 +668,7 @@ async function connectStdio(
   resolvedEnv: Record<string, string>,
   serverId: string,
   logger: Logger,
+  signal?: AbortSignal,
 ): Promise<ConnectedServer> {
   const { command, args } = transport;
   const expandedArgs = (args ?? []).map(interpolateArg);
@@ -633,7 +688,7 @@ async function connectStdio(
     args: expandedArgs,
   });
 
-  let result = await attemptStdio(command, expandedArgs, mergedEnv);
+  let result = await attemptStdio(command, expandedArgs, mergedEnv, signal);
   let firstStderr: string | undefined;
 
   if (!result.ok) {
@@ -651,7 +706,7 @@ async function connectStdio(
       // otherwise the only diagnostic for the failure mode this code targets
       // would be lost in `result`'s reassignment below.
       firstStderr = result.stderr;
-      result = await attemptStdio(command, recoveryArgs, mergedEnv);
+      result = await attemptStdio(command, recoveryArgs, mergedEnv, signal);
     }
   }
 
@@ -728,6 +783,7 @@ export async function connectHttp(
     /** Workspace `.env` overlay for resolving `startup.env` entries. */
     envOverlay?: Record<string, string>;
   } = {},
+  signal?: AbortSignal,
 ): Promise<ConnectedServer> {
   const { transport, auth, startup } = config;
   if (transport.type !== "http") {
@@ -750,12 +806,12 @@ export async function connectHttp(
     status: reachable.status,
   });
   if (reachable.ok) {
-    return connectHttpClient(url, headers, serverId, logger);
+    return connectHttpClient(url, headers, serverId, logger, signal);
   }
 
   // No startup config — try direct connection (will likely fail, matching old behaviour).
   if (!startup) {
-    return connectHttpClient(url, headers, serverId, logger);
+    return connectHttpClient(url, headers, serverId, logger, signal);
   }
 
   // Resolve startup.env separately from config.env — bearer tokens must never
@@ -783,7 +839,8 @@ export async function connectHttp(
   // eliminating the kernel TIME_WAIT respawn failures that broke FSM workflows
   // reusing the same MCP server across sequential states. The registry — not
   // this caller — owns the child's lifetime; `dispose` closes the MCP client
-  // only.
+  // only. Deliberately not passing `signal` here: the shared subprocess
+  // outlives any individual probe by design.
   await sharedMCPProcesses.acquire(
     serverId,
     {
@@ -798,7 +855,7 @@ export async function connectHttp(
     logger,
   );
 
-  return connectHttpClient(url, headers, serverId, logger);
+  return connectHttpClient(url, headers, serverId, logger, signal);
 }
 
 /** Create MCP client over HTTP transport and verify with tools(). */
@@ -807,7 +864,10 @@ async function connectHttpClient(
   headers: Record<string, string>,
   serverId: string,
   logger: Logger,
+  signal?: AbortSignal,
 ): Promise<ConnectedServer> {
+  if (signal?.aborted) throw signal.reason;
+
   logger.debug(`MCP HTTP connection attempt for "${serverId}"`, {
     operation: "mcp_connect",
     serverId,
@@ -819,6 +879,14 @@ async function connectHttpClient(
   });
 
   const client = await createMCPClient({ transport: httpTransport });
+
+  if (signal?.aborted) {
+    await client.close().catch(() => {});
+    throw signal.reason;
+  }
+  if (signal) {
+    signal.addEventListener("abort", () => client.close().catch(() => {}), { once: true });
+  }
 
   let tools: Record<string, Tool>;
   try {

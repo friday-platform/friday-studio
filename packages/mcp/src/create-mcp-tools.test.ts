@@ -694,7 +694,7 @@ describe("createMCPTools", () => {
     expect(result.disconnected[0]?.message).not.toContain("different-server");
   });
 
-  it("disposes all connected clients when signal aborts mid-connect", async () => {
+  it("disposes connected clients and short-circuits second server when signal aborts mid-connect", async () => {
     const closeA = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
     const controller = new AbortController();
 
@@ -716,9 +716,12 @@ describe("createMCPTools", () => {
     );
     expect(error).toBeInstanceOf(Error);
     expect((error as Error).message).toBe("cancelled");
-    // Both parallel mappers created a client; both get disposed in cleanup
-    expect(closeA).toHaveBeenCalledTimes(2);
-    expect(mockCreateMCPClient).toHaveBeenCalledTimes(2);
+    // The first mapper's createMCPClient resolves and the abort fires before
+    // tools() — attemptStdio closes the client on the aborted-signal check.
+    // The second mapper sees the already-aborted signal and short-circuits
+    // before calling createMCPClient, so no second spawn happens.
+    expect(mockCreateMCPClient).toHaveBeenCalledTimes(1);
+    expect(closeA).toHaveBeenCalledTimes(1);
   });
 
   it("dispose awaits close() — does not resolve before cleanup finishes", async () => {
