@@ -875,7 +875,26 @@
       )
       .map((p) => `Connected ${p.data.displayName}.`);
 
-    return [...textParts, ...credentialParts].join(" ");
+    const envAppliedParts = msg.parts
+      .filter(
+        (p): p is { type: "data-env-applied"; data: { scope: "workspace" | "global"; keys: string[] } } =>
+          typeof p === "object" &&
+          p !== null &&
+          "type" in p &&
+          p.type === "data-env-applied" &&
+          "data" in p &&
+          typeof p.data === "object" &&
+          p.data !== null &&
+          "keys" in p.data &&
+          Array.isArray(p.data.keys),
+      )
+      .map((p) => {
+        const keys = p.data.keys.filter((k: unknown): k is string => typeof k === "string");
+        return keys.length > 0 ? `Set ${keys.join(", ")}.` : "";
+      })
+      .filter((s) => s.length > 0);
+
+    return [...textParts, ...credentialParts, ...envAppliedParts].join(" ");
   }
 
   /**
@@ -1301,16 +1320,15 @@
    * Called when the user confirms an inline env_set elicitation. Pushes a
    * synthetic `data-env-applied` user message so the agent resumes without
    * the user having to type anything. Mirrors `handleCredentialConnected`.
+   *
+   * Renders client-side as a right-aligned "Set N variable(s)" pill (see
+   * `chat-message-list.svelte`'s env-applied branch), not as a blue user
+   * bubble. The agent still receives the structured signal as text via
+   * `convertDataPart` server-side.
    */
   function handleEnvApplied(info: { scope: "workspace" | "global"; keys: string[] }): void {
     if (!chat) return;
-    // Prepend a short text part so the synthetic user-message bubble isn't
-    // empty in the UI. The data part carries the structured signal and is
-    // separately rendered as text for the LLM by `convertDataPart` in the
-    // agent — the redundancy is intentional and small.
-    const bubbleText = info.keys.length > 0 ? `Set ${info.keys.join(", ")}` : "Set env vars";
     const parts: QueuedMessageParts = [
-      { type: "text", text: bubbleText },
       { type: "data-env-applied", data: { scope: info.scope, keys: info.keys } },
     ];
     if (streaming) {

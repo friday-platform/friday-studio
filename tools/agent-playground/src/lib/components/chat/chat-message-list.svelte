@@ -720,6 +720,43 @@
       message.role === "assistant" && hasToolSegment
         ? message.segments.findLastIndex((s) => s.type === "text" && s.content.length > 0)
         : -1}
+    {@const envAppliedOnly =
+      message.role === "user" &&
+      message.segments.length === 1 &&
+      message.segments[0]?.type === "env-applied"
+        ? message.segments[0]
+        : null}
+    {#if envAppliedOnly}
+      <!-- Env-set acknowledgement pill: replaces the synthetic "Set FOO"
+           user bubble when the only payload is a `data-env-applied` part.
+           Sits at the trailing edge of the column, no role badge, no
+           actions row — the agent receives the structured signal via
+           `convertDataPart` server-side; this is UI-only confirmation. -->
+      <div class="message env-applied-row">
+        <Tooltip as="span" label={envAppliedOnly.keys.join(", ")}>
+          <span class="env-applied-pill">
+            <svg
+              class="env-applied-icon"
+              width="12"
+              height="12"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M3 8.5l3 3 7-7" />
+            </svg>
+            <span>
+              Set {envAppliedOnly.keys.length}
+              {envAppliedOnly.keys.length === 1 ? "variable" : "variables"}
+            </span>
+          </span>
+        </Tooltip>
+      </div>
+    {:else}
     <div
       class="message"
       class:user={message.role === "user"}
@@ -838,6 +875,7 @@
           {/if}
       {/if}
     </div>
+    {/if}
 {/snippet}
 
 <div class="message-list" bind:this={containerEl} onscroll={handleScroll}>
@@ -1407,6 +1445,33 @@
     font-size: var(--font-size-1);
     font-style: italic;
     text-align: center;
+  }
+
+  /* Env-applied acknowledgement pill: right-anchored, fully-rounded chip
+     that replaces the synthetic "Set FOO" user bubble. Tokens match the
+     `.status-applied` badge on the env-set card so applied state reads
+     consistently across both surfaces. */
+  .env-applied-row {
+    align-self: flex-end;
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  .env-applied-pill {
+    align-items: center;
+    background-color: color-mix(in srgb, var(--green-primary), transparent 85%);
+    border-radius: var(--radius-round, 999px);
+    color: var(--green-primary);
+    column-gap: var(--size-1);
+    display: inline-flex;
+    font-size: var(--font-size-1);
+    font-weight: var(--font-weight-5);
+    line-height: 1;
+    padding: var(--size-2) var(--size-3);
+  }
+
+  .env-applied-icon {
+    flex-shrink: 0;
   }
 
   /* ─── Tool-call list ───────────────────────────────────────────────── */
