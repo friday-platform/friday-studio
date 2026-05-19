@@ -108,13 +108,10 @@
 {:else}
   <SidebarNav.Root>
     {#each grouped as group (group.namespace)}
-      {@const containsActive = group.skills.some(
-        (s) => s.namespace === activeNamespace && s.name === activeName,
-      )}
       <SidebarNav.Group
         label={group.namespace}
         count={group.skills.length}
-        defaultOpen={containsActive}
+        defaultOpen
       >
         {#each group.skills as skill (skill.skillId)}
           {@const ns = skill.namespace}
