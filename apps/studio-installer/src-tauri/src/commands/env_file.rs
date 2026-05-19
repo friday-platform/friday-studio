@@ -1211,3 +1211,193 @@ mod friday_yml_tests {
         assert_eq!(wizard_models_for(WizardProvider::Anthropic), None);
     }
 }
+
+#[cfg(test)]
+mod apply_platform_vars_tests {
+    use super::*;
+    use std::sync::{Mutex, OnceLock};
+    use tempfile::TempDir;
+
+    // Serialize tests that mutate FRIDAY_LAUNCHER_HOME. Cargo runs
+    // tests in parallel by default and two of these would race the
+    // shared env var.
+    fn env_lock() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+    }
+
+    fn build_existing_keys(lines: &[(Option<String>, String)]) -> HashMap<String, usize> {
+        lines
+            .iter()
+            .enumerate()
+            .filter_map(|(i, (k, _))| k.as_ref().map(|key| (key.clone(), i)))
+            .collect()
+    }
+
+    fn value_for<'a>(lines: &'a [(Option<String>, String)], key: &str) -> Option<&'a str> {
+        lines
+            .iter()
+            .find(|(k, _)| k.as_deref() == Some(key))
+            .map(|(_, v)| v.as_str())
+    }
+
+    fn count_for(lines: &[(Option<String>, String)], key: &str) -> usize {
+        lines
+            .iter()
+            .filter(|(k, _)| k.as_deref() == Some(key))
+            .count()
+    }
+
+    // Pin FRIDAY_LAUNCHER_HOME to a tempdir so friday_home_dir() doesn't
+    // touch the real ~/.friday/local while the test runs. The TempDir is
+    // held until drop so the path stays valid; the prior env value is
+    // restored on drop too.
+    struct LauncherHomeGuard {
+        _tmp: TempDir,
+        prior: Option<String>,
+    }
+
+    impl LauncherHomeGuard {
+        fn new() -> Self {
+            let tmp = TempDir::new().expect("create tmp");
+            let prior = std::env::var("FRIDAY_LAUNCHER_HOME").ok();
+            std::env::set_var("FRIDAY_LAUNCHER_HOME", tmp.path());
+            Self { _tmp: tmp, prior }
+        }
+    }
+
+    impl Drop for LauncherHomeGuard {
+        fn drop(&mut self) {
+            match &self.prior {
+                Some(v) => std::env::set_var("FRIDAY_LAUNCHER_HOME", v),
+                None => std::env::remove_var("FRIDAY_LAUNCHER_HOME"),
+            }
+        }
+    }
+
+    #[test]
+    fn preserves_user_customisations_for_every_platform_var() {
+        // Load-bearing guarantee for the whole installer: a customer who
+        // set FRIDAY_LOG_LEVEL=debug (or any other platform var) in
+        // their .env must keep that value across an installer upgrade
+        // — the `!existing_keys.contains_key(*k)` guard in
+        // apply_platform_vars is what protects them. If that
+        // conditional ever flips to overwrite-on-match, this test
+        // fails before it ships.
+        let _g = env_lock();
+        let _home = LauncherHomeGuard::new();
+
+        let mut lines: Vec<(Option<String>, String)> = vec![
+            (Some("FRIDAY_LOG_LEVEL".to_string()), "debug".to_string()),
+            (Some("FRIDAY_PORT_FRIDAY".to_string()), "19999".to_string()),
+            (Some("FRIDAY_ENV".to_string()), "production".to_string()),
+            (Some("LINK_DEV_MODE".to_string()), "false".to_string()),
+        ];
+        let existing_keys = build_existing_keys(&lines);
+
+        apply_platform_vars(&mut lines, &existing_keys).expect("apply ok");
+
+        assert_eq!(
+            value_for(&lines, "FRIDAY_LOG_LEVEL"),
+            Some("debug"),
+            "user-customised FRIDAY_LOG_LEVEL must survive"
+        );
+        assert_eq!(
+            value_for(&lines, "FRIDAY_PORT_FRIDAY"),
+            Some("19999"),
+            "user-customised FRIDAY_PORT_FRIDAY must survive"
+        );
+        assert_eq!(
+            value_for(&lines, "FRIDAY_ENV"),
+            Some("production"),
+            "user-customised FRIDAY_ENV must survive"
+        );
+        assert_eq!(
+            value_for(&lines, "LINK_DEV_MODE"),
+            Some("false"),
+            "user-customised LINK_DEV_MODE must survive"
+        );
+
+        // Mutation-resistance: if the contains_key guard ever flips to
+        // overwrite-on-match, apply_platform_vars would PUSH the default
+        // line in addition to the existing one, leaving the user's line
+        // at index 0 and the platform default at the tail. `value_for`
+        // would still return the user's value (it uses .find()) and the
+        // test would pass spuriously — but the rendered .env would
+        // contain both entries, and last-wins dotenv semantics in the
+        // launcher would silently pick the platform default.
+        for key in [
+            "FRIDAY_LOG_LEVEL",
+            "FRIDAY_PORT_FRIDAY",
+            "FRIDAY_ENV",
+            "LINK_DEV_MODE",
+        ] {
+            assert_eq!(
+                count_for(&lines, key),
+                1,
+                "{key} must appear exactly once — duplicate entries would let last-wins dotenv parsing clobber the user value"
+            );
+        }
+    }
+
+    #[test]
+    fn fresh_install_writes_warn_log_level() {
+        // Other half of the contract: on a fresh install where no
+        // .env exists, apply_platform_vars writes
+        // FRIDAY_LOG_LEVEL=warn. This is the whole point of the
+        // installer-default change — quiet logs out of the box.
+        let _g = env_lock();
+        let _home = LauncherHomeGuard::new();
+
+        let mut lines: Vec<(Option<String>, String)> = Vec::new();
+        let existing_keys = build_existing_keys(&lines);
+
+        apply_platform_vars(&mut lines, &existing_keys).expect("apply ok");
+
+        assert_eq!(
+            value_for(&lines, "FRIDAY_LOG_LEVEL"),
+            Some("warn"),
+            "fresh install must default FRIDAY_LOG_LEVEL to warn"
+        );
+        assert_eq!(
+            value_for(&lines, "FRIDAY_ENV"),
+            Some("dev"),
+            "fresh install must write FRIDAY_ENV=dev"
+        );
+    }
+
+    #[test]
+    fn fills_missing_keys_without_clobbering_set_ones() {
+        // Mixed upgrade case: user has customised one var, the rest
+        // come from the installer. Exercises both branches of the
+        // contains_key guard in a single test.
+        let _g = env_lock();
+        let _home = LauncherHomeGuard::new();
+
+        let mut lines: Vec<(Option<String>, String)> = vec![(
+            Some("FRIDAY_LOG_LEVEL".to_string()),
+            "trace".to_string(),
+        )];
+        let existing_keys = build_existing_keys(&lines);
+
+        apply_platform_vars(&mut lines, &existing_keys).expect("apply ok");
+
+        assert_eq!(
+            value_for(&lines, "FRIDAY_LOG_LEVEL"),
+            Some("trace"),
+            "set key must survive"
+        );
+        assert_eq!(
+            value_for(&lines, "LINK_DEV_MODE"),
+            Some("true"),
+            "missing LINK_DEV_MODE must be filled"
+        );
+        assert_eq!(
+            value_for(&lines, "FRIDAY_PORT_FRIDAY"),
+            Some("18080"),
+            "missing FRIDAY_PORT_FRIDAY must be filled"
+        );
+    }
+}
