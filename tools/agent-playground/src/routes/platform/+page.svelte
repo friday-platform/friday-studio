@@ -20,31 +20,31 @@
   {:else if visibleWorkspaces.length === 0}
     <div class="empty-content">
       <pre class="ascii-logo">{`
-                   .=*%@@%*=.
-                    .=%@@@@@@@@@@%*=.
-                     .=%@@@@@@@@@@@@@@@*:
-                    .%@@@@@@@@@@@@@@@@@@%:
-                    =%@@@@@@@@@@@@@@@@@@@%:
-                   :%@@@@@@@@@@@@@@@@@@@@%:
-                   +@@@@@@@@@@@@@@@@@@@@%*.
-                  +@@@@@@@@@@@@@@@@@@@%*:
-                +@@@@@@@@@@@@@@@@@%*:
-              +@@@@@@@@@@@@@@@%*:
-            .*@@@@@@@@@@@@*=.
+                     .=*%@@%*=.
+                        .=*%@@@@@@@@@@%*=.
+                         .=*%@@@@@@@@@@@@@@@*:
+                        .%@@@@@@@@@@@@@@@@@@%:
+                       =%@@@@@@@@@@@@@@@@@@%:
+                      :%@@@@@@@@@@@@@@@@@@%:
+                     +@@@@@@@@@@@@@@@@@@%*.
+                    +@@@@@@@@@@@@@@@@%*:
+                 +@@@@@@@@@@@@@@@%*:
+              +@@@@@@@@@@@@@@%*:
+          .*@@@@@@@@@@@@*=.
 
-        .=*@@@@@@@%*.
-   .=%@@@@@@@@@@@@:
-  .%@@@@@@@@@@@@@@:
-  =%@@@@@@@@@@@@@@:
- .=%@@@@@@@@@@@@@@:
-  .=%@@@@@@@@@@@@@:
-  .*@@@@@@@@@@@@*.
-    .=%@@@@@@%*=.
-   .=+*+=.`}</pre>
-      <h2 class="empty-title">Friday Agent Studio & Toolkit</h2>
+      .=*%@@@@@@@@%*=.
+ .=*%@@@@@@@@@@@@@:
+.%@@@@@@@@@@@@@@@@@:
+=%@@@@@@@@@@@@@@@@:
+.=%@@@@@@@@@@@@@@@@:
+ .=%@@@@@@@@@@@@@@@:
+ .*@@@@@@@@@@@@@@*.
+   .=%@@@@@%*=.
+  .=+*+=.`}</pre>
+      <h2 class="empty-title">Friday \u2014 The complete agent harness platform</h2>
       <p class="empty-description">
-        Orchestrate agentic workflows from a single config file. Versionable,
-        shareable, repeatable. Drop a workspace.yml to get started.
+        Memory, tools, scheduling, and orchestration built in. Describe what you
+        want in plain language and get a production-grade agent workflow in minutes.
         <a
           class="learn-more"
           href="https://docs.hellofriday.ai/core-concepts/spaces"
