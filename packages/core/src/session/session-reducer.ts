@@ -46,7 +46,51 @@ export function reduceSessionEvent(
   }
 
   switch (event.type) {
-    case "session:start":
+    case "session:start": {
+      // Out-of-order tolerance: step:start can arrive before session:start
+      // because both events publish to the same JetStream subject in fast
+      // succession and ordering isn't guaranteed for tightly-spaced writes.
+      // When this happens reduceStepStart already created a "running" block
+      // from step:start's data — including the `input` snapshot from the
+      // signal payload. We must NOT overwrite that block with an empty
+      // pending one from `plannedSteps`, or step:start's data is lost.
+      //
+      // Pre-fix this surfaced as agent blocks rendered with "No input
+      // provided" + planned-step task on the session page, because
+      // session:start ran after step:start and wiped the populated block.
+      const planned =
+        event.plannedSteps?.map((step) => ({
+          stepNumber: undefined as number | undefined,
+          agentName: step.agentName,
+          stateId: step.stateId,
+          actionType: step.actionType,
+          task: step.task,
+          status: "pending" as const,
+          toolCalls: [],
+          output: undefined,
+        })) ?? [];
+
+      // Merge with any blocks already created by an earlier step:start: keep
+      // the existing block if its stateId matches a planned step, otherwise
+      // fall back to the planned entry.
+      const mergedBlocks =
+        view.agentBlocks.length === 0
+          ? planned
+          : planned.map((plannedBlock) => {
+              if (!plannedBlock.stateId) return plannedBlock;
+              const existing = view.agentBlocks.find((b) => b.stateId === plannedBlock.stateId);
+              if (!existing) return plannedBlock;
+              // Layer the planned `task` (descriptive label from session:start)
+              // on top of the running block's empty step-start task, but keep
+              // every other field — status, input, startedAt — from the
+              // already-running block. Use existing.task if non-empty.
+              return {
+                ...existing,
+                task: existing.task && existing.task.length > 0 ? existing.task : plannedBlock.task,
+                actionType: existing.actionType ?? plannedBlock.actionType,
+              };
+            });
+
       return {
         ...view,
         sessionId: event.sessionId,
@@ -55,18 +99,9 @@ export function reduceSessionEvent(
         task: event.task,
         status: "active",
         startedAt: event.timestamp,
-        agentBlocks:
-          event.plannedSteps?.map((step) => ({
-            stepNumber: undefined,
-            agentName: step.agentName,
-            stateId: step.stateId,
-            actionType: step.actionType,
-            task: step.task,
-            status: "pending" as const,
-            toolCalls: [],
-            output: undefined,
-          })) ?? [],
+        agentBlocks: mergedBlocks,
       };
+    }
 
     case "step:start":
       return reduceStepStart(view, event);
@@ -146,19 +181,34 @@ function reduceStepStart(
     if (dupIdx !== -1) return view;
   }
 
-  // Find first pending block with matching agentName
-  const pendingIdx = view.agentBlocks.findIndex(
+  // Find first pending block with matching agentName. If agentName drifts
+  // (e.g. the FSM action emits `actionId: undefined`, which
+  // `mapActionToStepStart` falls back to "unknown" while the planned block
+  // carries the real agentId), fall back to matching by `stateId` — the
+  // FSM state name is a stable join key between `session:start.plannedSteps`
+  // and the action execution event, regardless of how the name happened to
+  // be projected onto the action.
+  let pendingIdx = view.agentBlocks.findIndex(
     (b) => b.status === "pending" && b.agentName === event.agentName,
   );
+  if (pendingIdx === -1 && event.stateId) {
+    pendingIdx = view.agentBlocks.findIndex(
+      (b) => b.status === "pending" && b.stateId === event.stateId,
+    );
+  }
 
   if (pendingIdx !== -1) {
-    // Transition pending → running in-place (preserve array position)
+    // Transition pending → running in-place (preserve array position).
+    // Keep the planned block's agentName when we matched via stateId so the
+    // UI doesn't relabel "Pr Reviewer" → "unknown" mid-transition.
     const pending = view.agentBlocks[pendingIdx];
     if (!pending) return view;
     const updated: AgentBlock = {
       ...pending,
       stepNumber: event.stepNumber,
       stateId: event.stateId ?? pending.stateId,
+      agentName:
+        pending.agentName && pending.agentName !== "unknown" ? pending.agentName : event.agentName,
       actionType: event.actionType,
       task: event.task,
       input: event.input,
@@ -195,7 +245,17 @@ function reduceStepComplete(
   view: SessionView,
   event: SessionStreamEvent & { type: "step:complete" },
 ): SessionView {
-  const idx = view.agentBlocks.findIndex((b) => b.stepNumber === event.stepNumber);
+  // Primary match: stepNumber. Fallback: stateId — covers the case where
+  // step:start never transitioned the planned block (so its stepNumber is
+  // still undefined) but a step:complete with the same FSM stateId arrived.
+  // Without this fallback the reducer would synthesize an "unknown"
+  // placeholder block alongside the original pending block, surfacing the
+  // duplicate "Pr Reviewer · Skipped + Unknown · Succeeded" pair we hit
+  // in the session view.
+  let idx = view.agentBlocks.findIndex((b) => b.stepNumber === event.stepNumber);
+  if (idx === -1 && event.stateId) {
+    idx = view.agentBlocks.findIndex((b) => b.stateId === event.stateId);
+  }
 
   if (idx === -1) {
     // No matching step:start — create a placeholder block
@@ -224,6 +284,10 @@ function reduceStepComplete(
 
   const updated: AgentBlock = {
     ...existing,
+    // Backfill stepNumber if we matched the block via stateId fallback —
+    // the block may have been stuck without a stepNumber when step:start
+    // never transitioned it.
+    stepNumber: existing.stepNumber ?? event.stepNumber,
     status: event.status,
     durationMs: event.durationMs,
     toolCalls: event.toolCalls,

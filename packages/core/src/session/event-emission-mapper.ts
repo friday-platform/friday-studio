@@ -106,6 +106,11 @@ export function mapActionToStepComplete(
     type: "step:complete",
     sessionId: event.data.sessionId,
     stepNumber,
+    // Carry the FSM state forward so the reducer can match this complete
+    // event to its planned/running block by `stateId` if `stepNumber`
+    // drifted (e.g. step:start emitted with a fallback agentName, leaving
+    // the original planned block stuck in pending).
+    stateId: event.data.state,
     status: event.data.status === "failed" ? "failed" : "completed",
     durationMs: event.data.durationMs ?? 0,
     toolCalls: agentResult?.toolCalls ?? [],
