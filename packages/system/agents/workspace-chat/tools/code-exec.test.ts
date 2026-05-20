@@ -166,4 +166,47 @@ describe("run_code — PTY wrap for interactive-auth commands", () => {
     expect(String(result.stderr)).toContain("stderr content");
     expect(result.exit_code).toBe(7);
   });
+
+  it("attaches tcc_denied when stderr matches macOS protected-folder denial", async () => {
+    // Drive the detector via a synthetic stderr — actually triggering TCC
+    // requires a non-entitled parent process which CI cannot guarantee.
+    // The script prints the same byte sequence the OS would emit, exits
+    // non-zero, and we assert the field is populated end-to-end.
+    if (process.platform !== "darwin") return;
+    const tools = createRunCodeTool("test-session-tcc", logger);
+    const run = getExecute(tools.run_code);
+
+    const homePath = process.env.HOME ?? "";
+    if (!homePath) throw new Error("HOME not set in test env");
+
+    const result = await run({
+      language: "bash",
+      source: `printf '%s\\n' "ls: ${homePath}/Downloads/: Operation not permitted" >&2; exit 1`,
+    });
+
+    if (!hasKey(result, "exit_code")) {
+      throw new Error(`expected success shape, got ${JSON.stringify(result)}`);
+    }
+    const tcc = (result as { tcc_denied?: { protectedRoot: string; actions: unknown[] } })
+      .tcc_denied;
+    expect(tcc).toBeDefined();
+    expect(tcc?.protectedRoot).toBe(`${homePath}/Downloads`);
+    expect(Array.isArray(tcc?.actions)).toBe(true);
+  });
+
+  it("does NOT attach tcc_denied on a clean (exit 0) run, even if output mentions the marker", async () => {
+    // Guard: a 0-exit script that happens to print the magic string as
+    // data shouldn't trip the affordance.
+    if (process.platform !== "darwin") return;
+    const tools = createRunCodeTool("test-session-tcc-cleanrun", logger);
+    const run = getExecute(tools.run_code);
+
+    const result = await run({
+      language: "bash",
+      source: `echo "the string Operation not permitted is just data here"; exit 0`,
+    });
+
+    if (!hasKey(result, "exit_code")) throw new Error("expected success shape");
+    expect((result as { tcc_denied?: unknown }).tcc_denied).toBeUndefined();
+  });
 });
