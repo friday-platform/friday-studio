@@ -242,12 +242,14 @@
    * `subscribeToWorkspaceElicitations` effect below keeps that cache live.
    */
   const setupElicitationQuery = createQuery(() => elicitationQueries.list(wsId));
-  const pendingSetupElicitation = $derived<Elicitation | null>(
+  // Match by session + kind regardless of status. The card has its own
+  // pending/answered branches — keeping the answered card mounted is what
+  // gives the user the "Submitted — workspace setup complete." confirmation
+  // after they hit submit. Filtering to status === "pending" here would
+  // unmount the card the instant it flips, leaving no feedback.
+  const sessionSetupElicitation = $derived<Elicitation | null>(
     (setupElicitationQuery.data ?? []).find(
-      (e) =>
-        e.kind === "workspace-setup" &&
-        e.status === "pending" &&
-        e.sessionId === chatId,
+      (e) => e.kind === "workspace-setup" && e.sessionId === chatId,
     ) ?? null,
   );
 
@@ -1511,9 +1513,9 @@
         {unsettledMessageId}
       />
 
-      {#if pendingSetupElicitation}
+      {#if sessionSetupElicitation}
         <div class="setup-card-slot">
-          <WorkspaceSetupCard elicitation={pendingSetupElicitation} workspaceId={wsId} />
+          <WorkspaceSetupCard elicitation={sessionSetupElicitation} workspaceId={wsId} />
         </div>
       {/if}
 
