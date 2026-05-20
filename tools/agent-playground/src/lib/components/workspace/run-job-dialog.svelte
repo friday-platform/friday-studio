@@ -148,9 +148,20 @@
     // navigate to the first session for this job whose id isn't in the
     // snapshot. Snapshot diff is clock-free (the old `startedAt >= since`
     // approach silently mis-attributed sessions whenever the browser and
-    // daemon clocks disagreed). Filtering by `jobName === jobId` also
-    // makes concurrent triggers for *other* jobs in the same workspace
-    // (cron, another tab) safe — they can't be misidentified as ours.
+    // daemon clocks disagreed).
+    //
+    // KNOWN LIMITATION: filtering by `jobName === jobId` rules out
+    // concurrent triggers for *other* jobs in the same workspace, but
+    // does NOT disambiguate two triggers for the *same* job. If a cron
+    // schedule overlaps a manual click, or the same job is launched
+    // from two browser tabs within a few hundred ms, both polls see
+    // both new sessions and both grab the first non-snapshot match —
+    // one tab navigates to the other's run. Failure mode is benign
+    // (you land on a real running session of the same job, not an
+    // error page), and same-job same-workspace concurrent triggers
+    // are vanishingly rare in interactive use. A clean fix would
+    // thread the daemon's `correlationId` into `SessionSummary` and
+    // match on that — out of scope here.
     //
     // The modal stays open showing "Starting…" until we either land on the
     // spawned session view or the poll budget runs out — closing on click
