@@ -27,27 +27,14 @@
   const client = getDaemonClient();
 
   const workspaceName = $derived(configQuery.data?.config?.workspace?.name ?? workspaceId ?? "");
-  const editPath = $derived(page.url.searchParams.get("path"));
-  const SECTION_ROUTES = new Set(["agents", "jobs", "skills"]);
-  const SECTION_LABELS: Record<string, string> = {
-    agents: "Agents",
-    jobs: "Jobs",
-    skills: "Skills",
-  };
-  const crumbs = $derived.by(() => {
-    if (!workspaceId) return [{ label: "Edit" }];
-    const base = [{ label: workspaceName, href: `/platform/${workspaceId}` }];
-    if (!editPath) return [...base, { label: "Edit" }];
-    const segments = editPath.split(".");
-    const first = segments[0];
-    const rest = segments.slice(1);
-    if (SECTION_ROUTES.has(first)) {
-      const middle = { label: SECTION_LABELS[first], href: `/platform/${workspaceId}/${first}` };
-      if (rest.length === 0) return [...base, middle];
-      return [...base, middle, { label: rest.join(".") }];
-    }
-    return [...base, { label: editPath }];
-  });
+  const crumbs = $derived(
+    workspaceId
+      ? [
+          { label: workspaceName, href: `/platform/${workspaceId}` },
+          { label: "Edit Configuration" },
+        ]
+      : [{ label: "Edit Configuration" }],
+  );
 
   // Line highlight effect for jump-to-path — shows a flash on the target line
   const highlightLineEffect = StateEffect.define<number>();
