@@ -36,6 +36,12 @@ export default defineConfig({
       // import without extensions; vitest's ESM resolver rejects them.
       // The component itself ships fine — only the test loader is broken.
       "tools/agent-playground/src/lib/components/mcp/mcp-credentials-panel.test.ts",
+      // Deno-native integration test for the liveness listener. Uses
+      // `Deno.serve` and `jsr:@std/assert@1` — neither is reachable from
+      // vitest's Node environment. Run via `deno test --allow-net` (see
+      // the file header). Vitest's glob would otherwise pick it up by
+      // the `.test.ts` suffix and fail to resolve the jsr: import.
+      "apps/atlasd/src/health-listener.test.ts",
     ],
     update: process.env.CI ? "none" : "new",
     // `@tanstack/svelte-query` ships a `.svelte` file
