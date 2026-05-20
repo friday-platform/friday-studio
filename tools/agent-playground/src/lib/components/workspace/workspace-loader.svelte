@@ -1,6 +1,10 @@
 <script lang="ts">
   import { useQueryClient } from "@tanstack/svelte-query";
   import { goto } from "$app/navigation";
+  import {
+    ImportBundleErrorSchema,
+    ImportBundleResponseSchema,
+  } from "$lib/api/workspace-import.ts";
   import { getDaemonClient } from "$lib/daemon-client";
   import { workspaceQueries } from "$lib/queries";
   import { parse as parseYaml } from "yaml";
@@ -30,9 +34,7 @@
    */
   const ValidationReportSchema = z.object({
     error: z.literal("validation_failed").optional(),
-    report: z.object({
-      issues: z.array(z.object({ message: z.string() })),
-    }),
+    report: z.object({ issues: z.array(z.object({ message: z.string() })) }),
   });
   const PlainErrorSchema = z.object({ error: z.string() });
 
@@ -103,6 +105,15 @@
     const file = input.files?.[0];
     if (!file) return;
     error = null;
+    // `<input accept>` is only a hint — Linux/Firefox in particular let
+    // users pick anything, so guard the picker path the same way `handleDrop`
+    // guards the drop path. Without this a `.txt` falls through to
+    // `createFromYaml` and surfaces a raw YAML parse error.
+    if (!isYamlFile(file) && !isZipFile(file)) {
+      error = "Please drop a .yml, .yaml, or .zip file";
+      input.value = "";
+      return;
+    }
     await loadFile(file);
     input.value = "";
   }
@@ -132,8 +143,7 @@
     }
 
     const name = (config as Record<string, unknown>).name;
-    const workspaceName =
-      typeof name === "string" ? name : file.name.replace(/\.(yml|yaml)$/, "");
+    const workspaceName = typeof name === "string" ? name : file.name.replace(/\.(yml|yaml)$/, "");
 
     const res = await client.workspace.create.$post({
       json: { config: config as Record<string, unknown>, workspaceName },
@@ -145,9 +155,10 @@
     }
 
     const result: unknown = await res.json();
-    const parsed = z.object({
-      workspace: z.object({ id: z.string() }),
-    }).passthrough().safeParse(result);
+    const parsed = z
+      .object({ workspace: z.object({ id: z.string() }) })
+      .passthrough()
+      .safeParse(result);
 
     if (!parsed.success) {
       console.warn("Workspace created but response shape unexpected:", parsed.error);
@@ -161,15 +172,10 @@
   }
 
   // The single-workspace import endpoint accepts the same zip shape that
-  // Settings > Import a workspace produces (`POST /api/workspaces/import-bundle`
-  // with `multipart/form-data` field `bundle`). A full-export archive (many
-  // workspaces in one zip) goes through a separate endpoint and is intentionally
-  // not handled here — that bulk-migration flow stays in Settings.
-  const ImportBundleSchema = z.object({
-    workspaceId: z.string().optional(),
-    error: z.string().optional(),
-  }).passthrough();
-
+  // Settings > Import a workspace produces. A full-export archive (many
+  // workspaces in one zip) goes through `import-bundle-all` and is
+  // intentionally not handled here — that bulk-migration flow stays in
+  // Settings. Response schema is shared with Settings in `$lib/api/workspace-import`.
   async function importBundle(file: File) {
     const form = new FormData();
     form.set("bundle", file);
@@ -179,13 +185,16 @@
     });
 
     const body = (await res.json().catch(() => ({}))) as unknown;
-    const parsed = ImportBundleSchema.safeParse(body);
 
     if (!res.ok) {
-      error = parsed.success && parsed.data.error
-        ? parsed.data.error
-        : `Import failed (HTTP ${res.status})`;
+      const parsed = ImportBundleErrorSchema.safeParse(body);
+      error = parsed.success ? parsed.data.error : `Import failed (HTTP ${res.status})`;
       return;
+    }
+
+    const parsed = ImportBundleResponseSchema.safeParse(body);
+    if (!parsed.success) {
+      console.warn("Workspace imported but response shape unexpected:", parsed.error);
     }
 
     await queryClient.invalidateQueries({ queryKey: workspaceQueries.all() });
@@ -219,12 +228,7 @@
     {/if}
   </div>
 
-  <input
-    type="file"
-    accept=".yml,.yaml,.zip,application/zip"
-    hidden
-    onchange={handleFileInput}
-  />
+  <input type="file" accept=".yml,.yaml,.zip,application/zip" hidden onchange={handleFileInput} />
 
   {#if !inline && onclose}
     <button type="button" class="close-btn" onclick={onclose}>Close</button>
