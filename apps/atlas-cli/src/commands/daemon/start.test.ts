@@ -42,11 +42,13 @@ describe("deriveHealthPort", () => {
     expect(deriveHealthPort({ port: 8080, healthPort: 8080 })).toBe(8080);
   });
 
-  it("does not crash near the 16-bit boundary (caller's problem, not ours)", () => {
-    // We deliberately don't clamp here — the daemon's bind will fail
-    // loudly via Deno.serve's `finished` promise, and the launcher
-    // already guards 65535 in project.go. Belt-and-suspenders gets
-    // wrong over time; pick one source of truth.
+  it("returns 65536 at the 16-bit boundary; launcher must short-circuit before this", () => {
+    // 65535 + 1 = 65536 is not a bindable port. The launcher's friday
+    // spec handles this case by passing --health-port 65535 explicitly
+    // (so the daemon's equal-port guard short-circuits without binding).
+    // If we ever get called with port=65535 AND no override on
+    // healthPort, the daemon will throw at bind time — the synchronous
+    // try/catch in startHealthListener catches it and logs cleanly.
     expect(deriveHealthPort({ port: 65535 })).toBe(65536);
   });
 });

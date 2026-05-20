@@ -124,6 +124,39 @@ func TestFridayLivenessListener_DefaultPort(t *testing.T) {
 	}
 }
 
+// TestSupervisedProcesses_PortOverride_65535 pins the 16-bit boundary
+// path: when FRIDAY_PORT_FRIDAY=65535, +1 would overflow the bindable
+// range. The launcher passes --health-port equal to --port so the
+// daemon's equal-port guard short-circuits without binding a second
+// listener, and the launcher's own healthPort tracks main so the
+// probe doesn't dangle. Without this, atlas-cli's deriveHealthPort
+// would compute 65536 and Deno.serve would throw at bind time.
+func TestSupervisedProcesses_PortOverride_65535(t *testing.T) {
+	t.Setenv("FRIDAY_PORT_FRIDAY", "65535")
+	specs := supervisedProcesses("/tmp/dummy-bin")
+	var friday *processSpec
+	for i := range specs {
+		if specs[i].name == "friday" {
+			friday = &specs[i]
+			break
+		}
+	}
+	if friday == nil {
+		t.Fatal("friday not found in supervisedProcesses")
+	}
+	if friday.healthPort != "65535" {
+		t.Errorf("friday healthPort = %q, want %q (equal to main so probe lands on the bound port)",
+			friday.healthPort, "65535")
+	}
+	joined := strings.Join(friday.args, " ")
+	if !strings.Contains(joined, "--port 65535") {
+		t.Errorf("friday args missing --port 65535\ngot: %s", joined)
+	}
+	if !strings.Contains(joined, "--health-port 65535") {
+		t.Errorf("friday args must pass --health-port equal to --port at the 65535 boundary\ngot: %s", joined)
+	}
+}
+
 // TestSupervisedProcesses_BadPortOverride_IsIgnored covers the
 // non-numeric / out-of-range port override path that previously
 // would have set healthPort to a string the readiness probe could

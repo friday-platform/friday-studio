@@ -719,16 +719,24 @@ func supervisedProcesses(binDir string) []processSpec {
 			specs[i].args = append(specs[i].args, "--port", port)
 			// Liveness listener moves with the main port — keep it at
 			// <port>+1. The launcher probes this, not the main port.
-			// Guard against 65535 → 65536 wrap; fall back to no-flag,
-			// daemon's own default will skip the listener too.
+			//
+			// At port=65535 there's no room for +1; we pass --health-port
+			// equal to --port so the daemon's equal-port guard
+			// short-circuits cleanly (no second listener bound). Without
+			// this explicit flag, atlas-cli's deriveHealthPort would
+			// compute 65535+1=65536 and Deno.serve would throw.
+			// healthPort stays at the main port too so the launcher's
+			// probe doesn't dangle on a never-bound port.
+			var healthPortStr string
 			if portNum < 65535 {
-				healthPortStr := strconv.Itoa(portNum + 1)
-				specs[i].healthPort = healthPortStr
-				specs[i].args = append(specs[i].args, "--health-port", healthPortStr)
+				healthPortStr = strconv.Itoa(portNum + 1)
 			} else {
-				log.Warn("friday port=65535 leaves no room for liveness listener; skipping --health-port",
+				log.Warn("friday port=65535: liveness listener disabled (no room for +1)",
 					"port", port)
+				healthPortStr = port
 			}
+			specs[i].healthPort = healthPortStr
+			specs[i].args = append(specs[i].args, "--health-port", healthPortStr)
 		case "link":
 			// apps/link/src/config.ts:40 reads LINK_PORT (default 3100).
 			specs[i].env = append(specs[i].env, "LINK_PORT="+port)

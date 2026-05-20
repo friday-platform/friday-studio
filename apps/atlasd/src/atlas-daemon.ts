@@ -2416,10 +2416,16 @@ export class AtlasDaemon {
    * No-op when `healthPort` is unset or equal to `port` — the main
    * `/health` route still serves general clients (atlas-cli, the UI).
    *
-   * Bind failures surface asynchronously via the `finished` promise
-   * rejection (Deno.serve returns synchronously after registering, so
-   * a sync try/catch never sees EADDRINUSE). The `.catch` below logs
-   * and nulls `healthServer` so the shutdown drain skips a dead handle.
+   * Bind failures (EADDRINUSE, permission denied, out-of-range port)
+   * are caught two ways:
+   *   - Synchronous `try/catch` around `Deno.serve` — verified to fire
+   *     on EADDRINUSE in Deno 2.7.4. This is the common path.
+   *   - `.finished.catch` as defense-in-depth for any runtime listener
+   *     error that surfaces after the bind (rare, but observed in past
+   *     Deno releases when a TLS handshake fails the listener itself).
+   * Either way the daemon keeps running — main `/health` still serves
+   * and the launcher's probe loses only its dedicated path until the
+   * operator fixes the port collision.
    */
   private startHealthListener(
     hostname: string,
@@ -2429,25 +2435,34 @@ export class AtlasDaemon {
     const healthPort = this.options.healthPort;
     if (!healthPort || healthPort === this.options.port) return;
 
-    this.healthServer = Deno.serve(
-      {
-        port: healthPort,
-        hostname,
-        signal: this.healthServerAbortController.signal,
-        ...(tls ?? {}),
-        onListen: ({ hostname, port }) => {
-          logger.info("Liveness listener running", { hostname, port, scheme });
+    try {
+      this.healthServer = Deno.serve(
+        {
+          port: healthPort,
+          hostname,
+          signal: this.healthServerAbortController.signal,
+          ...(tls ?? {}),
+          onListen: ({ hostname, port }) => {
+            logger.info("Liveness listener running", { hostname, port, scheme });
+          },
         },
-      },
-      () => new Response("ok"),
-    );
+        () => new Response("ok"),
+      );
+    } catch (error) {
+      logger.error("Liveness listener bind failed", {
+        healthPort,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      this.healthServer = null;
+      return;
+    }
 
-    // EADDRINUSE / permission errors surface here, not from the
-    // synchronous Deno.serve call. Drop the dead handle and let the
-    // main daemon continue — the main `/health` route still works,
-    // operators can fix the port collision out-of-band.
+    // Defense-in-depth for any post-bind listener error. Normal
+    // shutdown via `healthServerAbortController.abort()` resolves
+    // `.finished` cleanly (no rejection), so this only fires on
+    // genuine listener faults.
     this.healthServer.finished.catch((error) => {
-      logger.error("Liveness listener failed", {
+      logger.error("Liveness listener failed post-bind", {
         healthPort,
         error: error instanceof Error ? error.message : String(error),
       });
