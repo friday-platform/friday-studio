@@ -74,7 +74,10 @@ import {
 } from "../../src/services/communicator-wiring.ts";
 import { publishSessionCancel } from "../../src/session-dispatch-registry.ts";
 import { buildSetupRequired409Body } from "../../src/setup-required-gate.ts";
-import { getOrComputeSetupRequirements } from "../../src/setup-requirements-cache.ts";
+import {
+  getCachedParsedConfig,
+  getOrComputeSetupRequirements,
+} from "../../src/setup-requirements-cache.ts";
 import { awaitSignalCompletion, publishSignalCancellation } from "../../src/signal-stream.ts";
 import {
   getAccessibleWorkspaceIds,
@@ -483,25 +486,27 @@ const workspacesRoutes = daemonFactory
         workspaces.map((w) => deriveSetupRequirements(c, manager, w.id, w.path)),
       );
       const recovered = await Promise.all(
-        workspaces.map((w, i) => {
+        workspaces.map(async (w, i) => {
           const setup = setupResults[i];
-          if (!setup?.requires_setup) return Promise.resolve(w);
-          return recoverBootstrapSessionIfDeleted({
+          if (!setup?.requires_setup) return w;
+          const parsedConfig = getCachedParsedConfig(c, w.id);
+          if (!parsedConfig) return w;
+          const result = await recoverBootstrapSessionIfDeleted({
             manager,
             workspace: w,
+            parsedConfig,
             setupRequirements: setup.setup_requirements,
             userId,
-          }).then((result) =>
-            result.recovered
-              ? {
-                  ...w,
-                  metadata: {
-                    ...(w.metadata ?? {}),
-                    active_setup_session_id: result.bootstrap_session_id,
-                  },
-                }
-              : w,
-          );
+          });
+          return result.recovered
+            ? {
+                ...w,
+                metadata: {
+                  ...(w.metadata ?? {}),
+                  active_setup_session_id: result.bootstrap_session_id,
+                },
+              }
+            : w;
         }),
       );
       const response = recovered
@@ -1223,10 +1228,11 @@ const workspacesRoutes = daemonFactory
       const setup = await deriveSetupRequirements(c, manager, workspace.id, workspace.path);
 
       let effectiveWorkspace = workspace;
-      if (setup.requires_setup) {
+      if (setup.requires_setup && config) {
         const recovery = await recoverBootstrapSessionIfDeleted({
           manager,
           workspace,
+          parsedConfig: config.workspace,
           setupRequirements: setup.setup_requirements,
           userId,
         });

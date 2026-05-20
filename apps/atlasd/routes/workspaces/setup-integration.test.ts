@@ -356,7 +356,7 @@ describe("Initial workspace setup — end-to-end (Task #22)", () => {
     expect(
       createBody.bootstrapSessionId,
       "create response must include bootstrapSessionId",
-    ).toMatch(/^[0-9a-f-]{36}$/);
+    ).toMatch(/^chat_[A-Za-z0-9]{10}$/);
     const workspaceId = createBody.workspace.id;
     const workspacePath = createBody.workspace.path;
     const bootstrapSessionId = createBody.bootstrapSessionId!;

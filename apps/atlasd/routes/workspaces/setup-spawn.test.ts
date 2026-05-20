@@ -20,7 +20,7 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 
 const { mockChatStorage, mockElicitationStorage, mockAssembleLinkState, mockLoadEnv } = vi.hoisted(
   () => ({
-    mockChatStorage: { createChat: vi.fn(), getChat: vi.fn() },
+    mockChatStorage: { createChat: vi.fn(), getChat: vi.fn(), appendMessage: vi.fn() },
     mockElicitationStorage: { create: vi.fn() },
     mockAssembleLinkState: vi.fn(),
     mockLoadEnv: vi.fn(),
@@ -28,7 +28,10 @@ const { mockChatStorage, mockElicitationStorage, mockAssembleLinkState, mockLoad
 );
 
 vi.mock("@atlas/core/chat/storage", () => ({ ChatStorage: mockChatStorage }));
-vi.mock("@atlas/core/elicitations", () => ({ ElicitationStorage: mockElicitationStorage }));
+vi.mock("@atlas/core/elicitations", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@atlas/core/elicitations")>();
+  return { ...original, ElicitationStorage: mockElicitationStorage };
+});
 vi.mock("../../src/assemble-link-credential-state.ts", () => ({
   assembleLinkCredentialState: mockAssembleLinkState,
 }));
@@ -129,6 +132,7 @@ describe("spawnBootstrapSessionIfNeeded", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockChatStorage.createChat.mockResolvedValue({ ok: true, data: {} });
+    mockChatStorage.appendMessage.mockResolvedValue({ ok: true });
     mockElicitationStorage.create.mockResolvedValue({ ok: true, data: {} });
     mockLoadEnv.mockReturnValue({});
     mockAssembleLinkState.mockResolvedValue({
@@ -172,14 +176,25 @@ describe("spawnBootstrapSessionIfNeeded", () => {
     });
 
     expect(result.requires_setup).toBe(true);
-    expect(result.bootstrap_session_id).toMatch(/^[0-9a-f-]{36}$/);
+    expect(result.bootstrap_session_id).toMatch(/^chat_[A-Za-z0-9]{10}$/);
     expect(result.setup_requirements).toEqual([
       { kind: "variable", name: "region", description: "AWS region", schema: { type: "string" } },
     ]);
 
-    // Exactly one chat, exactly one elicitation, both scoped to the same id.
+    // Exactly one chat, one welcome message, exactly one elicitation, all scoped to the same id.
     expect(mockChatStorage.createChat).toHaveBeenCalledTimes(1);
+    expect(mockChatStorage.appendMessage).toHaveBeenCalledTimes(1);
     expect(mockElicitationStorage.create).toHaveBeenCalledTimes(1);
+
+    // The welcome message is a `system` role message with text content,
+    // appended to the bootstrap session BEFORE the elicitation is seeded so
+    // the chat thread renders welcome → setup card in that order.
+    const [welcomeChatId, welcomeMessage] = mockChatStorage.appendMessage.mock.calls[0] ?? [];
+    expect(welcomeChatId).toBe(result.bootstrap_session_id);
+    expect(welcomeMessage).toMatchObject({
+      role: "system",
+      parts: [{ type: "text", text: expect.stringContaining("Welcome to **Test**") }],
+    });
 
     const chatArgs = mockChatStorage.createChat.mock.calls[0]?.[0];
     expect(chatArgs).toMatchObject({
@@ -282,7 +297,7 @@ describe("spawnBootstrapSessionIfNeeded", () => {
       color: "blue",
       description: "an existing workspace",
     });
-    expect(writtenMetadata?.active_setup_session_id).toMatch(/^[0-9a-f-]{36}$/);
+    expect(writtenMetadata?.active_setup_session_id).toMatch(/^chat_[A-Za-z0-9]{10}$/);
   });
 });
 
@@ -295,10 +310,16 @@ describe("recoverBootstrapSessionIfDeleted", () => {
       schema: { type: "string" as const },
     },
   ];
+  const parsedConfig: WorkspaceConfig = parseConfig({
+    version: "1.0",
+    workspace: { name: "Test" },
+    variables: { region: { description: "AWS region", schema: { type: "string" } } },
+  });
 
   beforeEach(() => {
     vi.clearAllMocks();
     mockChatStorage.createChat.mockResolvedValue({ ok: true, data: {} });
+    mockChatStorage.appendMessage.mockResolvedValue({ ok: true });
     mockElicitationStorage.create.mockResolvedValue({ ok: true, data: {} });
   });
 
@@ -313,12 +334,13 @@ describe("recoverBootstrapSessionIfDeleted", () => {
     const result = await recoverBootstrapSessionIfDeleted({
       manager,
       workspace: entry,
+      parsedConfig,
       setupRequirements,
       userId: "user-1",
     });
 
     expect(result.recovered).toBe(true);
-    expect(result.bootstrap_session_id).toMatch(/^[0-9a-f-]{36}$/);
+    expect(result.bootstrap_session_id).toMatch(/^chat_[A-Za-z0-9]{10}$/);
     expect(result.bootstrap_session_id).not.toBe(previousSessionId);
 
     expect(mockChatStorage.getChat).toHaveBeenCalledWith(previousSessionId, entry.id);
@@ -363,6 +385,7 @@ describe("recoverBootstrapSessionIfDeleted", () => {
     const result = await recoverBootstrapSessionIfDeleted({
       manager,
       workspace: entry,
+      parsedConfig,
       setupRequirements,
       userId: "user-1",
     });
@@ -380,6 +403,7 @@ describe("recoverBootstrapSessionIfDeleted", () => {
     const result = await recoverBootstrapSessionIfDeleted({
       manager,
       workspace: entry,
+      parsedConfig,
       setupRequirements,
       userId: "user-1",
     });
@@ -402,6 +426,7 @@ describe("recoverBootstrapSessionIfDeleted", () => {
       recoverBootstrapSessionIfDeleted({
         manager,
         workspace: entry,
+        parsedConfig,
         setupRequirements,
         userId: "user-1",
       }),

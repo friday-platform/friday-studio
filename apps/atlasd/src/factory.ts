@@ -2,6 +2,7 @@ import type { AgentRegistry } from "@atlas/agent-sdk";
 import type { AtlasDaemon } from "@atlas/atlasd";
 import type { SessionHistoryAdapter } from "@atlas/core";
 import type { PlatformModels } from "@atlas/llm";
+import type { WorkspaceConfig } from "@atlas/config";
 import type { SetupRequirementsResult, WorkspaceManager } from "@atlas/workspace";
 import { cors } from "hono/cors";
 import { createFactory } from "hono/factory";
@@ -86,6 +87,13 @@ export type AppVariables = {
     app: AppContext;
     userId?: string;
     setupRequirementsCache?: Map<string, SetupRequirementsResult>;
+    /**
+     * Companion cache to `setupRequirementsCache` — stashes the parsed
+     * workspace config alongside the derivation so callers that need it
+     * (e.g. the recover-bootstrap loop's welcome-message builder) can
+     * grab it without re-reading the workspace from disk.
+     */
+    parsedConfigCache?: Map<string, WorkspaceConfig>;
   };
 };
 

@@ -22,7 +22,9 @@
  * `StaleCredentialIdAtImportError` for the caller to convert into a 400.
  */
 
+import type { AtlasUIMessage } from "@atlas/agent-sdk";
 import type { WorkspaceConfig } from "@atlas/config";
+import { generateChatId } from "@atlas/core/chat/id";
 import { ChatStorage } from "@atlas/core/chat/storage";
 import { ElicitationStorage } from "@atlas/core/elicitations";
 import { createLogger } from "@atlas/logger";
@@ -45,6 +47,17 @@ const spawnLogger = createLogger({ component: "workspace-setup-spawn" });
  * row expired during the form's lifetime.
  */
 const FAR_FUTURE_EXPIRES_AT_MS = 365 * 24 * 60 * 60 * 1000; // 1 year
+
+function buildWelcomeMessage(parsedConfig: WorkspaceConfig): AtlasUIMessage {
+  const name = parsedConfig.workspace.name;
+  const text = parsedConfig.workspace.welcome ??
+    `Welcome to **${name}** — this workspace needs a few values before it can run. Fill the form below to finish setup.`;
+  return {
+    id: crypto.randomUUID(),
+    role: "system",
+    parts: [{ type: "text", text }],
+  };
+}
 
 export interface SpawnBootstrapResult {
   requires_setup: boolean;
@@ -98,7 +111,7 @@ export async function spawnBootstrapSessionIfNeeded(
     throw new Error(`Workspace ${workspaceId} not found after registration`);
   }
 
-  const bootstrapSessionId = crypto.randomUUID();
+  const bootstrapSessionId = generateChatId();
 
   const chatResult = await ChatStorage.createChat({
     chatId: bootstrapSessionId,
@@ -108,6 +121,15 @@ export async function spawnBootstrapSessionIfNeeded(
   });
   if (!chatResult.ok) {
     throw new Error(`Failed to create bootstrap chat session: ${chatResult.error}`);
+  }
+
+  const welcomeResult = await ChatStorage.appendMessage(
+    bootstrapSessionId,
+    buildWelcomeMessage(parsedConfig),
+    workspaceId,
+  );
+  if (!welcomeResult.ok) {
+    throw new Error(`Failed to seed bootstrap welcome message: ${welcomeResult.error}`);
   }
 
   const now = new Date();
@@ -145,6 +167,7 @@ export async function spawnBootstrapSessionIfNeeded(
 export interface RecoverBootstrapArgs {
   manager: WorkspaceManager;
   workspace: WorkspaceEntry;
+  parsedConfig: WorkspaceConfig;
   setupRequirements: SetupRequirement[];
   userId: string;
 }
@@ -169,7 +192,7 @@ export interface RecoverBootstrapResult {
 export async function recoverBootstrapSessionIfDeleted(
   args: RecoverBootstrapArgs,
 ): Promise<RecoverBootstrapResult> {
-  const { manager, workspace, setupRequirements, userId } = args;
+  const { manager, workspace, parsedConfig, setupRequirements, userId } = args;
   const pointer = workspace.metadata?.active_setup_session_id;
   if (!pointer) {
     return { recovered: false, bootstrap_session_id: null };
@@ -180,7 +203,7 @@ export async function recoverBootstrapSessionIfDeleted(
     return { recovered: false, bootstrap_session_id: pointer };
   }
 
-  const newSessionId = crypto.randomUUID();
+  const newSessionId = generateChatId();
 
   const chatResult = await ChatStorage.createChat({
     chatId: newSessionId,
@@ -190,6 +213,15 @@ export async function recoverBootstrapSessionIfDeleted(
   });
   if (!chatResult.ok) {
     throw new Error(`Failed to recreate bootstrap chat session: ${chatResult.error}`);
+  }
+
+  const welcomeResult = await ChatStorage.appendMessage(
+    newSessionId,
+    buildWelcomeMessage(parsedConfig),
+    workspace.id,
+  );
+  if (!welcomeResult.ok) {
+    throw new Error(`Failed to seed bootstrap welcome message: ${welcomeResult.error}`);
   }
 
   const now = new Date();

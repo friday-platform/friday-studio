@@ -83,12 +83,15 @@
       }
       const parsed =
         body && typeof body === "object" && body !== null
-          ? (body as { workspaceId?: string; name?: string })
+          ? (body as { workspaceId?: string; name?: string; bootstrapSessionId?: string })
           : {};
       await queryClient.invalidateQueries({ queryKey: workspaceQueries.all() });
       toast({ title: `Imported: ${parsed.name ?? detail?.name ?? selectedSlug}` });
       if (parsed.workspaceId) {
-        await goto(`/platform/${parsed.workspaceId}`);
+        const target = parsed.bootstrapSessionId
+          ? `/platform/${parsed.workspaceId}/chat`
+          : `/platform/${parsed.workspaceId}`;
+        await goto(target);
       }
     } finally {
       importing = false;

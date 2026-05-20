@@ -25,17 +25,24 @@ interface CtxLike {
   ) => void;
 }
 
+type ParsedConfig = Parameters<typeof resolveWorkspaceSetupRequirements>[0];
+
 /**
  * Returns the memoized setup-requirements result for `workspaceId` within
  * this request, computing it via `compute` on first call. `compute` is
  * responsible for assembling the Link snapshot, env overlay, etc. — it runs
  * at most once per (workspace, request) pair.
+ *
+ * The `parsedConfig` from `compute()` is also stashed on the Hono context
+ * so callers like the recover-bootstrap loop can grab it without re-loading
+ * the workspace config — preserving the "N workspaces → N config loads"
+ * invariant.
  */
 export async function getOrComputeSetupRequirements(
   c: Context<AppVariables> | CtxLike,
   workspaceId: string,
   compute: () => Promise<{
-    parsedConfig: Parameters<typeof resolveWorkspaceSetupRequirements>[0];
+    parsedConfig: ParsedConfig;
     envSnapshot: Record<string, string>;
     linkCredentials: LinkCredentialState;
     options: ResolveSetupRequirementsOptions;
@@ -56,5 +63,27 @@ export async function getOrComputeSetupRequirements(
     inputs.options,
   );
   cache.set(workspaceId, result);
+  rememberParsedConfig(c, workspaceId, inputs.parsedConfig);
   return result;
+}
+
+/** Per-request cache of parsed configs, populated by `getOrComputeSetupRequirements`. */
+export function getCachedParsedConfig(
+  c: Context<AppVariables> | CtxLike,
+  workspaceId: string,
+): ParsedConfig | undefined {
+  return c.get("parsedConfigCache")?.get(workspaceId);
+}
+
+function rememberParsedConfig(
+  c: Context<AppVariables> | CtxLike,
+  workspaceId: string,
+  parsedConfig: ParsedConfig,
+): void {
+  let cache = c.get("parsedConfigCache");
+  if (!cache) {
+    cache = new Map<string, ParsedConfig>();
+    c.set("parsedConfigCache", cache);
+  }
+  cache.set(workspaceId, parsedConfig);
 }
