@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Button, ListDetail } from "@atlas/ui";
+  import { Button, getHotkeyRegistry, ListDetail } from "@atlas/ui";
   import { goto } from "$app/navigation";
   import { browser } from "$app/environment";
   import { page } from "$app/state";
@@ -36,14 +36,13 @@
     }
   });
 
-  function handleGlobalKeydown(e: KeyboardEvent) {
-    // Ctrl+B — hide / reveal the chat list sidebar. Cmd+B is reserved
-    // for Mac browser's bookmarks bar so we don't intercept it.
-    if (e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.key === "b") {
-      e.preventDefault();
-      sidebarCollapsed = !sidebarCollapsed;
-    }
-  }
+  // Ctrl+B — hide / reveal the chat list sidebar. Deliberately Ctrl
+  // only, never ⌘, so Mac's ⌘+B (bookmarks bar) is untouched.
+  const hotkeys = getHotkeyRegistry();
+  $effect(() => hotkeys.register({
+    key: "b", ctrl: true,
+    handler: () => (sidebarCollapsed = !sidebarCollapsed),
+  }));
 
   function handleSelectChat(chatId: string) {
     if (chatId === data.chatId) return;
@@ -60,8 +59,6 @@
     goto(`/platform/${encodeURIComponent(workspaceId)}/chat`);
   }
 </script>
-
-<svelte:window onkeydown={handleGlobalKeydown} />
 
 {#key workspaceId}
   <ListDetail bind:sidebarCollapsed>

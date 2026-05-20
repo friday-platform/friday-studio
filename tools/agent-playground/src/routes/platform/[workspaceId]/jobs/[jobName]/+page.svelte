@@ -15,7 +15,7 @@
 -->
 
 <script lang="ts">
-  import { markdownToHTMLSafe, toast } from "@atlas/ui";
+  import { getHotkeyRegistry, markdownToHTMLSafe, notInTextField, toast } from "@atlas/ui";
   import { createQuery, queryOptions, skipToken } from "@tanstack/svelte-query";
   import { page } from "$app/state";
   import WorkspaceBreadcrumb from "$lib/components/workspace/workspace-breadcrumb.svelte";
@@ -219,21 +219,21 @@
     }
   }
 
-  $effect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape" && selected) {
-        selected = null;
-        return;
-      }
-      if (e.key !== "/") return;
-      const tag = (document.activeElement as HTMLElement | null)?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA") return;
-      e.preventDefault();
-      visibleSearchEl?.focus();
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  });
+  // Escape clears the selected skill detail; `/` focuses the visible-skills
+  // search input (suppressed in any text field so typing `/` works).
+  const hotkeys = getHotkeyRegistry();
+
+  $effect(() => hotkeys.register({
+    key: "Escape",
+    when: () => selected !== null,
+    handler: () => (selected = null),
+  }));
+
+  $effect(() => hotkeys.register({
+    key: "/",
+    when: notInTextField,
+    handler: () => visibleSearchEl?.focus(),
+  }));
 
   async function attach(skill: SkillRow) {
     if (!workspaceId || !jobName) return;

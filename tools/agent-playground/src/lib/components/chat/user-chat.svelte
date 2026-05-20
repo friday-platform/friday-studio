@@ -2,7 +2,7 @@
   import { untrack } from "svelte";
   import { Chat as ChatImpl } from "@ai-sdk/svelte";
   import type { AtlasUIMessage } from "@atlas/agent-sdk";
-  import { toast } from "@atlas/ui";
+  import { getDragDropContext, getHotkeyRegistry, toast } from "@atlas/ui";
   import { createQuery, useQueryClient } from "@tanstack/svelte-query";
   import { page } from "$app/state";
   import { browser } from "$app/environment";
@@ -50,30 +50,33 @@
   let inspectorOpen = $state(false);
   let fullscreen = $state(false);
 
-  function handleGlobalKeydown(e: KeyboardEvent) {
-    // Cmd+Shift+D (Debug) — Cmd+Shift+I is intercepted by Chrome DevTools
-    if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === "d") {
-      e.preventDefault();
-      inspectorOpen = !inspectorOpen;
-      return;
-    }
-    // Ctrl+F toggles fullscreen — deliberately Ctrl, never ⌘, so Mac's
-    // ⌘+F find-in-page is untouched. Tradeoff: on Windows/Linux Ctrl+F
-    // *is* browser find, so it's shadowed inside the chat surface. This
-    // is a local dev tool and the in-app shortcut is the priority here;
-    // revisit if that becomes a real friction point.
-    if (e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.key === "f") {
-      e.preventDefault();
-      fullscreen = !fullscreen;
-      return;
-    }
-    if (e.key === "Escape" && fullscreen) {
-      fullscreen = false;
-    }
-  }
+  const hotkeys = getHotkeyRegistry();
+  const dragDrop = getDragDropContext();
+
+  // Cmd/Ctrl+Shift+D toggles the debug inspector — Cmd+Shift+I is taken
+  // by Chrome DevTools.
+  $effect(() => hotkeys.register({
+    key: "d", cmdOrCtrl: true, shift: true,
+    handler: () => (inspectorOpen = !inspectorOpen),
+  }));
+
+  // Ctrl+F toggles fullscreen — deliberately Ctrl, never ⌘, so Mac's
+  // ⌘+F find-in-page is untouched. On Windows/Linux Ctrl+F *is* browser
+  // find, so it's shadowed inside the chat surface; this is a local dev
+  // tool and the in-app shortcut wins.
+  $effect(() => hotkeys.register({
+    key: "f", ctrl: true,
+    handler: () => (fullscreen = !fullscreen),
+  }));
+
+  $effect(() => hotkeys.register({
+    key: "Escape",
+    when: () => fullscreen,
+    handler: () => (fullscreen = false),
+  }));
+
   let systemPromptContext: { timestamp: string; systemMessages: string[] } | null = $state(null);
 
-  let chatDragOver = $state(false);
   /**
    * Attachments for the *next* outgoing message. Bound into `ChatInput`
    * via `bind:attachments` so the file picker and the chat-surface drop
@@ -114,40 +117,11 @@
     }
   }
 
-  function handleChatDrop(e: DragEvent) {
-    e.preventDefault();
-    chatDragOver = false;
-    if (e.dataTransfer?.files) {
-      void addDroppedFiles(e.dataTransfer.files);
-    }
-  }
+  $effect(() => dragDrop.register({
+    onFiles: (files) => void addDroppedFiles(files),
+  }));
 
-  // Safari requires preventDefault on BOTH dragenter and dragover to register
-  // the element as a valid drop target; without dragenter prevention it falls
-  // back to its default file-open behavior on drop.
-  function handleChatDragEnter(e: DragEvent) {
-    e.preventDefault();
-    if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
-    chatDragOver = true;
-  }
-
-  function handleChatDragOver(e: DragEvent) {
-    e.preventDefault();
-    if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
-    chatDragOver = true;
-  }
-
-  function handleChatDragLeave(e: DragEvent) {
-    // Only dismiss if leaving the container (not entering a child)
-    if (
-      e.currentTarget instanceof HTMLElement &&
-      !e.currentTarget.contains(e.relatedTarget as Node)
-    ) {
-      chatDragOver = false;
-    }
-  }
-
-  async function addDroppedFiles(files: FileList) {
+  async function addDroppedFiles(files: readonly File[]) {
     const rejected: File[] = [];
     const duplicates: File[] = [];
     for (const file of files) {
@@ -1393,19 +1367,8 @@
   });
 </script>
 
-<svelte:window onkeydown={handleGlobalKeydown} />
-
-<div
-  class="user-chat"
-  class:chat-drag-over={chatDragOver}
-  class:fullscreen
-  ondrop={handleChatDrop}
-  ondragenter={handleChatDragEnter}
-  ondragover={handleChatDragOver}
-  ondragleave={handleChatDragLeave}
-  role="presentation"
->
-  {#if chatDragOver}
+<div class="user-chat" class:fullscreen>
+  {#if dragDrop.dragOver}
     <div class="drop-overlay">
       <span>Drop file here</span>
     </div>
@@ -1556,6 +1519,10 @@
     flex-direction: column;
     min-block-size: 0;
     overflow: hidden;
+    /* Containing block for the absolutely-positioned drop overlay below.
+       `.user-chat.fullscreen` overrides with position: fixed, which wins
+       on specificity. */
+    position: relative;
   }
 
   .rehydrating-indicator {
@@ -1680,10 +1647,6 @@
   }
 
   /* ─── Drag-drop overlay ────────────────────────────────────────────── */
-
-  .user-chat.chat-drag-over {
-    position: relative;
-  }
 
   .drop-overlay {
     align-items: center;

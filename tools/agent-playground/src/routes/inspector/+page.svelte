@@ -18,7 +18,7 @@
   import { deriveSignalDetails, type SignalDetail } from "@atlas/config/signal-details";
   import { deriveTopology } from "@atlas/config/topology";
   import type { AgentBlock } from "@atlas/core/session/session-events";
-  import { Dialog, DropdownMenu, IconSmall } from "@atlas/ui";
+  import { Dialog, DropdownMenu, getHotkeyRegistry, IconSmall, notInTextField } from "@atlas/ui";
   import { createQuery, useQueryClient } from "@tanstack/svelte-query";
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
@@ -352,24 +352,15 @@
     goto(url.toString(), { replaceState: true });
   }
 
-  function handleKeydown(e: KeyboardEvent) {
-    // Skip when focus is in an input/textarea/contenteditable
-    const target = e.target;
-    if (target instanceof HTMLInputElement) return;
-    if (target instanceof HTMLTextAreaElement) return;
-    if (target instanceof HTMLSelectElement) return;
-    if (target instanceof HTMLElement && target.isContentEditable) return;
-
-    // Escape: close inspection panel
-    if (e.key === "Escape" && selectedBlock) {
-      e.preventDefault();
-      selectStep(null);
-      return;
-    }
-  }
+  // Escape closes the inspection panel when one is open and the user
+  // isn't typing in a text field.
+  const hotkeys = getHotkeyRegistry();
+  $effect(() => hotkeys.register({
+    key: "Escape",
+    when: (e) => notInTextField(e) && selectedBlock !== null,
+    handler: () => selectStep(null),
+  }));
 </script>
-
-<svelte:window onkeydown={handleKeydown} />
 
 <div class="inspector">
   <!-- Zone 1: Toolbar (hidden when picker is showing) -->

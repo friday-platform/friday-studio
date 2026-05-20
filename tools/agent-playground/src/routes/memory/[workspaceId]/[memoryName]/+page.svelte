@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { getHotkeyRegistry, notInTextField } from "@atlas/ui";
   import { createQuery } from "@tanstack/svelte-query";
   import { page } from "$app/state";
   import MemoryEntryTable from "$lib/components/MemoryEntryTable.svelte";
@@ -55,21 +56,16 @@
   const isFetchingEntries = $derived(entriesQuery.isFetching);
   const entriesError = $derived(entriesQuery.error);
 
-  function handleKeydown(e: KeyboardEvent) {
-    const target = e.target;
-    if (target instanceof HTMLInputElement) return;
-    if (target instanceof HTMLTextAreaElement) return;
-    if (target instanceof HTMLSelectElement) return;
-    if (target instanceof HTMLElement && target.isContentEditable) return;
-
-    if (e.key === "r" || e.key === "R") {
-      e.preventDefault();
-      entriesQuery.refetch();
-    }
-  }
+  // `r` refetches narrative entries — suppressed when typing in a text
+  // field. The single-char matcher is case-insensitive so capslock
+  // still works; Shift+R is rejected (shift must NOT be pressed).
+  const hotkeys = getHotkeyRegistry();
+  $effect(() => hotkeys.register({
+    key: "r",
+    when: notInTextField,
+    handler: () => entriesQuery.refetch(),
+  }));
 </script>
-
-<svelte:window onkeydown={handleKeydown} />
 
 <div class="memory-detail">
   <header class="page-header">
