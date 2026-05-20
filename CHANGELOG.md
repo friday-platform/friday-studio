@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`labels` role default is anthropic-only; Groq is opt-in via `models.labels`.** The default chain in `packages/llm/src/platform-models.ts` previously led with `groq:openai/gpt-oss-120b`, so any environment with `GROQ_API_KEY` set silently routed session titles (and every other `smallLLM` caller) through Groq — including in regions where Groq is geo-blocked, where the call surfaced as a 403 on every session title. Default is now `anthropic:claude-haiku-4-5` across all four roles; opting back into Groq for sub-second titles is a one-line addition: `models.labels: "groq:openai/gpt-oss-120b"` in `friday.yml`. User-configured `models.labels` was always honored and is unchanged. (#412)
 
 ## [0.1.11] - 2026-05-20
 
