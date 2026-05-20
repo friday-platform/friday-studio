@@ -19,7 +19,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { buildDaemonArgs, deriveHealthPort, type StartArgs } from "./start.tsx";
+import { buildDaemonArgs, deriveHealthPort, type StartArgs } from "./start-args.ts";
 
 describe("deriveHealthPort", () => {
   it("defaults to <port>+1 when neither flag is set", () => {

@@ -55,34 +55,14 @@ function buildCommandArgs(scriptArgs: string[]): string[] {
   return scriptArgs;
 }
 
-/**
- * Build daemon start args from StartArgs.
- */
-export function buildDaemonArgs(argv: StartArgs): string[] {
-  return [
-    "daemon",
-    "start",
-    "--port",
-    (argv.port || 8080).toString(),
-    ...(argv.healthPort !== undefined ? ["--health-port", argv.healthPort.toString()] : []),
-    "--hostname",
-    argv.hostname || "127.0.0.1",
-    ...(argv.logLevel ? ["--log-level", argv.logLevel] : []),
-    ...(argv.atlasConfig ? ["--atlas-config", argv.atlasConfig] : []),
-  ];
-}
+// `buildDaemonArgs`, `deriveHealthPort`, and `StartArgs` live in
+// `start-args.ts` so vitest can import them without pulling in this
+// file's transitive imports (atlas client, credential helpers, daemon
+// runtime). Re-exported here so the rest of the CLI keeps its
+// previously-stable surface.
+import { buildDaemonArgs, deriveHealthPort } from "./start-args.ts";
 
-/**
- * Resolve the daemon's liveness listener port from CLI args.
- *
- * Returns the explicit `--health-port` when set; otherwise `<port>+1`.
- * Disabling is via `--health-port <same-as---port>`, which the daemon's
- * own equal-port guard turns into a single-listener mode no-op.
- */
-export function deriveHealthPort(argv: StartArgs): number {
-  const mainPort = argv.port ?? 8080;
-  return argv.healthPort ?? mainPort + 1;
-}
+export { buildDaemonArgs, deriveHealthPort };
 
 /**
  * Build OTEL environment variables from FRIDAY_KEY.
@@ -225,14 +205,9 @@ async function reExecWithOtel(atlasKey: string): Promise<never> {
   process.exit(status.code);
 }
 
-export interface StartArgs {
-  port?: number;
-  healthPort?: number;
-  hostname?: string;
-  detached?: boolean;
-  logLevel?: string;
-  atlasConfig?: string;
-}
+export type { StartArgs } from "./start-args.ts";
+
+import type { StartArgs } from "./start-args.ts";
 
 export const command = "start";
 export const desc = "Start the Atlas daemon";
