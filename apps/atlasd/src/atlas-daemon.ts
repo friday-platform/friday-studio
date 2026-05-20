@@ -2434,7 +2434,7 @@ export class AtlasDaemon {
     scheme: string,
   ): void {
     if (!shouldBindHealthListener(this.options.port, this.options.healthPort)) return;
-    const healthPort = this.options.healthPort as number;
+    const healthPort = this.options.healthPort;
 
     try {
       this.healthServer = Deno.serve(

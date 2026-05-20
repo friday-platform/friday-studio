@@ -14,7 +14,7 @@
 export function shouldBindHealthListener(
   port: number | undefined,
   healthPort: number | undefined,
-): boolean {
+): healthPort is number {
   if (!healthPort || healthPort <= 0) return false;
   if (healthPort === port) return false;
   return true;
