@@ -58,5 +58,3 @@ export const ImportBundleAllResponseSchema = z
 export const ImportBundleErrorSchema = z.object({ error: z.string() }).passthrough();
 
 export type ImportedEntry = z.infer<typeof ImportedEntrySchema>;
-export type ImportBundleResponse = z.infer<typeof ImportBundleResponseSchema>;
-export type ImportBundleAllResponse = z.infer<typeof ImportBundleAllResponseSchema>;
