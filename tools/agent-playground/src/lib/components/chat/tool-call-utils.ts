@@ -28,6 +28,17 @@ export function needsUserAction(call: ToolCallDisplay): boolean {
   if (call.toolName === "request_human_input" && isInProgress(call.state)) return true;
   if (call.toolName === "connect_service" && call.state === "output-available") return true;
   if (call.toolName === "connect_communicator" && call.state === "output-available") return true;
+  // macOS TCC denial cards live inside the tool-burst. Without this branch
+  // the burst stays collapsed and the affordance (deeplink + suggested mv)
+  // is invisible — the model ends up describing buttons that aren't on
+  // screen. See packages/system/agents/workspace-chat/tools/tcc-detect.ts.
+  if (
+    typeof call.output === "object" &&
+    call.output !== null &&
+    (call.output as { tcc_denied?: unknown }).tcc_denied !== undefined
+  ) {
+    return true;
+  }
   return call.children?.some((child) => needsUserAction(child)) ?? false;
 }
 
