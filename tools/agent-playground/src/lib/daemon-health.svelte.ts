@@ -83,15 +83,15 @@ function scheduleNext(): void {
 
 async function tick(): Promise<void> {
   scheduled = null;
-  // Skip the probe while the tab is hidden — a backgrounded playground
-  // has nothing to display anyway, and Chrome throttles network in
-  // hidden tabs hard enough that a probe is more likely to time out
-  // than report ground truth. We re-arm immediately so a quick toggle
-  // back to visible still gets a probe at the next scheduled tick.
-  if (typeof document !== "undefined" && document.visibilityState !== "visible") {
-    scheduleNext();
-    return;
-  }
+  // Previous version bailed when `document.visibilityState !== "visible"` to
+  // avoid probing in backgrounded tabs. It silently wedged the daemon-gate
+  // on any tab that mounted while hidden (background-opened tabs,
+  // DevTools-Protocol-driven tabs, headless test harnesses) because
+  // `state.loading` only flips inside `check()`'s `finally` — no probe, no
+  // flip, gate stuck on "CONNECTING…" forever. The bail's stated rationale
+  // (Chrome throttles fetch on hidden tabs) doesn't apply at the cadence
+  // we use: one local fetch per 30s when steady-connected is negligible,
+  // and Chrome throttles timers, not fetch. Probe unconditionally.
   try {
     await check();
   } finally {
