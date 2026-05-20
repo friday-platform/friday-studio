@@ -55,6 +55,7 @@ export function reduceSessionEvent(
         task: event.task,
         status: "active",
         startedAt: event.timestamp,
+        ...(event.correlationId && { correlationId: event.correlationId }),
         agentBlocks:
           event.plannedSteps?.map((step) => ({
             stepNumber: undefined,

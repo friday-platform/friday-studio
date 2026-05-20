@@ -60,6 +60,14 @@ export const SessionStartEventSchema = z.object({
    * inflight-marker writer to let listers filter without a join.
    */
   signalId: z.string().optional(),
+  /**
+   * Correlation id from the HTTP envelope that triggered this session.
+   * Carried so the SessionView reducer can surface it on active
+   * sessions (the durable `SessionSummary.correlationId` only exists
+   * after finalization). Optional — absent for non-HTTP triggers or
+   * historical events that predate the field.
+   */
+  correlationId: z.string().optional(),
   plannedSteps: z
     .array(
       z.object({
@@ -255,6 +263,14 @@ export const SessionViewSchema = z.object({
   error: z.string().optional(),
   /** AI-generated summary produced at session finalization */
   aiSummary: SessionAISummarySchema.optional(),
+  /**
+   * Correlation id from the HTTP envelope that triggered this session.
+   * Captured from the `session:start` event by the reducer. Lets the
+   * list endpoint surface correlationId for *active* sessions too —
+   * the durable `SessionSummary.correlationId` only exists post-
+   * finalization.
+   */
+  correlationId: z.string().optional(),
 });
 export type SessionView = z.infer<typeof SessionViewSchema>;
 
@@ -290,5 +306,16 @@ export const SessionSummarySchema = z.object({
    * pure session-level linkage works without it.
    */
   parentEventId: z.string().optional(),
+  /**
+   * Correlation id assigned by the signal trigger that spawned this
+   * session. Carried on the cascade envelope, threaded through to the
+   * session at creation. Lets a `?nowait=true` HTTP caller redeem the
+   * correlationId from the 202 response for the spawned sessionId via
+   * `GET /api/sessions?correlationId=…`, without polling for a generic
+   * "newest non-snapshot" guess. Absent for sessions spawned without a
+   * correlated envelope (chat-tools that call `bypassConcurrency`,
+   * cron signals, fs-watch signals).
+   */
+  correlationId: z.string().optional(),
 });
 export type SessionSummary = z.infer<typeof SessionSummarySchema>;

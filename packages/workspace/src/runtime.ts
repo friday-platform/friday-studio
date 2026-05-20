@@ -243,6 +243,15 @@ interface WorkspaceRuntimeSignal {
    */
   parentSessionId?: string;
   /**
+   * Correlation id assigned by the HTTP signal trigger that produced
+   * this envelope. Forwarded to `SessionSummary.correlationId` at
+   * finalization so a `?nowait=true` caller can redeem its 202's
+   * correlationId for the spawned sessionId via
+   * `GET /api/sessions?correlationId=…`. Absent for non-correlated
+   * triggers (cron, fs-watch, bypassConcurrency chat tools).
+   */
+  correlationId?: string;
+  /**
    * Base64-encoded original webhook request body. Only set for signals
    * fired through Friday's webhook-tunnel (the byte-for-byte HTTP proxy).
    * Surfaces to the agent as `ctx.input.raw["body"]` so HMAC verification
@@ -277,6 +286,13 @@ export interface TriggerSignalOpts {
    * session records its parent. Phase 11 provenance.
    */
   parentSessionId?: string;
+  /**
+   * Correlation id from the HTTP envelope that triggered this signal.
+   * Threads through to `SessionSummary.correlationId` so the spawned
+   * session is discoverable from the 202's `{ correlationId }` via
+   * `GET /api/sessions?correlationId=…`. Absent for non-HTTP triggers.
+   */
+  correlationId?: string;
   /**
    * Webhook-only context (base64 body + lowercased headers) preserved
    * byte-for-byte from the upstream HTTP request when the signal was
@@ -2049,6 +2065,7 @@ export class WorkspaceRuntime {
           task: typeof signal.data?.task === "string" ? signal.data.task : job.name,
           plannedSteps,
           timestamp: session.startedAt.toISOString(),
+          ...(signal.correlationId && { correlationId: signal.correlationId }),
         });
 
         // Emit session-start to the client's SSE stream so the UI can display
@@ -2429,6 +2446,10 @@ export class WorkspaceRuntime {
               // field on the wire — keeps existing SESSION_METADATA entries
               // and round-trip schema parses unchanged.
               ...(signal.parentSessionId && { parentSessionId: signal.parentSessionId }),
+              // Correlation id from the HTTP envelope. Lets nowait callers
+              // redeem their 202's correlationId for this sessionId via
+              // GET /api/sessions?correlationId=…
+              ...(signal.correlationId && { correlationId: signal.correlationId }),
             };
 
             await sessionStream.finalize(summaryV2).catch((err) => {
@@ -3446,8 +3467,15 @@ export class WorkspaceRuntime {
     payload?: Record<string, unknown>,
     opts: TriggerSignalOpts = {},
   ): Promise<WorkspaceSignalRunResult> {
-    const { streamId, onStreamEvent, skipStates, abortSignal, parentSessionId, webhookContext } =
-      opts;
+    const {
+      streamId,
+      onStreamEvent,
+      skipStates,
+      abortSignal,
+      parentSessionId,
+      correlationId,
+      webhookContext,
+    } = opts;
     // Top-level `streamId` opt wins over any payload.streamId. The runtime
     // reads the merged value via `signal.data.streamId` (see processSignalForJob
     // ~line 1595 where streamId is derived). Both surfaces stay supported so
@@ -3462,6 +3490,7 @@ export class WorkspaceRuntime {
       data,
       timestamp: new Date(),
       parentSessionId,
+      correlationId,
       body: webhookContext?.body,
       headers: webhookContext?.headers,
     };

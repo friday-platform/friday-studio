@@ -11,7 +11,16 @@ import { daemonFactory } from "../../src/factory.ts";
 import { publishSessionCancel } from "../../src/session-dispatch-registry.ts";
 import { getAccessibleWorkspaceIds, requireWorkspaceMember } from "../../src/workspace-authz.ts";
 
-const ListQuery = z.object({ workspaceId: z.string().optional() });
+const ListQuery = z.object({
+  workspaceId: z.string().optional(),
+  /**
+   * Filter to sessions whose `SessionSummary.correlationId` matches.
+   * Lets a `?nowait=true` signal-trigger caller redeem the 202's
+   * correlationId for the spawned sessionId without polling for a
+   * generic "newest non-snapshot" guess.
+   */
+  correlationId: z.string().optional(),
+});
 
 /**
  * Build a SessionSummary from a SessionView (for active sessions
@@ -30,6 +39,7 @@ function viewToSummary(view: SessionView): SessionSummary {
     stepCount: view.agentBlocks.length,
     agentNames: view.agentBlocks.map((b) => b.agentName),
     aiSummary: view.aiSummary,
+    ...(view.correlationId && { correlationId: view.correlationId }),
   };
 }
 
@@ -45,7 +55,7 @@ const sessionsRoutes = daemonFactory
     const userId = c.get("userId");
     if (!userId) return c.json({ error: "Unauthorized" }, 401);
 
-    const { workspaceId } = c.req.valid("query");
+    const { workspaceId, correlationId } = c.req.valid("query");
     if (workspaceId !== undefined) {
       await requireWorkspaceMember(c, workspaceId);
     }
@@ -70,9 +80,19 @@ const sessionsRoutes = daemonFactory
     }
 
     // Merge and sort by startedAt descending
-    const sessions = [...activeSummaries, ...completedSummaries].sort(
+    let sessions = [...activeSummaries, ...completedSummaries].sort(
       (a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime(),
     );
+
+    // correlationId filter — applied after the workspace filter so a
+    // nowait caller can look up its spawned session without knowing
+    // the workspaceId (though typically it does). Returns at most one
+    // session in practice (correlationId is per-signal-trigger), but
+    // we don't enforce that here — callers should treat results as
+    // "all sessions tagged with this correlationId".
+    if (correlationId !== undefined) {
+      sessions = sessions.filter((s) => s.correlationId === correlationId);
+    }
 
     return c.json({ sessions }, 200);
   })
