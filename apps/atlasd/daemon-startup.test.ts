@@ -114,11 +114,11 @@ describe("daemon startup platform models", () => {
     );
 
     it(
-      "boots successfully with groq credentials and resolves labels from groq",
+      "boots successfully and resolves labels from the anthropic default even when GROQ_API_KEY is set",
       async () => {
-        // Groq wins the labels role when credentialed
+        // Default labels chain leads with anthropic — a stray GROQ_API_KEY in
+        // the environment must NOT silently hijack the labels role.
         setCredential("GROQ_API_KEY", "test-groq-key");
-        // Also need anthropic for other roles (classifier, planner, conversational)
         setCredential("ANTHROPIC_API_KEY", "test-anthropic-key");
 
         const daemon = new AtlasDaemon({ port: 0 });
@@ -232,7 +232,7 @@ describe("daemon startup platform models", () => {
     );
 
     it(
-      "prefers groq for labels when both groq and anthropic are credentialed",
+      "uses anthropic for labels by default even when both groq and anthropic are credentialed",
       async () => {
         setCredential("GROQ_API_KEY", "test-groq-key");
         setCredential("ANTHROPIC_API_KEY", "test-anthropic-key");
@@ -244,7 +244,8 @@ describe("daemon startup platform models", () => {
         const platformModels = (
           daemon as unknown as { getPlatformModels: () => { get: (role: string) => unknown } }
         ).getPlatformModels();
-        // Labels should resolve (to groq in the default chain)
+        // Labels should resolve to the anthropic default — groq is opt-in via
+        // `models.labels` in friday.yml / settings, not the env var alone.
         expect(platformModels.get("labels")).toBeDefined();
 
         await daemon.shutdown();

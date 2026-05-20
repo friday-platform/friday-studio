@@ -68,16 +68,17 @@ describe("createPlatformModels", () => {
     expect(models.get("conversational")).toBeDefined();
   });
 
-  it("walks the labels default chain and picks Groq when GROQ_API_KEY is set", () => {
+  it("uses anthropic for labels by default — groq is opt-in even when GROQ_API_KEY is set", () => {
     setEnv({ GROQ_API_KEY: "gsk-test", ANTHROPIC_API_KEY: "sk-ant-test" });
 
-    // groq:openai/gpt-oss-120b is first in chain; both creds present — groq wins
-    expect(DEFAULT_PLATFORM_MODELS.labels[0]).toContain("groq:");
+    // Default chain leads with anthropic. Groq presence should NOT silently
+    // hijack the labels role — users opt in via `models.labels` in settings.
+    expect(DEFAULT_PLATFORM_MODELS.labels[0]).toContain("anthropic:");
     const models = createPlatformModels(null);
     expect(models.get("labels")).toBeDefined();
   });
 
-  it("falls through labels chain to anthropic when GROQ_API_KEY is missing", () => {
+  it("resolves labels from anthropic default when only ANTHROPIC_API_KEY is set", () => {
     setEnv({ ANTHROPIC_API_KEY: "sk-ant-test" });
 
     const models = createPlatformModels(null);
