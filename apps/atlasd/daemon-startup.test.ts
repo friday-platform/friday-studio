@@ -14,18 +14,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
-import type { PlatformModels } from "@atlas/llm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AtlasDaemon } from "./src/atlas-daemon.ts";
-
-/**
- * `getPlatformModels` is a daemon-internal accessor not exposed on the
- * public type — narrow through the daemon's known interface so test
- * assertions can read `.provider` / `.modelId` without resorting to `any`.
- */
-function getPlatformModels(daemon: AtlasDaemon): PlatformModels {
-  return (daemon as unknown as { getPlatformModels: () => PlatformModels }).getPlatformModels();
-}
 
 // daemon.initialize() spawns NATS, ensures multiple JetStream streams,
 // runs chat + memory migrations in the background. The default 5s vitest
@@ -135,7 +125,7 @@ describe("daemon startup platform models", () => {
         activeDaemon = daemon;
         await daemon.initialize();
 
-        const labels = getPlatformModels(daemon).get("labels");
+        const labels = daemon.getPlatformModels().get("labels");
         expect(labels.provider).toContain("anthropic");
         expect(labels.modelId).toBe("claude-haiku-4-5");
 
@@ -252,7 +242,7 @@ describe("daemon startup platform models", () => {
         // Groq is opt-in via `models.labels` in friday.yml / settings — env
         // var alone is not enough. Assert the resolved identity, not just
         // that something resolved (toBeDefined would pass for groq too).
-        const labels = getPlatformModels(daemon).get("labels");
+        const labels = daemon.getPlatformModels().get("labels");
         expect(labels.provider).toContain("anthropic");
         expect(labels.modelId).toBe("claude-haiku-4-5");
 
