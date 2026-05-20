@@ -448,6 +448,16 @@ interface ConnectedServer {
  * Combines the optional external `signal` with an internal controller that
  * aborts when the timer fires, so the downstream abort listener in
  * `attemptStdio` kills the spawned child on both abort and timeout paths.
+ *
+ * AI SDK contract dependency: the "timer → SIGTERM" chain that closes #344
+ * relies on `@ai-sdk/mcp`'s `StdioMCPTransport.close()` calling
+ * `abortController.abort()` on the controller passed to Node's `spawn()` as
+ * `signal` — which is how the child receives SIGTERM. This is internal AI
+ * SDK behaviour and could regress silently on a version bump. The real
+ * invariant ("subprocess PID is gone after abort/timeout") is verified by:
+ *   - `packages/mcp/src/create-mcp-tools.subprocess-kill.test.ts`
+ *   - `apps/atlasd/routes/mcp-registry.subprocess-kill.test.ts`
+ * Both suites MUST pass before merging any `@ai-sdk/mcp` version bump.
  */
 function connectServerWithTimeout(
   config: MCPServerConfig,
