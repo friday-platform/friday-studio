@@ -28,7 +28,7 @@ independently. Id format: `provider:model`. Known providers: `anthropic`,
 
 ```yaml
 models:
-  labels: "groq:openai/gpt-oss-120b"            # short plain-text (session titles, quick summaries)
+  labels: "anthropic:claude-haiku-4-5"          # short plain-text (session titles, quick summaries)
   classifier: "anthropic:claude-haiku-4-5"      # structured-output routing decisions
   planner: "anthropic:claude-sonnet-4-6"        # multi-step synthesis (workspace planner, plan DAG)
   conversational: "anthropic:claude-sonnet-4-6" # streaming chat with tools (workspace chat)
@@ -38,8 +38,9 @@ models:
 
 - **`labels`** — short plain-text, latency matters, quality ceiling is low.
   Session titles, snap summaries, anything on a user-blocking path under
-  ~100 output tokens. Default: `groq:openai/gpt-oss-120b` → falls back to
-  `anthropic:claude-haiku-4-5` if no Groq key.
+  ~100 output tokens. Default: `anthropic:claude-haiku-4-5`. A common
+  override is `groq:openai/gpt-oss-120b` for sub-second titles when
+  `GROQ_API_KEY` is reachable from your region.
 - **`classifier`** — `generateObject` over small enums / discriminated
   unions. Schema-compliance matters most. Default:
   `anthropic:claude-haiku-4-5`.
@@ -98,14 +99,14 @@ credential is missing.
 
 ## Default chains (what happens when `models` is absent)
 
-- `labels` → try `groq:openai/gpt-oss-120b`; fall back to
-  `anthropic:claude-haiku-4-5` if no Groq key.
+- `labels` → `anthropic:claude-haiku-4-5`.
 - `classifier` → `anthropic:claude-haiku-4-5`.
 - `planner` → `anthropic:claude-sonnet-4-6`.
 - `conversational` → `anthropic:claude-sonnet-4-6`.
 
-So with just `ANTHROPIC_API_KEY` set, the whole platform runs. Add
-`GROQ_API_KEY` and labels-path latency improves automatically.
+So with just `ANTHROPIC_API_KEY` set, the whole platform runs. Switching
+labels to a faster provider (e.g. Groq) is a deliberate `models.labels`
+override — env-var presence alone does not change the default.
 
 ## Extended `server.mcp` (friday.yml only)
 
