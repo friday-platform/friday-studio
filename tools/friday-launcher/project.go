@@ -694,12 +694,15 @@ func supervisedProcesses(binDir string) []processSpec {
 			// the spec's healthPort: "8081" above matches by construction.
 			continue
 		}
-		// Validate port is numeric. Without this, a typo like
-		// FRIDAY_PORT_FRIDAY="abc" would silently set healthPort to "abc"
-		// and the launcher would probe https://127.0.0.1:abc/ forever.
+		// Validate port is numeric. Upper bound is 65500 (not 65535) so
+		// friday's liveness listener always has room at <port>+1 without
+		// special-casing the 16-bit boundary. Without numeric validation
+		// a typo like FRIDAY_PORT_FRIDAY="abc" would silently set
+		// healthPort to "abc" and the launcher would probe
+		// https://127.0.0.1:abc/ forever.
 		portNum, atoiErr := strconv.Atoi(port)
-		if atoiErr != nil || portNum < 1 || portNum > 65535 {
-			log.Error("port override is not a valid 1-65535 integer; ignoring",
+		if atoiErr != nil || portNum < 1 || portNum > 65500 {
+			log.Error("port override is not a valid 1-65500 integer; ignoring",
 				"service", s.name, "value", port, "error", atoiErr)
 			continue
 		}
@@ -719,22 +722,10 @@ func supervisedProcesses(binDir string) []processSpec {
 			specs[i].args = append(specs[i].args, "--port", port)
 			// Liveness listener moves with the main port — keep it at
 			// <port>+1. The launcher probes this, not the main port.
-			//
-			// At port=65535 there's no room for +1; we pass --health-port
-			// equal to --port so the daemon's equal-port guard
-			// short-circuits cleanly (no second listener bound). Without
-			// this explicit flag, atlas-cli's deriveHealthPort would
-			// compute 65535+1=65536 and Deno.serve would throw.
-			// healthPort stays at the main port too so the launcher's
-			// probe doesn't dangle on a never-bound port.
-			var healthPortStr string
-			if portNum < 65535 {
-				healthPortStr = strconv.Itoa(portNum + 1)
-			} else {
-				log.Warn("friday port=65535: liveness listener disabled (no room for +1)",
-					"port", port)
-				healthPortStr = port
-			}
+			// The 65500 upper bound on port validation above guarantees
+			// <port>+1 stays within the bindable range — no boundary
+			// special-case needed here.
+			healthPortStr := strconv.Itoa(portNum + 1)
 			specs[i].healthPort = healthPortStr
 			specs[i].args = append(specs[i].args, "--health-port", healthPortStr)
 		case "link":

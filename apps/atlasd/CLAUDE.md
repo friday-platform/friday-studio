@@ -49,8 +49,18 @@ this design doesn't claim otherwise. The wins are routing/middleware
 overhead and accept-queue isolation, not microtask-queue priority.
 
 Disabling: pass `--health-port` equal to `--port`; `startHealthListener`'s
-equal-port guard short-circuits without binding. The launcher never
-needs this, but it lets tests / embedded callers run single-listener.
+equal-port guard short-circuits without binding. The guard logic is
+extracted as `shouldBindHealthListener` in `health-listener-policy.ts`
+so it's unit-testable without the broken daemon vitest harness. The
+launcher never sets `--health-port == --port` in normal operation —
+this branch exists for tests and embedded callers.
+
+Port-override range: `FRIDAY_PORT_FRIDAY` is capped at **65500** by
+the launcher (`tools/friday-launcher/project.go`), not 65535. This is
+deliberate: `<port>+1` for the liveness listener stays bindable without
+any 16-bit-boundary special case. An out-of-range override (e.g. 65501,
+70000, "abc") is rejected at spec-build with an ERROR log; the service
+keeps its defaults.
 
 The synthetic resilience test is at `src/health-listener.test.ts` —
 saturates a mock main listener with 64 in-flight slow handlers and

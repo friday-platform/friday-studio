@@ -117,6 +117,7 @@ import { createFSMBroadcastNotifier } from "./chat-sdk/fsm-broadcast-adapter.ts"
 import { ChatTurnRegistry } from "./chat-turn-registry.ts";
 import { DiscordGatewayService } from "./discord-gateway-service.ts";
 import { createApp } from "./factory.ts";
+import { shouldBindHealthListener } from "./health-listener-policy.ts";
 import { ensureInstanceEventsStream } from "./instance-events.ts";
 import { getAllMigrations } from "./migrations/index.ts";
 import { NatsManager } from "./nats-manager.ts";
@@ -2432,8 +2433,8 @@ export class AtlasDaemon {
     tls: { cert: string; key: string } | null,
     scheme: string,
   ): void {
-    const healthPort = this.options.healthPort;
-    if (!healthPort || healthPort === this.options.port) return;
+    if (!shouldBindHealthListener(this.options.port, this.options.healthPort)) return;
+    const healthPort = this.options.healthPort as number;
 
     try {
       this.healthServer = Deno.serve(

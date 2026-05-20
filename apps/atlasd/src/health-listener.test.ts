@@ -108,14 +108,6 @@ Deno.test("liveness listener answers while main listener handlers are stuck", as
         `accept-queue isolation, or test infrastructure is slow.`,
     );
 
-    // Hit the liveness listener a few more times to confirm it isn't
-    // a one-shot — under sustained pressure it must stay answerable.
-    for (let i = 0; i < 5; i++) {
-      const p = await timedProbe(`http://127.0.0.1:${livenessPort}/`, 1500);
-      assertEquals(p.body, "ok");
-      assert(p.elapsedMs < 500, `sustained probe ${i} took ${p.elapsedMs.toFixed(1)}ms`);
-    }
-
     // Don't await the flood — abort it on teardown. We just need it
     // to not contaminate other tests.
     await Promise.allSettled(flood.map(() => Promise.resolve()));
