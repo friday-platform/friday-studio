@@ -17,8 +17,12 @@ import { hc } from "hono/client";
 /**
  * Proxy base — all daemon requests route through the SvelteKit proxy
  * at `/api/daemon/`, which strips the prefix and forwards to the daemon.
+ *
+ * Exported so callers that need to bypass the typed Hono RPC client
+ * (e.g. to append a query param the route doesn't validate) can build
+ * a URL against the same proxy base instead of hard-coding the prefix.
  */
-const PROXY_BASE = "/api/daemon";
+export const PROXY_BASE = "/api/daemon";
 
 /**
  * Creates a typed Hono RPC client for the local daemon, routed through the
