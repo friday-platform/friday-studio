@@ -23,6 +23,49 @@ writes the env vars in tier 1 to `<friday-home>/.env` and pre-warms uv's
 cache. The script is idempotent and intentionally separate from the
 installer flow.
 
+## Liveness listener
+
+The daemon binds TWO `Deno.serve` listeners, not one:
+
+- **Main** on `--port` (default 8080) — full Hono app: agents, MCP,
+  workspaces, chat, the lot. `/health` route lives here and is what
+  atlas-cli + the playground UI hit.
+- **Liveness** on `--health-port` (default `<port>+1` = 8081) — a single
+  static `() => new Response("ok")` handler bound by `startHealthListener`
+  in `src/atlas-daemon.ts`. No Hono, no middleware, no shared state.
+
+The launcher's readiness probe targets the **liveness** port, not main
+`/health`. Reason: when MCP fan-out / NATS-request storms saturate the
+main listener's accept queue or pile slow handlers ahead of the probe,
+the trivial `/health` route can fail the launcher's 2 s probe deadline.
+30 consecutive failures × 2 s = SIGTERM → forced restart. The
+dedicated socket (a) bypasses Hono routing + the `app.use("*", ...)`
+request-logger middleware, (b) has its own TCP accept queue, and
+(c) is immune to per-route regressions on the main app.
+
+The two listeners share one V8 isolate, one event loop, one microtask
+queue. **Under genuine CPU starvation neither handler dispatches** —
+this design doesn't claim otherwise. The wins are routing/middleware
+overhead and accept-queue isolation, not microtask-queue priority.
+
+Disabling: pass `--health-port` equal to `--port`; `startHealthListener`'s
+equal-port guard short-circuits without binding. The guard logic is
+extracted as `shouldBindHealthListener` in `health-listener-policy.ts`
+so it's unit-testable without the broken daemon vitest harness. The
+launcher never sets `--health-port == --port` in normal operation —
+this branch exists for tests and embedded callers.
+
+Port-override range: `FRIDAY_PORT_FRIDAY` is capped at **65500** by
+the launcher (`tools/friday-launcher/project.go`), not 65535. This is
+deliberate: `<port>+1` for the liveness listener stays bindable without
+any 16-bit-boundary special case. An out-of-range override (e.g. 65501,
+70000, "abc") is rejected at spec-build with an ERROR log; the service
+keeps its defaults.
+
+The synthetic resilience test is at `src/health-listener.test.ts` —
+saturates a mock main listener with 64 in-flight slow handlers and
+times the liveness probe (must complete in <500 ms with 1500 ms deadline).
+
 ## Gotchas
 
 ### Hono RPC Type Inference

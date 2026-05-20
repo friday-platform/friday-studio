@@ -636,10 +636,18 @@ func supervisedProcesses(binDir string) []processSpec {
 		// without claude installed see the original SDK error message
 		// (which now points them at a working install command).
 		{
+			// Probe the daemon's dedicated liveness listener (main port + 1,
+			// see apps/atlasd/src/atlas-daemon.ts AtlasDaemonOptions.healthPort).
+			// The main `/health` route on the daemon also works, but probing
+			// it ties readiness to the same V8 microtask queue as the agent
+			// / MCP / NATS surface — under fan-out pressure that handler
+			// can't get scheduled inside the 2s probe deadline and the
+			// 30-failure threshold trips a restart. The dedicated listener
+			// bypasses Hono and middleware entirely.
 			name: "friday", binary: filepath.Join(binDir, "friday"),
 			args:       []string{"daemon", "start"},
 			env:        fridayEnv(binDir),
-			healthPort: "8080", healthPath: "/health",
+			healthPort: "8081", healthPath: "/",
 		},
 		// `link` historically required LINK_DEV_MODE=true to skip the
 		// POSTGRES_CONNECTION check on the platform-route + slack-app
@@ -681,6 +689,21 @@ func supervisedProcesses(binDir string) []processSpec {
 	for i, s := range specs {
 		port := portOverride(s.name)
 		if port == "" {
+			// No override → trust each binary's own default. For friday
+			// that's <port>+1 = 8081 in atlas-cli's deriveHealthPort;
+			// the spec's healthPort: "8081" above matches by construction.
+			continue
+		}
+		// Validate port is numeric. Upper bound is 65500 (not 65535) so
+		// friday's liveness listener always has room at <port>+1 without
+		// special-casing the 16-bit boundary. Without numeric validation
+		// a typo like FRIDAY_PORT_FRIDAY="abc" would silently set
+		// healthPort to "abc" and the launcher would probe
+		// https://127.0.0.1:abc/ forever.
+		portNum, atoiErr := strconv.Atoi(port)
+		if atoiErr != nil || portNum < 1 || portNum > 65500 {
+			log.Error("port override is not a valid 1-65500 integer; ignoring",
+				"service", s.name, "value", port, "error", atoiErr)
 			continue
 		}
 		// Update the launcher's own readiness probe so it watches the
@@ -697,6 +720,14 @@ func supervisedProcesses(binDir string) []processSpec {
 			// start.tsx:68). Append after `daemon start`; yargs accepts
 			// flag-after-positional for parsed args.
 			specs[i].args = append(specs[i].args, "--port", port)
+			// Liveness listener moves with the main port — keep it at
+			// <port>+1. The launcher probes this, not the main port.
+			// The 65500 upper bound on port validation above guarantees
+			// <port>+1 stays within the bindable range — no boundary
+			// special-case needed here.
+			healthPortStr := strconv.Itoa(portNum + 1)
+			specs[i].healthPort = healthPortStr
+			specs[i].args = append(specs[i].args, "--health-port", healthPortStr)
 		case "link":
 			// apps/link/src/config.ts:40 reads LINK_PORT (default 3100).
 			specs[i].env = append(specs[i].env, "LINK_PORT="+port)

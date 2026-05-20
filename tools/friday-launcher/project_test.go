@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -82,6 +83,138 @@ func TestSupervisedProcessesPinSet(t *testing.T) {
 		if got[i] != want[i] {
 			t.Errorf("supervisedProcesses[%d] = %q, want %q", i, got[i], want[i])
 		}
+	}
+}
+
+// TestFridayLivenessListener_DefaultPort pins the friday daemon's
+// dedicated liveness listener wiring when no port override is set.
+// The launcher probes <port>+1 (8081) rather than the main /health
+// route on the agent-bearing listener — bypassing Hono routing +
+// middleware, and isolating the probe from the main port's accept
+// queue. With no FRIDAY_PORT_FRIDAY override, the launcher does NOT
+// pass --health-port; atlas-cli's deriveHealthPort defaults to
+// port+1 = 8081, which matches the spec's healthPort here. See
+// AtlasDaemonOptions.healthPort in apps/atlasd/src/atlas-daemon.ts.
+func TestFridayLivenessListener_DefaultPort(t *testing.T) {
+	t.Setenv("FRIDAY_PORT_FRIDAY", "")
+	specs := supervisedProcesses("/tmp/dummy-bin")
+	var friday *processSpec
+	for i := range specs {
+		if specs[i].name == "friday" {
+			friday = &specs[i]
+			break
+		}
+	}
+	if friday == nil {
+		t.Fatal("friday not found in supervisedProcesses")
+	}
+	if friday.healthPort != "8081" {
+		t.Errorf("friday healthPort = %q, want %q (default 8080 + 1)",
+			friday.healthPort, "8081")
+	}
+	if friday.healthPath != "/" {
+		t.Errorf("friday healthPath = %q, want %q (dedicated listener responds to any path)",
+			friday.healthPath, "/")
+	}
+	// On the no-override path we deliberately do NOT pass --health-port;
+	// the daemon's own default (port+1) is the single source of truth.
+	joined := strings.Join(friday.args, " ")
+	if strings.Contains(joined, "--health-port") {
+		t.Errorf("friday args should NOT pass --health-port without an override\ngot: %s", joined)
+	}
+}
+
+// TestSupervisedProcesses_PortOverride_UpperBound pins the upper end
+// of the accepted range. The launcher caps overrides at 65500 (not
+// 65535) so friday's liveness listener at <port>+1 always has room
+// without special-casing the 16-bit boundary. 65500 must be accepted
+// and propagate cleanly; 65501 must be rejected.
+func TestSupervisedProcesses_PortOverride_UpperBound(t *testing.T) {
+	t.Run("65500-accepted", func(t *testing.T) {
+		t.Setenv("FRIDAY_PORT_FRIDAY", "65500")
+		specs := supervisedProcesses("/tmp/dummy-bin")
+		var friday *processSpec
+		for i := range specs {
+			if specs[i].name == "friday" {
+				friday = &specs[i]
+				break
+			}
+		}
+		if friday == nil {
+			t.Fatal("friday not found in supervisedProcesses")
+		}
+		if friday.healthPort != "65501" {
+			t.Errorf("friday healthPort = %q, want %q (port+1)", friday.healthPort, "65501")
+		}
+		joined := strings.Join(friday.args, " ")
+		if !strings.Contains(joined, "--port 65500") {
+			t.Errorf("friday args missing --port 65500\ngot: %s", joined)
+		}
+		if !strings.Contains(joined, "--health-port 65501") {
+			t.Errorf("friday args missing --health-port 65501\ngot: %s", joined)
+		}
+	})
+
+	t.Run("65501-rejected", func(t *testing.T) {
+		t.Setenv("FRIDAY_PORT_FRIDAY", "65501")
+		specs := supervisedProcesses("/tmp/dummy-bin")
+		var friday *processSpec
+		for i := range specs {
+			if specs[i].name == "friday" {
+				friday = &specs[i]
+				break
+			}
+		}
+		if friday == nil {
+			t.Fatal("friday not found in supervisedProcesses")
+		}
+		// Out-of-range override is rejected; spec stays at defaults.
+		if friday.healthPort != "8081" {
+			t.Errorf("friday healthPort = %q, want %q (rejected override leaves default)",
+				friday.healthPort, "8081")
+		}
+	})
+}
+
+// TestSupervisedProcesses_BadPortOverride_IsIgnored covers the
+// non-numeric / out-of-range port override path that previously
+// would have set healthPort to a string the readiness probe could
+// never resolve (e.g. https://127.0.0.1:abc/). The override is
+// rejected at spec-build time and the service keeps its default.
+func TestSupervisedProcesses_BadPortOverride_IsIgnored(t *testing.T) {
+	cases := []struct {
+		name string
+		env  string
+	}{
+		{"non-numeric", "abc"},
+		{"empty-after-set", "  "},
+		{"out-of-range-high", "70000"},
+		{"just-above-cap", "65501"}, // upper bound is 65500
+		{"out-of-range-low", "0"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("FRIDAY_PORT_FRIDAY", tc.env)
+			specs := supervisedProcesses("/tmp/dummy-bin")
+			var friday *processSpec
+			for i := range specs {
+				if specs[i].name == "friday" {
+					friday = &specs[i]
+					break
+				}
+			}
+			if friday == nil {
+				t.Fatal("friday not found in supervisedProcesses")
+			}
+			if friday.healthPort != "8081" {
+				t.Errorf("friday healthPort = %q, want %q (bad override should leave default)",
+					friday.healthPort, "8081")
+			}
+			joined := strings.Join(friday.args, " ")
+			if strings.Contains(joined, "--port "+tc.env) {
+				t.Errorf("friday args should NOT propagate bad override %q\ngot: %s", tc.env, joined)
+			}
+		})
 	}
 }
 

@@ -55,21 +55,14 @@ function buildCommandArgs(scriptArgs: string[]): string[] {
   return scriptArgs;
 }
 
-/**
- * Build daemon start args from StartArgs.
- */
-function buildDaemonArgs(argv: StartArgs): string[] {
-  return [
-    "daemon",
-    "start",
-    "--port",
-    (argv.port || 8080).toString(),
-    "--hostname",
-    argv.hostname || "127.0.0.1",
-    ...(argv.logLevel ? ["--log-level", argv.logLevel] : []),
-    ...(argv.atlasConfig ? ["--atlas-config", argv.atlasConfig] : []),
-  ];
-}
+// `buildDaemonArgs`, `deriveHealthPort`, and `StartArgs` live in
+// `start-args.ts` so vitest can import them without pulling in this
+// file's transitive imports (atlas client, credential helpers, daemon
+// runtime). Re-exported here so the rest of the CLI keeps its
+// previously-stable surface.
+import { buildDaemonArgs, deriveHealthPort } from "./start-args.ts";
+
+export { buildDaemonArgs, deriveHealthPort };
 
 /**
  * Build OTEL environment variables from FRIDAY_KEY.
@@ -212,13 +205,9 @@ async function reExecWithOtel(atlasKey: string): Promise<never> {
   process.exit(status.code);
 }
 
-interface StartArgs {
-  port?: number;
-  hostname?: string;
-  detached?: boolean;
-  logLevel?: string;
-  atlasConfig?: string;
-}
+export type { StartArgs } from "./start-args.ts";
+
+import type { StartArgs } from "./start-args.ts";
 
 export const command = "start";
 export const desc = "Start the Atlas daemon";
@@ -237,6 +226,11 @@ export function builder(y: YargsInstance) {
       alias: "p",
       describe: "Port to run the daemon on",
       default: 8080,
+    })
+    .option("health-port", {
+      type: "number",
+      describe:
+        "Dedicated liveness listener port (defaults to <port>+1). Set equal to --port to disable.",
     })
     .option("hostname", { type: "string", describe: "Hostname to bind to", default: "127.0.0.1" })
     .option("detached", {
@@ -634,6 +628,7 @@ async function startForeground(argv: StartArgs): Promise<void> {
     cors: [corsOrigin],
     tlsCert,
     tlsKey,
+    healthPort: deriveHealthPort(argv),
   });
 
   // Catch unhandled promise rejections so a single async error
