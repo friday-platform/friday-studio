@@ -500,10 +500,32 @@ export const claudeCodeAgent = createAgent<string, ClaudeCodeAgentResult | Recor
             logger.debug("Session started", { sessionId: message.session_id, cwd: message.cwd });
           }
 
-          // Tool progress from assistant messages
+          // Translate complete assistant messages into AI SDK v6 UIMessageChunk
+          // events so the chat UI renders text bubbles and tool-call cards. The
+          // SDK emits one `assistant` per turn (in addition to partial
+          // `stream_event` deltas we don't currently translate), so text shows
+          // up in turn-sized chunks rather than token-by-token. The supplemental
+          // `data-tool-progress` chip is kept so users see a friendly summary
+          // of what each tool call is doing while it runs.
           if (message.type === "assistant") {
             for (const block of message.message.content) {
-              if (block.type === "tool_use") {
+              if (block.type === "text") {
+                const id = crypto.randomUUID();
+                stream?.emit({ type: "text-start", id });
+                stream?.emit({ type: "text-delta", id, delta: block.text });
+                stream?.emit({ type: "text-end", id });
+              } else if (block.type === "tool_use") {
+                stream?.emit({
+                  type: "tool-input-start",
+                  toolCallId: block.id,
+                  toolName: block.name,
+                });
+                stream?.emit({
+                  type: "tool-input-available",
+                  toolCallId: block.id,
+                  toolName: block.name,
+                  input: block.input,
+                });
                 try {
                   const progress = await generateProgress(
                     platformModels,
@@ -520,6 +542,21 @@ export const claudeCodeAgent = createAgent<string, ClaudeCodeAgentResult | Recor
                     toolName: block.name,
                   });
                 }
+              }
+            }
+          }
+
+          // Pair tool calls with their results: when the SDK feeds tool_result
+          // blocks back to the model as user messages, surface them to the chat
+          // UI as tool-output-available chunks (matched by tool_use_id).
+          if (message.type === "user" && Array.isArray(message.message.content)) {
+            for (const block of message.message.content) {
+              if (block.type === "tool_result") {
+                stream?.emit({
+                  type: "tool-output-available",
+                  toolCallId: block.tool_use_id,
+                  output: block.content ?? "",
+                });
               }
             }
           }

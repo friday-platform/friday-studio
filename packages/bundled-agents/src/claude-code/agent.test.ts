@@ -1,5 +1,5 @@
 import type { HookInput } from "@anthropic-ai/claude-agent-sdk";
-import type { AgentContext } from "@atlas/agent-sdk";
+import type { AgentContext, StreamEmitter } from "@atlas/agent-sdk";
 import { createStubPlatformModels } from "@atlas/llm";
 import type { LogContext, Logger } from "@atlas/logger";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -514,5 +514,125 @@ describe("structured output wiring", () => {
     if (result.ok) {
       expect(result.data).toEqual({ response: "just plain text, no JSON here" });
     }
+  });
+});
+
+describe("UIMessageChunk translation", () => {
+  const testEnv = { ANTHROPIC_API_KEY: "sk-test", GH_TOKEN: "ghp-test" };
+
+  beforeEach(() => {
+    mockQuery.mockReset();
+    mockCreateSandbox.mockReset();
+    mockCreateSandbox.mockResolvedValue({
+      workDir: "/tmp/test-sandbox",
+      cleanup: () => Promise.resolve(),
+    });
+  });
+
+  it("emits text/tool-input/tool-output chunks for assistant + user messages", async () => {
+    mockQuery.mockReturnValue(
+      createMockSDKStream([
+        {
+          type: "assistant",
+          message: {
+            content: [
+              { type: "text", text: "Reading files now." },
+              { type: "tool_use", id: "tool-1", name: "Bash", input: { command: "ls /tmp" } },
+            ],
+          },
+        },
+        {
+          type: "user",
+          message: {
+            content: [
+              { type: "tool_result", tool_use_id: "tool-1", content: "file1.txt\nfile2.txt" },
+            ],
+          },
+        },
+        sdkResult({ result: "Done." }),
+      ]),
+    );
+
+    const emitted: Array<Record<string, unknown>> = [];
+    const stream: StreamEmitter = {
+      emit: (event) => {
+        emitted.push(event as Record<string, unknown>);
+      },
+      end: () => {},
+      error: () => {},
+    };
+
+    const result = await claudeCodeAgent.execute(
+      "test",
+      createMockContext({ env: testEnv, stream }),
+    );
+
+    expect(result.ok).toBe(true);
+
+    // Strip the supplemental LLM-generated `data-tool-progress` chip — its
+    // content is non-deterministic (depends on stubbed progress LLM). Assert
+    // the deterministic v6 UIMessageChunk translation instead.
+    const core = emitted.filter((e) => e.type !== "data-tool-progress");
+
+    // Text translation: one start/delta/end triple. The id is generated
+    // (crypto.randomUUID), so we accept any string but require it to be
+    // consistent across the three text chunks for the same block.
+    const textStart = core[0] as { type: string; id: string };
+    expect(textStart.type).toBe("text-start");
+    expect(typeof textStart.id).toBe("string");
+
+    expect(core[1]).toEqual({ type: "text-delta", id: textStart.id, delta: "Reading files now." });
+    expect(core[2]).toEqual({ type: "text-end", id: textStart.id });
+
+    // Tool-use translation: tool-input-start then tool-input-available with
+    // the full input. The toolCallId mirrors the SDK block id so the chat UI
+    // can pair it with the matching tool-output below.
+    expect(core[3]).toEqual({ type: "tool-input-start", toolCallId: "tool-1", toolName: "Bash" });
+    expect(core[4]).toEqual({
+      type: "tool-input-available",
+      toolCallId: "tool-1",
+      toolName: "Bash",
+      input: { command: "ls /tmp" },
+    });
+
+    // tool_result block from the user message becomes tool-output-available,
+    // matched to the original tool call via tool_use_id.
+    expect(core[5]).toEqual({
+      type: "tool-output-available",
+      toolCallId: "tool-1",
+      output: "file1.txt\nfile2.txt",
+    });
+
+    expect(core).toHaveLength(6);
+  });
+
+  it("ignores user messages whose content is a bare string", async () => {
+    // SDK SDKUserMessage.content is `string | ContentBlockParam[]`. The
+    // tool_result translation must guard against the string case rather than
+    // throw on `.type` access.
+    mockQuery.mockReturnValue(
+      createMockSDKStream([
+        { type: "user", message: { content: "plain user echo" } },
+        sdkResult({ result: "ok" }),
+      ]),
+    );
+
+    const emitted: Array<Record<string, unknown>> = [];
+    const stream: StreamEmitter = {
+      emit: (event) => {
+        emitted.push(event as Record<string, unknown>);
+      },
+      end: () => {},
+      error: () => {},
+    };
+
+    const result = await claudeCodeAgent.execute(
+      "test",
+      createMockContext({ env: testEnv, stream }),
+    );
+
+    expect(result.ok).toBe(true);
+    // No tool-output chunks expected for a string-content user message.
+    expect(emitted.find((e) => e.type === "tool-output-available")).toBeUndefined();
   });
 });
