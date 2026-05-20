@@ -822,6 +822,12 @@ export class AtlasDaemon {
               // consumed — Phase 11 makes it carry across into
               // `SessionSummary.parentSessionId`.
               parentSessionId: envelope.sourceSessionId,
+              // Carry the HTTP trigger's correlationId through to the
+              // spawned session so a `?nowait=true` caller can redeem the
+              // 202's correlationId for this sessionId via
+              // `GET /api/sessions?correlationId=…`. Absent on
+              // non-correlated envelopes (cron, fs-watch).
+              correlationId: envelope.correlationId,
               webhookContext: envelopeToWebhookContext(envelope),
             },
           );
