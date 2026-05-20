@@ -1315,6 +1315,7 @@ describe("withTimeout", () => {
     vi.useFakeTimers();
     try {
       const controller = new AbortController();
+      const removeSpy = vi.spyOn(controller.signal, "removeEventListener");
       const promise = withTimeout(
         new Promise(() => {}),
         10_000,
@@ -1326,6 +1327,7 @@ describe("withTimeout", () => {
       await expect(promise).rejects.toThrow("cancel");
 
       expect(vi.getTimerCount()).toBe(0);
+      expect(removeSpy).toHaveBeenCalledWith("abort", expect.any(Function));
     } finally {
       vi.useRealTimers();
     }
