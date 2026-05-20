@@ -1,18 +1,18 @@
 <!--
-  MCP Catalog Tree — list of installed servers for the catalog sidebar.
+  MCP Catalog Tree — sidebar nav for the catalog.
 
-  Shows installed servers grouped by source. Search filters installed servers.
-  Search query is synced to the URL (?q=) for shareable/bookmarkable filtered views.
-  Registry discovery lives in the import modal only.
+  Lists installed servers; the selected server expands in place to reveal
+  its section sub-nav (Overview, Connections, etc.). Search filters the
+  installed list and syncs to `?q=` so the filtered view is shareable.
+  Registry discovery happens in the import modal — this tree only shows
+  what's already installed.
 
   @component
-  @prop selectedServerId - ID of currently selected installed server
-  @prop onSelectServer - Called when an installed server is clicked
 -->
 
 <script lang="ts">
   import type { MCPServerMetadata } from "@atlas/core/mcp-registry/schemas";
-  import { IconSmall } from "@atlas/ui";
+  import { SidebarNav } from "@atlas/ui";
   import { createQuery } from "@tanstack/svelte-query";
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
@@ -21,26 +21,37 @@
 
   interface Props {
     selectedServerId?: string | null;
+    selectedSection?: string | null;
     onSelectServer: (serverId: string) => void;
+    onSelectSection: (section: string) => void;
   }
 
-  let { selectedServerId = null, onSelectServer }: Props = $props();
+  const {
+    selectedServerId = null,
+    selectedSection = null,
+    onSelectServer,
+    onSelectSection,
+  }: Props = $props();
 
-  // ---------------------------------------------------------------------------
-  // Queries
-  // ---------------------------------------------------------------------------
+  const SECTIONS = [
+    { id: "overview", label: "Overview" },
+    { id: "connections", label: "Connections" },
+    { id: "configuration", label: "Config Reference" },
+    { id: "tools", label: "Testing" },
+    { id: "readme", label: "Readme" },
+  ] as const;
+
+  // ── Queries ────────────────────────────────────────────────────────────
 
   const catalogQuery = createQuery(() => mcpQueries.catalog());
   const allServers = $derived(catalogQuery.data?.servers ?? []);
 
-  // ---------------------------------------------------------------------------
-  // URL-driven search
-  // ---------------------------------------------------------------------------
+  // ── URL-driven search ──────────────────────────────────────────────────
 
   const urlQuery = $derived(page.url.searchParams.get("q") ?? "");
-
-  // Local input mirrors URL; effect handles back-button / external nav sync
   let searchInput = $state(page.url.searchParams.get("q") ?? "");
+
+  // Sync local input ← URL on back / external nav.
   $effect(() => {
     searchInput = urlQuery;
   });
@@ -65,9 +76,7 @@
     return () => clearTimeout(searchDebounce);
   });
 
-  // ---------------------------------------------------------------------------
-  // Filtering
-  // ---------------------------------------------------------------------------
+  // ── Filtering ──────────────────────────────────────────────────────────
 
   const queryLower = $derived(urlQuery.toLowerCase());
 
@@ -81,11 +90,9 @@
   });
 
   const sortedInstalled = $derived(
-    [...filteredInstalled].sort((a, b) => {
-      const aBundled = a.source === "static" ? 0 : 1;
-      const bBundled = b.source === "static" ? 0 : 1;
-      return aBundled - bBundled;
-    }),
+    [...filteredInstalled].sort((a, b) =>
+      a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+    ),
   );
 
   function securityColor(rating: string | undefined): string {
@@ -101,14 +108,7 @@
     }
   }
 
-  /**
-   * Status badge for an install still mid-flow, so the user can resume it.
-   * `ready` entries that are clean / attention (or have no doctor report at
-   * all) get no badge — they're finished products.
-   */
-  function statusBadge(
-    server: MCPServerMetadata,
-  ): { label: string; tone: "info" | "warn" } | null {
+  function statusBadge(server: MCPServerMetadata): { label: string; tone: "info" | "warn" } | null {
     if (server.status === "setting_up") {
       return { label: "Installing…", tone: "info" };
     }
@@ -122,149 +122,63 @@
   }
 </script>
 
-<div class="catalog-tree">
-  <!-- Search -->
-  <div class="search-field">
-    <span class="search-icon"><IconSmall.Search /></span>
-    <input
-      type="text"
-      placeholder="Search"
-      bind:value={searchInput}
-      oninput={handleSearchInput}
-      autocomplete="off"
-    />
-  </div>
+<SidebarNav.Root gap="loose">
+  <SidebarNav.Search bind:value={searchInput} oninput={handleSearchInput} />
 
-  <!-- Installed servers -->
-  <div class="tree-section">
-    {#if catalogQuery.isLoading}
-      <div class="tree-skeleton">
-        {#each Array.from({ length: 4 }) as _, i (i)}
-          <div class="skeleton-row"></div>
-        {/each}
-      </div>
-    {:else if filteredInstalled.length === 0 && urlQuery.length > 0}
-      <p class="tree-empty">No installed servers match "{urlQuery}"</p>
-    {:else}
-      <div class="group">
-        {#each sortedInstalled as server (server.id)}
-          {@const badge = statusBadge(server)}
-          <button
-            class="tree-item"
-            class:active={selectedServerId === server.id}
-            onclick={() => onSelectServer(server.id)}
-          >
-            <span
-              class="security-dot"
-              style:--dot-color={securityColor(server.securityRating)}
-            ></span>
-            <span class="item-name">{shortenServerName(server.name)}</span>
-            {#if badge}
-              <span class="status-badge" data-tone={badge.tone}
-                >{badge.label}</span
+  {#if catalogQuery.isLoading}
+    <div class="tree-skeleton">
+      {#each Array.from({ length: 4 }) as _, i (i)}
+        <div class="skeleton-row"></div>
+      {/each}
+    </div>
+  {:else if filteredInstalled.length === 0 && urlQuery.length > 0}
+    <p class="tree-empty text-xs">No installed servers match "{urlQuery}"</p>
+  {:else}
+    <div class="server-list">
+      {#each sortedInstalled as server (server.id)}
+        {@const badge = statusBadge(server)}
+        {@const isSelected = selectedServerId === server.id}
+        <!-- Legacy / static entries have no status — treat as ready,
+             matching the original section-nav fallback. -->
+        {@const canExpand = (server.status ?? "ready") === "ready"}
+
+        <SidebarNav.Item
+          active={isSelected}
+          expanded={isSelected && canExpand}
+          onclick={() => onSelectServer(server.id)}
+        >
+          <span
+            class="security-dot"
+            style:--dot-color={securityColor(server.securityRating)}
+          ></span>
+          <span class="item-name">{shortenServerName(server.name)}</span>
+          {#if badge}
+            <span class="status-badge text-2xs" data-tone={badge.tone}>{badge.label}</span>
+          {:else}
+            <span class="tag-pill text-2xs">{sourceLabel(server.source)}</span>
+          {/if}
+
+          {#snippet subItems()}
+            {#each SECTIONS as s (s.id)}
+              <SidebarNav.Item
+                variant="sub"
+                active={(selectedSection ?? "overview") === s.id}
+                onclick={() => onSelectSection(s.id)}
               >
-            {:else}
-              <span class="tag-pill">{sourceLabel(server.source)}</span>
-            {/if}
-          </button>
-        {/each}
-      </div>
-    {/if}
-  </div>
-</div>
+                <span class="section-label">{s.label}</span>
+              </SidebarNav.Item>
+            {/each}
+          {/snippet}
+        </SidebarNav.Item>
+      {/each}
+    </div>
+  {/if}
+</SidebarNav.Root>
 
 <style>
-  .catalog-tree {
+  .server-list {
     display: flex;
     flex-direction: column;
-    gap: var(--size-4);
-    /* ListDetail's aside is full-bleed at the block-end (no padding) so
-       the chat consumer's overlay footer can sit flush; tree-style
-       sidebars add their own bottom gutter so the last item isn't
-       jammed against the edge when the list scrolls. */
-    padding-block-end: var(--size-4);
-  }
-
-  /* ─── Search field ─────────────────────────────────────────────────────── */
-
-  .search-field {
-    align-items: center;
-    background: var(--highlight);
-    border-radius: var(--radius-3);
-    block-size: var(--size-7-5);
-    display: flex;
-    gap: var(--size-1-5);
-    padding-inline: var(--size-3);
-    transition: background-color 120ms ease;
-
-    .search-icon {
-      color: var(--text-faded);
-      display: flex;
-      flex-shrink: 0;
-    }
-
-    input {
-      background: transparent;
-      block-size: 100%;
-      color: var(--text-bright);
-      font-family: inherit;
-      font-size: var(--font-size-3);
-      font-weight: var(--font-weight-4-5);
-      inline-size: 100%;
-      outline: none;
-
-      &::placeholder {
-        color: var(--text-faded);
-      }
-    }
-
-    &:focus-within {
-      background: var(--highlight-bright);
-    }
-  }
-
-  /* ─── Tree sections ────────────────────────────────────────────────────── */
-
-  .tree-section {
-    display: flex;
-    flex-direction: column;
-  }
-
-  /* ─── Groups ───────────────────────────────────────────────────────────── */
-
-  .group {
-    display: flex;
-    flex-direction: column;
-  }
-
-  /* ─── Tree items ───────────────────────────────────────────────────────── */
-
-  .tree-item {
-    align-items: center;
-    background: none;
-    block-size: var(--size-7-5);
-    border-radius: var(--radius-2-5);
-    border: none;
-    color: var(--text);
-    cursor: pointer;
-    display: flex;
-    font-size: var(--font-size-3);
-    font-weight: var(--font-weight-4-5);
-    gap: var(--size-1-5);
-    inline-size: 100%;
-    padding-inline: var(--size-3);
-    text-align: start;
-    transition: color 150ms ease;
-  }
-
-  .tree-item:hover {
-    color: var(--text-bright);
-  }
-
-  .tree-item.active {
-    background-color: var(--highlight);
-    color: var(--text-bright);
-    opacity: 1;
   }
 
   .security-dot {
@@ -282,18 +196,23 @@
     white-space: nowrap;
   }
 
+  .section-label {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   .tag-pill {
     color: var(--text-faded);
     flex-shrink: 0;
-    font-size: var(--font-size-1);
   }
 
   .status-badge {
-    background: color-mix(in srgb, var(--badge-tone), transparent 88%);
+    background-color: var(--badge-bg);
     border-radius: var(--radius-2);
     color: var(--badge-tone);
     flex-shrink: 0;
-    font-size: var(--font-size-1);
     font-weight: var(--font-weight-5);
     padding: 1px var(--size-1-5);
     white-space: nowrap;
@@ -301,13 +220,13 @@
 
   .status-badge[data-tone="info"] {
     --badge-tone: var(--blue-primary);
+    --badge-bg: var(--highlight);
   }
 
   .status-badge[data-tone="warn"] {
     --badge-tone: var(--yellow-primary);
+    --badge-bg: var(--highlight);
   }
-
-  /* ─── Skeleton / Empty ─────────────────────────────────────────────────── */
 
   .tree-skeleton {
     display: flex;
@@ -335,7 +254,6 @@
 
   .tree-empty {
     color: var(--text-faded);
-    font-size: var(--font-size-2);
     padding: var(--size-2) var(--size-1);
     text-align: center;
     word-break: break-all;

@@ -54,7 +54,12 @@ export function createEnableMcpServerTool(workspaceId: string, logger: Logger): 
           const res = await client
             .workspaceMcp(effectiveWorkspaceId)
             [":serverId"].$put({ param: { serverId } });
-          const body = await res.json();
+          // The status branches below read structured fields off `body`, but the
+          // response isn't always JSON — gateways and proxies surface HTML or
+          // empty payloads on 502/504, and the daemon could regress. Swallow
+          // parse errors so the per-status default text reaches the agent
+          // instead of "Enable failed: Unexpected non-whitespace character...".
+          const body: unknown = await res.json().catch(() => ({}));
 
           if (res.status === 200) {
             const parsed = z
@@ -78,10 +83,18 @@ export function createEnableMcpServerTool(workspaceId: string, logger: Logger): 
             };
           }
 
+          // The server returns one of two shapes:
+          //   - { success: false, error: "<tag>", message?: "<sentence>", ... }  (most paths)
+          //   - { success: false, error: "<tag>", serverId }                     (e.g. needs_manual_config)
+          // Prefer `message` (human-readable), fall back to the `error` tag so the
+          // agent gets a specific signal instead of a generic per-status fallback.
+          // Without this, `needs_manual_config` collapsed to "Conflict enabling
+          // MCP server." — the wording that sent the agent guessing during the
+          // Notion incident.
           if (res.status === 404) {
             const errorBody = body as Record<string, unknown>;
             const errorMsg = String(
-              errorBody.message ?? `Server "${serverId}" not found in catalog.`,
+              errorBody.message ?? errorBody.error ?? `Server "${serverId}" not found in catalog.`,
             );
             logger.info("enable_mcp_server: not found", {
               workspaceId: effectiveWorkspaceId,
@@ -92,7 +105,9 @@ export function createEnableMcpServerTool(workspaceId: string, logger: Logger): 
 
           if (res.status === 409) {
             const errorBody = body as Record<string, unknown>;
-            const errorMsg = String(errorBody.message ?? "Conflict enabling MCP server.");
+            const errorMsg = String(
+              errorBody.message ?? errorBody.error ?? "Conflict enabling MCP server.",
+            );
             logger.info("enable_mcp_server: conflict", {
               workspaceId: effectiveWorkspaceId,
               serverId,
@@ -105,6 +120,7 @@ export function createEnableMcpServerTool(workspaceId: string, logger: Logger): 
             const errorBody = body as Record<string, unknown>;
             const errorMsg = String(
               errorBody.message ??
+                errorBody.error ??
                 "This workspace uses a blueprint — direct config mutations are not supported.",
             );
             logger.info("enable_mcp_server: blueprint rejected", {
