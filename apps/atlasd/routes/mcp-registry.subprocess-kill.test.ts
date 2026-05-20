@@ -44,11 +44,30 @@ function listChildren(parent: number): number[] {
   }
 }
 
-async function waitForNewChild(baseline: Set<number>, timeoutMs: number): Promise<number> {
+// Read a single pid's command line via `ps -o command=` — portable across
+// macOS and Linux. Returns "" if the pid is gone by the time we ask, so
+// the caller treats it as a non-match.
+function cmdlineFor(pid: number): string {
+  try {
+    return execFileSync("ps", ["-o", "command=", "-p", String(pid)], { encoding: "utf8" }).trim();
+  } catch {
+    return "";
+  }
+}
+
+// Filter candidate child PIDs by command line so a concurrent test's spawn
+// can't be picked up as ours. The `cmdlineMatch` substring must be unique
+// to this test's slow-server script (see SLOW_SERVER_SCRIPT).
+async function waitForNewChild(
+  baseline: Set<number>,
+  timeoutMs: number,
+  cmdlineMatch: string,
+): Promise<number> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     for (const pid of listChildren(process.pid)) {
-      if (!baseline.has(pid)) return pid;
+      if (baseline.has(pid)) continue;
+      if (cmdlineFor(pid).includes(cmdlineMatch)) return pid;
     }
     await new Promise((r) => setTimeout(r, 10));
   }
@@ -174,7 +193,7 @@ describe.skipIf(process.platform === "win32")(
       // subprocess PID, not the fetch promise.
       fetchPromise.catch(() => {});
 
-      const pid = await waitForNewChild(baseline, 3000);
+      const pid = await waitForNewChild(baseline, 3000, SLOW_SERVER_SCRIPT);
       trackedPids.add(pid);
 
       controller.abort();
