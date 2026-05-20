@@ -46,7 +46,8 @@ describe("tcc-denied-card", () => {
     const { body } = render(TccDeniedCard, { props: { denial: baseDenial } });
     expect(body).toContain("Open System Settings");
     expect(body).toContain("Move out of ~/Downloads");
-    // Buttons are <button>s rendered by the @atlas/ui Button component.
+    // Plain <button> elements (the card intentionally doesn't use @atlas/ui's
+    // Button wrapper — see the explainer comment in the .svelte file).
     const buttonCount = (body.match(/<button\b/g) ?? []).length;
     expect(buttonCount).toBe(2);
   });

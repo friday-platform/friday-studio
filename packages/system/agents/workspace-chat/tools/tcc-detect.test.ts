@@ -59,14 +59,14 @@ describe("detectTccDenial — recognised macOS error signatures", () => {
       payload: expect.stringContaining("mv "),
     });
     // The suggested mv destination should be under $HOME, not under Downloads.
-    expect(result?.actions[1].payload).toContain("/Users/friday/bucketlist-cs");
+    expect(result?.actions[1]?.payload).toContain("/Users/friday/bucketlist-cs");
   });
 
   darwinOnly("shell-quotes paths with spaces in the mv suggestion", () => {
     const out = "ls: /Users/friday/Downloads/folder with spaces: Operation not permitted";
     const result = detectTccDenial(out, HOME);
-    expect(result?.actions[1].payload).toContain(`'/Users/friday/Downloads/folder with spaces'`);
-    expect(result?.actions[1].payload).toContain(`'/Users/friday/folder with spaces'`);
+    expect(result?.actions[1]?.payload).toContain(`'/Users/friday/Downloads/folder with spaces'`);
+    expect(result?.actions[1]?.payload).toContain(`'/Users/friday/folder with spaces'`);
   });
 
   darwinOnly("drops the no-op mv suggestion when user attempted the root itself", () => {
@@ -77,7 +77,7 @@ describe("detectTccDenial — recognised macOS error signatures", () => {
     const result = detectTccDenial(out, HOME);
     expect(result?.attemptedPath).toBe("/Users/friday/Downloads");
     expect(result?.actions).toHaveLength(1);
-    expect(result?.actions[0].type).toBe("open-url");
+    expect(result?.actions[0]?.type).toBe("open-url");
   });
 });
 

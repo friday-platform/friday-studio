@@ -1,5 +1,11 @@
 <script lang="ts">
-  import { Button, IconSmall } from "@atlas/ui";
+  // Use plain HTML elements instead of @atlas/ui's Button / IconSmall — the
+  // @atlas/ui barrel transitively pulls in `packages/ui/src/lib/table` which
+  // imports `@tanstack/svelte-table/dist/createTable.svelte`. That extension-
+  // less re-export can't be resolved by Node ESM under vitest (works fine
+  // in the SvelteKit build pipeline). Going plain HTML here avoids dragging
+  // the broken table import into our test, and the card has its own CSS
+  // anyway so we're not losing visual consistency.
 
   interface TccAction {
     label: string;
@@ -41,7 +47,6 @@
 
 <div class="tcc-card" role="region" aria-label="macOS permission needed">
   <div class="header">
-    <span class="icon" aria-hidden="true"><IconSmall.Clock /></span>
     <span class="eyebrow">macOS permission needed</span>
   </div>
 
@@ -51,9 +56,9 @@
 
   <div class="actions">
     {#each denial.actions as action (action.label + action.payload)}
-      <Button onclick={() => handleAction(action)}>
+      <button type="button" class="action" onclick={() => handleAction(action)}>
         {copied === action.payload ? "Copied!" : action.label}
-      </Button>
+      </button>
     {/each}
   </div>
 </div>
@@ -73,11 +78,6 @@
     align-items: center;
     display: flex;
     gap: var(--size-2);
-  }
-
-  .icon {
-    color: color-mix(in srgb, var(--yellow-primary), black 25%);
-    display: inline-flex;
   }
 
   .eyebrow {
@@ -112,5 +112,23 @@
     display: flex;
     flex-wrap: wrap;
     gap: var(--size-2);
+  }
+
+  /* Buttons mimic the @atlas/ui primary Button look without dragging the
+     barrel import in — see the explainer comment in the script block. */
+  .action {
+    background-color: var(--text-bright);
+    border: 1px solid var(--text-bright);
+    border-radius: var(--radius-2);
+    color: var(--surface-dark);
+    cursor: pointer;
+    font: inherit;
+    font-size: var(--font-size-1);
+    font-weight: var(--font-weight-6);
+    padding: var(--size-1) var(--size-3);
+  }
+
+  .action:hover {
+    opacity: 0.85;
   }
 </style>
