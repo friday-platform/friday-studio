@@ -8,13 +8,12 @@
 -->
 
 <script lang="ts">
-  import { Button } from "@atlas/ui";
+  import { Button, PageLayout } from "@atlas/ui";
   import { yaml as yamlLang } from "@codemirror/lang-yaml";
   import { EditorState, StateEffect, StateField } from "@codemirror/state";
   import { Decoration, EditorView, keymap } from "@codemirror/view";
   import { createQuery, useQueryClient } from "@tanstack/svelte-query";
   import { page } from "$app/state";
-  import WorkspaceBreadcrumb from "$lib/components/workspace/workspace-breadcrumb.svelte";
   import { getDaemonClient } from "$lib/daemon-client.ts";
   import { atlasTheme } from "$lib/editor/atlas-theme";
   import { workspaceQueries } from "$lib/queries";
@@ -26,6 +25,29 @@
   const configQuery = createQuery(() => workspaceQueries.config(workspaceId));
   const queryClient = useQueryClient();
   const client = getDaemonClient();
+
+  const workspaceName = $derived(configQuery.data?.config?.workspace?.name ?? workspaceId ?? "");
+  const editPath = $derived(page.url.searchParams.get("path"));
+  const SECTION_ROUTES = new Set(["agents", "jobs", "skills"]);
+  const SECTION_LABELS: Record<string, string> = {
+    agents: "Agents",
+    jobs: "Jobs",
+    skills: "Skills",
+  };
+  const crumbs = $derived.by(() => {
+    if (!workspaceId) return [{ label: "Edit" }];
+    const base = [{ label: workspaceName, href: `/platform/${workspaceId}` }];
+    if (!editPath) return [...base, { label: "Edit" }];
+    const segments = editPath.split(".");
+    const first = segments[0];
+    const rest = segments.slice(1);
+    if (SECTION_ROUTES.has(first)) {
+      const middle = { label: SECTION_LABELS[first], href: `/platform/${workspaceId}/${first}` };
+      if (rest.length === 0) return [...base, middle];
+      return [...base, middle, { label: rest.join(".") }];
+    }
+    return [...base, { label: editPath }];
+  });
 
   // Line highlight effect for jump-to-path — shows a flash on the target line
   const highlightLineEffect = StateEffect.define<number>();
@@ -183,9 +205,7 @@
 </script>
 
 <div class="edit-page">
-  {#if workspaceId}
-    <WorkspaceBreadcrumb {workspaceId} />
-  {/if}
+  <PageLayout.Breadcrumbs {crumbs} />
 
   <div class="edit-content">
     <div class="title-row">
