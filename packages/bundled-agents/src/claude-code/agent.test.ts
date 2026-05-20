@@ -17,10 +17,27 @@ import {
 
 const mockQuery = vi.hoisted(() => vi.fn());
 const mockCreateSandbox = vi.hoisted(() => vi.fn());
+const mockGenerateObject = vi.hoisted(() => vi.fn());
+const mockSmallLLM = vi.hoisted(() => vi.fn());
 
 vi.mock("@anthropic-ai/claude-agent-sdk", async (importOriginal) => {
   const mod = await importOriginal<typeof import("@anthropic-ai/claude-agent-sdk")>();
   return { ...mod, query: mockQuery };
+});
+
+// Stub `generateObject` (used by the prep step `extractRepoAndTask`) so the
+// agent's setup phase is deterministic in tests.
+vi.mock("ai", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("ai")>();
+  return { ...mod, generateObject: mockGenerateObject };
+});
+
+// Stub `smallLLM` so `generateProgress` returns deterministic content for
+// the `data-tool-progress` chip — otherwise the chip may be silently
+// dropped when the stub LLM rejects, which makes ordering assertions flaky.
+vi.mock("@atlas/llm", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("@atlas/llm")>();
+  return { ...mod, smallLLM: mockSmallLLM };
 });
 
 vi.mock("./sandbox.ts", () => ({ createSandbox: mockCreateSandbox, sandboxOptions: {} }));
@@ -523,13 +540,33 @@ describe("UIMessageChunk translation", () => {
   beforeEach(() => {
     mockQuery.mockReset();
     mockCreateSandbox.mockReset();
+    mockGenerateObject.mockReset();
+    mockSmallLLM.mockReset();
     mockCreateSandbox.mockResolvedValue({
       workDir: "/tmp/test-sandbox",
       cleanup: () => Promise.resolve(),
     });
+    // `extractRepoAndTask` returns these fields; the prep schema enforces
+    // their shape so unrelated callers don't see extra keys.
+    mockGenerateObject.mockResolvedValue({ object: { repo: null, task: "test", effort: "low" } });
+    // `generateProgress` returns a string; the `data-tool-progress` chip's
+    // content surfaces this verbatim.
+    mockSmallLLM.mockResolvedValue("Running Bash");
   });
 
-  it("emits text/tool-input/tool-output chunks for assistant + user messages", async () => {
+  function captureStream(): { emitted: Array<Record<string, unknown>>; stream: StreamEmitter } {
+    const emitted: Array<Record<string, unknown>> = [];
+    const stream: StreamEmitter = {
+      emit: (event) => {
+        emitted.push(event as Record<string, unknown>);
+      },
+      end: () => {},
+      error: () => {},
+    };
+    return { emitted, stream };
+  }
+
+  it("emits text/tool-input/tool-output/data-tool-progress in stream order", async () => {
     mockQuery.mockReturnValue(
       createMockSDKStream([
         {
@@ -553,15 +590,7 @@ describe("UIMessageChunk translation", () => {
       ]),
     );
 
-    const emitted: Array<Record<string, unknown>> = [];
-    const stream: StreamEmitter = {
-      emit: (event) => {
-        emitted.push(event as Record<string, unknown>);
-      },
-      end: () => {},
-      error: () => {},
-    };
-
+    const { emitted, stream } = captureStream();
     const result = await claudeCodeAgent.execute(
       "test",
       createMockContext({ env: testEnv, stream }),
@@ -569,41 +598,115 @@ describe("UIMessageChunk translation", () => {
 
     expect(result.ok).toBe(true);
 
-    // Strip the supplemental LLM-generated `data-tool-progress` chip — its
-    // content is non-deterministic (depends on stubbed progress LLM). Assert
-    // the deterministic v6 UIMessageChunk translation instead.
-    const core = emitted.filter((e) => e.type !== "data-tool-progress");
+    // Assert the FULL stream order — including the `data-tool-progress`
+    // chip — so a regression that reorders the tool_use branch (e.g.
+    // moving progress before tool-input-start) is caught. The progress
+    // chunk's content depends on the stubbed `generateProgress` LLM, so
+    // we match the envelope shape with `objectContaining`.
+    expect(emitted).toHaveLength(7);
 
-    // Text translation: one start/delta/end triple. The id is generated
-    // (crypto.randomUUID), so we accept any string but require it to be
-    // consistent across the three text chunks for the same block.
-    const textStart = core[0] as { type: string; id: string };
-    expect(textStart.type).toBe("text-start");
-    expect(typeof textStart.id).toBe("string");
+    // text-start / text-delta / text-end share one id (crypto.randomUUID).
+    expect(emitted[0]).toMatchObject({ type: "text-start", id: expect.any(String) });
+    const textId = (emitted[0] as { id: string }).id;
+    expect(emitted[1]).toEqual({ type: "text-delta", id: textId, delta: "Reading files now." });
+    expect(emitted[2]).toEqual({ type: "text-end", id: textId });
 
-    expect(core[1]).toEqual({ type: "text-delta", id: textStart.id, delta: "Reading files now." });
-    expect(core[2]).toEqual({ type: "text-end", id: textStart.id });
-
-    // Tool-use translation: tool-input-start then tool-input-available with
-    // the full input. The toolCallId mirrors the SDK block id so the chat UI
-    // can pair it with the matching tool-output below.
-    expect(core[3]).toEqual({ type: "tool-input-start", toolCallId: "tool-1", toolName: "Bash" });
-    expect(core[4]).toEqual({
+    // tool_use branch: input-start → input-available → data-tool-progress.
+    // The data-tool-progress chip lands AFTER tool-input-available — locking
+    // this order keeps the chat UI's "what's happening" pill rendering
+    // correctly tied to the just-emitted tool call.
+    expect(emitted[3]).toEqual({
+      type: "tool-input-start",
+      toolCallId: "tool-1",
+      toolName: "Bash",
+    });
+    expect(emitted[4]).toEqual({
       type: "tool-input-available",
       toolCallId: "tool-1",
       toolName: "Bash",
       input: { command: "ls /tmp" },
     });
+    expect(emitted[5]).toMatchObject({
+      type: "data-tool-progress",
+      data: expect.objectContaining({ toolName: "Claude Code" }),
+    });
 
-    // tool_result block from the user message becomes tool-output-available,
-    // matched to the original tool call via tool_use_id.
-    expect(core[5]).toEqual({
+    // tool_result → tool-output-available, matched via tool_use_id.
+    expect(emitted[6]).toEqual({
       type: "tool-output-available",
       toolCallId: "tool-1",
       output: "file1.txt\nfile2.txt",
     });
+  });
 
-    expect(core).toHaveLength(6);
+  it("emits text chunks for an assistant message with no tool_use", async () => {
+    // The most common case (final answer, no tool calls). Without this
+    // dedicated test a regression that gates the text branch on tool-call
+    // presence would slip past — the combined test still passes because it
+    // exercises both branches together.
+    mockQuery.mockReturnValue(
+      createMockSDKStream([
+        { type: "assistant", message: { content: [{ type: "text", text: "hello world" }] } },
+        sdkResult({ result: "hello world" }),
+      ]),
+    );
+
+    const { emitted, stream } = captureStream();
+    const result = await claudeCodeAgent.execute(
+      "test",
+      createMockContext({ env: testEnv, stream }),
+    );
+
+    expect(result.ok).toBe(true);
+    expect(emitted).toHaveLength(3);
+    expect(emitted[0]).toMatchObject({ type: "text-start", id: expect.any(String) });
+    const id = (emitted[0] as { id: string }).id;
+    expect(emitted[1]).toEqual({ type: "text-delta", id, delta: "hello world" });
+    expect(emitted[2]).toEqual({ type: "text-end", id });
+  });
+
+  it.each([
+    { name: "string content", content: "raw string output", expectedOutput: "raw string output" },
+    { name: "undefined content", content: undefined, expectedOutput: "" },
+    {
+      name: "structured-array content with mixed blocks",
+      content: [
+        { type: "text", text: "line 1" },
+        { type: "image", source: { type: "base64", media_type: "image/png", data: "..." } },
+        { type: "text", text: "line 2" },
+      ],
+      expectedOutput: "line 1\n[image]\nline 2",
+    },
+  ])("normalizes tool_result $name into a string output", async ({ content, expectedOutput }) => {
+    // tool_result.content is `string | Array<...ContentBlockParam> |
+    // undefined` per the Anthropic SDK. Any tool that returns an image,
+    // search result, or multiple blocks hits the array path — pre-fix the
+    // chat UI received the raw JS array as `output` and rendered
+    // `[object Object]`. The normalizer collapses non-text blocks to a
+    // `[type]` placeholder so the surface they existed is preserved.
+    mockQuery.mockReturnValue(
+      createMockSDKStream([
+        {
+          type: "user",
+          message: { content: [{ type: "tool_result", tool_use_id: "tool-x", content }] },
+        },
+        sdkResult({ result: "ok" }),
+      ]),
+    );
+
+    const { emitted, stream } = captureStream();
+    const result = await claudeCodeAgent.execute(
+      "test",
+      createMockContext({ env: testEnv, stream }),
+    );
+
+    expect(result.ok).toBe(true);
+    const toolOutput = emitted.find((e) => e.type === "tool-output-available");
+    expect(toolOutput).toEqual({
+      type: "tool-output-available",
+      toolCallId: "tool-x",
+      output: expectedOutput,
+    });
   });
 
   it("ignores user messages whose content is a bare string", async () => {
@@ -617,15 +720,7 @@ describe("UIMessageChunk translation", () => {
       ]),
     );
 
-    const emitted: Array<Record<string, unknown>> = [];
-    const stream: StreamEmitter = {
-      emit: (event) => {
-        emitted.push(event as Record<string, unknown>);
-      },
-      end: () => {},
-      error: () => {},
-    };
-
+    const { emitted, stream } = captureStream();
     const result = await claudeCodeAgent.execute(
       "test",
       createMockContext({ env: testEnv, stream }),

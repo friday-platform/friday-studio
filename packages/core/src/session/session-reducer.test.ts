@@ -396,6 +396,76 @@ describe("step:start", () => {
     expect(block.task).toBe("Plan task");
   });
 
+  // Counterpart to the merge: a step:start arrives for a stateId that
+  // session:start's plannedSteps doesn't include (dynamic step, replan,
+  // sub-machine). The merge must preserve the running block instead of
+  // wiping it. Locks the "union not overwrite" semantics — pre-fix the
+  // off-plan block was silently dropped.
+  test("session:start preserves off-plan running blocks not in plannedSteps", () => {
+    let view = reduceSessionEvent(
+      initialSessionView(),
+      stepStart({ stepNumber: 1, agentName: "dynamic", stateId: "ad-hoc", task: "" }),
+    );
+    expect(view.agentBlocks).toHaveLength(1);
+
+    view = reduceSessionEvent(
+      view,
+      sessionStart({
+        plannedSteps: [
+          { agentName: "planned", stateId: "review", actionType: "agent", task: "Plan" },
+        ],
+      }),
+    );
+
+    // Both blocks survive: planned "review" first (in plannedSteps order),
+    // off-plan "ad-hoc" appended after.
+    expect(view.agentBlocks).toHaveLength(2);
+    expect(view.agentBlocks[0]?.stateId).toBe("review");
+    expect(view.agentBlocks[0]?.status).toBe("pending");
+    expect(view.agentBlocks[1]?.stateId).toBe("ad-hoc");
+    expect(view.agentBlocks[1]?.status).toBe("running");
+    expect(view.agentBlocks[1]?.agentName).toBe("dynamic");
+  });
+
+  // session:start with no plannedSteps at all should still preserve any
+  // running blocks that arrived earlier — the publisher may legitimately
+  // omit plannedSteps for cron / on-demand triggers without a static FSM.
+  test("session:start with no plannedSteps preserves all existing blocks", () => {
+    let view = reduceSessionEvent(
+      initialSessionView(),
+      stepStart({ stepNumber: 1, agentName: "a", stateId: "s1", task: "" }),
+    );
+    view = reduceSessionEvent(view, sessionStart({ plannedSteps: undefined }));
+
+    expect(view.agentBlocks).toHaveLength(1);
+    expect(view.agentBlocks[0]?.stateId).toBe("s1");
+    expect(view.agentBlocks[0]?.status).toBe("running");
+  });
+
+  // Inverse of the agentName-drift fix: if the planned block carries
+  // agentName="unknown" (e.g. a future publisher chose that literal as a
+  // placeholder), step:start's real name wins. Pre-fix the reducer would
+  // have kept "unknown" because the preservation guard short-circuited.
+  test("agentName drift inverse: event.agentName wins when planned is 'unknown'", () => {
+    let view = reduceSessionEvent(
+      initialSessionView(),
+      sessionStart({
+        plannedSteps: [
+          { agentName: "unknown", stateId: "review", actionType: "agent", task: "Plan" },
+        ],
+      }),
+    );
+    view = reduceSessionEvent(
+      view,
+      stepStart({ agentName: "pr-reviewer", stateId: "review", stepNumber: 1 }),
+    );
+
+    const block = view.agentBlocks[0];
+    expect.assert(block !== undefined);
+    expect(block.agentName).toBe("pr-reviewer");
+    expect(block.status).toBe("running");
+  });
+
   // Production failure: FSM agent action emitted step:start with
   // agentName="unknown" (actionId was lost), while the planned block kept
   // its real name from `session:start.plannedSteps`. Pre-fix this drift
@@ -512,6 +582,45 @@ describe("step:complete", () => {
     expect(block.agentName).toBe("pr-reviewer");
     expect(block.status).toBe("completed");
     expect(block.stepNumber).toBe(7);
+  });
+
+  // Locks the match-priority order: stepNumber wins over stateId. If both
+  // could match different blocks, stepNumber must take precedence so an
+  // explicit step number from the FSM event isn't overridden by a state
+  // collision (e.g. two blocks for the same stateId after a replan).
+  test("step:complete priority — stepNumber match wins over stateId fallback", () => {
+    // Two pending blocks: one whose stateId matches the event's stateId
+    // (would win via fallback), and one whose stepNumber matches the
+    // event's stepNumber (must win via the primary match).
+    let view = reduceSessionEvent(
+      initialSessionView(),
+      sessionStart({
+        plannedSteps: [
+          { agentName: "alpha", stateId: "alpha-state", actionType: "agent", task: "" },
+          { agentName: "beta", stateId: "review", actionType: "agent", task: "" },
+        ],
+      }),
+    );
+    // step:start transitions the "alpha" block with stepNumber 7.
+    view = reduceSessionEvent(
+      view,
+      stepStart({ stepNumber: 7, agentName: "alpha", stateId: "alpha-state" }),
+    );
+
+    // step:complete carries BOTH stepNumber 7 (matches alpha) and
+    // stateId "review" (would match beta via fallback). stepNumber wins.
+    view = reduceSessionEvent(
+      view,
+      stepComplete({ stepNumber: 7, stateId: "review", status: "completed" }),
+    );
+
+    expect(view.agentBlocks).toHaveLength(2);
+    const alpha = view.agentBlocks.find((b) => b.agentName === "alpha");
+    const beta = view.agentBlocks.find((b) => b.agentName === "beta");
+    expect.assert(alpha !== undefined);
+    expect.assert(beta !== undefined);
+    expect(alpha.status).toBe("completed");
+    expect(beta.status).toBe("pending");
   });
 
   // J1 of melodic-strolling-seal-pt3 — pre-fix the reducer dropped

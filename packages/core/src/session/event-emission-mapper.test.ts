@@ -104,11 +104,17 @@ describe("mapActionToStepStart", () => {
     expect(result.task).toBe("");
   });
 
-  test("defaults agentName to 'unknown' when actionId missing", () => {
-    const event = agentExecutionEvent({ actionId: undefined });
+  test("falls back to FSM state when actionId missing", () => {
+    // Some FSM action shapes (emit / certain llm paths) leave `actionId`
+    // unset. The mapper falls back to `state` so the resulting `agentName`
+    // still matches the planned block built from the same FSM state by
+    // `extractPlannedSteps`. The terminal "unknown" fallback only fires
+    // when state is also absent (impossible per schema today, but the
+    // guard stays defense-in-depth).
+    const event = agentExecutionEvent({ actionId: undefined, state: "research" });
     const result = mapActionToStepStart(event, 1);
 
-    expect(result.agentName).toBe("unknown");
+    expect(result.agentName).toBe("research");
   });
 });
 

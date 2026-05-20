@@ -240,6 +240,33 @@ Read package.json → "Reading package.json"
  * SDK's native Skill tool. This preserves lazy loading (reference files, activity
  * matching) while ensuring the model actually triggers it.
  */
+/**
+ * Normalize a Claude Code SDK tool_result `content` field into a string the
+ * chat UI can render. The SDK delivers `content` as `string |
+ * Array<TextBlockParam | ImageBlockParam | SearchResultBlockParam | ...> |
+ * undefined`. Passing the raw array through to `tool-output-available`
+ * leaks `[object Object]` (or fails downstream Zod validation) for any
+ * tool that returns non-text blocks — images, structured search results,
+ * multi-block returns. Text blocks are concatenated; non-text blocks
+ * collapse to a `[type]` placeholder so the surface that they existed is
+ * preserved without trying to render their binary payload.
+ */
+function normalizeToolResultContent(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((c) => {
+      if (typeof c !== "object" || c === null || !("type" in c)) return "";
+      const type = (c as { type: unknown }).type;
+      if (type === "text" && "text" in c && typeof (c as { text: unknown }).text === "string") {
+        return (c as { text: string }).text;
+      }
+      return typeof type === "string" ? `[${type}]` : "";
+    })
+    .filter((s) => s.length > 0)
+    .join("\n");
+}
+
 function buildSystemAppend(skills?: Array<{ name: string }>): string {
   const base =
     "You have authenticated access to the gh CLI for GitHub operations. Use it for cloning repos, creating PRs, managing issues, and interacting with GitHub APIs. Return summary of actions. Concise, factual, markdown.";
@@ -555,7 +582,7 @@ export const claudeCodeAgent = createAgent<string, ClaudeCodeAgentResult | Recor
                 stream?.emit({
                   type: "tool-output-available",
                   toolCallId: block.tool_use_id,
-                  output: block.content ?? "",
+                  output: normalizeToolResultContent(block.content),
                 });
               }
             }

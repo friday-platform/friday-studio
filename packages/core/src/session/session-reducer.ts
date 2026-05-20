@@ -47,17 +47,15 @@ export function reduceSessionEvent(
 
   switch (event.type) {
     case "session:start": {
-      // Out-of-order tolerance: step:start can arrive before session:start
-      // because both events publish to the same JetStream subject in fast
-      // succession and ordering isn't guaranteed for tightly-spaced writes.
-      // When this happens reduceStepStart already created a "running" block
-      // from step:start's data — including the `input` snapshot from the
-      // signal payload. We must NOT overwrite that block with an empty
-      // pending one from `plannedSteps`, or step:start's data is lost.
-      //
-      // Pre-fix this surfaced as agent blocks rendered with "No input
-      // provided" + planned-step task on the session page, because
-      // session:start ran after step:start and wiped the populated block.
+      // Out-of-order tolerance: step:start can arrive before session:start.
+      // The ordering hazard isn't in JetStream itself (it preserves subject
+      // publish order) — it's in `NatsSessionStream.emit()`, which calls
+      // `appendEvent` fire-and-forget, so two back-to-back emits can race
+      // at `js.publish` ack time. When step:start lands first,
+      // reduceStepStart already created a "running" block carrying the
+      // signal `input` snapshot; this case must not destroy it. Pre-fix
+      // the page rendered "No input provided" + the planned task because
+      // session:start wiped the populated block.
       const planned =
         event.plannedSteps?.map((step) => ({
           stepNumber: undefined as number | undefined,
@@ -70,26 +68,30 @@ export function reduceSessionEvent(
           output: undefined,
         })) ?? [];
 
-      // Merge with any blocks already created by an earlier step:start: keep
-      // the existing block if its stateId matches a planned step, otherwise
-      // fall back to the planned entry.
-      const mergedBlocks =
-        view.agentBlocks.length === 0
-          ? planned
-          : planned.map((plannedBlock) => {
-              if (!plannedBlock.stateId) return plannedBlock;
-              const existing = view.agentBlocks.find((b) => b.stateId === plannedBlock.stateId);
-              if (!existing) return plannedBlock;
-              // Layer the planned `task` (descriptive label from session:start)
-              // on top of the running block's empty step-start task, but keep
-              // every other field — status, input, startedAt — from the
-              // already-running block. Use existing.task if non-empty.
-              return {
-                ...existing,
-                task: existing.task && existing.task.length > 0 ? existing.task : plannedBlock.task,
-                actionType: existing.actionType ?? plannedBlock.actionType,
-              };
-            });
+      // Union: layer planned entries onto matching existing blocks (by
+      // stateId) AND keep any existing block whose stateId doesn't appear
+      // in plannedSteps — those came from out-of-order step:starts (or
+      // dynamic/replanned steps) and must survive. plannedSteps may be
+      // empty/undefined entirely (some publishers omit it); in that case
+      // every existing block is preserved verbatim.
+      const matchedStateIds = new Set<string>();
+      const fromPlanned = planned.map((plannedBlock) => {
+        if (!plannedBlock.stateId) return plannedBlock;
+        const existing = view.agentBlocks.find((b) => b.stateId === plannedBlock.stateId);
+        if (!existing) return plannedBlock;
+        matchedStateIds.add(plannedBlock.stateId);
+        // Layer the planned `task` (descriptive label) on top of the
+        // running block's typically-empty step-start task, but keep every
+        // other field — status, input, startedAt — from the already-running
+        // block. `actionType` is always assigned by reduceStepStart on a
+        // running block so we don't need to fall back to plannedBlock.
+        return {
+          ...existing,
+          task: existing.task && existing.task.length > 0 ? existing.task : plannedBlock.task,
+        };
+      });
+      const orphans = view.agentBlocks.filter((b) => !b.stateId || !matchedStateIds.has(b.stateId));
+      const mergedBlocks = [...fromPlanned, ...orphans];
 
       return {
         ...view,
