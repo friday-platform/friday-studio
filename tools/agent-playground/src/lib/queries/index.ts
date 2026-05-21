@@ -50,11 +50,17 @@ export type {
   WorkspaceMCPStatus,
 } from "./workspace-mcp-queries.ts";
 export {
+  SaveWorkspaceDetailsError,
+  useSaveWorkspaceDetails,
   useSetMCPServerEnvVar,
   useSetWorkspaceEnvVar,
   useUpdateMCPCredential,
   useUpdateWorkspaceIdentity,
   workspaceEnvQueries,
+  workspaceVariableQueries,
 } from "./workspace-settings-queries.ts";
-export type { WorkspaceEnv } from "./workspace-settings-queries.ts";
+export type {
+  SaveWorkspaceDetailsInput,
+  WorkspaceEnv,
+} from "./workspace-settings-queries.ts";
 export { linkProviderQueries } from "./link-provider-queries.ts";
