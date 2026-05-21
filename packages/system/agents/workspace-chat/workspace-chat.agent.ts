@@ -1569,6 +1569,7 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
               type: "data-error",
               data: { error: displayMessage, errorCause },
             });
+            errorEmitted = true;
           }
         }
       },
