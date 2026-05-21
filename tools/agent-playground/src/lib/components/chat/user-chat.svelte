@@ -25,6 +25,7 @@
   import ChatMessageList from "./chat-message-list.svelte";
   import ChatSessionUsage from "./chat-session-usage.svelte";
   import { createCursorTrackingFetch } from "./cursor-tracking-fetch.ts";
+  import { getModelOverride } from "$lib/model-override-storage.ts";
   import { nextQueueStep } from "./chat-queue.ts";
   import { nextResumeBudgetStep } from "./resume-budget.ts";
   import { nextSpeechChunk } from "./chat-tts.ts";
@@ -449,6 +450,8 @@
       prepareSendMessagesRequest({ messages: msgs, id }) {
         // Adapter pulls history server-side; sending msgs[] would waste bandwidth.
         const body: Record<string, unknown> = { id, message: msgs.at(-1), datetime: buildDatetime() };
+        const modelOverride = getModelOverride(wsId);
+        if (modelOverride) body.model = modelOverride;
         return { body };
       },
     }),
