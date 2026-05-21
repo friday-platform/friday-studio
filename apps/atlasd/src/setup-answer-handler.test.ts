@@ -153,6 +153,32 @@ describe("commitWorkspaceSetupAnswer — pre-flight validation", () => {
     expect(mockApplyDraftAwareMutation).not.toHaveBeenCalled();
   });
 
+  test("blocks the commit with a per-field 400 when Link credential lookup fails transiently", async () => {
+    // Pin Decision 3's spirit: the SUBMIT is actively verifying the credential,
+    // so a transient Link failure (5xx, timeout, etc.) must NOT fail open —
+    // writing a credential id we couldn't verify is worse than blocking the user.
+    mockFetchLinkCredential.mockRejectedValue(new Error("network timeout"));
+
+    const outcome = await commitWorkspaceSetupAnswer({
+      workspacePath: "/tmp/ws_1",
+      parsedConfig: makeConfig(),
+      answer: {
+        variableValues: { email_recipient: "user@example.com", threshold: 50 },
+        credentialChoices: { gmail: "cred_gmail" },
+      },
+    });
+
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.status).toBe(400);
+    if (outcome.status !== 400) return;
+    expect(outcome.errors.credentials.gmail).toContain("Credential lookup failed:");
+    expect(outcome.errors.credentials.gmail).toContain("network timeout");
+    // Pre-flight failure: NO writes — env or credential — happen.
+    expect(mockSetEnvFileVar).not.toHaveBeenCalled();
+    expect(mockApplyDraftAwareMutation).not.toHaveBeenCalled();
+  });
+
   test("rejects a credential whose provider doesn't match the requested provider", async () => {
     mockFetchLinkCredential.mockResolvedValue({
       id: "cred_slack",
