@@ -1201,7 +1201,7 @@ describe("workspace-chat handler", () => {
     // "Something went wrong" mocked default.
     const { getErrorDisplayMessage } = await import("@atlas/core/errors");
     vi.mocked(getErrorDisplayMessage).mockImplementation(
-      (cause: unknown) => ((cause as { raw: Error }).raw.message),
+      (cause: unknown) => (cause as { raw: Error }).raw.message,
     );
 
     // Capture the writer that the agent's try/catch writes the
