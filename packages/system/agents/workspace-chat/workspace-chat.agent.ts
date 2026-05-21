@@ -1311,6 +1311,18 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           // messages." The cacheable system prompt lives in `systemBlocks`,
           // not in chat history.
           if (m.role === "system") return false;
+          // Strip synthetic messages — UI-only seeds (e.g. the bootstrap
+          // workspace-setup assistant message that anchors the form via a
+          // fabricated `tool-request_workspace_setup` part). The agent
+          // never actually called that tool, so replaying it as if it had
+          // would let the model treat the fake `pending_confirmation`
+          // output as real prior work, re-call the tool, or hallucinate
+          // from the fake output. The sentinel is set at the synthesis
+          // site (see `buildBootstrapAssistantMessage` in
+          // `setup-spawn.ts`). UI rendering ignores the sentinel — the
+          // tool-call card dispatches on part `type` alone, so the form
+          // still renders.
+          if (m.metadata?.synthetic === true) return false;
           if (m.role !== "assistant") return true;
           const fromSameModel =
             m.metadata?.provider === conversationalModel.provider &&

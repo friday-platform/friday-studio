@@ -71,6 +71,15 @@ const BOOTSTRAP_CHAT_TITLE = "Getting started";
  * also keeps Anthropic happy: there is no `role: "system"` UI message
  * sitting mid-conversation that would produce an interleaved SystemBlock
  * on the next user turn.
+ *
+ * The message is tagged `metadata.synthetic = true`. The workspace-chat
+ * agent's history sanitizer drops messages with this flag before handing
+ * history to `convertToModelMessages` — without that filter, the LLM
+ * would see a fabricated `tool-request_workspace_setup` call it never
+ * issued and could re-call the tool, treat the fake `pending_confirmation`
+ * output as completed prior work, or hallucinate downstream from it. UI
+ * rendering ignores the flag; the tool-call card dispatches on part
+ * `type` alone, so the form still renders inline.
  */
 function buildBootstrapAssistantMessage(
   parsedConfig: WorkspaceConfig,
@@ -84,6 +93,7 @@ function buildBootstrapAssistantMessage(
   return {
     id: crypto.randomUUID(),
     role: "assistant",
+    metadata: { synthetic: true },
     parts: [
       { type: "text", text },
       {

@@ -209,6 +209,15 @@ describe("spawnBootstrapSessionIfNeeded", () => {
     expect(welcomeChatId).toBe(result.bootstrap_session_id);
     expect(welcomeMessage).toMatchObject({
       role: "assistant",
+      // `metadata.synthetic === true` flags this message as a server-side
+      // UI seed that never came from an LLM/agent turn. The workspace-chat
+      // agent's history sanitizer drops messages with this flag before
+      // calling the LLM so the fabricated `tool-request_workspace_setup`
+      // part never enters model history (it would otherwise let the model
+      // treat the fake `pending_confirmation` output as real prior work).
+      // UI rendering ignores the flag — `tool-call-card.svelte` dispatches
+      // on part `type` alone, so the setup form still renders.
+      metadata: { synthetic: true },
       parts: [
         { type: "text", text: expect.stringContaining("Welcome to **Test**") },
         {
