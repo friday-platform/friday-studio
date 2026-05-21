@@ -7,8 +7,15 @@
  * signalToStream, isClientSafeEvent, and StreamRegistry are real.
  */
 
-const { mockAppendMessage } = vi.hoisted(() => ({
+const { mockAppendMessage, mockEvaluateWorkspaceSetupGate } = vi.hoisted(() => ({
   mockAppendMessage: vi.fn<() => Promise<{ ok: boolean; error?: string }>>(),
+  // Pinned to `requires_setup: true` so the regression-prevention test below
+  // sees a workspace that WOULD be gated if anyone defensively wires the
+  // derivation into `createMessageHandler`. Today the chat path doesn't
+  // import this module — the mock is harmless until that changes.
+  mockEvaluateWorkspaceSetupGate: vi.fn(() =>
+    Promise.resolve({ requires_setup: true, setupUrl: "http://daemon/workspaces/ws-1/chat" }),
+  ),
 }));
 
 vi.mock("@atlas/core/chat/storage", () => ({
@@ -18,6 +25,10 @@ vi.mock("@atlas/core/chat/storage", () => ({
     getChat: vi.fn().mockResolvedValue({ ok: true, data: null }),
     deleteChat: vi.fn().mockResolvedValue({ ok: true }),
   },
+}));
+
+vi.mock("../setup-required-gate.ts", () => ({
+  evaluateWorkspaceSetupGate: mockEvaluateWorkspaceSetupGate,
 }));
 
 import process from "node:process";
@@ -1765,5 +1776,44 @@ describe("createMessageHandler — Decision 7 setup gate", () => {
     expect(setupGate).toHaveBeenCalledOnce();
     expect(triggerFn).toHaveBeenCalledOnce();
     expect(thread.subscribe).toHaveBeenCalled();
+  });
+
+  it("fires the chat-signal trigger even when the workspace requires setup (chat exemption)", async () => {
+    // Pins the chat exemption from the cascade-worker setup gate. The plan's
+    // recovery contract: a user can always fix a broken workspace via chat,
+    // so chat dispatch must NOT consult `evaluateWorkspaceSetupGate`. Today
+    // that holds because `chat-sdk-instance.ts` doesn't import the gate
+    // helper — the top-of-file `vi.mock("../setup-required-gate.ts", ...)`
+    // pre-pins the derivation to `requires_setup: true` so a defensive
+    // future change that wires it into `createMessageHandler` would see a
+    // gated workspace and fail this assertion. No `setupGate` option is
+    // passed (matches the atlas-web path in production where the
+    // per-provider communicator gate isn't applied to the recovery chat).
+    const registry = new StreamRegistry();
+    const chunks = [{ type: "text-delta", delta: "recovery message reaches the agent" }];
+    const triggerFn = makeTriggerFn(chunks);
+
+    // No `setupGate` option — this is the chat-recovery dispatch shape.
+    const handler = createMessageHandler("ws-1", triggerFn, registry);
+    const thread = makeThread("chat-recovery");
+    const turnBuffer = registry.createStream("ws-1", "chat-recovery");
+
+    await handler(
+      thread,
+      makeMessage({ threadId: "chat-recovery", raw: { turnBuffer } }),
+    );
+
+    // Inner handler reached: thread subscribed, message persisted, signal fired.
+    // The handler did NOT throw WorkspaceSetupRequiredError or short-circuit.
+    expect(triggerFn).toHaveBeenCalledOnce();
+    expect(triggerFn).toHaveBeenCalledWith(
+      "chat",
+      expect.objectContaining({ chatId: "chat-recovery" }),
+      "chat-recovery",
+      expect.any(Function),
+      undefined,
+    );
+    expect(thread.subscribe).toHaveBeenCalled();
+    expect(mockAppendMessage).toHaveBeenCalled();
   });
 });
