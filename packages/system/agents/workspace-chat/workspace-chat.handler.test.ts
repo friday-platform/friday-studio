@@ -1086,6 +1086,12 @@ describe("workspace-chat handler", () => {
 
   // -----------------------------------------------------------------------
   // Per-turn model override (chat-input picker)
+  //
+  // These are wiring tests: `resolveModelFromString` is mocked, so they only
+  // assert that session.modelOverride flows into streamText and the message
+  // metadata tagger. Real resolver behavior (provider parsing, credential
+  // checks, error shapes) is covered in
+  // packages/llm/src/platform-models.test.ts → describe("resolveModelFromString").
   // -----------------------------------------------------------------------
 
   it("uses session.modelOverride for streamText and message metadata when set", async () => {
