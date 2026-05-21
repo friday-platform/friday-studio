@@ -737,6 +737,70 @@ describe("re-setup recovery: disconnect → surface → recover", () => {
     expect(verifyBody.metadata?.active_setup_session_id ?? null).toBeNull();
   });
 
+  test("POST /api/elicitations/:id/answer surfaces 500 when the elicitation is no longer pending (CAS guard)", async () => {
+    // Pin the terminal-state CAS guard added in commit `2aeb1d89`. Two
+    // concurrent /answer posts both pass the pending pre-check at the
+    // ElicitationStorage layer if the route doesn't re-check first; the
+    // workspace-setup branch was missing that re-check until 2aeb1d89.
+    // Drop the guard and the test below would 200 — the route would dispatch
+    // a second `commitWorkspaceSetupAnswer` against an already-terminal row
+    // and the mock's status overwrite would silently succeed.
+    //
+    // Strategy: seed a workspace-setup elicitation directly into the
+    // in-memory storage facade, flip it to `declined` out of band (the same
+    // state a winner's CAS would leave behind), then POST /answer for it
+    // and assert the route refuses with a 500 carrying the terminal-state
+    // error shape. The dispatch handlers + setEnvFileVar must NOT run.
+    const { app } = buildHonoApp(state);
+    wireClientToApp(app);
+
+    mockFetchLinkCredential.mockImplementation((id: string) =>
+      Promise.reject(new MockLinkCredentialNotFoundError(id)),
+    );
+    mockResolveCredentialsByProvider.mockResolvedValue([]);
+
+    const seeded = await mockElicitationStorage.create({
+      workspaceId: WORKSPACE_ID,
+      sessionId: SESSION_ID,
+      kind: "workspace-setup",
+      question: "Finish setting up this workspace",
+      setupRequirements: [
+        { kind: "credential", provider: "gmail", reason: "stale_id" },
+      ],
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    });
+    if (!seeded.ok) throw new Error("seed elicitation create failed");
+    const elicitationId = seeded.data.id;
+
+    // Mutate the row to a terminal status — the same state the CAS guard
+    // exists to defend against on a second concurrent /answer.
+    const row = mockElicitationStorageState.rows.get(elicitationId);
+    if (!row) throw new Error("seeded row missing from in-memory store");
+    mockElicitationStorageState.rows.set(elicitationId, { ...row, status: "declined" });
+
+    const answerRes = await app.request(`/api/elicitations/${elicitationId}/answer`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        value: { variableValues: {}, credentialChoices: { gmail: "cred_anything" } },
+      }),
+    });
+
+    expect(answerRes.status).toBe(500);
+    const errBody = (await answerRes.json()) as { error?: string };
+    expect(errBody.error).toContain("terminal state");
+    expect(errBody.error).toContain("declined");
+
+    // Side-effect channels MUST have been short-circuited by the guard.
+    expect(mockSetEnvFileVar).not.toHaveBeenCalled();
+    expect(mockApplyDraftAwareMutation).not.toHaveBeenCalled();
+
+    // The row stayed `declined` — the answer mock's unconditional overwrite
+    // never got the chance to flip it (which is exactly what the guard
+    // exists to prevent on the production code path).
+    expect(mockElicitationStorageState.rows.get(elicitationId)?.status).toBe("declined");
+  });
+
   test("the agent-side emission shares the same handler dispatch as the import-time pre-seed", async () => {
     // Decision: "two emission sites for the same elicitation kind." The
     // agent-side emit uses `emitWorkspaceSetupElicitation` (called via the
