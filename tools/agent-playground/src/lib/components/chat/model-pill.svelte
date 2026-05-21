@@ -11,8 +11,9 @@
   the override; "Use default chain" clears it.
 -->
 <script lang="ts">
-  import { createQuery } from "@tanstack/svelte-query";
+  import { createQuery, useQueryClient } from "@tanstack/svelte-query";
   import { getModelOverride, setModelOverride } from "$lib/model-override-storage.ts";
+  import { saveApiKeyForPlatform } from "$lib/save-api-key.ts";
   import ModelPicker from "../settings/model-picker.svelte";
   import ProviderMark from "../settings/provider-mark.svelte";
   import {
@@ -28,6 +29,8 @@
   }
 
   const { workspaceId }: Props = $props();
+
+  const queryClient = useQueryClient();
 
   // Writable derived: re-reads localStorage on workspace change, locally
   // assignable after the picker writes so the pill updates immediately
@@ -87,11 +90,15 @@
     pickerOpen = false;
   }
 
-  // The picker's "Save & unlock" flow is not relevant to the per-chat
-  // override — credentialed providers only. Reject locked unlocks here
-  // (the user can configure credentials on the Settings page).
-  async function rejectSaveApiKey(): Promise<null> {
-    return null;
+  // Persist the key, invalidate the cached catalog so other consumers
+  // see the unlocked provider, and hand the picker the fresh catalog so
+  // it can flip its locked banner without waiting for a re-render.
+  async function handleSaveApiKey(envVar: string, value: string): Promise<CatalogEntry[]> {
+    const updated = await saveApiKeyForPlatform(envVar, value);
+    await queryClient.invalidateQueries({
+      queryKey: ["daemon", "config", "models", "catalog"],
+    });
+    return updated;
   }
 </script>
 
@@ -119,7 +126,7 @@
     current={pickerCurrent}
     allowDefault={true}
     catalog={catalogQuery.data ?? []}
-    saveApiKey={rejectSaveApiKey}
+    saveApiKey={handleSaveApiKey}
     onSelect={handleSelect}
     onClose={() => (pickerOpen = false)}
   />

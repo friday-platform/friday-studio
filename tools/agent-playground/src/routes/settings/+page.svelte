@@ -24,6 +24,7 @@
   import ModelChain from "$lib/components/settings/model-chain.svelte";
   import ModelPicker from "$lib/components/settings/model-picker.svelte";
   import { tunnelUrl as tunnelProxyUrl } from "$lib/daemon-url";
+  import { saveApiKeyForPlatform } from "$lib/save-api-key";
   import { useQueryClient } from "@tanstack/svelte-query";
   import { workspaceQueries } from "$lib/queries";
   import {
@@ -429,32 +430,17 @@
   // ─── Save-key (inline unlock) ──────────────────────────────────────
 
   /**
-   * Inline API-key save from the picker's locked-provider banner. Reads
-   * current .env, splices in the new key, PUTs the full map. Returns
-   * the updated catalog (with the newly-unlocked provider flipped) so
-   * the picker re-renders its pills immediately.
+   * Inline API-key save from the picker's locked-provider banner.
+   * Delegates the load-env → splice → PUT → reload-catalog dance to the
+   * shared `saveApiKeyForPlatform` helper, then resyncs the page-local
+   * `catalog` + env-row state so the rest of the settings UI reflects
+   * the newly-unlocked provider.
    */
-  async function handleSaveApiKey(envVar: string, value: string): Promise<CatalogEntry[] | null> {
-    // Refresh rows so we don't clobber concurrent edits from another
-    // tab — the .env endpoint is full-rewrite, so staleness would be
-    // destructive.
-    const latest = await loadEnv();
-    const byKey = new Map(latest.map((r) => [r.key, r.value]));
-    byKey.set(envVar, value);
-    const payload = Object.fromEntries(byKey);
-
-    const putRes = await fetch("/api/daemon/api/config/env", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ envVars: payload }),
-    });
-    if (!putRes.ok) {
-      const text = await putRes.text();
-      throw new Error(`Save failed (HTTP ${putRes.status}): ${text}`);
-    }
-
-    await Promise.all([loadCatalog(), loadEnv()]);
-    return catalog;
+  async function handleSaveApiKey(envVar: string, value: string): Promise<CatalogEntry[]> {
+    const updated = await saveApiKeyForPlatform(envVar, value);
+    catalog = updated;
+    await loadEnv();
+    return updated;
   }
 
   // ─── Save models + discard ─────────────────────────────────────────
