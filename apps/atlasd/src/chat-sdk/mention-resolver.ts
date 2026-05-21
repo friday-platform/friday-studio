@@ -188,11 +188,38 @@ function renderMentionContextText(resolved: ResolvedMention[]): string {
  * text part carrying the snapshots for the model. The structural marker
  * lets the UI renderer skip the synthetic text in the user bubble.
  */
+function isMentionResolvedPart(
+  part: AtlasUIMessagePart,
+): part is AtlasUIMessagePart & {
+  type: "data-mention-resolved";
+  data: { workspaceId: string; chatId: string };
+} {
+  if (part.type !== "data-mention-resolved") return false;
+  const data = (part as { data?: unknown }).data;
+  if (typeof data !== "object" || data === null) return false;
+  const d = data as Record<string, unknown>;
+  return typeof d.workspaceId === "string" && typeof d.chatId === "string";
+}
+
 export function applyMentionsToMessage(
   message: AtlasUIMessage,
   resolved: ResolvedMention[],
 ): AtlasUIMessage {
   if (resolved.length === 0) return message;
+
+  // Drop any incoming `data-mention-resolved` parts for refs we resolved
+  // — the playground composer ships client-side placeholders so the
+  // optimistic bubble can render a link instantly. The server resolution
+  // carries the canonical snapshot + messageCount, so we replace those
+  // placeholders here. Parts for refs we did NOT resolve (e.g. the
+  // client typed something the server-side resolver dropped as
+  // not_found / unauthorized) pass through untouched so we don't
+  // discard data we'd otherwise persist.
+  const resolvedKeys = new Set(resolved.map((m) => `${m.ref.workspaceId}/${m.ref.chatId}`));
+  const filteredParts = message.parts.filter((part) => {
+    if (!isMentionResolvedPart(part)) return true;
+    return !resolvedKeys.has(`${part.data.workspaceId}/${part.data.chatId}`);
+  });
 
   const extraParts: AtlasUIMessagePart[] = [];
 
@@ -222,7 +249,7 @@ export function applyMentionsToMessage(
     providerMetadata: { atlas: { kind: "mention-expansion" } },
   });
 
-  return { ...message, parts: [...message.parts, ...extraParts] };
+  return { ...message, parts: [...filteredParts, ...extraParts] };
 }
 
 /**

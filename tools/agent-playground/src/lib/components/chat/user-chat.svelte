@@ -10,7 +10,7 @@
   import { mergeElicitationIntoCache } from "$lib/queries/elicitation-queries.ts";
   import { subscribeToWorkspaceElicitations } from "$lib/shared-worker/client.ts";
   import { DefaultChatTransport } from "ai";
-  import ChatInput from "./chat-input.svelte";
+  import ChatInput, { type InsertedMention } from "./chat-input.svelte";
   import {
     type FileAttachment,
     type ChatAttachment,
@@ -1251,7 +1251,11 @@
     }
   }
 
-  async function handleSubmit(text: string, attachments: ChatAttachment[] = []) {
+  async function handleSubmit(
+    text: string,
+    attachments: ChatAttachment[] = [],
+    mentions: InsertedMention[] = [],
+  ) {
     if (!chat) return;
     error = null;
     wasInterrupted = false;
@@ -1273,6 +1277,25 @@
           filename: att.file.name,
         });
       }
+    }
+
+    // Ship a data-mention-resolved part per autocomplete-picked mention so
+    // the optimistic user bubble renders the link with the friendly title
+    // immediately — the server resolver runs ahead of persist and
+    // overwrites these placeholders with the canonical snapshot
+    // (mention-resolver.applyMentionsToMessage dedupes on workspaceId+chatId).
+    for (const m of mentions) {
+      parts.push({
+        type: "data-mention-resolved",
+        data: {
+          workspaceId: m.workspaceId,
+          chatId: m.chatId,
+          title: m.title,
+          snapshot: "",
+          messageCount: 0,
+          generatedAt: new Date().toISOString(),
+        },
+      });
     }
 
     // Non-image attachments uploaded to scratch. The chat-input's

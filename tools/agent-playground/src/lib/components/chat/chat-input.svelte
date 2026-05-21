@@ -1,7 +1,7 @@
 <script lang="ts">
   import { ALLOWED_EXTENSION_LIST } from "@atlas/core/artifacts/file-upload";
   import { toast } from "@atlas/ui";
-  import { detectActiveMentionQuery } from "../../chat/mention-text.ts";
+  import { MENTION_REGEX, detectActiveMentionQuery } from "../../chat/mention-text.ts";
   import {
     type FileAttachment,
     type ChatAttachment,
@@ -14,6 +14,19 @@
     runFileUpload,
   } from "./chat-attachment.ts";
   import MentionAutocomplete from "./mention-autocomplete.svelte";
+
+  /**
+   * @-mention the user picked from autocomplete. We track these
+   * client-side so the parent can ship a `data-mention-resolved` part
+   * with the friendly title alongside the message — that way the
+   * optimistic user bubble shows a styled link to the referenced chat
+   * immediately, without waiting for the server resolver to round-trip.
+   */
+  export interface InsertedMention {
+    workspaceId: string;
+    chatId: string;
+    title: string;
+  }
 
   // Re-export the attachment types so existing imports
   // (`import { ChatAttachment } from "./chat-input.svelte"`) keep working.
@@ -38,7 +51,11 @@
      * owns this; user-chat passes it through unchanged.
      */
     chatId: string;
-    onsubmit: (message: string, attachments: ChatAttachment[]) => void;
+    onsubmit: (
+      message: string,
+      attachments: ChatAttachment[],
+      mentions: InsertedMention[],
+    ) => void;
     /** Attached images/files. Bindable so drop targets outside this component
      * (e.g. the whole chat surface) can push files into the same preview
      * strip the file-picker uses, instead of rendering a parallel one. */
@@ -86,6 +103,13 @@
   let mentionQuery = $state<{ start: number; end: number; query: string } | null>(null);
   const mentionOpen = $derived(mentionQuery !== null);
 
+  // Titles of the mentions the user picked from autocomplete, keyed
+  // by `"<workspaceId>/<chatId>"`. The map persists across edits so
+  // that even if the user adds/removes other text around the token,
+  // the title is still recoverable at submit time. Cleared on submit
+  // and on send-state reset.
+  let mentionTitleByKey = $state<Map<string, string>>(new Map());
+
   /**
    * Re-check whether the caret is currently inside an `@`-mention being
    * typed. Called on every keystroke + click so the popover follows the
@@ -108,6 +132,10 @@
     const before = value.slice(0, start);
     const after = value.slice(end);
     value = before + token + after;
+    mentionTitleByKey = new Map(mentionTitleByKey).set(
+      `${ref.workspaceId}/${ref.chatId}`,
+      ref.title,
+    );
     mentionQuery = null;
     // Restore focus + caret position after the splice in a microtask so
     // Svelte has flushed the bind:value update before we move the caret.
@@ -117,6 +145,31 @@
       textareaEl.focus();
       textareaEl.setSelectionRange(caretAt, caretAt);
     });
+  }
+
+  /**
+   * Collect mention tokens that are actually present in the current
+   * draft text and we have a title for (picked via autocomplete). The
+   * intersection lets the user paste / type extra refs without
+   * fabricating a stale title for them — server-side resolution will
+   * fill those in on persist.
+   */
+  function collectMentionsForSubmit(): InsertedMention[] {
+    if (mentionTitleByKey.size === 0) return [];
+    const seen = new Set<string>();
+    const out: InsertedMention[] = [];
+    for (const match of value.matchAll(MENTION_REGEX)) {
+      const workspaceId = match[1];
+      const chatId = match[2];
+      if (!workspaceId || !chatId) continue;
+      const key = `${workspaceId}/${chatId}`;
+      if (seen.has(key)) continue;
+      const title = mentionTitleByKey.get(key);
+      if (!title) continue;
+      seen.add(key);
+      out.push({ workspaceId, chatId, title });
+    }
+    return out;
   }
 
   function closeMentionPopover() {
@@ -318,9 +371,11 @@
 
   function submit() {
     if (!hasContent) return;
-    onsubmit(value.trim(), attachments);
+    const mentions = collectMentionsForSubmit();
+    onsubmit(value.trim(), attachments, mentions);
     value = "";
     attachments = [];
+    mentionTitleByKey = new Map();
   }
 
   function handleDrop(e: DragEvent) {

@@ -132,6 +132,76 @@ describe("applyMentionsToMessage", () => {
     const original = userMessage("no mentions here");
     expect(applyMentionsToMessage(original, [])).toBe(original);
   });
+
+  it("replaces client-side data-mention-resolved placeholders with the server's canonical part", () => {
+    const original: AtlasUIMessage = {
+      id: "m-1",
+      role: "user",
+      parts: [
+        { type: "text", text: "see @ws-a/c1" },
+        {
+          type: "data-mention-resolved",
+          data: {
+            workspaceId: "ws-a",
+            chatId: "c1",
+            title: "Placeholder typed by composer",
+            snapshot: "",
+            messageCount: 0,
+            generatedAt: "2026-05-21T00:00:00.000Z",
+          },
+        },
+      ],
+    };
+    const augmented = applyMentionsToMessage(original, [
+      {
+        ref: { raw: "@ws-a/c1", workspaceId: "ws-a", chatId: "c1" },
+        title: "Server canonical title",
+        snapshot: "snapshot text",
+        messageCount: 7,
+        generatedAt: "2026-05-21T01:00:00.000Z",
+      },
+    ]);
+    const mentionParts = augmented.parts.filter((p) => p.type === "data-mention-resolved");
+    expect(mentionParts).toHaveLength(1);
+    expect(
+      (mentionParts[0] as { data: { title: string; messageCount: number } }).data,
+    ).toMatchObject({ title: "Server canonical title", messageCount: 7 });
+  });
+
+  it("preserves client placeholders for refs the server did not resolve", () => {
+    const original: AtlasUIMessage = {
+      id: "m-1",
+      role: "user",
+      parts: [
+        { type: "text", text: "see @ws-a/c1 and @ws-b/c2" },
+        {
+          type: "data-mention-resolved",
+          data: {
+            workspaceId: "ws-b",
+            chatId: "c2",
+            title: "Untouched placeholder",
+            snapshot: "",
+            messageCount: 0,
+            generatedAt: "2026-05-21T00:00:00.000Z",
+          },
+        },
+      ],
+    };
+    const augmented = applyMentionsToMessage(original, [
+      {
+        ref: { raw: "@ws-a/c1", workspaceId: "ws-a", chatId: "c1" },
+        title: "Server resolved A",
+        snapshot: "",
+        messageCount: 0,
+        generatedAt: "2026-05-21T01:00:00.000Z",
+      },
+    ]);
+    const mentionParts = augmented.parts.filter((p) => p.type === "data-mention-resolved");
+    expect(mentionParts).toHaveLength(2);
+    const titles = mentionParts.map((p) => (p as { data: { title: string } }).data.title);
+    expect(titles).toContain("Server resolved A");
+    expect(titles).toContain("Untouched placeholder");
+  });
 });
 
 describe("mergeForegroundWorkspaceIds", () => {
