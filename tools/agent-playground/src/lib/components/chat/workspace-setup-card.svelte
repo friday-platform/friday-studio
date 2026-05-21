@@ -18,23 +18,22 @@
 <script lang="ts">
   import type { Elicitation } from "@atlas/core/elicitations/model";
   import { Button } from "@atlas/ui";
-  import { resolve } from "$app/paths";
   import { useAnswerElicitation } from "$lib/queries/elicitation-queries.ts";
   import SetupCredentialRow from "./setup-credential-row.svelte";
   import {
     allFieldsValid,
     buildSetupAnswerValue,
     credentialProviders,
+    labelFor,
     validateField,
     variableRequirements,
   } from "./workspace-setup-card.ts";
 
   interface Props {
     elicitation: Elicitation;
-    workspaceId: string;
   }
 
-  const { elicitation, workspaceId }: Props = $props();
+  const { elicitation }: Props = $props();
 
   const variables = $derived(variableRequirements(elicitation.setupRequirements ?? []));
   const providers = $derived(credentialProviders(elicitation.setupRequirements ?? []));
@@ -44,15 +43,30 @@
   let credentialChoices = $state<Record<string, string>>({});
   let submitAttempted = $state(false);
 
+  // Rehydrate from `elicitation.answer.value` once the elicitation lands in an
+  // answered state. Without this, a page refresh wipes the component's local
+  // `values` and `credentialChoices` and the applied card shows empty inputs
+  // even though .env holds the committed value. The answer envelope persists
+  // the structured payload plaintext (variables aren't `sensitive` in v1).
+  $effect(() => {
+    const answer = elicitation.answer?.value;
+    if (!answer || typeof answer !== "object") return;
+    const seededValues: Record<string, string> = {};
+    for (const [name, typed] of Object.entries(answer.variableValues ?? {})) {
+      if (typed === null || typed === undefined) continue;
+      seededValues[name] = String(typed);
+    }
+    if (Object.keys(seededValues).length > 0) values = seededValues;
+    if (Object.keys(answer.credentialChoices ?? {}).length > 0) {
+      credentialChoices = { ...answer.credentialChoices };
+    }
+  });
+
   const submittable = $derived(allFieldsValid(variables, values, providers, credentialChoices));
   const isPending = $derived(elicitation.status === "pending");
 
   const answerMutation = useAnswerElicitation();
   const inFlight = $derived(answerMutation.isPending);
-
-  const activityHref = $derived(
-    `${resolve("/platform/[workspaceId]/activity", { workspaceId })}?elicitationId=${encodeURIComponent(elicitation.id)}`,
-  );
 
   function fieldError(name: string): string | null {
     const raw = values[name] ?? "";
@@ -78,6 +92,12 @@
     return `Fill in ${parts.join(" and ")} to finish setting up this workspace.`;
   }
 
+  const statusLabel = $derived.by(() => {
+    if (isPending) return "pending";
+    if (elicitation.status === "answered") return "applied";
+    return elicitation.status;
+  });
+
   function onSubmit(event: SubmitEvent) {
     event.preventDefault();
     submitAttempted = true;
@@ -96,15 +116,14 @@
   data-testid="workspace-setup-card"
 >
   <div class="card-header">
-    <span class="eyebrow">Workspace setup</span>
-    <span class="status" class:status-pending={isPending}>
-      {#if isPending}
-        pending
-      {:else if elicitation.status === "answered"}
-        applied
-      {:else}
-        {elicitation.status}
-      {/if}
+    <h3 class="card-title">Workspace setup</h3>
+    <span
+      class="status"
+      class:status-pending={statusLabel === "pending"}
+      class:status-applied={statusLabel === "applied"}
+      class:status-denied={statusLabel === "declined"}
+    >
+      {statusLabel}
     </span>
   </div>
 
@@ -119,7 +138,13 @@
           {@const error = fieldError(req.name)}
           {@const inputId = `setup-${elicitation.id}-${req.name}`}
           <div class="var-group" class:invalid={error !== null}>
-            <label class="var-label" for={inputId}>{req.name}</label>
+            <label
+              class="var-label"
+              class:var-label-display={req.display_name !== undefined}
+              for={inputId}
+            >
+              {labelFor(req)}
+            </label>
             {#if req.description}
               <p class="var-description">{req.description}</p>
             {/if}
@@ -165,10 +190,11 @@
 
     {#if isPending}
       <div class="actions">
-        <Button type="submit" disabled={inFlight || !submittable}>
-          {inFlight ? "Submitting…" : "Submit"}
-        </Button>
-        <Button href={activityHref} variant="none">Open Activity</Button>
+        <div class="actions-buttons">
+          <Button type="submit" disabled={inFlight || !submittable}>
+            {inFlight ? "Completing…" : "Complete setup"}
+          </Button>
+        </div>
       </div>
     {:else}
       <p class="hint terminal">
@@ -190,50 +216,68 @@
 
 <style>
   .setup-card {
-    background-color: color-mix(in srgb, var(--blue-primary), transparent 92%);
-    border: 1px solid color-mix(in srgb, var(--blue-primary), transparent 60%);
+    align-self: flex-start;
+    background-color: var(--surface-dark);
+    border: 1px solid transparent;
     border-radius: var(--radius-3);
     display: flex;
     flex-direction: column;
     gap: var(--size-3);
+    inline-size: var(--size-128);
+    margin-block-end: var(--size-4);
+    min-inline-size: 0;
     padding: var(--size-3);
   }
 
   .setup-card.pending {
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--blue-primary), transparent 75%);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-info), transparent 50%);
   }
 
   .card-header {
-    align-items: center;
+    align-items: baseline;
     display: flex;
     gap: var(--size-2);
+    justify-content: space-between;
   }
 
-  .eyebrow {
-    color: color-mix(in srgb, var(--text), transparent 35%);
-    font-size: var(--font-size-0, 11px);
-    font-weight: var(--font-weight-7);
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
+  .card-title {
+    color: var(--text-bright);
+    font-size: var(--font-size-2);
+    font-weight: var(--font-weight-5);
+    line-height: 1.35;
+    margin: 0;
   }
 
   .status {
-    background-color: color-mix(in srgb, var(--text), transparent 88%);
-    border-radius: var(--radius-round);
-    color: color-mix(in srgb, var(--text), transparent 30%);
-    font-size: var(--font-size-0, 11px);
-    font-weight: var(--font-weight-6);
-    padding: 1px var(--size-2);
+    background-color: color-mix(in srgb, var(--color-text), transparent 88%);
+    border-radius: var(--radius-1);
+    color: var(--text-faded);
+    display: inline-block;
+    flex-shrink: 0;
+    font-size: var(--font-size-1);
+    font-weight: var(--font-weight-5);
+    padding: 1px var(--size-1-5);
+    text-transform: capitalize;
   }
 
   .status-pending {
-    background-color: color-mix(in srgb, var(--blue-primary), transparent 75%);
-    color: color-mix(in srgb, var(--blue-primary), black 35%);
+    background-color: color-mix(in srgb, var(--color-info), transparent 85%);
+    color: var(--color-info);
+  }
+
+  .status-applied {
+    background-color: color-mix(in srgb, var(--green-primary), transparent 85%);
+    color: var(--green-primary);
+  }
+
+  .status-denied {
+    background-color: color-mix(in srgb, var(--red-primary), transparent 85%);
+    color: var(--red-primary);
   }
 
   .lede {
-    color: var(--text-bright);
-    font-size: var(--font-size-2);
+    color: var(--text-faded);
+    font-size: var(--font-size-1);
     line-height: 1.4;
     margin: 0;
   }
@@ -242,7 +286,7 @@
   .cred-list {
     display: flex;
     flex-direction: column;
-    gap: var(--size-3);
+    gap: var(--size-2);
   }
 
   .var-group,
@@ -257,6 +301,14 @@
     font-family: var(--font-family-mono, ui-monospace, monospace);
     font-size: var(--font-size-1);
     font-weight: var(--font-weight-6);
+  }
+
+  /* Friendly display_name labels render in the body sans font at a larger
+     step — monospace earns its place for snake_case env keys, but reads
+     wrong for proper-case prose like "Email Recipient". */
+  .var-label.var-label-display {
+    font-family: inherit;
+    font-size: var(--font-size-2);
   }
 
   .var-description {
@@ -304,6 +356,12 @@
     gap: var(--size-2);
   }
 
+  .actions-buttons {
+    display: flex;
+    gap: var(--size-1-5);
+    margin-inline-start: auto;
+  }
+
   .hint,
   .error {
     font-size: var(--font-size-1);
@@ -311,7 +369,7 @@
   }
 
   .hint {
-    color: color-mix(in srgb, var(--text), transparent 45%);
+    color: var(--text-faded);
   }
 
   .terminal {

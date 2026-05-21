@@ -170,6 +170,20 @@ describe("SetupRequirementSchema", () => {
     ).toBe(true);
   });
 
+  it("round-trips display_name on a variable requirement", () => {
+    const parsed = SetupRequirementSchema.safeParse({
+      kind: "variable",
+      name: "email_recipient",
+      display_name: "Email Recipient",
+      description: "Where alerts go",
+      schema: { type: "string", format: "email" },
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success && parsed.data.kind === "variable") {
+      expect(parsed.data.display_name).toBe("Email Recipient");
+    }
+  });
+
   it("accepts a credential requirement", () => {
     expect(
       SetupRequirementSchema.safeParse({

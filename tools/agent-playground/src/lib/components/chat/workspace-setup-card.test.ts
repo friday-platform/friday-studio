@@ -5,6 +5,7 @@ import {
   buildSetupAnswerValue,
   credentialProviders,
   credentialRequirements,
+  labelFor,
   validateField,
   variableRequirements,
   type CredentialRequirement,
@@ -27,6 +28,27 @@ function credReq(
 ): CredentialRequirement {
   return { kind: "credential", provider, path, key, reason };
 }
+
+describe("labelFor", () => {
+  it("returns display_name when present", () => {
+    const req: VariableRequirement = {
+      kind: "variable",
+      name: "email_recipient",
+      display_name: "Email Recipient",
+      schema: { type: "string" },
+    };
+    expect(labelFor(req)).toBe("Email Recipient");
+  });
+
+  it("falls back to name when display_name is absent", () => {
+    const req: VariableRequirement = {
+      kind: "variable",
+      name: "email_recipient",
+      schema: { type: "string" },
+    };
+    expect(labelFor(req)).toBe("email_recipient");
+  });
+});
 
 describe("variableRequirements", () => {
   it("filters out non-variable requirements", () => {

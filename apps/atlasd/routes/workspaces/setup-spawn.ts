@@ -48,12 +48,59 @@ const spawnLogger = createLogger({ component: "workspace-setup-spawn" });
  */
 const FAR_FUTURE_EXPIRES_AT_MS = 365 * 24 * 60 * 60 * 1000; // 1 year
 
-function buildWelcomeMessage(parsedConfig: WorkspaceConfig): AtlasUIMessage {
+/**
+ * Bootstrap chats start with one synthetic assistant message already in
+ * storage, so the workspace-chat agent's count-based auto-title (turns 2/4)
+ * never lands on them — counts go 3 → 5 → 7 instead of 2 → 4. That makes
+ * it safe to pin a stable title here without the LLM later overwriting it.
+ */
+const BOOTSTRAP_CHAT_TITLE = "Getting started";
+
+/**
+ * Build the synthetic assistant message that anchors the workspace-setup
+ * form in the bootstrap chat thread.
+ *
+ * The message mirrors what the agent would emit if it had called
+ * `request_workspace_setup` itself (re-setup path): a text bubble followed
+ * by a completed tool-call part whose output carries the elicitation id.
+ * `tool-call-card.svelte` dispatches by tool name and renders the form
+ * inline — so initial setup and re-setup share one rendering path with
+ * one elicitation kind and one storage shape.
+ *
+ * Anchoring the form in chat history (instead of a side-query banner)
+ * also keeps Anthropic happy: there is no `role: "system"` UI message
+ * sitting mid-conversation that would produce an interleaved SystemBlock
+ * on the next user turn.
+ */
+function buildBootstrapAssistantMessage(
+  parsedConfig: WorkspaceConfig,
+  elicitationId: string,
+  requirementCount: number,
+): AtlasUIMessage {
   const name = parsedConfig.workspace.name;
   const text =
     parsedConfig.workspace.welcome ??
     `Welcome to **${name}** — this workspace needs a few values before it can run. Fill the form below to finish setup.`;
-  return { id: crypto.randomUUID(), role: "system", parts: [{ type: "text", text }] };
+  return {
+    id: crypto.randomUUID(),
+    role: "assistant",
+    parts: [
+      { type: "text", text },
+      {
+        type: "tool-request_workspace_setup",
+        toolCallId: crypto.randomUUID(),
+        state: "output-available",
+        input: {},
+        output: {
+          status: "pending_confirmation",
+          elicitationId,
+          requirementCount,
+          message:
+            "Workspace setup form raised in this chat. Fill it in and submit to write env vars and pin credentials.",
+        },
+      },
+    ],
+  };
 }
 
 export interface SpawnBootstrapResult {
@@ -120,15 +167,19 @@ export async function spawnBootstrapSessionIfNeeded(
     throw new Error(`Failed to create bootstrap chat session: ${chatResult.error}`);
   }
 
-  const welcomeResult = await ChatStorage.appendMessage(
+  const titleResult = await ChatStorage.updateChatTitle(
     bootstrapSessionId,
-    buildWelcomeMessage(parsedConfig),
+    BOOTSTRAP_CHAT_TITLE,
     workspaceId,
   );
-  if (!welcomeResult.ok) {
-    throw new Error(`Failed to seed bootstrap welcome message: ${welcomeResult.error}`);
+  if (!titleResult.ok) {
+    throw new Error(`Failed to set bootstrap chat title: ${titleResult.error}`);
   }
 
+  // Order: create the elicitation FIRST so the assistant message can embed
+  // its id in the tool-call output. tool-call-card.svelte reads
+  // `output.elicitationId` to locate the matching elicitation (same pattern
+  // env_set uses).
   const now = new Date();
   const elicitationResult = await ElicitationStorage.create({
     workspaceId,
@@ -140,6 +191,19 @@ export async function spawnBootstrapSessionIfNeeded(
   });
   if (!elicitationResult.ok) {
     throw new Error(`Failed to create bootstrap elicitation: ${elicitationResult.error}`);
+  }
+
+  const welcomeResult = await ChatStorage.appendMessage(
+    bootstrapSessionId,
+    buildBootstrapAssistantMessage(
+      parsedConfig,
+      elicitationResult.data.id,
+      derived.setup_requirements.length,
+    ),
+    workspaceId,
+  );
+  if (!welcomeResult.ok) {
+    throw new Error(`Failed to seed bootstrap welcome message: ${welcomeResult.error}`);
   }
 
   const newMetadata: WorkspaceMetadata = {
@@ -212,15 +276,17 @@ export async function recoverBootstrapSessionIfDeleted(
     throw new Error(`Failed to recreate bootstrap chat session: ${chatResult.error}`);
   }
 
-  const welcomeResult = await ChatStorage.appendMessage(
+  const titleResult = await ChatStorage.updateChatTitle(
     newSessionId,
-    buildWelcomeMessage(parsedConfig),
+    BOOTSTRAP_CHAT_TITLE,
     workspace.id,
   );
-  if (!welcomeResult.ok) {
-    throw new Error(`Failed to seed bootstrap welcome message: ${welcomeResult.error}`);
+  if (!titleResult.ok) {
+    throw new Error(`Failed to set bootstrap chat title: ${titleResult.error}`);
   }
 
+  // Order matches spawnBootstrapSessionIfNeeded: elicitation first so the
+  // assistant-message tool-call output can embed its id.
   const now = new Date();
   const elicitationResult = await ElicitationStorage.create({
     workspaceId: workspace.id,
@@ -232,6 +298,19 @@ export async function recoverBootstrapSessionIfDeleted(
   });
   if (!elicitationResult.ok) {
     throw new Error(`Failed to re-seed bootstrap elicitation: ${elicitationResult.error}`);
+  }
+
+  const welcomeResult = await ChatStorage.appendMessage(
+    newSessionId,
+    buildBootstrapAssistantMessage(
+      parsedConfig,
+      elicitationResult.data.id,
+      setupRequirements.length,
+    ),
+    workspace.id,
+  );
+  if (!welcomeResult.ok) {
+    throw new Error(`Failed to seed bootstrap welcome message: ${welcomeResult.error}`);
   }
 
   const newMetadata: WorkspaceMetadata = {

@@ -90,6 +90,7 @@
     value: string;
     secret: boolean;
     declaredName: string | null;
+    displayName: string | null;
     description: string | undefined;
     validation: VariableValidationResult | null;
   }
@@ -102,6 +103,7 @@
         value,
         secret: isSecretKey(key),
         declaredName: match?.name ?? null,
+        displayName: match?.declaration.display_name ?? null,
         description: match?.declaration.description,
         validation: match ? validateProposedValue(match.declaration, value) : null,
       };
@@ -277,6 +279,9 @@
       {#each enrichedEntries as entry (entry.key)}
         {@const maskApplied = !isPending && entry.secret && !revealed[entry.key]}
         <div class="var-group">
+          {#if entry.displayName}
+            <p class="var-display-name">{entry.displayName}</p>
+          {/if}
           {#if entry.description}
             <p class="var-description">{entry.description}</p>
           {/if}
@@ -476,6 +481,17 @@
     color: color-mix(in srgb, var(--text), transparent 25%);
     font-size: var(--font-size-1);
     line-height: 1.4;
+    margin: 0;
+  }
+
+  /* Sans, body-size, slightly heavier than description so the friendly
+     name reads as the primary affordance with the env key visible in
+     the row below as the implementation detail. */
+  .var-display-name {
+    color: var(--text-bright);
+    font-size: var(--font-size-2);
+    font-weight: var(--font-weight-6);
+    line-height: 1.35;
     margin: 0;
   }
 

@@ -25,6 +25,10 @@ export function needsUserAction(call: ToolCallDisplay): boolean {
   // the burst and the standalone surface as it settles — the card renders
   // its own stable placeholder until the tool call is done streaming.
   if (call.toolName === "env_set") return true;
+  // `request_workspace_setup` raises the workspace-setup form the user must
+  // answer. Same shape as env_set — state-independent so the card surfaces
+  // immediately and stays put regardless of the elicitation's lifecycle.
+  if (call.toolName === "request_workspace_setup") return true;
   if (call.toolName === "request_human_input" && isInProgress(call.state)) return true;
   if (call.toolName === "connect_service" && call.state === "output-available") return true;
   if (call.toolName === "connect_communicator" && call.state === "output-available") return true;

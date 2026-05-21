@@ -30,6 +30,16 @@ export function variableRequirements(reqs: readonly SetupRequirement[]): Variabl
   return reqs.filter(isVariableRequirement);
 }
 
+/**
+ * Human-facing label for a variable requirement. Authors can declare a
+ * friendly `display_name` (e.g. "Email Recipient") in `workspace.yml`; when
+ * omitted the env key serves as both label and identifier so unlabelled
+ * variables still render readably.
+ */
+export function labelFor(req: VariableRequirement): string {
+  return req.display_name ?? req.name;
+}
+
 export function credentialRequirements(reqs: readonly SetupRequirement[]): CredentialRequirement[] {
   return reqs.filter(isCredentialRequirement);
 }

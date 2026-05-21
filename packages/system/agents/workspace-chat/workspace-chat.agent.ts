@@ -1303,6 +1303,14 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
         // + modelId on the originating turn). Untagged messages are treated
         // as "unknown origin" — if they contain reasoning, drop them too.
         const sanitizedMessages = messages.filter((m) => {
+          // Strip role:"system" UI messages — these are UI-only affordances
+          // (e.g. the bootstrap workspace-setup welcome) rendered as banners
+          // in the chat list. Passing them to the LLM produces a SystemBlock
+          // mid-conversation; Anthropic rejects that as
+          // "Multiple system messages that are separated by user/assistant
+          // messages." The cacheable system prompt lives in `systemBlocks`,
+          // not in chat history.
+          if (m.role === "system") return false;
           if (m.role !== "assistant") return true;
           const fromSameModel =
             m.metadata?.provider === conversationalModel.provider &&

@@ -70,6 +70,8 @@ export const SetupRequirementSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("variable"),
     name: z.string(),
+    /** Author-supplied friendly label; falls back to `name` in the UI. */
+    display_name: z.string().optional(),
     description: z.string().optional(),
     schema: VariableSchemaSchema,
   }),

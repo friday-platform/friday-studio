@@ -165,6 +165,12 @@ export const VariableSchemaSchema = z.discriminatedUnion("type", [
 export type VariableSchema = z.infer<typeof VariableSchemaSchema>;
 
 export const VariableDeclarationSchema = z.strictObject({
+  /**
+   * Human-friendly label shown in setup forms and env-write confirmations.
+   * Falls back to the variable's snake_case key when absent so the
+   * placeholder copy "EMAIL_RECIPIENT" doesn't dominate the UI.
+   */
+  display_name: z.string().optional(),
   description: z.string().optional(),
   schema: VariableSchemaSchema,
   default: z.unknown().optional(),

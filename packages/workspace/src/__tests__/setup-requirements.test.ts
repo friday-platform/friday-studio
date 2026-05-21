@@ -43,6 +43,28 @@ describe("resolveWorkspaceSetupRequirements — variables", () => {
     ]);
   });
 
+  it("forwards display_name onto the requirement when declared", () => {
+    const config = baseConfig({
+      variables: {
+        email_recipient: {
+          display_name: "Email Recipient",
+          description: "Where to send the report",
+          schema: { type: "string", format: "email" },
+        },
+      },
+    });
+    const result = resolveWorkspaceSetupRequirements(config, {}, emptyLink(), RUNTIME_OPTS);
+    expect(result.setup_requirements).toEqual([
+      {
+        kind: "variable",
+        name: "email_recipient",
+        display_name: "Email Recipient",
+        description: "Where to send the report",
+        schema: { type: "string", format: "email" },
+      },
+    ]);
+  });
+
   it("treats variable with passing schema default as filled even without env value", () => {
     const config = baseConfig({
       variables: {

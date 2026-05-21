@@ -32,7 +32,13 @@ import { variableEnvKey } from "./variable-interpolation.ts";
  * popup completion refetches cleanly without lifting state.
  */
 export type SetupRequirement =
-  | { kind: "variable"; name: string; description?: string; schema: VariableDeclaration["schema"] }
+  | {
+      kind: "variable";
+      name: string;
+      display_name?: string;
+      description?: string;
+      schema: VariableDeclaration["schema"];
+    }
   | {
       kind: "credential";
       provider: string;
@@ -123,6 +129,7 @@ export function resolveWorkspaceSetupRequirements(
   for (const [name, decl] of Object.entries(declarations)) {
     if (!isVariableFilled(decl, envSnapshot[variableEnvKey(name)])) {
       const requirement: SetupRequirement = { kind: "variable", name, schema: decl.schema };
+      if (decl.display_name !== undefined) requirement.display_name = decl.display_name;
       if (decl.description !== undefined) requirement.description = decl.description;
       setup_requirements.push(requirement);
     }

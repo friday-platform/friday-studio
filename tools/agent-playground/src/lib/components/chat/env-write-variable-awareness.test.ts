@@ -1,6 +1,7 @@
 import type { VariableDeclaration } from "@atlas/config";
 import { describe, expect, it } from "vitest";
 import {
+  displayNameForKey,
   findDeclaredVariableForKey,
   validateProposedValue,
 } from "./env-write-variable-awareness.ts";
@@ -32,6 +33,28 @@ describe("findDeclaredVariableForKey", () => {
   it("returns null when declarations are absent", () => {
     expect(findDeclaredVariableForKey(undefined, "EMAIL_RECIPIENT")).toBeNull();
     expect(findDeclaredVariableForKey({}, "EMAIL_RECIPIENT")).toBeNull();
+  });
+});
+
+describe("displayNameForKey", () => {
+  const declarations: Record<string, VariableDeclaration> = {
+    email_recipient: {
+      display_name: "Email Recipient",
+      schema: { type: "string" },
+    },
+    threshold: { schema: { type: "integer" } },
+  };
+
+  it("returns the declared display_name when present", () => {
+    expect(displayNameForKey(declarations, "EMAIL_RECIPIENT")).toBe("Email Recipient");
+  });
+
+  it("returns null when the matched declaration omits display_name", () => {
+    expect(displayNameForKey(declarations, "THRESHOLD")).toBeNull();
+  });
+
+  it("returns null when the key does not belong to any declaration", () => {
+    expect(displayNameForKey(declarations, "OPENAI_API_KEY")).toBeNull();
   });
 });
 

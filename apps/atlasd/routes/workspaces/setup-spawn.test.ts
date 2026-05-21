@@ -20,7 +20,12 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 
 const { mockChatStorage, mockElicitationStorage, mockAssembleLinkState, mockLoadEnv } = vi.hoisted(
   () => ({
-    mockChatStorage: { createChat: vi.fn(), getChat: vi.fn(), appendMessage: vi.fn() },
+    mockChatStorage: {
+      createChat: vi.fn(),
+      getChat: vi.fn(),
+      appendMessage: vi.fn(),
+      updateChatTitle: vi.fn(),
+    },
     mockElicitationStorage: { create: vi.fn() },
     mockAssembleLinkState: vi.fn(),
     mockLoadEnv: vi.fn(),
@@ -133,7 +138,11 @@ describe("spawnBootstrapSessionIfNeeded", () => {
     vi.clearAllMocks();
     mockChatStorage.createChat.mockResolvedValue({ ok: true, data: {} });
     mockChatStorage.appendMessage.mockResolvedValue({ ok: true });
-    mockElicitationStorage.create.mockResolvedValue({ ok: true, data: {} });
+    mockChatStorage.updateChatTitle.mockResolvedValue({ ok: true, data: {} });
+    mockElicitationStorage.create.mockResolvedValue({
+      ok: true,
+      data: { id: "elic_stub_id" },
+    });
     mockLoadEnv.mockReturnValue({});
     mockAssembleLinkState.mockResolvedValue({
       defaultByProvider: {},
@@ -186,14 +195,28 @@ describe("spawnBootstrapSessionIfNeeded", () => {
     expect(mockChatStorage.appendMessage).toHaveBeenCalledTimes(1);
     expect(mockElicitationStorage.create).toHaveBeenCalledTimes(1);
 
-    // The welcome message is a `system` role message with text content,
-    // appended to the bootstrap session BEFORE the elicitation is seeded so
-    // the chat thread renders welcome → setup card in that order.
+    // The welcome message is a synthetic assistant turn: a text bubble
+    // followed by a completed `request_workspace_setup` tool call whose
+    // output carries the elicitation id. `tool-call-card.svelte`
+    // dispatches by tool name to render the setup form inline — the
+    // same path env-write uses. The elicitation is created BEFORE the
+    // message so its id can be embedded in the tool output.
+    const elicitationOrder = mockElicitationStorage.create.mock.invocationCallOrder[0] ?? 0;
+    const appendOrder = mockChatStorage.appendMessage.mock.invocationCallOrder[0] ?? 0;
+    expect(appendOrder).toBeGreaterThan(elicitationOrder);
+
     const [welcomeChatId, welcomeMessage] = mockChatStorage.appendMessage.mock.calls[0] ?? [];
     expect(welcomeChatId).toBe(result.bootstrap_session_id);
     expect(welcomeMessage).toMatchObject({
-      role: "system",
-      parts: [{ type: "text", text: expect.stringContaining("Welcome to **Test**") }],
+      role: "assistant",
+      parts: [
+        { type: "text", text: expect.stringContaining("Welcome to **Test**") },
+        {
+          type: "tool-request_workspace_setup",
+          state: "output-available",
+          output: { elicitationId: "elic_stub_id", status: "pending_confirmation" },
+        },
+      ],
     });
 
     const chatArgs = mockChatStorage.createChat.mock.calls[0]?.[0];
@@ -203,6 +226,16 @@ describe("spawnBootstrapSessionIfNeeded", () => {
       workspaceId: entry.id,
       source: "atlas",
     });
+
+    // Bootstrap chats get a stable "Getting started" title at creation. The
+    // workspace-chat agent's auto-title only fires at message counts 2/4,
+    // and bootstrap chats start at 1 (synthetic assistant) so counts go
+    // 3 → 5 → 7 and never trigger an overwrite.
+    expect(mockChatStorage.updateChatTitle).toHaveBeenCalledWith(
+      result.bootstrap_session_id,
+      "Getting started",
+      entry.id,
+    );
 
     const elicitationArgs = mockElicitationStorage.create.mock.calls[0]?.[0];
     expect(elicitationArgs).toMatchObject({
@@ -320,7 +353,11 @@ describe("recoverBootstrapSessionIfDeleted", () => {
     vi.clearAllMocks();
     mockChatStorage.createChat.mockResolvedValue({ ok: true, data: {} });
     mockChatStorage.appendMessage.mockResolvedValue({ ok: true });
-    mockElicitationStorage.create.mockResolvedValue({ ok: true, data: {} });
+    mockChatStorage.updateChatTitle.mockResolvedValue({ ok: true, data: {} });
+    mockElicitationStorage.create.mockResolvedValue({
+      ok: true,
+      data: { id: "elic_stub_id" },
+    });
   });
 
   test("session deleted → re-creates chat, re-seeds elicitation, updates pointer atomically", async () => {

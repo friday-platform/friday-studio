@@ -694,6 +694,36 @@ describe("workspace-chat handler", () => {
     expect(persistedSerialized).not.toContain("<retrieved_content");
   });
 
+  it("strips role:'system' UI messages from chat history before LLM call", async () => {
+    // The bootstrap workspace-setup spawn persists a welcome banner with
+    // role:"system" so chat-message-list renders it as a centered banner.
+    // Passing that through to the LLM would produce a second SystemBlock
+    // mid-conversation; Anthropic rejects that with "Multiple system
+    // messages that are separated by user/assistant messages."
+    const welcome: AtlasUIMessage = {
+      id: crypto.randomUUID(),
+      role: "system",
+      parts: [{ type: "text", text: "Welcome to the workspace" }],
+    };
+    const userMessage = makeMessage("user", "Hello");
+    setupDefaultMocks([welcome, userMessage]);
+
+    let convertedInput: unknown;
+    mockConvertToModelMessages.mockImplementation((msgs: unknown) => {
+      convertedInput = msgs;
+      return msgs;
+    });
+
+    const handler = getHandler();
+    const ctx = makeContext();
+    await handler("", ctx);
+
+    expect(convertedInput).toBeDefined();
+    const passed = convertedInput as AtlasUIMessage[];
+    const systemRoles = passed.filter((m) => m.role === "system");
+    expect(systemRoles).toHaveLength(0);
+  });
+
   // -----------------------------------------------------------------------
   // Seamless auto-continue after connect_service
   // -----------------------------------------------------------------------

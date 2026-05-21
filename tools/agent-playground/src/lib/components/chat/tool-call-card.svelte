@@ -6,6 +6,7 @@
   import ConnectService from "./connect-service.svelte";
   import DelegateToolCard from "./delegate-tool-card.svelte";
   import EnvSetToolCard from "./env-set-tool-card.svelte";
+  import WorkspaceSetupToolCard from "./workspace-setup-tool-card.svelte";
   import TccDeniedCard from "./tcc-denied-card.svelte";
   import { formatRawOutput } from "./format-raw-output";
   import HumanInputToolCard from "./human-input-tool-card.svelte";
@@ -470,6 +471,8 @@
   <HumanInputToolCard {call} />
 {:else if call.toolName === "env_set"}
   <EnvSetToolCard {call} onApplied={onEnvApplied} />
+{:else if call.toolName === "request_workspace_setup"}
+  <WorkspaceSetupToolCard {call} />
 {:else if call.toolName === "display_artifact"}
   <!-- Always render ArtifactCard for display_artifact tool calls — including
        during input-streaming when artifactId isn't parseable yet. The card

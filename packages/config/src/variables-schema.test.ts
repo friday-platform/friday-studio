@@ -68,6 +68,21 @@ describe("WorkspaceConfigSchema variables", () => {
     expect(parsed.variables?.notify_owner?.schema.type).toBe("boolean");
   });
 
+  it("parses display_name when present and leaves it undefined when absent", () => {
+    const parsed = WorkspaceConfigSchema.parse({
+      ...minimalWorkspace,
+      variables: {
+        email_recipient: {
+          display_name: "Email Recipient",
+          schema: { type: "string", format: "email" },
+        },
+        max_retries: { schema: { type: "integer", default: 3 } },
+      },
+    });
+    expect(parsed.variables?.email_recipient?.display_name).toBe("Email Recipient");
+    expect(parsed.variables?.max_retries?.display_name).toBeUndefined();
+  });
+
   it("rejects an array root type with an error path pointing at the variable", () => {
     const result = WorkspaceConfigSchema.safeParse({
       ...minimalWorkspace,

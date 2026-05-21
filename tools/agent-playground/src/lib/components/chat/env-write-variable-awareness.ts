@@ -30,6 +30,21 @@ export function findDeclaredVariableForKey(
   return null;
 }
 
+/**
+ * Friendly label for an env-write row when the key matches a declared
+ * variable that supplies a `display_name`. Returns `null` for unmatched
+ * keys and for declarations that omit `display_name` — callers fall back
+ * to the raw env key (which is also the agent's proposal target, so it
+ * stays visible on the row regardless).
+ */
+export function displayNameForKey(
+  declarations: Record<string, VariableDeclaration> | undefined,
+  key: string,
+): string | null {
+  const match = findDeclaredVariableForKey(declarations, key);
+  return match?.declaration.display_name ?? null;
+}
+
 export type VariableValidationResult =
   | { ok: true }
   | { ok: false; reason: "type" | "schema"; message: string };
