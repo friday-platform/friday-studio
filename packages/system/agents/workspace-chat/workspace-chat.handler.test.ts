@@ -6,11 +6,7 @@
  * separately in workspace-chat.agent.test.ts.
  */
 
-import type {
-  AgentContext,
-  AtlasUIMessage,
-  StreamEmitter,
-} from "@atlas/agent-sdk";
+import type { AgentContext, AtlasUIMessage, StreamEmitter } from "@atlas/agent-sdk";
 import { createStubPlatformModels } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -20,9 +16,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // ---------------------------------------------------------------------------
 
 const capturedHandler = vi.hoisted(
-  (): { fn: ((input: string, ctx: unknown) => Promise<unknown>) | null } => ({
-    fn: null,
-  }),
+  (): { fn: ((input: string, ctx: unknown) => Promise<unknown>) | null } => ({ fn: null }),
 );
 
 const mockParseResult = vi.hoisted(() => vi.fn());
@@ -31,9 +25,7 @@ const mockClientWorkspaceChat = vi.hoisted(() => vi.fn());
 const mockSetSystemPromptContext = vi.hoisted(() => vi.fn());
 const mockAppendMessage = vi.hoisted(() => vi.fn());
 const mockSkillStorageList = vi.hoisted(() => vi.fn());
-const mockResolveVisibleSkills = vi.hoisted(() =>
-  vi.fn().mockResolvedValue([])
-);
+const mockResolveVisibleSkills = vi.hoisted(() => vi.fn().mockResolvedValue([]));
 const mockCreateLoadSkillTool = vi.hoisted(() => vi.fn());
 const mockRegistryLanguageModel = vi.hoisted(() => vi.fn());
 const mockTraceModel = vi.hoisted(() => vi.fn());
@@ -62,19 +54,13 @@ const mockHasToolCall = vi.hoisted(() => vi.fn());
 // ---------------------------------------------------------------------------
 
 vi.mock("@atlas/agent-sdk", async () => {
-  const actual = await vi.importActual<typeof import("@atlas/agent-sdk")>(
-    "@atlas/agent-sdk",
-  );
+  const actual = await vi.importActual<typeof import("@atlas/agent-sdk")>("@atlas/agent-sdk");
   return {
     ...actual,
-    createAgent: vi.fn(
-      (
-        config: { handler: (input: string, ctx: unknown) => Promise<unknown> },
-      ) => {
-        capturedHandler.fn = config.handler;
-        return config;
-      },
-    ),
+    createAgent: vi.fn((config: { handler: (input: string, ctx: unknown) => Promise<unknown> }) => {
+      capturedHandler.fn = config.handler;
+      return config;
+    }),
     validateAtlasUIMessages: mockValidateAtlasUIMessages,
   };
 });
@@ -150,15 +136,9 @@ vi.mock("@atlas/skills", () => ({
   resolveVisibleSkills: mockResolveVisibleSkills,
 }));
 
-vi.mock(
-  "../link-context.ts",
-  () => ({ fetchLinkSummary: mockFetchLinkSummary }),
-);
+vi.mock("../link-context.ts", () => ({ fetchLinkSummary: mockFetchLinkSummary }));
 
-vi.mock(
-  "../user-identity.ts",
-  () => ({ fetchUserIdentitySection: mockFetchUserIdentitySection }),
-);
+vi.mock("../user-identity.ts", () => ({ fetchUserIdentitySection: mockFetchUserIdentitySection }));
 
 vi.mock("../tools/connect-service.ts", () => ({
   createConnectServiceTool: mockCreateConnectServiceTool,
@@ -234,12 +214,7 @@ const stubPlatformModels = createStubPlatformModels();
 function makeContext(overrides: Partial<AgentContext> = {}): AgentContext {
   return {
     tools: {},
-    session: {
-      sessionId: "sess-1",
-      workspaceId: "ws-1",
-      streamId: "stream-1",
-      userId: "user-1",
-    },
+    session: { sessionId: "sess-1", workspaceId: "ws-1", streamId: "stream-1", userId: "user-1" },
     env: {},
     stream: makeStream(),
     logger: makeLogger(),
@@ -269,15 +244,11 @@ function setupDefaultMocks(existingMessages: AtlasUIMessage[] = []): void {
         name: "test-ws",
         description: "A test workspace",
         config: { version: "1.0", workspace: { name: "test-ws" } },
-        user: {
-          full_name: "Alice",
-          email: "alice@test.com",
-          display_name: "Alice",
-        },
+        user: { full_name: "Alice", email: "alice@test.com", display_name: "Alice" },
         signals: { signals: [] },
         artifacts: { artifacts: [] },
       },
-    })
+    }),
   );
 
   // workspaceChat client proxy
@@ -290,9 +261,7 @@ function setupDefaultMocks(existingMessages: AtlasUIMessage[] = []): void {
   });
 
   // validateAtlasUIMessages: pass through
-  mockValidateAtlasUIMessages.mockImplementation((msgs: unknown) =>
-    Promise.resolve(msgs)
-  );
+  mockValidateAtlasUIMessages.mockImplementation((msgs: unknown) => Promise.resolve(msgs));
 
   // LLM mocks
   const mockModel = { modelId: "anthropic:claude-sonnet-4-6" };
@@ -338,21 +307,19 @@ function setupDefaultMocks(existingMessages: AtlasUIMessage[] = []): void {
   // `result.finishReason` to keep that scope alive until the underlying
   // stream settles — the mock must therefore expose `finishReason` as a
   // resolved promise so the await actually resolves under test.
-  mockStreamText.mockImplementation(
-    (opts: { onFinish?: (arg: { text: string }) => void }) => {
-      opts.onFinish?.({ text: "Hello from LLM" });
-      return {
-        toUIMessageStream: vi.fn().mockReturnValue(
-          new ReadableStream({
-            start(controller) {
-              controller.close();
-            },
-          }),
-        ),
-        finishReason: Promise.resolve("stop"),
-      };
-    },
-  );
+  mockStreamText.mockImplementation((opts: { onFinish?: (arg: { text: string }) => void }) => {
+    opts.onFinish?.({ text: "Hello from LLM" });
+    return {
+      toUIMessageStream: vi.fn().mockReturnValue(
+        new ReadableStream({
+          start(controller) {
+            controller.close();
+          },
+        }),
+      ),
+      finishReason: Promise.resolve("stop"),
+    };
+  });
 
   // createUIMessageStream: runs execute + onFinish synchronously, returns a ReadableStream
   mockCreateUIMessageStream.mockImplementation(
@@ -362,10 +329,7 @@ function setupDefaultMocks(existingMessages: AtlasUIMessage[] = []): void {
       originalMessages,
     }: {
       execute: (ctx: {
-        writer: {
-          write: ReturnType<typeof vi.fn>;
-          merge: ReturnType<typeof vi.fn>;
-        };
+        writer: { write: ReturnType<typeof vi.fn>; merge: ReturnType<typeof vi.fn> };
       }) => Promise<void>;
       onFinish: (ctx: { messages: AtlasUIMessage[] }) => Promise<void>;
       originalMessages: AtlasUIMessage[];
@@ -376,10 +340,7 @@ function setupDefaultMocks(existingMessages: AtlasUIMessage[] = []): void {
           await execute({ writer: mockWriter });
 
           // Simulate the AI SDK adding an assistant message
-          const finishMessages = [
-            ...originalMessages,
-            makeMessage("assistant", "Hello from LLM"),
-          ];
+          const finishMessages = [...originalMessages, makeMessage("assistant", "Hello from LLM")];
           await onFinish({ messages: finishMessages });
           controller.close();
         },
@@ -388,15 +349,13 @@ function setupDefaultMocks(existingMessages: AtlasUIMessage[] = []): void {
   );
 
   // pipeUIMessageStream: consume the readable stream to drive execution
-  mockPipeUIMessageStream.mockImplementation(
-    async (readable: ReadableStream) => {
-      const reader = readable.getReader();
-      while (true) {
-        const { done } = await reader.read();
-        if (done) break;
-      }
-    },
-  );
+  mockPipeUIMessageStream.mockImplementation(async (readable: ReadableStream) => {
+    const reader = readable.getReader();
+    while (true) {
+      const { done } = await reader.read();
+      if (done) break;
+    }
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -441,9 +400,7 @@ describe("workspace-chat handler", () => {
 
   it("throws when streamId is missing", async () => {
     const handler = getHandler();
-    const ctx = makeContext({
-      session: { sessionId: "sess-1", workspaceId: "ws-1" },
-    });
+    const ctx = makeContext({ session: { sessionId: "sess-1", workspaceId: "ws-1" } });
 
     await expect(handler("", ctx)).rejects.toThrow("Stream ID is required");
   });
@@ -510,12 +467,10 @@ describe("workspace-chat handler", () => {
     // title.$patch is called (via parseResult)
     // The second parseResult call after chat load is for workspace details, then config, etc.
     // Title update call goes through parseResult as well
-    const titlePatchCalls = mockParseResult.mock.calls.filter(
-      (call: unknown[]) => {
-        // We can't easily inspect proxy args, but we can verify smallLLM was called
-        return call;
-      },
-    );
+    const titlePatchCalls = mockParseResult.mock.calls.filter((call: unknown[]) => {
+      // We can't easily inspect proxy args, but we can verify smallLLM was called
+      return call;
+    });
     expect(titlePatchCalls.length).toBeGreaterThan(0);
   });
 
@@ -535,10 +490,7 @@ describe("workspace-chat handler", () => {
         originalMessages,
       }: {
         execute: (ctx: {
-          writer: {
-            write: ReturnType<typeof vi.fn>;
-            merge: ReturnType<typeof vi.fn>;
-          };
+          writer: { write: ReturnType<typeof vi.fn>; merge: ReturnType<typeof vi.fn> };
         }) => Promise<void>;
         onFinish: (ctx: { messages: AtlasUIMessage[] }) => Promise<void>;
         originalMessages: AtlasUIMessage[];
@@ -548,10 +500,7 @@ describe("workspace-chat handler", () => {
             const mockWriter = { write: vi.fn(), merge: vi.fn() };
             await execute({ writer: mockWriter });
             // 3 existing + 1 new assistant = 4
-            const finishMessages = [
-              ...originalMessages,
-              makeMessage("assistant", "I'm great!"),
-            ];
+            const finishMessages = [...originalMessages, makeMessage("assistant", "I'm great!")];
             await onFinish({ messages: finishMessages });
             controller.close();
           },
@@ -568,10 +517,7 @@ describe("workspace-chat handler", () => {
 
   it("does NOT generate title when message count is 3", async () => {
     // 2 existing + 1 new = 3 total
-    const existingMessages = [
-      makeMessage("user", "Hello"),
-      makeMessage("assistant", "Hi"),
-    ];
+    const existingMessages = [makeMessage("user", "Hello"), makeMessage("assistant", "Hi")];
     setupDefaultMocks(existingMessages);
 
     const handler = getHandler();
@@ -596,12 +542,7 @@ describe("workspace-chat handler", () => {
 
     expect(mockSetSystemPromptContext).toHaveBeenCalledWith(
       "stream-1",
-      {
-        systemMessages: expect.arrayContaining([
-          expect.any(String),
-          expect.any(String),
-        ]),
-      },
+      { systemMessages: expect.arrayContaining([expect.any(String), expect.any(String)]) },
       "ws-1",
     );
   });
@@ -617,10 +558,7 @@ describe("workspace-chat handler", () => {
   });
 
   it("captures system prompt context on every turn, not just the first", async () => {
-    setupDefaultMocks([
-      makeMessage("user", "Hello"),
-      makeMessage("assistant", "Hi"),
-    ]);
+    setupDefaultMocks([makeMessage("user", "Hello"), makeMessage("assistant", "Hi")]);
 
     const handler = getHandler();
     const ctx = makeContext();
@@ -753,8 +691,7 @@ describe("workspace-chat handler", () => {
 
     // But the persisted assistant message must NOT carry preface bytes.
     expect(mockAppendMessage).toHaveBeenCalledOnce();
-    const persistedMessage = mockAppendMessage.mock.calls[0]
-      ?.[1] as AtlasUIMessage;
+    const persistedMessage = mockAppendMessage.mock.calls[0]?.[1] as AtlasUIMessage;
     expect(persistedMessage.role).toBe("assistant");
     const persistedSerialized = JSON.stringify(persistedMessage);
     expect(persistedSerialized).not.toContain("<retrieved_content");
@@ -771,10 +708,7 @@ describe("workspace-chat handler", () => {
     setupDefaultMocks([userMessage]);
 
     // Turn 1: Link has stripe-mcp provider but no credential yet
-    mockFetchLinkSummary.mockResolvedValue({
-      providers: [{ id: "stripe-mcp" }],
-      credentials: [],
-    });
+    mockFetchLinkSummary.mockResolvedValue({ providers: [{ id: "stripe-mcp" }], credentials: [] });
 
     // Set up list_capabilities tool to return stripe as mcp_available (not yet enabled)
     mockCreateListCapabilitiesTool.mockReturnValue({
@@ -804,11 +738,7 @@ describe("workspace-chat handler", () => {
         messages: [userMessage],
         name: "test-ws",
         config: { version: "1.0", workspace: { name: "test-ws" } },
-        user: {
-          full_name: "Alice",
-          email: "alice@test.com",
-          display_name: "Alice",
-        },
+        user: { full_name: "Alice", email: "alice@test.com", display_name: "Alice" },
         signals: { signals: [] },
         artifacts: { artifacts: [] },
       },
@@ -844,10 +774,7 @@ describe("workspace-chat handler", () => {
         originalMessages,
       }: {
         execute: (ctx: {
-          writer: {
-            write: ReturnType<typeof vi.fn>;
-            merge: ReturnType<typeof vi.fn>;
-          };
+          writer: { write: ReturnType<typeof vi.fn>; merge: ReturnType<typeof vi.fn> };
         }) => Promise<void>;
         onFinish: (ctx: { messages: AtlasUIMessage[] }) => Promise<void>;
         originalMessages: AtlasUIMessage[];
@@ -865,10 +792,7 @@ describe("workspace-chat handler", () => {
                 id: crypto.randomUUID(),
                 role: "assistant",
                 parts: [
-                  {
-                    type: "text",
-                    text: "I'll help you check your Stripe charges.",
-                  },
+                  { type: "text", text: "I'll help you check your Stripe charges." },
                   {
                     type: "tool-call",
                     toolCallId: "tc-1",
@@ -946,20 +870,14 @@ describe("workspace-chat handler", () => {
                     type: "tool-call",
                     toolCallId: "tc-4",
                     toolName: "delegate",
-                    input: {
-                      mcpServers: ["stripe-mcp"],
-                      goal: "Fetch Stripe charges",
-                    },
+                    input: { mcpServers: ["stripe-mcp"], goal: "Fetch Stripe charges" },
                     dynamic: false,
                   } as unknown as AtlasUIMessage["parts"][number],
                   {
                     type: "tool-result",
                     toolCallId: "tc-4",
                     toolName: "delegate",
-                    input: {
-                      mcpServers: ["stripe-mcp"],
-                      goal: "Fetch Stripe charges",
-                    },
+                    input: { mcpServers: ["stripe-mcp"], goal: "Fetch Stripe charges" },
                     output: { ok: true, text: "You have 3 charges." },
                     dynamic: false,
                   } as unknown as AtlasUIMessage["parts"][number],
@@ -1007,14 +925,8 @@ describe("workspace-chat handler", () => {
       expect.objectContaining({
         role: "assistant",
         parts: expect.arrayContaining([
-          expect.objectContaining({
-            type: "tool-call",
-            toolName: "list_capabilities",
-          }),
-          expect.objectContaining({
-            type: "tool-call",
-            toolName: "connect_service",
-          }),
+          expect.objectContaining({ type: "tool-call", toolName: "list_capabilities" }),
+          expect.objectContaining({ type: "tool-call", toolName: "connect_service" }),
         ]),
       }),
       "ws-1",
@@ -1038,11 +950,7 @@ describe("workspace-chat handler", () => {
         messages: [userMessage, credentialLinkedMessage],
         name: "test-ws",
         config: { version: "1.0", workspace: { name: "test-ws" } },
-        user: {
-          full_name: "Alice",
-          email: "alice@test.com",
-          display_name: "Alice",
-        },
+        user: { full_name: "Alice", email: "alice@test.com", display_name: "Alice" },
         signals: { signals: [] },
         artifacts: { artifacts: [] },
       },
@@ -1078,17 +986,14 @@ describe("workspace-chat handler", () => {
     expect(turn2Args.tools).toHaveProperty("delegate");
 
     // Turn 2 messages include data-credential-linked
-    const modelMessages = turn2Args.messages as Array<
-      { role: string; parts?: unknown[] }
-    >;
+    const modelMessages = turn2Args.messages as Array<{ role: string; parts?: unknown[] }>;
     const hasCredentialLinked = modelMessages.some(
       (m) =>
         m.role === "user" &&
         Array.isArray(m.parts) &&
         m.parts.some((p: unknown) => {
           const part = p as { type?: string; data?: { provider?: string } };
-          return part.type === "data-credential-linked" &&
-            part.data?.provider === "stripe-mcp";
+          return part.type === "data-credential-linked" && part.data?.provider === "stripe-mcp";
         }),
     );
     expect(hasCredentialLinked).toBe(true);
@@ -1108,24 +1013,9 @@ describe("workspace-chat handler", () => {
     // mirroring the AI SDK's terminal-event shape. The handler should
     // collectToolUsageFromSteps(...) and pass them through `ok()`.
     const fakeToolCalls = [
-      {
-        type: "tool-call",
-        toolCallId: "tc-a",
-        toolName: "list_capabilities",
-        input: {},
-      },
-      {
-        type: "tool-call",
-        toolCallId: "tc-b",
-        toolName: "web_search",
-        input: { query: "atlas" },
-      },
-      {
-        type: "tool-call",
-        toolCallId: "tc-c",
-        toolName: "read_file",
-        input: { path: "/tmp/x" },
-      },
+      { type: "tool-call", toolCallId: "tc-a", toolName: "list_capabilities", input: {} },
+      { type: "tool-call", toolCallId: "tc-b", toolName: "web_search", input: { query: "atlas" } },
+      { type: "tool-call", toolCallId: "tc-c", toolName: "read_file", input: { path: "/tmp/x" } },
     ];
     const fakeToolResults = [
       {
@@ -1143,10 +1033,7 @@ describe("workspace-chat handler", () => {
         output: { results: [] },
       },
     ];
-    const fakeSteps = [{
-      toolCalls: fakeToolCalls,
-      toolResults: fakeToolResults,
-    }];
+    const fakeSteps = [{ toolCalls: fakeToolCalls, toolResults: fakeToolResults }];
 
     mockStreamText.mockImplementation(
       (opts: {
@@ -1218,25 +1105,25 @@ describe("workspace-chat handler", () => {
 
     let capturedStreamArgs: { model?: unknown } | undefined;
     let capturedMetadata: { provider?: string; modelId?: string } | undefined;
-    mockStreamText.mockImplementation(
-      (opts: { onFinish?: (a: { text: string }) => void }) => {
-        capturedStreamArgs = opts as never;
-        opts.onFinish?.({ text: "Hi" });
-        return {
-          toUIMessageStream: vi.fn().mockImplementation(({ messageMetadata }: {
-            messageMetadata: (
-              m: { part: { type: string } },
-            ) => Record<string, unknown>;
-          }) => {
-            capturedMetadata = messageMetadata({
-              part: { type: "finish" },
-            }) as never;
-            return new ReadableStream({ start: (c) => c.close() });
-          }),
-          finishReason: Promise.resolve("stop"),
-        };
-      },
-    );
+    mockStreamText.mockImplementation((opts: { onFinish?: (a: { text: string }) => void }) => {
+      capturedStreamArgs = opts as never;
+      opts.onFinish?.({ text: "Hi" });
+      return {
+        toUIMessageStream: vi
+          .fn()
+          .mockImplementation(
+            ({
+              messageMetadata,
+            }: {
+              messageMetadata: (m: { part: { type: string } }) => Record<string, unknown>;
+            }) => {
+              capturedMetadata = messageMetadata({ part: { type: "finish" } }) as never;
+              return new ReadableStream({ start: (c) => c.close() });
+            },
+          ),
+        finishReason: Promise.resolve("stop"),
+      };
+    });
 
     const handler = getHandler();
     const ctx = makeContext({
@@ -1250,9 +1137,7 @@ describe("workspace-chat handler", () => {
     });
     await handler("", ctx);
 
-    expect(mockResolveModelFromString).toHaveBeenCalledWith(
-      "anthropic:claude-haiku-4-5",
-    );
+    expect(mockResolveModelFromString).toHaveBeenCalledWith("anthropic:claude-haiku-4-5");
     expect(capturedStreamArgs?.model).toBe(overrideModel);
     expect(capturedMetadata?.provider).toBe("anthropic.messages");
     expect(capturedMetadata?.modelId).toBe("claude-haiku-4-5");
@@ -1263,25 +1148,25 @@ describe("workspace-chat handler", () => {
 
     let capturedStreamArgs: { model?: unknown } | undefined;
     let capturedMetadata: { provider?: string; modelId?: string } | undefined;
-    mockStreamText.mockImplementation(
-      (opts: { onFinish?: (a: { text: string }) => void }) => {
-        capturedStreamArgs = opts as never;
-        opts.onFinish?.({ text: "Hi" });
-        return {
-          toUIMessageStream: vi.fn().mockImplementation(({ messageMetadata }: {
-            messageMetadata: (
-              m: { part: { type: string } },
-            ) => Record<string, unknown>;
-          }) => {
-            capturedMetadata = messageMetadata({
-              part: { type: "finish" },
-            }) as never;
-            return new ReadableStream({ start: (c) => c.close() });
-          }),
-          finishReason: Promise.resolve("stop"),
-        };
-      },
-    );
+    mockStreamText.mockImplementation((opts: { onFinish?: (a: { text: string }) => void }) => {
+      capturedStreamArgs = opts as never;
+      opts.onFinish?.({ text: "Hi" });
+      return {
+        toUIMessageStream: vi
+          .fn()
+          .mockImplementation(
+            ({
+              messageMetadata,
+            }: {
+              messageMetadata: (m: { part: { type: string } }) => Record<string, unknown>;
+            }) => {
+              capturedMetadata = messageMetadata({ part: { type: "finish" } }) as never;
+              return new ReadableStream({ start: (c) => c.close() });
+            },
+          ),
+        finishReason: Promise.resolve("stop"),
+      };
+    });
 
     const handler = getHandler();
     // Default context (no modelOverride on session).
@@ -1291,10 +1176,7 @@ describe("workspace-chat handler", () => {
     expect(mockResolveModelFromString).not.toHaveBeenCalled();
     // stubPlatformModels.get('conversational') returns the stub LanguageModelV3
     // whose modelId is the role name.
-    const streamModel = capturedStreamArgs?.model as {
-      modelId?: string;
-      provider?: string;
-    };
+    const streamModel = capturedStreamArgs?.model as { modelId?: string; provider?: string };
     expect(streamModel?.modelId).toBe("conversational");
     expect(capturedMetadata?.modelId).toBe("conversational");
     expect(capturedMetadata?.provider).toBe("stub.language-model");

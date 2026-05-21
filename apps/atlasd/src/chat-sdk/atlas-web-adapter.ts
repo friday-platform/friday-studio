@@ -353,11 +353,7 @@ export class AtlasWebAdapter implements Adapter<string, WebChatPayload> {
     inlineAttachedFiles(uiMessage, this.workspaceId, chatId);
     const messageText = joinTextParts(uiMessage);
     const userId = request.headers.get("X-Atlas-User-Id") ?? UserStorage.getCachedLocalUserId();
-    const {
-      datetime,
-      foreground_workspace_ids: foregroundWorkspaceIds,
-      model,
-    } = parsed.data;
+    const { datetime, foreground_workspace_ids: foregroundWorkspaceIds, model } = parsed.data;
 
     // Create the buffer BEFORE dispatching so we don't lose early events.
     // Capture the buffer reference so the delayed finishStream only closes
