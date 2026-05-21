@@ -63,7 +63,10 @@ export function splitMentions(
         workspaceId,
         chatId,
         title,
-        href: `/workspaces/${encodeURIComponent(workspaceId)}/chat/${encodeURIComponent(chatId)}`,
+        // Playground chat URL pattern is `/platform/<workspaceId>/chat/<chatId>`.
+        // The earlier `/workspaces/...` form was wrong — that path doesn't exist
+        // in this SvelteKit app and produced a 404 on click.
+        href: `/platform/${encodeURIComponent(workspaceId)}/chat/${encodeURIComponent(chatId)}`,
       });
     } else {
       // No resolved metadata — keep the raw @ws/chat token as text.

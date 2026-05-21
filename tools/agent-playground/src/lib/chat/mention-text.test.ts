@@ -29,7 +29,7 @@ describe("splitMentions", () => {
       workspaceId: "ws-a",
       chatId: "c1",
       title: "Demo chat",
-      href: "/workspaces/ws-a/chat/c1",
+      href: "/platform/ws-a/chat/c1",
     });
     expect(out[2]).toEqual({ kind: "text", text: " here" });
   });

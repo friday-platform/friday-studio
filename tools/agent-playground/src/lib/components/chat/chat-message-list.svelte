@@ -1200,20 +1200,20 @@
     word-break: break-word;
   }
 
-  /* @-mention links rendered inline in user-message bodies. Keeps
-     pre-wrap spacing, just swaps the raw `@ws/chat` token for a
-     clickable pill. */
+  /* @-mention links rendered inline in user-message bodies. The earlier
+     pill-with-primary-tint form blended into the surface-3 bubble in
+     some themes, so the link looked like invisible blank space — keep
+     the styling background-agnostic: a brand-accent foreground with a
+     dotted underline that stays visible regardless of bubble color. */
   .mention-link {
-    background-color: color-mix(in srgb, var(--color-primary), transparent 88%);
-    border-radius: var(--radius-1);
-    color: var(--color-primary);
-    padding-block: 0;
-    padding-inline: var(--size-1);
-    text-decoration: none;
+    color: light-dark(hsl(217 91% 38%), hsl(213 94% 78%));
+    font-weight: var(--font-weight-6);
+    text-decoration: underline dotted;
+    text-underline-offset: 2px;
   }
 
   .mention-link:hover {
-    background-color: color-mix(in srgb, var(--color-primary), transparent 78%);
+    text-decoration: underline solid;
   }
 
   /* Wraps the last assistant text bubble together with the actions
