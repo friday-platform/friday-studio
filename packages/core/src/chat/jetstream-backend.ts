@@ -306,7 +306,21 @@ export function createJetStreamChatBackend(
     const entry = await k.get(kvKey(workspaceId, chatId));
     if (!entry || entry.operation !== "PUT") return null;
     const raw = JSON.parse(dec.decode(entry.value));
-    return ChatMetadataSchema.parse(raw);
+    const meta = ChatMetadataSchema.parse(raw);
+    // Defense-in-depth ACL: the KV key already partitions by workspaceId,
+    // but a future migration that drops workspaceId from the key (see
+    // beads friday-studio-1z9) would lose that implicit gate. Treat
+    // ChatMetadata.workspaceId as the source of truth and reject a chat
+    // whose metadata doesn't match the requested workspace.
+    if (meta.workspaceId !== workspaceId) {
+      logger.warn("chat_metadata_workspace_mismatch", {
+        chatId,
+        requestedWorkspaceId: workspaceId,
+        actualWorkspaceId: meta.workspaceId,
+      });
+      return null;
+    }
+    return meta;
   }
 
   async function writeMetadata(meta: ChatMetadata): Promise<void> {
@@ -327,6 +341,12 @@ export function createJetStreamChatBackend(
         throw new Error(`Chat metadata not found: ${key}`);
       }
       const current = ChatMetadataSchema.parse(JSON.parse(dec.decode(entry.value)));
+      // Same defense-in-depth ACL as readMetadata — see beads friday-studio-1z9.
+      if (current.workspaceId !== workspaceId) {
+        throw new Error(
+          `Chat metadata workspaceId mismatch: requested ${workspaceId}, actual ${current.workspaceId}`,
+        );
+      }
       const next = mut(current);
       try {
         await k.update(key, enc.encode(JSON.stringify(next)), entry.revision);
@@ -521,7 +541,21 @@ export function createJetStreamChatBackend(
       try {
         const entry = await k.get(key);
         if (!entry || entry.operation !== "PUT") continue;
-        metas.push(ChatMetadataSchema.parse(JSON.parse(dec.decode(entry.value))));
+        const meta = ChatMetadataSchema.parse(JSON.parse(dec.decode(entry.value)));
+        // Defense-in-depth ACL: when a workspace filter is requested,
+        // also assert the parsed metadata field matches. Today this is
+        // redundant with the KV-key prefix filter above; once the
+        // storage refactor (beads friday-studio-1z9) drops workspaceId
+        // from the key, this becomes the actual scope check.
+        if (workspaceId && meta.workspaceId !== workspaceId) {
+          logger.warn("chat_metadata_workspace_mismatch_in_list", {
+            key,
+            requestedWorkspaceId: workspaceId,
+            actualWorkspaceId: meta.workspaceId,
+          });
+          continue;
+        }
+        metas.push(meta);
       } catch (err) {
         logger.warn("Skipping malformed chat metadata", { key, error: stringifyError(err) });
       }

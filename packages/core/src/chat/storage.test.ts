@@ -7,6 +7,7 @@ import { chatUploadsRoot } from "@atlas/utils/paths.server";
 import { connect, type NatsConnection } from "nats";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { startNatsTestServer, type TestNatsServer } from "../test-utils/nats-test-server.ts";
+import { ensureChatsKVBucket } from "./jetstream-backend.ts";
 import { ChatStorage, initChatStorage } from "./storage.ts";
 
 let server: TestNatsServer;
@@ -302,6 +303,69 @@ describe("ChatStorage (JetStream-backed)", () => {
 
     const list = await ChatStorage.listChatsByWorkspace(wsId);
     expect(list.ok && list.data.chats.length).toBe(1);
+  });
+
+  // Defense-in-depth ACL: ChatMetadata.workspaceId is the source of
+  // truth for chat ownership. Today the KV key prefix also encodes
+  // workspaceId, but the storage refactor (beads friday-studio-1z9)
+  // will drop that prefix. These tests pin the metadata-based check so
+  // the rejection path survives the refactor.
+  describe("metadata-based workspace ACL", () => {
+    const enc = new TextEncoder();
+    const poisonedMeta = (chatId: string, metaWorkspace: string) => ({
+      id: chatId,
+      userId: "poisoner",
+      workspaceId: metaWorkspace,
+      source: "atlas",
+      createdAt: "2026-05-21T00:00:00.000Z",
+      updatedAt: "2026-05-21T00:00:00.000Z",
+    });
+
+    it("getChat returns null when KV key and metadata.workspaceId disagree", async () => {
+      const kv = await ensureChatsKVBucket(nc);
+      const chatId = crypto.randomUUID();
+      const keyWorkspace = `wskey${crypto.randomUUID().replace(/-/g, "")}`;
+      const metaWorkspace = `wsmeta${crypto.randomUUID().replace(/-/g, "")}`;
+      await kv.put(
+        `${keyWorkspace}/${chatId}`,
+        enc.encode(JSON.stringify(poisonedMeta(chatId, metaWorkspace))),
+      );
+
+      const get = await ChatStorage.getChat(chatId, keyWorkspace);
+      expect(get.ok).toBe(true);
+      if (get.ok) expect(get.data).toBeNull();
+    });
+
+    it("listChatsByWorkspace does not include chats whose metadata.workspaceId mismatches", async () => {
+      const kv = await ensureChatsKVBucket(nc);
+      const chatId = crypto.randomUUID();
+      const keyWorkspace = `wslistkey${crypto.randomUUID().replace(/-/g, "")}`;
+      const metaWorkspace = `wslistmeta${crypto.randomUUID().replace(/-/g, "")}`;
+      await kv.put(
+        `${keyWorkspace}/${chatId}`,
+        enc.encode(JSON.stringify(poisonedMeta(chatId, metaWorkspace))),
+      );
+
+      const list = await ChatStorage.listChatsByWorkspace(keyWorkspace);
+      expect(list.ok).toBe(true);
+      if (list.ok) {
+        expect(list.data.chats.find((c) => c.id === chatId)).toBeUndefined();
+      }
+    });
+
+    it("updateChatTitle fails when KV key and metadata.workspaceId disagree", async () => {
+      const kv = await ensureChatsKVBucket(nc);
+      const chatId = crypto.randomUUID();
+      const keyWorkspace = `wsupdkey${crypto.randomUUID().replace(/-/g, "")}`;
+      const metaWorkspace = `wsupdmeta${crypto.randomUUID().replace(/-/g, "")}`;
+      await kv.put(
+        `${keyWorkspace}/${chatId}`,
+        enc.encode(JSON.stringify(poisonedMeta(chatId, metaWorkspace))),
+      );
+
+      const result = await ChatStorage.updateChatTitle(chatId, "renamed", keyWorkspace);
+      expect(result.ok).toBe(false);
+    });
   });
 
   it("sorts messages by metadata.startTimestamp / .timestamp on read", async () => {
