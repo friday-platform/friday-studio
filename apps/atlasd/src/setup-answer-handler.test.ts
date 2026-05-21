@@ -177,6 +177,10 @@ describe("commitWorkspaceSetupAnswer — pre-flight validation", () => {
     // Pre-flight failure: NO writes — env or credential — happen.
     expect(mockSetEnvFileVar).not.toHaveBeenCalled();
     expect(mockApplyDraftAwareMutation).not.toHaveBeenCalled();
+    // Pin the exact call count so a future retry-on-5xx around
+    // `fetchLinkCredential` can't silently break the fail-closed contract
+    // — one transient failure must surface as a 400, not be retried away.
+    expect(mockFetchLinkCredential).toHaveBeenCalledTimes(1);
   });
 
   test("rejects a credential whose provider doesn't match the requested provider", async () => {
