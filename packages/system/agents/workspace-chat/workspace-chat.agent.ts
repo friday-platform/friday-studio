@@ -270,6 +270,21 @@ function describeSignalTrigger(sig: unknown): string {
 }
 
 /**
+ * XML-escape a body string before embedding in the workspace prompt section.
+ * Covers the five predefined XML entities so author-supplied markdown
+ * (welcome text, variable descriptions) can't break out of its containing
+ * element or smuggle attribute boundaries.
+ */
+function escapeXml(input: string): string {
+  return input
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+/**
  * Format workspace capabilities as a system prompt section.
  *
  * When the full `wsConfig` is available, signal triggers (HTTP paths, cron
@@ -286,6 +301,14 @@ export function formatWorkspaceSection(
 
   if (details.description) {
     section += `\n${details.description}`;
+  }
+
+  // Author-written narrative banner. Same string the user just read above
+  // the setup form — surfacing it here means the agent can answer
+  // "what is this workspace for?" without re-deriving from the name alone.
+  const welcome = config?.workspace.welcome;
+  if (typeof welcome === "string" && welcome.length > 0) {
+    section += `\n<welcome>${escapeXml(welcome)}</welcome>`;
   }
 
   if (details.agents.length > 0) {
@@ -320,6 +343,25 @@ export function formatWorkspaceSection(
       return trigger ? `${s.name} (${trigger})` : s.name;
     });
     section += `\n<signals>\n${signalEntries.join("\n")}\n</signals>`;
+  }
+
+  // Declared workspace variables — name + required flag + optional
+  // description. Schema, default, and display_name stay tool-discoverable
+  // via describe_workspace; this index is the lean version the agent
+  // reads to answer "why do you need EMAIL_RECIPIENT?". Iteration order
+  // is the declaration order preserved by `Object.entries`, locked by
+  // the byte-stability test.
+  const variableEntries = Object.entries(config?.variables ?? {});
+  if (variableEntries.length > 0) {
+    const elements = variableEntries.map(([name, decl]) => {
+      const required = decl.schema.default === undefined ? "true" : "false";
+      const description = decl.description;
+      if (typeof description === "string" && description.length > 0) {
+        return `<variable name="${name}" required="${required}">\n<description>${escapeXml(description)}</description>\n</variable>`;
+      }
+      return `<variable name="${name}" required="${required}"/>`;
+    });
+    section += `\n<variables>\n${elements.join("\n")}\n</variables>`;
   }
 
   const mcpServerIds = Object.keys(config?.tools?.mcp?.servers ?? {});
