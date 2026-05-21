@@ -67,7 +67,7 @@ describe("createAssignWorkspaceSkillTool", () => {
     vi.spyOn(SkillStorage, "assignSkill").mockResolvedValue({ ok: true, data: undefined });
 
     const tools = createAssignWorkspaceSkillTool("ws-1", logger);
-    const result = await tools.assign_workspace_skill!.execute!(
+    const result = await tools.assign_workspace_skill?.execute?.(
       { skillRef: "@atlas/test-skill" },
       TOOL_CALL_OPTS,
     );
@@ -87,11 +87,11 @@ describe("createAssignWorkspaceSkillTool", () => {
 
     const tools = createAssignWorkspaceSkillTool("ws-1", logger);
 
-    const first = await tools.assign_workspace_skill!.execute!(
+    const first = await tools.assign_workspace_skill?.execute?.(
       { skillRef: "@atlas/test-skill" },
       TOOL_CALL_OPTS,
     );
-    const second = await tools.assign_workspace_skill!.execute!(
+    const second = await tools.assign_workspace_skill?.execute?.(
       { skillRef: "@atlas/test-skill" },
       TOOL_CALL_OPTS,
     );
@@ -102,7 +102,7 @@ describe("createAssignWorkspaceSkillTool", () => {
 
   it("returns structured error for an invalid skill ref", async () => {
     const tools = createAssignWorkspaceSkillTool("ws-1", logger);
-    const result = await tools.assign_workspace_skill!.execute!(
+    const result = await tools.assign_workspace_skill?.execute?.(
       { skillRef: "not-a-valid-ref" },
       TOOL_CALL_OPTS,
     );
@@ -117,7 +117,7 @@ describe("createAssignWorkspaceSkillTool", () => {
     vi.spyOn(SkillStorage, "get").mockResolvedValue({ ok: true, data: null });
 
     const tools = createAssignWorkspaceSkillTool("ws-1", logger);
-    const result = await tools.assign_workspace_skill!.execute!(
+    const result = await tools.assign_workspace_skill?.execute?.(
       { skillRef: "@atlas/missing" },
       TOOL_CALL_OPTS,
     );
@@ -132,7 +132,7 @@ describe("createAssignWorkspaceSkillTool", () => {
     vi.spyOn(SkillStorage, "get").mockResolvedValue({ ok: false, error: "DB timeout" });
 
     const tools = createAssignWorkspaceSkillTool("ws-1", logger);
-    const result = await tools.assign_workspace_skill!.execute!(
+    const result = await tools.assign_workspace_skill?.execute?.(
       { skillRef: "@atlas/test-skill" },
       TOOL_CALL_OPTS,
     );
@@ -148,7 +148,7 @@ describe("createAssignWorkspaceSkillTool", () => {
     });
 
     const tools = createAssignWorkspaceSkillTool("ws-1", logger);
-    const result = await tools.assign_workspace_skill!.execute!(
+    const result = await tools.assign_workspace_skill?.execute?.(
       { skillRef: "@atlas/test-skill" },
       TOOL_CALL_OPTS,
     );
@@ -161,7 +161,7 @@ describe("createAssignWorkspaceSkillTool", () => {
     vi.spyOn(SkillStorage, "assignSkill").mockResolvedValue({ ok: true, data: undefined });
 
     const tools = createAssignWorkspaceSkillTool("ws-1", logger);
-    const result = await tools.assign_workspace_skill!.execute!(
+    const result = await tools.assign_workspace_skill?.execute?.(
       { skillRef: "@atlas/test-skill", workspaceId: "ws-override" },
       TOOL_CALL_OPTS,
     );
@@ -193,7 +193,7 @@ describe("createUnassignWorkspaceSkillTool", () => {
     vi.spyOn(SkillStorage, "unassignSkill").mockResolvedValue({ ok: true, data: undefined });
 
     const tools = createUnassignWorkspaceSkillTool("ws-1", logger);
-    const result = await tools.unassign_workspace_skill!.execute!(
+    const result = await tools.unassign_workspace_skill?.execute?.(
       { skillRef: "@atlas/test-skill" },
       TOOL_CALL_OPTS,
     );
@@ -212,11 +212,11 @@ describe("createUnassignWorkspaceSkillTool", () => {
 
     const tools = createUnassignWorkspaceSkillTool("ws-1", logger);
 
-    const first = await tools.unassign_workspace_skill!.execute!(
+    const first = await tools.unassign_workspace_skill?.execute?.(
       { skillRef: "@atlas/test-skill" },
       TOOL_CALL_OPTS,
     );
-    const second = await tools.unassign_workspace_skill!.execute!(
+    const second = await tools.unassign_workspace_skill?.execute?.(
       { skillRef: "@atlas/test-skill" },
       TOOL_CALL_OPTS,
     );
@@ -227,7 +227,7 @@ describe("createUnassignWorkspaceSkillTool", () => {
 
   it("returns structured error for an invalid skill ref", async () => {
     const tools = createUnassignWorkspaceSkillTool("ws-1", logger);
-    const result = await tools.unassign_workspace_skill!.execute!(
+    const result = await tools.unassign_workspace_skill?.execute?.(
       { skillRef: "not-a-valid-ref" },
       TOOL_CALL_OPTS,
     );
@@ -242,7 +242,7 @@ describe("createUnassignWorkspaceSkillTool", () => {
     vi.spyOn(SkillStorage, "get").mockResolvedValue({ ok: true, data: null });
 
     const tools = createUnassignWorkspaceSkillTool("ws-1", logger);
-    const result = await tools.unassign_workspace_skill!.execute!(
+    const result = await tools.unassign_workspace_skill?.execute?.(
       { skillRef: "@atlas/missing" },
       TOOL_CALL_OPTS,
     );
@@ -257,7 +257,7 @@ describe("createUnassignWorkspaceSkillTool", () => {
     vi.spyOn(SkillStorage, "get").mockResolvedValue({ ok: false, error: "DB timeout" });
 
     const tools = createUnassignWorkspaceSkillTool("ws-1", logger);
-    const result = await tools.unassign_workspace_skill!.execute!(
+    const result = await tools.unassign_workspace_skill?.execute?.(
       { skillRef: "@atlas/test-skill" },
       TOOL_CALL_OPTS,
     );
@@ -273,7 +273,7 @@ describe("createUnassignWorkspaceSkillTool", () => {
     });
 
     const tools = createUnassignWorkspaceSkillTool("ws-1", logger);
-    const result = await tools.unassign_workspace_skill!.execute!(
+    const result = await tools.unassign_workspace_skill?.execute?.(
       { skillRef: "@atlas/test-skill" },
       TOOL_CALL_OPTS,
     );
@@ -286,7 +286,7 @@ describe("createUnassignWorkspaceSkillTool", () => {
     vi.spyOn(SkillStorage, "unassignSkill").mockResolvedValue({ ok: true, data: undefined });
 
     const tools = createUnassignWorkspaceSkillTool("ws-1", logger);
-    const result = await tools.unassign_workspace_skill!.execute!(
+    const result = await tools.unassign_workspace_skill?.execute?.(
       { skillRef: "@atlas/test-skill", workspaceId: "ws-override" },
       TOOL_CALL_OPTS,
     );

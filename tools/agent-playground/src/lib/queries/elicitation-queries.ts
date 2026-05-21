@@ -17,7 +17,11 @@
 // which transitively pulls `@atlas/logger` → `node:path` into client bundles
 // and 500s the playground at `paths.ts`. The model module only depends on zod,
 // so it bundles cleanly for browser code.
-import { ElicitationSchema, type Elicitation } from "@atlas/core/elicitations/model";
+import {
+  ElicitationSchema,
+  type Elicitation,
+  type WorkspaceSetupAnswerValue,
+} from "@atlas/core/elicitations/model";
 import {
   createMutation,
   queryOptions,
@@ -25,6 +29,7 @@ import {
   type QueryClient,
 } from "@tanstack/svelte-query";
 import { z } from "zod";
+import { workspaceQueries } from "./workspace-queries.ts";
 
 // ==============================================================================
 // SCHEMAS
@@ -105,7 +110,7 @@ export function useAnswerElicitation() {
   return createMutation(() => ({
     mutationFn: async (input: {
       id: string;
-      value: string;
+      value: string | WorkspaceSetupAnswerValue;
       note?: string;
       answeredBy?: string;
       /**
@@ -181,4 +186,7 @@ export function mergeElicitationIntoCache(queryClient: QueryClient, next: Elicit
 function mergeAndInvalidate(queryClient: QueryClient, next: Elicitation): void {
   mergeElicitationIntoCache(queryClient, next);
   void queryClient.invalidateQueries({ queryKey: elicitationQueries.all() });
+  if (next.kind === "workspace-setup") {
+    void queryClient.invalidateQueries({ queryKey: workspaceQueries.all() });
+  }
 }

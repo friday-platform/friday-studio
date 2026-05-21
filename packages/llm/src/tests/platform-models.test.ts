@@ -12,11 +12,7 @@ vi.mock("../tracing.ts", async () => {
   return { ...actual, traceModel: traceModelMock };
 });
 
-import {
-  createPlatformModels,
-  DEFAULT_PLATFORM_MODELS,
-  PlatformModelsConfigError,
-} from "../platform-models.ts";
+import { createPlatformModels, PlatformModelsConfigError } from "../platform-models.ts";
 
 /**
  * Snapshot and restore the env vars the resolver reads so each test starts
@@ -68,20 +64,23 @@ describe("createPlatformModels", () => {
     expect(models.get("conversational")).toBeDefined();
   });
 
-  it("walks the labels default chain and picks Groq when GROQ_API_KEY is set", () => {
+  it("uses anthropic for labels by default — groq is opt-in even when GROQ_API_KEY is set", () => {
     setEnv({ GROQ_API_KEY: "gsk-test", ANTHROPIC_API_KEY: "sk-ant-test" });
 
-    // groq:openai/gpt-oss-120b is first in chain; both creds present — groq wins
-    expect(DEFAULT_PLATFORM_MODELS.labels[0]).toContain("groq:");
+    // Regression guard: a stray GROQ_API_KEY must NOT silently hijack the
+    // labels role. Users opt into groq via `models.labels` in settings.
     const models = createPlatformModels(null);
-    expect(models.get("labels")).toBeDefined();
+    const labels = models.get("labels");
+    expect(labels.provider).toContain("anthropic");
+    expect(labels.modelId).toBe("claude-haiku-4-5");
   });
 
-  it("falls through labels chain to anthropic when GROQ_API_KEY is missing", () => {
+  it("resolves labels from anthropic default when only ANTHROPIC_API_KEY is set", () => {
     setEnv({ ANTHROPIC_API_KEY: "sk-ant-test" });
 
-    const models = createPlatformModels(null);
-    expect(models.get("labels")).toBeDefined();
+    const labels = createPlatformModels(null).get("labels");
+    expect(labels.provider).toContain("anthropic");
+    expect(labels.modelId).toBe("claude-haiku-4-5");
   });
 
   it("accepts LITELLM_API_KEY as universal credential for every provider", () => {

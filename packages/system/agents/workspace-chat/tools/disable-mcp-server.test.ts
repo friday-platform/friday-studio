@@ -66,7 +66,10 @@ describe("createDisableMcpServerTool", () => {
     });
 
     const tools = createDisableMcpServerTool("ws-1", logger);
-    const result = await tools.disable_mcp_server!.execute!({ serverId: "github" }, TOOL_CALL_OPTS);
+    const result = await tools.disable_mcp_server?.execute?.(
+      { serverId: "github" },
+      TOOL_CALL_OPTS,
+    );
 
     expect(result).toEqual({
       success: true,
@@ -84,7 +87,7 @@ describe("createDisableMcpServerTool", () => {
     });
 
     const tools = createDisableMcpServerTool("ws-1", logger);
-    await tools.disable_mcp_server!.execute!({ serverId: "github", force: true }, TOOL_CALL_OPTS);
+    await tools.disable_mcp_server?.execute?.({ serverId: "github", force: true }, TOOL_CALL_OPTS);
 
     expect(mockDelete).toHaveBeenCalledWith(
       expect.objectContaining({ param: { serverId: "github" }, query: { force: "true" } }),
@@ -102,7 +105,7 @@ describe("createDisableMcpServerTool", () => {
     });
 
     const tools = createDisableMcpServerTool("ws-1", logger);
-    await tools.disable_mcp_server!.execute!({ serverId: "github", force: false }, TOOL_CALL_OPTS);
+    await tools.disable_mcp_server?.execute?.({ serverId: "github", force: false }, TOOL_CALL_OPTS);
 
     expect(mockDelete).toHaveBeenCalledWith(
       expect.objectContaining({ param: { serverId: "github" }, query: {} }),
@@ -117,7 +120,10 @@ describe("createDisableMcpServerTool", () => {
     });
 
     const tools = createDisableMcpServerTool("ws-1", logger);
-    const result = await tools.disable_mcp_server!.execute!({ serverId: "github" }, TOOL_CALL_OPTS);
+    const result = await tools.disable_mcp_server?.execute?.(
+      { serverId: "github" },
+      TOOL_CALL_OPTS,
+    );
 
     expect(result).toEqual({
       success: false,
@@ -140,7 +146,10 @@ describe("createDisableMcpServerTool", () => {
     });
 
     const tools = createDisableMcpServerTool("ws-1", logger);
-    const result = await tools.disable_mcp_server!.execute!({ serverId: "github" }, TOOL_CALL_OPTS);
+    const result = await tools.disable_mcp_server?.execute?.(
+      { serverId: "github" },
+      TOOL_CALL_OPTS,
+    );
 
     expect(result).toEqual({
       success: false,
@@ -163,7 +172,10 @@ describe("createDisableMcpServerTool", () => {
     });
 
     const tools = createDisableMcpServerTool("ws-1", logger);
-    const result = await tools.disable_mcp_server!.execute!({ serverId: "github" }, TOOL_CALL_OPTS);
+    const result = await tools.disable_mcp_server?.execute?.(
+      { serverId: "github" },
+      TOOL_CALL_OPTS,
+    );
 
     expect(result).toEqual({
       success: false,
@@ -179,7 +191,10 @@ describe("createDisableMcpServerTool", () => {
     });
 
     const tools = createDisableMcpServerTool("ws-1", logger);
-    const result = await tools.disable_mcp_server!.execute!({ serverId: "github" }, TOOL_CALL_OPTS);
+    const result = await tools.disable_mcp_server?.execute?.(
+      { serverId: "github" },
+      TOOL_CALL_OPTS,
+    );
 
     expect(result).toEqual({ success: false, error: "Internal server error" });
   });
@@ -189,7 +204,10 @@ describe("createDisableMcpServerTool", () => {
     mockDelete.mockRejectedValueOnce(new Error("Network failure"));
 
     const tools = createDisableMcpServerTool("ws-1", logger);
-    const result = await tools.disable_mcp_server!.execute!({ serverId: "github" }, TOOL_CALL_OPTS);
+    const result = await tools.disable_mcp_server?.execute?.(
+      { serverId: "github" },
+      TOOL_CALL_OPTS,
+    );
 
     expect(result).toEqual({ success: false, error: "Disable failed: Network failure" });
     expect(logger.warn).toHaveBeenCalledWith(
@@ -210,7 +228,7 @@ describe("createDisableMcpServerTool", () => {
     });
 
     const tools = createDisableMcpServerTool("ws-1", logger);
-    const result = await tools.disable_mcp_server!.execute!(
+    const result = await tools.disable_mcp_server?.execute?.(
       { serverId: "github", workspaceId: "ws-other" },
       TOOL_CALL_OPTS,
     );
@@ -237,7 +255,7 @@ describe("createDisableMcpServerTool", () => {
     });
 
     const tools = createDisableMcpServerTool("ws-1", logger);
-    await tools.disable_mcp_server!.execute!(
+    await tools.disable_mcp_server?.execute?.(
       { serverId: "github", workspaceId: "ws-other" },
       TOOL_CALL_OPTS,
     );
@@ -253,7 +271,7 @@ describe("createDisableMcpServerTool", () => {
     });
 
     const tools = createDisableMcpServerTool("ws-1", logger);
-    await tools.disable_mcp_server!.execute!({ serverId: "github" }, TOOL_CALL_OPTS);
+    await tools.disable_mcp_server?.execute?.({ serverId: "github" }, TOOL_CALL_OPTS);
 
     expect(mockInvalidateBlock2).not.toHaveBeenCalled();
   });

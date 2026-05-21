@@ -138,7 +138,7 @@ describe("FSM LLM action — forwards configured platform tools to LLM (Phase 5)
         observedPrompt = `${params.system ?? ""}\n\n${params.prompt ?? ""}`;
         observedToolNames = Object.keys(params.tools as Record<string, Tool>);
 
-        const tool = (params.tools as Record<string, Tool>)["save_memory_entry"];
+        const tool = (params.tools as Record<string, Tool>).save_memory_entry;
         if (tool?.execute) {
           await tool.execute(
             { workspaceId: "ignored-by-wrapper", memoryName: "decisions", text: "new decision" },
@@ -200,7 +200,7 @@ describe("FSM LLM action — forwards configured platform tools to LLM (Phase 5)
     const lastCall = mockCreateMCPTools.mock.calls.at(-1);
     const configs = lastCall?.[0] as Record<string, unknown> | undefined;
     expect(configs).toBeDefined();
-    expect(configs!["atlas-platform"]).toBeDefined();
+    expect(configs?.["atlas-platform"]).toBeDefined();
 
     // 2) save_memory_entry reached the LLM tools map without being declared.
     expect(observedToolNames).toContain("save_memory_entry");

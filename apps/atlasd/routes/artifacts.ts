@@ -260,7 +260,7 @@ async function convertUploadedBinary(opts: {
     const markdown = await converter(buffer, fileName);
 
     const summary = placeholderSummary(markdown);
-    const mdName = fileName.replace(/\.[^.]+$/, "") + ".md";
+    const mdName = `${fileName.replace(/\.[^.]+$/, "")}.md`;
 
     return {
       ok: true,

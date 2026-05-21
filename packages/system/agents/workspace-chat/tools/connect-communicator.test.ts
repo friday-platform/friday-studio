@@ -6,7 +6,7 @@ const OPTS = { toolCallId: "tc-1", messages: [], abortSignal: new AbortControlle
 describe("connect_communicator tool", () => {
   it("returns kind + active progress on telegram", async () => {
     const tool = createConnectCommunicatorTool();
-    const result = await tool.execute!({ kind: "telegram" }, OPTS);
+    const result = await tool.execute?.({ kind: "telegram" }, OPTS);
     expect(result).toEqual({
       kind: "telegram",
       progress: { label: "Connecting Telegram", status: "active" },
@@ -23,7 +23,7 @@ describe("connect_communicator tool", () => {
       ["whatsapp", "Connecting WhatsApp"],
     ] as const;
     for (const [kind, expected] of cases) {
-      const result = await tool.execute!({ kind }, OPTS);
+      const result = await tool.execute?.({ kind }, OPTS);
       expect(result).toMatchObject({ kind, progress: { label: expected, status: "active" } });
     }
   });

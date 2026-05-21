@@ -697,6 +697,90 @@ describe("workspace-chat handler", () => {
     expect(persistedSerialized).not.toContain("<retrieved_content");
   });
 
+  it("strips role:'system' UI messages from chat history before LLM call", async () => {
+    // The bootstrap workspace-setup spawn persists a welcome banner with
+    // role:"system" so chat-message-list renders it as a centered banner.
+    // Passing that through to the LLM would produce a second SystemBlock
+    // mid-conversation; Anthropic rejects that with "Multiple system
+    // messages that are separated by user/assistant messages."
+    const welcome: AtlasUIMessage = {
+      id: crypto.randomUUID(),
+      role: "system",
+      parts: [{ type: "text", text: "Welcome to the workspace" }],
+    };
+    const userMessage = makeMessage("user", "Hello");
+    setupDefaultMocks([welcome, userMessage]);
+
+    let convertedInput: unknown;
+    mockConvertToModelMessages.mockImplementation((msgs: unknown) => {
+      convertedInput = msgs;
+      return msgs;
+    });
+
+    const handler = getHandler();
+    const ctx = makeContext();
+    await handler("", ctx);
+
+    expect(convertedInput).toBeDefined();
+    const passed = convertedInput as AtlasUIMessage[];
+    const systemRoles = passed.filter((m) => m.role === "system");
+    expect(systemRoles).toHaveLength(0);
+  });
+
+  it("strips synthetic assistant messages from chat history before LLM call", async () => {
+    // The bootstrap workspace-setup spawn seeds a synthetic assistant
+    // message with a completed `tool-request_workspace_setup` part so the
+    // UI can render the setup form inline. The agent never actually
+    // called the tool — passing this message to the LLM would let the
+    // model treat the fake `pending_confirmation` output as real prior
+    // work and either re-call the tool or hallucinate from the fake
+    // output. The sentinel lives on `metadata.synthetic === true`.
+    const syntheticAssistant: AtlasUIMessage = {
+      id: crypto.randomUUID(),
+      role: "assistant",
+      metadata: { synthetic: true },
+      parts: [
+        { type: "text", text: "Welcome — fill out the setup form below." },
+        {
+          type: "tool-request_workspace_setup",
+          toolCallId: crypto.randomUUID(),
+          state: "output-available",
+          input: {},
+          output: {
+            status: "pending_confirmation",
+            elicitationId: "elic_stub_id",
+            requirementCount: 1,
+            message: "Workspace setup form raised in this chat.",
+          },
+        },
+      ],
+    };
+    const userMessage = makeMessage("user", "Hi");
+    setupDefaultMocks([syntheticAssistant, userMessage]);
+
+    let convertedInput: unknown;
+    mockConvertToModelMessages.mockImplementation((msgs: unknown) => {
+      convertedInput = msgs;
+      return msgs;
+    });
+
+    const handler = getHandler();
+    const ctx = makeContext();
+    await handler("", ctx);
+
+    expect(convertedInput).toBeDefined();
+    const passed = convertedInput as AtlasUIMessage[];
+    // The synthetic assistant message must NOT be in the LLM input.
+    const syntheticById = passed.find((m) => m.id === syntheticAssistant.id);
+    expect(syntheticById).toBeUndefined();
+    // Defense-in-depth: no message carries the synthetic sentinel either.
+    const syntheticByFlag = passed.filter((m) => m.metadata?.synthetic === true);
+    expect(syntheticByFlag).toHaveLength(0);
+    // The real user message survives.
+    const userById = passed.find((m) => m.id === userMessage.id);
+    expect(userById).toBeDefined();
+  });
+
   // -----------------------------------------------------------------------
   // Seamless auto-continue after connect_service
   // -----------------------------------------------------------------------

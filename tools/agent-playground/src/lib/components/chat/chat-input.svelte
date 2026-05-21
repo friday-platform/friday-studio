@@ -114,7 +114,7 @@
     if (!SpeechRecognitionCtor) return;
 
     const sr = new SpeechRecognitionCtor();
-    sr.continuous = false;
+    sr.continuous = true;
     sr.interimResults = true;
     sr.lang = navigator.language || "en-US";
 

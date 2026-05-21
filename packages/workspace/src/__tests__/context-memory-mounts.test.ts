@@ -63,7 +63,7 @@ describe("ctx.memory.mounts[name]", () => {
   it("is accessible as StoreMountBinding after runtime start", () => {
     const ctx = buildMockContext();
 
-    const mount: StoreMountBinding | undefined = ctx.memory?.mounts["backlog"];
+    const mount: StoreMountBinding | undefined = ctx.memory?.mounts.backlog;
     expect(mount).toBeDefined();
     expect(mount?.name).toBe("backlog");
     expect(mount?.mode).toBe("rw");
@@ -72,7 +72,7 @@ describe("ctx.memory.mounts[name]", () => {
 
   it("read() returns entries through the binding", async () => {
     const ctx = buildMockContext();
-    const mount = ctx.memory?.mounts["backlog"];
+    const mount = ctx.memory?.mounts.backlog;
 
     const entries = await mount?.read();
     expect(entries).toEqual([ENTRY]);
@@ -80,7 +80,7 @@ describe("ctx.memory.mounts[name]", () => {
 
   it("append() returns the appended entry through the binding", async () => {
     const ctx = buildMockContext();
-    const mount = ctx.memory?.mounts["backlog"];
+    const mount = ctx.memory?.mounts.backlog;
 
     const result = await mount?.append(ENTRY);
     expect(result).toEqual(ENTRY);

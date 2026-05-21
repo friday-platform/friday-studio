@@ -14,7 +14,7 @@
 <script lang="ts">
   import { Button, Dialog } from "@atlas/ui";
   import { goto } from "$app/navigation";
-  import { getDaemonClient } from "$lib/daemon-client";
+  import { getDaemonClient, PROXY_BASE } from "$lib/daemon-client";
   import {
     getFieldRendering,
     humanizeFieldName,
@@ -35,9 +35,25 @@
   let { workspaceId, jobId, jobTitle, signals, triggers }: Props = $props();
 
   let error = $state<string | null>(null);
+  let submitting = $state(false);
 
   let selectedSignalId = $state("");
   let formData = $state<Record<string, unknown>>({});
+
+  /**
+   * Held in component scope so the unmount cleanup and the Cancel handler
+   * can abort an in-flight trigger+poll cycle. Without this, a poll that
+   * outlives the dialog would happily fire `goto()` on whatever page the
+   * user navigated to next.
+   */
+  let pollController: AbortController | null = null;
+
+  $effect(() => {
+    return () => {
+      pollController?.abort();
+      pollController = null;
+    };
+  });
 
   const triggerSignals = $derived(
     triggers
@@ -70,9 +86,12 @@
   });
 
   function resetForm() {
+    pollController?.abort();
+    pollController = null;
     selectedSignalId = "";
     formData = {};
     error = null;
+    submitting = false;
   }
 
   function handleSignalChange(signalId: string) {
@@ -82,6 +101,8 @@
   }
 
   async function handleSubmit(open: { set: (v: boolean) => void }) {
+    if (submitting) return;
+
     if (!activeSignalId) {
       error = "Please select a signal to trigger";
       return;
@@ -103,33 +124,168 @@
     const payload = hasSchema ? { ...formData } : undefined;
 
     error = null;
+    submitting = true;
 
-    // Fire-and-forget: dismiss modal immediately, navigate on success
-    open.set(false);
-    resetForm();
+    // Use `?nowait=true` so the inbound HTTP request returns 202 as soon as
+    // the signal is published to JetStream. The cascade runs decoupled from
+    // this browser tab's lifetime — closing the modal, navigating away, or
+    // refreshing won't abort the spawned session. The sync path (no nowait)
+    // held the fetch open for the full cascade and cancelled the run on any
+    // navigation; long jobs (minutes-plus) always lost that race.
+    //
+    // Direct fetch instead of the typed RPC client: the daemon route has no
+    // `zValidator("query")`, so the Hono RPC input type doesn't expose a
+    // `query` field. Adding one upstream would force every other caller
+    // (CLI, MCP server, workspace-chat job tools, the platform client) to
+    // pass `query: {}` boilerplate — not worth the churn for a single
+    // optional flag.
+    //
+    // Auto-navigation: nowait's response doesn't carry a sessionId (the
+    // consumer assigns one when it picks up the message). To still land
+    // the user on the running session view, snapshot the existing session
+    // ids for this job *before* the POST, then poll the same
+    // `/api/sessions` endpoint that powers the Recent Runs sidebar and
+    // navigate to the first session for this job whose id isn't in the
+    // snapshot. Snapshot diff is clock-free (the old `startedAt >= since`
+    // approach silently mis-attributed sessions whenever the browser and
+    // daemon clocks disagreed).
+    //
+    // KNOWN LIMITATION: filtering by `jobName === jobId` rules out
+    // concurrent triggers for *other* jobs in the same workspace, but
+    // does NOT disambiguate two triggers for the *same* job. If a cron
+    // schedule overlaps a manual click, or the same job is launched
+    // from two browser tabs within a few hundred ms, both polls see
+    // both new sessions and both grab the first non-snapshot match —
+    // one tab navigates to the other's run. Failure mode is benign
+    // (you land on a real running session of the same job, not an
+    // error page), and same-job same-workspace concurrent triggers
+    // are vanishingly rare in interactive use. A clean fix would
+    // thread the daemon's `correlationId` into `SessionSummary` and
+    // match on that — out of scope here.
+    //
+    // The modal stays open showing "Starting…" until we either land on the
+    // spawned session view or the poll budget runs out — closing on click
+    // before the session existed gave the user "nothing happened" for up
+    // to half a second on the happy path.
+    pollController?.abort();
+    const controller = new AbortController();
+    pollController = controller;
+    const { signal } = controller;
 
-    const client = getDaemonClient();
-    client.workspace[":workspaceId"].signals[":signalId"]
-      .$post({
-        param: { workspaceId, signalId },
-        json: { payload },
-      })
-      .then(async (res) => {
-        if (!res.ok) {
-          console.error("Trigger failed:", res.status);
-          return;
-        }
-        const data = await res.json();
-        // Response can be {status:"completed",sessionId,...} (default sync)
-        // or {status:"accepted",correlationId,...} (?nowait=true). This
-        // dialog uses sync mode (no nowait), so navigate to the session.
-        if (data.status === "completed" && data.sessionId) {
-          goto(`/platform/${workspaceId}/sessions/${data.sessionId}`);
-        }
-      })
-      .catch((err) => {
-        console.error("Failed to trigger signal:", err);
+    try {
+      const seenSessionIds = await snapshotSessionIds(workspaceId, jobId, signal);
+      if (signal.aborted) return;
+
+      const url = `${PROXY_BASE}/api/workspaces/${encodeURIComponent(
+        workspaceId,
+      )}/signals/${encodeURIComponent(signalId)}?nowait=true`;
+      const triggerRes = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ payload }),
+        signal,
       });
+      if (!triggerRes.ok) {
+        error = `Trigger failed (HTTP ${triggerRes.status})`;
+        submitting = false;
+        return;
+      }
+
+      const sessionId = await findSpawnedSessionId(workspaceId, jobId, seenSessionIds, signal);
+      if (signal.aborted) return;
+
+      if (sessionId) {
+        // Route change unmounts the dialog; the $effect cleanup aborts the
+        // controller automatically, so no separate teardown here.
+        open.set(false);
+        resetForm();
+        goto(`/platform/${workspaceId}/sessions/${sessionId}`);
+      } else {
+        error = "Couldn't find the spawned session — check Recent Runs.";
+        submitting = false;
+      }
+    } catch (err) {
+      if ((err as Error | undefined)?.name === "AbortError") return;
+      console.error("Failed to trigger signal:", err);
+      error = "Failed to trigger signal.";
+      submitting = false;
+    }
+  }
+
+  /**
+   * Snapshot the currently-known session ids for a job, so the poll below
+   * can identify the freshly-spawned one by exclusion. Empty set on error
+   * — caller still polls; worst case nothing matches and the user sees the
+   * inline error in the dialog.
+   */
+  async function snapshotSessionIds(
+    workspaceId: string,
+    jobName: string,
+    signal: AbortSignal,
+  ): Promise<Set<string>> {
+    try {
+      const client = getDaemonClient();
+      const res = await client.sessions.index.$get(
+        { query: { workspaceId } },
+        { init: { signal } },
+      );
+      if (!res.ok) return new Set();
+      const data = await res.json();
+      return new Set(
+        data.sessions.filter((s) => s.jobName === jobName).map((s) => s.sessionId),
+      );
+    } catch {
+      return new Set();
+    }
+  }
+
+  /**
+   * Poll the same endpoint that powers the Recent Runs panel
+   * (`recent-sessions.svelte` → `sessionQueries.list`) until a session for
+   * this workspace+job appears whose id is not in the pre-POST snapshot.
+   * The list is returned newest-first, so the first non-snapshot match is
+   * the run we just triggered.
+   *
+   * Budget: first poll fires immediately, then 150ms cadence for the first
+   * 5 attempts (the user is staring at "Starting…"; tighten the loop), then
+   * 400ms for the remaining 12 attempts (~5s tail). Total ~5.5s before we
+   * give up and surface an inline error.
+   */
+  async function findSpawnedSessionId(
+    workspaceId: string,
+    jobName: string,
+    seen: Set<string>,
+    signal: AbortSignal,
+  ): Promise<string | null> {
+    const fastInterval = 150;
+    const fastAttempts = 5;
+    const slowInterval = 400;
+    const slowAttempts = 12;
+    const totalAttempts = fastAttempts + slowAttempts;
+    const client = getDaemonClient();
+    for (let attempt = 0; attempt < totalAttempts; attempt++) {
+      if (signal.aborted) return null;
+      try {
+        const res = await client.sessions.index.$get(
+          { query: { workspaceId } },
+          { init: { signal } },
+        );
+        if (res.ok) {
+          const data = await res.json();
+          const match = data.sessions.find(
+            (s) => s.jobName === jobName && !seen.has(s.sessionId),
+          );
+          if (match?.sessionId) return match.sessionId;
+        }
+      } catch (err) {
+        if ((err as Error | undefined)?.name === "AbortError") return null;
+        console.warn("Session poll failed:", err);
+      }
+      if (signal.aborted) return null;
+      const intervalMs = attempt < fastAttempts ? fastInterval : slowInterval;
+      await new Promise<void>((resolve) => setTimeout(resolve, intervalMs));
+    }
+    return null;
   }
 </script>
 
@@ -243,8 +399,8 @@
           {/if}
 
           <div class="buttons">
-            <Dialog.Button type="submit" closeOnClick={false}>
-              Run
+            <Dialog.Button type="submit" closeOnClick={false} disabled={submitting}>
+              {submitting ? "Starting…" : "Run"}
             </Dialog.Button>
             <Dialog.Cancel onclick={resetForm}>Cancel</Dialog.Cancel>
           </div>

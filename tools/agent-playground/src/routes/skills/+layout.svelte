@@ -6,7 +6,7 @@
 -->
 
 <script lang="ts">
-  import { Button, Dialog, IconSmall, ListDetail } from "@atlas/ui";
+  import { Button, Dialog, ListDetail } from "@atlas/ui";
   import { page } from "$app/state";
   import SkillLoader from "$lib/components/skills/skill-loader.svelte";
   import SkillsShImport from "$lib/components/skills/skills-sh-import.svelte";
@@ -44,10 +44,7 @@
       aria-label="Add skill"
       onclick={() => addDialogOpen.set(true)}
     >
-      {#snippet prepend()}
-        <IconSmall.Plus />
-      {/snippet}
-      Add
+      Add New
     </Button>
   {/snippet}
 

@@ -25,9 +25,24 @@ export function needsUserAction(call: ToolCallDisplay): boolean {
   // the burst and the standalone surface as it settles — the card renders
   // its own stable placeholder until the tool call is done streaming.
   if (call.toolName === "env_set") return true;
+  // `request_workspace_setup` raises the workspace-setup form the user must
+  // answer. Same shape as env_set — state-independent so the card surfaces
+  // immediately and stays put regardless of the elicitation's lifecycle.
+  if (call.toolName === "request_workspace_setup") return true;
   if (call.toolName === "request_human_input" && isInProgress(call.state)) return true;
   if (call.toolName === "connect_service" && call.state === "output-available") return true;
   if (call.toolName === "connect_communicator" && call.state === "output-available") return true;
+  // macOS TCC denial cards live inside the tool-burst. Without this branch
+  // the burst stays collapsed and the affordance (deeplink + suggested mv)
+  // is invisible — the model ends up describing buttons that aren't on
+  // screen. See packages/system/agents/workspace-chat/tools/tcc-detect.ts.
+  if (
+    typeof call.output === "object" &&
+    call.output !== null &&
+    (call.output as { tcc_denied?: unknown }).tcc_denied !== undefined
+  ) {
+    return true;
+  }
   return call.children?.some((child) => needsUserAction(child)) ?? false;
 }
 

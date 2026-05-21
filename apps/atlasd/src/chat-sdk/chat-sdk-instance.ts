@@ -76,6 +76,20 @@ const SlackLinkSecretSchema = z.object({
   app_id: z.string().min(1),
 });
 
+/**
+ * Decision 7 — per-provider setup gate for communicator inbound. The handler
+ * calls this before firing the "chat" signal so a setup-required workspace
+ * doesn't accidentally answer messages from a half-configured runtime.
+ *
+ * Resolves to `{ requires_setup: false }` when the workspace is ready,
+ * `{ requires_setup: true, setupUrl }` when the gate fires, or `null` when
+ * the workspace no longer exists (treat as "drop" — there's nothing to
+ * reply on behalf of).
+ */
+export type SetupGateCheck = () => Promise<
+  { requires_setup: false } | { requires_setup: true; setupUrl: string } | null
+>;
+
 export interface ChatSdkInstanceConfig {
   workspaceId: string;
   userId: string;
@@ -85,6 +99,7 @@ export interface ChatSdkInstanceConfig {
   chatTurnRegistry?: ChatTurnRegistry;
   triggerFn: TriggerFn;
   exposeKernel?: boolean;
+  setupGate?: SetupGateCheck;
 }
 
 export interface ChatSdkInstance {
@@ -794,10 +809,53 @@ export function createMessageHandler(
   triggerFn: TriggerFn,
   streamRegistry: StreamRegistry,
   stateAdapter?: ChatSdkStateAdapter,
-  options?: { exposeKernel?: boolean },
+  options?: { exposeKernel?: boolean; ownerUserId?: string; setupGate?: SetupGateCheck },
 ): (thread: Thread, message: Message) => Promise<void> {
   return async (thread: Thread, message: Message): Promise<void> => {
     const adapterName = thread.adapter.name;
+
+    // Decision 7 — communicator inbound setup gate. Runs ahead of subscribe
+    // so we don't leave a thread subscription dangling for a workspace the
+    // user has to set up before it can reply meaningfully. Owner gets the
+    // setup URL; anyone else (e.g. another user in a shared channel) is
+    // dropped silently — they can't fix anything.
+    if (options?.setupGate) {
+      const gate = await options.setupGate().catch((err) => {
+        logger.warn("setup_gate_check_failed", {
+          workspaceId,
+          threadId: thread.id,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        return null;
+      });
+      if (gate?.requires_setup) {
+        const senderUserId = message.author.userId;
+        const isOwner = !!options.ownerUserId && senderUserId === options.ownerUserId;
+        if (isOwner) {
+          try {
+            await thread.post(
+              `This workspace needs setup before I can respond here. Finish setup: ${gate.setupUrl}`,
+            );
+          } catch (err) {
+            logger.warn("setup_required_owner_reply_failed", {
+              workspaceId,
+              threadId: thread.id,
+              adapterName,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
+        } else {
+          logger.info("setup_required_non_owner_inbound_dropped", {
+            workspaceId,
+            threadId: thread.id,
+            adapterName,
+            senderUserId,
+          });
+        }
+        return;
+      }
+    }
+
     const sourceWasSet =
       stateAdapter &&
       (adapterName === "slack" ||
@@ -1059,6 +1117,8 @@ export async function initializeChatSdkInstance(
 
   const handler = createMessageHandler(workspaceId, triggerFn, streamRegistry, stateAdapter, {
     exposeKernel: config.exposeKernel,
+    ownerUserId: userId,
+    setupGate: config.setupGate,
   });
   chat.onNewMention(handler);
   chat.onSubscribedMessage(handler);

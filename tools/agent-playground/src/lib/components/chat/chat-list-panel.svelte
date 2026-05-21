@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Badge, IconSmall } from "@atlas/ui";
+  import { Badge, IconSmall, SidebarNav } from "@atlas/ui";
   import { onMount } from "svelte";
   import { z } from "zod";
 
@@ -270,25 +270,25 @@
 -->
 <aside class="chat-list-panel">
   {#if error}
-    <div class="list-error">{error}</div>
+    <div class="list-error text-2xs">{error}</div>
   {/if}
 
   {#if chats.length === 0 && !loading}
-    <p class="list-empty">No chats yet — send a message to start one.</p>
+    <p class="list-empty text-2xs">No chats yet — send a message to start one.</p>
   {/if}
 
-  <ul class="chat-list">
-    {#each visibleChats as chat (chat.id)}
-      {@const unread = isUnread(chat)}
-      <li class="chat-row" class:active={chat.id === currentChatId}>
-        <button class="chat-item" class:unread onclick={() => handleClick(chat.id)}>
-          <div class="item-body">
+  <div class="chat-list">
+    <SidebarNav.Root>
+      {#each visibleChats as chat (chat.id)}
+        {@const unread = isUnread(chat)}
+        <SidebarNav.Item active={chat.id === currentChatId} onclick={() => handleClick(chat.id)}>
+          <div class="item-body" class:unread>
             <div class="item-top">
-              <span class="item-title">{chat.title ?? "Untitled"}</span>
+              <span class="item-title text-sm">{chat.title ?? "Untitled"}</span>
               {#if unread}
                 <span class="item-unread" aria-hidden="true">*</span>
               {/if}
-              <span class="item-time">{formatRelativeTime(chat.updatedAt)}</span>
+              <span class="item-time text-2xs">{formatRelativeTime(chat.updatedAt)}</span>
             </div>
             {#if chat.source !== "atlas"}
               <div class="item-meta">
@@ -296,22 +296,26 @@
               </div>
             {/if}
           </div>
-        </button>
-        <button
-          class="chat-delete"
-          onclick={(e) => handleDelete(e, chat)}
-          aria-label="Delete chat {chat.title ?? 'Untitled'}"
-          title="Delete chat"
-        >
-          <IconSmall.TrashBin />
-        </button>
-      </li>
-    {/each}
-  </ul>
+
+          {#snippet actions()}
+            <button
+              type="button"
+              class="chat-delete"
+              onclick={(e) => handleDelete(e, chat)}
+              aria-label="Delete chat {chat.title ?? 'Untitled'}"
+              title="Delete chat"
+            >
+              <IconSmall.TrashBin />
+            </button>
+          {/snippet}
+        </SidebarNav.Item>
+      {/each}
+    </SidebarNav.Root>
+  </div>
 
   {#if hasMore}
     <div class="load-more-footer">
-      <button class="load-more" onclick={loadMore} disabled={loading}>
+      <button class="load-more text-2xs" onclick={loadMore} disabled={loading}>
         {loading ? "Loading…" : "Load more"}
       </button>
     </div>
@@ -333,13 +337,11 @@
 
   .list-error {
     color: var(--red-primary);
-    font-size: var(--font-size-1);
     padding-block: var(--size-3);
   }
 
   .list-empty {
     color: var(--text-faded);
-    font-size: var(--font-size-1);
     padding-block: var(--size-4);
     text-align: center;
   }
@@ -348,8 +350,6 @@
     display: flex;
     flex: 1;
     flex-direction: column;
-    list-style: none;
-    margin: 0;
     /* Without an explicit min-height: 0 a flex item won't shrink below
        its content size, which kills the inner overflow-y: auto scroll
        when the parent column has a finite height. */
@@ -359,99 +359,19 @@
        so the last chat row can scroll fully into view above it. Matches
        the footer's total height: pill + its block padding. */
     padding-block-end: calc(var(--size-7) + var(--size-4) * 2);
-    padding-inline: 0;
-    padding-block-start: 0;
     scrollbar-width: thin;
   }
 
-  /* Row wraps the main click target (.chat-item) and the delete button so
-     they share a single hover/active state — from the user's POV it's one
-     row, but we need two independent buttons so a click on the X doesn't
-     also select the chat. Rounded pill matches the left-nav active state
-     (var(--radius-2-5) + var(--highlight)). */
-  .chat-row {
-    align-items: stretch;
-    border-radius: var(--radius-2-5);
-    display: flex;
-    position: relative;
-    transition: background-color 100ms ease;
-  }
-
-  .chat-row.active {
-    background-color: var(--highlight);
-  }
-
-  .chat-item {
-    align-items: flex-start;
-    background: transparent;
-    border: none;
-    color: var(--text);
-    cursor: pointer;
-    display: flex;
-    flex: 1;
-    font: inherit;
-    min-inline-size: 0;
-    padding-block: var(--size-2);
-    /* Left padding is sized so the title's left edge optically aligns with
-       the trash icon's right edge — the trash sits at inset-inline-end:
-       var(--size-2) of a 24px button with the 16px icon centered (4px gap
-       inside the button), so visible content is ~12px from the row's
-       right edge. */
-    padding-inline: var(--size-3) var(--size-2);
-    text-align: start;
-  }
-
-  .chat-delete {
-    align-items: center;
-    background: transparent;
-    border: none;
-    border-radius: var(--radius-2);
-    color: var(--text-faded);
-    cursor: pointer;
-    display: flex;
-    /* Match .item-time's fixed-width slot so the icon is centered on the
-       same span the time was occupying — both elements share a 24px box.
-       Stretches the row's full height (inset-block: 0) so the icon
-       vertically centers regardless of whether the row also renders a
-       Badge under the title. */
-    inline-size: 24px;
-    inset-block: 0;
-    inset-inline-end: var(--size-2);
-    justify-content: center;
-    position: absolute;
-    /* Hidden until the row is hovered so quiet rows stay tidy; still
-       keyboard-focusable for accessibility (see :focus-visible below).
-       Cross-fades with .item-time over the same 150ms — both elements
-       sit in the same 24px slot, so opacity-only animation reads as a
-       single swap rather than a positional shift. */
-    opacity: 0;
-    pointer-events: none;
-    transition:
-      opacity 150ms ease,
-      color 100ms ease;
-  }
-
-  .chat-row:hover .chat-delete,
-  .chat-delete:focus-visible {
-    opacity: 1;
-    pointer-events: auto;
-  }
-
-  .chat-row:hover .item-time {
-    opacity: 0;
-  }
-
-  .chat-delete:hover,
-  .chat-delete:focus-visible {
-    color: var(--red-primary);
-  }
-
+  /* The chat row content is a column (title row + optional source badge).
+     It overrides the default centered row layout coming from SidebarNav's
+     trigger so multi-line content sits flush-left. */
   .item-body {
     display: flex;
     flex: 1;
     flex-direction: column;
     gap: 2px;
     min-inline-size: 0;
+    padding-block: var(--size-1);
   }
 
   .item-top {
@@ -462,7 +382,6 @@
 
   .item-title {
     flex: 1;
-    font-size: var(--font-size-3);
     font-weight: var(--font-weight-5);
     min-inline-size: 0;
     overflow: hidden;
@@ -470,7 +389,7 @@
     white-space: nowrap;
   }
 
-  .chat-item.unread .item-title {
+  .item-body.unread .item-title {
     font-weight: var(--font-weight-6);
   }
 
@@ -490,10 +409,12 @@
   .item-time {
     color: var(--text-faded);
     flex-shrink: 0;
-    font-size: var(--font-size-1);
     /* Fixed-width slot so the on-hover trash icon (same width, centered)
-       swaps in over the same visual span without shifting. */
+       swaps in over the same visual span without shifting. Opacity is
+       driven by `--sidebar-nav-row-hover` from SidebarNav.Item so the
+       hover-swap covers actions area too, not just the trigger. */
     inline-size: 24px;
+    opacity: calc(1 - var(--sidebar-nav-row-hover, 0));
     text-align: center;
     transition: opacity 150ms ease;
   }
@@ -501,6 +422,40 @@
   .item-meta {
     display: flex;
     gap: var(--size-1);
+  }
+
+  /* Action button: starts hidden, fades in when the row is hovered.
+     Driven by SidebarNav.Item's `--sidebar-nav-row-hover` so the swap is
+     symmetric with `.item-time`. `pointer-events` flips to auto only when
+     the row is hovered so the invisible button isn't a click target. */
+  .chat-delete {
+    align-items: center;
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-2);
+    color: var(--text-faded);
+    cursor: pointer;
+    display: flex;
+    /* Match .item-time's fixed-width slot so the icon is centered on the
+       same span the time was occupying — both elements share a 24px box. */
+    inline-size: 24px;
+    block-size: 100%;
+    justify-content: center;
+    opacity: var(--sidebar-nav-row-hover, 0);
+    pointer-events: var(--sidebar-nav-row-hover-pe, none);
+    transition:
+      opacity 150ms ease,
+      color 100ms ease;
+  }
+
+  .chat-delete:focus-visible {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .chat-delete:hover,
+  .chat-delete:focus-visible {
+    color: var(--red-primary);
   }
 
   /* Absolutely positioned against .chat-list-panel (its positioned
@@ -531,7 +486,6 @@
     cursor: pointer;
     display: inline-flex;
     flex-shrink: 0;
-    font-size: var(--font-size-1);
     font-weight: var(--font-weight-5-5);
     justify-content: center;
     padding-inline: var(--size-3);
@@ -540,17 +494,7 @@
   }
 
   .load-more:hover:not(:disabled) {
-    background-color: color-mix(in srgb, var(--surface), var(--text) 10%);
-  }
-
-  @media (prefers-color-scheme: light) {
-    .load-more {
-      background-color: color-mix(in srgb, black 5%, transparent);
-    }
-
-    .load-more:hover:not(:disabled) {
-      background-color: color-mix(in srgb, black 10%, transparent);
-    }
+    background-color: var(--highlight-bright);
   }
 
   .load-more:disabled {

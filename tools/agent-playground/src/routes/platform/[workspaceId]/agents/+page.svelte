@@ -17,6 +17,7 @@
   import { page } from "$app/state";
   import AgentIoSchemas from "$lib/components/agents/agent-io-schemas.svelte";
   import InlineBadge from "$lib/components/shared/inline-badge.svelte";
+  import SetupRequiredBanner from "$lib/components/shared/setup-required-banner.svelte";
   import { integrationQueries, workspaceQueries, type IntegrationStatus } from "$lib/queries";
 
   const workspaceId = $derived(page.params.workspaceId ?? null);
@@ -199,6 +200,7 @@
   <PageLayout.Breadcrumbs {crumbs} />
   <PageLayout.Body>
     <PageLayout.Content>
+      <SetupRequiredBanner {workspaceId} />
       <p class="page-description">
         Agents handle individual steps in your workspace jobs. Each one runs a specific task.
       </p>
@@ -234,7 +236,9 @@
               ></span>
             {/if}
             <h2 class="agent-name">{agent.name}</h2>
-            <InlineBadge variant={agent.type === "llm" ? "info" : "success"}>{typeBadge(agent)}</InlineBadge>
+            <InlineBadge variant={agent.type === "llm" ? "info" : "success"}>
+              {typeBadge(agent)}
+            </InlineBadge>
             <button
               class="edit-yaml-btn"
               title="Edit configuration"

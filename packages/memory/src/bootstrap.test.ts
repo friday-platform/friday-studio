@@ -303,7 +303,7 @@ describe("buildBootstrapBlock", () => {
     const result = await buildBootstrapBlock(adapter, "ws-1", mounts);
     const bullets = result.split("\n").filter((l) => l.startsWith("- "));
     const encoder = new TextEncoder();
-    const bulletBytes = encoder.encode(bullets.map((b) => b + "\n").join("")).byteLength;
+    const bulletBytes = encoder.encode(bullets.map((b) => `${b}\n`).join("")).byteLength;
     expect(bulletBytes).toBeLessThanOrEqual(DEFAULT_MOUNT_MAX_BYTES);
   });
 

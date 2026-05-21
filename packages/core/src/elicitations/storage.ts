@@ -67,4 +67,6 @@ export const ElicitationStorage: ElicitationStorageAdapter = {
   expirePending: (
     input: { now?: Date; limit?: number } = {},
   ): Promise<Result<ExpireSweepResult, string>> => require_().expirePending(input),
+  reserveForCommit: (input: { id: string }): Promise<Result<void, string>> =>
+    require_().reserveForCommit(input),
 };

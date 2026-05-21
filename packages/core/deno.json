@@ -27,6 +27,7 @@
     "./chat/chat-sdk-state-adapter": "./src/chat/chat-sdk-state-adapter.ts",
     "./chat/export/render": "./src/chat/export/render.ts",
     "./chat/storage": "./src/chat/storage.ts",
+    "./chat/id": "./src/chat/id.ts",
     "./chat/cache-salt-storage": "./src/chat/cache-salt-storage.ts",
     "./chat/sse-manager": "./src/chat/sse-manager.ts",
     "./users/storage": "./src/users/storage.ts",

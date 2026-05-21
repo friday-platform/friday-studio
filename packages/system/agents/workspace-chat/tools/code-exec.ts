@@ -44,6 +44,7 @@
 import type { Buffer } from "node:buffer";
 import { type ExecOptions, exec } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
 import { promisify } from "node:util";
@@ -52,6 +53,7 @@ import type { Logger } from "@atlas/logger";
 import { getFridayHome } from "@atlas/utils/paths.server";
 import { tool } from "ai";
 import { z } from "zod";
+import { detectTccDenial, type TccDenial } from "./tcc-detect.ts";
 
 const execAsync = promisify(exec);
 
@@ -127,6 +129,14 @@ export interface RunCodeSuccess {
   scratch_dir: string;
   stdout_truncated: boolean;
   stderr_truncated: boolean;
+  /**
+   * Set when the script's output matches a macOS TCC denial against a
+   * protected user folder (Downloads/Desktop/Documents). Surfaces a
+   * structured affordance so the chat UI can render a "click to grant
+   * access" card instead of the bare `Operation not permitted` shell error.
+   * See {@link detectTccDenial}. Always absent on non-darwin.
+   */
+  tcc_denied?: TccDenial;
 }
 
 export interface RunCodeError {
@@ -396,14 +406,23 @@ function buildSuccess(
 ): RunCodeSuccess {
   const stdoutTruncated = stdout.length > MAX_STDOUT_BYTES;
   const stderrTruncated = stderr.length > MAX_STDERR_BYTES;
+  const finalStdout = stdoutTruncated ? stdout.slice(0, MAX_STDOUT_BYTES) : stdout;
+  const finalStderr = stderrTruncated ? stderr.slice(0, MAX_STDERR_BYTES) : stderr;
+  // Only run the detector on failure — a 0-exit script that happens to print
+  // "Operation not permitted" as data shouldn't trigger the affordance.
+  const tccDenied =
+    exitCode === 0
+      ? undefined
+      : (detectTccDenial(`${finalStdout}\n${finalStderr}`, homedir()) ?? undefined);
   return {
-    stdout: stdoutTruncated ? stdout.slice(0, MAX_STDOUT_BYTES) : stdout,
-    stderr: stderrTruncated ? stderr.slice(0, MAX_STDERR_BYTES) : stderr,
+    stdout: finalStdout,
+    stderr: finalStderr,
     exit_code: exitCode,
     duration_ms: duration,
     language,
     scratch_dir: scratchPath,
     stdout_truncated: stdoutTruncated,
     stderr_truncated: stderrTruncated,
+    ...(tccDenied ? { tcc_denied: tccDenied } : {}),
   };
 }

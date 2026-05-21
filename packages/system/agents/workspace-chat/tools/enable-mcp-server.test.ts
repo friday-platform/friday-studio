@@ -66,7 +66,7 @@ describe("createEnableMcpServerTool", () => {
     });
 
     const tools = createEnableMcpServerTool("ws-1", logger);
-    const result = await tools.enable_mcp_server!.execute!({ serverId: "github" }, TOOL_CALL_OPTS);
+    const result = await tools.enable_mcp_server?.execute?.({ serverId: "github" }, TOOL_CALL_OPTS);
 
     expect(result).toEqual({
       success: true,
@@ -82,7 +82,7 @@ describe("createEnableMcpServerTool", () => {
     mockPut.mockResolvedValueOnce({ status: 200, json: () => Promise.resolve({}) });
 
     const tools = createEnableMcpServerTool("ws-1", logger);
-    const result = await tools.enable_mcp_server!.execute!({ serverId: "github" }, TOOL_CALL_OPTS);
+    const result = await tools.enable_mcp_server?.execute?.({ serverId: "github" }, TOOL_CALL_OPTS);
 
     expect(result).toEqual({
       success: true,
@@ -99,9 +99,53 @@ describe("createEnableMcpServerTool", () => {
     });
 
     const tools = createEnableMcpServerTool("ws-1", logger);
-    const result = await tools.enable_mcp_server!.execute!({ serverId: "github" }, TOOL_CALL_OPTS);
+    const result = await tools.enable_mcp_server?.execute?.({ serverId: "github" }, TOOL_CALL_OPTS);
 
     expect(result).toEqual({ success: false, error: 'Server "github" not found in catalog.' });
+  });
+
+  // The server-side handler at apps/atlasd/routes/workspaces/mcp.ts:282 returns
+  // `{ success: false, error: "needs_manual_config", serverId }` with NO `message`
+  // field. Reading only `errorBody.message` collapses it to the generic
+  // "Conflict enabling MCP server." string — exactly the misleading wording that
+  // sent Friday hunting for a credential-binding fix during the Notion incident.
+  it("returns server's structured error code on 409 when no message field", async () => {
+    setupMock("ws-1");
+    mockPut.mockResolvedValueOnce({
+      status: 409,
+      json: () =>
+        Promise.resolve({
+          success: false,
+          error: "needs_manual_config",
+          serverId: "com-notion-mcp",
+        }),
+    });
+
+    const tools = createEnableMcpServerTool("ws-1", logger);
+    const result = await tools.enable_mcp_server?.execute?.(
+      { serverId: "com-notion-mcp" },
+      TOOL_CALL_OPTS,
+    );
+
+    expect(result).toEqual({ success: false, error: "needs_manual_config" });
+  });
+
+  it("prefers server's message field on 409 when both are present", async () => {
+    setupMock("ws-1");
+    mockPut.mockResolvedValueOnce({
+      status: 409,
+      json: () =>
+        Promise.resolve({
+          success: false,
+          error: "conflict",
+          message: "Operation conflicts with existing entity",
+        }),
+    });
+
+    const tools = createEnableMcpServerTool("ws-1", logger);
+    const result = await tools.enable_mcp_server?.execute?.({ serverId: "github" }, TOOL_CALL_OPTS);
+
+    expect(result).toEqual({ success: false, error: "Operation conflicts with existing entity" });
   });
 
   it("returns error on 422 blueprint", async () => {
@@ -115,7 +159,7 @@ describe("createEnableMcpServerTool", () => {
     });
 
     const tools = createEnableMcpServerTool("ws-1", logger);
-    const result = await tools.enable_mcp_server!.execute!({ serverId: "github" }, TOOL_CALL_OPTS);
+    const result = await tools.enable_mcp_server?.execute?.({ serverId: "github" }, TOOL_CALL_OPTS);
 
     expect(result).toEqual({
       success: false,
@@ -131,9 +175,39 @@ describe("createEnableMcpServerTool", () => {
     });
 
     const tools = createEnableMcpServerTool("ws-1", logger);
-    const result = await tools.enable_mcp_server!.execute!({ serverId: "github" }, TOOL_CALL_OPTS);
+    const result = await tools.enable_mcp_server?.execute?.({ serverId: "github" }, TOOL_CALL_OPTS);
 
     expect(result).toEqual({ success: false, error: "Internal server error" });
+  });
+
+  // Gateways (502/504) and misconfigured proxies routinely return HTML or
+  // empty bodies. Before, `res.json()` threw and bubbled to the outer catch,
+  // producing "Enable failed: Unexpected non-whitespace character..." — useless
+  // to the agent. Now the per-status default reaches the caller.
+  it("falls back to per-status default when body is not JSON", async () => {
+    setupMock("ws-1");
+    mockPut.mockResolvedValueOnce({
+      status: 502,
+      json: () => Promise.reject(new SyntaxError("Unexpected token '<' at position 0")),
+    });
+
+    const tools = createEnableMcpServerTool("ws-1", logger);
+    const result = await tools.enable_mcp_server?.execute?.({ serverId: "github" }, TOOL_CALL_OPTS);
+
+    expect(result).toEqual({ success: false, error: "Enable failed: 502" });
+  });
+
+  it("falls back to status-specific default on 409 with non-JSON body", async () => {
+    setupMock("ws-1");
+    mockPut.mockResolvedValueOnce({
+      status: 409,
+      json: () => Promise.reject(new SyntaxError("Unexpected end of JSON input")),
+    });
+
+    const tools = createEnableMcpServerTool("ws-1", logger);
+    const result = await tools.enable_mcp_server?.execute?.({ serverId: "github" }, TOOL_CALL_OPTS);
+
+    expect(result).toEqual({ success: false, error: "Conflict enabling MCP server." });
   });
 
   it("returns error when fetch throws", async () => {
@@ -141,7 +215,7 @@ describe("createEnableMcpServerTool", () => {
     mockPut.mockRejectedValueOnce(new Error("Network failure"));
 
     const tools = createEnableMcpServerTool("ws-1", logger);
-    const result = await tools.enable_mcp_server!.execute!({ serverId: "github" }, TOOL_CALL_OPTS);
+    const result = await tools.enable_mcp_server?.execute?.({ serverId: "github" }, TOOL_CALL_OPTS);
 
     expect(result).toEqual({ success: false, error: "Enable failed: Network failure" });
     expect(logger.warn).toHaveBeenCalledWith(
@@ -162,7 +236,7 @@ describe("createEnableMcpServerTool", () => {
     });
 
     const tools = createEnableMcpServerTool("ws-1", logger);
-    const result = await tools.enable_mcp_server!.execute!(
+    const result = await tools.enable_mcp_server?.execute?.(
       { serverId: "github", workspaceId: "ws-other" },
       TOOL_CALL_OPTS,
     );
@@ -187,7 +261,7 @@ describe("createEnableMcpServerTool", () => {
     });
 
     const tools = createEnableMcpServerTool("ws-1", logger);
-    await tools.enable_mcp_server!.execute!(
+    await tools.enable_mcp_server?.execute?.(
       { serverId: "github", workspaceId: "ws-other" },
       TOOL_CALL_OPTS,
     );
@@ -203,7 +277,7 @@ describe("createEnableMcpServerTool", () => {
     });
 
     const tools = createEnableMcpServerTool("ws-1", logger);
-    await tools.enable_mcp_server!.execute!({ serverId: "github" }, TOOL_CALL_OPTS);
+    await tools.enable_mcp_server?.execute?.({ serverId: "github" }, TOOL_CALL_OPTS);
 
     expect(mockInvalidateBlock2).not.toHaveBeenCalled();
   });

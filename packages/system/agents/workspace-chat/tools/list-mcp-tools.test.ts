@@ -65,7 +65,7 @@ describe("createListMcpToolsTool", () => {
     });
 
     const tools = createListMcpToolsTool(logger);
-    const result = await tools.list_mcp_tools!.execute!(
+    const result = await tools.list_mcp_tools?.execute?.(
       { serverId: "google-gmail" },
       TOOL_CALL_OPTS,
     );
@@ -91,7 +91,7 @@ describe("createListMcpToolsTool", () => {
     });
 
     const tools = createListMcpToolsTool(logger);
-    const result = await tools.list_mcp_tools!.execute!(
+    const result = await tools.list_mcp_tools?.execute?.(
       { serverId: "minimal-server" },
       TOOL_CALL_OPTS,
     );
@@ -106,7 +106,7 @@ describe("createListMcpToolsTool", () => {
     });
 
     const tools = createListMcpToolsTool(logger);
-    const result = await tools.list_mcp_tools!.execute!(
+    const result = await tools.list_mcp_tools?.execute?.(
       { serverId: "google-gmail" },
       TOOL_CALL_OPTS,
     );
@@ -129,7 +129,7 @@ describe("createListMcpToolsTool", () => {
     });
 
     const tools = createListMcpToolsTool(logger);
-    const result = await tools.list_mcp_tools!.execute!(
+    const result = await tools.list_mcp_tools?.execute?.(
       { serverId: "nonexistent" },
       TOOL_CALL_OPTS,
     );
@@ -149,7 +149,7 @@ describe("createListMcpToolsTool", () => {
     });
 
     const tools = createListMcpToolsTool(logger);
-    const result = await tools.list_mcp_tools!.execute!(
+    const result = await tools.list_mcp_tools?.execute?.(
       { serverId: "google-gmail" },
       TOOL_CALL_OPTS,
     );
@@ -161,7 +161,7 @@ describe("createListMcpToolsTool", () => {
     mockGet.mockRejectedValueOnce(new Error("Network failure"));
 
     const tools = createListMcpToolsTool(logger);
-    const result = await tools.list_mcp_tools!.execute!(
+    const result = await tools.list_mcp_tools?.execute?.(
       { serverId: "google-gmail" },
       TOOL_CALL_OPTS,
     );

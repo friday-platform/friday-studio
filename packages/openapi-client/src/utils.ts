@@ -61,7 +61,7 @@ export function getAtlasDaemonUrl(): string {
       // downgrade https→http: a user with explicit https config knows
       // their setup.
       if (tlsOn && explicit.startsWith("http://")) {
-        return "https://" + explicit.slice("http://".length);
+        return `https://${explicit.slice("http://".length)}`;
       }
       return explicit;
     }
@@ -85,10 +85,9 @@ export function getAtlasDaemonUrl(): string {
  * install — is "same host as the daemon".
  */
 export function getAtlasPlatformServerConfig() {
-  const override =
-    typeof process !== "undefined" && process?.env?.FRIDAY_ATLAS_PLATFORM_URL
-      ? process.env.FRIDAY_ATLAS_PLATFORM_URL
-      : undefined;
+  const override = process?.env?.FRIDAY_ATLAS_PLATFORM_URL
+    ? process.env.FRIDAY_ATLAS_PLATFORM_URL
+    : undefined;
   const url = override ?? `${getAtlasDaemonUrl()}/mcp`;
   return { transport: { type: "http" as const, url } };
 }

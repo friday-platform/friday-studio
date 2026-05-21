@@ -51,11 +51,12 @@ export interface PlatformModels {
 
 /**
  * Per-role ordered default chains. The factory walks each chain and picks
- * the first entry whose credentials are present. Preserves zero-config
- * Anthropic behavior while preferring Groq for labels when available.
+ * the first entry whose credentials are present. Zero-config behavior is
+ * Anthropic across every role; users who want Groq (or any other provider)
+ * for a role must opt in via `models.<role>` in friday.yml / settings.
  */
 export const DEFAULT_PLATFORM_MODELS: Record<PlatformRole, readonly string[]> = {
-  labels: ["groq:openai/gpt-oss-120b", "anthropic:claude-haiku-4-5"],
+  labels: ["anthropic:claude-haiku-4-5"],
   classifier: ["anthropic:claude-haiku-4-5"],
   planner: ["anthropic:claude-sonnet-4-6"],
   conversational: ["anthropic:claude-sonnet-4-6"],

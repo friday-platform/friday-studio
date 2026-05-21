@@ -152,12 +152,12 @@ export async function callTool(
           }
           reject(new DOMException("Aborted", "AbortError"));
         };
-        if (opts.abortSignal!.aborted) {
+        if (opts.abortSignal?.aborted) {
           fire();
           return;
         }
         abortHandler = fire;
-        opts.abortSignal!.addEventListener("abort", abortHandler, { once: true });
+        opts.abortSignal?.addEventListener("abort", abortHandler, { once: true });
       })
     : null;
 

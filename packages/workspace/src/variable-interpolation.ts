@@ -13,6 +13,7 @@
 
 import { statSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { decodeFromEnv, type VariableDeclaration, VariableSchemaSchema } from "@atlas/config";
 import { logger } from "@atlas/logger";
 import { getAtlasDaemonUrl } from "@atlas/oapi-client";
 import { z } from "zod";
@@ -35,48 +36,128 @@ export const WorkspaceVariablesSchema = z.object({
 
 export type WorkspaceVariables = z.infer<typeof WorkspaceVariablesSchema>;
 
-/** Pattern matching `{{key}}` — captures the key name. */
-const PLACEHOLDER_RE = /\{\{([a-z_]+)\}\}/g;
+/**
+ * Pattern matching `{{key}}` or `{{namespace.key}}` — captures the full token.
+ *
+ * Flat keys (`{{repo_root}}`) resolve from `WorkspaceVariables`. Dotted keys
+ * under the `variables.` namespace (`{{variables.email_recipient}}`) resolve
+ * from declared workspace variables.
+ */
+const PLACEHOLDER_RE = /\{\{([a-z_]+(?:\.[a-z_]+)?)\}\}/g;
+
+/** Convert a declared variable name to its auto-derived `.env` key. */
+export function variableEnvKey(name: string): string {
+  return name.toUpperCase();
+}
 
 /**
- * Recursively walk a parsed config object and replace `{{key}}` placeholders
- * in every string value with the corresponding entry from `variables`.
+ * Build the resolved `variables.*` namespace from declarations + workspace `.env`.
  *
+ * For each declared variable:
+ * - Read the env value at `UPPER_SNAKE_CASE(name)`.
+ * - If present and it validates against the declared schema, use it (coerced
+ *   to string via `String`).
+ * - Otherwise fall back to `schema.default` when present and itself valid.
+ * - Otherwise leave the variable unresolved (omitted from the returned map);
+ *   the interpolator leaves `{{variables.<name>}}` literal in that case.
+ *
+ * Coercion is one-way (env strings → typed values for validation; resolved
+ * values → strings for substitution). The answer handler is what writes
+ * typed user input back into `.env` as a string.
+ */
+export function resolveDeclaredVariables(
+  declarations: Record<string, VariableDeclaration> | undefined,
+  env: Record<string, string | undefined>,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!declarations) return out;
+  for (const [name, decl] of Object.entries(declarations)) {
+    const resolved = resolveOne(decl, env[variableEnvKey(name)]);
+    if (resolved !== undefined) out[name] = resolved;
+  }
+  return out;
+}
+
+function resolveOne(decl: VariableDeclaration, raw: string | undefined): string | undefined {
+  const zodSchema = z.fromJSONSchema(VariableSchemaSchema.parse(decl.schema));
+  const tried = tryCoerceAndValidate(decl, raw, zodSchema);
+  if (tried.ok) return String(tried.value);
+  const fallback = decl.schema.default;
+  if (fallback === undefined) return undefined;
+  const fallbackOk = zodSchema.safeParse(fallback);
+  if (!fallbackOk.success) return undefined;
+  return String(fallbackOk.data);
+}
+
+type CoerceResult = { ok: true; value: unknown } | { ok: false };
+
+function tryCoerceAndValidate(
+  decl: VariableDeclaration,
+  raw: string | undefined,
+  zodSchema: z.ZodType,
+): CoerceResult {
+  if (raw === undefined) return { ok: false };
+  const decoded = decodeFromEnv(raw, decl);
+  if (decoded === undefined) return { ok: false };
+  const parsed = zodSchema.safeParse(decoded);
+  return parsed.success ? { ok: true, value: parsed.data } : { ok: false };
+}
+
+/**
+ * Recursively walk a parsed config object and replace `{{key}}` and
+ * `{{variables.<name>}}` placeholders in every string value.
+ *
+ * - Flat `{{key}}` resolves from `WorkspaceVariables` (daemon-known values).
+ * - `{{variables.<name>}}` resolves from the pre-built `declaredVariables`
+ *   namespace (see `resolveDeclaredVariables`). Undeclared or unresolved
+ *   variables stay literal — the strict namespace prevents silent env leaks.
  * - Non-string values (numbers, booleans, null) are returned as-is.
- * - Unknown `{{unknown_key}}` placeholders are left untouched (a warning is logged).
  * - The function is pure modulo logging — it returns a new object tree.
  */
-export function interpolateConfig<T>(value: T, variables: WorkspaceVariables): T {
+export function interpolateConfig<T>(
+  value: T,
+  variables: WorkspaceVariables,
+  declaredVariables: Record<string, string> = {},
+): T {
   if (typeof value === "string") {
-    return interpolateString(value, variables) as T;
+    return interpolateString(value, variables, declaredVariables) as T;
   }
   if (Array.isArray(value)) {
-    return value.map((item) => interpolateConfig(item, variables)) as T;
+    return value.map((item) => interpolateConfig(item, variables, declaredVariables)) as T;
   }
   if (value !== null && typeof value === "object") {
     const result: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(value)) {
-      result[k] = interpolateConfig(v, variables);
+      result[k] = interpolateConfig(v, variables, declaredVariables);
     }
     return result as T;
   }
   return value;
 }
 
-/**
- * Replace `{{key}}` tokens in a single string.
- */
-function interpolateString(str: string, variables: WorkspaceVariables): string {
-  const knownKeys = new Set(Object.keys(variables));
-  return str.replace(PLACEHOLDER_RE, (match, key: string) => {
-    if (knownKeys.has(key)) {
-      return variables[key as keyof WorkspaceVariables];
+function interpolateString(
+  str: string,
+  variables: WorkspaceVariables,
+  declaredVariables: Record<string, string>,
+): string {
+  const knownFlatKeys = new Set(Object.keys(variables));
+  return str.replace(PLACEHOLDER_RE, (match, token: string) => {
+    const dotIndex = token.indexOf(".");
+    if (dotIndex === -1) {
+      if (knownFlatKeys.has(token)) {
+        return variables[token as keyof WorkspaceVariables];
+      }
+      logger.warn("Unknown workspace variable placeholder, leaving as-is", {
+        placeholder: match,
+        key: token,
+      });
+      return match;
     }
-    logger.warn("Unknown workspace variable placeholder, leaving as-is", {
-      placeholder: match,
-      key,
-    });
-    return match;
+    const namespace = token.slice(0, dotIndex);
+    const name = token.slice(dotIndex + 1);
+    if (namespace !== "variables") return match;
+    const resolved = declaredVariables[name];
+    return resolved ?? match;
   });
 }
 
@@ -113,20 +194,18 @@ export async function findRepoRoot(startPath: string): Promise<string | null> {
  * @param workspaceId   The workspace's stable identifier.
  * @param daemonUrl     The daemon's base URL (defaults to `getAtlasDaemonUrl()` —
  *                      scheme/port follow the daemon's actual binding).
- * @returns Parsed `WorkspaceVariables` or `null` if repo_root cannot be derived.
+ * @returns Parsed `WorkspaceVariables`. `repo_root` falls back to
+ *          `workspacePath` when no `.git` ancestor exists — imported workspaces
+ *          live at `~/.atlas/workspaces/<dir>/` outside any git repo, and a
+ *          null return here used to silently skip declared-variable
+ *          interpolation in callers.
  */
 export async function resolveWorkspaceVariables(
   workspacePath: string,
   workspaceId: string,
   daemonUrl?: string,
-): Promise<WorkspaceVariables | null> {
-  const repoRoot = await findRepoRoot(workspacePath);
-  if (!repoRoot) {
-    logger.warn("Could not derive repo_root for workspace variable interpolation", {
-      workspacePath,
-    });
-    return null;
-  }
+): Promise<WorkspaceVariables> {
+  const repoRoot = (await findRepoRoot(workspacePath)) ?? workspacePath;
 
   // platform_url is intentionally left undefined when daemonUrl is absent so
   // the schema's `.default(() => getAtlasDaemonUrl())` fires. Without this,

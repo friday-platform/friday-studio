@@ -1151,7 +1151,7 @@ describe("createMCPTools", () => {
       expect(result.tools).toHaveProperty("hang-tool");
 
       const tool = result.tools["hang-tool"]!;
-      const executePromise = tool.execute!({}, { toolCallId: "tc_1", messages: [] });
+      const executePromise = tool.execute?.({}, { toolCallId: "tc_1", messages: [] });
 
       // Advance past the 15-minute ceiling
       vi.advanceTimersByTime(15 * 60 * 1_000 + 1_000);

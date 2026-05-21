@@ -45,6 +45,7 @@ import { getFridayHome } from "@atlas/utils/paths.server";
 import {
   createJetStreamKVStorage,
   createRegistryStorageJS,
+  resolveWorkspaceSetupRequirements,
   type TriggerSignalOpts,
   validateMCPEnvironmentForWorkspace,
   WorkspaceManager,
@@ -117,12 +118,18 @@ import { createFSMBroadcastNotifier } from "./chat-sdk/fsm-broadcast-adapter.ts"
 import { ChatTurnRegistry } from "./chat-turn-registry.ts";
 import { DiscordGatewayService } from "./discord-gateway-service.ts";
 import { createApp } from "./factory.ts";
+import { buildSetupRequirementInputs } from "./get-workspace-setup-state.ts";
 import { ensureInstanceEventsStream } from "./instance-events.ts";
 import { getAllMigrations } from "./migrations/index.ts";
 import { NatsManager } from "./nats-manager.ts";
 import { ProcessAgentExecutor } from "./process-agent-executor.ts";
 import { SessionDispatchRegistry } from "./session-dispatch-registry.ts";
 import { SessionStreamRegistry } from "./session-stream-registry.ts";
+import {
+  classifyCascadeSetupError,
+  evaluateWorkspaceSetupGate,
+  WorkspaceSetupRequiredError,
+} from "./setup-required-gate.ts";
 import { CronSignalRegistrar } from "./signal-registrars/cron-registrar.ts";
 import { FsWatchSignalRegistrar } from "./signal-registrars/fs-watch-registrar.ts";
 import {
@@ -648,6 +655,29 @@ export class AtlasDaemon {
       },
     });
 
+    // Setup gate (T13): the manager skips schedule + fs-watch
+    // registration when the workspace still requires setup. Assembling
+    // the Link snapshot + env overlay lives in the daemon to keep
+    // `@atlas/workspace` free of @atlas/core, link-client, and env-IO
+    // concerns. `allowStaleIdRecovery: true` matches the post-import
+    // read path — a stale pinned id is a recoverable requirement, not
+    // a hard error here (Decision 5).
+    this.workspaceManager.setRequiresSetupProbe({
+      async check({ workspacePath, config }) {
+        const { envSnapshot, linkCredentials } = await buildSetupRequirementInputs(
+          workspacePath,
+          config.workspace,
+        );
+        const result = resolveWorkspaceSetupRequirements(
+          config.workspace,
+          envSnapshot,
+          linkCredentials,
+          { allowStaleIdRecovery: true },
+        );
+        return result.requires_setup;
+      },
+    });
+
     // Initialize CronManager with JetStream-KV-backed storage. Cron
     // only uses get/set/delete/list — JS KV's per-key model fits
     // exactly. Migration entry below republishes any legacy
@@ -826,6 +856,27 @@ export class AtlasDaemon {
             },
           );
         } catch (err) {
+          const setupRouting = classifyCascadeSetupError(err, {
+            correlationId: envelope.correlationId,
+          });
+          if (setupRouting?.action === "rethrow") {
+            // HTTP path — the correlated response subject has a subscriber
+            // waiting; rethrow so cascade-stream publishes the fail envelope
+            // and the route handler surfaces 409. The trigger gate already
+            // logged the structured info line.
+            throw err;
+          }
+          if (setupRouting?.action === "skip") {
+            // Cron / fs-watch — no subscriber. The gate already logged
+            // `workspace_setup_required_signal_skipped` at info-level; the
+            // cascade settles as a no-session skip. Returning a synthetic
+            // empty result (rather than rethrowing) keeps cron ticks from
+            // dripping ok=false envelopes onto a (potentially stale) response
+            // subject and keeps cascade-failure WARN logs unpolluted by
+            // predictable setup-required skips. sessionId="" signals
+            // no-session-created to downstream consumers.
+            return { sessionId: "", output: [], artifactIds: [], summary: "" };
+          }
           if (err instanceof SessionFailedError) {
             logger.warn("Cascade session failed", {
               workspaceId: envelope.workspaceId,
@@ -2141,6 +2192,10 @@ export class AtlasDaemon {
       streamRegistry: this.streamRegistry,
       chatTurnRegistry: this.chatTurnRegistry,
       exposeKernel: process.env.FRIDAY_EXPOSE_KERNEL === "1",
+      // Decision 7 — communicator inbound gate. Evaluated lazily so a freshly
+      // edited workspace.yml / .env is picked up on the next inbound message
+      // without rebuilding the SDK instance.
+      setupGate: () => evaluateWorkspaceSetupGate(this.getWorkspaceManager(), workspaceId),
       triggerFn: async (signalId, signalData, streamId, onStreamEvent, abortSignal) => {
         const runtime = await this.getOrCreateWorkspaceRuntime(workspaceId);
         try {
@@ -2162,6 +2217,24 @@ export class AtlasDaemon {
     };
 
     return initializeChatSdkInstance(instanceConfig, credentials);
+  }
+
+  /**
+   * Look up a signal's provider type from the workspace config without spinning
+   * up a runtime. Used by the setup gate to label the structured log line so
+   * operators can tell which signal class was skipped without grepping
+   * `workspace.yml`.
+   */
+  private async lookupSignalProvider(
+    workspaceId: string,
+    signalId: string,
+  ): Promise<string | undefined> {
+    try {
+      const merged = await this.getWorkspaceManager().getWorkspaceConfig(workspaceId);
+      return merged?.workspace?.signals?.[signalId]?.provider;
+    } catch {
+      return undefined;
+    }
   }
 
   /**
@@ -2203,6 +2276,29 @@ export class AtlasDaemon {
      */
     summary: string;
   }> {
+    // Decision 7 — setup gate. Schedule, fs-watch, and the queued HTTP path
+    // all converge on this method via the CascadeConsumer. Chat does NOT
+    // (chat-sdk-instance's `triggerFn` calls `triggerSignalWithSession`
+    // directly), so this short-circuit is correctly scoped to non-chat
+    // audiences. Communicator inbound enforces its own gate in
+    // `createMessageHandler` since it also bypasses this method.
+    const gate = await evaluateWorkspaceSetupGate(this.getWorkspaceManager(), workspaceId);
+    if (gate?.requires_setup) {
+      const signalProvider = await this.lookupSignalProvider(workspaceId, signalId);
+      logger.info("workspace_setup_required_signal_skipped", {
+        workspaceId,
+        signalId,
+        signalProvider: signalProvider ?? "unknown",
+        setupUrl: gate.setupUrl,
+      });
+      AtlasMetrics.recordSignalTrigger(`${signalProvider ?? "unknown"}.setup_required`);
+      throw new WorkspaceSetupRequiredError({
+        workspaceId,
+        setupUrl: gate.setupUrl,
+        signalProvider,
+      });
+    }
+
     const runtime = await this.getOrCreateWorkspaceRuntime(workspaceId);
     try {
       const result = await runtime.triggerSignalWithResult(signalId, payload || {}, opts);
