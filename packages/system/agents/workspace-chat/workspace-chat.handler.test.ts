@@ -1188,6 +1188,76 @@ describe("workspace-chat handler", () => {
     expect(capturedMetadata?.provider).toBe("stub.language-model");
   });
 
+  it("emits data-error and skips streamText when resolveModelFromString throws", async () => {
+    setupDefaultMocks([makeMessage("user", "Hello")]);
+
+    const resolveError = new Error("Unknown provider in spec: bogus:nope");
+    mockResolveModelFromString.mockImplementation(() => {
+      throw resolveError;
+    });
+
+    // Surface the thrown message through the display path so the test
+    // asserts the real error text reaches the writer, not the static
+    // "Something went wrong" mocked default.
+    const { getErrorDisplayMessage } = await import("@atlas/core/errors");
+    vi.mocked(getErrorDisplayMessage).mockImplementation(
+      (cause: unknown) => ((cause as { raw: Error }).raw.message),
+    );
+
+    // Capture the writer that the agent's try/catch writes the
+    // `data-error` chunk to. createUIMessageStream is the boundary that
+    // hands the writer into the execute callback containing the catch.
+    const writerWrites: Array<{ type: string; data?: unknown }> = [];
+    mockCreateUIMessageStream.mockImplementation(
+      ({
+        execute,
+        onFinish,
+        originalMessages,
+      }: {
+        execute: (ctx: {
+          writer: { write: (chunk: { type: string; data?: unknown }) => void; merge: () => void };
+        }) => Promise<void>;
+        onFinish: (ctx: { messages: AtlasUIMessage[] }) => Promise<void>;
+        originalMessages: AtlasUIMessage[];
+      }) => {
+        return new ReadableStream({
+          async start(controller) {
+            const writer = {
+              write: (chunk: { type: string; data?: unknown }) => {
+                writerWrites.push(chunk);
+              },
+              merge: vi.fn(),
+            };
+            await execute({ writer });
+            await onFinish({ messages: originalMessages });
+            controller.close();
+          },
+        });
+      },
+    );
+
+    const handler = getHandler();
+    const ctx = makeContext({
+      session: {
+        sessionId: "sess-1",
+        workspaceId: "ws-1",
+        streamId: "stream-1",
+        userId: "user-1",
+        modelOverride: "bogus:nope",
+      },
+    });
+    await handler("", ctx);
+
+    expect(mockResolveModelFromString).toHaveBeenCalledWith("bogus:nope");
+    expect(mockStreamText).not.toHaveBeenCalled();
+
+    const errorChunks = writerWrites.filter((c) => c.type === "data-error");
+    expect(errorChunks).toHaveLength(1);
+    const errorData = errorChunks[0]?.data as { error: string; errorCause: { raw: Error } };
+    expect(errorData.error).toBe("Unknown provider in spec: bogus:nope");
+    expect(errorData.errorCause.raw).toBe(resolveError);
+  });
+
   it("returns empty tool arrays when streamText onFinish reports no tools", async () => {
     setupDefaultMocks([makeMessage("user", "Just chat")]);
 
