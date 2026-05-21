@@ -100,6 +100,7 @@ import workspaceChatRoutes from "../routes/workspaces/chat.ts";
 import workspaceChatDebugRoutes from "../routes/workspaces/chat-debug.ts";
 import { configRoutes as workspaceConfigRoutes } from "../routes/workspaces/config.ts";
 import { workspaceEnvRoutes } from "../routes/workspaces/env.ts";
+import { workspaceVariablesRoutes } from "../routes/workspaces/variables.ts";
 import { workspacesRoutes } from "../routes/workspaces/index.ts";
 import { integrationRoutes } from "../routes/workspaces/integrations.ts";
 import { mcpRoutes } from "../routes/workspaces/mcp.ts";
@@ -1490,6 +1491,7 @@ export class AtlasDaemon {
     // Mount workspace config routes for partial updates (separate from workspacesRoutes to avoid circular deps)
     this.app.route("/api/workspaces/:workspaceId/config", workspaceConfigRoutes);
     this.app.route("/api/workspaces/:workspaceId/env", workspaceEnvRoutes);
+    this.app.route("/api/workspaces/:workspaceId/variables", workspaceVariablesRoutes);
     this.app.route("/api/workspaces/:workspaceId/chat", workspaceChatRoutes);
     this.app.route("/api/workspaces/:workspaceId/chat", workspaceChatDebugRoutes);
     this.app.route("/api/workspaces/:workspaceId", workspaceCacheSaltRoutes);
