@@ -1200,14 +1200,11 @@
     word-break: break-word;
   }
 
-  /* @-mention links rendered inline in user-message bodies. The earlier
-     pill-with-primary-tint form blended into the surface-3 bubble in
-     some themes, so the link looked like invisible blank space — keep
-     the styling background-agnostic: a brand-accent foreground with a
-     dotted underline that stays visible regardless of bubble color. */
+  /* @-mention links rendered inline in user-message bodies. Inherit the
+     bubble's text color so contrast can't be wrong in any theme; the
+     dotted underline carries the "this is a link" affordance. */
   .mention-link {
-    color: light-dark(hsl(217 91% 38%), hsl(213 94% 78%));
-    font-weight: var(--font-weight-6);
+    color: inherit;
     text-decoration: underline dotted;
     text-underline-offset: 2px;
   }
