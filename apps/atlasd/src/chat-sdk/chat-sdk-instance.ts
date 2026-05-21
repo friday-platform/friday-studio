@@ -766,6 +766,12 @@ async function resolveSlackFromLink(
 
 const MAX_LOG_FIELD_BYTES = 512;
 
+const COMMUNICATOR_ADAPTERS = new Set(["slack", "discord", "telegram", "whatsapp", "teams"]);
+
+function isCommunicatorAdapter(adapterName: string): boolean {
+  return COMMUNICATOR_ADAPTERS.has(adapterName);
+}
+
 function truncateForLog(value: unknown): string {
   const str = typeof value === "string" ? value : (JSON.stringify(value) ?? String(value));
   return str.length > MAX_LOG_FIELD_BYTES
@@ -819,7 +825,17 @@ export function createMessageHandler(
     // user has to set up before it can reply meaningfully. Owner gets the
     // setup URL; anyone else (e.g. another user in a shared channel) is
     // dropped silently — they can't fix anything.
-    if (options?.setupGate) {
+    //
+    // Scoped to communicator adapters only. The atlas-web adapter is the
+    // in-product chat surface where the bootstrap setup form lives — per the
+    // workspace-setup design, "chat does execute" during setup so the user
+    // can converse with Friday while filling the form. Gating atlas would
+    // short-circuit before `ChatStorage.appendMessage` and the chat signal,
+    // making messages vanish on refresh. The setupGate option is wired
+    // unconditionally in `buildChatSdkInstance` (one SDK instance per
+    // workspace serves all adapters), so the per-adapter discrimination has
+    // to live here.
+    if (options?.setupGate && isCommunicatorAdapter(adapterName)) {
       const gate = await options.setupGate().catch((err) => {
         logger.warn("setup_gate_check_failed", {
           workspaceId,
