@@ -1271,6 +1271,12 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
         const conversationalModel = session.modelOverride
           ? resolveModelFromString(session.modelOverride)
           : platformModels.get("conversational");
+        logger.info("Conversational model resolved", {
+          source: session.modelOverride ? "override" : "default",
+          provider: conversationalModel.provider,
+          modelId: conversationalModel.modelId,
+          workspaceId,
+        });
         // Drop cross-model assistant messages that carry reasoning parts.
         //
         // Two providers fail in opposite ways when replayed across model
