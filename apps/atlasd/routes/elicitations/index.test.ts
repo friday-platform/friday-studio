@@ -175,6 +175,7 @@ beforeEach(() => {
   mockToolAccessGrants.grantAlways.mockReset();
   mockCommitGlobalEnvWrite.mockReset();
   mockSetEnvFileVar.mockReset();
+  mockCommitWorkspaceSetupAnswer.mockReset();
   mockToolAccessGrants.grantAlways.mockResolvedValue(
     success({
       workspaceId: "ws_1",
