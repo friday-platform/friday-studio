@@ -218,4 +218,53 @@ describe("WorkspaceManager setup gate — registerWithRegistrars", () => {
 
     expect(registrar.registered).toContain("completes-setup");
   });
+
+  it("unregisters signals via handleWorkspaceConfigChange when a healthy workspace re-enters setup", async () => {
+    // Inverse of the test above. Decision 4 (re-setup recovery) lands the
+    // workspace back in setup state when a previously-pinned credential
+    // disconnects. `handleWorkspaceConfigChange` runs through
+    // `restartSignalsForWorkspace`, which unregisters unconditionally then
+    // re-registers via the probe gate — so the cron / fs-watch registrars
+    // observe the unregister but the re-register is skipped while the
+    // probe reports `requires_setup: true`. Pin both halves: the
+    // unregister fires AND the registered count does not advance.
+    const kv = await makeIdempotentMemoryKV();
+    const registry = new RegistryStorageAdapter(kv);
+    await registry.initialize();
+
+    const wsPath = await makeWorkspace(
+      home,
+      "credential-disconnect",
+      'version: "1.0"\nworkspace:\n  name: credential-disconnect\n',
+    );
+
+    let probeValue = false;
+    const manager = new WorkspaceManager(registry);
+    manager.setRequiresSetupProbe({ check: () => Promise.resolve(probeValue) });
+
+    const registrar = makeSpyRegistrar();
+    await manager.initialize([registrar]);
+
+    await manager.registerWorkspace(wsPath, {
+      id: "credential-disconnect",
+      skipEnvValidation: true,
+    });
+    expect(registrar.registered).toContain("credential-disconnect");
+    const registeredCountBefore = registrar.registered.length;
+
+    // Flip the probe — the credential just disconnected and the workspace
+    // is back in setup state. The next config-change tick must take the
+    // signals offline.
+    probeValue = true;
+    const workspace = await registry.getWorkspace("credential-disconnect");
+    if (!workspace) throw new Error("test seed missing");
+    await manager.handleWorkspaceConfigChange(workspace, workspace.configPath);
+
+    // Unregister fired — this is what stops cron timers from firing
+    // sessions that would no-op on missing credentials.
+    expect(registrar.unregistered).toContain("credential-disconnect");
+    // Re-register was skipped by the setup gate — `registered` count
+    // unchanged from the initial registration.
+    expect(registrar.registered.length).toBe(registeredCountBefore);
+  });
 });
