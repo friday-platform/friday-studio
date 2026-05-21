@@ -175,7 +175,7 @@ export async function importBundle(opts: ImportOptions): Promise<ImportResult> {
     throw new Error(`importBundle: target directory is not empty: ${opts.targetDir}`);
   }
 
-  const stagingDir = opts.targetDir + ".staging";
+  const stagingDir = `${opts.targetDir}.staging`;
   await rm(stagingDir, { recursive: true, force: true });
   await mkdir(stagingDir, { recursive: true });
 

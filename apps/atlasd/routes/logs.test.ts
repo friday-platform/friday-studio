@@ -64,7 +64,7 @@ function makeLogLine(level: string, message: string, extra: Record<string, unkno
 
 /** Build a JSONL buffer from an array of log lines, returning the content string. */
 function buildJSONL(lines: string[]): string {
-  return lines.join("\n") + "\n";
+  return `${lines.join("\n")}\n`;
 }
 
 /** Setup mockOpen and mockFileHandle.read to serve the given content string from a virtual file. */
@@ -128,11 +128,11 @@ describe("GET /logs/tail", () => {
   test("since_offset=N skips first N bytes", async () => {
     const line1 = makeLogLine("error", "First error");
     const line2 = makeLogLine("error", "Second error");
-    const content = line1 + "\n" + line2 + "\n";
+    const content = `${line1}\n${line2}\n`;
     setupMockFile(content);
 
     // Offset past the first line (line1 + newline)
-    const offset = Buffer.byteLength(line1 + "\n", "utf-8");
+    const offset = Buffer.byteLength(`${line1}\n`, "utf-8");
 
     const app = createTestApp();
     const res = await app.request(`/tail?since_offset=${offset}&level_filter=error`);
@@ -223,7 +223,7 @@ describe("GET /logs/tail", () => {
 
   test("next_offset equals byte position after last line read", async () => {
     const line1 = makeLogLine("error", "Only error");
-    const content = line1 + "\n";
+    const content = `${line1}\n`;
     setupMockFile(content);
 
     const app = createTestApp();
@@ -347,7 +347,7 @@ describe("fingerprint computation (deterministic)", () => {
   test("message truncation at 80 chars is consistent", () => {
     const longMsg = "A".repeat(200);
     const fp1 = computeFingerprint({ component: "x", message: longMsg });
-    const fp2 = computeFingerprint({ component: "x", message: longMsg + "extra" });
+    const fp2 = computeFingerprint({ component: "x", message: `${longMsg}extra` });
     // Both truncate to first 80 chars, which are identical
     expect(fp1).toBe(fp2);
   });

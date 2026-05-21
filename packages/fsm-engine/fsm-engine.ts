@@ -293,9 +293,9 @@ export function getInputSnapshot(
       ? items
           .map(({ id, data }) => `${id}: ${typeof data === "string" ? data : JSON.stringify(data)}`)
           .join("\n\n")
-      : typeof items[0]!.data === "string"
-        ? (items[0]!.data as string)
-        : JSON.stringify(items[0]!.data);
+      : typeof items[0]?.data === "string"
+        ? (items[0]?.data as string)
+        : JSON.stringify(items[0]?.data);
 
     const config: Record<string, unknown> = Object.fromEntries(
       items.map(({ id, data }) => [id, data]),

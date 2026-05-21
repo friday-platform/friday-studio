@@ -66,7 +66,7 @@ describe("createEnableMcpServerTool", () => {
     });
 
     const tools = createEnableMcpServerTool("ws-1", logger);
-    const result = await tools.enable_mcp_server!.execute!({ serverId: "github" }, TOOL_CALL_OPTS);
+    const result = await tools.enable_mcp_server?.execute?.({ serverId: "github" }, TOOL_CALL_OPTS);
 
     expect(result).toEqual({
       success: true,
@@ -82,7 +82,7 @@ describe("createEnableMcpServerTool", () => {
     mockPut.mockResolvedValueOnce({ status: 200, json: () => Promise.resolve({}) });
 
     const tools = createEnableMcpServerTool("ws-1", logger);
-    const result = await tools.enable_mcp_server!.execute!({ serverId: "github" }, TOOL_CALL_OPTS);
+    const result = await tools.enable_mcp_server?.execute?.({ serverId: "github" }, TOOL_CALL_OPTS);
 
     expect(result).toEqual({
       success: true,
@@ -99,7 +99,7 @@ describe("createEnableMcpServerTool", () => {
     });
 
     const tools = createEnableMcpServerTool("ws-1", logger);
-    const result = await tools.enable_mcp_server!.execute!({ serverId: "github" }, TOOL_CALL_OPTS);
+    const result = await tools.enable_mcp_server?.execute?.({ serverId: "github" }, TOOL_CALL_OPTS);
 
     expect(result).toEqual({ success: false, error: 'Server "github" not found in catalog.' });
   });
@@ -122,7 +122,7 @@ describe("createEnableMcpServerTool", () => {
     });
 
     const tools = createEnableMcpServerTool("ws-1", logger);
-    const result = await tools.enable_mcp_server!.execute!(
+    const result = await tools.enable_mcp_server?.execute?.(
       { serverId: "com-notion-mcp" },
       TOOL_CALL_OPTS,
     );
@@ -143,7 +143,7 @@ describe("createEnableMcpServerTool", () => {
     });
 
     const tools = createEnableMcpServerTool("ws-1", logger);
-    const result = await tools.enable_mcp_server!.execute!({ serverId: "github" }, TOOL_CALL_OPTS);
+    const result = await tools.enable_mcp_server?.execute?.({ serverId: "github" }, TOOL_CALL_OPTS);
 
     expect(result).toEqual({ success: false, error: "Operation conflicts with existing entity" });
   });
@@ -159,7 +159,7 @@ describe("createEnableMcpServerTool", () => {
     });
 
     const tools = createEnableMcpServerTool("ws-1", logger);
-    const result = await tools.enable_mcp_server!.execute!({ serverId: "github" }, TOOL_CALL_OPTS);
+    const result = await tools.enable_mcp_server?.execute?.({ serverId: "github" }, TOOL_CALL_OPTS);
 
     expect(result).toEqual({
       success: false,
@@ -175,7 +175,7 @@ describe("createEnableMcpServerTool", () => {
     });
 
     const tools = createEnableMcpServerTool("ws-1", logger);
-    const result = await tools.enable_mcp_server!.execute!({ serverId: "github" }, TOOL_CALL_OPTS);
+    const result = await tools.enable_mcp_server?.execute?.({ serverId: "github" }, TOOL_CALL_OPTS);
 
     expect(result).toEqual({ success: false, error: "Internal server error" });
   });
@@ -192,7 +192,7 @@ describe("createEnableMcpServerTool", () => {
     });
 
     const tools = createEnableMcpServerTool("ws-1", logger);
-    const result = await tools.enable_mcp_server!.execute!({ serverId: "github" }, TOOL_CALL_OPTS);
+    const result = await tools.enable_mcp_server?.execute?.({ serverId: "github" }, TOOL_CALL_OPTS);
 
     expect(result).toEqual({ success: false, error: "Enable failed: 502" });
   });
@@ -205,7 +205,7 @@ describe("createEnableMcpServerTool", () => {
     });
 
     const tools = createEnableMcpServerTool("ws-1", logger);
-    const result = await tools.enable_mcp_server!.execute!({ serverId: "github" }, TOOL_CALL_OPTS);
+    const result = await tools.enable_mcp_server?.execute?.({ serverId: "github" }, TOOL_CALL_OPTS);
 
     expect(result).toEqual({ success: false, error: "Conflict enabling MCP server." });
   });
@@ -215,7 +215,7 @@ describe("createEnableMcpServerTool", () => {
     mockPut.mockRejectedValueOnce(new Error("Network failure"));
 
     const tools = createEnableMcpServerTool("ws-1", logger);
-    const result = await tools.enable_mcp_server!.execute!({ serverId: "github" }, TOOL_CALL_OPTS);
+    const result = await tools.enable_mcp_server?.execute?.({ serverId: "github" }, TOOL_CALL_OPTS);
 
     expect(result).toEqual({ success: false, error: "Enable failed: Network failure" });
     expect(logger.warn).toHaveBeenCalledWith(
@@ -236,7 +236,7 @@ describe("createEnableMcpServerTool", () => {
     });
 
     const tools = createEnableMcpServerTool("ws-1", logger);
-    const result = await tools.enable_mcp_server!.execute!(
+    const result = await tools.enable_mcp_server?.execute?.(
       { serverId: "github", workspaceId: "ws-other" },
       TOOL_CALL_OPTS,
     );
@@ -261,7 +261,7 @@ describe("createEnableMcpServerTool", () => {
     });
 
     const tools = createEnableMcpServerTool("ws-1", logger);
-    await tools.enable_mcp_server!.execute!(
+    await tools.enable_mcp_server?.execute?.(
       { serverId: "github", workspaceId: "ws-other" },
       TOOL_CALL_OPTS,
     );
@@ -277,7 +277,7 @@ describe("createEnableMcpServerTool", () => {
     });
 
     const tools = createEnableMcpServerTool("ws-1", logger);
-    await tools.enable_mcp_server!.execute!({ serverId: "github" }, TOOL_CALL_OPTS);
+    await tools.enable_mcp_server?.execute?.({ serverId: "github" }, TOOL_CALL_OPTS);
 
     expect(mockInvalidateBlock2).not.toHaveBeenCalled();
   });

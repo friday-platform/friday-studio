@@ -367,7 +367,7 @@ async function readEventsBackwards(
       // Sequence gap (purged / dedup'd) — skip.
       continue;
     }
-    if (!msg || !msg.subject.startsWith(subjectPrefix)) continue;
+    if (!msg?.subject.startsWith(subjectPrefix)) continue;
     let event: WorkspaceEvent;
     try {
       event = JSON.parse(dec.decode(msg.data)) as WorkspaceEvent;

@@ -48,7 +48,7 @@ describe("publish_skill", () => {
     );
 
     const { publish_skill } = createPublishSkillTool(logger);
-    const result = await publish_skill!.execute!({ namespace, name, content }, OPTS);
+    const result = await publish_skill?.execute?.({ namespace, name, content }, OPTS);
 
     const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
     expect(url).toBe("http://localhost:3000/api/skills/@tempest/demo-skill/upload");
@@ -93,7 +93,7 @@ describe("publish_skill", () => {
     );
 
     const { publish_skill } = createPublishSkillTool(logger);
-    await publish_skill!.execute!({ namespace, name, content, files }, OPTS);
+    await publish_skill?.execute?.({ namespace, name, content, files }, OPTS);
 
     const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
     const formData = init.body as FormData;
@@ -117,7 +117,7 @@ describe("publish_skill", () => {
     mockFetch.mockRejectedValueOnce(new Error("ECONNREFUSED"));
 
     const { publish_skill } = createPublishSkillTool(logger);
-    const result = await publish_skill!.execute!({ namespace, name, content }, OPTS);
+    const result = await publish_skill?.execute?.({ namespace, name, content }, OPTS);
 
     expect(result).toMatchObject({ success: false, error: expect.any(String) });
     expect(result).not.toHaveProperty("deadLinks");
@@ -140,7 +140,7 @@ describe("publish_skill", () => {
     );
 
     const { publish_skill } = createPublishSkillTool(logger);
-    const result = await publish_skill!.execute!({ namespace, name, content }, OPTS);
+    const result = await publish_skill?.execute?.({ namespace, name, content }, OPTS);
 
     expect(result).toEqual({
       success: false,
@@ -155,7 +155,7 @@ describe("publish_skill", () => {
     mockFetch.mockResolvedValueOnce(new Response("bad gateway", { status: 502 }));
 
     const { publish_skill } = createPublishSkillTool(logger);
-    const result = await publish_skill!.execute!(
+    const result = await publish_skill?.execute?.(
       { namespace: "tempest", name: "demo-skill", content },
       OPTS,
     );
@@ -170,7 +170,7 @@ describe("publish_skill", () => {
     const content = "---\nname: demo-skill\ndescription: Test. Use when X.\n---\n\nBody.";
 
     const { publish_skill } = createPublishSkillTool(logger);
-    const result = await publish_skill!.execute!(
+    const result = await publish_skill?.execute?.(
       {
         namespace: "tempest",
         name: "demo-skill",

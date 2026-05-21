@@ -36,10 +36,10 @@ describe("LocalMCPRegistryAdapter", () => {
       const updated = await adapter.update(entry.id, { name: "Updated Name" });
 
       expect(updated).not.toBeNull();
-      expect(updated!.name).toEqual("Updated Name");
-      expect(updated!.id).toEqual(entry.id);
-      expect(updated!.source).toEqual(entry.source);
-      expect(updated!.securityRating).toEqual(entry.securityRating);
+      expect(updated?.name).toEqual("Updated Name");
+      expect(updated?.id).toEqual(entry.id);
+      expect(updated?.source).toEqual(entry.source);
+      expect(updated?.securityRating).toEqual(entry.securityRating);
     });
 
     it("returns null when updating non-existent entry", async () => {
@@ -58,11 +58,11 @@ describe("LocalMCPRegistryAdapter", () => {
       });
 
       expect(updated).not.toBeNull();
-      expect(updated!.name).toEqual("New Name");
-      expect(updated!.description).toEqual("New description");
+      expect(updated?.name).toEqual("New Name");
+      expect(updated?.description).toEqual("New description");
       // Original fields should be preserved
-      expect(updated!.securityRating).toEqual(entry.securityRating);
-      expect(updated!.configTemplate).toEqual(entry.configTemplate);
+      expect(updated?.securityRating).toEqual(entry.securityRating);
+      expect(updated?.configTemplate).toEqual(entry.configTemplate);
     });
 
     it("persists updates and reflects them in subsequent gets", async () => {
@@ -73,7 +73,7 @@ describe("LocalMCPRegistryAdapter", () => {
 
       const retrieved = await adapter.get(entry.id);
       expect(retrieved).not.toBeNull();
-      expect(retrieved!.name).toEqual("Persisted Name");
+      expect(retrieved?.name).toEqual("Persisted Name");
     });
 
     it("persists updates and reflects them in list", async () => {
@@ -85,7 +85,7 @@ describe("LocalMCPRegistryAdapter", () => {
       const entries = await adapter.list();
       const found = entries.find((e) => e.id === entry.id);
       expect(found).toBeDefined();
-      expect(found!.name).toEqual("Listed Name");
+      expect(found?.name).toEqual("Listed Name");
     });
 
     it("throws on atomic conflict (version mismatch)", async () => {
@@ -132,13 +132,13 @@ describe("LocalMCPRegistryAdapter", () => {
       });
 
       expect(updated).not.toBeNull();
-      expect(updated!.name).toEqual("New Name");
-      expect(updated!.description).toEqual("New Description");
-      expect(updated!.securityRating).toEqual("high");
-      expect(updated!.constraints).toEqual("New constraints");
+      expect(updated?.name).toEqual("New Name");
+      expect(updated?.description).toEqual("New Description");
+      expect(updated?.securityRating).toEqual("high");
+      expect(updated?.constraints).toEqual("New constraints");
       // Original fields preserved
-      expect(updated!.configTemplate).toEqual(entry.configTemplate);
-      expect(updated!.requiredConfig).toEqual(entry.requiredConfig);
+      expect(updated?.configTemplate).toEqual(entry.configTemplate);
+      expect(updated?.requiredConfig).toEqual(entry.requiredConfig);
     });
 
     it("can update urlDomains field", async () => {
@@ -150,7 +150,7 @@ describe("LocalMCPRegistryAdapter", () => {
       });
 
       expect(updated).not.toBeNull();
-      expect(updated!.urlDomains).toEqual(["example.com", "api.example.com"]);
+      expect(updated?.urlDomains).toEqual(["example.com", "api.example.com"]);
     });
 
     it("can update configTemplate field", async () => {
@@ -165,7 +165,7 @@ describe("LocalMCPRegistryAdapter", () => {
       const updated = await adapter.update(entry.id, { configTemplate: newConfig });
 
       expect(updated).not.toBeNull();
-      expect(updated!.configTemplate).toEqual(newConfig);
+      expect(updated?.configTemplate).toEqual(newConfig);
     });
 
     it("can update requiredConfig field", async () => {
@@ -180,7 +180,7 @@ describe("LocalMCPRegistryAdapter", () => {
       const updated = await adapter.update(entry.id, { requiredConfig: newRequired });
 
       expect(updated).not.toBeNull();
-      expect(updated!.requiredConfig).toEqual(newRequired);
+      expect(updated?.requiredConfig).toEqual(newRequired);
     });
   });
 });

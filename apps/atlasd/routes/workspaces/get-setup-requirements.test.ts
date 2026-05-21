@@ -81,7 +81,7 @@ function createTestApp(fixtures: WorkspaceFixture[]) {
   });
   const getWorkspaceConfig = vi.fn().mockImplementation((id: string) => {
     const f = fixtures.find((x) => x.id === id);
-    if (!f || !f.config) return Promise.resolve(null);
+    if (!f?.config) return Promise.resolve(null);
     return Promise.resolve({ atlas: null, workspace: f.config });
   });
 

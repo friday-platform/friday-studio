@@ -55,10 +55,10 @@ import { encodeBase64 } from "@std/encoding/base64";
 import { parse, stringify } from "@std/yaml";
 import type { Context } from "hono";
 import { z } from "zod";
-import { buildSetupRequirementInputs } from "../../src/get-workspace-setup-state.ts";
 import { requireDevEnv } from "../../src/dev-only.ts";
 import type { AppContext, AppVariables } from "../../src/factory.ts";
 import { daemonFactory, KERNEL_WORKSPACE_ID } from "../../src/factory.ts";
+import { buildSetupRequirementInputs } from "../../src/get-workspace-setup-state.ts";
 import {
   CommunicatorKindSchema,
   deriveConnectionId,

@@ -264,7 +264,7 @@ describe("resolveWorkspaceVariables", () => {
 
     expect(result?.platform_url).toBe(getAtlasDaemonUrl());
     // Sanity: the value is a parseable URL with an HTTP(S) scheme.
-    expect(() => new URL(result!.platform_url)).not.toThrow();
+    expect(() => new URL(result?.platform_url)).not.toThrow();
     expect(result?.platform_url).toMatch(/^https?:\/\//);
   });
 

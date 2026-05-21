@@ -588,16 +588,14 @@ function parseJsonResponsePayload(
   rawPayload: Record<string, unknown> | undefined,
 ): Record<string, unknown> | undefined {
   if (
-    rawPayload &&
-    rawPayload.response &&
+    rawPayload?.response &&
     typeof rawPayload.response === "object" &&
     !Array.isArray(rawPayload.response)
   ) {
     return rawPayload.response as Record<string, unknown>;
   }
   if (
-    rawPayload &&
-    rawPayload.result &&
+    rawPayload?.result &&
     typeof rawPayload.result === "object" &&
     !Array.isArray(rawPayload.result)
   ) {

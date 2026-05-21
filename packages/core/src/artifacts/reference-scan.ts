@@ -108,7 +108,7 @@ export async function hasPromotionSignal(
     try {
       const details = await ctx.aiSummary(workspaceId);
       for (const detail of details) {
-        if (detail.url && detail.url.includes(artifactId)) return true;
+        if (detail.url?.includes(artifactId)) return true;
       }
     } catch (err) {
       logger.warn("aiSummary scan failed during promotion check", {

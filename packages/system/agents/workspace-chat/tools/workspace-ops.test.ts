@@ -70,7 +70,7 @@ describe("createWorkspaceOpsTools", () => {
     });
 
     const tools = createWorkspaceOpsTools(logger);
-    const result = await tools.create_workspace!.execute!(
+    const result = await tools.create_workspace?.execute?.(
       { name: "Test Workspace", description: "A test workspace" },
       TOOL_CALL_OPTS,
     );
@@ -95,7 +95,7 @@ describe("createWorkspaceOpsTools", () => {
     mockParseResult.mockResolvedValueOnce({ ok: false, error: "Validation failed" });
 
     const tools = createWorkspaceOpsTools(logger);
-    const result = await tools.create_workspace!.execute!(
+    const result = await tools.create_workspace?.execute?.(
       { name: "Bad Workspace" },
       TOOL_CALL_OPTS,
     );
@@ -120,7 +120,7 @@ describe("createWorkspaceOpsTools", () => {
     });
 
     const tools = createWorkspaceOpsTools(logger);
-    const result = await tools.delete_workspace!.execute!(
+    const result = await tools.delete_workspace?.execute?.(
       { workspaceId: "ws-abc" },
       TOOL_CALL_OPTS,
     );
@@ -139,7 +139,7 @@ describe("createWorkspaceOpsTools", () => {
     });
 
     const tools = createWorkspaceOpsTools(logger);
-    const result = await tools.delete_workspace!.execute!(
+    const result = await tools.delete_workspace?.execute?.(
       { workspaceId: "ws-def", force: true },
       TOOL_CALL_OPTS,
     );
@@ -155,7 +155,7 @@ describe("createWorkspaceOpsTools", () => {
     mockParseResult.mockResolvedValueOnce({ ok: false, error: "Workspace not found" });
 
     const tools = createWorkspaceOpsTools(logger);
-    const result = await tools.delete_workspace!.execute!(
+    const result = await tools.delete_workspace?.execute?.(
       { workspaceId: "missing-ws" },
       TOOL_CALL_OPTS,
     );
@@ -192,7 +192,7 @@ describe("createBoundWorkspaceOpsTools", () => {
     );
 
     const tools = createBoundWorkspaceOpsTools(logger, "ws-1");
-    const result = await tools.delete_agent!.execute!({ id: "test-agent" }, TOOL_CALL_OPTS);
+    const result = await tools.delete_agent?.execute?.({ id: "test-agent" }, TOOL_CALL_OPTS);
 
     expect(mockItemsDelete).toHaveBeenCalledWith({
       param: { workspaceId: "ws-1", kind: "agent", id: "test-agent" },
@@ -204,7 +204,7 @@ describe("createBoundWorkspaceOpsTools", () => {
     mockItemsDelete.mockResolvedValueOnce(mockResponse(true, 200, { ok: true }));
 
     const tools = createBoundWorkspaceOpsTools(logger, "ws-1");
-    await tools.delete_signal!.execute!({ id: "my-signal" }, TOOL_CALL_OPTS);
+    await tools.delete_signal?.execute?.({ id: "my-signal" }, TOOL_CALL_OPTS);
 
     expect(mockItemsDelete).toHaveBeenCalledWith({
       param: { workspaceId: "ws-1", kind: "signal", id: "my-signal" },
@@ -215,7 +215,7 @@ describe("createBoundWorkspaceOpsTools", () => {
     mockItemsDelete.mockResolvedValueOnce(mockResponse(true, 200, { ok: true }));
 
     const tools = createBoundWorkspaceOpsTools(logger, "ws-1");
-    await tools.delete_job!.execute!({ id: "my-job" }, TOOL_CALL_OPTS);
+    await tools.delete_job?.execute?.({ id: "my-job" }, TOOL_CALL_OPTS);
 
     expect(mockItemsDelete).toHaveBeenCalledWith({
       param: { workspaceId: "ws-1", kind: "job", id: "my-job" },
@@ -231,7 +231,7 @@ describe("createBoundWorkspaceOpsTools", () => {
     );
 
     const tools = createBoundWorkspaceOpsTools(logger, "ws-1");
-    const result = await tools.delete_agent!.execute!({ id: "test-agent" }, TOOL_CALL_OPTS);
+    const result = await tools.delete_agent?.execute?.({ id: "test-agent" }, TOOL_CALL_OPTS);
 
     expect(result).toEqual({ ok: false, error: { code: "referenced", dependents: ["test-job"] } });
   });

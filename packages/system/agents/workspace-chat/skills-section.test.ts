@@ -75,7 +75,7 @@ describe("buildSkillsSection", () => {
   });
 
   it("does NOT include the full description body when descriptions are long", () => {
-    const longDescription = "Patterns for Svelte 5. " + "Detailed body. ".repeat(50);
+    const longDescription = `Patterns for Svelte 5. ${"Detailed body. ".repeat(50)}`;
     const out = buildSkillsSection([skill("svelte", "core", longDescription)]);
     expect(out).toContain("Patterns for Svelte 5.");
     // The repeated body should be capped out — assert the section doesn't carry

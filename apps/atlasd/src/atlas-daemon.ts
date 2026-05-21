@@ -103,7 +103,6 @@ import { workspaceEnvRoutes } from "../routes/workspaces/env.ts";
 import { workspacesRoutes } from "../routes/workspaces/index.ts";
 import { integrationRoutes } from "../routes/workspaces/integrations.ts";
 import { mcpRoutes } from "../routes/workspaces/mcp.ts";
-import { buildSetupRequirementInputs } from "./get-workspace-setup-state.ts";
 import { CapabilityHandlerRegistry } from "./capability-handlers.ts";
 import { CascadeConsumer, ensureCascadesStream, publishCascade } from "./cascade-stream.ts";
 import { CHAT_PROVIDERS, type PlatformCredentials } from "./chat-sdk/adapter-factory.ts";
@@ -119,6 +118,7 @@ import { createFSMBroadcastNotifier } from "./chat-sdk/fsm-broadcast-adapter.ts"
 import { ChatTurnRegistry } from "./chat-turn-registry.ts";
 import { DiscordGatewayService } from "./discord-gateway-service.ts";
 import { createApp } from "./factory.ts";
+import { buildSetupRequirementInputs } from "./get-workspace-setup-state.ts";
 import { ensureInstanceEventsStream } from "./instance-events.ts";
 import { getAllMigrations } from "./migrations/index.ts";
 import { NatsManager } from "./nats-manager.ts";
