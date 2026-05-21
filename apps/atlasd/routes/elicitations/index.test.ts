@@ -24,6 +24,7 @@ const { mockElicitationStorage, mockToolAccessGrants } = vi.hoisted(() => ({
     list: vi.fn(),
     answer: vi.fn(),
     decline: vi.fn(),
+    reserveForCommit: vi.fn(),
   },
   mockToolAccessGrants: { grantAlways: vi.fn() },
 }));
@@ -172,6 +173,10 @@ beforeEach(() => {
   mockElicitationStorage.list.mockReset();
   mockElicitationStorage.answer.mockReset();
   mockElicitationStorage.decline.mockReset();
+  mockElicitationStorage.reserveForCommit.mockReset();
+  // Default: reserve wins. Specific tests override per-call (e.g. concurrent
+  // reserve race uses `mockResolvedValueOnce` with `success` then `fail`).
+  mockElicitationStorage.reserveForCommit.mockResolvedValue(success(undefined));
   mockToolAccessGrants.grantAlways.mockReset();
   mockCommitGlobalEnvWrite.mockReset();
   mockSetEnvFileVar.mockReset();
@@ -823,6 +828,70 @@ describe("POST /:id/answer", () => {
       });
 
       expect(res.status).toBe(500);
+      expect(mockCommitWorkspaceSetupAnswer).not.toHaveBeenCalled();
+      expect(mockElicitationStorage.answer).not.toHaveBeenCalled();
+    });
+
+    // Two concurrent /answer posts both pass the pending pre-check; without
+    // the CAS reserve step they'd both call `commitWorkspaceSetupAnswer` →
+    // both `setEnvFileVar` and both run the credential-pin draft mutation on
+    // workspace.yml. `reserveForCommit` is the single-flight gate: exactly
+    // one caller wins, the loser gets 409 and the disk-mutating commit runs
+    // exactly once.
+    test("concurrent /answer posts: exactly one wins, the other 409s; commit runs once", async () => {
+      const pending = setupElicitation();
+      // Both requests read the same `pending` snapshot.
+      mockElicitationStorage.get.mockResolvedValue(success(pending));
+      mockElicitationStorage.answer.mockResolvedValue(
+        success(makeElicitation({ kind: "workspace-setup", status: "answered" })),
+      );
+      mockCommitWorkspaceSetupAnswer.mockResolvedValue({
+        ok: true,
+        committedKeys: ["EMAIL_RECIPIENT"],
+      });
+      // First reserve wins; second loses with a clear conflict error.
+      mockElicitationStorage.reserveForCommit
+        .mockResolvedValueOnce(success(undefined))
+        .mockResolvedValueOnce(fail("Elicitation elc_1 commit already in progress"));
+
+      const app = createTestApp();
+      const post = () =>
+        app.request("/elc_1/answer", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(validBody),
+        });
+      const [a, b] = await Promise.all([post(), post()]);
+      const statuses = [a.status, b.status].sort();
+
+      expect(statuses).toEqual([200, 409]);
+      // The disk-mutating commit must have run exactly once.
+      expect(mockCommitWorkspaceSetupAnswer).toHaveBeenCalledTimes(1);
+      // `answer` (the final `pending → answered` CAS flip) only runs for the winner.
+      expect(mockElicitationStorage.answer).toHaveBeenCalledTimes(1);
+      // Both callers attempted to reserve.
+      expect(mockElicitationStorage.reserveForCommit).toHaveBeenCalledTimes(2);
+    });
+
+    test("reserveForCommit failure with non-`in progress` reason still 409s (reserve owns the gate)", async () => {
+      // The route trusts reserveForCommit's verdict: any failed reserve
+      // closes the door. The adapter's pending-pre-check inside reserve
+      // can fail for "already terminal" too, and the route surfaces those
+      // as 409 (commit-conflict) — semantically the same "you cannot
+      // commit right now" verdict.
+      const pending = setupElicitation();
+      mockElicitationStorage.get.mockResolvedValueOnce(success(pending));
+      mockElicitationStorage.reserveForCommit.mockResolvedValueOnce(
+        fail("Elicitation elc_1 already in terminal state: answered"),
+      );
+
+      const res = await createTestApp().request("/elc_1/answer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(validBody),
+      });
+
+      expect(res.status).toBe(409);
       expect(mockCommitWorkspaceSetupAnswer).not.toHaveBeenCalled();
       expect(mockElicitationStorage.answer).not.toHaveBeenCalled();
     });

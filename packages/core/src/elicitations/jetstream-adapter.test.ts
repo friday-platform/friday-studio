@@ -304,6 +304,88 @@ describe("JetStreamElicitationStorageAdapter", () => {
     }
   });
 
+  it("reserveForCommit: concurrent reserves yield exactly one winner, one loser", async () => {
+    // Single-flight gate for the workspace-setup answer commit. Two
+    // concurrent callers race on the reserve bucket's `kv.create`; JetStream
+    // KV semantics fail the second one with a CAS conflict, which the
+    // adapter surfaces as "commit already in progress". The route handler
+    // maps that to a 409.
+    const adapter = new JetStreamElicitationStorageAdapter(nc);
+    const created = await adapter.create(
+      baseInput({
+        workspaceId: `ws-reserve-race-${crypto.randomUUID()}`,
+        kind: "workspace-setup",
+        question: "Finish setup",
+      }),
+    );
+    expect.assert(created.ok === true);
+
+    const [a, b] = await Promise.all([
+      adapter.reserveForCommit({ id: created.data.id }),
+      adapter.reserveForCommit({ id: created.data.id }),
+    ]);
+
+    const okCount = [a, b].filter((r) => r.ok).length;
+    expect(okCount).toBe(1);
+    const loser = a.ok ? b : a;
+    expect.assert(loser.ok === false);
+    expect(loser.error).toMatch(/commit already in progress/i);
+  });
+
+  it("reserveForCommit: rejects with a terminal-state error when the elicitation is already answered", async () => {
+    // Pre-check inside reserveForCommit must catch the case where the
+    // elicitation was answered between the route's pre-check and the
+    // reserve attempt. Same error shape as `transitionPending` so the
+    // route can surface both classes as 409 without parsing reasons.
+    const adapter = new JetStreamElicitationStorageAdapter(nc);
+    const created = await adapter.create(
+      baseInput({
+        workspaceId: `ws-reserve-terminal-${crypto.randomUUID()}`,
+        kind: "workspace-setup",
+        question: "Finish setup",
+      }),
+    );
+    expect.assert(created.ok === true);
+    const answered = await adapter.answer({
+      id: created.data.id,
+      answer: {
+        value: { variableValues: {}, credentialChoices: {} },
+        answeredAt: new Date().toISOString(),
+      },
+    });
+    expect.assert(answered.ok === true);
+
+    const reserved = await adapter.reserveForCommit({ id: created.data.id });
+    expect(reserved.ok).toBe(false);
+    expect.assert(reserved.ok === false);
+    expect(reserved.error).toMatch(/terminal state/i);
+    expect(reserved.error).toMatch(/answered/);
+  });
+
+  it("reserveForCommit: re-reserving after a successful claim still fails (not released on failure)", async () => {
+    // Design decision (option (b) from the review): the reserve is NOT
+    // released on commit failure. A successful reserve sticks until the
+    // elicitation reaches a terminal state — re-reserving the same id
+    // always 409s. The elicitation is intentionally "stuck" so the
+    // disk-mutating commit cannot run twice; recovery is manual.
+    const adapter = new JetStreamElicitationStorageAdapter(nc);
+    const created = await adapter.create(
+      baseInput({
+        workspaceId: `ws-reserve-sticky-${crypto.randomUUID()}`,
+        kind: "workspace-setup",
+        question: "Finish setup",
+      }),
+    );
+    expect.assert(created.ok === true);
+
+    const first = await adapter.reserveForCommit({ id: created.data.id });
+    expect(first.ok).toBe(true);
+    const second = await adapter.reserveForCommit({ id: created.data.id });
+    expect(second.ok).toBe(false);
+    expect.assert(second.ok === false);
+    expect(second.error).toMatch(/commit already in progress/i);
+  });
+
   it("answer on an already-declined elicitation fails with a status-guard error", async () => {
     const adapter = new JetStreamElicitationStorageAdapter(nc);
     const created = await adapter.create(baseInput({ workspaceId: "ws-guard" }));

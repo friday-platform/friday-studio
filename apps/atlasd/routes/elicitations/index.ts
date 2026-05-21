@@ -435,6 +435,11 @@ elicitationApp.post(
         description: "Elicitation not found",
         content: { "application/json": { schema: resolver(errorResponseSchema) } },
       },
+      409: {
+        description:
+          "Conflict — workspace-setup commit already in progress (or stuck after a prior commit failure).",
+        content: { "application/json": { schema: resolver(errorResponseSchema) } },
+      },
       500: {
         description: "Internal server error or terminal-state conflict",
         content: { "application/json": { schema: resolver(errorResponseSchema) } },
@@ -504,12 +509,36 @@ elicitationApp.post(
       // credential deletion etc.) leaves the elicitation `pending` and
       // returns the env keys that already committed so the caller's retry is
       // idempotent. Decision 6.
+      //
+      // Unlike env-write (which writes the same value twice in the worst-case
+      // TOCTOU and is therefore idempotent on disk), workspace-setup mutates
+      // `workspace.yml` via the credential-pin draft-aware mutation. Two
+      // concurrent /answer posts that both passed the `status === "pending"`
+      // pre-check would both run that mutation, even though only one wins
+      // the final `pending → answered` CAS flip below. We close the window
+      // with a CAS-guarded reserve: only one caller proceeds to commit;
+      // the loser gets 409 with body `{ error: ... }` matching the rest of
+      // this route's failure shape.
+      //
+      // Reserve is intentionally NOT released on commit failure (option (b)
+      // from the design review) — re-opening the reserve reopens the race
+      // it exists to close. The elicitation is left stuck and the next
+      // /answer 409s; recovery surfaces as a stuck-row in the Activity UI.
       if (got.data.kind === "workspace-setup") {
         if (got.data.status !== "pending") {
           return c.json(
             { error: `Elicitation ${id} already in terminal state: ${got.data.status}` },
             500,
           );
+        }
+        const reserved = await ElicitationStorage.reserveForCommit({ id });
+        if (!reserved.ok) {
+          // 409 Conflict: a concurrent commit holds the reserve (or, less
+          // commonly, the elicitation transitioned to terminal between the
+          // pre-check above and the reserve attempt). Either way, this
+          // caller cannot commit; surface the reserve's error string so the
+          // UI can disambiguate "in progress" vs "terminal".
+          return c.json({ error: reserved.error }, 409);
         }
         const setupOutcome = await commitWorkspaceSetupElicitation(c, got.data, body.value);
         if (!setupOutcome.ok) return setupOutcome.response;

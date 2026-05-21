@@ -135,6 +135,23 @@ const {
         return Promise.resolve({ ok: true as const, data: updated });
       }),
       decline: vi.fn(),
+      // Single-flight reserve for the workspace-setup commit (see Finding #2).
+      // In-memory mock: reject reserve against a non-pending row with the
+      // same "in terminal state" error shape the real adapter returns. The
+      // concurrency contract itself is pinned by `jetstream-adapter.test.ts`;
+      // this stub only has to satisfy the happy-path single-call shape
+      // exercised here.
+      reserveForCommit: vi.fn(({ id }: { id: string }) => {
+        const row = rows.get(id);
+        if (!row) return Promise.resolve({ ok: false as const, error: "not found" });
+        if (row.status !== "pending") {
+          return Promise.resolve({
+            ok: false as const,
+            error: `Elicitation ${id} already in terminal state: ${row.status}`,
+          });
+        }
+        return Promise.resolve({ ok: true as const, data: undefined });
+      }),
     },
     mockApplyDraftAwareMutation: vi.fn(),
     mockClientGet: vi.fn(),
