@@ -30,6 +30,16 @@ export function isSecretKey(key: string): boolean {
 }
 
 /**
+ * Mirror of `variableEnvKey` from `@atlas/workspace` — duplicated here so the
+ * client doesn't import the workspace package's barrel (which transitively
+ * pulls `node:fs` via `variable-interpolation.ts` and breaks the browser
+ * bundle). Keep this function byte-identical to the canonical implementation.
+ */
+export function variableEnvKey(name: string): string {
+  return name.toUpperCase();
+}
+
+/**
  * Validate one raw string field against its declaration. Reuses the
  * env-write validator so a "valid" value here is also valid for the env-write
  * confirmation flow downstream.

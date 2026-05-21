@@ -11,11 +11,15 @@
  */
 import { VariableDeclarationSchema } from "@atlas/config";
 import type { WorkspaceIdentityPatch } from "@atlas/config/mutations";
-import { variableEnvKey, type VariableState } from "@atlas/workspace";
+import type { VariableState } from "@atlas/workspace";
 import { createMutation, queryOptions, skipToken, useQueryClient } from "@tanstack/svelte-query";
 import { z } from "zod";
 import { getDaemonClient } from "../daemon-client.ts";
-import { validateField, type VariableRequirement } from "../workspace-variables/validate.ts";
+import {
+  validateField,
+  variableEnvKey,
+  type VariableRequirement,
+} from "../workspace-variables/validate.ts";
 import { workspaceQueries } from "./workspace-queries.ts";
 
 // ==============================================================================

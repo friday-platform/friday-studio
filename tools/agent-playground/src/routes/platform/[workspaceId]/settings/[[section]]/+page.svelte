@@ -17,7 +17,6 @@
 <script lang="ts">
   import { deriveWorkspaceAgents } from "@atlas/config/workspace-agents";
   import { Button, Icons, ListDetail, toast } from "@atlas/ui";
-  import { variableEnvKey } from "@atlas/workspace";
   import { createQuery } from "@tanstack/svelte-query";
   import { page } from "$app/state";
   import WorkspaceMcpSection from "$lib/components/mcp/workspace-mcp-section.svelte";
@@ -40,6 +39,7 @@
     variablesDirty as deriveVariablesDirty,
     type VariableEdits,
   } from "$lib/workspace-variables/details-state.ts";
+  import { variableEnvKey } from "$lib/workspace-variables/validate.ts";
 
   const workspaceId = $derived(page.params.workspaceId ?? null);
 
