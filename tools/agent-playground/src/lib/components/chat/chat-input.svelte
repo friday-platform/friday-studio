@@ -1,6 +1,7 @@
 <script lang="ts">
   import { ALLOWED_EXTENSION_LIST } from "@atlas/core/artifacts/file-upload";
   import { toast } from "@atlas/ui";
+  import { detectActiveMentionQuery } from "../../chat/mention-text.ts";
   import {
     type FileAttachment,
     type ChatAttachment,
@@ -12,6 +13,7 @@
     rejectionToast,
     runFileUpload,
   } from "./chat-attachment.ts";
+  import MentionAutocomplete from "./mention-autocomplete.svelte";
 
   // Re-export the attachment types so existing imports
   // (`import { ChatAttachment } from "./chat-input.svelte"`) keep working.
@@ -75,6 +77,51 @@
 
   let recording = $state(false);
   let recognition: SpeechRecognition | null = $state(null);
+
+  // ── @-mention autocomplete state ─────────────────────────────────────
+  // Tracks the active `@`-query (start/end indices + substring) so the
+  // popover knows what to filter against and where to splice the
+  // inserted token on select. See friday-studio-c7j.
+  let mentionPopover: MentionAutocomplete | undefined = $state();
+  let mentionQuery = $state<{ start: number; end: number; query: string } | null>(null);
+  const mentionOpen = $derived(mentionQuery !== null);
+
+  /**
+   * Re-check whether the caret is currently inside an `@`-mention being
+   * typed. Called on every keystroke + click so the popover follows the
+   * caret. The single source of truth is `detectActiveMentionQuery` in
+   * `mention-text.ts` — same regex as the server-side resolver.
+   */
+  function refreshMentionQuery() {
+    if (!textareaEl) {
+      mentionQuery = null;
+      return;
+    }
+    const caret = textareaEl.selectionStart ?? value.length;
+    mentionQuery = detectActiveMentionQuery(value, caret);
+  }
+
+  function insertMention(ref: { workspaceId: string; chatId: string; title: string }) {
+    if (!mentionQuery || !textareaEl) return;
+    const { start, end } = mentionQuery;
+    const token = `@${ref.workspaceId}/${ref.chatId} `;
+    const before = value.slice(0, start);
+    const after = value.slice(end);
+    value = before + token + after;
+    mentionQuery = null;
+    // Restore focus + caret position after the splice in a microtask so
+    // Svelte has flushed the bind:value update before we move the caret.
+    queueMicrotask(() => {
+      if (!textareaEl) return;
+      const caretAt = before.length + token.length;
+      textareaEl.focus();
+      textareaEl.setSelectionRange(caretAt, caretAt);
+    });
+  }
+
+  function closeMentionPopover() {
+    mentionQuery = null;
+  }
 
   $effect(() => {
     if (!textareaEl) return;
@@ -247,10 +294,26 @@
   }
 
   function handleKeydown(e: KeyboardEvent) {
+    // Mention autocomplete owns ArrowUp/Down/Enter/Tab/Escape while it's
+    // open. The popover exposes a `handleKey` so this textarea keeps
+    // focus throughout — preventDefault on a consumed event so Enter
+    // doesn't also submit the message.
+    if (mentionOpen && mentionPopover?.handleKey(e)) {
+      e.preventDefault();
+      return;
+    }
     if (e.key === "Enter" && !e.shiftKey && hasContent) {
       e.preventDefault();
       submit();
     }
+  }
+
+  function handleInput() {
+    refreshMentionQuery();
+  }
+
+  function handleSelectionChange() {
+    refreshMentionQuery();
   }
 
   function submit() {
@@ -410,15 +473,28 @@
       onchange={handleFileInput}
       class="file-input-hidden"
     />
-    <textarea
-      data-testid="chat-input"
-      bind:this={textareaEl}
-      bind:value
-      onkeydown={handleKeydown}
-      onpaste={handlePaste}
-      placeholder={dragOver ? "Drop file here..." : recording ? "Listening..." : "Send a message..."}
-      rows={1}
-    ></textarea>
+    <div class="textarea-wrap">
+      <textarea
+        data-testid="chat-input"
+        bind:this={textareaEl}
+        bind:value
+        onkeydown={handleKeydown}
+        oninput={handleInput}
+        onclick={handleSelectionChange}
+        onkeyup={handleSelectionChange}
+        onblur={closeMentionPopover}
+        onpaste={handlePaste}
+        placeholder={dragOver ? "Drop file here..." : recording ? "Listening..." : "Send a message..."}
+        rows={1}
+      ></textarea>
+      <MentionAutocomplete
+        bind:this={mentionPopover}
+        query={mentionQuery?.query ?? ""}
+        open={mentionOpen}
+        onselect={insertMention}
+        onclose={closeMentionPopover}
+      />
+    </div>
     {#if sttSupported}
       <button
         class="mic-button"
@@ -500,6 +576,13 @@
     align-items: flex-end;
     display: flex;
     gap: var(--size-2);
+  }
+
+  /* Anchor for the mention popover — the popover positions itself
+     against this wrap so it sits just above the textarea. */
+  .textarea-wrap {
+    flex: 1;
+    position: relative;
   }
 
   .file-input-hidden {

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { DropdownMenu, Icons, Tooltip } from "@atlas/ui";
+  import { splitMentions } from "../../chat/mention-text.ts";
   import MarkdownBody from "./markdown-body.svelte";
   import { createVirtualizer } from "@tanstack/svelte-virtual";
   import { tick, untrack } from "svelte";
@@ -796,7 +797,21 @@
                   </div>
                 {/if}
               {:else}
-                <div class="message-content">{segment.content}</div>
+                {@const mentionSegments = splitMentions(
+                  segment.content,
+                  message.mentions ?? [],
+                )}
+                <div class="message-content">
+                  {#each mentionSegments as seg, segIdx (segIdx)}
+                    {#if seg.kind === "mention"}
+                      <a class="mention-link" href={seg.href} title={`Open ${seg.title}`}
+                        >@{seg.title}</a
+                      >
+                    {:else}
+                      {seg.text}
+                    {/if}
+                  {/each}
+                </div>
               {/if}
             {:else if segment.type === "tool-burst"}
               {@const regularCalls = segment.calls.filter((c) => !needsUserAction(c))}
@@ -1183,6 +1198,22 @@
     padding: var(--size-2-5) var(--size-3);
     white-space: pre-wrap;
     word-break: break-word;
+  }
+
+  /* @-mention links rendered inline in user-message bodies. Keeps
+     pre-wrap spacing, just swaps the raw `@ws/chat` token for a
+     clickable pill. */
+  .mention-link {
+    background-color: color-mix(in srgb, var(--color-primary), transparent 88%);
+    border-radius: var(--radius-1);
+    color: var(--color-primary);
+    padding-block: 0;
+    padding-inline: var(--size-1);
+    text-decoration: none;
+  }
+
+  .mention-link:hover {
+    background-color: color-mix(in srgb, var(--color-primary), transparent 78%);
   }
 
   /* Wraps the last assistant text bubble together with the actions

@@ -1099,6 +1099,37 @@
       const m = (typeof msg.metadata === "object" && msg.metadata !== null
         ? msg.metadata
         : {}) as Record<string, unknown>;
+      // Resolved @-mentions for this message — server-side resolver
+      // stashes a `data-mention-resolved` part per expanded ref. The
+      // message-list reads this to swap raw `@ws/chat` tokens for
+      // links to the referenced chat. See friday-studio-c7j.
+      const mentions: ChatMessage["mentions"] = [];
+      const parts = Array.isArray(msg.parts) ? msg.parts : [];
+      for (const part of parts) {
+        if (typeof part !== "object" || part === null) continue;
+        if ((part as { type?: unknown }).type !== "data-mention-resolved") continue;
+        const data = (part as { data?: unknown }).data;
+        if (typeof data !== "object" || data === null) continue;
+        const d = data as Record<string, unknown>;
+        if (
+          typeof d.workspaceId === "string" &&
+          typeof d.chatId === "string" &&
+          typeof d.title === "string" &&
+          typeof d.snapshot === "string" &&
+          typeof d.messageCount === "number" &&
+          typeof d.generatedAt === "string"
+        ) {
+          mentions.push({
+            workspaceId: d.workspaceId,
+            chatId: d.chatId,
+            title: d.title,
+            snapshot: d.snapshot,
+            messageCount: d.messageCount,
+            generatedAt: d.generatedAt,
+          });
+        }
+      }
+
       const result: ChatMessage = {
         id: msg.id,
         role: (msg.role === "user"
@@ -1110,6 +1141,7 @@
         timestamp: ts,
         images: extractImages(msg),
         errorText: extractErrorText(msg),
+        mentions: mentions.length > 0 ? mentions : undefined,
         metadata: {
           agentId: typeof m.agentId === "string" ? m.agentId : undefined,
           jobName: typeof m.jobName === "string" ? m.jobName : undefined,
