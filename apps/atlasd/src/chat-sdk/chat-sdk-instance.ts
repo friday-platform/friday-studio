@@ -33,6 +33,7 @@ import {
   type PlatformCredentials,
 } from "./adapter-factory.ts";
 import { ChatSdkNotifier } from "./chat-sdk-notifier.ts";
+import { applyMentions } from "./mention-resolver.ts";
 
 const logger = createLogger({ component: "chat-sdk-instance" });
 
@@ -892,9 +893,35 @@ export function createMessageHandler(
     // non-text parts); fall back to the flat-text rebuild for adapters that
     // only provide `Message.text` (e.g. Slack).
     const preValidated = preValidatedUIMessageRawSchema.safeParse(message.raw);
-    const storedMessage = preValidated.success
+    const initialStoredMessage = preValidated.success
       ? preValidated.data.uiMessage
       : toAtlasUIMessage(message);
+
+    const rawFgPayload =
+      typeof message.raw === "object" &&
+      message.raw !== null &&
+      "foregroundWorkspaceIds" in message.raw
+        ? message.raw.foregroundWorkspaceIds
+        : undefined;
+    const initialForegroundWorkspaceIds = Array.isArray(rawFgPayload)
+      ? rawFgPayload
+          .filter((id: unknown): id is string => typeof id === "string")
+          .filter((id) => options?.exposeKernel || id !== KERNEL_WORKSPACE_ID)
+      : undefined;
+
+    // Resolve cross-workspace @-mentions BEFORE persisting the message —
+    // the resolved snapshot is appended as a data-mention-resolved part
+    // and a hidden mention-expansion text part so the model can see it,
+    // and source workspaces are layered into foreground_workspace_ids for
+    // this turn. Unauthorized / not-found refs are logged + dropped so a
+    // bad reference doesn't break the send. See friday-studio-ivt /
+    // friday-studio-4j7.
+    const { message: storedMessage, foregroundWorkspaceIds } = await applyMentions({
+      message: initialStoredMessage,
+      requesterUserId: userId,
+      currentWorkspaceId: workspaceId,
+      foregroundWorkspaceIds: initialForegroundWorkspaceIds,
+    });
 
     const appendResult = await ChatStorage.appendMessage(chatId, storedMessage, workspaceId);
     if (!appendResult.ok) {
@@ -922,18 +949,6 @@ export function createMessageHandler(
       message.raw.abortSignal instanceof AbortSignal
         ? message.raw.abortSignal
         : undefined;
-
-    const rawFgPayload =
-      typeof message.raw === "object" &&
-      message.raw !== null &&
-      "foregroundWorkspaceIds" in message.raw
-        ? message.raw.foregroundWorkspaceIds
-        : undefined;
-    const foregroundWorkspaceIds = Array.isArray(rawFgPayload)
-      ? rawFgPayload
-          .filter((id: unknown): id is string => typeof id === "string")
-          .filter((id) => options?.exposeKernel || id !== KERNEL_WORKSPACE_ID)
-      : undefined;
 
     // Capture the buffer this turn owns so stale producers can't bleed into
     // a follow-up turn's buffer. The web adapter stashes the buffer it
