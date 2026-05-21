@@ -334,7 +334,7 @@ describe("spawnBootstrapSessionIfNeeded", () => {
     // on `invocationCallOrder` (a brittle proxy: a future await between
     // them passes the order check but still breaks the invariant).
     let pointerAtFailingElicitationCall: string | undefined;
-    mockElicitationStorage.create.mockImplementationOnce(async () => {
+    mockElicitationStorage.create.mockImplementationOnce(() => {
       const lastUpdate = updateWorkspaceStatus.mock.calls.at(-1);
       pointerAtFailingElicitationCall = lastUpdate?.[2]?.metadata?.active_setup_session_id;
       return { ok: false, error: "kv down" };
