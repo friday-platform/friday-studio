@@ -1,6 +1,10 @@
 import process from "node:process";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createPlatformModels, PlatformModelsConfigError } from "./platform-models.ts";
+import {
+  createPlatformModels,
+  PlatformModelsConfigError,
+  resolveModelFromString,
+} from "./platform-models.ts";
 
 /**
  * Tests below run the real `createPlatformModels` factory and therefore
@@ -170,6 +174,48 @@ describe("createPlatformModels — chain resolution", () => {
     expect(() =>
       createPlatformModels({ models: { planner: ["anthropic:claude-sonnet-4-6"] } }),
     ).toThrow(PlatformModelsConfigError);
+  });
+});
+
+describe("resolveModelFromString", () => {
+  it("returns a traced LanguageModelV3 for a credentialed provider:model", () => {
+    stubEnv({ ANTHROPIC_API_KEY: "sk-ant-test" });
+    const model = resolveModelFromString("anthropic:claude-sonnet-4-6");
+    expect(model.provider).toContain("anthropic");
+    expect(model.modelId).toBe("claude-sonnet-4-6");
+  });
+
+  it("throws naming the spec when the format is invalid (no colon)", () => {
+    expect(() => resolveModelFromString("malformed-no-colon")).toThrow(/malformed-no-colon/);
+  });
+
+  it("throws naming the spec when the provider half is empty", () => {
+    expect(() => resolveModelFromString(":claude-sonnet-4-6")).toThrow(/:claude-sonnet-4-6/);
+  });
+
+  it("throws naming the spec when the model half is empty", () => {
+    expect(() => resolveModelFromString("anthropic:")).toThrow(/anthropic:/);
+  });
+
+  it("throws listing known providers on unknown provider", () => {
+    expect(() => resolveModelFromString("totally-not-a-provider:x")).toThrow(
+      /totally-not-a-provider/,
+    );
+    expect(() => resolveModelFromString("totally-not-a-provider:x")).toThrow(/anthropic/);
+  });
+
+  it("throws naming the env var (and LITELLM_API_KEY) when credentials are missing", () => {
+    expect(() => resolveModelFromString("anthropic:claude-sonnet-4-6")).toThrow(
+      /ANTHROPIC_API_KEY/,
+    );
+    expect(() => resolveModelFromString("anthropic:claude-sonnet-4-6")).toThrow(/LITELLM_API_KEY/);
+  });
+
+  it("accepts LITELLM_API_KEY in lieu of the provider-specific env var", () => {
+    stubEnv({ LITELLM_API_KEY: "sk-litellm-test" });
+    const model = resolveModelFromString("openai:gpt-5");
+    expect(model.provider).toContain("openai");
+    expect(model.modelId).toBe("gpt-5");
   });
 });
 
