@@ -318,7 +318,21 @@ describe("spawnBootstrapSessionIfNeeded", () => {
     const entry = makeWorkspaceEntry({ metadata: { createdBy: "user-1" } });
     const { manager, updateWorkspaceStatus } = makeManager(entry);
 
-    mockElicitationStorage.create.mockResolvedValueOnce({ ok: false, error: "kv down" });
+    // The contract is "no observer can see a non-null pointer without
+    // a corresponding chat"; in the mid-spawn-failure case we need the
+    // INVERSE: when the elicitation create runs (whether it succeeds or
+    // fails), the metadata pointer must already be populated so a
+    // subsequent recovery read can find it. Snapshot the pointer state
+    // visible to `updateWorkspaceStatus` AT the moment the failing
+    // elicitation create fires — proves the invariant without relying
+    // on `invocationCallOrder` (a brittle proxy: a future await between
+    // them passes the order check but still breaks the invariant).
+    let pointerAtFailingElicitationCall: string | undefined;
+    mockElicitationStorage.create.mockImplementationOnce(async () => {
+      const lastUpdate = updateWorkspaceStatus.mock.calls.at(-1);
+      pointerAtFailingElicitationCall = lastUpdate?.[2]?.metadata?.active_setup_session_id;
+      return { ok: false, error: "kv down" };
+    });
 
     await expect(
       spawnBootstrapSessionIfNeeded({
@@ -338,10 +352,12 @@ describe("spawnBootstrapSessionIfNeeded", () => {
     expect(writtenMetadata?.createdBy).toBe("user-1");
     const orphanSessionId = writtenMetadata?.active_setup_session_id as string;
 
-    // Pointer write happened BEFORE the (failing) elicitation create.
-    const updateOrder = updateWorkspaceStatus.mock.invocationCallOrder[0] ?? 0;
-    const elicitationOrder = mockElicitationStorage.create.mock.invocationCallOrder[0] ?? 0;
-    expect(updateOrder).toBeLessThan(elicitationOrder);
+    // Contract pin: observed inside the failing elicitation create —
+    // the pointer was already populated by the time the elicitation
+    // call ran. This breaks if a future refactor moves the metadata
+    // write back after the elicitation create, even if no `await`
+    // separates them.
+    expect(pointerAtFailingElicitationCall).toBe(orphanSessionId);
 
     // Recovery sees the pointer + a missing chat and re-seeds the session.
     mockChatStorage.createChat.mockClear();
