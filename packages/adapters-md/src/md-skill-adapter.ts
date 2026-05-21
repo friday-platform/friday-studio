@@ -82,9 +82,9 @@ function parseDraftMd(content: string): {
     .trimStart();
 
   return {
-    name: meta["name"] ?? "",
-    description: meta["description"] ?? "",
-    version: meta["version"] ?? "1",
+    name: meta.name ?? "",
+    description: meta.description ?? "",
+    version: meta.version ?? "1",
     instructions,
   };
 }

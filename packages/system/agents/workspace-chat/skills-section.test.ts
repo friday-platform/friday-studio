@@ -75,7 +75,7 @@ describe("buildSkillsSection", () => {
   });
 
   it("does NOT include the full description body when descriptions are long", () => {
-    const longDescription = "Patterns for Svelte 5. " + "Detailed body. ".repeat(50);
+    const longDescription = `Patterns for Svelte 5. ${"Detailed body. ".repeat(50)}`;
     const out = buildSkillsSection([skill("svelte", "core", longDescription)]);
     expect(out).toContain("Patterns for Svelte 5.");
     // The repeated body should be capped out — assert the section doesn't carry
@@ -164,6 +164,20 @@ describe("getSystemBlocks block-4 (volatile workspace inventory)", () => {
     const blocks = getSystemBlocks(workspaceSection);
     expect(blocks.block2).toBe("");
     expect(blocks.block4).toContain(workspaceSection);
+  });
+
+  it("prepends the setup-status block to block 4 (volatile tier, ahead of inventory)", () => {
+    const setupStatus = "[WORKSPACE SETUP STATUS]\nstub bullets";
+    const blocks = getSystemBlocks(workspaceSection, { setupStatus });
+    expect(blocks.block4.startsWith(setupStatus)).toBe(true);
+    expect(blocks.block4).toContain(workspaceSection);
+    expect(blocks.block2).not.toContain(setupStatus);
+    expect(blocks.block3).not.toContain(setupStatus);
+  });
+
+  it("omits the setup-status block when option is empty (fully-configured / initial-setup state)", () => {
+    const blocks = getSystemBlocks(workspaceSection, { setupStatus: "" });
+    expect(blocks.block4).toBe(workspaceSection);
   });
 });
 

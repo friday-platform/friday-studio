@@ -60,7 +60,7 @@ describe("createRegisterAgentTool", () => {
     );
 
     const tools = createRegisterAgentTool(makeLogger());
-    const result = await tools.register_agent!.execute!(
+    const result = await tools.register_agent?.execute?.(
       { entrypoint: "/Users/me/projects/triage-agent/agent.py" },
       TOOL_CALL_OPTS,
     );
@@ -86,7 +86,7 @@ describe("createRegisterAgentTool", () => {
     );
 
     const tools = createRegisterAgentTool(makeLogger());
-    const result = await tools.register_agent!.execute!(
+    const result = await tools.register_agent?.execute?.(
       { entrypoint: "/path/to/agent.py" },
       TOOL_CALL_OPTS,
     );
@@ -98,7 +98,7 @@ describe("createRegisterAgentTool", () => {
     fetchSpy.mockRejectedValue(new Error("ECONNREFUSED"));
 
     const tools = createRegisterAgentTool(makeLogger());
-    const result = await tools.register_agent!.execute!(
+    const result = await tools.register_agent?.execute?.(
       { entrypoint: "/path/to/agent.py" },
       TOOL_CALL_OPTS,
     );
@@ -115,7 +115,7 @@ describe("createRegisterAgentTool", () => {
     );
 
     const tools = createRegisterAgentTool(makeLogger());
-    const result = await tools.register_agent!.execute!(
+    const result = await tools.register_agent?.execute?.(
       { entrypoint: "/path/to/agent.py" },
       TOOL_CALL_OPTS,
     );
@@ -146,7 +146,7 @@ describe("createDeleteAgentFromRegistryTool", () => {
     );
 
     const tools = createDeleteAgentFromRegistryTool(makeLogger());
-    const result = await tools.delete_agent_from_registry!.execute!(
+    const result = await tools.delete_agent_from_registry?.execute?.(
       { id: "triage-agent" },
       TOOL_CALL_OPTS,
     );
@@ -173,7 +173,7 @@ describe("createDeleteAgentFromRegistryTool", () => {
     );
 
     const tools = createDeleteAgentFromRegistryTool(makeLogger());
-    await tools.delete_agent_from_registry!.execute!(
+    await tools.delete_agent_from_registry?.execute?.(
       { id: "triage-agent", version: "0.1.0" },
       TOOL_CALL_OPTS,
     );
@@ -193,7 +193,7 @@ describe("createDeleteAgentFromRegistryTool", () => {
     );
 
     const tools = createDeleteAgentFromRegistryTool(makeLogger());
-    await tools.delete_agent_from_registry!.execute!({ id: "weird id" }, TOOL_CALL_OPTS);
+    await tools.delete_agent_from_registry?.execute?.({ id: "weird id" }, TOOL_CALL_OPTS);
 
     expect(fetchSpy).toHaveBeenCalledWith(
       "http://localhost:8080/api/agents/weird%20id",
@@ -213,7 +213,7 @@ describe("createDeleteAgentFromRegistryTool", () => {
     );
 
     const tools = createDeleteAgentFromRegistryTool(makeLogger());
-    const result = await tools.delete_agent_from_registry!.execute!(
+    const result = await tools.delete_agent_from_registry?.execute?.(
       { id: "delegate" },
       TOOL_CALL_OPTS,
     );
@@ -225,7 +225,7 @@ describe("createDeleteAgentFromRegistryTool", () => {
     fetchSpy.mockRejectedValue(new Error("ECONNREFUSED"));
 
     const tools = createDeleteAgentFromRegistryTool(makeLogger());
-    const result = await tools.delete_agent_from_registry!.execute!(
+    const result = await tools.delete_agent_from_registry?.execute?.(
       { id: "triage-agent" },
       TOOL_CALL_OPTS,
     );

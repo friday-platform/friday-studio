@@ -25,6 +25,16 @@ import {
 
 vi.mock("../me/adapter.ts", () => ({ getCurrentUser: vi.fn().mockResolvedValue({ ok: false }) }));
 
+const { mockSetupRequirements } = vi.hoisted(() => ({
+  mockSetupRequirements:
+    vi.fn<() => Promise<{ requires_setup: boolean; setup_requirements: never[] }>>(),
+}));
+
+vi.mock("../../src/setup-requirements-cache.ts", () => ({
+  getOrComputeSetupRequirements: (_c: unknown, _workspaceId: string, _compute: unknown) =>
+    mockSetupRequirements(),
+}));
+
 vi.mock("@atlas/core/workspace-members/storage", () => ({
   WorkspaceMemberStorage: {
     get: vi
@@ -46,9 +56,20 @@ vi.mock("@atlas/core/workspace-members/storage", () => ({
   resetWorkspaceMemberStorageForTests: vi.fn(),
 }));
 
-function createTestApp() {
+function createTestApp(options: { workspace?: { id: string; path: string } | null } = {}) {
+  // Reset the setup gate mock to "no setup required" so the existing test
+  // suite (which exercises the bypass + envelope guards) passes through
+  // without thinking about setup state. Per-test code can override it.
+  mockSetupRequirements.mockReset();
+  mockSetupRequirements.mockResolvedValue({ requires_setup: false, setup_requirements: [] });
+
+  // Default keeps the legacy "workspace not found" surface (existing
+  // pending-revision / not-found tests depend on `find` returning null).
+  // Pass `workspace: {...}` to populate.
+  const workspace = options.workspace ?? null;
+
   const mockWorkspaceManager = {
-    find: vi.fn().mockResolvedValue(null),
+    find: vi.fn().mockResolvedValue(workspace),
     list: vi.fn().mockResolvedValue([]),
     getWorkspaceConfig: vi.fn().mockResolvedValue(null),
     registerWorkspace: vi.fn(),
@@ -276,6 +297,74 @@ describe("POST /workspaces/:workspaceId/signals/:signalId envelope guard", () =>
 
       expect(res.status).toBe(200);
       expect(triggerWorkspaceSignal).toHaveBeenCalledOnce();
+    } finally {
+      if (previous === undefined) delete process.env[INTERNAL_SIGNAL_BYPASS_TOKEN_ENV];
+      else process.env[INTERNAL_SIGNAL_BYPASS_TOKEN_ENV] = previous;
+    }
+  });
+});
+
+describe("POST /workspaces/:workspaceId/signals/:signalId — Decision 7 setup gate", () => {
+  // Both registrations of the route (SSE branch + JSON branch) must short-
+  // circuit to 409 with the exact body shape. Webhook clients depend on the
+  // exact key names (`error`, `message`, `setup_url`) — change with care.
+
+  test("JSON handler returns 409 + workspace_setup_required body when requires_setup", async () => {
+    const { app, triggerWorkspaceSignal } = createTestApp({
+      workspace: { id: "ws-1", path: "/tmp/ws-1" },
+    });
+    mockSetupRequirements.mockResolvedValue({ requires_setup: true, setup_requirements: [] });
+
+    const res = await post(app, "/workspaces/ws-1/signals/sig-1", { payload: {} });
+
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { error?: string; message?: string; setup_url?: string };
+    expect(body.error).toBe("workspace_setup_required");
+    expect(typeof body.message).toBe("string");
+    expect((body.message ?? "").length).toBeGreaterThan(0);
+    expect(typeof body.setup_url).toBe("string");
+    expect(body.setup_url).toContain("/workspaces/ws-1/chat");
+    expect(triggerWorkspaceSignal).not.toHaveBeenCalled();
+  });
+
+  test("SSE handler also returns 409 + workspace_setup_required body", async () => {
+    const { app, triggerWorkspaceSignal } = createTestApp({
+      workspace: { id: "ws-1", path: "/tmp/ws-1" },
+    });
+    mockSetupRequirements.mockResolvedValue({ requires_setup: true, setup_requirements: [] });
+
+    const res = await post(
+      app,
+      "/workspaces/ws-1/signals/sig-1",
+      { payload: {} },
+      { Accept: "text/event-stream" },
+    );
+
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { error?: string; setup_url?: string };
+    expect(body.error).toBe("workspace_setup_required");
+    expect(body.setup_url).toContain("/workspaces/ws-1/chat");
+    expect(triggerWorkspaceSignal).not.toHaveBeenCalled();
+  });
+
+  test("internal bypass callers do NOT skip the setup gate", async () => {
+    const previous = process.env[INTERNAL_SIGNAL_BYPASS_TOKEN_ENV];
+    process.env[INTERNAL_SIGNAL_BYPASS_TOKEN_ENV] = "test-token";
+    try {
+      const { app, triggerWorkspaceSignal } = createTestApp({
+        workspace: { id: "ws-1", path: "/tmp/ws-1" },
+      });
+      mockSetupRequirements.mockResolvedValue({ requires_setup: true, setup_requirements: [] });
+
+      const res = await post(
+        app,
+        "/workspaces/ws-1/signals/sig-1",
+        { payload: {}, bypassConcurrency: true },
+        { [INTERNAL_SIGNAL_BYPASS_HEADER]: "test-token" },
+      );
+
+      expect(res.status).toBe(409);
+      expect(triggerWorkspaceSignal).not.toHaveBeenCalled();
     } finally {
       if (previous === undefined) delete process.env[INTERNAL_SIGNAL_BYPASS_TOKEN_ENV];
       else process.env[INTERNAL_SIGNAL_BYPASS_TOKEN_ENV] = previous;

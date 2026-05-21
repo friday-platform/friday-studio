@@ -1,8 +1,9 @@
 import type { AgentRegistry } from "@atlas/agent-sdk";
 import type { AtlasDaemon } from "@atlas/atlasd";
+import type { WorkspaceConfig } from "@atlas/config";
 import type { SessionHistoryAdapter } from "@atlas/core";
 import type { PlatformModels } from "@atlas/llm";
-import type { WorkspaceManager } from "@atlas/workspace";
+import type { SetupRequirementsResult, WorkspaceManager } from "@atlas/workspace";
 import { cors } from "hono/cors";
 import { createFactory } from "hono/factory";
 import type { ChatSdkInstance } from "./chat-sdk/chat-sdk-instance.ts";
@@ -74,8 +75,27 @@ export interface CreateAppOptions {
   corsOrigins?: string | string[];
 }
 
-// Define variables available in context
-export type AppVariables = { Variables: { app: AppContext; userId?: string } };
+// Define variables available in context.
+//
+// `setupRequirementsCache` memoizes per-workspace setup-requirements results
+// for the lifetime of a single request — the derivation is called from the
+// signal gate, workspace GET endpoints, sidebar badge, and system-prompt
+// builder, all of which may run inside one Hono request. Keyed on workspace
+// id. Created lazily by the route on first read.
+export type AppVariables = {
+  Variables: {
+    app: AppContext;
+    userId?: string;
+    setupRequirementsCache?: Map<string, SetupRequirementsResult>;
+    /**
+     * Companion cache to `setupRequirementsCache` — stashes the parsed
+     * workspace config alongside the derivation so callers that need it
+     * (e.g. the recover-bootstrap loop's welcome-message builder) can
+     * grab it without re-reading the workspace from disk.
+     */
+    parsedConfigCache?: Map<string, WorkspaceConfig>;
+  };
+};
 
 // Create the factory with our types
 export const daemonFactory = createFactory<AppVariables>();

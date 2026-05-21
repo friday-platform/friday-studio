@@ -10,7 +10,7 @@ function makeDefinitionLockfile(): Lockfile {
     mode: "definition",
     workspace: { name: "test-space", version: "1.0.0" },
     primitives: {
-      skills: { "@tempest/example": { hash: "sha256:" + "a".repeat(64), path: "skills/example" } },
+      skills: { "@tempest/example": { hash: `sha256:${"a".repeat(64)}`, path: "skills/example" } },
       agents: {},
     },
   };
@@ -24,7 +24,7 @@ function makeMigrationLockfile(): Lockfile {
       memory: {
         "dispatch-log": {
           backend: "md-narrative",
-          digest: "sha256:" + "b".repeat(64),
+          digest: `sha256:${"b".repeat(64)}`,
           path: "memory/dispatch-log/snapshot.bin",
         },
       },

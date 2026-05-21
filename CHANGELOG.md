@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`labels` LLM role default is anthropic-only; Groq is opt-in via `models.labels`.** The default chain in `packages/llm/src/platform-models.ts` previously led with `groq:openai/gpt-oss-120b`, so any environment with `GROQ_API_KEY` set silently routed session titles (and every other `smallLLM` caller) through Groq — including in regions where Groq is geo-blocked, where the call surfaced as a 403 on every session title. Default is now `anthropic:claude-haiku-4-5` across all four roles; opting back into Groq for sub-second titles is a one-line addition: `models.labels: "groq:openai/gpt-oss-120b"` in `friday.yml`. User-configured `models.labels` was always honored and is unchanged. (#412)
+
+### Fixed
+
+- **Sidebar "Add Space" dialog accepts workspace `.zip` bundles, not just YAML.** The dialog's file picker hardcoded `accept=".yml,.yaml"`, so users with an exported workspace zip had to go to Settings → Import a workspace instead. `workspace-loader.svelte` now branches on file type: YAML files still parse inline and `POST /api/workspaces/create`; `.zip` files route through `POST /api/daemon/api/workspaces/import-bundle` as a multipart upload, mirroring the Settings flow. Both `handleDrop()` and `handleFileInput()` validate by extension + MIME (Safari/macOS send `application/x-zip-compressed`) so dropping a `.txt` fails with a clear message instead of a downstream YAML parse error. Bulk-export zips (multiple workspaces per archive) remain Settings-only. (#395)
+- **Job, edit, and memory pages share one breadcrumb implementation.** Three playground routes had drifted onto different breadcrumbs — job/edit used the bespoke `WorkspaceBreadcrumb` (back-arrow + workspace dot), memory hand-rolled inline `<nav class="breadcrumb">` tags. The memory page also lacked a `PageLayout.Root` wrapper, so its crumbs escaped to the viewport edge. All three now render through `<PageLayout.Root>` → `<PageLayout.Breadcrumbs {crumbs} />` → `<PageLayout.Body>`, matching `/agents`, `/settings`, `/schedules`. (#411)
 
 ## [0.1.11] - 2026-05-20
 

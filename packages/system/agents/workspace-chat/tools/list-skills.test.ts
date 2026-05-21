@@ -76,7 +76,7 @@ describe("createListSkillsTool", () => {
     ]);
 
     const tools = createListSkillsTool("ws-1", makeLogger());
-    const result = await tools.list_skills!.execute!({}, TOOL_CALL_OPTS);
+    const result = await tools.list_skills?.execute?.({}, TOOL_CALL_OPTS);
 
     expect(result).toMatchObject({ ok: true, scope: "workspace", count: 2 });
     const refs = (result as { skills: Array<{ ref: string }> }).skills.map((s) => s.ref);
@@ -89,7 +89,7 @@ describe("createListSkillsTool", () => {
     ]);
 
     const tools = createListSkillsTool("ws-1", makeLogger());
-    const result = await tools.list_skills!.execute!({}, TOOL_CALL_OPTS);
+    const result = await tools.list_skills?.execute?.({}, TOOL_CALL_OPTS);
 
     expect(result).toMatchObject({
       ok: true,
@@ -112,7 +112,7 @@ describe("createListSkillsTool", () => {
     });
 
     const tools = createListSkillsTool("ws-1", makeLogger());
-    const result = await tools.list_skills!.execute!({ scope: "catalog" }, TOOL_CALL_OPTS);
+    const result = await tools.list_skills?.execute?.({ scope: "catalog" }, TOOL_CALL_OPTS);
 
     expect(result).toMatchObject({ ok: true, scope: "catalog", count: 1 });
     expect(mockResolveVisibleSkills).not.toHaveBeenCalled();
@@ -126,7 +126,7 @@ describe("createListSkillsTool", () => {
     ]);
 
     const tools = createListSkillsTool("ws-1", makeLogger());
-    const result = await tools.list_skills!.execute!({}, TOOL_CALL_OPTS);
+    const result = await tools.list_skills?.execute?.({}, TOOL_CALL_OPTS);
 
     expect((result as { skills: unknown[] }).skills).toHaveLength(1);
   });
@@ -135,7 +135,7 @@ describe("createListSkillsTool", () => {
     mockResolveVisibleSkills.mockRejectedValueOnce(new Error("kv down"));
 
     const tools = createListSkillsTool("ws-1", makeLogger());
-    const result = await tools.list_skills!.execute!({}, TOOL_CALL_OPTS);
+    const result = await tools.list_skills?.execute?.({}, TOOL_CALL_OPTS);
 
     expect(result).toEqual({ ok: false, error: "list_skills failed: kv down" });
   });
@@ -154,7 +154,7 @@ describe("createSearchSkillsTool", () => {
     ]);
 
     const tools = createSearchSkillsTool("ws-1", makeLogger());
-    const result = await tools.search_skills!.execute!({ query: "qa" }, TOOL_CALL_OPTS);
+    const result = await tools.search_skills?.execute?.({ query: "qa" }, TOOL_CALL_OPTS);
 
     expect(result).toMatchObject({ ok: true, count: 2 });
     const refs = (result as { skills: Array<{ ref: string }> }).skills.map((s) => s.ref);
@@ -169,7 +169,7 @@ describe("createSearchSkillsTool", () => {
     ]);
 
     const tools = createSearchSkillsTool("ws-1", makeLogger());
-    const result = await tools.search_skills!.execute!({ query: "match", k: 2 }, TOOL_CALL_OPTS);
+    const result = await tools.search_skills?.execute?.({ query: "match", k: 2 }, TOOL_CALL_OPTS);
 
     expect((result as { skills: unknown[] }).skills).toHaveLength(2);
   });
@@ -178,7 +178,7 @@ describe("createSearchSkillsTool", () => {
     mockResolveVisibleSkills.mockResolvedValueOnce([summary("a", "alpha", "nothing here")]);
 
     const tools = createSearchSkillsTool("ws-1", makeLogger());
-    const result = await tools.search_skills!.execute!({ query: "zzzz" }, TOOL_CALL_OPTS);
+    const result = await tools.search_skills?.execute?.({ query: "zzzz" }, TOOL_CALL_OPTS);
 
     expect(result).toMatchObject({ ok: true, count: 0, skills: [] });
   });
@@ -187,7 +187,7 @@ describe("createSearchSkillsTool", () => {
     mockResolveVisibleSkills.mockResolvedValueOnce([summary("a", "alpha", "Cookie Monster")]);
 
     const tools = createSearchSkillsTool("ws-1", makeLogger());
-    const result = await tools.search_skills!.execute!({ query: "COOKIE" }, TOOL_CALL_OPTS);
+    const result = await tools.search_skills?.execute?.({ query: "COOKIE" }, TOOL_CALL_OPTS);
 
     expect(result).toMatchObject({ ok: true, count: 1 });
   });
@@ -219,7 +219,7 @@ describe("createDescribeSkillTool", () => {
     });
 
     const tools = createDescribeSkillTool(makeLogger());
-    const result = await tools.describe_skill!.execute!({ ref: "@svelte/core" }, TOOL_CALL_OPTS);
+    const result = await tools.describe_skill?.execute?.({ ref: "@svelte/core" }, TOOL_CALL_OPTS);
 
     expect(result).toMatchObject({
       ok: true,
@@ -234,7 +234,7 @@ describe("createDescribeSkillTool", () => {
 
   it("returns ok:false when ref is malformed", async () => {
     const tools = createDescribeSkillTool(makeLogger());
-    const result = await tools.describe_skill!.execute!({ ref: "not-a-ref" }, TOOL_CALL_OPTS);
+    const result = await tools.describe_skill?.execute?.({ ref: "not-a-ref" }, TOOL_CALL_OPTS);
 
     expect(result).toMatchObject({ ok: false });
   });
@@ -243,7 +243,10 @@ describe("createDescribeSkillTool", () => {
     vi.spyOn(SkillStorage, "get").mockResolvedValue({ ok: true, data: null });
 
     const tools = createDescribeSkillTool(makeLogger());
-    const result = await tools.describe_skill!.execute!({ ref: "@svelte/missing" }, TOOL_CALL_OPTS);
+    const result = await tools.describe_skill?.execute?.(
+      { ref: "@svelte/missing" },
+      TOOL_CALL_OPTS,
+    );
 
     expect(result).toMatchObject({ ok: false });
   });
@@ -252,7 +255,7 @@ describe("createDescribeSkillTool", () => {
     vi.spyOn(SkillStorage, "get").mockResolvedValue({ ok: false, error: "broker down" });
 
     const tools = createDescribeSkillTool(makeLogger());
-    const result = await tools.describe_skill!.execute!({ ref: "@svelte/core" }, TOOL_CALL_OPTS);
+    const result = await tools.describe_skill?.execute?.({ ref: "@svelte/core" }, TOOL_CALL_OPTS);
 
     expect(result).toMatchObject({ ok: false, error: "broker down" });
   });
@@ -290,20 +293,20 @@ describe("retrieval tool contract", () => {
     const search = createSearchSkillsTool("ws-1", makeLogger());
     const describe = createDescribeSkillTool(makeLogger());
 
-    const listResult = (await list.list_skills!.execute!({}, TOOL_CALL_OPTS)) as {
+    const listResult = (await list.list_skills?.execute?.({}, TOOL_CALL_OPTS)) as {
       skills: Array<{ ref: string; description: string }>;
     };
     expect(listResult.skills[0]).toHaveProperty("ref");
     expect(listResult.skills[0]).toHaveProperty("description");
 
-    const searchResult = (await search.search_skills!.execute!(
+    const searchResult = (await search.search_skills?.execute?.(
       { query: "patterns" },
       TOOL_CALL_OPTS,
     )) as { skills: Array<{ ref: string; description: string }> };
     expect(searchResult.skills[0]).toHaveProperty("ref");
     expect(searchResult.skills[0]).toHaveProperty("description");
 
-    const describeResult = await describe.describe_skill!.execute!(
+    const describeResult = await describe.describe_skill?.execute?.(
       { ref: "@svelte/core" },
       TOOL_CALL_OPTS,
     );

@@ -58,7 +58,7 @@ describe("createListIntegrationsTool", () => {
     });
 
     const tools = createListIntegrationsTool(makeLogger());
-    const result = await tools.list_integrations!.execute!({}, TOOL_CALL_OPTS);
+    const result = await tools.list_integrations?.execute?.({}, TOOL_CALL_OPTS);
 
     expect(result).toMatchObject({
       ok: true,
@@ -82,7 +82,7 @@ describe("createListIntegrationsTool", () => {
     mockFetchLinkSummary.mockResolvedValue(null);
 
     const tools = createListIntegrationsTool(makeLogger());
-    const result = await tools.list_integrations!.execute!({}, TOOL_CALL_OPTS);
+    const result = await tools.list_integrations?.execute?.({}, TOOL_CALL_OPTS);
 
     expect(result).toMatchObject({ ok: false });
   });
@@ -94,7 +94,7 @@ describe("createListIntegrationsTool", () => {
     });
 
     const tools = createListIntegrationsTool(makeLogger());
-    const result = await tools.list_integrations!.execute!({}, TOOL_CALL_OPTS);
+    const result = await tools.list_integrations?.execute?.({}, TOOL_CALL_OPTS);
 
     const ids = (result as { integrations: Array<{ provider: string }> }).integrations.map(
       (i) => i.provider,
@@ -120,7 +120,7 @@ describe("createDescribeIntegrationTool", () => {
     });
 
     const tools = createDescribeIntegrationTool(makeLogger());
-    const result = await tools.describe_integration!.execute!(
+    const result = await tools.describe_integration?.execute?.(
       { provider: "gmail" },
       TOOL_CALL_OPTS,
     );
@@ -140,7 +140,7 @@ describe("createDescribeIntegrationTool", () => {
     mockFetchLinkSummary.mockResolvedValue({ providers: [{ id: "gmail" }], credentials: [] });
 
     const tools = createDescribeIntegrationTool(makeLogger());
-    const result = await tools.describe_integration!.execute!(
+    const result = await tools.describe_integration?.execute?.(
       { provider: "ghost" },
       TOOL_CALL_OPTS,
     );
@@ -152,7 +152,7 @@ describe("createDescribeIntegrationTool", () => {
     mockFetchLinkSummary.mockResolvedValue(null);
 
     const tools = createDescribeIntegrationTool(makeLogger());
-    const result = await tools.describe_integration!.execute!(
+    const result = await tools.describe_integration?.execute?.(
       { provider: "gmail" },
       TOOL_CALL_OPTS,
     );

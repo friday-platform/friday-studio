@@ -122,7 +122,7 @@ describe("WorkspaceConfigSchema memory", () => {
     if (result.success) {
       expect(result.data.memory?.shareable?.list).toBeUndefined();
       expect(
-        (result.data.memory?.shareable as Record<string, unknown> | undefined)?.["corpora"],
+        (result.data.memory?.shareable as Record<string, unknown> | undefined)?.corpora,
       ).toBeUndefined();
     }
   });

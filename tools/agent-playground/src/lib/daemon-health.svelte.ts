@@ -83,12 +83,19 @@ function scheduleNext(): void {
 
 async function tick(): Promise<void> {
   scheduled = null;
-  // Skip the probe while the tab is hidden — a backgrounded playground
-  // has nothing to display anyway, and Chrome throttles network in
-  // hidden tabs hard enough that a probe is more likely to time out
-  // than report ground truth. We re-arm immediately so a quick toggle
-  // back to visible still gets a probe at the next scheduled tick.
-  if (typeof document !== "undefined" && document.visibilityState !== "visible") {
+  // Skip steady-state probes while the tab is hidden — a backgrounded
+  // playground has nothing to display anyway, and Chrome throttles
+  // network in hidden tabs hard enough that a probe is more likely to
+  // time out than report ground truth. We re-arm immediately so a
+  // quick toggle back to visible still gets a probe at the next
+  // scheduled tick. The first probe must always run regardless of
+  // visibility — otherwise DaemonGate hangs on `Connecting...` forever
+  // for tabs opened in the background (cmd-click, deep-link).
+  if (
+    state.hasConnected &&
+    typeof document !== "undefined" &&
+    document.visibilityState !== "visible"
+  ) {
     scheduleNext();
     return;
   }

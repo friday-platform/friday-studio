@@ -31,6 +31,17 @@ export { validateMCPEnvironmentForWorkspace, WorkspaceManager } from "./src/mana
 export type { TriggerSignalOpts } from "./src/runtime.ts";
 // Runtime
 export { classifySessionError, WorkspaceRuntime } from "./src/runtime.ts";
+// Live setup-requirements derivation (Decision 3 — `requires_setup` is not stored).
+export type {
+  LinkCredentialState,
+  ResolveSetupRequirementsOptions,
+  SetupRequirement,
+  SetupRequirementsResult,
+} from "./src/setup-requirements.ts";
+export {
+  resolveWorkspaceSetupRequirements,
+  StaleCredentialIdAtImportError,
+} from "./src/setup-requirements.ts";
 // Storage factories and registry adapter
 export {
   createJetStreamKVStorage,
@@ -57,7 +68,9 @@ export type { WorkspaceVariables } from "./src/variable-interpolation.ts";
 export {
   findRepoRoot,
   interpolateConfig,
+  resolveDeclaredVariables,
   resolveWorkspaceVariables,
+  variableEnvKey,
   WorkspaceVariablesSchema,
 } from "./src/variable-interpolation.ts";
 // Re-export watchers module for convenience

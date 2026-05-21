@@ -214,7 +214,7 @@ export async function listInstanceEvents(
     } catch {
       continue;
     }
-    if (!msg || !msg.subject.startsWith(subjectFilter)) continue;
+    if (!msg?.subject.startsWith(subjectFilter)) continue;
     try {
       events.push(JSON.parse(dec.decode(msg.data)) as InstanceEvent);
     } catch {

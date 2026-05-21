@@ -22,6 +22,7 @@ import {
   ElicitationStatusSchema,
   ElicitationStorage,
   ToolAccessGrants,
+  WorkspaceSetupAnswerValueSchema,
 } from "@atlas/core";
 import { createLogger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
@@ -33,6 +34,7 @@ import { z } from "zod";
 import { commitGlobalEnvWrite } from "../../src/env-commit.ts";
 import type { AppVariables } from "../../src/factory.ts";
 import { daemonFactory } from "../../src/factory.ts";
+import { commitWorkspaceSetupAnswer } from "../../src/setup-answer-handler.ts";
 import { errorResponseSchema } from "../../src/utils.ts";
 import { getAccessibleWorkspaceIds, requireWorkspaceMember } from "../../src/workspace-authz.ts";
 
@@ -131,6 +133,131 @@ async function commitEnvWriteElicitation(
     logger.error("env-write elicitation commit failed", { id: elicitation.id, error: message });
     return { ok: false, error: message };
   }
+}
+
+/**
+ * Apply a confirmed `workspace-setup` elicitation. Mirrors the pre-flight,
+ * commit, then restart shape from the design doc (Decision 6):
+ *
+ *   1. Resolve workspace + parsed config off the manager.
+ *   2. Re-parse the answer value as `WorkspaceSetupAnswerValueSchema` —
+ *      `AnswerBodySchema` already validates the union, but re-parse here
+ *      shrinks the type from the union to the structured shape without an
+ *      assertion cast.
+ *   3. Pre-flight + commit via `commitWorkspaceSetupAnswer`.
+ *   4. Restart signals so the setup gate re-evaluates and any deferred
+ *      schedule / fs-watch registrations land.
+ *
+ * Returns `{ ok: true }` to let the caller fall through to
+ * `ElicitationStorage.answer`; otherwise returns a fully-formed JSON Response
+ * for the caller to early-return.
+ */
+async function commitWorkspaceSetupElicitation(
+  c: Context<AppVariables>,
+  elicitation: Elicitation,
+  rawValue:
+    | string
+    | { variableValues: Record<string, unknown>; credentialChoices: Record<string, string> },
+): Promise<{ ok: true } | { ok: false; response: Response }> {
+  const parsedValue = WorkspaceSetupAnswerValueSchema.safeParse(rawValue);
+  if (!parsedValue.success) {
+    return {
+      ok: false,
+      response: c.json(
+        { error: `workspace-setup answer value malformed: ${parsedValue.error.message}` },
+        400,
+      ),
+    };
+  }
+
+  const manager = c.get("app").getWorkspaceManager();
+  const workspace = await manager.find({ id: elicitation.workspaceId });
+  if (!workspace) {
+    logger.error("workspace-setup elicitation: workspace not found", {
+      id: elicitation.id,
+      workspaceId: elicitation.workspaceId,
+    });
+    return {
+      ok: false,
+      response: c.json({ error: `workspace '${elicitation.workspaceId}' not found` }, 500),
+    };
+  }
+
+  const merged = await manager.getWorkspaceConfig(elicitation.workspaceId);
+  if (!merged) {
+    logger.error("workspace-setup elicitation: workspace config not loadable", {
+      id: elicitation.id,
+      workspaceId: elicitation.workspaceId,
+    });
+    return {
+      ok: false,
+      response: c.json(
+        { error: `workspace '${elicitation.workspaceId}' config not loadable` },
+        500,
+      ),
+    };
+  }
+
+  const outcome = await commitWorkspaceSetupAnswer({
+    workspacePath: workspace.path,
+    parsedConfig: merged.workspace,
+    answer: parsedValue.data,
+  });
+
+  if (!outcome.ok && outcome.status === 400) {
+    return { ok: false, response: c.json({ error: "validation_failed", ...outcome.errors }, 400) };
+  }
+  if (!outcome.ok) {
+    return {
+      ok: false,
+      response: c.json({ error: outcome.message, committedKeys: outcome.committedKeys }, 500),
+    };
+  }
+
+  // Initial-setup bootstrap pointer cleanup (Decision 1 / design doc
+  // § Module — Answer handler dispatch, step 6). Once the pre-seeded
+  // elicitation is answered, clear `active_setup_session_id` so the T21
+  // chat-no-session redirect stops routing back to the bootstrap chat. The
+  // pointer is set ONLY for the initial-setup elicitation (never for
+  // re-setup), so the comparison against `elicitation.sessionId` correctly
+  // scopes this write to the initial-setup flow.
+  if (workspace.metadata?.active_setup_session_id === elicitation.sessionId) {
+    const { active_setup_session_id: _cleared, ...remainingMetadata } = workspace.metadata ?? {};
+    try {
+      await manager.updateWorkspaceStatus(workspace.id, workspace.status, {
+        metadata: remainingMetadata,
+      });
+    } catch (err) {
+      // Best-effort: the elicitation flip is the source of truth for
+      // "setup completed"; a stale pointer is annoying (extra redirect)
+      // but not load-bearing. Surface in logs so it's visible.
+      logger.warn("workspace-setup post-commit pointer clear failed", {
+        id: elicitation.id,
+        workspaceId: elicitation.workspaceId,
+        error: stringifyError(err),
+      });
+    }
+  }
+
+  // Post-commit: re-derive the setup gate and (re-)register schedule +
+  // fs-watch signals. `handleWorkspaceConfigChange` is the public entrypoint
+  // that routes through the same `restartSignalsForWorkspace` path the
+  // file-watcher uses, so the gate from T13 sees the updated env + config.
+  try {
+    const entry = await manager.find({ id: elicitation.workspaceId });
+    if (entry) await manager.handleWorkspaceConfigChange(entry, entry.configPath);
+  } catch (err) {
+    // Best-effort: a restart hiccup must not leave the elicitation pending
+    // after a successful commit. The next workspace config change will
+    // reconcile.
+    logger.warn("workspace-setup post-commit signal restart failed", {
+      id: elicitation.id,
+      workspaceId: elicitation.workspaceId,
+      error: stringifyError(err),
+    });
+  }
+
+  return { ok: true };
 }
 
 const elicitationApp = daemonFactory.createApp();
@@ -261,8 +388,14 @@ elicitationApp.get(
 // POST /:id/answer
 // ---------------------------------------------------------------------------
 
+/**
+ * Answer body. `value` is a plain string for the option-style kinds
+ * (`tool-allowlist`, `auth-refresh`, `confirm-action`, `open-question`,
+ * `env-write`) and a structured `{ variableValues, credentialChoices }`
+ * object for `workspace-setup`. Mirrors `ElicitationAnswerSchema.value`.
+ */
 const AnswerBodySchema = z.object({
-  value: z.string(),
+  value: z.union([z.string(), WorkspaceSetupAnswerValueSchema]),
   note: z.string().optional(),
   answeredBy: z.string().optional(),
   /**
@@ -300,6 +433,11 @@ elicitationApp.post(
       },
       404: {
         description: "Elicitation not found",
+        content: { "application/json": { schema: resolver(errorResponseSchema) } },
+      },
+      409: {
+        description:
+          "Conflict — workspace-setup commit already in progress (or stuck after a prior commit failure).",
         content: { "application/json": { schema: resolver(errorResponseSchema) } },
       },
       500: {
@@ -363,6 +501,47 @@ elicitationApp.post(
         if (!commit.ok) {
           return c.json({ error: `env write failed: ${commit.error}` }, 500);
         }
+      }
+
+      // workspace-setup follows the same commit-before-`answer` ordering as
+      // env-write, but on a richer payload. Pre-flight validates everything
+      // and only then writes; a post-pre-flight failure (concurrent
+      // credential deletion etc.) leaves the elicitation `pending` and
+      // returns the env keys that already committed so the caller's retry is
+      // idempotent. Decision 6.
+      //
+      // Unlike env-write (which writes the same value twice in the worst-case
+      // TOCTOU and is therefore idempotent on disk), workspace-setup mutates
+      // `workspace.yml` via the credential-pin draft-aware mutation. Two
+      // concurrent /answer posts that both passed the `status === "pending"`
+      // pre-check would both run that mutation, even though only one wins
+      // the final `pending → answered` CAS flip below. We close the window
+      // with a CAS-guarded reserve: only one caller proceeds to commit;
+      // the loser gets 409 with body `{ error: ... }` matching the rest of
+      // this route's failure shape.
+      //
+      // Reserve is intentionally NOT released on commit failure (option (b)
+      // from the design review) — re-opening the reserve reopens the race
+      // it exists to close. The elicitation is left stuck and the next
+      // /answer 409s; recovery surfaces as a stuck-row in the Activity UI.
+      if (got.data.kind === "workspace-setup") {
+        if (got.data.status !== "pending") {
+          return c.json(
+            { error: `Elicitation ${id} already in terminal state: ${got.data.status}` },
+            500,
+          );
+        }
+        const reserved = await ElicitationStorage.reserveForCommit({ id });
+        if (!reserved.ok) {
+          // 409 Conflict: a concurrent commit holds the reserve (or, less
+          // commonly, the elicitation transitioned to terminal between the
+          // pre-check above and the reserve attempt). Either way, this
+          // caller cannot commit; surface the reserve's error string so the
+          // UI can disambiguate "in progress" vs "terminal".
+          return c.json({ error: reserved.error }, 409);
+        }
+        const setupOutcome = await commitWorkspaceSetupElicitation(c, got.data, body.value);
+        if (!setupOutcome.ok) return setupOutcome.response;
       }
 
       const result = await ElicitationStorage.answer({

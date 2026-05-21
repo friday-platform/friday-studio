@@ -54,7 +54,7 @@ describe("createUpsertTools", () => {
     expect(tools).toHaveProperty("upsert_signal");
     expect(tools).toHaveProperty("upsert_job");
 
-    const result = await tools.upsert_agent!.execute!({ id: "a", config: {} }, TOOL_CALL_OPTS);
+    const result = await tools.upsert_agent?.execute?.({ id: "a", config: {} }, TOOL_CALL_OPTS);
     expect(result).toMatchObject({
       ok: false,
       error: expect.stringContaining("upsert_agent must be called"),
@@ -85,7 +85,7 @@ describe("createBoundUpsertTools", () => {
     );
 
     const tools = createBoundUpsertTools(logger, "ws-1");
-    const result = await tools.upsert_agent!.execute!(
+    const result = await tools.upsert_agent?.execute?.(
       { id: "email-triager", config: { type: "llm" } },
       TOOL_CALL_OPTS,
     );
@@ -111,7 +111,7 @@ describe("createBoundUpsertTools", () => {
     );
 
     const tools = createBoundUpsertTools(logger, "ws-1");
-    const result = await tools.upsert_agent!.execute!(
+    const result = await tools.upsert_agent?.execute?.(
       { id: "email-triager", config: { type: "llm" } },
       TOOL_CALL_OPTS,
     );
@@ -133,7 +133,7 @@ describe("createBoundUpsertTools", () => {
     );
 
     const tools = createBoundUpsertTools(logger, "ws-1");
-    const result = await tools.upsert_signal!.execute!(
+    const result = await tools.upsert_signal?.execute?.(
       { id: "webhook", config: { provider: "http" } },
       TOOL_CALL_OPTS,
     );
@@ -155,7 +155,7 @@ describe("createBoundUpsertTools", () => {
     );
 
     const tools = createBoundUpsertTools(logger, "ws-1");
-    const result = await tools.upsert_job!.execute!(
+    const result = await tools.upsert_job?.execute?.(
       { id: "test-job", config: { description: "Test job" } },
       TOOL_CALL_OPTS,
     );
@@ -177,7 +177,7 @@ describe("createBoundUpsertTools", () => {
     );
 
     const tools = createBoundUpsertTools(logger, "ws-1");
-    const result = await tools.upsert_agent!.execute!(
+    const result = await tools.upsert_agent?.execute?.(
       { id: "bad-agent", config: { invalid: true } },
       TOOL_CALL_OPTS,
     );
@@ -200,7 +200,7 @@ describe("createBoundUpsertTools", () => {
     );
 
     const tools = createBoundUpsertTools(logger, "ws-1");
-    const result = await tools.upsert_agent!.execute!({ id: "agent", config: {} }, TOOL_CALL_OPTS);
+    const result = await tools.upsert_agent?.execute?.({ id: "agent", config: {} }, TOOL_CALL_OPTS);
 
     expect(result).toEqual({
       ok: false,
@@ -233,7 +233,7 @@ describe("createBoundUpsertTools", () => {
     );
 
     const tools = createBoundUpsertTools(logger, "ws-1");
-    const result = await tools.upsert_agent!.execute!(
+    const result = await tools.upsert_agent?.execute?.(
       { id: "email-triage", config: { type: "llm" } },
       TOOL_CALL_OPTS,
     );
@@ -260,7 +260,7 @@ describe("createBoundUpsertTools", () => {
     } as Response);
 
     const tools = createBoundUpsertTools(logger, "ws-1");
-    const result = await tools.upsert_agent!.execute!({ id: "agent", config: {} }, TOOL_CALL_OPTS);
+    const result = await tools.upsert_agent?.execute?.({ id: "agent", config: {} }, TOOL_CALL_OPTS);
 
     expect(result).toEqual({
       ok: false,
@@ -279,7 +279,7 @@ describe("createBoundUpsertTools", () => {
     );
 
     const tools = createBoundUpsertTools(logger, "ws-1");
-    await tools.upsert_job!.execute!({ id: "j", config: {} }, TOOL_CALL_OPTS);
+    await tools.upsert_job?.execute?.({ id: "j", config: {} }, TOOL_CALL_OPTS);
 
     expect(mockInvalidateBlock2).toHaveBeenCalledWith("ws-1");
   });
@@ -293,7 +293,7 @@ describe("createBoundUpsertTools", () => {
     );
 
     const tools = createBoundUpsertTools(logger, "ws-1");
-    await tools.upsert_signal!.execute!({ id: "s", config: {} }, TOOL_CALL_OPTS);
+    await tools.upsert_signal?.execute?.({ id: "s", config: {} }, TOOL_CALL_OPTS);
 
     expect(mockInvalidateBlock2).toHaveBeenCalledWith("ws-1");
   });
@@ -304,7 +304,7 @@ describe("createBoundUpsertTools", () => {
     );
 
     const tools = createBoundUpsertTools(logger, "ws-1");
-    await tools.upsert_agent!.execute!({ id: "bad", config: {} }, TOOL_CALL_OPTS);
+    await tools.upsert_agent?.execute?.({ id: "bad", config: {} }, TOOL_CALL_OPTS);
 
     expect(mockInvalidateBlock2).not.toHaveBeenCalled();
   });

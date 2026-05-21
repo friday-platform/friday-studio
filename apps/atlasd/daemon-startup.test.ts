@@ -114,22 +114,20 @@ describe("daemon startup platform models", () => {
     );
 
     it(
-      "boots successfully with groq credentials and resolves labels from groq",
+      "boots successfully and resolves labels from the anthropic default even when GROQ_API_KEY is set",
       async () => {
-        // Groq wins the labels role when credentialed
+        // Regression guard: a stray GROQ_API_KEY in the environment must NOT
+        // silently hijack the labels role. Default chain leads with anthropic.
         setCredential("GROQ_API_KEY", "test-groq-key");
-        // Also need anthropic for other roles (classifier, planner, conversational)
         setCredential("ANTHROPIC_API_KEY", "test-anthropic-key");
 
         const daemon = new AtlasDaemon({ port: 0 });
         activeDaemon = daemon;
         await daemon.initialize();
 
-        const platformModels = (
-          daemon as unknown as { getPlatformModels: () => { get: (role: string) => unknown } }
-        ).getPlatformModels();
-        const labelsModel = platformModels.get("labels");
-        expect(labelsModel).toBeDefined();
+        const labels = daemon.getPlatformModels().get("labels");
+        expect(labels.provider).toContain("anthropic");
+        expect(labels.modelId).toBe("claude-haiku-4-5");
 
         await daemon.shutdown();
       },
@@ -232,7 +230,7 @@ describe("daemon startup platform models", () => {
     );
 
     it(
-      "prefers groq for labels when both groq and anthropic are credentialed",
+      "uses anthropic for labels by default even when both groq and anthropic are credentialed",
       async () => {
         setCredential("GROQ_API_KEY", "test-groq-key");
         setCredential("ANTHROPIC_API_KEY", "test-anthropic-key");
@@ -241,11 +239,12 @@ describe("daemon startup platform models", () => {
         activeDaemon = daemon;
         await daemon.initialize();
 
-        const platformModels = (
-          daemon as unknown as { getPlatformModels: () => { get: (role: string) => unknown } }
-        ).getPlatformModels();
-        // Labels should resolve (to groq in the default chain)
-        expect(platformModels.get("labels")).toBeDefined();
+        // Groq is opt-in via `models.labels` in friday.yml / settings — env
+        // var alone is not enough. Assert the resolved identity, not just
+        // that something resolved (toBeDefined would pass for groq too).
+        const labels = daemon.getPlatformModels().get("labels");
+        expect(labels.provider).toContain("anthropic");
+        expect(labels.modelId).toBe("claude-haiku-4-5");
 
         await daemon.shutdown();
       },

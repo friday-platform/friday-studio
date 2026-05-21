@@ -52,6 +52,12 @@ const logger = createLogger({ component: "jetstream-elicitation-storage" });
 const STREAM_NAME = "ELICITATIONS";
 const SUBJECT_PREFIX = "elicitations";
 const KV_BUCKET = "ELICITATION_STATUS";
+/**
+ * Single-flight reserve marker bucket. Keyed by elicitation id; presence
+ * means "a commit is in progress (or stuck)". See
+ * {@link JetStreamElicitationStorageAdapter.reserveForCommit}.
+ */
+const RESERVE_BUCKET = "ELICITATION_COMMIT_RESERVE";
 const HISTORY = 5;
 const TERMINAL_ANSWER_GRACE_MS = 5_000;
 
@@ -72,6 +78,7 @@ function subjectFor(elicitation: Elicitation): string {
 
 export class JetStreamElicitationStorageAdapter implements ElicitationStorageAdapter {
   private cachedKv: KV | null = null;
+  private cachedReserveKv: KV | null = null;
   private streamEnsured = false;
 
   constructor(private readonly nc: NatsConnection) {
@@ -80,6 +87,7 @@ export class JetStreamElicitationStorageAdapter implements ElicitationStorageAda
     // stream-not-found / bucket-not-found.
     registerReconnectReset(this.nc, () => {
       this.cachedKv = null;
+      this.cachedReserveKv = null;
       this.streamEnsured = false;
     });
   }
@@ -131,6 +139,23 @@ export class JetStreamElicitationStorageAdapter implements ElicitationStorageAda
     const js = this.nc.jetstream();
     this.cachedKv = await js.views.kv(KV_BUCKET, { history: HISTORY, storage: StorageType.File });
     return this.cachedKv;
+  }
+
+  /**
+   * Lazily provisions the commit-reserve bucket. The reserve marker is a
+   * one-byte presence flag — `history: 1` is enough, and the bucket is
+   * separate from {@link KV_BUCKET} so that revising the reserve never
+   * disturbs the elicitation envelope's revision lineage used by
+   * {@link transitionPending}.
+   */
+  private async reserveKv(): Promise<KV> {
+    if (this.cachedReserveKv) return this.cachedReserveKv;
+    const js = this.nc.jetstream();
+    this.cachedReserveKv = await js.views.kv(RESERVE_BUCKET, {
+      history: 1,
+      storage: StorageType.File,
+    });
+    return this.cachedReserveKv;
   }
 
   /**
@@ -258,9 +283,14 @@ export class JetStreamElicitationStorageAdapter implements ElicitationStorageAda
       if (current.status !== "pending") {
         return fail(`Elicitation ${id} already in terminal state: ${current.status}`);
       }
-      const expiresAtMs = new Date(current.expiresAt).getTime();
-      if (Date.now() > expiresAtMs + TERMINAL_ANSWER_GRACE_MS) {
-        return fail(`Elicitation ${id} already expired`);
+      // `workspace-setup` may sit unanswered for days — see
+      // `expirePending` and `deriveExpired` for the sweep/read exemptions.
+      // Mirror them here so a delayed answer isn't rejected as expired.
+      if (current.kind !== "workspace-setup") {
+        const expiresAtMs = new Date(current.expiresAt).getTime();
+        if (Date.now() > expiresAtMs + TERMINAL_ANSWER_GRACE_MS) {
+          return fail(`Elicitation ${id} already expired`);
+        }
       }
 
       const next = ElicitationSchema.parse(makeNext(current));
@@ -310,6 +340,54 @@ export class JetStreamElicitationStorageAdapter implements ElicitationStorageAda
         answeredAt: new Date().toISOString(),
       },
     }));
+  }
+
+  /**
+   * Single-flight gate for the disk-mutating section of `workspace-setup`
+   * commit. Mechanism:
+   *
+   *   1. Read the elicitation; reject if missing or already terminal so
+   *      the loser of a terminal-state race gets the same shape of error
+   *      as the existing pre-check.
+   *   2. `kv.create(id, ...)` against {@link RESERVE_BUCKET}. JetStream KV
+   *      `create` fails iff the key already exists — exactly one concurrent
+   *      caller wins; everyone else gets a CAS conflict and a clear "commit
+   *      already in progress" error.
+   *
+   * **No release-on-failure (option (b) from the design review):** if the
+   * caller's commit throws after a successful reserve, the marker stays in
+   * place. Subsequent /answer attempts for the same elicitation receive
+   * the same 409. This is intentional — option (a) (revert to `pending` on
+   * failure) reopens the race the reserve was added to close. The trade is
+   * "stuck elicitation" over "duplicate disk mutation"; recovery surfaces
+   * as a stuck-row in the Activity UI. TODO: hook stuck-reserve into the UI
+   * + a manual unstick endpoint when surfaced.
+   */
+  async reserveForCommit(input: { id: string }): Promise<Result<void, string>> {
+    try {
+      // Pre-check: surface terminal-state conflicts with the same error
+      // shape the existing `transitionPending` returns, so callers can
+      // route the failure to a 409 without parsing the reason.
+      const got = await this.get({ id: input.id });
+      if (!got.ok) return fail(got.error);
+      if (!got.data) return fail(`Elicitation ${input.id} not found`);
+      if (got.data.status !== "pending") {
+        return fail(`Elicitation ${input.id} already in terminal state: ${got.data.status}`);
+      }
+
+      const kv = await this.reserveKv();
+      try {
+        await kv.create(input.id, enc.encode("1"));
+      } catch (err) {
+        if (isCASConflict(err)) {
+          return fail(`Elicitation ${input.id} commit already in progress`);
+        }
+        throw err;
+      }
+      return success(undefined);
+    } catch (err) {
+      return fail(stringifyError(err));
+    }
   }
 
   /**
@@ -363,6 +441,10 @@ export class JetStreamElicitationStorageAdapter implements ElicitationStorageAda
           continue;
         }
         if (elicitation.status !== "pending") continue; // idempotent
+        // `workspace-setup` may sit unanswered for days while the user
+        // wires up credentials or hunts down a value; the 30-minute
+        // sweep would silently kill those flows.
+        if (elicitation.kind === "workspace-setup") continue;
         if (new Date(elicitation.expiresAt).getTime() > now.getTime()) continue; // not yet due
 
         const next: Elicitation = { ...elicitation, status: "expired" };
@@ -436,6 +518,7 @@ export class JetStreamElicitationStorageAdapter implements ElicitationStorageAda
  */
 function deriveExpired(elicitation: Elicitation, now: Date): Elicitation {
   if (elicitation.status !== "pending") return elicitation;
+  if (elicitation.kind === "workspace-setup") return elicitation;
   if (new Date(elicitation.expiresAt).getTime() > now.getTime()) {
     return elicitation;
   }

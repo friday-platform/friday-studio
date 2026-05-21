@@ -235,7 +235,7 @@ export async function discoverAndInstallSkill(
 
   // Step 2: Local skill search
   const localMatch = await searchLocalSkills(messageText);
-  if (localMatch && localMatch.name) {
+  if (localMatch?.name) {
     logger.info("Found local skill match", { skillId: localMatch.skillId, name: localMatch.name });
     return {
       complex: true,

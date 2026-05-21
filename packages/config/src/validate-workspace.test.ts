@@ -38,9 +38,9 @@ describe("validateWorkspace structural layer", () => {
     expect(result.errors.length).toBe(1);
     const enumError = result.errors[0];
     expect(enumError).toBeDefined();
-    expect(enumError!.path).toBe("improvement");
-    expect(enumError!.code).toBe("invalid_value");
-    expect(enumError!.message).toMatch(/surface/i);
+    expect(enumError?.path).toBe("improvement");
+    expect(enumError?.code).toBe("invalid_value");
+    expect(enumError?.message).toMatch(/surface/i);
   });
 
   it("returns error for unknown extra key", () => {
@@ -53,9 +53,9 @@ describe("validateWorkspace structural layer", () => {
     expect(result.errors.length).toBe(1);
     const unknownKey = result.errors[0];
     expect(unknownKey).toBeDefined();
-    expect(unknownKey!.path).toBe("");
-    expect(unknownKey!.code).toBe("unrecognized_keys");
-    expect(unknownKey!.message).toMatch(/unknown_extra_key/i);
+    expect(unknownKey?.path).toBe("");
+    expect(unknownKey?.code).toBe("unrecognized_keys");
+    expect(unknownKey?.message).toMatch(/unknown_extra_key/i);
   });
 
   it("produces distinct Issue objects for multiple Zod issues", () => {
@@ -98,9 +98,9 @@ describe("validateWorkspace structural layer", () => {
     expect(result.status).toBe("error");
     const err = result.errors.find((e) => e.path === "signals.review-inbox.description");
     expect(err).toBeDefined();
-    expect(err!.code).toBe("invalid_type");
-    expect(err!.message).not.toBe("expected string, received undefined");
-    expect(err!.message).toMatch(/required|expected string|invalid input/i);
+    expect(err?.code).toBe("invalid_type");
+    expect(err?.message).not.toBe("expected string, received undefined");
+    expect(err?.message).toMatch(/required|expected string|invalid input/i);
   });
 
   it("never emits raw Zod stringification in any issue message", () => {
@@ -189,8 +189,8 @@ describe("validateWorkspace structural layer", () => {
     expect(result.status).toBe("error");
     const err = result.errors.find((e) => e.code === "unknown_tool");
     expect(err).toBeDefined();
-    expect(err!.path).toBe("agents.my_agent.config.tools[0]");
-    expect(err!.message).toContain("bogus-tool-name");
+    expect(err?.path).toBe("agents.my_agent.config.tools[0]");
+    expect(err?.message).toContain("bogus-tool-name");
   });
 
   it("still errors on tool from undeclared MCP server prefix", () => {
@@ -220,8 +220,8 @@ describe("validateWorkspace structural layer", () => {
     expect(result.status).toBe("error");
     const err = result.errors.find((e) => e.code === "unknown_tool");
     expect(err).toBeDefined();
-    expect(err!.path).toBe("agents.my_agent.config.tools[0]");
-    expect(err!.message).toContain("undeclared-server");
+    expect(err?.path).toBe("agents.my_agent.config.tools[0]");
+    expect(err?.message).toContain("undeclared-server");
   });
 
   it("accepts prefixed tool when registry has the bare name", () => {
@@ -313,8 +313,8 @@ describe("validateWorkspace structural layer", () => {
     expect(result.status).toBe("error");
     const err = result.errors.find((e) => e.code === "unknown_tool");
     expect(err).toBeDefined();
-    expect(err!.path).toBe("agents.my_agent.config.tools[0]");
-    expect(err!.message).toContain("nonexistent_tool");
+    expect(err?.path).toBe("agents.my_agent.config.tools[0]");
+    expect(err?.message).toContain("nonexistent_tool");
   });
 
   it("accepts bare tool name when registry includes it", () => {
@@ -433,7 +433,7 @@ describe("validateWorkspace reference integrity", () => {
     expect(result.status).toBe("error");
     const err = result.errors.find((e) => e.code === "unknown_agent_id");
     expect(err).toBeDefined();
-    expect(err!.path).toBe("jobs.my_job.fsm.states.step1.entry[0].agentId");
+    expect(err?.path).toBe("jobs.my_job.fsm.states.step1.entry[0].agentId");
   });
 
   it("errors on unknown tool in agent config.tools", () => {
@@ -456,7 +456,7 @@ describe("validateWorkspace reference integrity", () => {
     expect(result.status).toBe("error");
     const err = result.errors.find((e) => e.code === "unknown_tool");
     expect(err).toBeDefined();
-    expect(err!.path).toBe("agents.my_agent.config.tools[0]");
+    expect(err?.path).toBe("agents.my_agent.config.tools[0]");
   });
 
   it("errors on unknown memory store referenced in agent prompt", () => {
@@ -478,7 +478,7 @@ describe("validateWorkspace reference integrity", () => {
     expect(result.status).toBe("error");
     const err = result.errors.find((e) => e.code === "unknown_memory_store");
     expect(err).toBeDefined();
-    expect(err!.message).toContain("ghost-store");
+    expect(err?.message).toContain("ghost-store");
   });
 });
 
@@ -506,7 +506,7 @@ describe("validateWorkspace semantic warnings", () => {
     expect(result.status).toBe("warning");
     const warn = result.warnings.find((w) => w.code === "missing_tools_array");
     expect(warn).toBeDefined();
-    expect(warn!.path).toBe("agents.my_agent.config.tools");
+    expect(warn?.path).toBe("agents.my_agent.config.tools");
   });
 
   it("warns dead_signal when signal has no triggering job", () => {
@@ -518,7 +518,7 @@ describe("validateWorkspace semantic warnings", () => {
     expect(result.status).toBe("warning");
     const warn = result.warnings.find((w) => w.code === "dead_signal");
     expect(warn).toBeDefined();
-    expect(warn!.path).toBe("signals.unused");
+    expect(warn?.path).toBe("signals.unused");
   });
 
   it("warns orphan_agent when agent is not referenced by any job", () => {
@@ -538,7 +538,7 @@ describe("validateWorkspace semantic warnings", () => {
     expect(result.status).toBe("warning");
     const warn = result.warnings.find((w) => w.code === "orphan_agent");
     expect(warn).toBeDefined();
-    expect(warn!.path).toBe("agents.orphan");
+    expect(warn?.path).toBe("agents.orphan");
   });
 
   it("produces no orphan_agent warning when every agent is referenced by a job", () => {
@@ -582,7 +582,7 @@ describe("validateWorkspace semantic warnings", () => {
     expect(result.status).toBe("warning");
     const warn = result.warnings.find((w) => w.code === "cron_parse_failed");
     expect(warn).toBeDefined();
-    expect(warn!.path).toBe("signals.bad.config.schedule");
+    expect(warn?.path).toBe("signals.bad.config.schedule");
   });
 
   it("warns http_path_collision when two HTTP signals share a path", () => {
@@ -597,6 +597,6 @@ describe("validateWorkspace semantic warnings", () => {
     expect(result.status).toBe("warning");
     const warn = result.warnings.find((w) => w.code === "http_path_collision");
     expect(warn).toBeDefined();
-    expect(warn!.message).toContain("/same");
+    expect(warn?.message).toContain("/same");
   });
 });

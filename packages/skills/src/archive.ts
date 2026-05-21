@@ -38,7 +38,7 @@ export async function writeSkillFiles(
       throw new Error("SKILL.md is reserved for the canonical skill instructions");
     }
     const resolvedTarget = resolve(target);
-    if (!resolvedTarget.startsWith(resolvedDir + "/") && resolvedTarget !== resolvedDir) {
+    if (!resolvedTarget.startsWith(`${resolvedDir}/`) && resolvedTarget !== resolvedDir) {
       throw new Error(`Path escapes base directory: ${entry.path}`);
     }
     await mkdir(dirname(target), { recursive: true });

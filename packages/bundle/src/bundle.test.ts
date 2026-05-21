@@ -31,7 +31,7 @@ describe("exportBundle + importBundle round-trip", () => {
   afterEach(async () => {
     await rm(workDir, { recursive: true, force: true });
     await rm(importDir, { recursive: true, force: true });
-    await rm(importDir + ".staging", { recursive: true, force: true });
+    await rm(`${importDir}.staging`, { recursive: true, force: true });
   });
 
   it("exports a definition-only bundle and re-imports identically", async () => {
@@ -86,7 +86,7 @@ describe("exportBundle + importBundle round-trip", () => {
 
     const { access } = await import("node:fs/promises");
     await expect(access(importDir)).rejects.toThrow();
-    await expect(access(importDir + ".staging")).rejects.toThrow();
+    await expect(access(`${importDir}.staging`)).rejects.toThrow();
   });
 
   it("verifyWorkspace reports ok for a freshly imported workspace", async () => {

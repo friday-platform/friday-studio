@@ -21,10 +21,16 @@
 -->
 <script lang="ts">
   import { Button, PageLayout, toast } from "@atlas/ui";
+  import { useQueryClient } from "@tanstack/svelte-query";
+  import {
+    ImportBundleAllResponseSchema,
+    ImportBundleErrorSchema,
+    ImportBundleResponseSchema,
+    type ImportedEntry as DaemonImportedEntry,
+  } from "$lib/api/workspace-import.ts";
   import ModelChain from "$lib/components/settings/model-chain.svelte";
   import ModelPicker from "$lib/components/settings/model-picker.svelte";
   import { tunnelUrl as tunnelProxyUrl } from "$lib/daemon-url";
-  import { useQueryClient } from "@tanstack/svelte-query";
   import { workspaceQueries } from "$lib/queries";
   import {
     checkInFlight,
@@ -681,41 +687,57 @@
     }
   }
 
-  async function postBundle(url: string, file: File): Promise<ImportSummary> {
+  async function fetchBundle(url: string, file: File): Promise<{ res: Response; body: unknown }> {
     const form = new FormData();
     form.set("bundle", file);
     const res = await fetch(url, { method: "POST", body: form });
-    const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    const body = (await res.json().catch(() => ({}))) as unknown;
+    return { res, body };
+  }
+
+  function decodeError(res: Response, body: unknown): string {
+    const parsed = ImportBundleErrorSchema.safeParse(body);
+    return parsed.success ? parsed.data.error : `HTTP ${res.status}`;
+  }
+
+  function toImportedEntry(entry: DaemonImportedEntry): ImportedEntry {
+    return {
+      workspaceId: entry.workspaceId,
+      name: entry.name,
+      path: entry.path,
+      memory: entry.memory,
+    };
+  }
+
+  async function postImportBundle(file: File): Promise<ImportSummary> {
+    const { res, body } = await fetchBundle("/api/daemon/api/workspaces/import-bundle", file);
     if (!res.ok) {
-      return {
-        ok: false,
-        imported: [],
-        errors: [],
-        message: typeof body.error === "string" ? body.error : `HTTP ${res.status}`,
-        raw: body,
-      };
+      return { ok: false, imported: [], errors: [], message: decodeError(res, body), raw: body };
+    }
+    const parsed = ImportBundleResponseSchema.safeParse(body);
+    return {
+      ok: true,
+      imported: parsed.success ? [toImportedEntry(parsed.data)] : [],
+      errors: [],
+      globalSkills: null,
+      raw: body,
+    };
+  }
+
+  async function postImportBundleAll(file: File): Promise<ImportSummary> {
+    const { res, body } = await fetchBundle("/api/daemon/api/workspaces/import-bundle-all", file);
+    if (!res.ok) {
+      return { ok: false, imported: [], errors: [], message: decodeError(res, body), raw: body };
+    }
+    const parsed = ImportBundleAllResponseSchema.safeParse(body);
+    if (!parsed.success) {
+      return { ok: true, imported: [], errors: [], globalSkills: null, raw: body };
     }
     return {
       ok: true,
-      imported: Array.isArray(body.imported)
-        ? (body.imported as ImportedEntry[])
-        : body.workspaceId
-          ? [
-              {
-                workspaceId: String(body.workspaceId),
-                name: typeof body.name === "string" ? body.name : undefined,
-                path: typeof body.path === "string" ? body.path : undefined,
-                memory:
-                  body.memory && typeof body.memory === "object"
-                    ? (body.memory as ImportedEntry["memory"])
-                    : undefined,
-              },
-            ]
-          : [],
-      errors: Array.isArray(body.errors)
-        ? (body.errors as { name?: string; error?: string }[])
-        : [],
-      globalSkills: (body.globalSkills as { kind?: string } | null | undefined) ?? null,
+      imported: parsed.data.imported.map(toImportedEntry),
+      errors: parsed.data.errors,
+      globalSkills: parsed.data.globalSkills ?? null,
       raw: body,
     };
   }
@@ -726,7 +748,7 @@
     singleBusy = true;
     singleResult = null;
     try {
-      singleResult = await postBundle("/api/daemon/api/workspaces/import-bundle", file);
+      singleResult = await postImportBundle(file);
       if (singleResult.ok) {
         await queryClient.invalidateQueries({ queryKey: workspaceQueries.all() });
         toast({ title: `Imported: ${singleResult.imported[0]?.name ?? "workspace"}` });
@@ -744,7 +766,7 @@
     fullBusy = true;
     fullResult = null;
     try {
-      fullResult = await postBundle("/api/daemon/api/workspaces/import-bundle-all", file);
+      fullResult = await postImportBundleAll(file);
       if (fullResult.ok) {
         await queryClient.invalidateQueries({ queryKey: workspaceQueries.all() });
         const n = fullResult.imported.length;
@@ -1112,12 +1134,12 @@
           </div>
 
           <div class="update-row">
-            <span class="update-version">Current: <strong>{updateStatus.current}</strong></span>
+            <span class="update-version">
+              Current: <strong>{updateStatus.current}</strong>
+            </span>
 
             {#if updateStatus.isDev}
-              <span class="update-state">
-                Development build — update check skipped
-              </span>
+              <span class="update-state">Development build — update check skipped</span>
             {:else if checkInFlight.value && !justChecked.value}
               <span class="update-state">Checking…</span>
             {:else if updateStatus.outOfDate && updateStatus.latest !== null}
@@ -1126,11 +1148,7 @@
               </span>
               <span class="update-state warn">
                 ⚠ Update available —
-                <a
-                  href="https://hellofriday.ai/download"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
+                <a href="https://hellofriday.ai/download" target="_blank" rel="noopener noreferrer">
                   Download new version →
                 </a>
               </span>

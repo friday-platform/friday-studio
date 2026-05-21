@@ -66,4 +66,21 @@ export interface ElicitationStorageAdapter {
    * concurrent answer/decline lands wins, the sweeper skips that id.
    */
   expirePending(input?: { now?: Date; limit?: number }): Promise<Result<ExpireSweepResult, string>>;
+
+  /**
+   * Atomically claim the right to run a side-effectful commit for a
+   * `pending` elicitation. First caller wins; concurrent callers fail
+   * with a "commit already in progress" error. Single-flights the
+   * disk-mutating section of `workspace-setup` answer handling so
+   * `.env` writes and `workspace.yml` credential pins can't run twice
+   * for the same elicitation between the read-and-check and the final
+   * `pending → answered` CAS flip in `answer`.
+   *
+   * **Recovery story (option (b) from the design review):** the reserve
+   * is NOT released on commit failure. A subsequent `/answer` for the
+   * same elicitation will receive the same 409 — the elicitation is
+   * effectively stuck and requires manual recovery. Pairs with a TODO
+   * to surface the stuck state in the Activity UI.
+   */
+  reserveForCommit(input: { id: string }): Promise<Result<void, string>>;
 }

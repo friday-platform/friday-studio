@@ -15,10 +15,9 @@
 -->
 
 <script lang="ts">
-  import { getHotkeyRegistry, markdownToHTMLSafe, notInTextField, toast } from "@atlas/ui";
+  import { getHotkeyRegistry, markdownToHTMLSafe, notInTextField, PageLayout, toast } from "@atlas/ui";
   import { createQuery, queryOptions, skipToken } from "@tanstack/svelte-query";
   import { page } from "$app/state";
-  import WorkspaceBreadcrumb from "$lib/components/workspace/workspace-breadcrumb.svelte";
   import { skillQueries, workspaceQueries } from "$lib/queries";
   import {
     searchSkillsSh,
@@ -55,6 +54,17 @@
     const job = (cfg.jobs as Record<string, { title?: string }> | undefined)?.[jobName];
     return job?.title ?? jobName;
   });
+
+  const workspaceName = $derived(configQuery.data?.config?.workspace?.name ?? workspaceId ?? "");
+  const crumbs = $derived(
+    workspaceId
+      ? [
+          { label: workspaceName, href: `/platform/${workspaceId}` },
+          { label: "Jobs", href: `/platform/${workspaceId}/jobs` },
+          { label: jobTitle },
+        ]
+      : [{ label: "Jobs" }, { label: jobTitle }],
+  );
 
   const jobDescription = $derived.by(() => {
     const cfg = configQuery.data?.config;
@@ -305,10 +315,11 @@
   }
 </script>
 
-<div class="page">
-  {#if workspaceId}
-    <WorkspaceBreadcrumb {workspaceId} />
-  {/if}
+<PageLayout.Root>
+  <PageLayout.Breadcrumbs {crumbs} />
+  <PageLayout.Body>
+    <PageLayout.Content>
+      <div class="stack">
 
   <header class="page-header">
     <div class="title-row">
@@ -531,7 +542,10 @@
       {/if}
     </section>
   {/if}
-</div>
+      </div>
+    </PageLayout.Content>
+  </PageLayout.Body>
+</PageLayout.Root>
 
 {#if selected}
   {@const sel = selected}
@@ -571,11 +585,10 @@
 {/if}
 
 <style>
-  .page {
+  .stack {
     display: flex;
     flex-direction: column;
     gap: var(--size-5);
-    padding: var(--size-6) var(--size-8);
   }
 
   .page-header {
@@ -623,7 +636,9 @@
   .skills-section {
     border: 1px solid var(--color-border-1);
     border-radius: var(--radius-3);
-    overflow: hidden;
+    overflow: auto;
+    overscroll-behavior: none;
+    scrollbar-width: thin;
     background: var(--color-surface-1);
   }
 

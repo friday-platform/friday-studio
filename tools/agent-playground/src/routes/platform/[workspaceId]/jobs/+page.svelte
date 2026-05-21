@@ -24,6 +24,7 @@
   import { resolve } from "$app/paths";
   import { page } from "$app/state";
   import InlineBadge from "$lib/components/shared/inline-badge.svelte";
+  import SetupRequiredBanner from "$lib/components/shared/setup-required-banner.svelte";
   import PipelineDiagram from "$lib/components/workspace/pipeline-diagram.svelte";
   import RunJobDialog from "$lib/components/workspace/run-job-dialog.svelte";
   import { humanizeCronSchedule } from "$lib/cron-humanize";
@@ -270,6 +271,8 @@
   <PageLayout.Breadcrumbs {crumbs} />
   <PageLayout.Body>
     <PageLayout.Content>
+      <SetupRequiredBanner {workspaceId} />
+
   {#if configQuery.isLoading}
     <div class="empty-state"><p>Loading jobs…</p></div>
   {:else if configQuery.isError}

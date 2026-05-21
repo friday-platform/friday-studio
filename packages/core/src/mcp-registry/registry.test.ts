@@ -136,24 +136,24 @@ describe("mcpServersRegistry", () => {
       if (!server) throw new Error(`missing server '${id}' in registry`);
       const startup = server.configTemplate.startup;
       expect(startup).toBeDefined();
-      expect(startup!.type).toBe("command");
-      expect(startup!.command).toBe("uvx");
-      expect(startup!.args).toEqual(
+      expect(startup?.type).toBe("command");
+      expect(startup?.command).toBe("uvx");
+      expect(startup?.args).toEqual(
         expect.arrayContaining(["workspace-mcp", "--transport", "streamable-http"]),
       );
       // Either tool-set filtering (--tools) or permission-level filtering
       // (--permissions) — these flags are mutually exclusive in workspace-mcp.
-      const hasToolsFlag = startup!.args!.includes("--tools");
-      const hasPermissionsFlag = startup!.args!.includes("--permissions");
+      const hasToolsFlag = startup?.args?.includes("--tools");
+      const hasPermissionsFlag = startup?.args?.includes("--permissions");
       expect(hasToolsFlag || hasPermissionsFlag).toBe(true);
       expect(hasToolsFlag && hasPermissionsFlag).toBe(false);
-      expect(startup!.env).toBeDefined();
+      expect(startup?.env).toBeDefined();
       // Per-server config only — OAuth vars live in platformEnv
-      expect(startup!.env).toHaveProperty("WORKSPACE_MCP_PORT");
-      expect(startup!.env).not.toHaveProperty("GOOGLE_OAUTH_CLIENT_ID");
-      expect(startup!.env).not.toHaveProperty("GOOGLE_OAUTH_CLIENT_SECRET");
-      expect(startup!.env).not.toHaveProperty("MCP_ENABLE_OAUTH21");
-      expect(startup!.env).not.toHaveProperty("EXTERNAL_OAUTH21_PROVIDER");
+      expect(startup?.env).toHaveProperty("WORKSPACE_MCP_PORT");
+      expect(startup?.env).not.toHaveProperty("GOOGLE_OAUTH_CLIENT_ID");
+      expect(startup?.env).not.toHaveProperty("GOOGLE_OAUTH_CLIENT_SECRET");
+      expect(startup?.env).not.toHaveProperty("MCP_ENABLE_OAUTH21");
+      expect(startup?.env).not.toHaveProperty("EXTERNAL_OAUTH21_PROVIDER");
     });
 
     it.each(
@@ -178,13 +178,14 @@ describe("mcpServersRegistry", () => {
       if (!server) throw new Error(`missing server '${id}' in registry`);
       const transportUrl =
         server.configTemplate.transport.type === "http" ? server.configTemplate.transport.url : "";
-      expect(server.configTemplate.startup!.ready_url).toBe(transportUrl);
+      expect(server.configTemplate.startup?.ready_url).toBe(transportUrl);
     });
 
     it.each(googleIds)("'%s' startup env uses plain strings or Link refs", (id) => {
       const server = mcpServersRegistry.servers[id];
       if (!server) throw new Error(`missing server '${id}' in registry`);
-      const env = server.configTemplate.startup!.env!;
+      const env = server.configTemplate.startup?.env;
+      if (!env) throw new Error(`missing startup env for server '${id}'`);
       for (const [_key, value] of Object.entries(env)) {
         const isValid =
           typeof value === "string" ||

@@ -26,9 +26,9 @@ export async function smallLLM(params: {
 
     return result.text;
   } catch (e) {
-    // 400s from the LiteLLM proxy or upstream providers (budget exceeded, model not
-    // found, parameter rejection, gpt-oss tool hallucination, etc.) are logged at
-    // warn. Call sites must handle errors with fallbacks.
+    // 400s from the LiteLLM proxy or upstream providers (budget exceeded, model
+    // not found, parameter rejection, model-specific tool-call quirks, etc.)
+    // are logged at warn. Call sites must handle errors with fallbacks.
     if (APICallError.isInstance(e) && e.statusCode === 400) {
       logger.warn("Small LLM request rejected (400)", { error: e });
       throw e;
