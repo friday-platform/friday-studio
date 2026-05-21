@@ -8,13 +8,12 @@
 -->
 
 <script lang="ts">
-  import { Button } from "@atlas/ui";
+  import { Button, PageLayout } from "@atlas/ui";
   import { yaml as yamlLang } from "@codemirror/lang-yaml";
   import { EditorState, StateEffect, StateField } from "@codemirror/state";
   import { Decoration, EditorView, keymap } from "@codemirror/view";
   import { createQuery, useQueryClient } from "@tanstack/svelte-query";
   import { page } from "$app/state";
-  import WorkspaceBreadcrumb from "$lib/components/workspace/workspace-breadcrumb.svelte";
   import { getDaemonClient } from "$lib/daemon-client.ts";
   import { atlasTheme } from "$lib/editor/atlas-theme";
   import { workspaceQueries } from "$lib/queries";
@@ -26,6 +25,16 @@
   const configQuery = createQuery(() => workspaceQueries.config(workspaceId));
   const queryClient = useQueryClient();
   const client = getDaemonClient();
+
+  const workspaceName = $derived(configQuery.data?.config?.workspace?.name ?? workspaceId ?? "");
+  const crumbs = $derived(
+    workspaceId
+      ? [
+          { label: workspaceName, href: `/platform/${workspaceId}` },
+          { label: "Edit Configuration" },
+        ]
+      : [{ label: "Edit Configuration" }],
+  );
 
   // Line highlight effect for jump-to-path — shows a flash on the target line
   const highlightLineEffect = StateEffect.define<number>();
@@ -183,9 +192,7 @@
 </script>
 
 <div class="edit-page">
-  {#if workspaceId}
-    <WorkspaceBreadcrumb {workspaceId} />
-  {/if}
+  <PageLayout.Breadcrumbs {crumbs} />
 
   <div class="edit-content">
     <div class="title-row">

@@ -6,6 +6,7 @@
   import ConnectService from "./connect-service.svelte";
   import DelegateToolCard from "./delegate-tool-card.svelte";
   import EnvSetToolCard from "./env-set-tool-card.svelte";
+  import TccDeniedCard from "./tcc-denied-card.svelte";
   import { formatRawOutput } from "./format-raw-output";
   import HumanInputToolCard from "./human-input-tool-card.svelte";
   import { extractLiftedArtifactIds } from "./lifted-markers";
@@ -242,6 +243,64 @@
     return { artifactId: i.artifactId };
   });
 
+  /* ─── TCC-denied affordance extraction ──────────────────────────── */
+
+  /**
+   * macOS TCC ("Operation not permitted" against ~/Downloads etc.) is detected
+   * server-side by `detectTccDenial` and surfaced as `output.tcc_denied`. Both
+   * `run_code` (success shape) and the file-io tools (error shape) can carry
+   * this field. Extract a typed view so the card renders without any-casts.
+   */
+  interface TccDeniedView {
+    kind: "tcc-denied";
+    protectedRoot: string;
+    attemptedPath: string;
+    guidance: string;
+    actions: Array<{
+      label: string;
+      type: "open-url" | "copy-shell";
+      payload: string;
+    }>;
+  }
+
+  function readTccDenied(output: unknown): TccDeniedView | null {
+    if (typeof output !== "object" || output === null) return null;
+    const candidate = (output as Record<string, unknown>).tcc_denied;
+    if (typeof candidate !== "object" || candidate === null) return null;
+    const c = candidate as Record<string, unknown>;
+    if (
+      c.kind !== "tcc-denied" ||
+      typeof c.protectedRoot !== "string" ||
+      typeof c.attemptedPath !== "string" ||
+      typeof c.guidance !== "string" ||
+      !Array.isArray(c.actions)
+    ) {
+      return null;
+    }
+    const actions: TccDeniedView["actions"] = [];
+    for (const raw of c.actions) {
+      if (typeof raw !== "object" || raw === null) continue;
+      const a = raw as Record<string, unknown>;
+      if (
+        typeof a.label === "string" &&
+        (a.type === "open-url" || a.type === "copy-shell") &&
+        typeof a.payload === "string"
+      ) {
+        actions.push({ label: a.label, type: a.type, payload: a.payload });
+      }
+    }
+    if (actions.length === 0) return null;
+    return {
+      kind: "tcc-denied",
+      protectedRoot: c.protectedRoot,
+      attemptedPath: c.attemptedPath,
+      guidance: c.guidance,
+      actions,
+    };
+  }
+
+  const tccDenied = $derived(readTccDenied(call.output));
+
   /* ─── Drawer open state ──────────────────────────────────────────── */
 
   // Closed drawers do not pay the `formatRawOutput` cost (JSON.stringify +
@@ -432,6 +491,9 @@
     class:error={isError(call.state)}
   >
     {@render cardBody(call, meta)}
+    {#if tccDenied}
+      <TccDeniedCard denial={tccDenied} />
+    {/if}
     {#if liftedArtifacts.length > 0}
       <div class="lifted-artifacts">
         {#each liftedArtifacts as ref (ref.artifactId)}

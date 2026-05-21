@@ -31,6 +31,7 @@
  */
 
 import { lstat, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import type { AtlasTools } from "@atlas/agent-sdk";
 import { isInvalidChatId } from "@atlas/core/artifacts/file-upload";
@@ -38,6 +39,7 @@ import type { Logger } from "@atlas/logger";
 import { chatUploadsRoot, getFridayHome } from "@atlas/utils/paths.server";
 import { tool } from "ai";
 import { z } from "zod";
+import { detectTccDenial, type TccDenial } from "./tcc-detect.ts";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -121,6 +123,31 @@ interface FileOk {
 }
 interface FileErr {
   error: string;
+  /**
+   * Set when the underlying OS error matched the macOS TCC denial signature
+   * against a protected user folder. The chat UI uses this to render an
+   * affordance card (deeplink to System Settings, etc.) instead of the
+   * raw "Operation not permitted" text. Today's path-resolution gates
+   * keep these tools inside the scratch dir and so TCC is unreachable in
+   * practice — this is forward-defensive plumbing for any future variant
+   * that exposes protected paths to the agent.
+   * See {@link detectTccDenial}.
+   */
+  tcc_denied?: TccDenial;
+}
+
+/**
+ * Convert an unknown caught error into a `FileErr`, attaching `tcc_denied`
+ * when the OS message matches the macOS TCC denial signature. Centralised
+ * so all four tools (`read_file`, `write_file`, `list_files`,
+ * `read_attachment`) emit the same shape.
+ */
+function toFileErr(prefix: string, err: unknown): FileErr {
+  const message = err instanceof Error ? err.message : String(err);
+  const tccDenied = detectTccDenial(message, homedir());
+  return tccDenied
+    ? { error: `${prefix}: ${message}`, tcc_denied: tccDenied }
+    : { error: `${prefix}: ${message}` };
 }
 
 export interface ReadFileSuccess {
@@ -169,8 +196,7 @@ export function createFileIOTools(sessionId: string, logger: Logger): AtlasTools
           logger.info("read_file success", { sessionId, path, bytes: buffer.byteLength });
           return { path, content, size_bytes: buffer.byteLength, truncated };
         } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
-          return { error: `read_file failed: ${message}` };
+          return toFileErr("read_file failed", err);
         }
       },
     }),
@@ -192,8 +218,7 @@ export function createFileIOTools(sessionId: string, logger: Logger): AtlasTools
           logger.info("write_file success", { sessionId, path, bytes });
           return { ok: true, path, bytes_written: bytes };
         } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
-          return { error: `write_file failed: ${message}` };
+          return toFileErr("write_file failed", err);
         }
       },
     }),
@@ -230,7 +255,7 @@ export function createFileIOTools(sessionId: string, logger: Logger): AtlasTools
           if (message.includes("ENOENT")) {
             return { path: requested, entries: [], truncated: false };
           }
-          return { error: `list_files failed: ${message}` };
+          return toFileErr("list_files failed", err);
         }
       },
     }),
@@ -353,8 +378,7 @@ export function createReadAttachmentTool(
           });
           return { path, content, size_bytes: buffer.byteLength, truncated };
         } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
-          return { error: `read_attachment failed: ${message}` };
+          return toFileErr("read_attachment failed", err);
         }
       },
     }),

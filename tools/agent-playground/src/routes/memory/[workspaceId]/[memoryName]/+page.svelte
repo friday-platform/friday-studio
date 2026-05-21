@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { PageLayout } from "@atlas/ui";
   import { createQuery } from "@tanstack/svelte-query";
   import { page } from "$app/state";
   import MemoryEntryTable from "$lib/components/MemoryEntryTable.svelte";
@@ -55,6 +56,12 @@
   const isFetchingEntries = $derived(entriesQuery.isFetching);
   const entriesError = $derived(entriesQuery.error);
 
+  const crumbs = $derived([
+    { label: "Memory", href: "/memory" },
+    { label: workspaceName, href: `/memory/${encodeURIComponent(workspaceId)}` },
+    { label: memoryName },
+  ]);
+
   function handleKeydown(e: KeyboardEvent) {
     const target = e.target;
     if (target instanceof HTMLInputElement) return;
@@ -71,53 +78,49 @@
 
 <svelte:window onkeydown={handleKeydown} />
 
-<div class="memory-detail">
-  <header class="page-header">
-    <nav class="breadcrumb">
-      <a href="/memory">Memory</a>
-      <span class="sep">/</span>
-      <a href="/memory/{encodeURIComponent(workspaceId)}">{workspaceName}</a>
-      <span class="sep">/</span>
-      <span>{memoryName}</span>
-    </nav>
+<PageLayout.Root>
+  <PageLayout.Breadcrumbs {crumbs} />
 
-    <div class="title-row">
-      <h1>{memoryName}</h1>
-      {#if isFetchingEntries}
-        <span class="live-dot" title="Refreshing…"></span>
-        <span class="live-label">Live</span>
-      {/if}
-    </div>
-
-    <div class="meta-row">
-      {#if lastUpdated}
-        <span class="updated">Updated: {lastUpdated}</span>
-      {/if}
-      <span class="updated">
-        {entries.length} {showAllHistory ? "raw" : "unique"} entries
-        {#if !showAllHistory && duplicateCount > 0}
-          <span class="hint">({duplicateCount} shadowed)</span>
+  <div class="memory-detail">
+    <header class="page-header">
+      <div class="title-row">
+        <h1>{memoryName}</h1>
+        {#if isFetchingEntries}
+          <span class="live-dot" title="Refreshing…"></span>
+          <span class="live-label">Live</span>
         {/if}
-      </span>
-      <label class="history-toggle">
-        <input type="checkbox" bind:checked={showAllHistory} />
-        Show all history
-      </label>
-      <span class="hint">Press R to refresh</span>
-    </div>
-  </header>
+      </div>
 
-  {#if entriesError && entries.length === 0}
-    <div class="error-banner">
-      <span>{entriesQuery.error?.message}</span>
-      <button class="dismiss" onclick={() => entriesQuery.refetch()}>Retry</button>
-    </div>
-  {/if}
+      <div class="meta-row">
+        {#if lastUpdated}
+          <span class="updated">Updated: {lastUpdated}</span>
+        {/if}
+        <span class="updated">
+          {entries.length} {showAllHistory ? "raw" : "unique"} entries
+          {#if !showAllHistory && duplicateCount > 0}
+            <span class="hint">({duplicateCount} shadowed)</span>
+          {/if}
+        </span>
+        <label class="history-toggle">
+          <input type="checkbox" bind:checked={showAllHistory} />
+          Show all history
+        </label>
+        <span class="hint">Press R to refresh</span>
+      </div>
+    </header>
 
-  <div class="table-container">
-    <MemoryEntryTable {entries} loading={isEntriesLoading} />
+    {#if entriesError && entries.length === 0}
+      <div class="error-banner">
+        <span>{entriesQuery.error?.message}</span>
+        <button class="dismiss" onclick={() => entriesQuery.refetch()}>Retry</button>
+      </div>
+    {/if}
+
+    <div class="table-container">
+      <MemoryEntryTable {entries} loading={isEntriesLoading} />
+    </div>
   </div>
-</div>
+</PageLayout.Root>
 
 <style>
   .memory-detail {
@@ -132,26 +135,7 @@
     flex-direction: column;
     flex-shrink: 0;
     gap: var(--size-1);
-    padding: var(--size-5) var(--size-6) var(--size-3);
-  }
-
-  .breadcrumb {
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
-    font-size: var(--font-size-1);
-  }
-
-  .breadcrumb a {
-    color: inherit;
-    text-decoration: underline;
-    text-underline-offset: 2px;
-
-    &:hover {
-      color: var(--color-text);
-    }
-  }
-
-  .sep {
-    margin-inline: var(--size-1);
+    padding: var(--size-16) var(--size-6) var(--size-3);
   }
 
   .title-row {
