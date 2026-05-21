@@ -497,6 +497,76 @@ describe("step:start", () => {
     expect(block.agentName).toBe("pr-reviewer");
     expect(block.stepNumber).toBe(1);
   });
+
+  // After the stateId fallback transitions the planned block, a replay
+  // step:start still carries `agentName="unknown"` (the drifted name from
+  // mapActionToStepStart) — the original `(stepNumber, agentName)` dup
+  // guard would miss because the block now carries the preserved
+  // "pr-reviewer", and the function would fall through to append a fresh
+  // running "unknown" block. The widened guard short-circuits on
+  // `stepNumber + status !== "pending"`, so the replay is a no-op.
+  test("replay step:start after stateId-fallback is a no-op (no duplicate block)", () => {
+    let view = reduceSessionEvent(
+      initialSessionView(),
+      sessionStart({
+        plannedSteps: [
+          { agentName: "pr-reviewer", stateId: "review", actionType: "agent", task: "" },
+        ],
+      }),
+    );
+    view = reduceSessionEvent(
+      view,
+      stepStart({ agentName: "unknown", stateId: "review", stepNumber: 1 }),
+    );
+    expect(view.agentBlocks).toHaveLength(1);
+    expect(view.agentBlocks[0]?.agentName).toBe("pr-reviewer");
+
+    // Identical replay — would re-append a running "unknown" block pre-fix.
+    view = reduceSessionEvent(
+      view,
+      stepStart({ agentName: "unknown", stateId: "review", stepNumber: 1 }),
+    );
+
+    expect(view.agentBlocks).toHaveLength(1);
+    const block = view.agentBlocks[0];
+    expect.assert(block !== undefined);
+    expect(block.agentName).toBe("pr-reviewer");
+    expect(block.status).toBe("running");
+  });
+
+  // Symmetric out-of-order: step:complete arrives BEFORE step:start and
+  // completes the planned block via the stateId fallback. A subsequent
+  // step:start with the same stepNumber must NOT append a new running
+  // "unknown" block — the block is already past `pending` and the widened
+  // dup guard catches it on stepNumber alone.
+  test("step:start after step:complete (already transitioned) is a no-op", () => {
+    let view = reduceSessionEvent(
+      initialSessionView(),
+      sessionStart({
+        plannedSteps: [
+          { agentName: "pr-reviewer", stateId: "review", actionType: "agent", task: "" },
+        ],
+      }),
+    );
+    view = reduceSessionEvent(
+      view,
+      stepComplete({ stepNumber: 7, stateId: "review", status: "completed" }),
+    );
+    expect(view.agentBlocks).toHaveLength(1);
+    expect(view.agentBlocks[0]?.status).toBe("completed");
+
+    // Drifted step:start arriving late — pre-fix, this appended a duplicate.
+    view = reduceSessionEvent(
+      view,
+      stepStart({ agentName: "unknown", stateId: "review", stepNumber: 7 }),
+    );
+
+    expect(view.agentBlocks).toHaveLength(1);
+    const block = view.agentBlocks[0];
+    expect.assert(block !== undefined);
+    expect(block.status).toBe("completed");
+    expect(block.agentName).toBe("pr-reviewer");
+  });
 });
 
 // ---------------------------------------------------------------------------

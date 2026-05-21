@@ -158,27 +158,32 @@ function reduceStepStart(
   view: SessionView,
   event: SessionStreamEvent & { type: "step:start" },
 ): SessionView {
-  // Defense in depth (J2 / review H1): if a `step:start` for this exact
-  // (stepNumber, agentName) pair already lives in the view, treat the
-  // re-publish as a no-op. Pre-J2 the broker dedup window (default 2m)
-  // was shorter than long-running FSM jobs, so a `save()` republish past
-  // the window landed as a NEW message. The reducer would then fail to
-  // find a *pending* match (the prior copy was already running/done) and
-  // append a duplicate block — status derivation then saw both pending
-  // and complete simultaneously, surfacing as `status: "active"` post-
-  // completion. The dedup_window bump fixes the broker side; this guard
-  // protects the reducer regardless.
+  // Defense in depth: if a block carrying this `stepNumber` already exists
+  // and has been transitioned (status !== "pending"), this step:start is a
+  // replay or arrived after step:complete already landed via the stateId
+  // fallback below. Treat as a no-op — appending another running block
+  // here is exactly the duplicate-block regression the stateId fallback
+  // was added to prevent.
   //
-  // The reducer is a pure function shared with browser clients, so we don't
-  // log from here. Operators investigating "is this
-  // guard firing in production?" should check the NATS dedup-rejection
-  // counter (`nats stream info SESSION_EVENTS` reports duplicates) and
-  // grep daemon logs for "step:start" with the same (stepNumber,
-  // agentName). A non-zero dedup rate paired with this guard firing
-  // means the dedup_window is still too short and should be raised.
+  // Originates as J2 / review H1: broker dedup_window (default 2m) was
+  // shorter than long-running FSM jobs, so a `save()` republish past the
+  // window landed as a NEW message and the reducer appended a duplicate.
+  // Subsumes the original `(stepNumber, agentName)` guard — keying on
+  // `stepNumber` alone also covers the agentName-drift case (where a
+  // replay carries `agentName="unknown"` but the planned block kept its
+  // real name) and the symmetric step:complete-before-step:start case
+  // (where the block is already "completed" via stateId fallback).
+  //
+  // The reducer is a pure function shared with browser clients, so we
+  // don't log from here. Operators investigating "is this guard firing in
+  // production?" should check the NATS dedup-rejection counter (`nats
+  // stream info SESSION_EVENTS` reports duplicates) and grep daemon logs
+  // for "step:start" with the same `stepNumber`. A non-zero dedup rate
+  // paired with this guard firing means the dedup_window is still too
+  // short and should be raised.
   if (event.stepNumber !== undefined) {
     const dupIdx = view.agentBlocks.findIndex(
-      (b) => b.stepNumber === event.stepNumber && b.agentName === event.agentName,
+      (b) => b.stepNumber === event.stepNumber && b.status !== "pending",
     );
     if (dupIdx !== -1) return view;
   }
@@ -209,8 +214,7 @@ function reduceStepStart(
       ...pending,
       stepNumber: event.stepNumber,
       stateId: event.stateId ?? pending.stateId,
-      agentName:
-        pending.agentName && pending.agentName !== "unknown" ? pending.agentName : event.agentName,
+      agentName: pending.agentName !== "unknown" ? pending.agentName : event.agentName,
       actionType: event.actionType,
       task: event.task,
       input: event.input,

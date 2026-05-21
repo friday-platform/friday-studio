@@ -76,13 +76,11 @@ export function mapActionToStepStart(
     sessionId: event.data.sessionId,
     stepNumber,
     // `actionId` is optional on the FSM event (some emit/llm action shapes
-    // don't carry one). Falling back to the FSM `state` keeps the
-    // agentName stable and matches the planned block built from the same
-    // state in `extractPlannedSteps`, so the session reducer doesn't have
-    // to lean on its stateId-fallback path for every agent action. The
-    // literal "unknown" remains as a final guard in case a publisher omits
-    // both fields.
-    agentName: event.data.actionId ?? event.data.state ?? "unknown",
+    // don't carry one). `state` is required, so falling back to it keeps
+    // the agentName stable and matches the planned block built from the
+    // same state in `extractPlannedSteps`, so the session reducer doesn't
+    // have to lean on its stateId-fallback path for every agent action.
+    agentName: event.data.actionId ?? event.data.state,
     stateId: event.data.state,
     actionType: SessionActionTypeSchema.parse(event.data.actionType),
     task: snapshot?.task ?? "",

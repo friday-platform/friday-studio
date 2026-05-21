@@ -573,12 +573,13 @@ describe("UIMessageChunk translation", () => {
 
     expect(result.ok).toBe(true);
 
-    // Strip the supplemental `data-tool-progress` chip — its content
-    // depends on a real LLM (stub) call and may be silently skipped when
-    // the call rejects under test, which makes positional assertions
-    // flaky. Where it DOES land, separately assert it sits between
-    // `tool-input-available` and the next event (the position guard
-    // below) — that's the ordering invariant we actually need to lock.
+    // Strip the supplemental `data-tool-progress` chip — its content depends
+    // on a real `smallLLM` call, and `createStubPlatformModels`' stub model
+    // rejects `doGenerate`/`doStream`. The production try/catch swallows
+    // that and skips the emit, so the chip is never present under stub
+    // models. The chunk-ordering invariants chat depends on are the
+    // text/tool-input/tool-output positions locked below; the chip's
+    // position is covered by the integration smoke test.
     const core = emitted.filter((e) => e.type !== "data-tool-progress");
 
     // text-start / text-delta / text-end share one id (crypto.randomUUID).
@@ -605,19 +606,6 @@ describe("UIMessageChunk translation", () => {
       output: "file1.txt\nfile2.txt",
     });
     expect(core).toHaveLength(6);
-
-    // Position guard: when `data-tool-progress` is emitted, it MUST sit
-    // strictly between `tool-input-available` and `tool-output-available`
-    // — that's the ordering invariant chat UIs depend on. Skipping when
-    // absent (stub LLM rejected) avoids the flakiness while still locking
-    // the ordering whenever it lands.
-    const progressIdx = emitted.findIndex((e) => e.type === "data-tool-progress");
-    if (progressIdx !== -1) {
-      const inputAvailIdx = emitted.findIndex((e) => e.type === "tool-input-available");
-      const outputAvailIdx = emitted.findIndex((e) => e.type === "tool-output-available");
-      expect(progressIdx).toBeGreaterThan(inputAvailIdx);
-      expect(progressIdx).toBeLessThan(outputAvailIdx);
-    }
   });
 
   it("emits text chunks for an assistant message with no tool_use", async () => {
@@ -657,6 +645,14 @@ describe("UIMessageChunk translation", () => {
         { type: "text", text: "line 2" },
       ],
       expectedOutput: "line 1\n[image]\nline 2",
+    },
+    {
+      // Defends the two-stage guard `type === "text" && typeof c.text === "string"`.
+      // A future flattening to `if (type === "text") return c.text` would
+      // surface `undefined` here; the placeholder branch keeps it stable.
+      name: "non-string text in a text block",
+      content: [{ type: "text", text: 123 }],
+      expectedOutput: "[text]",
     },
   ])("normalizes tool_result $name into a string output", async ({ content, expectedOutput }) => {
     // tool_result.content is `string | Array<...ContentBlockParam> |
