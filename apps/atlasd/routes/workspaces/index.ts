@@ -50,7 +50,6 @@ import { FilesystemWorkspaceCreationAdapter } from "@atlas/storage";
 import { ColorSchema, isErrnoException, stringifyError } from "@atlas/utils";
 import { getFridayHome } from "@atlas/utils/paths.server";
 import {
-  loadWorkspaceEnv,
   type SetupRequirementsResult,
   StaleCredentialIdAtImportError,
 } from "@atlas/workspace";
@@ -59,7 +58,7 @@ import { encodeBase64 } from "@std/encoding/base64";
 import { parse, stringify } from "@std/yaml";
 import type { Context } from "hono";
 import { z } from "zod";
-import { assembleLinkCredentialState } from "../../src/assemble-link-credential-state.ts";
+import { buildSetupRequirementInputs } from "../../src/get-workspace-setup-state.ts";
 import { requireDevEnv } from "../../src/dev-only.ts";
 import type { AppContext, AppVariables } from "../../src/factory.ts";
 import { daemonFactory, KERNEL_WORKSPACE_ID } from "../../src/factory.ts";
@@ -454,8 +453,10 @@ async function deriveSetupRequirements(
         options: { allowStaleIdRecovery: true },
       };
     }
-    const envSnapshot = loadWorkspaceEnv(workspacePath);
-    const linkCredentials = await assembleLinkCredentialState(merged.workspace);
+    const { envSnapshot, linkCredentials } = await buildSetupRequirementInputs(
+      workspacePath,
+      merged.workspace,
+    );
     return {
       parsedConfig: merged.workspace,
       envSnapshot,

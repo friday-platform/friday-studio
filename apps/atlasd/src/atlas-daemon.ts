@@ -45,7 +45,6 @@ import { getFridayHome } from "@atlas/utils/paths.server";
 import {
   createJetStreamKVStorage,
   createRegistryStorageJS,
-  loadWorkspaceEnv,
   resolveWorkspaceSetupRequirements,
   type TriggerSignalOpts,
   validateMCPEnvironmentForWorkspace,
@@ -104,7 +103,7 @@ import { workspaceEnvRoutes } from "../routes/workspaces/env.ts";
 import { workspacesRoutes } from "../routes/workspaces/index.ts";
 import { integrationRoutes } from "../routes/workspaces/integrations.ts";
 import { mcpRoutes } from "../routes/workspaces/mcp.ts";
-import { assembleLinkCredentialState } from "./assemble-link-credential-state.ts";
+import { buildSetupRequirementInputs } from "./get-workspace-setup-state.ts";
 import { CapabilityHandlerRegistry } from "./capability-handlers.ts";
 import { CascadeConsumer, ensureCascadesStream, publishCascade } from "./cascade-stream.ts";
 import { CHAT_PROVIDERS, type PlatformCredentials } from "./chat-sdk/adapter-factory.ts";
@@ -665,8 +664,10 @@ export class AtlasDaemon {
     // a hard error here (Decision 5).
     this.workspaceManager.setRequiresSetupProbe({
       async check({ workspacePath, config }) {
-        const linkCredentials = await assembleLinkCredentialState(config.workspace);
-        const envSnapshot = loadWorkspaceEnv(workspacePath);
+        const { envSnapshot, linkCredentials } = await buildSetupRequirementInputs(
+          workspacePath,
+          config.workspace,
+        );
         const result = resolveWorkspaceSetupRequirements(
           config.workspace,
           envSnapshot,

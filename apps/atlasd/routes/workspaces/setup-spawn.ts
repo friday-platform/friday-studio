@@ -29,14 +29,13 @@ import { ChatStorage } from "@atlas/core/chat/storage";
 import { ElicitationStorage } from "@atlas/core/elicitations";
 import { createLogger } from "@atlas/logger";
 import {
-  loadWorkspaceEnv,
   resolveWorkspaceSetupRequirements,
   type SetupRequirement,
   type WorkspaceEntry,
   type WorkspaceManager,
   type WorkspaceMetadata,
 } from "@atlas/workspace";
-import { assembleLinkCredentialState } from "../../src/assemble-link-credential-state.ts";
+import { buildSetupRequirementInputs } from "../../src/get-workspace-setup-state.ts";
 
 const spawnLogger = createLogger({ component: "workspace-setup-spawn" });
 
@@ -150,8 +149,10 @@ export async function spawnBootstrapSessionIfNeeded(
 ): Promise<SpawnBootstrapResult> {
   const { manager, workspaceId, workspacePath, parsedConfig, userId, existingMetadata } = args;
 
-  const envSnapshot = loadWorkspaceEnv(workspacePath);
-  const linkCredentials = await assembleLinkCredentialState(parsedConfig);
+  const { envSnapshot, linkCredentials } = await buildSetupRequirementInputs(
+    workspacePath,
+    parsedConfig,
+  );
   const derived = resolveWorkspaceSetupRequirements(parsedConfig, envSnapshot, linkCredentials, {
     allowStaleIdRecovery: false,
   });

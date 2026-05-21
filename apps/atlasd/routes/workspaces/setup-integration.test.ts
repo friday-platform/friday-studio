@@ -189,16 +189,19 @@ async function makeTestRig(): Promise<TestRig> {
   // `registerWithRegistrars` gate kicks in — mirrors the daemon's wire-up in
   // `atlas-daemon.ts` so the test exercises the same control flow rather
   // than a fake.
-  const { assembleLinkCredentialState } = await import(
-    "../../src/assemble-link-credential-state.ts"
-  );
+  const { buildSetupRequirementInputs } = await import("../../src/get-workspace-setup-state.ts");
   manager.setRequiresSetupProbe({
     check: async ({ workspacePath, config }) => {
-      const linkState = await assembleLinkCredentialState(config.workspace);
-      const envSnapshot = loadWorkspaceEnv(workspacePath);
-      const result = resolveWorkspaceSetupRequirements(config.workspace, envSnapshot, linkState, {
-        allowStaleIdRecovery: true,
-      });
+      const { envSnapshot, linkCredentials } = await buildSetupRequirementInputs(
+        workspacePath,
+        config.workspace,
+      );
+      const result = resolveWorkspaceSetupRequirements(
+        config.workspace,
+        envSnapshot,
+        linkCredentials,
+        { allowStaleIdRecovery: true },
+      );
       return result.requires_setup;
     },
   });

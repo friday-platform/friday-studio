@@ -17,8 +17,7 @@
  */
 
 import type { WorkspaceManager } from "@atlas/workspace";
-import { loadWorkspaceEnv, resolveWorkspaceSetupRequirements } from "@atlas/workspace";
-import { assembleLinkCredentialState } from "./assemble-link-credential-state.ts";
+import { getWorkspaceSetupState } from "./get-workspace-setup-state.ts";
 import { getAtlasDaemonUrl } from "./utils.ts";
 
 /** Returned to webhook callers in the 409 body and used in communicator replies. */
@@ -116,16 +115,10 @@ export async function evaluateWorkspaceSetupGate(
   manager: WorkspaceManager,
   workspaceId: string,
 ): Promise<SetupGateResult | null> {
-  const entry = await manager.find({ id: workspaceId });
-  if (!entry) return null;
-  const merged = await manager.getWorkspaceConfig(workspaceId);
-  if (!merged) return null;
-
-  const envSnapshot = loadWorkspaceEnv(entry.path);
-  const linkCredentials = await assembleLinkCredentialState(merged.workspace);
-  const result = resolveWorkspaceSetupRequirements(merged.workspace, envSnapshot, linkCredentials, {
+  const result = await getWorkspaceSetupState(workspaceId, manager, {
     allowStaleIdRecovery: true,
   });
+  if (!result) return null;
   if (!result.requires_setup) return { requires_setup: false };
   return { requires_setup: true, setupUrl: buildWorkspaceSetupUrl(workspaceId) };
 }
