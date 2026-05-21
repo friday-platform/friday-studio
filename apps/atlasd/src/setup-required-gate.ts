@@ -24,7 +24,7 @@ import { getAtlasDaemonUrl } from "./utils.ts";
 /** Returned to webhook callers in the 409 body and used in communicator replies. */
 export const SETUP_REQUIRED_ERROR_CODE = "workspace_setup_required" as const;
 
-export const SETUP_REQUIRED_MESSAGE =
+const SETUP_REQUIRED_MESSAGE =
   "Workspace setup is incomplete. Open the workspace's chat to finish setup before triggering signals." as const;
 
 /**
