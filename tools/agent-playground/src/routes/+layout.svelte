@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { notInTextField, NotificationPortal, setDragDropContext, setHotkeyRegistry } from "@atlas/ui";
+  import { notInTextField, NotificationPortal, setHotkeyRegistry } from "@atlas/ui";
   import { QueryClient, QueryClientProvider } from "@tanstack/svelte-query";
   import { onMount } from "svelte";
   import { browser } from "$app/environment";
@@ -23,7 +23,6 @@
   const { children } = $props();
 
   const hotkeys = setHotkeyRegistry();
-  setDragDropContext();
 
   // Routes that opt out of the playground app shell (sidebar, palette, etc.)
   // and render their children directly. Two consumers today:

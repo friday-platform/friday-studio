@@ -2,12 +2,9 @@ export { default as Badge } from "./badge.svelte";
 export { default as Button } from "./button.svelte";
 export { Collapsible } from "./collapsible/index.js";
 export { Dialog } from "./dialog/index.js";
-export {
-  createDragDropContext,
-  getDragDropContext,
-  setDragDropContext,
-} from "./drag-drop.svelte.js";
-export type { DragDropContext, DragDropHandler } from "./drag-drop.svelte.js";
+export { createDragDropState } from "./drag-drop.svelte.js";
+export type { DragDropState } from "./drag-drop.svelte.js";
+export { default as DragDropZone } from "./drag-drop-zone.svelte";
 export { DropdownMenu } from "./dropdown-menu/index.js";
 export { default as FormattedData } from "./formatted-data.svelte";
 export {

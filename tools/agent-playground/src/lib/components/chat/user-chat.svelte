@@ -2,7 +2,7 @@
   import { untrack } from "svelte";
   import { Chat as ChatImpl } from "@ai-sdk/svelte";
   import type { AtlasUIMessage } from "@atlas/agent-sdk";
-  import { getDragDropContext, getHotkeyRegistry, toast } from "@atlas/ui";
+  import { DragDropZone, getHotkeyRegistry, toast } from "@atlas/ui";
   import { createQuery, useQueryClient } from "@tanstack/svelte-query";
   import { page } from "$app/state";
   import { browser } from "$app/environment";
@@ -51,7 +51,6 @@
   let fullscreen = $state(false);
 
   const hotkeys = getHotkeyRegistry();
-  const dragDrop = getDragDropContext();
 
   // Cmd/Ctrl+Shift+D toggles the debug inspector — Cmd+Shift+I is taken
   // by Chrome DevTools.
@@ -116,10 +115,6 @@
       }
     }
   }
-
-  $effect(() => dragDrop.register({
-    onFiles: (files) => void addDroppedFiles(files),
-  }));
 
   async function addDroppedFiles(files: readonly File[]) {
     const rejected: File[] = [];
@@ -1367,12 +1362,14 @@
   });
 </script>
 
-<div class="user-chat" class:fullscreen>
-  {#if dragDrop.dragOver}
-    <div class="drop-overlay">
-      <span>Drop file here</span>
-    </div>
-  {/if}
+<DragDropZone onFiles={(files) => void addDroppedFiles(files)}>
+  {#snippet children({ dragOver })}
+    <div class="user-chat" class:fullscreen>
+      {#if dragOver}
+        <div class="drop-overlay">
+          <span>Drop file here</span>
+        </div>
+      {/if}
 
 
   {#if chat && chat.messages.length > 0}
@@ -1511,6 +1508,8 @@
     />
   </div>
 </div>
+  {/snippet}
+</DragDropZone>
 
 <style>
   .user-chat {
