@@ -14,7 +14,12 @@
  */
 
 import { join } from "node:path";
-import { loadEnvFile, resolveVariableState, variableEnvKey, type VariableState } from "@atlas/workspace";
+import {
+  loadEnvFile,
+  resolveVariableState,
+  type VariableState,
+  variableEnvKey,
+} from "@atlas/workspace";
 import { daemonFactory } from "../../src/factory.ts";
 import { requireWorkspaceMember } from "../../src/workspace-authz.ts";
 

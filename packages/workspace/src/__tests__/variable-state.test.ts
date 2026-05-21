@@ -126,21 +126,13 @@ describe("resolveVariableState — env present but invalid", () => {
 describe("resolveVariableState — is_filled invariant", () => {
   it("is_filled is true iff source !== 'unset'", () => {
     const cases = [
-      {
-        d: decl({ schema: { type: "string" } }),
-        env: "hello",
-        expectFilled: true,
-      },
+      { d: decl({ schema: { type: "string" } }), env: "hello", expectFilled: true },
       {
         d: decl({ schema: { type: "string", default: "fallback" } }),
         env: undefined,
         expectFilled: true,
       },
-      {
-        d: decl({ schema: { type: "string", minLength: 5 } }),
-        env: "ab",
-        expectFilled: false,
-      },
+      { d: decl({ schema: { type: "string", minLength: 5 } }), env: "ab", expectFilled: false },
     ] as const;
     for (const c of cases) {
       const state = resolveVariableState("x", c.d, c.env);

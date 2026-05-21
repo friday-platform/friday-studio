@@ -11,7 +11,7 @@
  * Credential glossary entry.
  */
 
-import { type VariableDeclaration, type WorkspaceConfig } from "@atlas/config";
+import type { VariableDeclaration, WorkspaceConfig } from "@atlas/config";
 import { extractCredentials } from "@atlas/config/mutations";
 import { variableEnvKey } from "./variable-interpolation.ts";
 import { resolveVariableState } from "./variable-state.ts";

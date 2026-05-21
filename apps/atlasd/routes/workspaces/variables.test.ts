@@ -134,10 +134,7 @@ function useTempWorkspaceDir(): () => string {
   return () => dir;
 }
 
-const stringDecl: VariableDeclaration = {
-  display_name: "Recipient",
-  schema: { type: "string" },
-};
+const stringDecl: VariableDeclaration = { display_name: "Recipient", schema: { type: "string" } };
 
 const stringWithDefaultDecl: VariableDeclaration = {
   schema: { type: "string", default: "fallback@example.com" },
@@ -259,10 +256,7 @@ describe("GET /api/workspaces/:workspaceId/variables", () => {
       const dir = getDir();
       await writeFile(join(dir, ".env"), "THRESHOLD=not-an-integer\n");
 
-      const { app } = createTestApp({
-        workspacePath: dir,
-        variables: { threshold: integerDecl },
-      });
+      const { app } = createTestApp({ workspacePath: dir, variables: { threshold: integerDecl } });
 
       const res = await app.request("/ws-test/variables");
       const body = (await res.json()) as { variables: VariableRow[] };

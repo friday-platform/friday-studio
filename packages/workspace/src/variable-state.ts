@@ -18,11 +18,7 @@
  * wire to the client as JSON — `null` round-trips, `undefined` doesn't.
  */
 
-import {
-  decodeFromEnv,
-  type VariableDeclaration,
-  VariableSchemaSchema,
-} from "@atlas/config";
+import { decodeFromEnv, type VariableDeclaration, VariableSchemaSchema } from "@atlas/config";
 import { z } from "zod";
 
 export type VariableSource = "env" | "default" | "unset";
@@ -88,7 +84,8 @@ export function resolveVariableState(
       name,
       declaration,
       value,
-      validation_error: parsed.error.issues[0]?.message ?? "Value does not match the declared schema.",
+      validation_error:
+        parsed.error.issues[0]?.message ?? "Value does not match the declared schema.",
       zodSchema,
     });
   }
