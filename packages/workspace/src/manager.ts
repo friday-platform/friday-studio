@@ -89,6 +89,28 @@ export interface MembershipWriter {
 }
 
 /**
+ * Hook the daemon uses to tell the manager whether a workspace currently
+ * requires setup (unfilled declared variables or unresolved credential
+ * refs). The manager calls this before wiring schedule + fs-watch
+ * registrars — a setup-required workspace must not fire crons or watch
+ * files, since both fire blind and produce failed sessions that pollute
+ * history.
+ *
+ * Injected because deriving `requires_setup` needs a Link client and an
+ * env reader; pulling either into `@atlas/workspace` would push storage
+ * + service concerns down into the manager. The probe is `undefined`
+ * during tests and early boot — callers must treat "no probe wired" as
+ * "not setup-required" so existing behavior is preserved.
+ */
+export interface RequiresSetupProbe {
+  check(input: {
+    workspaceId: string;
+    workspacePath: string;
+    config: MergedConfig;
+  }): Promise<boolean>;
+}
+
+/**
  * Pre-flight check that every `auto`/`from_environment` MCP env var a
  * workspace declares will actually resolve at spawn — against the same
  * precedence the runtime uses (workspace `.env` overlay → daemon
@@ -143,6 +165,7 @@ export class WorkspaceManager {
     ensureRoot(workspaceId: string, name: string): Promise<void>;
   };
   private membershipWriter?: MembershipWriter;
+  private requiresSetupProbe?: RequiresSetupProbe;
 
   /**
    * Cache of parsed workspace configs keyed by workspaceId. Each entry pins
@@ -177,6 +200,18 @@ export class WorkspaceManager {
    */
   setMembershipWriter(writer: MembershipWriter): void {
     this.membershipWriter = writer;
+  }
+
+  /**
+   * Inject the probe that decides whether a workspace requires setup
+   * before scheduling cron timers / fs-watch sources. The daemon wires
+   * this against `assembleLinkCredentialState` +
+   * `resolveWorkspaceSetupRequirements`. When absent (tests, early boot),
+   * the manager treats every workspace as "not setup-required" so the
+   * pre-existing registration path stays intact.
+   */
+  setRequiresSetupProbe(probe: RequiresSetupProbe): void {
+    this.requiresSetupProbe = probe;
   }
 
   /**
@@ -293,8 +328,8 @@ export class WorkspaceManager {
     }
 
     // Validate that all "auto" env vars are available before allowing registration.
-    // Skip during import when credentials are unresolved — the route sets
-    // requires_setup so the user is prompted to connect them post-creation.
+    // Skip during import when credentials are unresolved — the user is prompted
+    // to connect them via Workspace Setup, which derives the gap on read.
     if (!options?.skipEnvValidation) {
       validateMCPEnvironmentForWorkspace(config, absolutePath);
     }
@@ -920,13 +955,30 @@ export class WorkspaceManager {
     await this.registry.close();
   }
 
-  /** Register workspace with all signal registrars (best-effort). */
+  /**
+   * Register workspace with all signal registrars (best-effort).
+   *
+   * Setup gate: when the injected {@link RequiresSetupProbe} reports the
+   * workspace still needs setup, skip registration entirely. The
+   * registered registrars (`CronSignalRegistrar`, `FsWatchSignalRegistrar`)
+   * fire blind without a configured workspace and produce failed sessions
+   * that pollute history. HTTP + chat providers don't register here —
+   * they're gated at trigger time (see T14), so this guard doesn't affect
+   * them.
+   */
   private async registerWithRegistrars(
     workspaceId: string,
     workspacePath: string,
     config: MergedConfig,
   ): Promise<void> {
     if (this.signalRegistrars.length === 0) return;
+    if (await this.shouldSkipForSetup(workspaceId, workspacePath, config)) {
+      logger.info("Skipping signal registration — workspace requires setup", {
+        workspaceId,
+        workspacePath,
+      });
+      return;
+    }
     for (const registrar of this.signalRegistrars) {
       try {
         await registrar.registerWorkspace(workspaceId, workspacePath, config);
@@ -937,6 +989,31 @@ export class WorkspaceManager {
           error: error,
         });
       }
+    }
+  }
+
+  /**
+   * Probe wrapper: returns `true` only when a probe is wired AND it
+   * reports `requires_setup`. A probe throw is logged and treated as
+   * "not setup-required" — failing closed here would silently break
+   * cron/fs-watch registration for any workspace whose Link probe
+   * hiccups (Decision 3: transient errors must not flip the gate).
+   */
+  private async shouldSkipForSetup(
+    workspaceId: string,
+    workspacePath: string,
+    config: MergedConfig,
+  ): Promise<boolean> {
+    if (!this.requiresSetupProbe) return false;
+    try {
+      return await this.requiresSetupProbe.check({ workspaceId, workspacePath, config });
+    } catch (error) {
+      logger.warn("RequiresSetupProbe threw; treating workspace as not setup-required", {
+        workspaceId,
+        workspacePath,
+        error,
+      });
+      return false;
     }
   }
 

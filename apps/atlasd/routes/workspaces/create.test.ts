@@ -1,9 +1,12 @@
 /**
- * Integration tests for POST /create (requires_setup flag) and
- * POST /:workspaceId/setup/complete endpoint.
+ * Integration tests for POST /create credential-resolution behavior.
  *
- * Tests the create endpoint sets requires_setup when credentials can't resolve,
- * and the setup/complete endpoint verifies all credentials before clearing the flag.
+ * `requires_setup` is no longer stored on workspace metadata — it's live-
+ * derived per request from parsed config + env + Link state via
+ * `resolveWorkspaceSetupRequirements`. These tests assert the create endpoint
+ * still surfaces unresolved credential paths in the response so the importer
+ * can route the user into Workspace Setup, but does NOT write a stale
+ * `requires_setup` flag on metadata.
  */
 
 import { createStubPlatformModels } from "@atlas/llm";
@@ -19,6 +22,22 @@ vi.mock("@atlas/storage", () => ({
     writeWorkspaceFiles = vi.fn().mockResolvedValue(undefined);
   },
 }));
+
+// Bootstrap-spawn lives in its own file with its own targeted tests; the
+// /create tests only care about the surrounding response shape, so stub the
+// helper to a no-op result and let the call-sites continue.
+const mockSpawnBootstrap = vi.hoisted(() =>
+  vi
+    .fn<
+      () => Promise<{
+        requires_setup: boolean;
+        bootstrap_session_id?: string;
+        setup_requirements: never[];
+      }>
+    >()
+    .mockResolvedValue({ requires_setup: false, setup_requirements: [] }),
+);
+vi.mock("./setup-spawn.ts", () => ({ spawnBootstrapSessionIfNeeded: mockSpawnBootstrap }));
 
 // Mock credential resolver
 const mockResolveCredentialsByProvider = vi.hoisted(() => vi.fn());
@@ -123,42 +142,6 @@ function configWithNoCredentials() {
   };
 }
 
-/** Config where all credentials already have IDs (fully connected). */
-function configWithConnectedCredentials() {
-  return {
-    version: "1.0",
-    workspace: { name: "Test Workspace" },
-    tools: {
-      mcp: {
-        servers: {
-          github: {
-            transport: { type: "stdio", command: "npx", args: ["-y", "server-github"] },
-            env: { TOKEN: { from: "link", id: "cred-1", provider: "github", key: "access_token" } },
-          },
-        },
-      },
-    },
-  };
-}
-
-/** Config where some credentials are missing IDs. */
-function configWithMissingCredentials() {
-  return {
-    version: "1.0",
-    workspace: { name: "Test Workspace" },
-    tools: {
-      mcp: {
-        servers: {
-          github: {
-            transport: { type: "stdio", command: "npx", args: ["-y", "server-github"] },
-            env: { TOKEN: { from: "link", provider: "github", key: "access_token" } },
-          },
-        },
-      },
-    },
-  };
-}
-
 type JsonBody = Record<string, unknown>;
 
 function createTestApp() {
@@ -251,15 +234,17 @@ async function mountRoutes(app: Hono<AppVariables>) {
   return app;
 }
 
-describe("POST /create — requires_setup flag", () => {
+describe("POST /create — credential resolution", () => {
   beforeEach(() => {
     vi.resetModules();
     mockResolveCredentialsByProvider.mockReset();
     mockFetchLinkCredential.mockReset();
     mockWriteFile.mockReset().mockResolvedValue(undefined);
+    mockSpawnBootstrap.mockReset();
+    mockSpawnBootstrap.mockResolvedValue({ requires_setup: false, setup_requirements: [] });
   });
 
-  test("sets requires_setup: true when credentials cannot be resolved", {
+  test("returns unresolved credential paths when credentials cannot be resolved", {
     timeout: 15_000,
   }, async () => {
     const { app, registerWorkspace, updateWorkspaceStatus } = createTestApp();
@@ -280,21 +265,18 @@ describe("POST /create — requires_setup flag", () => {
     const body = (await response.json()) as JsonBody;
     expect(body.success).toBe(true);
 
-    // Env validation skipped because credentials are unresolved
     expect(registerWorkspace).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({ skipEnvValidation: true }),
     );
 
-    // requires_setup should be set via updateWorkspaceStatus
-    expect(updateWorkspaceStatus).toHaveBeenCalledWith(
-      "ws-new-id",
-      "inactive",
-      expect.objectContaining({ metadata: expect.objectContaining({ requires_setup: true }) }),
-    );
+    // No stale `requires_setup` flag is ever written — it's live-derived now.
+    expect(updateWorkspaceStatus).not.toHaveBeenCalled();
+
+    expect(body.unresolvedCredentials).toEqual(expect.arrayContaining(["mcp:myserver:TOKEN"]));
   });
 
-  test("does not set requires_setup when all credentials resolve", async () => {
+  test("skips env validation toggle off when all credentials resolve", async () => {
     const { app, registerWorkspace, updateWorkspaceStatus } = createTestApp();
     await mountRoutes(app);
 
@@ -310,17 +292,15 @@ describe("POST /create — requires_setup flag", () => {
     const body = (await response.json()) as JsonBody;
     expect(body.success).toBe(true);
 
-    // Env validation NOT skipped when all credentials resolve
     expect(registerWorkspace).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({ skipEnvValidation: false }),
     );
 
-    // updateWorkspaceStatus should NOT have been called with requires_setup
     expect(updateWorkspaceStatus).not.toHaveBeenCalled();
   });
 
-  test("does not set requires_setup when no credentials needed", async () => {
+  test("emits no extra metadata writes when no credentials are needed", async () => {
     const { app, updateWorkspaceStatus } = createTestApp();
     await mountRoutes(app);
 
@@ -334,11 +314,10 @@ describe("POST /create — requires_setup flag", () => {
     const body = (await response.json()) as JsonBody;
     expect(body.success).toBe(true);
 
-    // No credentials to resolve for config setup, no requires_setup needed
     expect(updateWorkspaceStatus).not.toHaveBeenCalled();
   });
 
-  test("partial resolution: resolves what it can, sets requires_setup for the rest", async () => {
+  test("partial resolution: resolved credentials reported, unresolved paths surfaced", async () => {
     const { app, registerWorkspace, updateWorkspaceStatus } = createTestApp();
     await mountRoutes(app);
 
@@ -346,7 +325,6 @@ describe("POST /create — requires_setup flag", () => {
       "@atlas/core/mcp-registry/credential-resolver"
     );
 
-    // github resolves, slack does not
     mockResolveCredentialsByProvider
       .mockResolvedValueOnce([{ id: "cred-gh", label: "My GitHub" }])
       .mockRejectedValueOnce(new CredentialNotFoundError("slack"));
@@ -361,96 +339,92 @@ describe("POST /create — requires_setup flag", () => {
     const body = (await response.json()) as JsonBody;
     expect(body.success).toBe(true);
 
-    // Env validation skipped because slack is unresolved
     expect(registerWorkspace).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({ skipEnvValidation: true }),
     );
 
-    // Partially resolved — still needs setup
-    expect(updateWorkspaceStatus).toHaveBeenCalledWith(
-      "ws-new-id",
-      "inactive",
-      expect.objectContaining({ metadata: expect.objectContaining({ requires_setup: true }) }),
-    );
+    expect(updateWorkspaceStatus).not.toHaveBeenCalled();
 
-    // The resolved credential should be included in the response
     expect(body.resolvedCredentials).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ provider: "github", credentialId: "cred-gh" }),
       ]),
     );
+    expect(body.unresolvedCredentials).toEqual(expect.arrayContaining(["mcp:serverB:TOKEN_B"]));
   });
 });
 
-describe("POST /:workspaceId/setup/complete", () => {
+describe("POST /create — bootstrap setup spawn (T11)", () => {
   beforeEach(() => {
     vi.resetModules();
     mockResolveCredentialsByProvider.mockReset();
     mockFetchLinkCredential.mockReset();
     mockWriteFile.mockReset().mockResolvedValue(undefined);
+    mockSpawnBootstrap.mockReset();
   });
 
-  test("returns 200 and clears requires_setup when all credentials are connected", async () => {
-    const { app, find, getWorkspaceConfig, updateWorkspaceStatus } = createTestApp();
+  test("requires_setup === true → response carries bootstrapSessionId", async () => {
+    mockSpawnBootstrap.mockResolvedValue({
+      requires_setup: true,
+      bootstrap_session_id: "bootstrap-abc",
+      setup_requirements: [],
+    });
+    const { app } = createTestApp();
     await mountRoutes(app);
 
-    find.mockResolvedValue({
-      id: "ws-test-id",
-      name: "Test Workspace",
-      status: "inactive",
-      metadata: { requires_setup: true },
-    });
-    getWorkspaceConfig.mockResolvedValue({
-      atlas: null,
-      workspace: configWithConnectedCredentials(),
+    const response = await app.request("/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ config: configWithNoCredentials() }),
     });
 
-    const response = await app.request("/ws-test-id/setup/complete", { method: "POST" });
-
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(201);
     const body = (await response.json()) as JsonBody;
-    expect(body).toMatchObject({ ok: true });
+    expect(body.success).toBe(true);
+    expect(body.bootstrapSessionId).toBe("bootstrap-abc");
+    expect(mockSpawnBootstrap).toHaveBeenCalledTimes(1);
+  });
 
-    expect(updateWorkspaceStatus).toHaveBeenCalledWith(
-      "ws-test-id",
-      "inactive",
-      expect.objectContaining({ metadata: expect.objectContaining({ requires_setup: false }) }),
+  test("requires_setup === false → response omits bootstrapSessionId", async () => {
+    mockSpawnBootstrap.mockResolvedValue({ requires_setup: false, setup_requirements: [] });
+    const { app } = createTestApp();
+    await mountRoutes(app);
+
+    const response = await app.request("/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ config: configWithNoCredentials() }),
+    });
+
+    expect(response.status).toBe(201);
+    const body = (await response.json()) as JsonBody;
+    expect(body.success).toBe(true);
+    expect(body.bootstrapSessionId).toBeUndefined();
+  });
+
+  test("StaleCredentialIdAtImportError → 400 with stale credential details", async () => {
+    const { StaleCredentialIdAtImportError } = await import("@atlas/workspace");
+    mockSpawnBootstrap.mockRejectedValue(
+      new StaleCredentialIdAtImportError({
+        credentialId: "cred_stale",
+        provider: "gmail",
+        path: "mcp_servers.gmail.credentials",
+      }),
     );
-  });
-
-  test("returns 422 with missing providers when some credentials lack IDs", async () => {
-    const { app, find, getWorkspaceConfig, updateWorkspaceStatus } = createTestApp();
+    const { app } = createTestApp();
     await mountRoutes(app);
 
-    find.mockResolvedValue({
-      id: "ws-test-id",
-      name: "Test Workspace",
-      status: "inactive",
-      metadata: { requires_setup: true },
-    });
-    getWorkspaceConfig.mockResolvedValue({
-      atlas: null,
-      workspace: configWithMissingCredentials(),
+    const response = await app.request("/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ config: configWithNoCredentials() }),
     });
 
-    const response = await app.request("/ws-test-id/setup/complete", { method: "POST" });
-
-    expect(response.status).toBe(422);
+    expect(response.status).toBe(400);
     const body = (await response.json()) as JsonBody;
-    expect(body).toMatchObject({ error: "incomplete_setup", missingProviders: ["github"] });
-
-    expect(updateWorkspaceStatus).not.toHaveBeenCalled();
-  });
-
-  test("returns 404 when workspace not found", async () => {
-    const { app, find } = createTestApp();
-    await mountRoutes(app);
-
-    find.mockResolvedValue(null);
-
-    const response = await app.request("/ws-nonexistent/setup/complete", { method: "POST" });
-
-    expect(response.status).toBe(404);
+    expect(body.error).toBe("stale_credential_id_at_import");
+    expect(body.credentialId).toBe("cred_stale");
+    expect(body.provider).toBe("gmail");
   });
 });

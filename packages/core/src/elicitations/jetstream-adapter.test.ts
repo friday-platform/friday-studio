@@ -304,6 +304,88 @@ describe("JetStreamElicitationStorageAdapter", () => {
     }
   });
 
+  it("reserveForCommit: concurrent reserves yield exactly one winner, one loser", async () => {
+    // Single-flight gate for the workspace-setup answer commit. Two
+    // concurrent callers race on the reserve bucket's `kv.create`; JetStream
+    // KV semantics fail the second one with a CAS conflict, which the
+    // adapter surfaces as "commit already in progress". The route handler
+    // maps that to a 409.
+    const adapter = new JetStreamElicitationStorageAdapter(nc);
+    const created = await adapter.create(
+      baseInput({
+        workspaceId: `ws-reserve-race-${crypto.randomUUID()}`,
+        kind: "workspace-setup",
+        question: "Finish setup",
+      }),
+    );
+    expect.assert(created.ok === true);
+
+    const [a, b] = await Promise.all([
+      adapter.reserveForCommit({ id: created.data.id }),
+      adapter.reserveForCommit({ id: created.data.id }),
+    ]);
+
+    const okCount = [a, b].filter((r) => r.ok).length;
+    expect(okCount).toBe(1);
+    const loser = a.ok ? b : a;
+    expect.assert(loser.ok === false);
+    expect(loser.error).toMatch(/commit already in progress/i);
+  });
+
+  it("reserveForCommit: rejects with a terminal-state error when the elicitation is already answered", async () => {
+    // Pre-check inside reserveForCommit must catch the case where the
+    // elicitation was answered between the route's pre-check and the
+    // reserve attempt. Same error shape as `transitionPending` so the
+    // route can surface both classes as 409 without parsing reasons.
+    const adapter = new JetStreamElicitationStorageAdapter(nc);
+    const created = await adapter.create(
+      baseInput({
+        workspaceId: `ws-reserve-terminal-${crypto.randomUUID()}`,
+        kind: "workspace-setup",
+        question: "Finish setup",
+      }),
+    );
+    expect.assert(created.ok === true);
+    const answered = await adapter.answer({
+      id: created.data.id,
+      answer: {
+        value: { variableValues: {}, credentialChoices: {} },
+        answeredAt: new Date().toISOString(),
+      },
+    });
+    expect.assert(answered.ok === true);
+
+    const reserved = await adapter.reserveForCommit({ id: created.data.id });
+    expect(reserved.ok).toBe(false);
+    expect.assert(reserved.ok === false);
+    expect(reserved.error).toMatch(/terminal state/i);
+    expect(reserved.error).toMatch(/answered/);
+  });
+
+  it("reserveForCommit: re-reserving after a successful claim still fails (not released on failure)", async () => {
+    // Design decision (option (b) from the review): the reserve is NOT
+    // released on commit failure. A successful reserve sticks until the
+    // elicitation reaches a terminal state — re-reserving the same id
+    // always 409s. The elicitation is intentionally "stuck" so the
+    // disk-mutating commit cannot run twice; recovery is manual.
+    const adapter = new JetStreamElicitationStorageAdapter(nc);
+    const created = await adapter.create(
+      baseInput({
+        workspaceId: `ws-reserve-sticky-${crypto.randomUUID()}`,
+        kind: "workspace-setup",
+        question: "Finish setup",
+      }),
+    );
+    expect.assert(created.ok === true);
+
+    const first = await adapter.reserveForCommit({ id: created.data.id });
+    expect(first.ok).toBe(true);
+    const second = await adapter.reserveForCommit({ id: created.data.id });
+    expect(second.ok).toBe(false);
+    expect.assert(second.ok === false);
+    expect(second.error).toMatch(/commit already in progress/i);
+  });
+
   it("answer on an already-declined elicitation fails with a status-guard error", async () => {
     const adapter = new JetStreamElicitationStorageAdapter(nc);
     const created = await adapter.create(baseInput({ workspaceId: "ws-guard" }));
@@ -394,6 +476,31 @@ describe("JetStreamElicitationStorageAdapter — expirePending sweep", () => {
     expect(second.data.skipped).not.toContain(created.data.id);
   });
 
+  it("leaves a past-deadline workspace-setup entry untouched (exempt from sweep)", async () => {
+    const adapter = new JetStreamElicitationStorageAdapter(nc);
+    const created = await adapter.create(
+      baseInput({
+        workspaceId: `ws-setup-sweep-${crypto.randomUUID()}`,
+        kind: "workspace-setup",
+        question: "Finish setup for this workspace",
+        expiresAt: expiresIn(200),
+      }),
+    );
+    expect.assert(created.ok === true);
+
+    // Sweep with a "now" far past the (intentionally tight) deadline.
+    // Workspace setup may sit unanswered for days — the sweep must skip it.
+    const fakeNow = new Date(Date.parse(created.data.expiresAt) + 7 * 24 * 60 * 60 * 1000);
+    const swept = await adapter.expirePending({ now: fakeNow });
+    expect.assert(swept.ok === true);
+    expect(swept.data.expired).not.toContain(created.data.id);
+
+    const got = await adapter.get({ id: created.data.id });
+    expect.assert(got.ok === true);
+    // Both durable state and read-time derivation must stay `pending`.
+    expect(got.data?.status).toBe("pending");
+  });
+
   it("CAS-skips when a concurrent answer wins the race", async () => {
     // Race the answer in BEFORE the sweep starts. With the answer
     // already landed, the entry is no longer `pending` so the sweep
@@ -420,6 +527,53 @@ describe("JetStreamElicitationStorageAdapter — expirePending sweep", () => {
     const got = await adapter.get({ id: created.data.id });
     expect.assert(got.ok === true);
     expect(got.data?.status).toBe("answered");
+  });
+});
+
+describe("JetStreamElicitationStorageAdapter — workspace-setup exemptions", () => {
+  it("get() leaves a past-deadline workspace-setup entry as `pending` (no read-time expiry)", async () => {
+    const adapter = new JetStreamElicitationStorageAdapter(nc);
+    const created = await adapter.create(
+      baseInput({
+        workspaceId: `ws-setup-rt-${crypto.randomUUID()}`,
+        kind: "workspace-setup",
+        question: "Finish setup",
+        expiresAt: expiresIn(100),
+      }),
+    );
+    expect.assert(created.ok === true);
+
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    const got = await adapter.get({ id: created.data.id });
+    expect.assert(got.ok === true);
+    expect(got.data?.status).toBe("pending");
+  });
+
+  it("answer() accepts a workspace-setup response long past the deadline", async () => {
+    const adapter = new JetStreamElicitationStorageAdapter(nc);
+    const created = await adapter.create(
+      baseInput({
+        workspaceId: `ws-setup-late-${crypto.randomUUID()}`,
+        kind: "workspace-setup",
+        question: "Finish setup",
+        // Already expired by the time we answer below.
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
+      }),
+    );
+    expect.assert(created.ok === true);
+
+    const answered = await adapter.answer({
+      id: created.data.id,
+      answer: {
+        value: {
+          variableValues: { region: "us-east-1" },
+          credentialChoices: { gmail: "cred_abc" },
+        },
+        answeredAt: new Date().toISOString(),
+      },
+    });
+    expect.assert(answered.ok === true);
+    expect(answered.data.status).toBe("answered");
   });
 });
 

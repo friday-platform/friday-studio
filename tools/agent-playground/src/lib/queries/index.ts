@@ -4,7 +4,11 @@
  * @module
  */
 export { agentQueries, invalidateAgentPreflight } from "./agent-queries.ts";
-export type { AgentMetadata, AgentPreflightCredential, AgentPreflightResponse } from "./agent-queries.ts";
+export type {
+  AgentMetadata,
+  AgentPreflightCredential,
+  AgentPreflightResponse,
+} from "./agent-queries.ts";
 export { artifactQueries } from "./artifact-queries.ts";
 export type { ArtifactResponse } from "./artifact-queries.ts";
 export { integrationQueries } from "./integration-queries.ts";
@@ -21,11 +25,17 @@ export { sessionQueries } from "./session-queries.ts";
 export { skillQueries } from "./skill-queries.ts";
 export { memoryQueries } from "./memory-queries.ts";
 export type { SearchResult } from "./mcp-queries.ts";
-export { AGENT_TYPE_LABELS, useDeleteWorkspace, WorkspaceAgentDefsResponseSchema, workspaceQueries } from "./workspace-queries.ts";
+export {
+  AGENT_TYPE_LABELS,
+  useDeleteWorkspace,
+  WorkspaceAgentDefsResponseSchema,
+  workspaceQueries,
+} from "./workspace-queries.ts";
 export type {
   JobSummary,
   Workspace,
   WorkspaceAgentDef,
+  WorkspaceDetail,
   WorkspaceSummary,
   WorkspaceWithJobs,
 } from "./workspace-queries.ts";

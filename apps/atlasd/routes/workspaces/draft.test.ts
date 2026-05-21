@@ -404,7 +404,7 @@ describe("Draft file flow", () => {
       .parse(await res.json());
     expect(body).toMatchObject({ ok: true });
     expect(body.diff).toHaveProperty("type");
-    expect(body.diff["type"]).toEqual({ to: "llm" });
+    expect(body.diff.type).toEqual({ to: "llm" });
 
     const draft = await readFile(join(tempDir, "workspace.yml.draft"), "utf-8");
     expect(draft).toContain("test-agent");
@@ -595,7 +595,7 @@ describe("Draft file flow", () => {
       .parse(await res.json());
     expect(body).toMatchObject({ ok: true });
     expect(body.diff).toHaveProperty("description");
-    expect(body.diff["description"]).toEqual({ from: "Original agent", to: "Updated agent" });
+    expect(body.diff.description).toEqual({ from: "Original agent", to: "Updated agent" });
     expect(body.diff).toHaveProperty("config.prompt");
     expect(body.diff["config.prompt"]).toEqual({ from: "Original prompt", to: "Updated prompt" });
   });

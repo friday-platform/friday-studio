@@ -436,8 +436,7 @@ export const skillsRoutes = daemonFactory
         }
         const assignResult = await SkillStorage.assignSkill(published.data.skillId, workspaceId);
         if (!assignResult.ok) {
-          reassignment.error =
-            (reassignment.error ?? "") + ` Assign to fork failed: ${assignResult.error}`;
+          reassignment.error = `${reassignment.error ?? ""} Assign to fork failed: ${assignResult.error}`;
         } else {
           reassignment.assignedTo = published.data.skillId;
         }
@@ -891,7 +890,7 @@ export const skillsRoutes = daemonFactory
     const fm = result.data.frontmatter as Record<string, unknown>;
     const source = typeof fm.source === "string" ? fm.source : undefined;
     const localHash = typeof fm["source-hash"] === "string" ? fm["source-hash"] : undefined;
-    if (!source || !source.startsWith("skills.sh/")) {
+    if (!source?.startsWith("skills.sh/")) {
       return c.json({ hasUpdate: false, remote: null, source: source ?? null, localHash: null });
     }
     const parts = source
@@ -940,7 +939,7 @@ export const skillsRoutes = daemonFactory
 
     const fm = existing.data.frontmatter as Record<string, unknown>;
     const source = typeof fm.source === "string" ? fm.source : undefined;
-    if (!source || !source.startsWith("skills.sh/")) {
+    if (!source?.startsWith("skills.sh/")) {
       return c.json({ error: "Skill has no skills.sh source — nothing to update" }, 400);
     }
     const parts = source

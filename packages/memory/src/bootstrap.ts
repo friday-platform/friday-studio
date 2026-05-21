@@ -137,7 +137,7 @@ export function applyFilter(
 }
 
 function getPriority(entry: NarrativeEntry): number {
-  const p = entry.metadata?.["priority"];
+  const p = entry.metadata?.priority;
   return typeof p === "number" ? p : 0;
 }
 
@@ -158,7 +158,7 @@ export function truncateToBytes(
   let totalSize = 0;
 
   for (const entry of entries) {
-    const line = renderBullet(entry) + "\n";
+    const line = `${renderBullet(entry)}\n`;
     const lineBytes = encoder.encode(line).byteLength;
     if (totalSize + lineBytes > maxBytes && kept.length > 0) {
       return { entries: kept, truncated: true };

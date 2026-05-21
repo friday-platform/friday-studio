@@ -23,7 +23,7 @@ describe("FSMEngine.seedResults", () => {
 
     await engine.signal({ type: "GO" });
     expect(engine.state).toBe("done");
-    expect(engine.results["__meta"]).toEqual({
+    expect(engine.results.__meta).toEqual({
       repo_root: "/fake/repo",
       workspace_path: "/fake/repo/workspaces/test",
       workspace_id: "test-ws",
@@ -47,7 +47,7 @@ describe("FSMEngine.seedResults", () => {
     expect(() => {
       engine.seedResults({ __meta: { repo_root: "/between-sessions" } });
     }).not.toThrow();
-    expect(engine.results["__meta"]).toEqual({ repo_root: "/between-sessions" });
+    expect(engine.results.__meta).toEqual({ repo_root: "/between-sessions" });
   });
 
   it("merges multiple seedResults calls before first signal", async () => {
@@ -64,8 +64,8 @@ describe("FSMEngine.seedResults", () => {
 
     await engine.signal({ type: "GO" });
     expect(engine.state).toBe("done");
-    expect(engine.results["__meta"]).toEqual({ repo_root: "/repo" });
-    expect(engine.results["__extra"]).toEqual({ key: "value" });
+    expect(engine.results.__meta).toEqual({ repo_root: "/repo" });
+    expect(engine.results.__extra).toEqual({ key: "value" });
   });
 
   it("seedResults works after reset (new session)", async () => {
@@ -89,6 +89,6 @@ describe("FSMEngine.seedResults", () => {
 
     // Should work again after reset
     engine.seedResults({ __meta: { repo_root: "/second" } });
-    expect(engine.results["__meta"]).toEqual({ repo_root: "/second" });
+    expect(engine.results.__meta).toEqual({ repo_root: "/second" });
   });
 });

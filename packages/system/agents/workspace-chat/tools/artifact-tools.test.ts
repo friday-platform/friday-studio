@@ -33,7 +33,7 @@ describe("create_artifact", () => {
       streamId: undefined,
     });
 
-    await tools.create_artifact!.execute!(
+    await tools.create_artifact?.execute?.(
       { path: "SKILL.md", title: "A skill", summary: "A test skill artifact." },
       TOOL_CALL_OPTS,
     );
@@ -54,7 +54,7 @@ describe("create_artifact", () => {
       streamId: undefined,
     });
 
-    await tools.create_artifact!.execute!(
+    await tools.create_artifact?.execute?.(
       { path: "report.html", title: "A report", summary: "A test HTML artifact." },
       TOOL_CALL_OPTS,
     );
@@ -73,7 +73,7 @@ describe("create_artifact", () => {
       streamId: undefined,
     });
 
-    await tools.create_artifact!.execute!(
+    await tools.create_artifact?.execute?.(
       { path: "data.weirdext", title: "A blob", summary: "A test artifact with unknown ext." },
       TOOL_CALL_OPTS,
     );
@@ -94,7 +94,7 @@ describe("create_artifact", () => {
       streamId: undefined,
     });
 
-    await tools.create_artifact!.execute!(
+    await tools.create_artifact?.execute?.(
       { path: "icon.svg", title: "An icon", summary: "A test SVG artifact." },
       TOOL_CALL_OPTS,
     );
@@ -115,7 +115,7 @@ describe("create_artifact", () => {
       streamId: undefined,
     });
 
-    await tools.create_artifact!.execute!(
+    await tools.create_artifact?.execute?.(
       { path: "image.png", title: "An image", summary: "A test image artifact." },
       TOOL_CALL_OPTS,
     );
@@ -133,7 +133,7 @@ describe("create_artifact", () => {
       streamId: undefined,
     });
 
-    const result = await tools.create_artifact!.execute!(
+    const result = await tools.create_artifact?.execute?.(
       { path: "SKILL.md", title: "A skill", summary: "A test skill artifact." },
       TOOL_CALL_OPTS,
     );
@@ -154,7 +154,7 @@ describe("create_artifact", () => {
       streamId: undefined,
     });
 
-    const result = await tools.create_artifact!.execute!(
+    const result = await tools.create_artifact?.execute?.(
       { path: "missing.md", title: "Missing", summary: "Should fail to read." },
       TOOL_CALL_OPTS,
     );
@@ -174,7 +174,7 @@ describe("save_artifact", () => {
       streamId: undefined,
     });
 
-    await tools.save_artifact!.execute!(
+    await tools.save_artifact?.execute?.(
       {
         filename: "notes.md",
         content: "# hello",
@@ -205,7 +205,7 @@ describe("save_artifact", () => {
       streamId: undefined,
     });
 
-    const result = await tools.save_artifact!.execute!(
+    const result = await tools.save_artifact?.execute?.(
       {
         filename: "data.json",
         content: '{"a":1}',
@@ -230,7 +230,7 @@ describe("save_artifact", () => {
       streamId: undefined,
     });
 
-    const result = await tools.save_artifact!.execute!(
+    const result = await tools.save_artifact?.execute?.(
       {
         filename: "chart.png",
         content: "iVBORw0KGgo...not actually a PNG...",
@@ -259,7 +259,7 @@ describe("save_artifact", () => {
     });
 
     for (const filename of ["archive.zip", "binary.exe", "blob.weirdext"]) {
-      const result = await tools.save_artifact!.execute!(
+      const result = await tools.save_artifact?.execute?.(
         {
           filename,
           content: "irrelevant",
@@ -283,7 +283,7 @@ describe("save_artifact", () => {
       streamId: undefined,
     });
 
-    const result = await tools.save_artifact!.execute!(
+    const result = await tools.save_artifact?.execute?.(
       {
         filename: "../escape.md",
         content: "x",

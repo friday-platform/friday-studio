@@ -154,8 +154,8 @@ describe("FSM LLM action — scrubber wiring (N4: lift moved off MCP boundary)",
       // ToolExecuteFunction signature; runtime shape is what we exercise.
       const wrappedExecute = options?.scrubResult
         ? ((async (args: Parameters<NonNullable<Tool["execute"]>>[0], ctx) => {
-            const result = await rawTool.execute!(args, ctx);
-            return await options.scrubResult!(result, {
+            const result = await rawTool.execute?.(args, ctx);
+            return await options.scrubResult?.(result, {
               serverId: "test-server",
               toolName: "fetch_thing",
             });
@@ -175,9 +175,9 @@ describe("FSM LLM action — scrubber wiring (N4: lift moved off MCP boundary)",
     // surface what actually reached the model.
     const mockLLMProvider: LLMProvider = {
       call: async (params) => {
-        const tool = (params.tools as Record<string, Tool>)["fetch_thing"];
+        const tool = (params.tools as Record<string, Tool>).fetch_thing;
         // Exercise the tool — this is where the scrubber wrapper fires.
-        const output = await tool!.execute!({}, { toolCallId: "tc1", messages: [] } as never);
+        const output = await tool?.execute?.({}, { toolCallId: "tc1", messages: [] } as never);
         llmReceivedToolResults.push(output);
 
         const envelope: AgentResult<string, FSMLLMOutput> = {

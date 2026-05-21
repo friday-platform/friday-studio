@@ -54,7 +54,7 @@ describe("createDraftTools", () => {
     const tools = createDraftTools(makeLogger());
     expect(tools).toHaveProperty("begin_draft");
 
-    const result = await tools.begin_draft!.execute!({}, TOOL_CALL_OPTS);
+    const result = await tools.begin_draft?.execute?.({}, TOOL_CALL_OPTS);
     expect(result).toMatchObject({
       success: false,
       error: expect.stringContaining("begin_draft must be called"),
@@ -65,7 +65,7 @@ describe("createDraftTools", () => {
     const tools = createDraftTools(makeLogger());
     expect(tools).toHaveProperty("publish_draft");
 
-    const result = await tools.publish_draft!.execute!({}, TOOL_CALL_OPTS);
+    const result = await tools.publish_draft?.execute?.({}, TOOL_CALL_OPTS);
     expect(result).toMatchObject({
       success: false,
       error: expect.stringContaining("publish_draft must be called"),
@@ -76,7 +76,7 @@ describe("createDraftTools", () => {
     const tools = createDraftTools(makeLogger());
     expect(tools).toHaveProperty("validate_workspace");
 
-    const result = await tools.validate_workspace!.execute!({}, TOOL_CALL_OPTS);
+    const result = await tools.validate_workspace?.execute?.({}, TOOL_CALL_OPTS);
     expect(result).toMatchObject({
       success: false,
       error: expect.stringContaining("validate_workspace must be called"),
@@ -87,7 +87,7 @@ describe("createDraftTools", () => {
     const tools = createDraftTools(makeLogger());
     expect(tools).toHaveProperty("discard_draft");
 
-    const result = await tools.discard_draft!.execute!({}, TOOL_CALL_OPTS);
+    const result = await tools.discard_draft?.execute?.({}, TOOL_CALL_OPTS);
     expect(result).toMatchObject({
       success: false,
       error: expect.stringContaining("discard_draft must be called"),
@@ -129,7 +129,7 @@ describe("createBoundDraftTools", () => {
 
   it("begin_draft description mentions idempotency and safe staging", () => {
     const tools = createBoundDraftTools(logger, "ws-1");
-    const desc = tools.begin_draft!.description;
+    const desc = tools.begin_draft?.description;
     expect(desc?.toLowerCase()).toContain("idempotent");
     expect(desc).toContain("draft");
   });
@@ -140,7 +140,7 @@ describe("createBoundDraftTools", () => {
     );
 
     const tools = createBoundDraftTools(logger, "ws-1");
-    const result = await tools.begin_draft!.execute!({}, TOOL_CALL_OPTS);
+    const result = await tools.begin_draft?.execute?.({}, TOOL_CALL_OPTS);
 
     expect(mockDraftBeginPost).toHaveBeenCalledWith({ param: { workspaceId: "ws-1" } });
     expect(result).toEqual({ success: true, draftPath: "/tmp/ws-1/workspace.yml.draft" });
@@ -152,7 +152,7 @@ describe("createBoundDraftTools", () => {
     );
 
     const tools = createBoundDraftTools(logger, "ws-1");
-    const result = await tools.publish_draft!.execute!({}, TOOL_CALL_OPTS);
+    const result = await tools.publish_draft?.execute?.({}, TOOL_CALL_OPTS);
 
     expect(mockDraftPublishPost).toHaveBeenCalledWith({ param: { workspaceId: "ws-1" } });
     expect(result).toEqual({ success: true, livePath: "/tmp/ws-1/workspace.yml" });
@@ -169,7 +169,7 @@ describe("createBoundDraftTools", () => {
     );
 
     const tools = createBoundDraftTools(logger, "ws-1");
-    const result = await tools.publish_draft!.execute!({}, TOOL_CALL_OPTS);
+    const result = await tools.publish_draft?.execute?.({}, TOOL_CALL_OPTS);
 
     expect(result).toEqual({ success: false, error: "Validation failed", report });
   });
@@ -180,7 +180,7 @@ describe("createBoundDraftTools", () => {
     );
 
     const tools = createBoundDraftTools(logger, "ws-1");
-    const result = await tools.begin_draft!.execute!({}, TOOL_CALL_OPTS);
+    const result = await tools.begin_draft?.execute?.({}, TOOL_CALL_OPTS);
 
     expect(result).toEqual({ success: false, error: "Draft already exists" });
   });
@@ -191,7 +191,7 @@ describe("createBoundDraftTools", () => {
     );
 
     const tools = createBoundDraftTools(logger, "ws-1");
-    const result = await tools.publish_draft!.execute!({}, TOOL_CALL_OPTS);
+    const result = await tools.publish_draft?.execute?.({}, TOOL_CALL_OPTS);
 
     expect(result).toEqual({ success: false, error: "No draft to publish" });
   });
@@ -204,7 +204,7 @@ describe("createBoundDraftTools", () => {
     );
 
     const tools = createBoundDraftTools(logger, "ws-1");
-    await tools.publish_draft!.execute!({}, TOOL_CALL_OPTS);
+    await tools.publish_draft?.execute?.({}, TOOL_CALL_OPTS);
 
     expect(mockInvalidateBlock2).toHaveBeenCalledWith("ws-1");
   });
@@ -215,7 +215,7 @@ describe("createBoundDraftTools", () => {
     );
 
     const tools = createBoundDraftTools(logger, "ws-1");
-    await tools.publish_draft!.execute!({}, TOOL_CALL_OPTS);
+    await tools.publish_draft?.execute?.({}, TOOL_CALL_OPTS);
 
     expect(mockInvalidateBlock2).not.toHaveBeenCalled();
   });
@@ -225,7 +225,7 @@ describe("createBoundDraftTools", () => {
     mockDraftValidatePost.mockResolvedValueOnce(mockResponse(true, 200, { success: true, report }));
 
     const tools = createBoundDraftTools(logger, "ws-1");
-    const result = await tools.validate_workspace!.execute!({}, TOOL_CALL_OPTS);
+    const result = await tools.validate_workspace?.execute?.({}, TOOL_CALL_OPTS);
 
     expect(mockDraftValidatePost).toHaveBeenCalledWith({ param: { workspaceId: "ws-1" } });
     expect(result).toEqual(report);
@@ -239,7 +239,7 @@ describe("createBoundDraftTools", () => {
     mockLintPost.mockResolvedValueOnce(mockResponse(true, 200, { report }));
 
     const tools = createBoundDraftTools(logger, "ws-1");
-    const result = await tools.validate_workspace!.execute!({}, TOOL_CALL_OPTS);
+    const result = await tools.validate_workspace?.execute?.({}, TOOL_CALL_OPTS);
 
     expect(mockLintPost).toHaveBeenCalledWith({ param: { workspaceId: "ws-1" } });
     expect(result).toEqual(report);
@@ -251,7 +251,7 @@ describe("createBoundDraftTools", () => {
     );
 
     const tools = createBoundDraftTools(logger, "ws-1");
-    const result = await tools.validate_workspace!.execute!({}, TOOL_CALL_OPTS);
+    const result = await tools.validate_workspace?.execute?.({}, TOOL_CALL_OPTS);
 
     expect(result).toEqual({ success: false, error: "Server error" });
   });
@@ -260,7 +260,7 @@ describe("createBoundDraftTools", () => {
     mockDraftDelete.mockResolvedValueOnce(mockResponse(true, 200, { success: true }));
 
     const tools = createBoundDraftTools(logger, "ws-1");
-    const result = await tools.discard_draft!.execute!({}, TOOL_CALL_OPTS);
+    const result = await tools.discard_draft?.execute?.({}, TOOL_CALL_OPTS);
 
     expect(mockDraftDelete).toHaveBeenCalledWith({ param: { workspaceId: "ws-1" } });
     expect(result).toEqual({ success: true, noOp: false });
@@ -272,7 +272,7 @@ describe("createBoundDraftTools", () => {
     );
 
     const tools = createBoundDraftTools(logger, "ws-1");
-    const result = await tools.discard_draft!.execute!({}, TOOL_CALL_OPTS);
+    const result = await tools.discard_draft?.execute?.({}, TOOL_CALL_OPTS);
 
     expect(result).toEqual({ success: true, noOp: true });
   });
@@ -283,7 +283,7 @@ describe("createBoundDraftTools", () => {
     );
 
     const tools = createBoundDraftTools(logger, "ws-1");
-    const result = await tools.discard_draft!.execute!({}, TOOL_CALL_OPTS);
+    const result = await tools.discard_draft?.execute?.({}, TOOL_CALL_OPTS);
 
     expect(result).toEqual({ success: false, error: "Server error" });
   });

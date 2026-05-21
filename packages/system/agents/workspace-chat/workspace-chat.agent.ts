@@ -51,6 +51,7 @@ import {
 } from "./compose-context.ts";
 import { buildOnboardingClause, buildUserProfileClause } from "./onboarding.ts";
 import SYSTEM_PROMPT from "./prompt.txt" with { type: "text" };
+import { fetchWorkspaceSetupStatus, formatSetupStatusBlock } from "./setup-status-section.ts";
 import { connectCommunicatorSucceeded, connectServiceSucceeded } from "./stop-conditions.ts";
 import {
   createDeleteAgentFromRegistryTool,
@@ -112,6 +113,7 @@ import {
 import { createMemorySaveTool } from "./tools/memory-save.ts";
 import { createPublishSkillTool } from "./tools/publish-skill.ts";
 import { createRequestToolAccessTool } from "./tools/request-tool-access.ts";
+import { createRequestWorkspaceSetupTool } from "./tools/request-workspace-setup.ts";
 import { createSearchMcpServersTool } from "./tools/search-mcp-servers.ts";
 import { createDescribeSessionTool, createListSessionsTool } from "./tools/session-tools.ts";
 import { createSetUserIdentityTool } from "./tools/set-user-identity.ts";
@@ -461,6 +463,16 @@ export function getSystemBlocks(
      * when the workspace has never bumped — no behavior change then.
      */
     cacheSaltTag?: string;
+    /**
+     * Re-setup status block (Decision 4). Rides at the start of block 4
+     * because it shares the same volatility profile as the workspace
+     * inventory — env writes / credential disconnects mid-conversation
+     * shift the bytes, so co-locating with the 5m-TTL tier keeps the
+     * 1h-TTL identity prefix cached when the setup state changes.
+     * Empty string when the workspace is fully configured or in the
+     * initial-setup (pointer non-null) state.
+     */
+    setupStatus?: string;
   },
 ): SystemBlocks {
   // The salt leads block 2 so a "force fresh" bump cascades: changing
@@ -474,7 +486,9 @@ export function getSystemBlocks(
   if (options?.onboarding) block3Parts.push(options.onboarding);
   if (options?.userProfile) block3Parts.push(options.userProfile);
 
-  const block4Parts: string[] = [workspaceSection];
+  const block4Parts: string[] = [];
+  if (options?.setupStatus) block4Parts.push(options.setupStatus);
+  block4Parts.push(workspaceSection);
 
   return {
     block1: SYSTEM_PROMPT,
@@ -780,7 +794,7 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           workspaceId,
           foregroundCount: foregroundIds.length,
         });
-        const [block2, linkSummary, userIdentitySection, foregrounds, profileState] =
+        const [block2, linkSummary, userIdentitySection, foregrounds, profileState, setupStatus] =
           await Promise.all([
             getBlock2Inputs(workspaceId, logger),
             fetchLinkSummary(logger),
@@ -789,6 +803,7 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
               ? fetchForegroundContexts(foregroundIds, logger)
               : Promise.resolve([]),
             fetchUserProfileState(userId, logger),
+            fetchWorkspaceSetupStatus(workspaceId, logger),
           ]);
 
         const workspaceDetails = block2.details;
@@ -1069,6 +1084,7 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
             daemonUrl: getAtlasDaemonUrl(),
             logger,
           }),
+          ...createRequestWorkspaceSetupTool({ workspaceId, sessionId: adHocSessionId, logger }),
           ...webFetchTool,
           ...webSearchTool,
           ...runCodeTool,
@@ -1214,12 +1230,17 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           });
         }
 
+        const setupStatusBlock = setupStatus.shouldInject
+          ? formatSetupStatusBlock(setupStatus.setupRequirements)
+          : "";
+
         const systemBlocks = getSystemBlocks(workspaceSection, {
           skills: skillsSection,
           userIdentity: userIdentitySection,
           onboarding: onboardingClause,
           userProfile: userProfileClause,
           cacheSaltTag,
+          setupStatus: setupStatusBlock,
         });
         const systemPrompt = flattenSystemBlocks(systemBlocks);
 
@@ -1282,6 +1303,26 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
         // + modelId on the originating turn). Untagged messages are treated
         // as "unknown origin" — if they contain reasoning, drop them too.
         const sanitizedMessages = messages.filter((m) => {
+          // Strip role:"system" UI messages — these are UI-only affordances
+          // (e.g. the bootstrap workspace-setup welcome) rendered as banners
+          // in the chat list. Passing them to the LLM produces a SystemBlock
+          // mid-conversation; Anthropic rejects that as
+          // "Multiple system messages that are separated by user/assistant
+          // messages." The cacheable system prompt lives in `systemBlocks`,
+          // not in chat history.
+          if (m.role === "system") return false;
+          // Strip synthetic messages — UI-only seeds (e.g. the bootstrap
+          // workspace-setup assistant message that anchors the form via a
+          // fabricated `tool-request_workspace_setup` part). The agent
+          // never actually called that tool, so replaying it as if it had
+          // would let the model treat the fake `pending_confirmation`
+          // output as real prior work, re-call the tool, or hallucinate
+          // from the fake output. The sentinel is set at the synthesis
+          // site (see `buildBootstrapAssistantMessage` in
+          // `setup-spawn.ts`). UI rendering ignores the sentinel — the
+          // tool-call card dispatches on part `type` alone, so the form
+          // still renders.
+          if (m.metadata?.synthetic === true) return false;
           if (m.role !== "assistant") return true;
           const fromSameModel =
             m.metadata?.provider === conversationalModel.provider &&
@@ -1321,7 +1362,7 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
               const data = (part as { type: string; data?: { scope?: string; keys?: string[] } })
                 .data;
               const scope = data?.scope === "global" ? "global" : "workspace";
-              const keys = Array.isArray(data?.keys) ? data!.keys : [];
+              const keys = Array.isArray(data?.keys) ? data?.keys : [];
               const keyList = keys.length > 0 ? keys.join(", ") : "(none)";
               return {
                 type: "text" as const,

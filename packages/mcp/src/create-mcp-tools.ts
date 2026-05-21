@@ -98,7 +98,7 @@ function wrapToolWithTimeout(tool: Tool, serverId: string): Tool {
     ...tool,
     execute: (args, opts) => {
       return withTimeout(
-        tool.execute!(args, opts),
+        tool.execute?.(args, opts),
         CALL_TOOL_TIMEOUT_MS,
         (actualDurationMs) =>
           new MCPTimeoutError(serverId, "call_tool", CALL_TOOL_TIMEOUT_MS, actualDurationMs),
@@ -129,7 +129,7 @@ function wrapTool(tool: Tool, serverId: string, toolName: string, scrub?: ScrubT
   return {
     ...timed,
     execute: async (args, opts) => {
-      const result = await timed.execute!(args, opts);
+      const result = await timed.execute?.(args, opts);
       try {
         return await scrub(result, { serverId, toolName });
       } catch {

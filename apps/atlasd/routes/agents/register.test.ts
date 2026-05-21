@@ -309,7 +309,7 @@ describe("POST /register", () => {
       (c) => typeof c[0] === "string" && c[0].endsWith("metadata.json"),
     );
     expect(metaCall).toBeDefined();
-    const persisted = JSON.parse(metaCall![1] as string);
+    const persisted = JSON.parse(metaCall?.[1] as string);
 
     expect(persisted).toMatchObject({
       id: "rich-agent",

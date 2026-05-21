@@ -41,7 +41,7 @@ async function ensureBucket(nc: NatsConnection) {
 }
 
 function decodeSalt(entry: { value: Uint8Array } | null | undefined): number {
-  if (!entry || !entry.value || entry.value.length === 0) return 0;
+  if (!entry?.value || entry.value.length === 0) return 0;
   const text = new TextDecoder().decode(entry.value);
   const n = Number.parseInt(text, 10);
   return Number.isFinite(n) && n >= 0 ? n : 0;

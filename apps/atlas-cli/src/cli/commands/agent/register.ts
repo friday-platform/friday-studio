@@ -28,7 +28,7 @@ export const registerCommand = define({
     }
 
     const agentDir = resolve(dir);
-    const entrypointFile = ctx.values["entry"] ?? "agent.py";
+    const entrypointFile = ctx.values.entry ?? "agent.py";
     const entrypointPath = join(agentDir, entrypointFile);
 
     try {

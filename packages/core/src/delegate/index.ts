@@ -342,7 +342,7 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
           const candidateMap = new Map(candidates.map((c) => [c.metadata.id, c]));
           const invalid = mcpServers.filter((id) => {
             const c = candidateMap.get(id);
-            return !c || !c.configured;
+            return !c?.configured;
           });
           if (invalid.length > 0) {
             return {

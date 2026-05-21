@@ -442,6 +442,21 @@ export const MessageMetadataSchema = z.object({
    * surface per-turn and aggregate cost.
    */
   usage: MessageUsageSchema.optional(),
+  /**
+   * Sentinel for messages that were synthesized server-side for the UI
+   * but never actually emitted by an LLM/agent turn. The current case is
+   * the bootstrap workspace-setup welcome (see `buildBootstrapAssistantMessage`
+   * in `apps/atlasd/routes/workspaces/setup-spawn.ts`), which fakes a
+   * completed `tool-request_workspace_setup` part so `tool-call-card.svelte`
+   * can render the setup form inline.
+   *
+   * The workspace-chat agent's history sanitizer drops messages with this
+   * flag before handing history to `convertToModelMessages`, so the LLM
+   * never sees the fabricated tool call. UI rendering ignores the flag —
+   * the tool-call dispatcher matches on part `type` alone — so the form
+   * still renders.
+   */
+  synthetic: z.literal(true).optional(),
 });
 
 export type MessageMetadata = z.infer<typeof MessageMetadataSchema>;

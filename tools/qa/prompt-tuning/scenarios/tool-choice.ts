@@ -86,7 +86,7 @@ function extractClaudeCodeDescription(src: string): string {
   // `description:` (optional whitespace) `"…"` where the body may contain
   // escaped quotes. Non-greedy across the body via the [^"\\] / \\. class.
   const match = src.match(/description:\s*"((?:\\.|[^"\\])*)"/);
-  if (!match || !match[1]) {
+  if (!match?.[1]) {
     throw new Error(
       "[tool-choice.ts] could not extract claude-code description from agent.ts. " +
         "Source layout likely changed; update the regex. Stub fallback removed on purpose — " +

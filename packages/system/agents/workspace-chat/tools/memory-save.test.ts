@@ -42,7 +42,7 @@ describe("save_memory_entry", () => {
     mockFetch.mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 200 }));
 
     const { save_memory_entry } = createMemorySaveTool("al-dente_vanilla", logger);
-    await save_memory_entry!.execute!({ memoryName: "notes", text: "Ken won 45/40" }, OPTS);
+    await save_memory_entry?.execute?.({ memoryName: "notes", text: "Ken won 45/40" }, OPTS);
 
     const [url] = mockFetch.mock.calls[0] as [string, RequestInit];
     expect(url).toBe("http://localhost:3000/api/memory/al-dente_vanilla/narrative/notes");
@@ -52,7 +52,7 @@ describe("save_memory_entry", () => {
     mockFetch.mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 200 }));
 
     const { save_memory_entry } = createMemorySaveTool("ws-1", logger);
-    await save_memory_entry!.execute!(
+    await save_memory_entry?.execute?.(
       { memoryName: "notes", text: "hello", metadata: { kind: "note" } },
       OPTS,
     );
@@ -65,14 +65,14 @@ describe("save_memory_entry", () => {
   it("returns error on HTTP failure", async () => {
     mockFetch.mockResolvedValueOnce(new Response("error", { status: 500 }));
     const { save_memory_entry } = createMemorySaveTool("ws-1", logger);
-    const result = await save_memory_entry!.execute!({ memoryName: "notes", text: "x" }, OPTS);
+    const result = await save_memory_entry?.execute?.({ memoryName: "notes", text: "x" }, OPTS);
     expect(result).toHaveProperty("error");
   });
 
   it("returns error on network failure", async () => {
     mockFetch.mockRejectedValueOnce(new Error("ECONNREFUSED"));
     const { save_memory_entry } = createMemorySaveTool("ws-1", logger);
-    const result = await save_memory_entry!.execute!({ memoryName: "notes", text: "x" }, OPTS);
+    const result = await save_memory_entry?.execute?.({ memoryName: "notes", text: "x" }, OPTS);
     expect(result).toHaveProperty("error");
   });
 });
@@ -84,7 +84,7 @@ describe("delete_memory_entry", () => {
     );
 
     const { delete_memory_entry } = createMemorySaveTool("al-dente_vanilla", logger);
-    const result = await delete_memory_entry!.execute!(
+    const result = await delete_memory_entry?.execute?.(
       { memoryName: "notes", entryId: "e123" },
       OPTS,
     );
@@ -98,7 +98,7 @@ describe("delete_memory_entry", () => {
   it("returns error on HTTP failure", async () => {
     mockFetch.mockResolvedValueOnce(new Response("error", { status: 500 }));
     const { delete_memory_entry } = createMemorySaveTool("ws-1", logger);
-    const result = await delete_memory_entry!.execute!(
+    const result = await delete_memory_entry?.execute?.(
       { memoryName: "notes", entryId: "e1" },
       OPTS,
     );
@@ -108,7 +108,7 @@ describe("delete_memory_entry", () => {
   it("returns error on network failure", async () => {
     mockFetch.mockRejectedValueOnce(new Error("ECONNREFUSED"));
     const { delete_memory_entry } = createMemorySaveTool("ws-1", logger);
-    const result = await delete_memory_entry!.execute!(
+    const result = await delete_memory_entry?.execute?.(
       { memoryName: "notes", entryId: "e1" },
       OPTS,
     );

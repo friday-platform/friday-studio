@@ -134,8 +134,8 @@ const baseRegistry = Object.fromEntries(
 export const bundledAgentsRegistry = {
   ...baseRegistry,
   // Aliases: old agent IDs → unified web agent
-  browser: baseRegistry["web"],
-  research: baseRegistry["web"],
+  browser: baseRegistry.web,
+  research: baseRegistry.web,
 } as Record<string, ReturnType<typeof deriveRegistryEntry>>;
 
 export type BundledAgentRegistryEntry = (typeof bundledAgentsRegistry)[string];

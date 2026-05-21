@@ -62,7 +62,7 @@ function buildChildSystemPrompt(opts: { withSkill: boolean }): string {
   const datetimeMessage = buildTemporalFacts(undefined);
   return [
     skillsBlock,
-    "Goal: " + USER_TASK,
+    `Goal: ${USER_TASK}`,
     "Handoff: Test eval — give the user a direct, well-formed answer.",
     datetimeMessage,
     "You are a terse back-end agent. Your output is consumed by another AI agent, " +

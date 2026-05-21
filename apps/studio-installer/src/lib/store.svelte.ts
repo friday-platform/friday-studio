@@ -46,7 +46,7 @@ function formatBytes(n: number): string {
 }
 
 function formatDuration(secs: number): string {
-  if (!isFinite(secs) || secs < 0) return "--";
+  if (!Number.isFinite(secs) || secs < 0) return "--";
   const h = Math.floor(secs / 3600);
   const m = Math.floor((secs % 3600) / 60);
   const s = Math.floor(secs % 60);
@@ -302,7 +302,7 @@ function createStore() {
     },
 
     get speedStr(): string {
-      return formatBytes(bytesPerSec) + "/s";
+      return `${formatBytes(bytesPerSec)}/s`;
     },
 
     get etaStr(): string {
