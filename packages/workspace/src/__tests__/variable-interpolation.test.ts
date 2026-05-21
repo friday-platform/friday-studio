@@ -279,6 +279,25 @@ describe("resolveWorkspaceVariables", () => {
     expect(result?.platform_url).toBe("http://example.test:9999");
   });
 
+  it("falls back to workspacePath as repo_root when no .git ancestor exists", async () => {
+    // Production workspaces live at ~/.atlas/workspaces/<dir>/ — outside any
+    // git repo. The function must not return null and block declared-variable
+    // interpolation just because the workspace happens not to be in a git tree.
+    const nonGitDir = mkdtempSync(join(tmpdir(), "no-git-"));
+    try {
+      const wsPath = join(nonGitDir, "ws");
+      mkdirSync(wsPath, { recursive: true });
+      const result = await resolveWorkspaceVariables(wsPath, "test_ws", "http://localhost:9090");
+
+      expect(result).not.toBeNull();
+      expect(result?.repo_root).toBe(wsPath);
+      expect(result?.workspace_path).toBe(wsPath);
+      expect(result?.workspace_id).toBe("test_ws");
+    } finally {
+      rmSync(nonGitDir, { recursive: true, force: true });
+    }
+  });
+
   it("integration: interpolates a sample workspace config", async () => {
     process.env.FRIDAYD_URL = "http://example.test:9999";
     const wsPath = join(tempDir, "workspaces", "test-ws");

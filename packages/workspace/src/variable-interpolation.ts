@@ -219,20 +219,18 @@ export async function findRepoRoot(startPath: string): Promise<string | null> {
  * @param workspaceId   The workspace's stable identifier.
  * @param daemonUrl     The daemon's base URL (defaults to `getAtlasDaemonUrl()` —
  *                      scheme/port follow the daemon's actual binding).
- * @returns Parsed `WorkspaceVariables` or `null` if repo_root cannot be derived.
+ * @returns Parsed `WorkspaceVariables`. `repo_root` falls back to
+ *          `workspacePath` when no `.git` ancestor exists — imported workspaces
+ *          live at `~/.atlas/workspaces/<dir>/` outside any git repo, and a
+ *          null return here used to silently skip declared-variable
+ *          interpolation in callers.
  */
 export async function resolveWorkspaceVariables(
   workspacePath: string,
   workspaceId: string,
   daemonUrl?: string,
-): Promise<WorkspaceVariables | null> {
-  const repoRoot = await findRepoRoot(workspacePath);
-  if (!repoRoot) {
-    logger.warn("Could not derive repo_root for workspace variable interpolation", {
-      workspacePath,
-    });
-    return null;
-  }
+): Promise<WorkspaceVariables> {
+  const repoRoot = (await findRepoRoot(workspacePath)) ?? workspacePath;
 
   // platform_url is intentionally left undefined when daemonUrl is absent so
   // the schema's `.default(() => getAtlasDaemonUrl())` fires. Without this,

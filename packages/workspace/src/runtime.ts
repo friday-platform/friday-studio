@@ -1414,21 +1414,19 @@ export class WorkspaceRuntime {
       this.workspace.id,
       this.options.daemonUrl,
     );
-    if (wsVars) {
-      const declaredVars = resolveDeclaredVariables(
-        this.config.workspace.variables,
-        loadWorkspaceEnv(workspacePath),
-      );
+    const declaredVars = resolveDeclaredVariables(
+      this.config.workspace.variables,
+      loadWorkspaceEnv(workspacePath),
+    );
+    this.config = {
+      ...this.config,
+      workspace: interpolateConfig(this.config.workspace, wsVars, declaredVars),
+    };
+    if (this.config.atlas) {
       this.config = {
         ...this.config,
-        workspace: interpolateConfig(this.config.workspace, wsVars, declaredVars),
+        atlas: interpolateConfig(this.config.atlas, wsVars, declaredVars),
       };
-      if (this.config.atlas) {
-        this.config = {
-          ...this.config,
-          atlas: interpolateConfig(this.config.atlas, wsVars, declaredVars),
-        };
-      }
     }
 
     const configJobs = this.config.workspace.jobs || {};

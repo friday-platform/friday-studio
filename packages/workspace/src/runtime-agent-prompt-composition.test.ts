@@ -186,9 +186,13 @@ describe("runtime.executeAgent — agent prompt composition (call site)", () => 
     );
   });
 
-  it("substitutes `{{variables.X}}` in agent prompts from the workspace .env at initialize() time", async () => {
+  it("substitutes `{{variables.X}}` in agent prompts from the workspace .env at initialize() time, even outside a git repo", async () => {
     capturedPrompts.length = 0;
 
+    // Deliberately no .git ancestor — production workspaces live at
+    // ~/.atlas/workspaces/<dir>/ outside any git tree. The earlier version of
+    // this test created a fake .git, which silently masked the bug where
+    // declared-variable interpolation was gated behind findRepoRoot.
     const testDir = makeTempDir({ prefix: "atlas_agent_prompt_vars_test_" });
     const originalAtlasHome = process.env.FRIDAY_HOME;
     process.env.FRIDAY_HOME = testDir;
@@ -196,7 +200,6 @@ describe("runtime.executeAgent — agent prompt composition (call site)", () => 
     const workspacePath = join(testDir, "ws");
     try {
       await mkdir(workspacePath, { recursive: true });
-      await mkdir(join(testDir, ".git"), { recursive: true });
       await writeFile(
         join(workspacePath, ".env"),
         "EMAIL_RECIPIENT=alerts@tempest.team\n",
