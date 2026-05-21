@@ -13,7 +13,7 @@
 
 import { statSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { type VariableDeclaration, VariableSchemaSchema } from "@atlas/config";
+import { decodeFromEnv, type VariableDeclaration, VariableSchemaSchema } from "@atlas/config";
 import { logger } from "@atlas/logger";
 import { getAtlasDaemonUrl } from "@atlas/oapi-client";
 import { z } from "zod";
@@ -80,7 +80,7 @@ export function resolveDeclaredVariables(
 
 function resolveOne(decl: VariableDeclaration, raw: string | undefined): string | undefined {
   const zodSchema = z.fromJSONSchema(VariableSchemaSchema.parse(decl.schema));
-  const tried = tryCoerceAndValidate(decl.schema.type, raw, zodSchema);
+  const tried = tryCoerceAndValidate(decl, raw, zodSchema);
   if (tried.ok) return String(tried.value);
   const fallback = decl.schema.default;
   if (fallback === undefined) return undefined;
@@ -92,40 +92,15 @@ function resolveOne(decl: VariableDeclaration, raw: string | undefined): string 
 type CoerceResult = { ok: true; value: unknown } | { ok: false };
 
 function tryCoerceAndValidate(
-  type: VariableDeclaration["schema"]["type"],
+  decl: VariableDeclaration,
   raw: string | undefined,
   zodSchema: z.ZodType,
 ): CoerceResult {
   if (raw === undefined) return { ok: false };
-  const coerced = coerceFromString(type, raw);
-  if (coerced === undefined) return { ok: false };
-  const parsed = zodSchema.safeParse(coerced);
+  const decoded = decodeFromEnv(raw, decl);
+  if (decoded === undefined) return { ok: false };
+  const parsed = zodSchema.safeParse(decoded);
   return parsed.success ? { ok: true, value: parsed.data } : { ok: false };
-}
-
-function coerceFromString(
-  type: VariableDeclaration["schema"]["type"],
-  raw: string,
-): unknown | undefined {
-  switch (type) {
-    case "string":
-      return raw;
-    case "boolean": {
-      if (raw === "true") return true;
-      if (raw === "false") return false;
-      return undefined;
-    }
-    case "integer": {
-      if (!/^-?\d+$/.test(raw)) return undefined;
-      const n = Number(raw);
-      return Number.isFinite(n) ? n : undefined;
-    }
-    case "number": {
-      if (raw.trim() === "") return undefined;
-      const n = Number(raw);
-      return Number.isFinite(n) ? n : undefined;
-    }
-  }
 }
 
 /**

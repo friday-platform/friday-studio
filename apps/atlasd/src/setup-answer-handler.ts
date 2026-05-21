@@ -20,7 +20,7 @@
  */
 
 import { join } from "node:path";
-import type { WorkspaceConfig } from "@atlas/config";
+import { encodeForEnv, type WorkspaceConfig } from "@atlas/config";
 import { extractCredentials, type MutationResult, updateCredential } from "@atlas/config/mutations";
 import type { WorkspaceSetupAnswerValue } from "@atlas/core/elicitations";
 import {
@@ -144,7 +144,7 @@ async function preflightWorkspaceSetupAnswer(
       variableErrors[name] = parsed.error.issues.map((i) => i.message).join("; ");
       continue;
     }
-    envWrites.push({ name, raw: stringifyForEnv(parsed.data) });
+    envWrites.push({ name, raw: encodeForEnv(parsed.data, decl) });
   }
 
   const usagesByProvider = new Map<string, string[]>();
@@ -189,8 +189,3 @@ async function preflightWorkspaceSetupAnswer(
   return { ok: true, envWrites, credentialPlan };
 }
 
-function stringifyForEnv(value: unknown): string {
-  if (typeof value === "string") return value;
-  if (typeof value === "number" || typeof value === "boolean") return String(value);
-  return JSON.stringify(value);
-}

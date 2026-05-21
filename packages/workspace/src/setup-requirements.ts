@@ -12,6 +12,7 @@
  */
 
 import {
+  decodeFromEnv,
   type VariableDeclaration,
   VariableSchemaSchema,
   type WorkspaceConfig,
@@ -178,35 +179,10 @@ export function resolveWorkspaceSetupRequirements(
 function isVariableFilled(decl: VariableDeclaration, raw: string | undefined): boolean {
   const zodSchema = z.fromJSONSchema(VariableSchemaSchema.parse(decl.schema));
   if (raw !== undefined) {
-    const coerced = coerceFromString(decl.schema.type, raw);
-    if (coerced !== undefined && zodSchema.safeParse(coerced).success) return true;
+    const decoded = decodeFromEnv(raw, decl);
+    if (decoded !== undefined && zodSchema.safeParse(decoded).success) return true;
   }
   const fallback = decl.schema.default;
   if (fallback === undefined) return false;
   return zodSchema.safeParse(fallback).success;
-}
-
-function coerceFromString(
-  type: VariableDeclaration["schema"]["type"],
-  raw: string,
-): unknown | undefined {
-  switch (type) {
-    case "string":
-      return raw;
-    case "boolean": {
-      if (raw === "true") return true;
-      if (raw === "false") return false;
-      return undefined;
-    }
-    case "integer": {
-      if (!/^-?\d+$/.test(raw)) return undefined;
-      const n = Number(raw);
-      return Number.isFinite(n) ? n : undefined;
-    }
-    case "number": {
-      if (raw.trim() === "") return undefined;
-      const n = Number(raw);
-      return Number.isFinite(n) ? n : undefined;
-    }
-  }
 }

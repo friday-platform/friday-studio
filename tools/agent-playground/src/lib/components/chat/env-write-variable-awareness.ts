@@ -1,4 +1,4 @@
-import { VariableSchemaSchema, type VariableDeclaration } from "@atlas/config";
+import { decodeFromEnv, VariableSchemaSchema, type VariableDeclaration } from "@atlas/config";
 import { z } from "zod";
 
 /**
@@ -52,19 +52,20 @@ export type VariableValidationResult =
 /**
  * Coerce a raw `.env` string into the declared variable's type, then validate
  * against the schema. The proposed value rides on `env_set`'s `vars` payload
- * as a string (env files are stringly-typed), so coercion mirrors
- * `coerceFromString` in `@atlas/workspace`'s `variable-interpolation.ts`.
+ * as a string (env files are stringly-typed), so decoding goes through the
+ * shared `decodeFromEnv` codec in `@atlas/config` to stay in lockstep with
+ * the answer-handler's encode side.
  */
 export function validateProposedValue(
   declaration: VariableDeclaration,
   rawValue: string,
 ): VariableValidationResult {
-  const coerced = coerceFromString(declaration.schema.type, rawValue);
-  if (coerced === undefined) {
+  const decoded = decodeFromEnv(rawValue, declaration);
+  if (decoded === undefined) {
     return { ok: false, reason: "type", message: typeMismatchMessage(declaration.schema.type) };
   }
   const zodSchema = z.fromJSONSchema(VariableSchemaSchema.parse(declaration.schema));
-  const parsed = zodSchema.safeParse(coerced);
+  const parsed = zodSchema.safeParse(decoded);
   if (parsed.success) return { ok: true };
   const first = parsed.error.issues[0];
   return {
@@ -74,30 +75,7 @@ export function validateProposedValue(
   };
 }
 
-type VariableType = "string" | "number" | "integer" | "boolean";
-
-function coerceFromString(type: VariableType, raw: string): string | number | boolean | undefined {
-  switch (type) {
-    case "string":
-      return raw;
-    case "boolean":
-      if (raw === "true") return true;
-      if (raw === "false") return false;
-      return undefined;
-    case "integer": {
-      if (!/^-?\d+$/.test(raw)) return undefined;
-      const n = Number(raw);
-      return Number.isFinite(n) ? n : undefined;
-    }
-    case "number": {
-      if (raw.trim() === "") return undefined;
-      const n = Number(raw);
-      return Number.isFinite(n) ? n : undefined;
-    }
-    default:
-      return assertExhaustive(type);
-  }
-}
+type VariableType = VariableDeclaration["schema"]["type"];
 
 function typeMismatchMessage(type: VariableType): string {
   switch (type) {

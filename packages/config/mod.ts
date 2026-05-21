@@ -45,6 +45,9 @@ export * from "./src/signals.ts";
 // Skill schemas
 export * from "./src/skills.ts";
 export * from "./src/topology.ts";
+// Typed env codec — round-trip-safe encode/decode between declared
+// VariableDeclaration types and `.env` strings.
+export { decodeFromEnv, encodeForEnv, type TypedVariableValue } from "./src/typed-env-codec.ts";
 export type { Issue, Registry, ValidationReport } from "./src/validate-workspace.ts";
 // Workspace structural validator
 export { validateWorkspace } from "./src/validate-workspace.ts";
