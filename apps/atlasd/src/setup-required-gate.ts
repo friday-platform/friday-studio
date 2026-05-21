@@ -78,6 +78,36 @@ export type SetupGateResult =
   | { requires_setup: false };
 
 /**
+ * Decision 7 — cascade-consumer dispatch error routing.
+ *
+ * The CascadeConsumer wrapper around `triggerWorkspaceSignal` catches every
+ * error thrown by the dispatch. For `WorkspaceSetupRequiredError`, what we
+ * do next depends on whether a synchronous caller is waiting:
+ *
+ *  - HTTP path (envelope carries `correlationId`): rethrow so the
+ *    cascade-stream's runCascade catch publishes the fail envelope on
+ *    `signals.responses.<id>`. The route handler is already awaiting that
+ *    subject; the rethrow is load-bearing for the 409 surface.
+ *  - Cron / fs-watch (no `correlationId`): no subscriber, so the rethrow
+ *    only produces a WARN log every tick. Per the plan, we log info-level
+ *    in the gate and return cleanly here — the cascade settles as a
+ *    no-session skip without polluting cascade-failure telemetry.
+ *
+ * Non-setup-required errors are passed through (`null` return) so the
+ * caller keeps its existing SessionFailedError / infra-error handling.
+ *
+ * Pulled out as a pure function so the routing decision is unit-testable
+ * without standing up the full daemon + JetStream stack.
+ */
+export function classifyCascadeSetupError(
+  err: unknown,
+  envelope: { correlationId?: string },
+): { action: "skip" } | { action: "rethrow" } | null {
+  if (!(err instanceof WorkspaceSetupRequiredError)) return null;
+  return envelope.correlationId ? { action: "rethrow" } : { action: "skip" };
+}
+
+/**
  * Context-free setup-state derivation for call sites that don't have a Hono
  * request (cascade worker, communicator inbound handler). Returns `null` when
  * the workspace doesn't exist — the caller has nothing to gate.

@@ -126,7 +126,11 @@ import { NatsManager } from "./nats-manager.ts";
 import { ProcessAgentExecutor } from "./process-agent-executor.ts";
 import { SessionDispatchRegistry } from "./session-dispatch-registry.ts";
 import { SessionStreamRegistry } from "./session-stream-registry.ts";
-import { evaluateWorkspaceSetupGate, WorkspaceSetupRequiredError } from "./setup-required-gate.ts";
+import {
+  classifyCascadeSetupError,
+  evaluateWorkspaceSetupGate,
+  WorkspaceSetupRequiredError,
+} from "./setup-required-gate.ts";
 import { CronSignalRegistrar } from "./signal-registrars/cron-registrar.ts";
 import { FsWatchSignalRegistrar } from "./signal-registrars/fs-watch-registrar.ts";
 import {
@@ -851,14 +855,26 @@ export class AtlasDaemon {
             },
           );
         } catch (err) {
-          if (err instanceof WorkspaceSetupRequiredError) {
-            // Setup-required short-circuit. The trigger gate already logged
-            // the structured info line; surface it to the correlated-response
-            // subscriber (HTTP webhook path) so the route can return 409
-            // instead of swallowing the skip silently. Schedule + fs-watch
-            // have no subscriber and the throw is the natural no-session
-            // outcome.
+          const setupRouting = classifyCascadeSetupError(err, {
+            correlationId: envelope.correlationId,
+          });
+          if (setupRouting?.action === "rethrow") {
+            // HTTP path — the correlated response subject has a subscriber
+            // waiting; rethrow so cascade-stream publishes the fail envelope
+            // and the route handler surfaces 409. The trigger gate already
+            // logged the structured info line.
             throw err;
+          }
+          if (setupRouting?.action === "skip") {
+            // Cron / fs-watch — no subscriber. The gate already logged
+            // `workspace_setup_required_signal_skipped` at info-level; the
+            // cascade settles as a no-session skip. Returning a synthetic
+            // empty result (rather than rethrowing) keeps cron ticks from
+            // dripping ok=false envelopes onto a (potentially stale) response
+            // subject and keeps cascade-failure WARN logs unpolluted by
+            // predictable setup-required skips. sessionId="" signals
+            // no-session-created to downstream consumers.
+            return { sessionId: "", output: [], artifactIds: [], summary: "" };
           }
           if (err instanceof SessionFailedError) {
             logger.warn("Cascade session failed", {

@@ -35,6 +35,7 @@ vi.mock("@atlas/core/mcp-registry/credential-resolver", async (importOriginal) =
 import {
   buildSetupRequired409Body,
   buildWorkspaceSetupUrl,
+  classifyCascadeSetupError,
   evaluateWorkspaceSetupGate,
   SETUP_REQUIRED_ERROR_CODE,
   WorkspaceSetupRequiredError,
@@ -114,5 +115,39 @@ describe("buildSetupRequired409Body / WorkspaceSetupRequiredError", () => {
     expect(err.workspaceId).toBe("ws-y");
     expect(err.signalProvider).toBe("schedule");
     expect(err.setupUrl).toContain("/workspaces/ws-y/chat");
+  });
+});
+
+describe("classifyCascadeSetupError — Decision 7 cascade-consumer routing", () => {
+  // Cron and fs-watch publish cascade envelopes without a correlationId
+  // (no synchronous caller waiting on `signals.responses.<id>`). When the
+  // setup-gate fires on the cascade dispatch, we don't want to rethrow —
+  // the rethrow surfaces as a WARN log + (for HTTP callers only) a
+  // fail-envelope publish. For cron/fs-watch the only honest outcome is
+  // "skip cleanly + log info-level". HTTP callers always carry a
+  // correlationId; for them the rethrow is load-bearing because the
+  // correlated response subscriber is waiting for a fail envelope so the
+  // route handler can return 409.
+
+  const err = new WorkspaceSetupRequiredError({
+    workspaceId: "ws-1",
+    setupUrl: "http://daemon/workspaces/ws-1/chat",
+    signalProvider: "schedule",
+  });
+
+  test("cron/fs-watch envelope (no correlationId) → skip cleanly", () => {
+    const result = classifyCascadeSetupError(err, { correlationId: undefined });
+    expect(result).toEqual({ action: "skip" });
+  });
+
+  test("HTTP envelope (correlationId set) → rethrow so the 409 surfaces", () => {
+    const result = classifyCascadeSetupError(err, { correlationId: "abc-123" });
+    expect(result).toEqual({ action: "rethrow" });
+  });
+
+  test("non-setup errors are passed through to the caller's existing handling", () => {
+    const other = new Error("something else broke");
+    expect(classifyCascadeSetupError(other, { correlationId: undefined })).toBeNull();
+    expect(classifyCascadeSetupError(other, { correlationId: "abc" })).toBeNull();
   });
 });
