@@ -1273,7 +1273,9 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
         }
 
         const setupStatusBlock = setupStatus.shouldInject
-          ? formatSetupStatusBlock(setupStatus.setupRequirements)
+          ? formatSetupStatusBlock(setupStatus.setupRequirements, {
+              isInitialSetup: setupStatus.isInitialSetup,
+            })
           : "";
 
         const systemBlocks = getSystemBlocks(workspaceSection, {

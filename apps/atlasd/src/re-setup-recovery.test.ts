@@ -548,13 +548,17 @@ describe("re-setup recovery: disconnect → surface → recover", () => {
 
     const status = await fetchWorkspaceSetupStatus(WORKSPACE_ID, logger);
 
-    // shouldInject keys off (requires_setup=true && active_setup_session_id=null).
+    // shouldInject keys off requires_setup=true; this scenario is re-setup
+    // (active_setup_session_id=null) so isInitialSetup is false.
     expect(status.shouldInject).toBe(true);
+    expect(status.isInitialSetup).toBe(false);
     expect(status.setupRequirements).toEqual([
       expect.objectContaining({ kind: "credential", provider: "gmail", reason: "stale_id" }),
     ]);
 
-    const block = formatSetupStatusBlock(status.setupRequirements);
+    const block = formatSetupStatusBlock(status.setupRequirements, {
+      isInitialSetup: status.isInitialSetup,
+    });
 
     // AC #3: the block matches the design template. Snapshot the whole
     // formatted text so the next copy churn re-records atomically rather

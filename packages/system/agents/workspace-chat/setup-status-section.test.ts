@@ -68,11 +68,12 @@ describe("formatVariableSchemaSummary", () => {
 
 describe("formatSetupStatusBlock", () => {
   it("returns empty string when there are no requirements", () => {
-    expect(formatSetupStatusBlock([])).toBe("");
+    expect(formatSetupStatusBlock([], { isInitialSetup: false })).toBe("");
+    expect(formatSetupStatusBlock([], { isInitialSetup: true })).toBe("");
   });
 
-  it("matches the design template verbatim — header, bullets, tools clause", () => {
-    const out = formatSetupStatusBlock([VARIABLE_REQ, CREDENTIAL_REQ]);
+  it("matches the design template verbatim during re-setup — header, bullets, tools clause", () => {
+    const out = formatSetupStatusBlock([VARIABLE_REQ, CREDENTIAL_REQ], { isInitialSetup: false });
 
     expect(out).toBe(
       [
@@ -89,17 +90,65 @@ describe("formatSetupStatusBlock", () => {
     );
   });
 
+  it("matches the design template verbatim during initial setup — same gap bullets, variant tools clause", () => {
+    const out = formatSetupStatusBlock([VARIABLE_REQ, CREDENTIAL_REQ], { isInitialSetup: true });
+
+    expect(out).toBe(
+      [
+        "[WORKSPACE SETUP STATUS]",
+        "This workspace currently has unfilled configuration:",
+        "- Variable `region`: AWS region to scope queries to. Required: string, enum: us-east-1|us-west-2.",
+        "- Credential: gmail (no default credential selected).",
+        "",
+        "The setup form is already visible in this chat (above your turn). Your job:",
+        "- Greet the user. Use <welcome> and <variables> to ground them in what this workspace does and what each value is for.",
+        "- For each gap, explain *why* this workspace needs that value — quote or paraphrase the variable's description.",
+        "- If the user asks how a variable is used in this workspace, call describe_job(name) on workspace jobs and search for `{{variables.<name>}}` references; the returned prompt field preserves raw refs.",
+        "- Do NOT call request_workspace_setup — the form is already there.",
+        "- If the user explicitly asks you to fill a single value rather than typing into the form, use env_set. Otherwise leave the form to do its job.",
+      ].join("\n"),
+    );
+  });
+
+  it("emits identical header, intro, and gap bullets across both phases", () => {
+    const reSetup = formatSetupStatusBlock([VARIABLE_REQ, CREDENTIAL_REQ], {
+      isInitialSetup: false,
+    });
+    const initial = formatSetupStatusBlock([VARIABLE_REQ, CREDENTIAL_REQ], {
+      isInitialSetup: true,
+    });
+    // Find the blank-line separator; everything before it (inclusive) is
+    // the phase-invariant prelude. Locks the design's "gap bullets same
+    // across phases" contract — only the tools clause downstream varies.
+    const reSetupPrelude = reSetup.slice(0, reSetup.indexOf("\n\n"));
+    const initialPrelude = initial.slice(0, initial.indexOf("\n\n"));
+    expect(initialPrelude).toBe(reSetupPrelude);
+  });
+
+  it("re-setup clause forbids the initial-setup form-visible language", () => {
+    const out = formatSetupStatusBlock([VARIABLE_REQ], { isInitialSetup: false });
+    expect(out).not.toContain("The setup form is already visible");
+    expect(out).not.toContain("Do NOT call request_workspace_setup");
+  });
+
+  it("initial-setup clause forbids the re-setup request_workspace_setup tool listing", () => {
+    const out = formatSetupStatusBlock([VARIABLE_REQ], { isInitialSetup: true });
+    expect(out).not.toContain("request_workspace_setup() — show the full setup form");
+    expect(out).toContain("Do NOT call request_workspace_setup");
+  });
+
   it("renders stale credential reason distinctly from no_default", () => {
-    const out = formatSetupStatusBlock([STALE_CREDENTIAL_REQ]);
+    const out = formatSetupStatusBlock([STALE_CREDENTIAL_REQ], { isInitialSetup: false });
     expect(out).toContain(
       "- Credential: github (previously-linked credential no longer resolves).",
     );
   });
 
   it("falls back to a placeholder description when variable has none", () => {
-    const out = formatSetupStatusBlock([
-      { kind: "variable", name: "max_retries", schema: { type: "integer", minimum: 1 } },
-    ]);
+    const out = formatSetupStatusBlock(
+      [{ kind: "variable", name: "max_retries", schema: { type: "integer", minimum: 1 } }],
+      { isInitialSetup: false },
+    );
     expect(out).toContain(
       "- Variable `max_retries`: (no description provided). Required: integer, min: 1.",
     );
@@ -112,7 +161,7 @@ describe("fetchWorkspaceSetupStatus", () => {
     mockParseResult.mockReset();
   });
 
-  it("returns shouldInject=true when requires_setup=true AND active_setup_session_id is null", async () => {
+  it("returns shouldInject=true, isInitialSetup=false when active_setup_session_id is null", async () => {
     mockParseResult.mockResolvedValueOnce({
       ok: true,
       data: {
@@ -125,10 +174,11 @@ describe("fetchWorkspaceSetupStatus", () => {
     const result = await fetchWorkspaceSetupStatus("ws_test", logger);
 
     expect(result.shouldInject).toBe(true);
+    expect(result.isInitialSetup).toBe(false);
     expect(result.setupRequirements).toEqual([VARIABLE_REQ, CREDENTIAL_REQ]);
   });
 
-  it("returns shouldInject=true when metadata is omitted entirely (pointer treated as null)", async () => {
+  it("returns shouldInject=true, isInitialSetup=false when metadata is omitted entirely", async () => {
     mockParseResult.mockResolvedValueOnce({
       ok: true,
       data: { requires_setup: true, setup_requirements: [VARIABLE_REQ] },
@@ -137,9 +187,10 @@ describe("fetchWorkspaceSetupStatus", () => {
     const result = await fetchWorkspaceSetupStatus("ws_test", logger);
 
     expect(result.shouldInject).toBe(true);
+    expect(result.isInitialSetup).toBe(false);
   });
 
-  it("returns shouldInject=false during initial setup (active_setup_session_id non-null)", async () => {
+  it("returns shouldInject=true AND isInitialSetup=true during initial setup (active_setup_session_id non-null)", async () => {
     mockParseResult.mockResolvedValueOnce({
       ok: true,
       data: {
@@ -151,7 +202,25 @@ describe("fetchWorkspaceSetupStatus", () => {
 
     const result = await fetchWorkspaceSetupStatus("ws_test", logger);
 
-    expect(result.shouldInject).toBe(false);
+    expect(result.shouldInject).toBe(true);
+    expect(result.isInitialSetup).toBe(true);
+    expect(result.setupRequirements).toEqual([VARIABLE_REQ]);
+  });
+
+  it("treats an empty-string active_setup_session_id as not-initial-setup", async () => {
+    mockParseResult.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        requires_setup: true,
+        setup_requirements: [VARIABLE_REQ],
+        metadata: { active_setup_session_id: "" },
+      },
+    });
+
+    const result = await fetchWorkspaceSetupStatus("ws_test", logger);
+
+    expect(result.shouldInject).toBe(true);
+    expect(result.isInitialSetup).toBe(false);
   });
 
   it("returns shouldInject=false when fully configured (requires_setup=false)", async () => {
@@ -163,6 +232,7 @@ describe("fetchWorkspaceSetupStatus", () => {
     const result = await fetchWorkspaceSetupStatus("ws_test", logger);
 
     expect(result.shouldInject).toBe(false);
+    expect(result.isInitialSetup).toBe(false);
   });
 
   it("returns shouldInject=false silently on fetch failure (no false accusation)", async () => {
@@ -171,6 +241,7 @@ describe("fetchWorkspaceSetupStatus", () => {
     const result = await fetchWorkspaceSetupStatus("ws_test", logger);
 
     expect(result.shouldInject).toBe(false);
+    expect(result.isInitialSetup).toBe(false);
   });
 
   it("returns shouldInject=false silently on shape mismatch", async () => {
@@ -182,5 +253,6 @@ describe("fetchWorkspaceSetupStatus", () => {
     const result = await fetchWorkspaceSetupStatus("ws_test", logger);
 
     expect(result.shouldInject).toBe(false);
+    expect(result.isInitialSetup).toBe(false);
   });
 });
