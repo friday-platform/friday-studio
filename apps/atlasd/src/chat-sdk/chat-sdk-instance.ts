@@ -877,6 +877,19 @@ export function createMessageHandler(
           .filter((id) => options?.exposeKernel || id !== KERNEL_WORKSPACE_ID)
       : undefined;
 
+    // Per-turn conversational model override stashed by the atlas web adapter
+    // from the chat-send body. Plumbed into `signalData.modelOverride` so the
+    // workspace-chat agent sees it on `session.modelOverride`. Other adapters
+    // (Slack, Telegram) don't carry it.
+    const modelOverride =
+      typeof message.raw === "object" &&
+      message.raw !== null &&
+      "model" in message.raw &&
+      typeof message.raw.model === "string" &&
+      message.raw.model.length > 0
+        ? message.raw.model
+        : undefined;
+
     // Capture the buffer this turn owns so stale producers can't bleed into
     // a follow-up turn's buffer. The web adapter stashes the buffer it
     // created on `Message.raw.turnBuffer` at dispatch time — reading it
@@ -906,7 +919,7 @@ export function createMessageHandler(
     const stream = signalToStream<StreamEvent>(
       triggerFn,
       "chat",
-      { chatId, userId, streamId, datetime, foregroundWorkspaceIds },
+      { chatId, userId, streamId, datetime, foregroundWorkspaceIds, modelOverride },
       streamId,
       (chunk: unknown) => {
         // Non-web adapters (Slack, Telegram, Teams, etc.) never create a

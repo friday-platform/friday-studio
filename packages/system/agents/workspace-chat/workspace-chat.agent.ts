@@ -24,6 +24,7 @@ import {
   buildTemporalFacts,
   enterUsageScope,
   type PlatformModels,
+  resolveModelFromString,
   smallLLM,
   type UsageCounter,
 } from "@atlas/llm";
@@ -1262,7 +1263,14 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
 
         let errorEmitted = false;
 
-        const conversationalModel = platformModels.get("conversational");
+        // Per-turn model override (from the chat-input picker) takes precedence
+        // over the daemon-wide default. `resolveModelFromString` throws on bad
+        // spec / unknown provider / missing credentials — let it surface to the
+        // caller rather than silently falling back, so the user sees the real
+        // error instead of a confusing wrong-model response.
+        const conversationalModel = session.modelOverride
+          ? resolveModelFromString(session.modelOverride)
+          : platformModels.get("conversational");
         // Drop cross-model assistant messages that carry reasoning parts.
         //
         // Two providers fail in opposite ways when replayed across model
