@@ -536,4 +536,50 @@ describe("recoverBootstrapSessionIfDeleted", () => {
 
     expect(updateWorkspaceStatus).not.toHaveBeenCalled();
   });
+
+  test("concurrent recovery on the same workspace is single-flight (one chat, one elicitation)", async () => {
+    // Regression for the orphan-chat race: two concurrent GETs (sidebar
+    // list + direct chat URL) both observed a deleted pointer, both
+    // executed createChat + ElicitationStorage.create + appendMessage +
+    // updateWorkspaceStatus. Last writer wins on the pointer; the loser's
+    // chat + elicitation rows are orphaned with no way to clean them up.
+    //
+    // Recovery must single-flight per workspace id: the second caller
+    // should observe the winner's session id, not race-create its own.
+    const previousSessionId = "44444444-4444-4444-4444-444444444444";
+    const entry = makeWorkspaceEntry({
+      metadata: { createdBy: "user-1", active_setup_session_id: previousSessionId },
+    });
+    const { manager, updateWorkspaceStatus } = makeManager(entry);
+    // Both callers see a deleted chat — `.mockResolvedValue` (no Once)
+    // so the second concurrent caller also fails the pointer-valid check.
+    mockChatStorage.getChat.mockResolvedValue({ ok: true, data: null });
+
+    const [first, second] = await Promise.all([
+      recoverBootstrapSessionIfDeleted({
+        manager,
+        workspace: entry,
+        parsedConfig,
+        setupRequirements,
+        userId: "user-1",
+      }),
+      recoverBootstrapSessionIfDeleted({
+        manager,
+        workspace: entry,
+        parsedConfig,
+        setupRequirements,
+        userId: "user-1",
+      }),
+    ]);
+
+    // Exactly ONE chat + elicitation + metadata write — the loser sees
+    // the winner's session id, not its own freshly-generated one.
+    expect(mockChatStorage.createChat).toHaveBeenCalledTimes(1);
+    expect(mockElicitationStorage.create).toHaveBeenCalledTimes(1);
+    expect(updateWorkspaceStatus).toHaveBeenCalledTimes(1);
+
+    // Both callers report the same recovered session id.
+    expect(first.bootstrap_session_id).toBe(second.bootstrap_session_id);
+    expect(first.bootstrap_session_id).toMatch(/^chat_[A-Za-z0-9]{10}$/);
+  });
 });

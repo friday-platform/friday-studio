@@ -246,6 +246,24 @@ export interface RecoverBootstrapResult {
 }
 
 /**
+ * Per-workspace single-flight cache for `recoverBootstrapSessionIfDeleted`.
+ *
+ * The workspace registry storage (`RegistryStorageAdapter.updateWorkspaceStatus`)
+ * is a plain read-modify-write — no CAS on the metadata pointer — so two
+ * concurrent GETs (sidebar list + direct chat URL) both observing a deleted
+ * chat would each `createChat` + `ElicitationStorage.create` + `appendMessage`
+ * + flip the pointer. Last writer wins on the pointer; the loser's chat +
+ * elicitation rows are orphaned with no later sweep to clean them up.
+ *
+ * Atlasd runs as a single daemon process, so an in-process per-workspace
+ * promise map is sufficient to make recovery single-flight: the second
+ * caller awaits the first caller's pending promise and observes the winner's
+ * session id. Entries are cleared in a `finally` so a thrown recovery
+ * (e.g. KV transient error) doesn't poison subsequent retries.
+ */
+const inflightRecovery = new Map<string, Promise<RecoverBootstrapResult>>();
+
+/**
  * Re-spawn the bootstrap chat session if the pointer on
  * `WorkspaceMetadata.active_setup_session_id` references a chat the user has
  * since deleted (Decision 1, deletion-recovery paragraph).
@@ -256,8 +274,26 @@ export interface RecoverBootstrapResult {
  * write is the final step so a failed re-spawn leaves the stale pointer in
  * place for the next read to retry, rather than half-committing a fresh id
  * with no session behind it.
+ *
+ * **Single-flight per workspace**: concurrent callers on the same workspace
+ * id share one in-flight recovery; the loser observes the winner's session
+ * id instead of racing to create an orphan chat. See `inflightRecovery`.
  */
-export async function recoverBootstrapSessionIfDeleted(
+export function recoverBootstrapSessionIfDeleted(
+  args: RecoverBootstrapArgs,
+): Promise<RecoverBootstrapResult> {
+  const existing = inflightRecovery.get(args.workspace.id);
+  if (existing) return existing;
+  const promise = runRecoverBootstrapSessionIfDeleted(args).finally(() => {
+    // Clear AFTER the promise settles so awaiters all observe the same
+    // result, but no FUTURE caller is stuck observing a stale completion.
+    inflightRecovery.delete(args.workspace.id);
+  });
+  inflightRecovery.set(args.workspace.id, promise);
+  return promise;
+}
+
+async function runRecoverBootstrapSessionIfDeleted(
   args: RecoverBootstrapArgs,
 ): Promise<RecoverBootstrapResult> {
   const { manager, workspace, parsedConfig, setupRequirements, userId } = args;
