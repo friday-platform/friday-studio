@@ -3,7 +3,7 @@ import {
   validateField as setupCardValidateField,
   type VariableRequirement as SetupCardVariableRequirement,
 } from "../components/chat/workspace-setup-card.ts";
-import { validateField, type VariableRequirement } from "./validate.ts";
+import { isSecretKey, validateField, type VariableRequirement } from "./validate.ts";
 
 function varReq(
   name: string,
@@ -67,15 +67,40 @@ describe("validateField — schema default fallback presence", () => {
   });
 });
 
+describe("isSecretKey — heuristic single source of truth", () => {
+  it.each(["API_KEY", "GITHUB_TOKEN", "DB_PASSWORD", "CLIENT_SECRET", "OAUTH_CREDENTIAL"])(
+    "treats %s as a secret-shaped key",
+    (key) => {
+      expect(isSecretKey(key)).toBe(true);
+    },
+  );
+
+  it.each(["EMAIL_RECIPIENT", "PORT", "WORKSPACE_NAME", "HOST", "RATE_LIMIT"])(
+    "treats %s as a non-secret key",
+    (key) => {
+      expect(isSecretKey(key)).toBe(false);
+    },
+  );
+
+  it("matches case-insensitively (heuristic ignores casing)", () => {
+    expect(isSecretKey("api_key")).toBe(true);
+    expect(isSecretKey("GitHub_Token")).toBe(true);
+  });
+});
+
 describe("test case #14 — validateField parity across import surfaces", () => {
-  const cases: ReadonlyArray<{
-    label: string;
-    req: VariableRequirement;
-    raw: string;
-  }> = [
+  const cases: ReadonlyArray<{ label: string; req: VariableRequirement; raw: string }> = [
     { label: "string pass", req: varReq("NAME", { type: "string", minLength: 1 }), raw: "alice" },
-    { label: "string fail (too short)", req: varReq("NAME", { type: "string", minLength: 3 }), raw: "ab" },
-    { label: "string fail (empty)", req: varReq("NAME", { type: "string", minLength: 1 }), raw: "" },
+    {
+      label: "string fail (too short)",
+      req: varReq("NAME", { type: "string", minLength: 3 }),
+      raw: "ab",
+    },
+    {
+      label: "string fail (empty)",
+      req: varReq("NAME", { type: "string", minLength: 1 }),
+      raw: "",
+    },
     { label: "integer pass", req: varReq("PORT", { type: "integer" }), raw: "8080" },
     { label: "integer fail (decimal)", req: varReq("PORT", { type: "integer" }), raw: "3.5" },
     { label: "integer fail (garbage)", req: varReq("PORT", { type: "integer" }), raw: "abc" },

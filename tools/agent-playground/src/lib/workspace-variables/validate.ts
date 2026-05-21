@@ -19,6 +19,17 @@ export type VariableRequirement = Extract<SetupRequirement, { kind: "variable" }
 export type CredentialRequirement = Extract<SetupRequirement, { kind: "credential" }>;
 
 /**
+ * Key-name heuristic — kept in sync with the env tools' `shared.ts` and the
+ * agent-environment settings section's `SECRET_KEY_RE`. Used by the settings
+ * Variables surface to decide whether to render a variable's input as
+ * `type="password"`.
+ */
+const SECRET_KEY_RE = /password|secret|token|key|credential/i;
+export function isSecretKey(key: string): boolean {
+  return SECRET_KEY_RE.test(key);
+}
+
+/**
  * Validate one raw string field against its declaration. Reuses the
  * env-write validator so a "valid" value here is also valid for the env-write
  * confirmation flow downstream.
