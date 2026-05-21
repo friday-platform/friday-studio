@@ -157,6 +157,19 @@ export async function spawnBootstrapSessionIfNeeded(
 
   const bootstrapSessionId = generateChatId();
 
+  // Flip the metadata pointer BEFORE any session-side writes. If a later
+  // step fails mid-spawn (chat create, elicitation create, message append),
+  // the workspace ends up with `requires_setup=true` AND a non-null
+  // `active_setup_session_id`. `recoverBootstrapSessionIfDeleted` already
+  // handles "pointer set, session missing" by re-seeding — without this
+  // early write, recovery short-circuits on the null pointer and the orphan
+  // becomes unrecoverable.
+  const newMetadata: WorkspaceMetadata = {
+    ...(existingMetadata ?? {}),
+    active_setup_session_id: bootstrapSessionId,
+  };
+  await manager.updateWorkspaceStatus(workspaceId, workspace.status, { metadata: newMetadata });
+
   const chatResult = await ChatStorage.createChat({
     chatId: bootstrapSessionId,
     userId,
@@ -205,12 +218,6 @@ export async function spawnBootstrapSessionIfNeeded(
   if (!welcomeResult.ok) {
     throw new Error(`Failed to seed bootstrap welcome message: ${welcomeResult.error}`);
   }
-
-  const newMetadata: WorkspaceMetadata = {
-    ...(existingMetadata ?? {}),
-    active_setup_session_id: bootstrapSessionId,
-  };
-  await manager.updateWorkspaceStatus(workspaceId, workspace.status, { metadata: newMetadata });
 
   spawnLogger.info("Spawned bootstrap setup session", {
     workspaceId,

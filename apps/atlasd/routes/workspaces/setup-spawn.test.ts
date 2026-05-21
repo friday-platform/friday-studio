@@ -309,6 +309,71 @@ describe("spawnBootstrapSessionIfNeeded", () => {
     expect(mockElicitationStorage.create).toHaveBeenCalledTimes(1);
   });
 
+  test("mid-spawn elicitation failure leaves pointer set so next read recovers cleanly", async () => {
+    // Regression: previously the pointer was the LAST write, so a throw mid-spawn
+    // left the workspace with `requires_setup=true` AND
+    // `active_setup_session_id=null`. `recoverBootstrapSessionIfDeleted`
+    // short-circuits on a null pointer, making the orphan unrecoverable.
+    // Writing the pointer FIRST hands recovery a session id it can re-seed.
+    const entry = makeWorkspaceEntry({ metadata: { createdBy: "user-1" } });
+    const { manager, updateWorkspaceStatus } = makeManager(entry);
+
+    mockElicitationStorage.create.mockResolvedValueOnce({ ok: false, error: "kv down" });
+
+    await expect(
+      spawnBootstrapSessionIfNeeded({
+        manager,
+        workspaceId: entry.id,
+        workspacePath: entry.path,
+        parsedConfig: configWithDeclaredVariable(),
+        userId: "user-1",
+        existingMetadata: entry.metadata,
+      }),
+    ).rejects.toThrow(/Failed to create bootstrap elicitation: kv down/);
+
+    // Pointer was flipped BEFORE the failing elicitation create.
+    expect(updateWorkspaceStatus).toHaveBeenCalledTimes(1);
+    const writtenMetadata = updateWorkspaceStatus.mock.calls[0]?.[2]?.metadata;
+    expect(writtenMetadata?.active_setup_session_id).toMatch(/^chat_[A-Za-z0-9]{10}$/);
+    expect(writtenMetadata?.createdBy).toBe("user-1");
+    const orphanSessionId = writtenMetadata?.active_setup_session_id as string;
+
+    // Pointer write happened BEFORE the (failing) elicitation create.
+    const updateOrder = updateWorkspaceStatus.mock.invocationCallOrder[0] ?? 0;
+    const elicitationOrder = mockElicitationStorage.create.mock.invocationCallOrder[0] ?? 0;
+    expect(updateOrder).toBeLessThan(elicitationOrder);
+
+    // Recovery sees the pointer + a missing chat and re-seeds the session.
+    mockChatStorage.createChat.mockClear();
+    mockElicitationStorage.create.mockClear();
+    mockChatStorage.appendMessage.mockClear();
+    updateWorkspaceStatus.mockClear();
+    mockChatStorage.getChat.mockResolvedValueOnce({ ok: true, data: null });
+
+    const recovered = await recoverBootstrapSessionIfDeleted({
+      manager,
+      workspace: makeWorkspaceEntry({
+        metadata: { createdBy: "user-1", active_setup_session_id: orphanSessionId },
+      }),
+      parsedConfig: configWithDeclaredVariable(),
+      setupRequirements: [
+        {
+          kind: "variable" as const,
+          name: "region",
+          description: "AWS region",
+          schema: { type: "string" as const },
+        },
+      ],
+      userId: "user-1",
+    });
+
+    expect(recovered.recovered).toBe(true);
+    expect(recovered.bootstrap_session_id).toMatch(/^chat_[A-Za-z0-9]{10}$/);
+    expect(mockChatStorage.createChat).toHaveBeenCalledTimes(1);
+    expect(mockElicitationStorage.create).toHaveBeenCalledTimes(1);
+    expect(updateWorkspaceStatus).toHaveBeenCalledTimes(1);
+  });
+
   test("merges existing metadata (preserves color, createdBy) when writing active_setup_session_id", async () => {
     const entry = makeWorkspaceEntry({
       metadata: { createdBy: "user-1", color: "blue", description: "an existing workspace" },
