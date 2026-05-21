@@ -57,7 +57,7 @@
     /** Save an API key inline and flip a provider from locked → unlocked.
      * Returns the updated catalog entries so the picker can reflect the
      * new state without a full-page reload. */
-    saveApiKey: (envVar: string, value: string) => Promise<CatalogEntry[] | null>;
+    saveApiKey: (envVar: string, value: string) => Promise<CatalogEntry[]>;
     onSelect: (choice: ModelChoice | null) => void;
     onClose: () => void;
   }
@@ -150,13 +150,10 @@
     saving = true;
     saveError = null;
     try {
-      const updated = await saveApiKey(entry.credentialEnvVar, value);
-      if (updated) {
-        catalog = updated;
-        // Clear the buffer for this provider — successful save means
-        // the key is now in .env, no reason to keep it typed in memory.
-        keyInputs = { ...keyInputs, [entry.provider]: "" };
-      }
+      catalog = await saveApiKey(entry.credentialEnvVar, value);
+      // Clear the buffer for this provider — successful save means
+      // the key is now in .env, no reason to keep it typed in memory.
+      keyInputs = { ...keyInputs, [entry.provider]: "" };
     } catch (err) {
       saveError = err instanceof Error ? err.message : String(err);
     } finally {
