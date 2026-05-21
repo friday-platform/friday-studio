@@ -1798,10 +1798,7 @@ describe("createMessageHandler — Decision 7 setup gate", () => {
     const thread = makeThread("chat-recovery");
     const turnBuffer = registry.createStream("ws-1", "chat-recovery");
 
-    await handler(
-      thread,
-      makeMessage({ threadId: "chat-recovery", raw: { turnBuffer } }),
-    );
+    await handler(thread, makeMessage({ threadId: "chat-recovery", raw: { turnBuffer } }));
 
     // Inner handler reached: thread subscribed, message persisted, signal fired.
     // The handler did NOT throw WorkspaceSetupRequiredError or short-circuit.

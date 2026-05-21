@@ -115,9 +115,7 @@ export async function evaluateWorkspaceSetupGate(
   manager: WorkspaceManager,
   workspaceId: string,
 ): Promise<SetupGateResult | null> {
-  const result = await getWorkspaceSetupState(workspaceId, manager, {
-    allowStaleIdRecovery: true,
-  });
+  const result = await getWorkspaceSetupState(workspaceId, manager, { allowStaleIdRecovery: true });
   if (!result) return null;
   if (!result.requires_setup) return { requires_setup: false };
   return { requires_setup: true, setupUrl: buildWorkspaceSetupUrl(workspaceId) };

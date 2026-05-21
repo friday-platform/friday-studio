@@ -575,8 +575,7 @@ describe("re-setup recovery: disconnect → surface → recover", () => {
     const [requirementsSection = ""] = block.split("\n\n");
     const requirementBulletCount = requirementsSection
       .split("\n")
-      .filter((line) => line.startsWith("- "))
-      .length;
+      .filter((line) => line.startsWith("- ")).length;
     expect(requirementBulletCount).toBe(status.setupRequirements.length);
   });
 
@@ -764,9 +763,7 @@ describe("re-setup recovery: disconnect → surface → recover", () => {
       sessionId: SESSION_ID,
       kind: "workspace-setup",
       question: "Finish setting up this workspace",
-      setupRequirements: [
-        { kind: "credential", provider: "gmail", reason: "stale_id" },
-      ],
+      setupRequirements: [{ kind: "credential", provider: "gmail", reason: "stale_id" }],
       expiresAt: new Date(Date.now() + 60_000).toISOString(),
     });
     if (!seeded.ok) throw new Error("seed elicitation create failed");

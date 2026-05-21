@@ -139,10 +139,7 @@ describe("spawnBootstrapSessionIfNeeded", () => {
     mockChatStorage.createChat.mockResolvedValue({ ok: true, data: {} });
     mockChatStorage.appendMessage.mockResolvedValue({ ok: true });
     mockChatStorage.updateChatTitle.mockResolvedValue({ ok: true, data: {} });
-    mockElicitationStorage.create.mockResolvedValue({
-      ok: true,
-      data: { id: "elic_stub_id" },
-    });
+    mockElicitationStorage.create.mockResolvedValue({ ok: true, data: { id: "elic_stub_id" } });
     mockLoadEnv.mockReturnValue({});
     mockAssembleLinkState.mockResolvedValue({
       defaultByProvider: {},
@@ -444,10 +441,7 @@ describe("recoverBootstrapSessionIfDeleted", () => {
     mockChatStorage.createChat.mockResolvedValue({ ok: true, data: {} });
     mockChatStorage.appendMessage.mockResolvedValue({ ok: true });
     mockChatStorage.updateChatTitle.mockResolvedValue({ ok: true, data: {} });
-    mockElicitationStorage.create.mockResolvedValue({
-      ok: true,
-      data: { id: "elic_stub_id" },
-    });
+    mockElicitationStorage.create.mockResolvedValue({ ok: true, data: { id: "elic_stub_id" } });
   });
 
   test("session deleted → re-creates chat, re-seeds elicitation, updates pointer atomically", async () => {

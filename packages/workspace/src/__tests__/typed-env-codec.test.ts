@@ -36,7 +36,7 @@ describe("typed-env-codec round-trip", () => {
       "true", // string that looks like a boolean
       "42", // string that looks like a number
       "newlines\nin\nstrings",
-      'quotes "and" \'apostrophes\'',
+      "quotes \"and\" 'apostrophes'",
     ];
     for (const v of cases) {
       it(`round-trips ${JSON.stringify(v)}`, () => {

@@ -49,10 +49,7 @@ import { resolveVisibleSkills, SkillStorage } from "@atlas/skills";
 import { FilesystemWorkspaceCreationAdapter } from "@atlas/storage";
 import { ColorSchema, isErrnoException, stringifyError } from "@atlas/utils";
 import { getFridayHome } from "@atlas/utils/paths.server";
-import {
-  type SetupRequirementsResult,
-  StaleCredentialIdAtImportError,
-} from "@atlas/workspace";
+import { type SetupRequirementsResult, StaleCredentialIdAtImportError } from "@atlas/workspace";
 import { zValidator } from "@hono/zod-validator";
 import { encodeBase64 } from "@std/encoding/base64";
 import { parse, stringify } from "@std/yaml";

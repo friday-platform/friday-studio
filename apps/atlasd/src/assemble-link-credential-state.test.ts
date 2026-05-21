@@ -41,9 +41,7 @@ function configWithPinnedId(credentialId: string): WorkspaceConfig {
         servers: {
           myserver: {
             transport: { type: "stdio", command: "npx", args: ["-y", "some-server"] },
-            env: {
-              TOKEN: { from: "link", id: credentialId, key: "access_token" },
-            },
+            env: { TOKEN: { from: "link", id: credentialId, key: "access_token" } },
           },
         },
       },

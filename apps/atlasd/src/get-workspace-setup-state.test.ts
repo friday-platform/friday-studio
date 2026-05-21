@@ -127,10 +127,7 @@ describe("getWorkspaceSetupState", () => {
   });
 
   test("returns null when the workspace config is missing", async () => {
-    const manager = makeManager({
-      workspace: { id: "ws-1", path: "/tmp/ws-1" },
-      config: null,
-    });
+    const manager = makeManager({ workspace: { id: "ws-1", path: "/tmp/ws-1" }, config: null });
 
     const result = await getWorkspaceSetupState("ws-1", manager, { allowStaleIdRecovery: true });
 
@@ -186,9 +183,7 @@ describe("getWorkspaceSetupState", () => {
       config: { workspace: config },
     });
 
-    const recovered = await getWorkspaceSetupState("ws-1", manager, {
-      allowStaleIdRecovery: true,
-    });
+    const recovered = await getWorkspaceSetupState("ws-1", manager, { allowStaleIdRecovery: true });
     expect(recovered).toEqual({
       requires_setup: true,
       setup_requirements: [
