@@ -50,13 +50,10 @@ const FAR_FUTURE_EXPIRES_AT_MS = 365 * 24 * 60 * 60 * 1000; // 1 year
 
 function buildWelcomeMessage(parsedConfig: WorkspaceConfig): AtlasUIMessage {
   const name = parsedConfig.workspace.name;
-  const text = parsedConfig.workspace.welcome ??
+  const text =
+    parsedConfig.workspace.welcome ??
     `Welcome to **${name}** — this workspace needs a few values before it can run. Fill the form below to finish setup.`;
-  return {
-    id: crypto.randomUUID(),
-    role: "system",
-    parts: [{ type: "text", text }],
-  };
+  return { id: crypto.randomUUID(), role: "system", parts: [{ type: "text", text }] };
 }
 
 export interface SpawnBootstrapResult {

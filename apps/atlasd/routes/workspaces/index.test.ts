@@ -372,7 +372,6 @@ describe("POST /workspaces/:workspaceId/signals/:signalId — Decision 7 setup g
   });
 });
 
-
 // The 202 "accepted" envelope below is consumed by FOUR downstream callers:
 //   - apps/atlas-cli/src/modules/signals/trigger.ts
 //   - packages/mcp-server/src/tools/signals/trigger.ts

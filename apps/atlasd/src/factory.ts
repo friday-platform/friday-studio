@@ -1,8 +1,8 @@
 import type { AgentRegistry } from "@atlas/agent-sdk";
 import type { AtlasDaemon } from "@atlas/atlasd";
+import type { WorkspaceConfig } from "@atlas/config";
 import type { SessionHistoryAdapter } from "@atlas/core";
 import type { PlatformModels } from "@atlas/llm";
-import type { WorkspaceConfig } from "@atlas/config";
 import type { SetupRequirementsResult, WorkspaceManager } from "@atlas/workspace";
 import { cors } from "hono/cors";
 import { createFactory } from "hono/factory";

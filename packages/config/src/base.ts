@@ -137,10 +137,13 @@ export const WorkspaceIdentitySchema = z.strictObject({
   name: z.string().min(1, "Workspace name cannot be empty"),
   version: z.string().optional().describe("Workspace version"),
   description: z.string().optional().describe("Workspace description"),
-  welcome: z.string().optional().describe(
-    "Markdown welcome message shown above the setup form in the bootstrap " +
-      "chat session. Falls back to a static template when absent.",
-  ),
+  welcome: z
+    .string()
+    .optional()
+    .describe(
+      "Markdown welcome message shown above the setup form in the bootstrap " +
+        "chat session. Falls back to a static template when absent.",
+    ),
   timeout: WorkspaceTimeoutConfigSchema.optional().describe(
     "Timeout configuration for workspace operations",
   ),
