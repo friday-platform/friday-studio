@@ -556,18 +556,28 @@ describe("re-setup recovery: disconnect → surface → recover", () => {
 
     const block = formatSetupStatusBlock(status.setupRequirements);
 
-    // AC #3: the block matches the design template — header, credential
-    // bullet calling out the stale_id reason, and the conversational-tools
-    // clause listing the three recovery tools.
-    expect(block).toContain("[WORKSPACE SETUP STATUS]");
-    expect(block).toContain("This workspace currently has unfilled configuration:");
-    expect(block).toContain(
-      "- Credential: gmail (previously-linked credential no longer resolves).",
-    );
-    expect(block).toContain("Do not attempt actions that depend on these.");
-    expect(block).toContain("- env_set(key, value)");
-    expect(block).toContain("- connect_service(provider)");
-    expect(block).toContain("- request_workspace_setup()");
+    // AC #3: the block matches the design template. Snapshot the whole
+    // formatted text so the next copy churn re-records atomically rather
+    // than dribbling through a handful of `toContain` calls each pinned
+    // on a single fragment. The structural assertion below is what the
+    // snapshot is *not* allowed to drift on: one bullet per requirement
+    // in the requirements section (before the empty-line separator).
+    expect(block).toMatchInlineSnapshot(`
+      "[WORKSPACE SETUP STATUS]
+      This workspace currently has unfilled configuration:
+      - Credential: gmail (previously-linked credential no longer resolves).
+
+      Do not attempt actions that depend on these. Surface the gap conversationally. Tools:
+      - env_set(key, value) — fill a single variable. Confirmation card renders.
+      - connect_service(provider) — open OAuth for a single credential.
+      - request_workspace_setup() — show the full setup form. Use when multiple gaps OR the user prefers a form to a conversation."
+    `);
+    const [requirementsSection = ""] = block.split("\n\n");
+    const requirementBulletCount = requirementsSection
+      .split("\n")
+      .filter((line) => line.startsWith("- "))
+      .length;
+    expect(requirementBulletCount).toBe(status.setupRequirements.length);
   });
 
   test("system-prompt block is NOT injected once the credential is reconnected", async () => {
