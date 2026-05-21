@@ -807,6 +807,25 @@ describe("POST /:id/answer", () => {
       expect(mockCommitWorkspaceSetupAnswer).not.toHaveBeenCalled();
       expect(mockElicitationStorage.answer).not.toHaveBeenCalled();
     });
+
+    test.each([
+      "answered",
+      "expired",
+      "declined",
+    ] as const)("%s workspace-setup answer is rejected before committing", async (status) => {
+      const terminal = makeElicitation({ kind: "workspace-setup", status });
+      mockElicitationStorage.get.mockResolvedValueOnce(success(terminal));
+
+      const res = await createTestApp().request("/elc_1/answer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(validBody),
+      });
+
+      expect(res.status).toBe(500);
+      expect(mockCommitWorkspaceSetupAnswer).not.toHaveBeenCalled();
+      expect(mockElicitationStorage.answer).not.toHaveBeenCalled();
+    });
   });
 });
 

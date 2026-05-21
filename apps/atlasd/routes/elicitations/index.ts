@@ -505,6 +505,12 @@ elicitationApp.post(
       // returns the env keys that already committed so the caller's retry is
       // idempotent. Decision 6.
       if (got.data.kind === "workspace-setup") {
+        if (got.data.status !== "pending") {
+          return c.json(
+            { error: `Elicitation ${id} already in terminal state: ${got.data.status}` },
+            500,
+          );
+        }
         const setupOutcome = await commitWorkspaceSetupElicitation(c, got.data, body.value);
         if (!setupOutcome.ok) return setupOutcome.response;
       }
