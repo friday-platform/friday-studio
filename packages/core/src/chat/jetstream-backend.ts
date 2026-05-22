@@ -647,6 +647,26 @@ export function createJetStreamChatBackend(
         // same names the chat was created under. Fresh chats (no
         // metadata yet) get the current default scheme.
         const located = await readChatLocation(workspaceId, chatId);
+        // Cross-workspace chatId-collision gate under the new scheme.
+        // If `located` is null and a chat with the same chatId already
+        // exists under another workspace's metadata, refuse the
+        // append rather than cross-pollute that workspace's stream.
+        // createChat has the same check upstream, but its Result can
+        // be silently dropped (e.g. by chat-sdk-state-adapter
+        // subscribe). This is the load-bearing gate. See
+        // friday-studio-1z9.
+        if (!located && newNamingEnabled) {
+          const k = await kv();
+          const collision = await k.get(kvKeyNew(chatId));
+          if (collision?.operation === "PUT") {
+            const collidingMeta = parseMetaSafe(collision.value);
+            if (collidingMeta && collidingMeta.workspaceId !== workspaceId) {
+              throw new Error(
+                `Cannot append to chat '${chatId}': belongs to workspace '${collidingMeta.workspaceId}', not '${workspaceId}'`,
+              );
+            }
+          }
+        }
         const scheme: ChatScheme = located?.scheme ?? (newNamingEnabled ? "new" : "legacy");
         const layout = await ensureChatStream(jsm, workspaceId, chatId, limits, scheme);
 

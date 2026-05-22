@@ -483,6 +483,30 @@ describe("JetStream backend — new naming scheme (friday-studio-1z9)", () => {
     }
   });
 
+  it("appendMessage refuses to write to a chatId owned by another workspace under new scheme", async () => {
+    // ws-a creates chat X under new scheme. ws-b then tries to append
+    // a message claiming chatId X. The collision gate must refuse to
+    // avoid cross-writing into ws-a's stream.
+    const backend = createJetStreamChatBackend(nc, { newNamingEnabled: true });
+    const chatId = `xws-${crypto.randomUUID()}`;
+    const wsA = `ws-a-${crypto.randomUUID()}`;
+    const wsB = `ws-b-${crypto.randomUUID()}`;
+    await backend.createChat({ chatId, userId: "u", workspaceId: wsA, source: "atlas" });
+
+    const result = await backend.appendMessage(
+      chatId,
+      { id: crypto.randomUUID(), role: "user", parts: [{ type: "text", text: "cross-pollute" }] },
+      wsB,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toMatch(/belongs to workspace/);
+    }
+    // ws-a's chat still has zero messages — no cross-pollution happened.
+    const aGet = await backend.getChat(chatId, wsA);
+    expect(aGet.ok && aGet.data?.messages.length).toBe(0);
+  });
+
   it("deleteChat under new scheme removes only the targeted chat (no cross-scheme smash)", async () => {
     const chatId = `del-${crypto.randomUUID()}`;
     const wsLegacy = `ws-leg-${crypto.randomUUID()}`;

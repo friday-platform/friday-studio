@@ -52,12 +52,22 @@ export class ChatSdkStateAdapter implements StateAdapter {
   async subscribe(threadId: string): Promise<void> {
     const source = this.threadSources.get(threadId) ?? "atlas";
     this.threadSources.delete(threadId);
-    await ChatStorage.createChat({
+    const result = await ChatStorage.createChat({
       chatId: threadId,
       userId: this.userId,
       workspaceId: this.workspaceId,
       source,
     });
+    // Surface a failed createChat — silently swallowing it lets a
+    // cross-workspace chatId-collision (friday-studio-1z9 new scheme)
+    // fall through to appendMessage, which would then race against
+    // the foreign workspace's stream. appendMessage has its own
+    // collision gate as defense-in-depth; throwing here means the
+    // platform-level inbound handler sees the error and can fail
+    // the message cleanly.
+    if (!result.ok) {
+      throw new Error(`Failed to create chat '${threadId}': ${result.error}`);
+    }
   }
 
   async isSubscribed(threadId: string): Promise<boolean> {
