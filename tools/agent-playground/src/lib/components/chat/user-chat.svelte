@@ -827,6 +827,17 @@
         type: "data-file-attached";
         data: { paths: string[]; filenames: string[]; mimeTypes: string[] };
       }
+    | {
+        type: "data-mention-resolved";
+        data: {
+          workspaceId: string;
+          chatId: string;
+          title: string;
+          snapshot: string;
+          messageCount: number;
+          generatedAt: string;
+        };
+      }
   >;
   let queuedMessages: QueuedMessageParts[] = $state([]);
 

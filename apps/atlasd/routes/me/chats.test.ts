@@ -21,10 +21,7 @@ vi.mock("../../src/workspace-authz.ts", () => ({
 // The me module also depends on these — stub with no-op shapes so the
 // rest of meRoutes loads, even though the /chats route never touches
 // them.
-vi.mock("./adapter.ts", () => ({
-  getCurrentUser: vi.fn(),
-  updateCurrentUser: vi.fn(),
-}));
+vi.mock("./adapter.ts", () => ({ getCurrentUser: vi.fn(), updateCurrentUser: vi.fn() }));
 vi.mock("./photo-storage.ts", () => ({
   validatePhoto: vi.fn(),
   savePhoto: vi.fn(),
@@ -52,15 +49,7 @@ function chat(workspaceId: string, id: string, title: string, updatedAt: string)
     ok: true,
     data: {
       chats: [
-        {
-          id,
-          workspaceId,
-          title,
-          userId: "u",
-          source: "atlas",
-          createdAt: updatedAt,
-          updatedAt,
-        },
+        { id, workspaceId, title, userId: "u", source: "atlas", createdAt: updatedAt, updatedAt },
       ],
     },
   };
@@ -79,7 +68,7 @@ afterEach(() => {
 describe("GET /chats", () => {
   it("merges chats across every accessible workspace, sorted by updatedAt DESC", async () => {
     mockGetAccessibleWorkspaceIds.mockResolvedValue(new Set(["ws-a", "ws-b"]));
-    mockListChatsByWorkspace.mockImplementation(async (workspaceId: string) => {
+    mockListChatsByWorkspace.mockImplementation((workspaceId: string) => {
       if (workspaceId === "ws-a") return chat("ws-a", "c-old", "Old", "2026-05-01T00:00:00Z");
       return chat("ws-b", "c-new", "New", "2026-05-21T00:00:00Z");
     });

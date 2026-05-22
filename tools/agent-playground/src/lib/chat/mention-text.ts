@@ -9,12 +9,7 @@
  * what the server expands.
  */
 
-export const MENTION_REGEX = /@([a-zA-Z0-9_\-:.]+)\/([a-zA-Z0-9_\-:.]+)/g;
-
-export interface MentionRef {
-  workspaceId: string;
-  chatId: string;
-}
+const MENTION_REGEX = /@([a-zA-Z0-9_\-:.]+)\/([a-zA-Z0-9_\-:.]+)/g;
 
 /** Resolved-mention metadata persisted on a message's `data-mention-resolved` parts. */
 export interface ResolvedMentionData {
