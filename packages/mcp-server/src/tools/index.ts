@@ -14,6 +14,7 @@ import { registerArtifactsParseTool } from "./artifacts/parse.ts";
 import { registerArtifactsUpdateTool } from "./artifacts/update.ts";
 // Chat tools
 import { registerChatReadTool } from "./chat/read.ts";
+import { registerChatSummarizeTool } from "./chat/summarize.ts";
 // Data processing tools
 import { registerCsvTool } from "./data-processing/csv/index.ts";
 // Env tools
@@ -103,6 +104,7 @@ export function registerTools(server: McpServer, context: ToolContext): void {
 
   // Chat tools — load referenced chats (used by @-mention expansion)
   registerChatReadTool(server, context);
+  registerChatSummarizeTool(server, context);
 
   // State tools
   registerStateAppendTool(server, context);

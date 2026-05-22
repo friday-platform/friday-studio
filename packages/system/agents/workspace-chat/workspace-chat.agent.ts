@@ -122,6 +122,7 @@ import {
   createAssignWorkspaceSkillTool,
   createUnassignWorkspaceSkillTool,
 } from "./tools/skill-tools.ts";
+import { createSummarizeChatTool } from "./tools/summarize-chat.ts";
 import { createBoundUpsertTools } from "./tools/upsert-tools.ts";
 import { createWebFetchTool } from "./tools/web-fetch.ts";
 import { createWebSearchTool } from "./tools/web-search.ts";
@@ -936,6 +937,7 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
         const listSessionsTool = createListSessionsTool(workspaceId, logger);
         const describeSessionTool = createDescribeSessionTool(logger);
         const readChatTool = createReadChatTool(logger);
+        const summarizeChatTool = createSummarizeChatTool(logger);
 
         // Memory-entry retrieval (replaces the old list_memory_entries shape
         // with rich substring + time + metadata filters and pagination).
@@ -1135,6 +1137,7 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           ...listSessionsTool,
           ...describeSessionTool,
           ...readChatTool,
+          ...summarizeChatTool,
           ...listMemoryEntriesTool,
           ...describeMemoryEntryTool,
           delegate: delegateTool,
