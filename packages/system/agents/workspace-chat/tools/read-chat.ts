@@ -56,10 +56,18 @@ export function createReadChatTool(logger: Logger): AtlasTools {
           const body = (await res.json()) as {
             chat?: { id?: string; title?: string | null; workspaceId?: string };
             messages?: unknown[];
+            totalMessageCount?: number;
           };
           const all = Array.isArray(body.messages) ? body.messages : [];
           const cap = limit ?? 100;
           const trimmed = all.slice(-cap);
+          // `totalMessageCount` reflects messages in the source chat
+          // regardless of any route-side trim (server caps at 100 by
+          // default). Without it the agent would conclude
+          // truncated=false when the route already dropped older
+          // messages. See friday-studio-ns4.
+          const total =
+            typeof body.totalMessageCount === "number" ? body.totalMessageCount : all.length;
           return {
             ok: true as const,
             chat: {
@@ -69,7 +77,8 @@ export function createReadChatTool(logger: Logger): AtlasTools {
             },
             messages: trimmed,
             count: trimmed.length,
-            truncated: all.length > trimmed.length,
+            totalMessageCount: total,
+            truncated: total > trimmed.length,
           };
         } catch (err) {
           logger.warn("read_chat threw", { url, error: stringifyError(err) });

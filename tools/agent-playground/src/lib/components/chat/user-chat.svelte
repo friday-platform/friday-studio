@@ -526,12 +526,18 @@
 
     let seedText = seed;
     let seedMentions: InsertedMention[] = [];
+    // Only parse JSON when the seed declares itself as a versioned
+    // envelope. Otherwise a user whose message happens to start with
+    // `{` (and JSON-parses to an object with a `text` string field)
+    // would have their literal payload silently rewritten. See
+    // friday-studio-1n3.
     if (seed.startsWith("{")) {
       try {
         const parsed: unknown = JSON.parse(seed);
         if (
           typeof parsed === "object" &&
           parsed !== null &&
+          (parsed as { v?: unknown }).v === 1 &&
           typeof (parsed as { text?: unknown }).text === "string"
         ) {
           seedText = (parsed as { text: string }).text;

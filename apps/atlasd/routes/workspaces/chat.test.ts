@@ -946,4 +946,32 @@ describe("POST /:chatId/summarize", () => {
     const body = (await res.json()) as JsonBody;
     expect(body.error).toBe("Summarization failed");
   });
+
+  test("bypasses cache (no get, no put) when chat.updatedAt is unparseable (friday-studio-4t7)", async () => {
+    const { app } = createTestApp();
+    mockChatStorage.getChat.mockResolvedValue({
+      ok: true,
+      data: {
+        id: "chat-1",
+        workspaceId: "ws-1",
+        updatedAt: "not-a-timestamp", // Date.parse → NaN
+        messages: [],
+      },
+    });
+    mockSummarizeChat.mockResolvedValue({
+      summary: "freshly computed",
+      messageCount: 0,
+      modelId: "stub",
+      generatedAt: "2026-05-22T01:00:00.000Z",
+    });
+
+    const res = await post(app, "/ws-1/chat/chat-1/summarize", {});
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as JsonBody;
+    expect(body).toMatchObject({ summary: "freshly computed", cached: false });
+    // Neither cache touchpoint should fire — otherwise NaN would
+    // freeze the key forever.
+    expect(mockSummariesStorage.get).not.toHaveBeenCalled();
+    expect(mockSummariesStorage.put).not.toHaveBeenCalled();
+  });
 });

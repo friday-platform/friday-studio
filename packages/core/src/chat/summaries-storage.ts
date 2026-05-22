@@ -13,13 +13,13 @@
  * restarts.
  */
 
+import { createHash } from "node:crypto";
 import { createLogger } from "@atlas/logger";
 import { type KV, type NatsConnection, StorageType } from "nats";
 
 const logger = createLogger({ component: "chat-summaries-storage" });
 
 const KV_BUCKET = "CHAT_SUMMARIES";
-const SAFE_NAME_RE = /[^A-Za-z0-9_-]/g;
 const dec = new TextDecoder();
 const enc = new TextEncoder();
 
@@ -32,14 +32,14 @@ export interface ChatSummary {
   generatedAt: string;
 }
 
-function sanitizeKeyComponent(s: string): string {
-  return s.replace(SAFE_NAME_RE, "_");
-}
-
 /**
- * Compose the KV key. Uses periods (NATS-native separator) instead of
- * slashes so the key is a single subject token; downstream filters
- * stay simple if we ever want to list-by-prefix.
+ * Compose the KV key. Earlier revisions sanitized each component by
+ * stripping non-`[A-Za-z0-9_-]` chars, which collapsed legal chat IDs
+ * like `team.demo` and `team_demo` to the same key (friday-studio-ejb).
+ * Use a SHA-256 digest of the canonical tuple instead — collision-free
+ * and KV-safe regardless of the source charset. The cache is only
+ * looked up by exact key (never scanned by prefix), so we don't need
+ * the components to be human-readable in the key.
  */
 function kvKey(input: {
   workspaceId: string;
@@ -47,12 +47,14 @@ function kvKey(input: {
   updatedAtMs: number;
   focusHash: string;
 }): string {
-  return [
-    sanitizeKeyComponent(input.workspaceId),
-    sanitizeKeyComponent(input.chatId),
-    String(input.updatedAtMs),
-    sanitizeKeyComponent(input.focusHash),
-  ].join(".");
+  const tuple = JSON.stringify([
+    input.workspaceId,
+    input.chatId,
+    input.updatedAtMs,
+    input.focusHash,
+  ]);
+  const digest = createHash("sha256").update(tuple).digest("hex");
+  return `summary.${digest}`;
 }
 
 export async function ensureChatSummariesKVBucket(nc: NatsConnection): Promise<KV> {

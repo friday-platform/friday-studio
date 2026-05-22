@@ -152,6 +152,29 @@ describe("GET /chats", () => {
     expect(res.status).toBe(401);
   });
 
+  it("treats ?limit=0 as an explicit-but-clamped value (friday-studio-ltn)", async () => {
+    mockGetAccessibleWorkspaceIds.mockResolvedValue(new Set(["ws-a"]));
+    mockListChatsByWorkspace.mockResolvedValue({
+      ok: true,
+      data: {
+        chats: Array.from({ length: 5 }, (_, i) => ({
+          id: `c${i}`,
+          workspaceId: "ws-a",
+          title: `Chat ${i}`,
+          userId: "u",
+          source: "atlas",
+          createdAt: "2026-05-01T00:00:00Z",
+          updatedAt: `2026-05-01T00:00:0${i}Z`,
+        })),
+      },
+    });
+
+    const res = await testApp.request("/chats?limit=0");
+    const body = (await res.json()) as { chats: unknown[] };
+    // Clamp lifts 0 to 1 — explicit-zero is not silently overridden to 50.
+    expect(body.chats).toHaveLength(1);
+  });
+
   it("filters the kernel workspace out of the autocomplete data source (friday-studio-svv)", async () => {
     // Even when the caller has kernel membership, the autocomplete must
     // not surface kernel chats — the composer has no context flag.

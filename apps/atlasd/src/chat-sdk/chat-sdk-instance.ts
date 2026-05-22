@@ -916,9 +916,23 @@ export function createMessageHandler(
     // this turn. Unauthorized / not-found refs are logged + dropped so a
     // bad reference doesn't break the send. See friday-studio-ivt /
     // friday-studio-4j7.
+    // For the web adapter, `userId` (= message.author.userId) is the
+    // Atlas userId set via `X-Atlas-User-Id` on the inbound request.
+    // For Slack/Telegram/Discord/Teams/WhatsApp it's the *platform*
+    // user id (a Slack U… id, etc.), which never matches a row in
+    // WORKSPACE_MEMBERS — every mention would fail as 'unauthorized'.
+    // Fall back to the workspace owner (the user who connected the
+    // platform integration). Single-owner workspaces (the common
+    // case) see no behavior change; in shared workspaces this is a
+    // permissive proxy that still respects per-workspace membership
+    // (the owner has to be a member of the referenced workspace for
+    // the resolution to succeed). See friday-studio-phq.
+    const mentionRequesterUserId =
+      adapterName === "atlas" ? userId : (options?.ownerUserId ?? userId);
+
     const { message: storedMessage, foregroundWorkspaceIds } = await applyMentions({
       message: initialStoredMessage,
-      requesterUserId: userId,
+      requesterUserId: mentionRequesterUserId,
       currentWorkspaceId: workspaceId,
       foregroundWorkspaceIds: initialForegroundWorkspaceIds,
       exposeKernel: options?.exposeKernel ?? false,

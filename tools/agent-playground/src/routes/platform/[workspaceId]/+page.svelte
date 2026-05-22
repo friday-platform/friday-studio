@@ -375,8 +375,12 @@
     const { text, mentions } = expandMentionSpans(rawMsg, useSpans);
     const trimmed = text.trim();
     if (!trimmed) return;
+    // Versioned envelope so the chat-page seed parser doesn't have to
+    // guess whether a seed that happens to start with `{` is JSON or
+    // a literal user message. user-chat checks `parsed.v === 1`
+    // before treating the seed as structured. See friday-studio-1n3.
     const payload = mentions.length > 0
-      ? JSON.stringify({ text: trimmed, mentions })
+      ? JSON.stringify({ v: 1, text: trimmed, mentions })
       : trimmed;
     sessionStorage.setItem(`chat-seed-${workspaceId}`, payload);
     void goto(`/platform/${workspaceId}/chat`);

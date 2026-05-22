@@ -52,13 +52,22 @@ export function registerChatReadTool(server: McpServer, ctx: ToolContext) {
         return createErrorResponse("Failed to read chat", stringifyError(response.error));
       }
 
-      const { chat, messages } = response.data;
+      const { chat, messages, totalMessageCount } = response.data as {
+        chat: { id: string; title?: string | null; workspaceId: string };
+        messages: unknown[];
+        totalMessageCount?: number;
+      };
       const trimmed = messages.slice(-limit);
+      // Use the route's totalMessageCount when available so `truncated`
+      // reflects the source chat, not the slice the route returned.
+      // See friday-studio-ns4.
+      const total = typeof totalMessageCount === "number" ? totalMessageCount : messages.length;
       return createSuccessResponse({
         chat: { id: chat.id, title: chat.title ?? null, workspaceId: chat.workspaceId },
         messages: trimmed,
         count: trimmed.length,
-        truncated: messages.length > trimmed.length,
+        totalMessageCount: total,
+        truncated: total > trimmed.length,
       });
     },
   );

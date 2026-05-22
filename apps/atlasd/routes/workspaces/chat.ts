@@ -293,6 +293,11 @@ const workspaceChatRoutes = daemonFactory
       chat,
       messages: sanitized,
       systemPromptContext: systemPromptContext ?? null,
+      // Total messages in the chat regardless of the route-side trim.
+      // Lets agent tools compute `truncated` honestly — without this
+      // they only know "I sliced what I received", not "the route
+      // already sliced at 100". See friday-studio-ns4.
+      totalMessageCount: messages.length,
     };
 
     if (full) {
@@ -367,11 +372,20 @@ const workspaceChatRoutes = daemonFactory
     const chat = chatResult.data;
     const updatedAtMs = Date.parse(chat.updatedAt);
     const focusHash = hashFocus(focus);
-    const keyParts = { workspaceId, chatId, updatedAtMs, focusHash };
+    // Date.parse returns NaN for malformed timestamps. String(NaN)
+    // is the literal "NaN" — baking that into the cache key freezes
+    // the key forever (subsequent appends still parse to NaN → same
+    // key → stale summary returned with cached:true). Bypass cache
+    // entirely on bad timestamps so each call recomputes. See
+    // friday-studio-4t7.
+    const cacheable = Number.isFinite(updatedAtMs);
+    const keyParts = cacheable ? { workspaceId, chatId, updatedAtMs, focusHash } : null;
 
-    const cached = await ChatSummariesStorage.get(keyParts);
-    if (cached) {
-      return c.json({ ...cached, cached: true }, 200);
+    if (keyParts) {
+      const cached = await ChatSummariesStorage.get(keyParts);
+      if (cached) {
+        return c.json({ ...cached, cached: true }, 200);
+      }
     }
 
     try {
@@ -382,7 +396,7 @@ const workspaceChatRoutes = daemonFactory
         focus,
         abortSignal: c.req.raw.signal,
       });
-      await ChatSummariesStorage.put(keyParts, result);
+      if (keyParts) await ChatSummariesStorage.put(keyParts, result);
       return c.json({ ...result, cached: false }, 200);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

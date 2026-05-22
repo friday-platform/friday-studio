@@ -309,7 +309,12 @@ const meRoutes = daemonFactory
 
     const qRaw = c.req.query("q") ?? "";
     const limitRaw = c.req.query("limit");
-    const limit = Math.max(1, Math.min(200, Number.parseInt(limitRaw ?? "", 10) || 50));
+    // `parseInt(...) || 50` would silently override `?limit=0` (falsy-zero
+    // pitfall) — explicit-zero callers got 50 chats back. Use isFinite
+    // so 0 is treated as an explicit-but-clamped value (Math.max lifts
+    // to 1). See friday-studio-ltn.
+    const parsedLimit = Number.parseInt(limitRaw ?? "", 10);
+    const limit = Math.max(1, Math.min(200, Number.isFinite(parsedLimit) ? parsedLimit : 50));
     const q = qRaw.trim().toLowerCase();
 
     const accessible = await getAccessibleWorkspaceIds(userId);

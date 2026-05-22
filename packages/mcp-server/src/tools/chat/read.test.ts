@@ -96,6 +96,7 @@ describe("registerChatReadTool", () => {
           chat: { id: "c1", title: null, workspaceId: "ws-a", userId: "u" },
           messages,
           systemPromptContext: null,
+          totalMessageCount: 5,
         }),
       );
     vi.stubGlobal("fetch", fetchMock);
@@ -109,6 +110,37 @@ describe("registerChatReadTool", () => {
     expect(data.count).toBe(2);
     expect(data.truncated).toBe(true);
     expect(data.messages.map((m) => m.id)).toEqual(["m3", "m4"]);
+  });
+
+  it("reports truncated when the route's slice undercounts the source chat (friday-studio-ns4)", async () => {
+    // 5000-message chat; route trimmed to last 100; tool keeps all 100.
+    // Without totalMessageCount the tool would conclude 100 > 100 → false.
+    const last100 = Array.from({ length: 100 }, (_, i) => ({
+      id: `m${4900 + i}`,
+      role: i % 2 === 0 ? "user" : "assistant",
+      parts: [{ type: "text", text: `msg-${4900 + i}` }],
+    }));
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        jsonResponse({
+          chat: { id: "c1", title: null, workspaceId: "ws-a", userId: "u" },
+          messages: last100,
+          systemPromptContext: null,
+          totalMessageCount: 5000,
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await handler({ workspace_id: "ws-a", chat_id: "c1" });
+    const data = parseToolResult(result) as {
+      count: number;
+      truncated: boolean;
+      totalMessageCount: number;
+    };
+    expect(data.count).toBe(100);
+    expect(data.totalMessageCount).toBe(5000);
+    expect(data.truncated).toBe(true);
   });
 
   it("returns an error response when the chat is not found", async () => {

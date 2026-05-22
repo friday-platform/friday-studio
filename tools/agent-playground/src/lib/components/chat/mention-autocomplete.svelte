@@ -83,7 +83,22 @@
    * the event (parent should preventDefault).
    */
   export function handleKey(e: KeyboardEvent): boolean {
-    if (!open || filtered.length === 0) return false;
+    if (!open) return false;
+    // Escape + Enter MUST consume the event even in the empty/loading/
+    // error state — otherwise Escape can't dismiss an open popover
+    // and Enter would fall through to the composer's submit branch
+    // while the popover is still painted on screen. See
+    // friday-studio-ogy.
+    if (e.key === "Escape") {
+      onclose();
+      return true;
+    }
+    if (filtered.length === 0) {
+      // Consume Enter so the open-but-empty popover doesn't let a
+      // half-typed `@xyz` get sent. ArrowUp/Down/Tab fall through
+      // (nothing to navigate / select).
+      return e.key === "Enter";
+    }
     if (e.key === "ArrowDown") {
       highlighted = (highlighted + 1) % filtered.length;
       return true;
@@ -102,10 +117,6 @@
         });
         return true;
       }
-    }
-    if (e.key === "Escape") {
-      onclose();
-      return true;
     }
     return false;
   }
@@ -127,6 +138,14 @@
           class:active={i === highlighted}
           aria-selected={i === highlighted}
           onmouseenter={() => (highlighted = i)}
+          onmousedown={(e) => {
+            // Stop the textarea's onblur from firing — without
+            // preventDefault here, mousedown blurs the textarea,
+            // closeMentionPopover unmounts this {#if open} block,
+            // and the queued click never reaches us. See
+            // friday-studio-ogy.
+            e.preventDefault();
+          }}
           onclick={() =>
             onselect({
               workspaceId: chat.workspaceId,
