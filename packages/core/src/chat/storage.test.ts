@@ -7,7 +7,7 @@ import { chatUploadsRoot } from "@atlas/utils/paths.server";
 import { connect, type NatsConnection } from "nats";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { startNatsTestServer, type TestNatsServer } from "../test-utils/nats-test-server.ts";
-import { ensureChatsKVBucket } from "./jetstream-backend.ts";
+import { createJetStreamChatBackend, ensureChatsKVBucket } from "./jetstream-backend.ts";
 import { ChatStorage, initChatStorage } from "./storage.ts";
 
 let server: TestNatsServer;
@@ -394,5 +394,113 @@ describe("ChatStorage (JetStream-backed)", () => {
     if (get.ok && get.data) {
       expect(get.data.messages.map((m) => m.id)).toEqual([a.id, b.id]);
     }
+  });
+});
+
+describe("JetStream backend — new naming scheme (friday-studio-1z9)", () => {
+  // Drive the backend directly with newNamingEnabled so we can verify
+  // dual-read interop without touching the singleton ChatStorage facade.
+
+  it("creates chats under the new key (no `<ws>/` prefix) when newNamingEnabled is true", async () => {
+    const backend = createJetStreamChatBackend(nc, { newNamingEnabled: true });
+    const chatId = `nn-${crypto.randomUUID()}`;
+    const ws = `ws-nn-${crypto.randomUUID()}`;
+
+    const created = await backend.createChat({
+      chatId,
+      userId: "u",
+      workspaceId: ws,
+      source: "atlas",
+    });
+    expect(created.ok).toBe(true);
+
+    // KV should have the new bare-chatId key and NOT the legacy `<ws>/<chat>` key.
+    const kv = await ensureChatsKVBucket(nc);
+    const newEntry = await kv.get(chatId);
+    expect(newEntry?.operation).toBe("PUT");
+    const legacyEntry = await kv.get(`${ws}/${chatId}`);
+    expect(legacyEntry).toBeNull();
+  });
+
+  it("reads a legacy-created chat even with newNamingEnabled (dual-read tolerance)", async () => {
+    // Create via the legacy backend (flag off), then read via the new backend (flag on).
+    const legacyBackend = createJetStreamChatBackend(nc, { newNamingEnabled: false });
+    const chatId = `legacy-${crypto.randomUUID()}`;
+    const ws = `ws-legacy-${crypto.randomUUID()}`;
+    await legacyBackend.createChat({ chatId, userId: "u", workspaceId: ws, source: "atlas" });
+    await legacyBackend.appendMessage(
+      chatId,
+      { id: crypto.randomUUID(), role: "user", parts: [{ type: "text", text: "legacy hi" }] },
+      ws,
+    );
+
+    const newBackend = createJetStreamChatBackend(nc, { newNamingEnabled: true });
+    const got = await newBackend.getChat(chatId, ws);
+    expect(got.ok && got.data?.messages.length).toBe(1);
+  });
+
+  it("appendMessage to a legacy chat uses the legacy stream (no split-brain)", async () => {
+    const legacyBackend = createJetStreamChatBackend(nc, { newNamingEnabled: false });
+    const chatId = `legacy-append-${crypto.randomUUID()}`;
+    const ws = `ws-la-${crypto.randomUUID()}`;
+    await legacyBackend.createChat({ chatId, userId: "u", workspaceId: ws, source: "atlas" });
+
+    // Now flag-on backend appends — should write to the LEGACY stream
+    // because the chat already exists under legacy naming.
+    const newBackend = createJetStreamChatBackend(nc, { newNamingEnabled: true });
+    await newBackend.appendMessage(
+      chatId,
+      {
+        id: crypto.randomUUID(),
+        role: "user",
+        parts: [{ type: "text", text: "post-flag append" }],
+      },
+      ws,
+    );
+    const got = await newBackend.getChat(chatId, ws);
+    expect(got.ok && got.data?.messages.length).toBe(1);
+  });
+
+  it("rejects createChat when chatId collides across workspaces under new scheme", async () => {
+    const backend = createJetStreamChatBackend(nc, { newNamingEnabled: true });
+    const chatId = `collision-${crypto.randomUUID()}`;
+    const ok = await backend.createChat({
+      chatId,
+      userId: "u",
+      workspaceId: "ws-a",
+      source: "atlas",
+    });
+    expect(ok.ok).toBe(true);
+    const conflict = await backend.createChat({
+      chatId,
+      userId: "u",
+      workspaceId: "ws-b",
+      source: "atlas",
+    });
+    expect(conflict.ok).toBe(false);
+    if (!conflict.ok) {
+      expect(conflict.error).toMatch(/already exists/);
+    }
+  });
+
+  it("deleteChat under new scheme removes only the targeted chat (no cross-scheme smash)", async () => {
+    const chatId = `del-${crypto.randomUUID()}`;
+    const wsLegacy = `ws-leg-${crypto.randomUUID()}`;
+    const wsNew = `ws-new-${crypto.randomUUID()}`;
+    // Same chatId under both schemes in different workspaces.
+    const legacyBackend = createJetStreamChatBackend(nc, { newNamingEnabled: false });
+    await legacyBackend.createChat({ chatId, userId: "u", workspaceId: wsLegacy, source: "atlas" });
+    const newBackend = createJetStreamChatBackend(nc, { newNamingEnabled: true });
+    await newBackend.createChat({ chatId, userId: "u", workspaceId: wsNew, source: "atlas" });
+
+    // Delete only the new-scheme one.
+    await newBackend.deleteChat(chatId, wsNew);
+
+    // Legacy chat survives.
+    const legacyAfter = await legacyBackend.getChat(chatId, wsLegacy);
+    expect(legacyAfter.ok && legacyAfter.data).toBeTruthy();
+    // New-scheme chat is gone.
+    const newAfter = await newBackend.getChat(chatId, wsNew);
+    expect(newAfter.ok && newAfter.data).toBeNull();
   });
 });

@@ -530,9 +530,18 @@ export class AtlasDaemon {
 
     // Wire chat storage to JetStream + eagerly create the CHATS KV bucket
     // so the first cold read doesn't pay the create cost.
+    //
+    // friday-studio-1z9 phase 3: new-naming is on by default. Fresh
+    // chats use workspaceId-agnostic stream / subject / KV names
+    // (`CHAT_<chatId>`, `chats.<chatId>.messages.<msgId>`, `<chatId>`).
+    // Existing legacy-named chats keep working via dual-read. Set
+    // `FRIDAY_CHAT_NEW_NAMING=false` as a kill switch if a regression
+    // surfaces and write-side rollback is needed.
+    const newNamingEnabled = process.env.FRIDAY_CHAT_NEW_NAMING !== "false";
     initChatStorage(nc, {
       maxMsgSize: jsCfg.stream.maxMsgSize.value,
       duplicateWindowNs: jsCfg.stream.duplicateWindowNs.value,
+      newNamingEnabled,
     });
     await ensureChatsKVBucket(nc);
 
