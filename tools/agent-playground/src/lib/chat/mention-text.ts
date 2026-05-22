@@ -120,6 +120,56 @@ export function detectActiveMentionQuery(
 }
 
 /**
+ * What the composer carries forward from each autocomplete-picked
+ * mention: the workspace + chat ids the server resolver expects, plus
+ * the friendly title we showed in the textarea.
+ */
+export interface InsertedMentionRef {
+  workspaceId: string;
+  chatId: string;
+  title: string;
+}
+
+/**
+ * Expand `@Title` occurrences (the human-readable form the composer
+ * shows in the textarea) back into the canonical `@workspaceId/chatId`
+ * the server resolver expects. The `refsByTitle` map is built up as
+ * the user picks entries from the autocomplete. Titles that have been
+ * edited or deleted in the textarea won't match and pass through as
+ * plain text — the server's resolver will simply find no @ws/chat
+ * token for them, which is the safer failure mode.
+ */
+export function expandMentionDisplayText(
+  text: string,
+  refsByTitle: ReadonlyMap<string, InsertedMentionRef>,
+): { text: string; mentions: InsertedMentionRef[] } {
+  if (refsByTitle.size === 0) return { text, mentions: [] };
+  let out = text;
+  const used: InsertedMentionRef[] = [];
+  const seen = new Set<string>();
+  // Longest titles first so that "Foo bar" matches before "Foo" — a
+  // prefix-title would otherwise eat its own suffix.
+  const titles = [...refsByTitle.keys()].sort((a, b) => b.length - a.length);
+  for (const title of titles) {
+    const ref = refsByTitle.get(title);
+    if (!ref) continue;
+    const escaped = title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    // `@<title>` bounded by end-of-string or a non-identifier char so
+    // we don't snip into a token the user is still typing (e.g. `@Demos`
+    // shouldn't substitute on `@Demo`).
+    const re = new RegExp(`@${escaped}(?=$|[\\s.,!?;:)\\]'"])`, "g");
+    if (!re.test(out)) continue;
+    out = out.replace(re, `@${ref.workspaceId}/${ref.chatId}`);
+    const key = `${ref.workspaceId}/${ref.chatId}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      used.push(ref);
+    }
+  }
+  return { text: out, mentions: used };
+}
+
+/**
  * Score a chat title against a free-text query. Returns -Infinity for a
  * non-match. Higher is better. Matches the established lightweight fuzzy
  * heuristics: exact prefix > word-start > contained > none.

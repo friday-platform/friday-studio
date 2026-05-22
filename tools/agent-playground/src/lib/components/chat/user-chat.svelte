@@ -512,13 +512,53 @@
   // Only fires for fresh chats (no prior messages) to avoid replaying on navigation.
   // `untrack` around handleSubmit prevents chat.sendMessage()'s synchronous status
   // mutation from re-triggering this effect mid-execution.
+  //
+  // The overview composer encodes `{ text, mentions }` as JSON when the
+  // user picked any @-mentions, plain string otherwise. Parse both
+  // shapes so old planters keep working and new ones thread mention
+  // metadata through to the optimistic bubble.
   $effect(() => {
     if (!chat || initialMessages.length > 0) return;
     const key = `chat-seed-${wsId}`;
     const seed = sessionStorage.getItem(key);
     if (!seed) return;
     sessionStorage.removeItem(key);
-    untrack(() => void handleSubmit(seed));
+
+    let seedText = seed;
+    let seedMentions: InsertedMention[] = [];
+    if (seed.startsWith("{")) {
+      try {
+        const parsed: unknown = JSON.parse(seed);
+        if (
+          typeof parsed === "object" &&
+          parsed !== null &&
+          typeof (parsed as { text?: unknown }).text === "string"
+        ) {
+          seedText = (parsed as { text: string }).text;
+          const rawMentions = (parsed as { mentions?: unknown }).mentions;
+          if (Array.isArray(rawMentions)) {
+            for (const m of rawMentions) {
+              if (typeof m !== "object" || m === null) continue;
+              const d = m as Record<string, unknown>;
+              if (
+                typeof d.workspaceId === "string" &&
+                typeof d.chatId === "string" &&
+                typeof d.title === "string"
+              ) {
+                seedMentions.push({
+                  workspaceId: d.workspaceId,
+                  chatId: d.chatId,
+                  title: d.title,
+                });
+              }
+            }
+          }
+        }
+      } catch {
+        // Not JSON — treat the raw value as plain text seed.
+      }
+    }
+    untrack(() => void handleSubmit(seedText, [], seedMentions));
   });
 
   // Mid-turn fetch drops (Chrome's ~50s streaming cap) get an auto-resume
