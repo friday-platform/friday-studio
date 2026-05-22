@@ -19,7 +19,7 @@ import { type KV, type NatsConnection, StorageType } from "nats";
 const logger = createLogger({ component: "chat-summaries-storage" });
 
 const KV_BUCKET = "CHAT_SUMMARIES";
-const SAFE_NAME_RE = /[^-/=.\w]/g;
+const SAFE_NAME_RE = /[^A-Za-z0-9_-]/g;
 const dec = new TextDecoder();
 const enc = new TextEncoder();
 
