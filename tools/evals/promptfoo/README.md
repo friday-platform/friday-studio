@@ -11,49 +11,99 @@ evals that need `AgentContextAdapter` or full `@atlas/llm` trace plumbing.
 |---|---|---|---|
 | Runner | custom Deno harness | promptfoo CLI | promptfoo CLI |
 | Daemon required | no | **no** | yes |
-| Multi-model | via `variants` array (one suite uses it) | provider matrix (all suites) | single provider per suite |
-| Parallel | sequential | `--max-concurrency` | sequential |
+| Multi-model | hand-rolled per suite | shared provider matrix | single provider per suite |
+| Parallel | `-j N` (default 1) | `-j N` global pool | sequential |
 | Trace capture | `enterTraceScope` | none | none |
 
-## Running
-
-Start LiteLLM proxy once:
+## Quickstart
 
 ```bash
-cd tools/evals/promptfoo/litellm
-./start.sh  # docker run with config.yaml mounted on :4000
-```
+# 1. Start the LiteLLM proxy once (routes friday-sm/md/lg → real providers)
+cd tools/evals/promptfoo/litellm && ./start.sh   # see litellm/README.md for env vars
 
-Run a single suite:
+# 2. Run every suite × every model in one parallel sweep
+deno task evals:promptfoo
 
-```bash
+# 3. Or just the small tier (PR-CI cost profile)
+EVAL_TIER=small deno task evals:promptfoo
+
+# 4. Or a single suite the long way
 npx promptfoo@latest eval \
   -c tools/evals/promptfoo/suites/progress-line/promptfooconfig.yaml \
   --no-cache --no-share -j 20
 ```
 
-Run all suites (parallel, each on its own concurrency budget):
+`deno task evals:promptfoo` runs all suites in a **single** `promptfoo eval`
+invocation — promptfoo's `-j` is a global worker pool, so one invocation across
+N configs schedules better than N sequential invocations. The wrapper script
+lives at `scripts/run-all.sh`.
+
+## Picking a model tier
+
+Every provider entry in `shared/providers.yaml` has a `tier:<small|medium|large>`
+tag baked into its label:
+
+```yaml
+- id: openai:chat:friday-sm
+  label: 'groq-8b (openai) | tier:small'
+```
+
+Pick a subset at run time — `EVAL_TIER` accepts a regex alternation:
 
 ```bash
-npx promptfoo@latest eval \
-  -c tools/evals/promptfoo/suites/*/promptfooconfig.yaml \
-  --no-cache --no-share -j 20
+EVAL_TIER=small               deno task evals:promptfoo    # cheap CI
+EVAL_TIER='small|medium'      deno task evals:promptfoo    # PR matrix
+EVAL_TIER=large               deno task evals:promptfoo    # nightly quality run
+# unset                       → full matrix
 ```
+
+Under the hood the wrapper forwards
+`--filter-providers 'tier:(small|medium|large)'` to promptfoo, which regex-matches
+provider id/label. Add a new tier by tagging providers — no config files to fork.
+
+Other knobs the wrapper honors:
+
+| Env var | Effect |
+|---|---|
+| `EVAL_TIER` | Forwarded as `--filter-providers 'tier:<regex>'`. |
+| `EVAL_CONCURRENCY` | `-j N` (default 20). |
+| `PROMPTFOO_PASS_RATE_THRESHOLD` | Promptfoo built-in: exit code 100 if pass rate < N. |
+
+Anything after `--` is passed through to promptfoo:
+
+```bash
+deno task evals:promptfoo -- --filter-pattern simple-substitution
+```
+
+## CI integration
+
+Promptfoo's `eval` command returns **exit 100** when there are test failures
+*or* the pass rate is below `PROMPTFOO_PASS_RATE_THRESHOLD`. Standard CI shape:
+
+```bash
+EVAL_TIER='small|medium' \
+PROMPTFOO_PASS_RATE_THRESHOLD=95 \
+  deno task evals:promptfoo -- -o results.json
+```
+
+GitHub Actions step exits non-zero on pass-rate regression. No bespoke
+threshold parsing required — promptfoo handles it.
 
 ## Layout
 
 ```
 tools/evals/promptfoo/
 ├── shared/
-│   ├── providers.yaml         # full 5-model matrix (litellm: + openai: side-by-side)
-│   ├── providers.pr.yaml      # cheap 2-model matrix for PR CI
-│   └── defaultTest.yaml       # latency floor + grader provider
+│   ├── providers.yaml         # single source of truth — tier:* labels select subsets
+│   └── defaultTest.yaml       # latency floor + pinned grader provider
 ├── litellm/
 │   ├── litellm_config.yaml    # friday-sm / friday-md / friday-lg / friday-local
 │   ├── start.sh               # docker run helper
 │   └── README.md              # provider-by-provider env vars
 ├── scripts/
-│   └── render-all.ts          # discovers + runs every suite's render.ts
+│   ├── render-all.ts          # discovers + runs every suite's render.ts (parallel)
+│   ├── render-shared.ts       # shared types + writeGeneratedTests() helper
+│   └── run-all.sh             # backs `deno task evals:promptfoo`
 └── suites/
     ├── progress-line/           # migrated from agents/small-llm/small-llm.eval.ts
     ├── prompt-interpolation/    # migrated from agents/prompt-interpolation/
@@ -74,7 +124,8 @@ functions live in Deno workspace packages; promptfoo runs in Node.
 Each such suite ships a `render.ts` that:
 1. Defines its cases as data (templates, configs, expectations)
 2. Calls the real function once per case
-3. Writes a `tests.generated.yaml` alongside
+3. Writes a `tests.generated.yaml` via `writeGeneratedTests()` from
+   `scripts/render-shared.ts`
 
 The generated YAML is committed — promptfoo runs zero-build at eval time.
 Edit cases → `deno task evals:render-promptfoo` → run the eval.
@@ -98,17 +149,28 @@ the renderer.
 3. Write prompts under `prompts/` (one file per system-prompt variant).
 4. Write `tests.yaml` with one entry per case (`vars`, `description`,
    per-case `assert`).
-5. Run with `npx promptfoo@latest eval -c suites/<name>/promptfooconfig.yaml --no-cache --no-share`.
+5. Run with `deno task evals:promptfoo` — auto-discovered.
 
 **Function-wrapping suite** (like `prompt-interpolation` /
 `agent-config-prompt`):
 
 1. Create `suites/<name>/render.ts` — imports the Friday function,
-   defines cases, calls the function, writes `tests.generated.yaml`.
+   defines cases, calls the function, writes via
+   `writeGeneratedTests(import.meta.url, "<fn name>", tests)`.
 2. Point `tests: file://tests.generated.yaml` in the config.
 3. Run `deno task evals:render-promptfoo` once to produce the file.
 4. Commit the generated file. Regenerate whenever cases or the
    underlying function change.
+
+## Adding a new model
+
+1. Add a `- model_name: friday-<alias>` entry to `litellm/litellm_config.yaml`.
+2. Add two provider entries to `shared/providers.yaml` (one `openai:chat:`
+   variant, one `litellm:` variant) — both reuse the existing `*openai_config` /
+   `*litellm_config` YAML anchors. Tag each label with the right
+   `tier:small|medium|large`.
+3. Restart the proxy. Every suite picks the new model up automatically — no
+   per-suite edits.
 
 ## When NOT to migrate to promptfoo
 
@@ -134,9 +196,6 @@ until the promptfoo suite is trusted.
 - **Python 3.14 breaks `uvloop`.** Install with `uv tool install --python
   3.13 'litellm[proxy]'`. The bare `uv tool install` picks 3.14 on this
   machine and crashes on import.
-- **The default matrix is Anthropic + Groq only.** Add any other
-  provider you have an API key for to `litellm_config.yaml` and
-  `shared/providers.yaml` (one line each).
 - **Promptfoo `cost` assertion can't read LiteLLM cost headers.** Cost
   is in `x-litellm-response-cost`, not the OpenAI response body. The
   shared `defaultTest.yaml` omits `cost` for this reason; add it
@@ -150,3 +209,6 @@ until the promptfoo suite is trusted.
 - **`prompts:` listing N files cross-products with every test.** For
   multi-system-prompt suites use a single `chat.json` template with
   `{{system_prompt}}` injected per-test via `vars`.
+- **`--filter-providers` is a regex against id + label.** The
+  `tier:<size>` tag in each provider's label is what makes
+  `EVAL_TIER=small` work — keep the tag intact when editing labels.

@@ -1,6 +1,10 @@
 # yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
 #
-# Full multi-model matrix for nightly eval runs.
+# Single source of truth for the friday-* provider matrix.
+#
+# Tier selection at run time: each entry's label carries a `tier:<small|medium|large>`
+# tag. Use `--filter-providers 'tier:small'` (or `tier:(small|medium)`) to pick a
+# subset. Promptfoo's --filter-providers is a regex against `id` and `label`.
 #
 # Side-by-side both integration paths so behavior differences surface in the
 # same run:
@@ -9,12 +13,9 @@
 #
 # The proxy resolves `<alias>` (friday-sm, friday-md, ...) via litellm_config.yaml,
 # so adding a new model is one line in that file and one entry here.
-#
-# YAML anchors collapse the two repeated `config:` shapes. Adding a new alias
-# is then two lines (one openai variant + one litellm variant), no boilerplate.
 
 - id: openai:chat:friday-sm
-  label: groq-8b (openai)
+  label: 'groq-8b (openai) | tier:small'
   config: &openai_config
     apiBaseUrl: http://localhost:4000/v1
     apiKey: '{{env.LITELLM_MASTER_KEY}}'
@@ -23,7 +24,7 @@
     stream: false
 
 - id: litellm:friday-sm
-  label: groq-8b (litellm)
+  label: 'groq-8b (litellm) | tier:small'
   config: &litellm_config
     apiBaseUrl: http://localhost:4000
     apiKey: '{{env.LITELLM_MASTER_KEY}}'
@@ -31,17 +32,19 @@
     max_tokens: 256
 
 - id: openai:chat:friday-md
-  label: haiku-4-5 (openai)
+  label: 'haiku-4-5 (openai) | tier:medium'
   config: *openai_config
 
 - id: litellm:friday-md
-  label: haiku-4-5 (litellm)
+  label: 'haiku-4-5 (litellm) | tier:medium'
   config: *litellm_config
 
 - id: openai:chat:friday-lg
-  label: sonnet-4-6 (openai)
+  label: 'sonnet-4-6 (openai) | tier:large'
   config: *openai_config
 
 # Add any extra provider lanes here. The default matrix is intentionally
 # small (Anthropic + Groq); enable an OpenAI / Bedrock / other lane by
 # adding both a `litellm_config.yaml` entry AND a provider entry here.
+# Tag each new entry's label with `tier:small`, `tier:medium`, or `tier:large`
+# so `--filter-providers 'tier:...'` continues to work.

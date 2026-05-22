@@ -51,6 +51,7 @@
     "compile": "./scripts/compile.sh",
     "evals": "deno run --allow-all tools/evals/run.ts",
     "evals:render-promptfoo": "deno run -A tools/evals/promptfoo/scripts/render-all.ts",
+    "evals:promptfoo": "bash tools/evals/promptfoo/scripts/run-all.sh",
     "sync:svelte": "deno task -f @atlas/ui sync && deno task -f @atlas/agent-playground sync",
     "playground": "deno task sync:svelte && bash scripts/run-playground-vite.sh"
   },

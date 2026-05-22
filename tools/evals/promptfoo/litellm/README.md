@@ -19,14 +19,15 @@ export LITELLM_MASTER_KEY=sk-friday-evals-dev
 
 ## Model aliases
 
-| Alias | Backend | Tier | Used in |
+| Alias | Backend | Tier label | Use |
 |---|---|---|---|
-| `friday-sm` | `groq/llama-3.1-8b-instant` | cheap/fast | PR CI matrix |
-| `friday-md` | `anthropic/claude-haiku-4-5` | balanced | PR CI matrix + dev default |
-| `friday-lg` | `anthropic/claude-sonnet-4-6` | quality | nightly only |
-| `friday-gpt` | `openai/gpt-4.1-mini` | cross-vendor signal | nightly only |
-| `friday-local` | `ollama/llama3.1` | offline fallback | local dev only |
-| `friday-embed` | `openai/text-embedding-3-small` | embeddings | `similar:` assertions |
+| `friday-sm` | `groq/llama-3.1-8b-instant` | `tier:small` | cheap CI / smoke runs |
+| `friday-md` | `anthropic/claude-haiku-4-5` | `tier:medium` | PR matrix + dev default |
+| `friday-lg` | `anthropic/claude-sonnet-4-6` | `tier:large` | nightly quality run |
+| `friday-local` | `ollama/llama3.1` | (no tier) | offline fallback |
+
+Tier labels live in `../shared/providers.yaml` and gate
+`--filter-providers` selection — see the parent README for `EVAL_TIER` usage.
 
 ## Why aliases (not raw model names)?
 
@@ -42,8 +43,9 @@ digit cents per call". Everything else is plumbing.
 ## Adding a new model
 
 1. Add a `- model_name: friday-...` entry to `litellm_config.yaml`
-2. Add a corresponding provider entry to `../shared/providers.yaml`
-   (and `providers.pr.yaml` if cheap enough for PR CI)
+2. Add a corresponding provider entry to `../shared/providers.yaml`,
+   tagged `tier:small|medium|large` in its label so `EVAL_TIER`
+   filtering keeps working
 3. Restart the proxy (`Ctrl+C` then `./start.sh` again)
 4. Run a suite to confirm — every test now also runs against the new
    model with no per-suite edits
