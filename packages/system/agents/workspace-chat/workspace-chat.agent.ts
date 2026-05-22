@@ -857,7 +857,7 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
               ? fetchForegroundContexts(foregroundIds, logger)
               : Promise.resolve([]),
             fetchUserProfileState(userId, logger),
-            fetchWorkspaceSetupStatus(workspaceId, logger),
+            fetchWorkspaceSetupStatus(workspaceId, logger, session.streamId ?? null),
           ]);
 
         const workspaceDetails = block2.details;
@@ -1286,7 +1286,7 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
 
         const setupStatusBlock = setupStatus.shouldInject
           ? formatSetupStatusBlock(setupStatus.setupRequirements, {
-              isInitialSetup: setupStatus.isInitialSetup,
+              isBootstrapChat: setupStatus.isBootstrapChat,
             })
           : "";
 
