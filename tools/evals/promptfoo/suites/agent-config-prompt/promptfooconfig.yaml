@@ -1,0 +1,30 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+
+description: |
+  Agent-config-prompt downstream eval — multi-model.
+
+  Migrated from tools/evals/agents/agent-config-prompt/agent-config-prompt.eval.ts.
+  The original ran Haiku only; this suite covers the full matrix.
+
+  Each test's `user_prompt` is the literal output of `composeAgentPrompt(...)`
+  — see render.ts. No system message is set: the whole point is that the
+  agent's config-level prompt acts as the system-style instruction embedded
+  in the user message. Adding a real system message here would mask the bug.
+
+  Structural contract for `composeAgentPrompt` itself is pinned by unit
+  tests in `apps/atlasd/src/agent-helpers.test.ts` AND by render.ts's
+  pre-check (renderer fails if either prompt layer is dropped from the
+  composed output).
+
+prompts:
+  - file://prompts/chat.json
+
+providers: file://../../shared/providers.yaml
+
+defaultTest: file://../../shared/defaultTest.yaml
+
+tests: file://tests.generated.yaml
+
+evaluateOptions:
+  maxConcurrency: 20
+  showProgressBar: true

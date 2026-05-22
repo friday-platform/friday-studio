@@ -1,0 +1,7 @@
+[
+  {
+    "role": "system",
+    "content": "You follow the user's instruction precisely and respond in plain prose. Keep responses short."
+  },
+  { "role": "user", "content": "{{user_prompt}}" }
+]
