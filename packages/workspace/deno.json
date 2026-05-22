@@ -9,7 +9,9 @@
     "./signal-to-stream": "./src/signal-to-stream.ts",
     "./storage": "./src/storage.ts",
     "./types": "./src/types.ts",
-    "./agent-builder": "./src/agent-builder.ts"
+    "./agent-builder": "./src/agent-builder.ts",
+    "./variable-state": "./src/variable-state.ts",
+    "./variable-interpolation": "./src/variable-interpolation.ts"
   },
   "imports": {
     "@atlas/adapters-md": "../adapters-md/mod.ts",

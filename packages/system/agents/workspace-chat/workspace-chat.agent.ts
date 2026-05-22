@@ -127,6 +127,7 @@ import { createWebSearchTool } from "./tools/web-search.ts";
 import { createBoundWorkspaceOpsTools, createWorkspaceOpsTools } from "./tools/workspace-ops.ts";
 import { fetchUserIdentitySection } from "./user-identity.ts";
 import { fetchUserProfileState } from "./user-profile.ts";
+import { formatVariableValuesBlock } from "./variable-values-section.ts";
 
 interface WorkspaceChatResult {
   text: string | undefined;
@@ -515,6 +516,14 @@ export function getSystemBlocks(
      * initial-setup (pointer non-null) state.
      */
     setupStatus?: string;
+    /**
+     * Per-turn `<variable-values>` snapshot (Decision 3, volatile half).
+     * Sits between setup-status and the workspace inventory so the agent
+     * reads "what's missing" before "what's here". Empty/undefined when
+     * the workspace declares no variables — the `filter(Boolean)`
+     * composition collapses to the byte-identical block-4 fallback.
+     */
+    variableValues?: string;
   },
 ): SystemBlocks {
   // The salt leads block 2 so a "force fresh" bump cascades: changing
@@ -528,15 +537,18 @@ export function getSystemBlocks(
   if (options?.onboarding) block3Parts.push(options.onboarding);
   if (options?.userProfile) block3Parts.push(options.userProfile);
 
-  const block4Parts: string[] = [];
-  if (options?.setupStatus) block4Parts.push(options.setupStatus);
-  block4Parts.push(workspaceSection);
+  // `filter(Boolean)` keeps the all-absent fallback byte-identical to the
+  // pre-feature output: when neither setup-status nor variable-values fire,
+  // block 4 is just the workspace section with no leading blank line.
+  const block4 = [options?.setupStatus, options?.variableValues, workspaceSection]
+    .filter(Boolean)
+    .join("\n\n");
 
   return {
     block1: SYSTEM_PROMPT,
     block2: block2Parts.join("\n\n"),
     block3: block3Parts.join("\n\n"),
-    block4: block4Parts.join("\n\n"),
+    block4,
   };
 }
 
@@ -1278,6 +1290,11 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
             })
           : "";
 
+        // `<variable-values>` snapshot — same envOverlay the handler already
+        // loaded, threaded through `resolveVariableState` so the agent's
+        // "filled" view matches what the daemon resolved at config-load time.
+        const variableValuesBlock = formatVariableValuesBlock(wsConfig, envOverlay ?? {}) ?? "";
+
         const systemBlocks = getSystemBlocks(workspaceSection, {
           skills: skillsSection,
           userIdentity: userIdentitySection,
@@ -1285,6 +1302,7 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           userProfile: userProfileClause,
           cacheSaltTag,
           setupStatus: setupStatusBlock,
+          variableValues: variableValuesBlock,
         });
         const systemPrompt = flattenSystemBlocks(systemBlocks);
 
