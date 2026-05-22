@@ -486,6 +486,51 @@ export class JetStreamElicitationStorageAdapter implements ElicitationStorageAda
     }
   }
 
+  async deletePendingByWorkspace(input: {
+    workspaceId: string;
+  }): Promise<Result<{ deleted: string[] }, string>> {
+    const deleted: string[] = [];
+    try {
+      const kv = await this.kv();
+      // Same two-pass key/get pattern as `list()` / `expirePending()` —
+      // see the comment in `list()` for why we materialize keys before
+      // fetching entries.
+      const keysIter = await kv.keys();
+      const keys: string[] = [];
+      for await (const key of keysIter) keys.push(key);
+
+      for (const key of keys) {
+        const entry = await kv.get(key);
+        if (!entry || entry.operation !== "PUT") continue;
+        let elicitation: Elicitation;
+        try {
+          elicitation = ElicitationSchema.parse(JSON.parse(dec.decode(entry.value)));
+        } catch (parseErr) {
+          logger.warn("deletePendingByWorkspace: skipping malformed entry", {
+            key,
+            error: stringifyError(parseErr),
+          });
+          continue;
+        }
+        if (elicitation.workspaceId !== input.workspaceId) continue;
+        if (elicitation.status !== "pending") continue;
+        try {
+          await kv.delete(elicitation.id);
+          deleted.push(elicitation.id);
+        } catch (err) {
+          logger.warn("deletePendingByWorkspace: per-entry delete failed", {
+            elicitationId: elicitation.id,
+            workspaceId: input.workspaceId,
+            error: stringifyError(err),
+          });
+        }
+      }
+      return success({ deleted });
+    } catch (err) {
+      return fail(stringifyError(err));
+    }
+  }
+
   /**
    * Re-publish an envelope to the stream without touching the KV.
    * Used by {@link expirePending} after a CAS-guarded KV update so the

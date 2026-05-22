@@ -620,6 +620,66 @@ describe("JetStreamElicitationStorageAdapter — read-time derivation", () => {
     expect.assert(expired.ok === true);
     expect(expired.data.map((e) => e.id)).toContain(stale.data.id);
   });
+
+  it("deletePendingByWorkspace removes pending entries for the workspace and leaves others intact", async () => {
+    const adapter = new JetStreamElicitationStorageAdapter(nc);
+    const wsTarget = `ws-delete-${crypto.randomUUID().slice(0, 8)}`;
+    const wsOther = `ws-keep-${crypto.randomUUID().slice(0, 8)}`;
+
+    // Target workspace: two pending + one answered. Only the pending pair
+    // should disappear; the answered row is audit history and stays.
+    const targetPending1 = await adapter.create(
+      baseInput({ workspaceId: wsTarget, kind: "workspace-setup" }),
+    );
+    const targetPending2 = await adapter.create(baseInput({ workspaceId: wsTarget }));
+    const targetAnswered = await adapter.create(baseInput({ workspaceId: wsTarget }));
+    expect.assert(targetPending1.ok === true);
+    expect.assert(targetPending2.ok === true);
+    expect.assert(targetAnswered.ok === true);
+    await adapter.answer({
+      id: targetAnswered.data.id,
+      answer: { value: "ok", answeredAt: new Date().toISOString() },
+    });
+
+    // Other workspace: one pending. Must survive — the filter is per-workspace.
+    const otherPending = await adapter.create(baseInput({ workspaceId: wsOther }));
+    expect.assert(otherPending.ok === true);
+
+    const result = await adapter.deletePendingByWorkspace({ workspaceId: wsTarget });
+    expect.assert(result.ok === true);
+    expect(result.data.deleted).toEqual(
+      expect.arrayContaining([targetPending1.data.id, targetPending2.data.id]),
+    );
+    expect(result.data.deleted).toHaveLength(2);
+
+    // Pending rows for the target workspace are gone from the KV.
+    expect((await adapter.get({ id: targetPending1.data.id })).ok && true).toBe(true);
+    const lookup1 = await adapter.get({ id: targetPending1.data.id });
+    expect.assert(lookup1.ok === true);
+    expect(lookup1.data).toBeNull();
+    const lookup2 = await adapter.get({ id: targetPending2.data.id });
+    expect.assert(lookup2.ok === true);
+    expect(lookup2.data).toBeNull();
+
+    // Answered row stays — audit history is preserved.
+    const survivorAnswered = await adapter.get({ id: targetAnswered.data.id });
+    expect.assert(survivorAnswered.ok === true);
+    expect(survivorAnswered.data?.status).toBe("answered");
+
+    // Other workspace's pending row is untouched.
+    const survivorOther = await adapter.get({ id: otherPending.data.id });
+    expect.assert(survivorOther.ok === true);
+    expect(survivorOther.data?.status).toBe("pending");
+  });
+
+  it("deletePendingByWorkspace returns an empty list when no pending rows match", async () => {
+    const adapter = new JetStreamElicitationStorageAdapter(nc);
+    const result = await adapter.deletePendingByWorkspace({
+      workspaceId: `ws-nothing-${crypto.randomUUID().slice(0, 8)}`,
+    });
+    expect.assert(result.ok === true);
+    expect(result.data.deleted).toEqual([]);
+  });
 });
 
 // ---------------------------------------------------------------------------
