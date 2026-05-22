@@ -105,11 +105,12 @@ tools/evals/promptfoo/
 │   ├── render-shared.ts       # shared types + writeGeneratedTests() helper
 │   └── run-all.sh             # backs `deno task evals:promptfoo`
 └── suites/
-    ├── progress-line/           # migrated from agents/small-llm/small-llm.eval.ts
-    ├── prompt-interpolation/    # migrated from agents/prompt-interpolation/
+    ├── progress-line/           # static-prompt suite (status-line generation)
+    ├── title-generation/        # static-prompt suite (conversation titles)
+    ├── prompt-interpolation/    # function-wrapping suite
     │   ├── render.ts            # calls real interpolatePromptPlaceholders, writes tests.generated.yaml
     │   └── tests.generated.yaml # COMMITTED — regenerate via `deno task evals:render-promptfoo`
-    └── agent-config-prompt/     # migrated from agents/agent-config-prompt/
+    └── agent-config-prompt/     # function-wrapping suite
         ├── render.ts            # calls real composeAgentPrompt, writes tests.generated.yaml
         └── tests.generated.yaml # COMMITTED — same workflow
 ```
@@ -186,10 +187,6 @@ Move it here when:
 - It's a pure system-prompt → response → assert loop
 - Multi-model comparison adds signal
 - Latency/cost regression matters
-
-See `agents/small-llm/small-llm.eval.ts` for the original of the
-`progress-line` suite — it stays in the custom harness as a fallback
-until the promptfoo suite is trusted.
 
 ## Gotchas discovered during integration
 

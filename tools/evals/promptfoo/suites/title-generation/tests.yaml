@@ -1,0 +1,49 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+#
+# Title-generation cases mirror agents/small-llm/title-generation.eval.ts.
+# Two assertions per case map to the original scorers:
+#   - NonEmpty   ← trimmed length >= 3 (regression guard for empty-title bug)
+#   - TitleLength ← 2-3 words after trim/split (the prompt's actual contract)
+
+- description: 'short-greeting — "who are you"'
+  vars:
+    transcript: |-
+      user: [{"type":"text","text":"who are you"}]
+      assistant: [{"type":"text","text":"I'm Friday, an AI assistant."}]
+  assert: &title_assert
+    - type: javascript
+      value: 'output.trim().length >= 3'
+      metric: NonEmpty
+    - type: javascript
+      value: |
+        const words = output.trim().split(/\s+/).filter(Boolean);
+        return words.length >= 2 && words.length <= 3;
+      metric: TitleLength
+
+- description: 'technical-question — OAuth flows'
+  vars:
+    transcript: |-
+      user: [{"type":"text","text":"Can you explain the difference between OAuth 2.0 authorization code flow and the implicit flow?"}]
+      assistant: [{"type":"text","text":"The authorization code flow is a two-step process where the server exchanges a code for tokens. The implicit flow returns tokens directly in the URL fragment."}]
+  assert: *title_assert
+
+- description: 'creative-request — dark fantasy story'
+  vars:
+    transcript: |-
+      user: [{"type":"text","text":"Write me a dark fantasy short story about a lighthouse keeper who discovers the light lures ancient leviathans from the deep ocean."}]
+      assistant: [{"type":"text","text":"The fog had not lifted in eleven days. Maren Sollis kept count by the scratch marks she'd carved into the doorframe..."}]
+  assert: *title_assert
+
+- description: 'code-help — React useEffect bug'
+  vars:
+    transcript: |-
+      user: [{"type":"text","text":"My React useEffect is firing twice in development mode, what's going on?"}]
+      assistant: [{"type":"text","text":"In React 18 with StrictMode enabled, effects intentionally fire twice in development to help you find bugs."}]
+  assert: *title_assert
+
+- description: 'long-technical — microservices migration'
+  vars:
+    transcript: |-
+      user: [{"type":"text","text":"We're planning a microservices migration from a Django monolith. The current app handles user authentication, product catalog with search, order processing with payment integration via Stripe, email notifications via SendGrid, and a recommendation engine using collaborative filtering. We want to decompose this into separate services."}]
+      assistant: [{"type":"text","text":"I'd recommend starting with 5 bounded contexts: Auth, Product/Search, Orders, Notifications, and Recommendations. Migrate in order of lowest risk first..."}]
+  assert: *title_assert

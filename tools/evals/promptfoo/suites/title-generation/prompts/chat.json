@@ -1,0 +1,7 @@
+[
+  {
+    "role": "system",
+    "content": "You generate concise 2-3 word titles for conversations. Only output the title, nothing else."
+  },
+  { "role": "user", "content": "Generate a title for this conversation:\n{{transcript}}" }
+]

@@ -1,0 +1,25 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+
+description: |
+  Title-generation eval — multi-model.
+
+  Migrated from tools/evals/agents/small-llm/title-generation.eval.ts.
+  Original ran Groq only; this suite exercises the full friday-* matrix so a
+  prompt regression on the empty-title bug (reasoning models exhausting their
+  budget on internal tokens) surfaces on any tier.
+
+  System prompt + user template live in prompts/chat.json. Each case in
+  tests.yaml plugs a conversation transcript into `{{transcript}}`.
+
+prompts:
+  - file://prompts/chat.json
+
+providers: file://../../shared/providers.yaml
+
+defaultTest: file://../../shared/defaultTest.yaml
+
+tests: file://tests.yaml
+
+# Concurrency comes from the CLI (`-j N`) — keep config callers in control.
+evaluateOptions:
+  showProgressBar: true
