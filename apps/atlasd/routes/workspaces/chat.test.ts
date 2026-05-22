@@ -35,6 +35,18 @@ const { mockChatStorage, mockValidateMessages } = vi.hoisted(() => ({
 
 vi.mock("@atlas/core/chat/storage", () => ({ ChatStorage: mockChatStorage }));
 
+const { mockSummariesStorage, mockSummarizeChat } = vi.hoisted(() => ({
+  mockSummariesStorage: {
+    get: vi.fn<() => Promise<unknown | null>>(),
+    put: vi.fn<() => Promise<void>>(),
+  },
+  mockSummarizeChat: vi.fn<() => Promise<unknown>>(),
+}));
+vi.mock("@atlas/core/chat/summaries-storage", () => ({
+  ChatSummariesStorage: mockSummariesStorage,
+}));
+vi.mock("../../src/summarize-chat.ts", () => ({ summarizeChat: mockSummarizeChat }));
+
 vi.mock("@atlas/core/users/storage", () => ({
   UserStorage: { getCachedLocalUserId: () => "test-local-user" },
 }));
@@ -135,6 +147,10 @@ function createTestApp(
     chatTurnRegistry: { replace: vi.fn(), abort: vi.fn(), get: vi.fn() },
     sessionStreamRegistry: {},
     sessionHistoryAdapter: {},
+    // Stub PlatformModels for the summarize route. Real summarization
+    // is mocked at the `summarize-chat` module boundary above, so the
+    // route never actually reads from this object.
+    platformModels: { get: vi.fn() },
   };
 
   const app = new Hono<{ Variables: { app: typeof mockContext; userId?: string } }>();
@@ -179,6 +195,10 @@ beforeEach(async () => {
   mockChatStorage.getChat.mockReset();
   mockChatStorage.appendMessage.mockReset();
   mockChatStorage.updateChatTitle.mockReset();
+  mockSummariesStorage.get.mockReset();
+  mockSummariesStorage.put.mockReset();
+  mockSummariesStorage.put.mockResolvedValue(undefined);
+  mockSummarizeChat.mockReset();
   mockValidateMessages.mockReset();
   mockValidateMessages.mockImplementation((msgs: unknown[]) => Promise.resolve(msgs));
   // Default chat lookup — covers the routes that now consult
@@ -827,4 +847,103 @@ test("workspace-not-found middleware short-circuits with 404", async () => {
   expect(res.status).toBe(404);
   const body = (await res.json()) as JsonBody;
   expect(body.error).toBe("Workspace not found");
+});
+
+// ---------------------------------------------------------------------------
+// POST /:chatId/summarize (friday-studio-6dq)
+// ---------------------------------------------------------------------------
+
+describe("POST /:chatId/summarize", () => {
+  test("cache miss runs summarizeChat, persists the result, returns cached: false", async () => {
+    const { app } = createTestApp();
+    mockChatStorage.getChat.mockResolvedValue({
+      ok: true,
+      data: {
+        id: "chat-1",
+        workspaceId: "ws-1",
+        updatedAt: "2026-05-22T00:00:00.000Z",
+        messages: [{ id: "m1", role: "user", parts: [{ type: "text", text: "hi" }] }],
+      },
+    });
+    mockSummariesStorage.get.mockResolvedValue(null);
+    mockSummarizeChat.mockResolvedValue({
+      summary: "compact summary",
+      messageCount: 1,
+      modelId: "stub-labels",
+      generatedAt: "2026-05-22T01:00:00.000Z",
+    });
+
+    const res = await post(app, "/ws-1/chat/chat-1/summarize", {});
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as JsonBody;
+    expect(body).toMatchObject({
+      summary: "compact summary",
+      messageCount: 1,
+      modelId: "stub-labels",
+      cached: false,
+    });
+    expect(mockSummariesStorage.put).toHaveBeenCalledTimes(1);
+  });
+
+  test("cache hit returns the cached payload with cached: true and skips summarizeChat", async () => {
+    const { app } = createTestApp();
+    mockChatStorage.getChat.mockResolvedValue({
+      ok: true,
+      data: {
+        id: "chat-1",
+        workspaceId: "ws-1",
+        updatedAt: "2026-05-22T00:00:00.000Z",
+        messages: [],
+      },
+    });
+    mockSummariesStorage.get.mockResolvedValue({
+      summary: "from cache",
+      messageCount: 4,
+      modelId: "stub-labels",
+      generatedAt: "2026-05-20T00:00:00.000Z",
+    });
+
+    const res = await post(app, "/ws-1/chat/chat-1/summarize", {});
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as JsonBody;
+    expect(body).toMatchObject({ summary: "from cache", cached: true });
+    expect(mockSummarizeChat).not.toHaveBeenCalled();
+    expect(mockSummariesStorage.put).not.toHaveBeenCalled();
+  });
+
+  test("returns 404 when the chat does not exist", async () => {
+    const { app } = createTestApp();
+    mockChatStorage.getChat.mockResolvedValue({ ok: true, data: null });
+
+    const res = await post(app, "/ws-1/chat/missing/summarize", {});
+    expect(res.status).toBe(404);
+    expect(mockSummarizeChat).not.toHaveBeenCalled();
+  });
+
+  test("returns 400 when focus exceeds the max length", async () => {
+    const { app } = createTestApp();
+    const res = await post(app, "/ws-1/chat/chat-1/summarize", { focus: "x".repeat(600) });
+    expect(res.status).toBe(400);
+    expect(mockChatStorage.getChat).not.toHaveBeenCalled();
+  });
+
+  test("surfaces a 503 with details when summarizeChat throws", async () => {
+    const { app } = createTestApp();
+    mockChatStorage.getChat.mockResolvedValue({
+      ok: true,
+      data: {
+        id: "chat-1",
+        workspaceId: "ws-1",
+        updatedAt: "2026-05-22T00:00:00.000Z",
+        messages: [],
+      },
+    });
+    mockSummariesStorage.get.mockResolvedValue(null);
+    mockSummarizeChat.mockRejectedValue(new Error("model unavailable"));
+
+    const res = await post(app, "/ws-1/chat/chat-1/summarize", {});
+    expect(res.status).toBe(503);
+    const body = (await res.json()) as JsonBody;
+    expect(body.error).toBe("Summarization failed");
+  });
 });

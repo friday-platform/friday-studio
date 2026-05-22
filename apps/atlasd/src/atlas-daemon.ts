@@ -18,6 +18,10 @@ import {
 } from "@atlas/core";
 import { initArtifactStorage } from "@atlas/core/artifacts/server";
 import { ensureChatsKVBucket, initChatStorage } from "@atlas/core/chat/storage";
+import {
+  ensureChatSummariesKVBucket,
+  initChatSummariesStorage,
+} from "@atlas/core/chat/summaries-storage";
 import { bootstrapElicitationsStream, initElicitationStorage } from "@atlas/core/elicitations";
 import { initMCPRegistryAdapter } from "@atlas/core/mcp-registry/storage";
 import { ensureSessionsKVBucket, initSessionStorage } from "@atlas/core/sessions/storage";
@@ -531,6 +535,13 @@ export class AtlasDaemon {
       duplicateWindowNs: jsCfg.stream.duplicateWindowNs.value,
     });
     await ensureChatsKVBucket(nc);
+
+    // Chat-summary cache (friday-studio-6dq). Map-reduce summaries are
+    // expensive; the bucket lets repeat calls for an unchanged chat
+    // short-circuit. Keyed on chat.updatedAt so a new message
+    // append naturally invalidates without an explicit purge.
+    initChatSummariesStorage(nc);
+    await ensureChatSummariesKVBucket(nc);
 
     // Wire user-identity storage and warm the local-user-id cache so
     // synchronous request handlers can read it via getCachedLocalUserId().
