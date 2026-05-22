@@ -112,6 +112,7 @@ import {
 } from "./tools/memory-entry-tools.ts";
 import { createMemorySaveTool } from "./tools/memory-save.ts";
 import { createPublishSkillTool } from "./tools/publish-skill.ts";
+import { createReadChatTool } from "./tools/read-chat.ts";
 import { createRequestToolAccessTool } from "./tools/request-tool-access.ts";
 import { createRequestWorkspaceSetupTool } from "./tools/request-workspace-setup.ts";
 import { createSearchMcpServersTool } from "./tools/search-mcp-servers.ts";
@@ -934,6 +935,7 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
         // run_code curl).
         const listSessionsTool = createListSessionsTool(workspaceId, logger);
         const describeSessionTool = createDescribeSessionTool(logger);
+        const readChatTool = createReadChatTool(logger);
 
         // Memory-entry retrieval (replaces the old list_memory_entries shape
         // with rich substring + time + metadata filters and pagination).
@@ -1132,6 +1134,7 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           ...describeBundledAgentTool,
           ...listSessionsTool,
           ...describeSessionTool,
+          ...readChatTool,
           ...listMemoryEntriesTool,
           ...describeMemoryEntryTool,
           delegate: delegateTool,
