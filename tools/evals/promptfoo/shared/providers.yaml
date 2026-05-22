@@ -53,7 +53,6 @@
     max_tokens: 256
     stream: false
 
-# friday-gpt (openai/gpt-4.1-mini) intentionally omitted — disabled in this env.
-# Re-enable by adding a provider entry here AND ensuring a real OpenAI key is
-# available to the proxy (the local .env points OPENAI_API_KEY at OpenRouter,
-# which won't accept bare `gpt-4.1-mini` model IDs).
+# Add any extra provider lanes here. The default matrix is intentionally
+# small (Anthropic + Groq); enable an OpenAI / Bedrock / other lane by
+# adding both a `litellm_config.yaml` entry AND a provider entry here.

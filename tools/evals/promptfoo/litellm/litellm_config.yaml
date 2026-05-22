@@ -23,21 +23,10 @@ model_list:
       model: ollama/llama3.1
       api_base: http://localhost:11434
 
-  # NOTE: friday-gpt (openai/gpt-4.1-mini) and friday-embed (text-embedding-3-small)
-  # are disabled by default — the suite is validated against the Anthropic +
-  # Groq lanes only. To enable, restore the entries below AND ensure the proxy
-  # has a real OpenAI key in scope (an OpenRouter-routed key in OPENAI_API_KEY
-  # — value starting with `sk-or-v1-` — won't work; OpenRouter rejects bare
-  # `gpt-4.1-mini` model IDs):
-  #
-  #   - model_name: friday-gpt
-  #     litellm_params:
-  #       model: openai/gpt-4.1-mini
-  #       api_key: os.environ/OPENAI_API_KEY
-  #   - model_name: friday-embed
-  #     litellm_params:
-  #       model: openai/text-embedding-3-small
-  #       api_key: os.environ/OPENAI_API_KEY
+  # Add additional model aliases here as needed (e.g. an OpenAI lane, a
+  # different Bedrock model, an embedding model for `similar:` assertions).
+  # Each entry maps an alias to a backend + the env var that holds its key;
+  # update shared/providers.yaml to surface it in the matrix.
 
 general_settings:
   # Promptfoo passes this as apiKey: in provider config.

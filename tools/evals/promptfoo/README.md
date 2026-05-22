@@ -142,12 +142,9 @@ until the promptfoo suite is trusted.
 - **Python 3.14 breaks `uvloop`.** Install with `uv tool install --python
   3.13 'litellm[proxy]'`. The bare `uv tool install` picks 3.14 on this
   machine and crashes on import.
-- **The OpenAI lane is disabled by default.** The suite is validated
-  against Anthropic + Groq only. If your `OPENAI_API_KEY` starts with
-  `sk-or-v1-` it's an OpenRouter-routed key, which rejects bare
-  `gpt-4.1-mini` model IDs and won't work with the inline-commented
-  entries in `litellm_config.yaml` — substitute a real OpenAI key
-  before re-enabling.
+- **The default matrix is Anthropic + Groq only.** Add any other
+  provider you have an API key for to `litellm_config.yaml` and
+  `shared/providers.yaml` (one line each).
 - **Promptfoo `cost` assertion can't read LiteLLM cost headers.** Cost
   is in `x-litellm-response-cost`, not the OpenAI response body. The
   shared `defaultTest.yaml` omits `cost` for this reason; add it
