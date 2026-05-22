@@ -40,14 +40,6 @@ npx promptfoo@latest eval \
   --no-cache --no-share -j 20
 ```
 
-CI / cheap matrix (only `friday-sm` + `friday-md`):
-
-```bash
-PROVIDERS_FILE=shared/providers.pr.yaml \
-  npx promptfoo@latest eval -c tools/evals/promptfoo/suites/progress-line/promptfooconfig.yaml \
-  --no-cache --no-share -j 50
-```
-
 ## Layout
 
 ```

@@ -25,6 +25,6 @@ defaultTest: file://../../shared/defaultTest.yaml
 
 tests: file://tests.generated.yaml
 
+# Concurrency comes from the CLI (`-j N`) — keep config callers in control.
 evaluateOptions:
-  maxConcurrency: 20
   showProgressBar: true

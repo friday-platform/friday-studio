@@ -5,11 +5,9 @@
  *
  * Used by:  `deno task evals:render-promptfoo`
  *
- * Discovers any `suites/*\/render.ts`, executes it inline (so a failed
- * structural pre-check inside a renderer aborts the whole regeneration
- * with a non-zero exit). Runs suites sequentially — the cost is one
- * function call per case, not API calls; parallelism would only speed up
- * import resolution.
+ * Discovers any `suites/*\/render.ts`, imports them in parallel via
+ * `Promise.allSettled` so a failure in one renderer doesn't mask others.
+ * Exits non-zero if any renderer's structural pre-check throws.
  */
 
 import { dirname, join } from "node:path";
@@ -35,20 +33,21 @@ if (entries.length === 0) {
   Deno.exit(0);
 }
 
+for (const path of entries) console.log(`▶ ${path}`);
+
+// Dynamic import runs each script's top-level body once. Renderers are
+// independent (different output paths) so parallel execution is safe and
+// `allSettled` lets us report every failure rather than aborting on the first.
+const results = await Promise.allSettled(entries.map((path) => import(`file://${path}`)));
+
 let failed = 0;
-for (const path of entries) {
-  console.log(`▶ ${path}`);
-  try {
-    // Dynamic import runs the script top-level body once. Each renderer is
-    // idempotent — re-importing in the same process would be a cache hit, but
-    // we expect this script to run as a one-shot, so we don't worry about it.
-    await import(`file://${path}`);
-  } catch (e) {
+results.forEach((result, i) => {
+  if (result.status === "rejected") {
     failed += 1;
-    console.error(`✗ ${path}`);
-    console.error(e);
+    console.error(`✗ ${entries[i]}`);
+    console.error(result.reason);
   }
-}
+});
 
 if (failed > 0) {
   console.error(`\n${failed} renderer(s) failed.`);
