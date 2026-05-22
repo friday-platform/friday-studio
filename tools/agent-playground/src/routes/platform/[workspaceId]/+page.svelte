@@ -28,9 +28,11 @@
   import SignalsCard from "$lib/components/workspace/signals-card.svelte";
   import MentionAutocomplete from "$lib/components/chat/mention-autocomplete.svelte";
   import {
+    applyEditDelta,
     detectActiveMentionQuery,
-    expandMentionDisplayText,
+    expandMentionSpans,
     type InsertedMentionRef,
+    type InsertedMentionSpan,
   } from "$lib/chat/mention-text.ts";
   import { sessionQueries, useDeleteWorkspace, workspaceQueries } from "$lib/queries";
   import { writable } from "svelte/store";
@@ -287,7 +289,10 @@
   let mentionPopover = $state<MentionAutocomplete | undefined>(undefined);
   let mentionQuery = $state<{ start: number; end: number; query: string } | null>(null);
   const mentionOpen = $derived(mentionQuery !== null);
-  let mentionRefsByTitle = $state<Map<string, InsertedMentionRef>>(new Map());
+  // Offset-based span tracking (friday-studio-a0q) so duplicate
+  // titles across workspaces don't collide.
+  let mentionSpans = $state<InsertedMentionSpan[]>([]);
+  let prevStartMessage = "";
 
   function refreshMentionQuery() {
     if (!composerInputEl) {
@@ -304,12 +309,22 @@
     const display = `@${ref.title} `;
     const before = startMessage.slice(0, start);
     const after = startMessage.slice(end);
-    startMessage = before + display + after;
-    mentionRefsByTitle = new Map(mentionRefsByTitle).set(ref.title, ref);
+    const newValue = before + display + after;
+    const replaceDelta = display.length - (end - start);
+    const shifted: InsertedMentionSpan[] = [];
+    for (const span of mentionSpans) {
+      const spanEnd = span.start + span.length;
+      if (spanEnd <= start) shifted.push(span);
+      else if (span.start >= end) shifted.push({ ...span, start: span.start + replaceDelta });
+    }
+    shifted.push({ start, length: display.length, ref });
+    mentionSpans = shifted;
+    startMessage = newValue;
+    prevStartMessage = newValue;
     mentionQuery = null;
     queueMicrotask(() => {
       if (!composerInputEl) return;
-      const caretAt = before.length + display.length;
+      const caretAt = start + display.length;
       composerInputEl.focus();
       composerInputEl.setSelectionRange(caretAt, caretAt);
     });
@@ -320,6 +335,8 @@
   }
 
   function handleComposerInput() {
+    mentionSpans = applyEditDelta(mentionSpans, prevStartMessage, startMessage);
+    prevStartMessage = startMessage;
     refreshMentionQuery();
   }
 
@@ -354,7 +371,8 @@
     // so the server resolver matches. Mentions are encoded into the
     // sessionStorage payload alongside the text so the chat page can
     // render the optimistic link bubble with the friendly title.
-    const { text, mentions } = expandMentionDisplayText(rawMsg, mentionRefsByTitle);
+    const useSpans = rawMsg === startMessage ? mentionSpans : [];
+    const { text, mentions } = expandMentionSpans(rawMsg, useSpans);
     const trimmed = text.trim();
     if (!trimmed) return;
     const payload = mentions.length > 0

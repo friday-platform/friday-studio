@@ -921,6 +921,7 @@ export function createMessageHandler(
       requesterUserId: userId,
       currentWorkspaceId: workspaceId,
       foregroundWorkspaceIds: initialForegroundWorkspaceIds,
+      exposeKernel: options?.exposeKernel ?? false,
     });
 
     const appendResult = await ChatStorage.appendMessage(chatId, storedMessage, workspaceId);

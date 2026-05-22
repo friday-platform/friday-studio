@@ -3,7 +3,7 @@ import { ChatStorage } from "@atlas/core/chat/storage";
 import { ONBOARDING_VERSION, UserStorage } from "@atlas/core/users/storage";
 import type { Context } from "hono";
 import { z } from "zod";
-import { daemonFactory } from "../../src/factory.ts";
+import { daemonFactory, KERNEL_WORKSPACE_ID } from "../../src/factory.ts";
 import { getAccessibleWorkspaceIds } from "../../src/workspace-authz.ts";
 import { getCurrentUser, updateCurrentUser } from "./adapter.ts";
 import { deletePhoto, getPhoto, savePhoto, validatePhoto } from "./photo-storage.ts";
@@ -313,6 +313,14 @@ const meRoutes = daemonFactory
     const q = qRaw.trim().toLowerCase();
 
     const accessible = await getAccessibleWorkspaceIds(userId);
+    // Drop the kernel workspace from the autocomplete data source — a
+    // kernel-member caller in a non-kernel chat should not see kernel
+    // chats as @-mention candidates. The composer doesn't pass a
+    // context flag, so the safe default is to hide kernel chats from
+    // this endpoint entirely; kernel-internal tooling that needs to
+    // mention kernel chats should use a different route. See
+    // friday-studio-svv.
+    accessible.delete(KERNEL_WORKSPACE_ID);
     if (accessible.size === 0) {
       return c.json({ chats: [] }, 200);
     }

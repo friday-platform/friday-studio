@@ -126,40 +126,105 @@ export interface InsertedMentionRef {
 }
 
 /**
- * Expand `@Title` occurrences (the human-readable form the composer
- * shows in the textarea) back into the canonical `@workspaceId/chatId`
- * the server resolver expects. The `refsByTitle` map is built up as
- * the user picks entries from the autocomplete. Titles that have been
- * edited or deleted in the textarea won't match and pass through as
- * plain text — the server's resolver will simply find no @ws/chat
- * token for them, which is the safer failure mode.
+ * Tracked insertion of a mention in the textarea. `start` is the
+ * offset of the leading `@` in `value`; `length` covers the whole
+ * inserted display (typically `@Title `, including the trailing
+ * space). The composer maintains these offsets across user edits via
+ * `applyEditDelta` so two picks with the same title resolve to their
+ * correct refs at submit time. See friday-studio-a0q.
  */
-export function expandMentionDisplayText(
+export interface InsertedMentionSpan {
+  start: number;
+  length: number;
+  ref: InsertedMentionRef;
+}
+
+/**
+ * Shift / drop tracked spans in response to a text edit. The textarea's
+ * single string offset is the source of truth; we diff old vs new to
+ * find the [editStart, prevEnd) → [editStart, newEnd) replacement and:
+ *   - spans entirely before the edit: untouched
+ *   - spans entirely after the edit:  shift by delta
+ *   - spans that overlap the edit:    dropped (their display was
+ *     mutilated; the user clearly didn't want them to track)
+ */
+export function applyEditDelta(
+  spans: ReadonlyArray<InsertedMentionSpan>,
+  prevValue: string,
+  newValue: string,
+): InsertedMentionSpan[] {
+  if (prevValue === newValue) return [...spans];
+  // Common prefix.
+  let editStart = 0;
+  const minLen = Math.min(prevValue.length, newValue.length);
+  while (editStart < minLen && prevValue[editStart] === newValue[editStart]) editStart++;
+  // Common suffix.
+  let prevEnd = prevValue.length;
+  let newEnd = newValue.length;
+  while (
+    prevEnd > editStart &&
+    newEnd > editStart &&
+    prevValue[prevEnd - 1] === newValue[newEnd - 1]
+  ) {
+    prevEnd--;
+    newEnd--;
+  }
+  const delta = newEnd - editStart - (prevEnd - editStart);
+  const updated: InsertedMentionSpan[] = [];
+  for (const span of spans) {
+    const spanEnd = span.start + span.length;
+    if (spanEnd <= editStart) {
+      updated.push(span);
+    } else if (span.start >= prevEnd) {
+      updated.push({ ...span, start: span.start + delta });
+    }
+    // else: edit overlaps the span — drop it.
+  }
+  return updated;
+}
+
+/**
+ * Substitute each tracked-span's display text with the canonical
+ * `@workspaceId/chatId` token the server resolver expects. Walks
+ * spans in reverse offset order so earlier offsets remain valid as
+ * later ones splice. Spans whose slice no longer matches the
+ * expected display (e.g. the user mutated the inserted text inline)
+ * are skipped — the server then sees a literal `@Title` and won't
+ * resolve it, which is the safer failure mode.
+ */
+export function expandMentionSpans(
   text: string,
-  refsByTitle: ReadonlyMap<string, InsertedMentionRef>,
+  spans: ReadonlyArray<InsertedMentionSpan>,
 ): { text: string; mentions: InsertedMentionRef[] } {
-  if (refsByTitle.size === 0) return { text, mentions: [] };
+  if (spans.length === 0) return { text, mentions: [] };
+  // Splice in reverse offset order so earlier offsets remain valid as
+  // later ones change length. Each insertMention emits `@Title ` (with
+  // a trailing space) — require exactly that match. applyEditDelta
+  // drops any span whose display the user mutated; this slice check
+  // is the second-line guard for misses applyEditDelta didn't catch.
+  const sorted = [...spans].sort((a, b) => b.start - a.start);
   let out = text;
+  const useByStart = new Map<number, InsertedMentionRef>();
+  for (const span of sorted) {
+    const expected = `@${span.ref.title} `;
+    if (out.slice(span.start, span.start + span.length) !== expected) continue;
+    const canonical = `@${span.ref.workspaceId}/${span.ref.chatId} `;
+    out = out.slice(0, span.start) + canonical + out.slice(span.start + span.length);
+    useByStart.set(span.start, span.ref);
+  }
+  // Return refs in original (leftmost-first) order so callers see a
+  // stable, source-text-aligned list. Dedupe by canonical key so two
+  // mentions of the same chat surface once.
   const used: InsertedMentionRef[] = [];
   const seen = new Set<string>();
-  // Longest titles first so that "Foo bar" matches before "Foo" — a
-  // prefix-title would otherwise eat its own suffix.
-  const titles = [...refsByTitle.keys()].sort((a, b) => b.length - a.length);
-  for (const title of titles) {
-    const ref = refsByTitle.get(title);
+  const inOrder = [...useByStart.keys()].sort((a, b) => a - b);
+  for (const start of inOrder) {
+    const ref = useByStart.get(start);
     if (!ref) continue;
-    const escaped = title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    // `@<title>` bounded by end-of-string or a non-identifier char so
-    // we don't snip into a token the user is still typing (e.g. `@Demos`
-    // shouldn't substitute on `@Demo`).
-    const re = new RegExp(`@${escaped}(?=$|[\\s.,!?;:)\\]'"])`, "g");
-    if (!re.test(out)) continue;
-    out = out.replace(re, `@${ref.workspaceId}/${ref.chatId}`);
     const key = `${ref.workspaceId}/${ref.chatId}`;
-    if (!seen.has(key)) {
-      seen.add(key);
-      used.push(ref);
-    }
+    if (seen.has(key)) continue;
+    seen.add(key);
+    used.push(ref);
   }
   return { text: out, mentions: used };
 }

@@ -2,9 +2,11 @@
   import { ALLOWED_EXTENSION_LIST } from "@atlas/core/artifacts/file-upload";
   import { toast } from "@atlas/ui";
   import {
+    applyEditDelta,
     detectActiveMentionQuery,
-    expandMentionDisplayText,
+    expandMentionSpans,
     type InsertedMentionRef,
+    type InsertedMentionSpan,
   } from "../../chat/mention-text.ts";
   import {
     type FileAttachment,
@@ -101,16 +103,15 @@
   let mentionQuery = $state<{ start: number; end: number; query: string } | null>(null);
   const mentionOpen = $derived(mentionQuery !== null);
 
-  // Picked-from-autocomplete mentions, keyed by the *display title*
-  // shown in the textarea (i.e. what we inserted after `@`). The
-  // composer uses this map both to keep the user-facing form readable
-  // and, at submit time, to swap each `@Title` back to the canonical
-  // `@workspaceId/chatId` token the server resolver expects. Edits to
-  // the inserted title in the textarea make the substitution fail to
-  // match — the message goes through with the literal `@Title` and
-  // the server simply doesn't resolve it, which is the safer failure
-  // mode (no fabricated authorization).
-  let mentionRefsByTitle = $state<Map<string, InsertedMentionRef>>(new Map());
+  // Picked-from-autocomplete mentions tracked as offset spans into
+  // `value`. Keying by offset (rather than display title) means two
+  // chats that share a title resolve to their own refs at submit time
+  // — picking ws-a/c1 "Demo" and ws-b/c2 "Demo" no longer collide. See
+  // friday-studio-a0q.
+  let mentionSpans = $state<InsertedMentionSpan[]>([]);
+  /** Snapshot of `value` before the latest input edit. Drives
+   *  applyEditDelta so we can shift / drop spans across user edits. */
+  let prevValue = "";
 
   /**
    * Re-check whether the caret is currently inside an `@`-mention being
@@ -136,14 +137,29 @@
     const display = `@${ref.title} `;
     const before = value.slice(0, start);
     const after = value.slice(end);
-    value = before + display + after;
-    mentionRefsByTitle = new Map(mentionRefsByTitle).set(ref.title, ref);
+    const newValue = before + display + after;
+    // Shift existing spans to account for replacing `[start, end)`
+    // with `display`. Drop any span that overlaps that range
+    // (shouldn't happen — the user can't be inside another span
+    // while typing the active @-query — but defensive).
+    const replaceDelta = display.length - (end - start);
+    const shifted: InsertedMentionSpan[] = [];
+    for (const span of mentionSpans) {
+      const spanEnd = span.start + span.length;
+      if (spanEnd <= start) shifted.push(span);
+      else if (span.start >= end) shifted.push({ ...span, start: span.start + replaceDelta });
+      // else: overlap → drop
+    }
+    shifted.push({ start, length: display.length, ref });
+    mentionSpans = shifted;
+    value = newValue;
+    prevValue = newValue;
     mentionQuery = null;
     // Restore focus + caret position after the splice in a microtask so
     // Svelte has flushed the bind:value update before we move the caret.
     queueMicrotask(() => {
       if (!textareaEl) return;
-      const caretAt = before.length + display.length;
+      const caretAt = start + display.length;
       textareaEl.focus();
       textareaEl.setSelectionRange(caretAt, caretAt);
     });
@@ -339,6 +355,10 @@
   }
 
   function handleInput() {
+    // Reconcile span offsets against the user's edit before any
+    // downstream work that depends on them.
+    mentionSpans = applyEditDelta(mentionSpans, prevValue, value);
+    prevValue = value;
     refreshMentionQuery();
   }
 
@@ -348,11 +368,12 @@
 
   function submit() {
     if (!hasContent) return;
-    const { text, mentions } = expandMentionDisplayText(value, mentionRefsByTitle);
+    const { text, mentions } = expandMentionSpans(value, mentionSpans);
     onsubmit(text.trim(), attachments, mentions);
     value = "";
+    prevValue = "";
     attachments = [];
-    mentionRefsByTitle = new Map();
+    mentionSpans = [];
   }
 
   function handleDrop(e: DragEvent) {

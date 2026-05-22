@@ -21,6 +21,7 @@ import type { AtlasUIMessage, AtlasUIMessagePart } from "@atlas/agent-sdk";
 import { type Chat, ChatStorage } from "@atlas/core/chat/storage";
 import { WorkspaceMemberStorage } from "@atlas/core/workspace-members/storage";
 import { createLogger } from "@atlas/logger";
+import { KERNEL_WORKSPACE_ID } from "../factory.ts";
 
 const logger = createLogger({ component: "mention-resolver" });
 
@@ -205,21 +206,27 @@ export function applyMentionsToMessage(
   message: AtlasUIMessage,
   resolved: ResolvedMention[],
 ): AtlasUIMessage {
-  if (resolved.length === 0) return message;
+  // Strip EVERY client-shipped `data-mention-resolved` part. The
+  // server-side resolver is the sole authority on which mentions are
+  // valid; client placeholders are a render-time convenience that
+  // must not survive persistence. After stripping, we re-append a
+  // canonical part for each resolved ref below. See friday-studio-1ev:
+  //   - empty server-resolved set + client placeholders ⇒ all
+  //     placeholders dropped (forged refs / unauthorized refs / refs
+  //     whose @-token the user erased can no longer persist).
+  //   - non-empty set + matching placeholder ⇒ canonical replaces it
+  //     (one part out, one part in, same key).
+  const filteredParts = message.parts.filter((part) => !isMentionResolvedPart(part));
 
-  // Drop any incoming `data-mention-resolved` parts for refs we resolved
-  // — the playground composer ships client-side placeholders so the
-  // optimistic bubble can render a link instantly. The server resolution
-  // carries the canonical snapshot + messageCount, so we replace those
-  // placeholders here. Parts for refs we did NOT resolve (e.g. the
-  // client typed something the server-side resolver dropped as
-  // not_found / unauthorized) pass through untouched so we don't
-  // discard data we'd otherwise persist.
-  const resolvedKeys = new Set(resolved.map((m) => `${m.ref.workspaceId}/${m.ref.chatId}`));
-  const filteredParts = message.parts.filter((part) => {
-    if (!isMentionResolvedPart(part)) return true;
-    return !resolvedKeys.has(`${part.data.workspaceId}/${part.data.chatId}`);
-  });
+  if (resolved.length === 0) {
+    // No server-resolved refs → nothing to inject. Return only the
+    // structural change (placeholder strip), and only if anything
+    // actually got stripped, to keep object identity stable for the
+    // common no-mentions path.
+    return filteredParts.length === message.parts.length
+      ? message
+      : { ...message, parts: filteredParts };
+  }
 
   const extraParts: AtlasUIMessagePart[] = [];
 
@@ -262,11 +269,17 @@ export function mergeForegroundWorkspaceIds(
   existing: string[] | undefined,
   resolved: ResolvedMention[],
   currentWorkspaceId: string,
+  exposeKernel = false,
 ): string[] | undefined {
   if (resolved.length === 0) return existing;
   const set = new Set(existing ?? []);
   for (const m of resolved) {
-    if (m.ref.workspaceId !== currentWorkspaceId) set.add(m.ref.workspaceId);
+    if (m.ref.workspaceId === currentWorkspaceId) continue;
+    // Mirror the caller-side kernel suppression at chat-sdk-instance.ts —
+    // a mention pointing at the kernel workspace cannot smuggle kernel
+    // context into a non-kernel turn. See friday-studio-svv.
+    if (!exposeKernel && m.ref.workspaceId === KERNEL_WORKSPACE_ID) continue;
+    set.add(m.ref.workspaceId);
   }
   if (set.size === 0) return existing;
   return [...set];
@@ -283,6 +296,10 @@ export async function applyMentions(input: {
   requesterUserId: string;
   currentWorkspaceId: string;
   foregroundWorkspaceIds: string[] | undefined;
+  /** Same flag chat-sdk-instance.ts uses to gate kernel workspace
+   *  visibility. Threaded through to mergeForegroundWorkspaceIds so a
+   *  mention can't smuggle the kernel workspace into the foreground. */
+  exposeKernel?: boolean;
 }): Promise<{
   message: AtlasUIMessage;
   foregroundWorkspaceIds: string[] | undefined;
@@ -290,20 +307,20 @@ export async function applyMentions(input: {
   failures: MentionResolutionFailure[];
 }> {
   const refs = parseMentions(joinMessageText(input.message));
-  if (refs.length === 0) {
-    return {
-      message: input.message,
-      foregroundWorkspaceIds: input.foregroundWorkspaceIds,
-      resolved: [],
-      failures: [],
-    };
-  }
-  const { resolved, failures } = await resolveAllMentions(refs, input.requesterUserId);
+  // No short-circuit even when refs are empty: applyMentionsToMessage
+  // must still run so client-shipped placeholders for non-existent /
+  // unauthorized refs are stripped (friday-studio-1ev). The function
+  // returns object-identity-stable output when there's nothing to do.
+  const { resolved, failures } =
+    refs.length === 0
+      ? { resolved: [], failures: [] }
+      : await resolveAllMentions(refs, input.requesterUserId);
   const augmented = applyMentionsToMessage(input.message, resolved);
   const foreground = mergeForegroundWorkspaceIds(
     input.foregroundWorkspaceIds,
     resolved,
     input.currentWorkspaceId,
+    input.exposeKernel ?? false,
   );
   if (failures.length > 0) {
     logger.warn("mention_resolution_failures", {

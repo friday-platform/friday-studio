@@ -168,7 +168,7 @@ describe("applyMentionsToMessage", () => {
     ).toMatchObject({ title: "Server canonical title", messageCount: 7 });
   });
 
-  it("preserves client placeholders for refs the server did not resolve", () => {
+  it("drops client placeholders for refs the server did NOT resolve (friday-studio-1ev)", () => {
     const original: AtlasUIMessage = {
       id: "m-1",
       role: "user",
@@ -179,7 +179,7 @@ describe("applyMentionsToMessage", () => {
           data: {
             workspaceId: "ws-b",
             chatId: "c2",
-            title: "Untouched placeholder",
+            title: "Forged placeholder",
             snapshot: "",
             messageCount: 0,
             generatedAt: "2026-05-21T00:00:00.000Z",
@@ -197,10 +197,39 @@ describe("applyMentionsToMessage", () => {
       },
     ]);
     const mentionParts = augmented.parts.filter((p) => p.type === "data-mention-resolved");
-    expect(mentionParts).toHaveLength(2);
+    expect(mentionParts).toHaveLength(1);
     const titles = mentionParts.map((p) => (p as { data: { title: string } }).data.title);
-    expect(titles).toContain("Server resolved A");
-    expect(titles).toContain("Untouched placeholder");
+    expect(titles).toEqual(["Server resolved A"]);
+    expect(titles).not.toContain("Forged placeholder");
+  });
+
+  it("strips ALL client placeholders when the server resolved nothing (friday-studio-1ev)", () => {
+    const original: AtlasUIMessage = {
+      id: "m-1",
+      role: "user",
+      // Note: no @ws/chat token in text — server's parseMentions
+      // returns no refs and the client's placeholder must NOT survive.
+      parts: [
+        { type: "text", text: "just plain text" },
+        {
+          type: "data-mention-resolved",
+          data: {
+            workspaceId: "ws-forged",
+            chatId: "c-forged",
+            title: "Forged",
+            snapshot: "snapshot text",
+            messageCount: 99,
+            generatedAt: "2026-05-21T00:00:00.000Z",
+          },
+        },
+      ],
+    };
+    const augmented = applyMentionsToMessage(original, []);
+    const mentionParts = augmented.parts.filter((p) => p.type === "data-mention-resolved");
+    expect(mentionParts).toHaveLength(0);
+    // The text part remains.
+    expect(augmented.parts).toHaveLength(1);
+    expect(augmented.parts[0]?.type).toBe("text");
   });
 });
 
@@ -237,6 +266,22 @@ describe("mergeForegroundWorkspaceIds", () => {
       "ws-a",
     );
     expect(merged).toBeUndefined();
+  });
+
+  it("drops the kernel workspace from the merged set unless exposeKernel is true (friday-studio-svv)", () => {
+    const resolved = [
+      {
+        ref: { raw: "@system/c1", workspaceId: "system", chatId: "c1" },
+        title: "k",
+        snapshot: "",
+        messageCount: 0,
+        generatedAt: "",
+      },
+    ];
+    const blocked = mergeForegroundWorkspaceIds(undefined, resolved, "ws-a", false);
+    expect(blocked).toBeUndefined();
+    const allowed = mergeForegroundWorkspaceIds(undefined, resolved, "ws-a", true);
+    expect(allowed).toEqual(["system"]);
   });
 });
 

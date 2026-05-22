@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyEditDelta,
   countMentionTokens,
   detectActiveMentionQuery,
-  expandMentionDisplayText,
+  expandMentionSpans,
   type InsertedMentionRef,
+  type InsertedMentionSpan,
   scoreTitleMatch,
   splitMentions,
 } from "./mention-text.ts";
@@ -81,43 +83,72 @@ describe("detectActiveMentionQuery", () => {
   });
 });
 
-describe("expandMentionDisplayText", () => {
-  const refsByTitle = new Map<string, InsertedMentionRef>([
-    ["Demo notes", { workspaceId: "ws-a", chatId: "c-1", title: "Demo notes" }],
-    ["Plain", { workspaceId: "ws-b", chatId: "c-2", title: "Plain" }],
-  ]);
+describe("expandMentionSpans", () => {
+  function span(start: number, length: number, ref: InsertedMentionRef): InsertedMentionSpan {
+    return { start, length, ref };
+  }
+  const refA: InsertedMentionRef = { workspaceId: "ws-a", chatId: "c-1", title: "Demo" };
+  const refB: InsertedMentionRef = { workspaceId: "ws-b", chatId: "c-2", title: "Demo" };
 
-  it("expands @<title> into the canonical @<wsId>/<chatId> token", () => {
-    const out = expandMentionDisplayText("see @Demo notes please", refsByTitle);
-    expect(out.text).toBe("see @ws-a/c-1 please");
-    expect(out.mentions).toEqual([
-      { workspaceId: "ws-a", chatId: "c-1", title: "Demo notes" },
-    ]);
+  it("substitutes each tracked span with its canonical token (trailing space preserved)", () => {
+    // insertMention emits `@Title ` (with trailing space, length=title+2)
+    const text = "see @Demo and @Demo done";
+    const out = expandMentionSpans(text, [span(4, 6, refA), span(14, 6, refB)]);
+    expect(out.text).toBe("see @ws-a/c-1 and @ws-b/c-2 done");
+    expect(out.mentions).toEqual([refA, refB]);
   });
 
-  it("only reports each ref once even if the title appears twice", () => {
-    const out = expandMentionDisplayText("@Plain and @Plain again", refsByTitle);
-    expect(out.text).toBe("@ws-b/c-2 and @ws-b/c-2 again");
-    expect(out.mentions).toHaveLength(1);
+  it("disambiguates duplicate titles by offset (friday-studio-a0q)", () => {
+    // The bug-codifying case: two distinct refs share a title. Spans
+    // tag them by position, so the first `@Demo ` gets refA's
+    // canonical and the second gets refB's. Title-keyed map would
+    // have sent both to refB.
+    const text = "@Demo and @Demo done";
+    const out = expandMentionSpans(text, [span(0, 6, refA), span(10, 6, refB)]);
+    expect(out.text).toBe("@ws-a/c-1 and @ws-b/c-2 done");
   });
 
-  it("leaves an edited title alone (substitution fails the match)", () => {
-    const out = expandMentionDisplayText("@Demo notez", refsByTitle);
-    expect(out.text).toBe("@Demo notez");
+  it("skips a span whose slice no longer matches the inserted display", () => {
+    // User deleted the trailing space and typed `z` instead — the
+    // slice is now `@Demoz`, not `@Demo `. applyEditDelta would
+    // normally drop it; this is the second-line guard.
+    const text = "@Demoz";
+    const out = expandMentionSpans(text, [span(0, 6, refA)]);
+    expect(out.text).toBe("@Demoz");
     expect(out.mentions).toEqual([]);
   });
 
-  it("matches longest title first so a prefix-title doesn't eat its own suffix", () => {
-    const refs = new Map<string, InsertedMentionRef>([
-      ["Foo", { workspaceId: "ws", chatId: "f", title: "Foo" }],
-      ["Foo bar", { workspaceId: "ws", chatId: "fb", title: "Foo bar" }],
-    ]);
-    const out = expandMentionDisplayText("@Foo bar", refs);
-    expect(out.text).toBe("@ws/fb");
+  it("returns the original text when no spans are tracked", () => {
+    expect(expandMentionSpans("hello", []).text).toBe("hello");
+  });
+});
+
+describe("applyEditDelta", () => {
+  const ref: InsertedMentionRef = { workspaceId: "w", chatId: "c", title: "Demo" };
+
+  it("shifts spans that sit after the edit by the length delta", () => {
+    // " @Demo" — span at offset 1, length 5. Prepend two chars.
+    const spans = [{ start: 1, length: 5, ref }];
+    const out = applyEditDelta(spans, "x @Demo", "xyz @Demo");
+    expect(out).toEqual([{ start: 3, length: 5, ref }]);
   });
 
-  it("returns the original text when no refs have been picked", () => {
-    expect(expandMentionDisplayText("hello", new Map()).text).toBe("hello");
+  it("leaves spans before the edit alone", () => {
+    const spans = [{ start: 0, length: 5, ref }];
+    const out = applyEditDelta(spans, "@Demo x", "@Demo xy");
+    expect(out).toEqual([{ start: 0, length: 5, ref }]);
+  });
+
+  it("drops spans that overlap the edit", () => {
+    // Delete the middle of the inserted display — span is mutilated.
+    const spans = [{ start: 0, length: 5, ref }];
+    const out = applyEditDelta(spans, "@Demo", "@Do");
+    expect(out).toEqual([]);
+  });
+
+  it("returns the spans unchanged when prev === new", () => {
+    const spans = [{ start: 3, length: 5, ref }];
+    expect(applyEditDelta(spans, "abc@Demo", "abc@Demo")).toEqual(spans);
   });
 });
 

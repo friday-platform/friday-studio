@@ -151,4 +151,22 @@ describe("GET /chats", () => {
     const res = await testApp.request("/chats");
     expect(res.status).toBe(401);
   });
+
+  it("filters the kernel workspace out of the autocomplete data source (friday-studio-svv)", async () => {
+    // Even when the caller has kernel membership, the autocomplete must
+    // not surface kernel chats — the composer has no context flag.
+    mockGetAccessibleWorkspaceIds.mockResolvedValue(new Set(["system", "ws-a"]));
+    mockListChatsByWorkspace.mockImplementation((workspaceId: string) => {
+      if (workspaceId === "system")
+        return chat("system", "k1", "Kernel internal", "2026-05-22T00:00:00Z");
+      return chat("ws-a", "c1", "Demo", "2026-05-21T00:00:00Z");
+    });
+
+    const res = await testApp.request("/chats");
+    const body = (await res.json()) as { chats: Array<{ workspaceId: string }> };
+    expect(body.chats.every((c) => c.workspaceId !== "system")).toBe(true);
+    // listChatsByWorkspace should NOT have been invoked for the kernel ws.
+    const visited = mockListChatsByWorkspace.mock.calls.map((c) => c[0]);
+    expect(visited).not.toContain("system");
+  });
 });
