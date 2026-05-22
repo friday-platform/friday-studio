@@ -1,0 +1,26 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+#
+# Defaults applied to every test in every suite that includes this file.
+# Per-suite or per-test overrides win (promptfoo deep-merges).
+
+# Grader used for any `llm-rubric` / `factuality` assertion. Pinned so model
+# upgrades on the system-under-test don't silently shift grading bias.
+options:
+  provider:
+    id: openai:chat:friday-md
+    config:
+      apiBaseUrl: http://localhost:4000/v1
+      apiKey: '{{env.LITELLM_MASTER_KEY}}'
+      temperature: 0
+
+# Floor assertions — every model on every test must clear these.
+#
+# `cost` assertion intentionally omitted from the shared defaults: when
+# promptfoo's `openai:` provider talks to LiteLLM, cost lives in the
+# `x-litellm-response-cost` response header (not the OpenAI-shaped JSON body),
+# so promptfoo reads cost as 0 and the assertion errors. Opt in per-suite if
+# the underlying provider surfaces cost in-band.
+assert:
+  - type: latency
+    threshold: 8000        # ms; only honored when --no-cache is set
+    metric: Latency

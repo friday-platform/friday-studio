@@ -1,0 +1,9 @@
+Generate a research progress update.
+
+<constraints>
+- Maximum 4 words
+- Start with active verb
+- Be specific about WHAT is being researched
+- Match the research topic/question in context
+- No generic phrases like "conducting research"
+</constraints>

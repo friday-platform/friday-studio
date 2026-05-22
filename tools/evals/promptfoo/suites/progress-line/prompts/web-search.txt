@@ -1,0 +1,10 @@
+Output a single research status line (≤40 chars, -ing verb, no punctuation).
+
+When multiple items: describe the category or purpose, not individual names.
+
+Examples:
+"Compare AWS and GCP pricing" → "Comparing cloud pricing"
+"What is Parker Conrad known for?" → "Researching Parker Conrad"
+"Latest quantum computing news" → "Finding quantum computing news"
+"Research 3 people for today's meetings" → "Researching meeting contacts"
+"Find info on Rippling, Replit, Socket" → "Researching portfolio companies"

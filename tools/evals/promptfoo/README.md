@@ -1,0 +1,163 @@
+# Friday Promptfoo Suites
+
+Daemon-free, multi-model, parallel-runnable evals for pure prompt/agent
+behavior. Sits alongside the trace-aware custom harness in
+`tools/evals/lib/` + `tools/evals/agents/`, which stays the home for
+evals that need `AgentContextAdapter` or full `@atlas/llm` trace plumbing.
+
+## What lives where
+
+| | tools/evals/agents/*.eval.ts | tools/evals/promptfoo/suites/* | tools/qa/live-daemon/promptfoo/* |
+|---|---|---|---|
+| Runner | custom Deno harness | promptfoo CLI | promptfoo CLI |
+| Daemon required | no | **no** | yes |
+| Multi-model | via `variants` array (one suite uses it) | provider matrix (all suites) | single provider per suite |
+| Parallel | sequential | `--max-concurrency` | sequential |
+| Trace capture | `enterTraceScope` | none | none |
+
+## Running
+
+Start LiteLLM proxy once:
+
+```bash
+cd tools/evals/promptfoo/litellm
+./start.sh  # docker run with config.yaml mounted on :4000
+```
+
+Run a single suite:
+
+```bash
+npx promptfoo@latest eval \
+  -c tools/evals/promptfoo/suites/progress-line/promptfooconfig.yaml \
+  --no-cache --no-share -j 20
+```
+
+Run all suites (parallel, each on its own concurrency budget):
+
+```bash
+npx promptfoo@latest eval \
+  -c tools/evals/promptfoo/suites/*/promptfooconfig.yaml \
+  --no-cache --no-share -j 20
+```
+
+CI / cheap matrix (only `friday-sm` + `friday-md`):
+
+```bash
+PROVIDERS_FILE=shared/providers.pr.yaml \
+  npx promptfoo@latest eval -c tools/evals/promptfoo/suites/progress-line/promptfooconfig.yaml \
+  --no-cache --no-share -j 50
+```
+
+## Layout
+
+```
+tools/evals/promptfoo/
+├── shared/
+│   ├── providers.yaml         # full 5-model matrix (litellm: + openai: side-by-side)
+│   ├── providers.pr.yaml      # cheap 2-model matrix for PR CI
+│   └── defaultTest.yaml       # latency floor + grader provider
+├── litellm/
+│   ├── litellm_config.yaml    # friday-sm / friday-md / friday-lg / friday-local
+│   ├── start.sh               # docker run helper
+│   └── README.md              # provider-by-provider env vars
+├── scripts/
+│   └── render-all.ts          # discovers + runs every suite's render.ts
+└── suites/
+    ├── progress-line/           # migrated from agents/small-llm/small-llm.eval.ts
+    ├── prompt-interpolation/    # migrated from agents/prompt-interpolation/
+    │   ├── render.ts            # calls real interpolatePromptPlaceholders, writes tests.generated.yaml
+    │   └── tests.generated.yaml # COMMITTED — regenerate via `deno task evals:render-promptfoo`
+    └── agent-config-prompt/     # migrated from agents/agent-config-prompt/
+        ├── render.ts            # calls real composeAgentPrompt, writes tests.generated.yaml
+        └── tests.generated.yaml # COMMITTED — same workflow
+```
+
+## The "pre-render" pattern
+
+Two of the three suites wrap a real Friday prompt-building function
+(`interpolatePromptPlaceholders` in `@atlas/fsm-engine`,
+`composeAgentPrompt` in `apps/atlasd/src/agent-helpers.ts`). Those
+functions live in Deno workspace packages; promptfoo runs in Node.
+
+Each such suite ships a `render.ts` that:
+1. Defines its cases as data (templates, configs, expectations)
+2. Calls the real function once per case
+3. Writes a `tests.generated.yaml` alongside
+
+The generated YAML is committed — promptfoo runs zero-build at eval time.
+Edit cases → `deno task evals:render-promptfoo` → run the eval.
+
+The renderer also enforces structural pre-checks (e.g. "this template,
+after interpolation, must contain X" / "must not contain `{{`"). If the
+function regresses, the renderer fails before promptfoo calls any model
+— same protection the original eval's `assert:` callback provided, just
+hoisted to generation time.
+
+Suites whose user-message is hand-authored (e.g. `progress-line`) skip
+the renderer.
+
+## Adding a new suite
+
+**Static-prompt suite** (like `progress-line`):
+
+1. `mkdir suites/<name> && touch suites/<name>/promptfooconfig.yaml`
+2. Point `providers: file://../../shared/providers.yaml` and
+   `defaultTest: file://../../shared/defaultTest.yaml`.
+3. Write prompts under `prompts/` (one file per system-prompt variant).
+4. Write `tests.yaml` with one entry per case (`vars`, `description`,
+   per-case `assert`).
+5. Run with `npx promptfoo@latest eval -c suites/<name>/promptfooconfig.yaml --no-cache --no-share`.
+
+**Function-wrapping suite** (like `prompt-interpolation` /
+`agent-config-prompt`):
+
+1. Create `suites/<name>/render.ts` — imports the Friday function,
+   defines cases, calls the function, writes `tests.generated.yaml`.
+2. Point `tests: file://tests.generated.yaml` in the config.
+3. Run `deno task evals:render-promptfoo` once to produce the file.
+4. Commit the generated file. Regenerate whenever cases or the
+   underlying function change.
+
+## When NOT to migrate to promptfoo
+
+Keep an eval in the Deno harness when:
+
+- It needs `enterTraceScope` / `TraceEntry[]` inspection
+- It calls `bundledAgentsRegistry` against `AgentContext`
+- Scoring requires custom `llmJudge` semantics that don't map to
+  promptfoo's `llm-rubric`
+
+Move it here when:
+
+- It's a pure system-prompt → response → assert loop
+- Multi-model comparison adds signal
+- Latency/cost regression matters
+
+See `agents/small-llm/small-llm.eval.ts` for the original of the
+`progress-line` suite — it stays in the custom harness as a fallback
+until the promptfoo suite is trusted.
+
+## Gotchas discovered during integration
+
+- **Python 3.14 breaks `uvloop`.** Install with `uv tool install --python
+  3.13 'litellm[proxy]'`. The bare `uv tool install` picks 3.14 on this
+  machine and crashes on import.
+- **The OpenAI lane is disabled by default.** The suite is validated
+  against Anthropic + Groq only. If your `OPENAI_API_KEY` starts with
+  `sk-or-v1-` it's an OpenRouter-routed key, which rejects bare
+  `gpt-4.1-mini` model IDs and won't work with the inline-commented
+  entries in `litellm_config.yaml` — substitute a real OpenAI key
+  before re-enabling.
+- **Promptfoo `cost` assertion can't read LiteLLM cost headers.** Cost
+  is in `x-litellm-response-cost`, not the OpenAI response body. The
+  shared `defaultTest.yaml` omits `cost` for this reason; add it
+  per-suite only when the provider surfaces cost in-band.
+- **Promptfoo passes assertion `value` through Nunjucks.** Bare `{{` or
+  `}}` in a `not-contains` value crashes with "expected expression, got
+  end of file". Use `not-regex` with escaped braces (`\\{\\{`) instead.
+- **JS `RegExp` doesn't support inline `(?i)`.** Use character classes
+  (`[Ii]`) for case-insensitivity in `regex`/`not-regex` assertions, or
+  switch to `not-icontains` for literals.
+- **`prompts:` listing N files cross-products with every test.** For
+  multi-system-prompt suites use a single `chat.json` template with
+  `{{system_prompt}}` injected per-test via `vars`.

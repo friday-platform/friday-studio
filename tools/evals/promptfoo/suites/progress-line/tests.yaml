@@ -1,0 +1,155 @@
+# Cases migrated from tools/evals/agents/small-llm/small-llm.eval.ts.
+# Each test runs against every provider declared in promptfooconfig.yaml.
+#
+# Per-test `vars.system_prompt` loads the right system template from
+# `prompts/`. The single chat-format prompt (`prompts/chat.json`) injects
+# both `system_prompt` and `input` into a system/user message pair, so the
+# model receives a real role-split (matches the production AI-SDK call).
+#
+# Scoring matches the original eval:
+#   - Relevance: required keywords appear in output (case-insensitive)
+#   - StatusLine: rejects fail-patterns, requires -ing verb, ≤50 chars
+#   - Latency / Cost: floor in shared/defaultTest.yaml
+
+# ─── Claude Code — tool invocations ──────────────────────────────────────────
+
+- description: 'claude-code/tool — write file'
+  vars:
+    system_prompt: file://prompts/claude-code.txt
+    input: '{"toolName":"Write","input":{"file_path":"/tmp/agent-output.txt"}}'
+  assert:
+    - type: icontains-all
+      value: [writing, output.txt]
+      metric: Relevance
+    - type: javascript
+      value: file://assertions/status-line.js
+      metric: StatusLine
+
+- description: 'claude-code/tool — read package.json'
+  vars:
+    system_prompt: file://prompts/claude-code.txt
+    input: '{"toolName":"Read","input":{"file":"package.json"}}'
+  assert:
+    - type: icontains-all
+      value: [reading, package.json]
+      metric: Relevance
+    - type: javascript
+      value: file://assertions/status-line.js
+      metric: StatusLine
+
+- description: 'claude-code/tool — bash npm install'
+  vars:
+    system_prompt: file://prompts/claude-code.txt
+    input: '{"toolName":"Bash","input":{"command":"npm install"}}'
+  assert:
+    - type: icontains-all
+      value: [npm, install]
+      metric: Relevance
+    - type: javascript
+      value: file://assertions/status-line.js
+      metric: StatusLine
+
+- description: 'claude-code/tool — edit index.ts'
+  vars:
+    system_prompt: file://prompts/claude-code.txt
+    input: '{"toolName":"Edit","input":{"file_path":"src/index.ts","changes":"..."}}'
+  assert:
+    - type: icontains-all
+      value: [editing, index.ts]
+      metric: Relevance
+    - type: javascript
+      value: file://assertions/status-line.js
+      metric: StatusLine
+
+# ─── Research — progress updates ─────────────────────────────────────────────
+
+- description: 'research — AI safety'
+  vars:
+    system_prompt: file://prompts/research.txt
+    input: 'stage: analyzing, context: AI safety developments'
+  assert:
+    - type: icontains-all
+      value: [ai, safety]
+      metric: Relevance
+
+- description: 'research — Parker Conrad'
+  vars:
+    system_prompt: file://prompts/research.txt
+    input: 'stage: starting, topic: Parker Conrad background research'
+  assert:
+    - type: icontains-all
+      value: [parker, conrad]
+      metric: Relevance
+
+- description: 'research — quantum trends'
+  vars:
+    system_prompt: file://prompts/research.txt
+    input: 'stage: reporting, question: quantum computing trends'
+  assert:
+    - type: icontains
+      value: quantum
+      metric: Relevance
+
+- description: 'research — Anthropic meeting'
+  vars:
+    system_prompt: file://prompts/research.txt
+    input: 'stage: analyzing, context: meeting with Anthropic team'
+  assert:
+    - type: icontains
+      value: anthropic
+      metric: Relevance
+
+# ─── Web search — progress lines ────────────────────────────────────────────
+
+- description: 'web-search — Wroclaw news'
+  vars:
+    system_prompt: file://prompts/web-search.txt
+    input: |
+      Find recent news from Wrocław, Poland from the last 23 hours. Look for
+      local news, events, developments, and stories specifically related to
+      Wrocław city.
+  assert:
+    - type: icontains-any
+      value: [wrocław, wroclaw, news, finding, searching, researching]
+      metric: Relevance
+    - type: javascript
+      value: file://assertions/status-line.js
+      metric: StatusLine
+
+- description: 'web-search — gravel bikes'
+  vars:
+    system_prompt: file://prompts/web-search.txt
+    input: |
+      What are new options for gravel bikes which fit larger than 2-inch tires?
+      Prefer titanium frames, but open to carbon as well.
+  assert:
+    - type: icontains-any
+      value: [gravel, bike, finding, searching, researching]
+      metric: Relevance
+    - type: javascript
+      value: file://assertions/status-line.js
+      metric: StatusLine
+
+- description: 'web-search — Parker Conrad'
+  vars:
+    system_prompt: file://prompts/web-search.txt
+    input: 'Who is Parker Conrad?'
+  assert:
+    - type: icontains-any
+      value: [parker, conrad, researching]
+      metric: Relevance
+    - type: javascript
+      value: file://assertions/status-line.js
+      metric: StatusLine
+
+- description: 'web-search — quantum computing news'
+  vars:
+    system_prompt: file://prompts/web-search.txt
+    input: 'Latest quantum computing news'
+  assert:
+    - type: icontains-any
+      value: [quantum, finding, searching]
+      metric: Relevance
+    - type: javascript
+      value: file://assertions/status-line.js
+      metric: StatusLine

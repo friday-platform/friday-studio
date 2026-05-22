@@ -1,0 +1,59 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+#
+# Full multi-model matrix for nightly eval runs.
+#
+# Side-by-side both integration paths so behavior differences surface in the
+# same run:
+#   - `openai:chat:<alias>`  — proven path, every promptfoo OpenAI feature works
+#   - `litellm:<alias>`       — newer first-party provider
+#
+# The proxy resolves `<alias>` (friday-sm, friday-md, ...) via litellm_config.yaml,
+# so adding a new model is one line in that file and one entry here.
+
+- id: openai:chat:friday-sm
+  label: groq-8b (openai)
+  config:
+    apiBaseUrl: http://localhost:4000/v1
+    apiKey: '{{env.LITELLM_MASTER_KEY}}'
+    temperature: 0
+    max_tokens: 256
+    stream: false
+
+- id: litellm:friday-sm
+  label: groq-8b (litellm)
+  config:
+    apiBaseUrl: http://localhost:4000
+    apiKey: '{{env.LITELLM_MASTER_KEY}}'
+    temperature: 0
+    max_tokens: 256
+
+- id: openai:chat:friday-md
+  label: haiku-4-5 (openai)
+  config:
+    apiBaseUrl: http://localhost:4000/v1
+    apiKey: '{{env.LITELLM_MASTER_KEY}}'
+    temperature: 0
+    max_tokens: 256
+    stream: false
+
+- id: litellm:friday-md
+  label: haiku-4-5 (litellm)
+  config:
+    apiBaseUrl: http://localhost:4000
+    apiKey: '{{env.LITELLM_MASTER_KEY}}'
+    temperature: 0
+    max_tokens: 256
+
+- id: openai:chat:friday-lg
+  label: sonnet-4-6 (openai)
+  config:
+    apiBaseUrl: http://localhost:4000/v1
+    apiKey: '{{env.LITELLM_MASTER_KEY}}'
+    temperature: 0
+    max_tokens: 256
+    stream: false
+
+# friday-gpt (openai/gpt-4.1-mini) intentionally omitted — disabled in this env.
+# Re-enable by adding a provider entry here AND ensuring a real OpenAI key is
+# available to the proxy (the local .env points OPENAI_API_KEY at OpenRouter,
+# which won't accept bare `gpt-4.1-mini` model IDs).

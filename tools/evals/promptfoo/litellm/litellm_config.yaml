@@ -1,0 +1,56 @@
+model_list:
+  # Cheap and fast — used in PR CI matrix
+  - model_name: friday-sm
+    litellm_params:
+      model: groq/llama-3.1-8b-instant
+      api_key: os.environ/GROQ_API_KEY
+
+  # Balanced default — used in PR CI matrix
+  - model_name: friday-md
+    litellm_params:
+      model: anthropic/claude-haiku-4-5
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+  # Quality tier — nightly only
+  - model_name: friday-lg
+    litellm_params:
+      model: anthropic/claude-sonnet-4-6
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+  # Local fallback — for dev runs without API keys
+  - model_name: friday-local
+    litellm_params:
+      model: ollama/llama3.1
+      api_base: http://localhost:11434
+
+  # NOTE: friday-gpt (openai/gpt-4.1-mini) and friday-embed (text-embedding-3-small)
+  # are disabled by default — the suite is validated against the Anthropic +
+  # Groq lanes only. To enable, restore the entries below AND ensure the proxy
+  # has a real OpenAI key in scope (an OpenRouter-routed key in OPENAI_API_KEY
+  # — value starting with `sk-or-v1-` — won't work; OpenRouter rejects bare
+  # `gpt-4.1-mini` model IDs):
+  #
+  #   - model_name: friday-gpt
+  #     litellm_params:
+  #       model: openai/gpt-4.1-mini
+  #       api_key: os.environ/OPENAI_API_KEY
+  #   - model_name: friday-embed
+  #     litellm_params:
+  #       model: openai/text-embedding-3-small
+  #       api_key: os.environ/OPENAI_API_KEY
+
+general_settings:
+  # Promptfoo passes this as apiKey: in provider config.
+  # Override via LITELLM_MASTER_KEY env var.
+  master_key: os.environ/LITELLM_MASTER_KEY
+
+litellm_settings:
+  # Disable proxy-side cache during eval runs — promptfoo --no-cache only
+  # disables promptfoo's disk cache. A live Redis cache here would silently
+  # break latency and cost assertions.
+  cache: false
+  # Inject a dummy tool when none is supplied — works around Anthropic's
+  # "tool_use requires tools=" requirement when an eval reuses a prompt
+  # written for OpenAI.
+  modify_params: true
+  drop_params: true
