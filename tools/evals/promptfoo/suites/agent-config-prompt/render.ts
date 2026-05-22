@@ -1,4 +1,5 @@
 #!/usr/bin/env -S deno run -A
+
 /**
  * Renderer for the agent-config-prompt suite.
  *
@@ -20,11 +21,11 @@
  * `npx promptfoo eval ...`.
  */
 
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { atlasAgent } from "@atlas/config/testing";
 import { interpolatePromptPlaceholders } from "@atlas/fsm-engine";
 import { stringify } from "@std/yaml";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { composeAgentPrompt } from "../../../../../apps/atlasd/src/agent-helpers.ts";
 
 interface Case {

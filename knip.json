@@ -73,8 +73,17 @@
       "ignore": ["src/tool-worker-launcher.ts"]
     },
     "tools/evals": {
-      "entry": ["run.ts!", "mod.ts!", "agents/**/*.eval.ts", "lib/*.test.ts"],
-      "project": ["**/*.{ts,tsx,js,jsx}!"]
+      "entry": [
+        "run.ts!",
+        "mod.ts!",
+        "agents/**/*.eval.ts",
+        "lib/*.test.ts",
+        "promptfoo/scripts/*.ts!",
+        "promptfoo/suites/**/render.ts!",
+        "promptfoo/suites/**/assertions/*.js!"
+      ],
+      "project": ["**/*.{ts,tsx,js,jsx}!"],
+      "ignoreDependencies": ["@std/yaml"]
     },
     "packages/ui": {
       "entry": ["src/routes/**/*.svelte!"],

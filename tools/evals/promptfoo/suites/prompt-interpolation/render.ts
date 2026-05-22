@@ -1,4 +1,5 @@
 #!/usr/bin/env -S deno run -A
+
 /**
  * Renderer for the prompt-interpolation suite.
  *
@@ -21,10 +22,10 @@
  * are zero-build.
  */
 
-import { interpolatePromptPlaceholders } from "@atlas/fsm-engine";
-import { stringify } from "@std/yaml";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { interpolatePromptPlaceholders } from "@atlas/fsm-engine";
+import { stringify } from "@std/yaml";
 
 interface Case {
   /** URL-safe slug used in the promptfoo test description. */
@@ -145,7 +146,11 @@ function renderTests(): PromptfooTest[] {
       { type: "not-icontains", value: "required input", metric: "NotARefusal" },
       { type: "not-icontains", value: "missing input", metric: "NotARefusal" },
       { type: "not-icontains", value: "missing required input", metric: "NotARefusal" },
-      { type: "not-regex", value: "[nN]o input (was )?(provided|given|supplied)", metric: "NotARefusal" },
+      {
+        type: "not-regex",
+        value: "[nN]o input (was )?(provided|given|supplied)",
+        metric: "NotARefusal",
+      },
       { type: "not-icontains", value: "placeholder", metric: "NotARefusal" },
       { type: "not-icontains", value: "template variable", metric: "NotARefusal" },
       { type: "not-icontains", value: "template reference", metric: "NotARefusal" },

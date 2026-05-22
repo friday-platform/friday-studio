@@ -14,7 +14,7 @@ const FAIL_PATTERNS = [
 ];
 
 module.exports = (output) => {
-  const trimmed = String(output ?? '').trim();
+  const trimmed = String(output ?? "").trim();
 
   for (const pattern of FAIL_PATTERNS) {
     if (pattern.test(trimmed)) {
@@ -27,8 +27,8 @@ module.exports = (output) => {
   }
 
   if (/^[A-Z][a-z]+ing\b/.test(trimmed)) {
-    return { pass: true, score: 1, reason: 'Proper -ing verb format' };
+    return { pass: true, score: 1, reason: "Proper -ing verb format" };
   }
 
-  return { pass: true, score: 0.7, reason: 'Acceptable but not ideal format' };
+  return { pass: true, score: 0.7, reason: "Acceptable but not ideal format" };
 };
