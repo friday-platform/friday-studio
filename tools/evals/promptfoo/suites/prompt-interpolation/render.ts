@@ -24,6 +24,7 @@
 
 import { interpolatePromptPlaceholders } from "@atlas/fsm-engine";
 import { type PromptfooTest, writeGeneratedTests } from "../../scripts/render-shared.ts";
+import { notARefusalAsserts } from "../../shared/assertions/not-a-refusal.ts";
 
 interface Case {
   /** URL-safe slug used in the promptfoo test description. */
@@ -130,33 +131,7 @@ function renderTests(): PromptfooTest[] {
       { type: "not-regex", value: "\\{\\{", metric: "NoPlaceholderLeak" },
       { type: "not-regex", value: "\\}\\}", metric: "NoPlaceholderLeak" },
       // NotARefusal — the model didn't punt with the patterns PR #199 fixed.
-      // Patterns mirror the original `notARefusalScore` exactly. Use
-      // `not-icontains` (built-in case-insensitive) for simple literals and
-      // `not-regex` for genuine alternations. JS RegExp does not support the
-      // inline `(?i)` flag, so we either flag-flip via character classes
-      // (`[Ii]`) or enumerate alternation branches as separate icontains.
-      { type: "not-icontains", value: "required input", metric: "NotARefusal" },
-      { type: "not-icontains", value: "missing input", metric: "NotARefusal" },
-      { type: "not-icontains", value: "missing required input", metric: "NotARefusal" },
-      {
-        type: "not-regex",
-        value: "[nN]o input (was )?(provided|given|supplied)",
-        metric: "NotARefusal",
-      },
-      { type: "not-icontains", value: "placeholder", metric: "NotARefusal" },
-      { type: "not-icontains", value: "template variable", metric: "NotARefusal" },
-      { type: "not-icontains", value: "template reference", metric: "NotARefusal" },
-      { type: "not-icontains", value: "unresolved variable", metric: "NotARefusal" },
-      { type: "not-icontains", value: "unresolved reference", metric: "NotARefusal" },
-      // The canonical "model punts because input looks unresolved" shape from
-      // PR #199. Enumerated branches are too many (4 verbs × 2 see-words × 2
-      // optional-article × 2 nouns = 32); regex with a leading `[iI]` class
-      // covers both cases.
-      {
-        type: "not-regex",
-        value: "[iI] (don't|do not|cannot|can't) (have|see) (the )?(input|value)",
-        metric: "NotARefusal",
-      },
+      ...notARefusalAsserts(),
     ];
 
     if (c.expectInResponse.length > 0) {

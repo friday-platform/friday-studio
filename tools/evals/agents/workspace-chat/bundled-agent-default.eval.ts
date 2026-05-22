@@ -49,37 +49,21 @@
  * real LLM cost. The eval below is the closest CI-runnable approximation.
  */
 
-import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
-import process from "node:process";
+import { resolve } from "node:path";
 import { bundledAgents } from "@atlas/bundled-agents";
-import {
-  buildRegistryModelId,
-  isRegistryProvider,
-  type RegistryModelId,
-  registry,
-  traceModel,
-} from "@atlas/llm";
-import { getFridayHome } from "@atlas/utils/paths.server";
+import { registry, traceModel } from "@atlas/llm";
 import { jsonSchema, stepCountIs, streamText, tool } from "ai";
-import dotenv from "dotenv";
 import { z } from "zod";
 import { AgentContextAdapter } from "../../lib/context.ts";
+import { loadAnthropicEnv } from "../../lib/load-anthropic-env.ts";
 import { type BaseEvalCase, defineEval, type EvalRegistration } from "../../lib/registration.ts";
+import { resolveModelId } from "../../lib/resolve-model.ts";
 import { createScore } from "../../lib/scoring.ts";
 
-// This eval only needs an inference key — no bundled-agent credentials. Skip
-// `loadCredentials()` (which requires FRIDAY_KEY for the gateway fetch) and
-// load just the dotenv files. ANTHROPIC_API_KEY is the minimum.
-dotenv.config();
-const globalAtlasEnv = join(getFridayHome(), ".env");
-if (existsSync(globalAtlasEnv)) {
-  dotenv.config({ path: globalAtlasEnv, override: true });
-}
-if (!process.env.ANTHROPIC_API_KEY) {
-  throw new Error("ANTHROPIC_API_KEY is required to run workspace-chat evals");
-}
+// Inference-only eval — skip the full loadCredentials() path (which requires
+// FRIDAY_KEY for the gateway fetch). ANTHROPIC_API_KEY is the minimum.
+loadAnthropicEnv("workspace-chat evals");
 
 const adapter = new AgentContextAdapter();
 
@@ -421,31 +405,9 @@ function buildToolset(captures: CapturedToolCalls) {
 // Run helper — wires streamText with the canonical workspace-chat surface
 // ---------------------------------------------------------------------------
 
-/**
- * Model id used by workspace-chat's primary path. Override with
- * `WORKSPACE_CHAT_EVAL_MODEL` (`provider:model` form) to compare candidates.
- */
-function resolveModelId(): RegistryModelId {
-  const raw = process.env.WORKSPACE_CHAT_EVAL_MODEL;
-  if (!raw) return "anthropic:claude-sonnet-4-20250514";
-
-  const colonIdx = raw.indexOf(":");
-  if (colonIdx === -1) {
-    throw new Error(`WORKSPACE_CHAT_EVAL_MODEL must be in "provider:model" form, got "${raw}".`);
-  }
-
-  const provider = raw.slice(0, colonIdx);
-  const model = raw.slice(colonIdx + 1);
-  if (!isRegistryProvider(provider)) {
-    throw new Error(
-      `WORKSPACE_CHAT_EVAL_MODEL has unknown provider "${provider}". ` +
-        `Expected one of: anthropic, claude-code, google, groq, openai.`,
-    );
-  }
-  return buildRegistryModelId(provider, model);
-}
-
-const MODEL_ID = resolveModelId();
+// Override the default with `WORKSPACE_CHAT_EVAL_MODEL=provider:model` to
+// compare candidates without editing this file.
+const MODEL_ID = resolveModelId("WORKSPACE_CHAT_EVAL_MODEL", "anthropic:claude-sonnet-4-20250514");
 
 interface RunOutcome {
   captures: CapturedToolCalls;
