@@ -12,7 +12,7 @@
     "@atlas/storage": "workspace:*",
     "@modelcontextprotocol/sdk": "~1.28.0",
     "@worker-tools/html-rewriter": "0.1.0-pre.19",
-    "ai": "^6.0.184",
+    "ai": "^6.0.191",
     "fast-glob": "^3.3.3",
     "minimatch": "^10.2.5",
     "nats": "^2.29.3",
