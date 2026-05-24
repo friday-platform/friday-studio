@@ -66,10 +66,7 @@ function makeThread(id: string, adapterName: string = "atlas") {
   const posted: unknown[] = [];
   return {
     id,
-    adapter: {
-      name: adapterName,
-      addReaction: vi.fn().mockResolvedValue(undefined),
-    },
+    adapter: { name: adapterName, addReaction: vi.fn().mockResolvedValue(undefined) },
     subscribe: vi.fn().mockResolvedValue(undefined),
     post: vi.fn(async (stream: ReadableStream<unknown>) => {
       for await (const chunk of stream) {
@@ -1843,7 +1840,9 @@ describe("createMessageHandler — Decision 7 setup gate", () => {
     });
 
     const thread = makeThread("chat-atlas-bootstrap"); // default adapter.name === "atlas"
-    const post = vi.fn().mockResolvedValue({ id: "sent-1", threadId: "chat-atlas-bootstrap", raw: {} });
+    const post = vi
+      .fn()
+      .mockResolvedValue({ id: "sent-1", threadId: "chat-atlas-bootstrap", raw: {} });
     (thread as unknown as { post: typeof post }).post = post;
     const turnBuffer = registry.createStream("ws-1", "chat-atlas-bootstrap");
 

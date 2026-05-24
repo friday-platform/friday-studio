@@ -100,11 +100,7 @@ export async function fetchWorkspaceSetupStatus(
   const isBootstrapChat =
     typeof pointer === "string" && pointer.length > 0 && pointer === currentSessionId;
 
-  return {
-    shouldInject: true,
-    setupRequirements: parsed.data.setup_requirements,
-    isBootstrapChat,
-  };
+  return { shouldInject: true, setupRequirements: parsed.data.setup_requirements, isBootstrapChat };
 }
 
 /**

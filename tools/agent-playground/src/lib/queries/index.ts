@@ -55,7 +55,6 @@ export {
   useSetMCPServerEnvVar,
   useSetWorkspaceEnvVar,
   useUpdateMCPCredential,
-  useUpdateWorkspaceIdentity,
   workspaceEnvQueries,
   workspaceVariableQueries,
 } from "./workspace-settings-queries.ts";
