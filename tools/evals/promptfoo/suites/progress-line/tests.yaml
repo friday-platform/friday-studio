@@ -110,7 +110,7 @@
       Wrocław city.
   assert:
     - type: icontains-any
-      value: [wrocław, wroclaw, news, finding, searching, researching]
+      value: [wrocław, wroclaw]
       metric: Relevance
     - type: javascript
       value: file://assertions/status-line.js
@@ -124,7 +124,7 @@
       Prefer titanium frames, but open to carbon as well.
   assert:
     - type: icontains-any
-      value: [gravel, bike, finding, searching, researching]
+      value: [gravel, bike, titanium]
       metric: Relevance
     - type: javascript
       value: file://assertions/status-line.js
@@ -136,7 +136,7 @@
     input: 'Who is Parker Conrad?'
   assert:
     - type: icontains-any
-      value: [parker, conrad, researching]
+      value: [parker, conrad]
       metric: Relevance
     - type: javascript
       value: file://assertions/status-line.js
@@ -148,7 +148,7 @@
     input: 'Latest quantum computing news'
   assert:
     - type: icontains-any
-      value: [quantum, finding, searching]
+      value: [quantum, computing]
       metric: Relevance
     - type: javascript
       value: file://assertions/status-line.js

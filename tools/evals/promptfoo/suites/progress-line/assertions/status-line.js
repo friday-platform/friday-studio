@@ -30,5 +30,7 @@ module.exports = (output) => {
     return { pass: true, score: 1, reason: "Proper -ing verb format" };
   }
 
-  return { pass: true, score: 0.7, reason: "Acceptable but not ideal format" };
+  // No leading -ing verb: contract violated. Fail so the score actually gates.
+  // (Without a threshold, `pass: true` would pass regardless of the score.)
+  return { pass: false, score: 0.7, reason: "Missing leading -ing verb" };
 };
