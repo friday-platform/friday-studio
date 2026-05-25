@@ -231,16 +231,10 @@ describe("model-catalog — local provider", () => {
 
   it("fetches models from a local server when LOCAL_BASE_URL is set", async () => {
     stubEnv({ LOCAL_BASE_URL: "http://localhost:1234/v1" });
-    const lmStudio = localListResponse([
-      "llama-3.2-3b-instruct",
-      "qwen2.5-coder-7b-instruct",
-    ]);
+    const lmStudio = localListResponse(["llama-3.2-3b-instruct", "qwen2.5-coder-7b-instruct"]);
     vi.stubGlobal(
       "fetch",
-      mockJsonFetch({
-        [GATEWAY_URL]: { models: [] },
-        "http://localhost:1234/v1/models": lmStudio,
-      }),
+      mockJsonFetch({ [GATEWAY_URL]: { models: [] }, "http://localhost:1234/v1/models": lmStudio }),
     );
 
     const catalog = await getCatalog();
