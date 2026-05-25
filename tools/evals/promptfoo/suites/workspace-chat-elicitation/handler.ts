@@ -15,11 +15,11 @@
 // `vars.toolResponseJson` (parsed from a JSON string), so each test row can
 // switch between the bypass / pending-approval branches.
 
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import { buildRegistryModelId, isRegistryProvider, registry } from "@atlas/llm";
 import { stepCountIs, streamText, tool } from "ai";
 import { z } from "zod";
-import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
 
 const ROOT = resolve(import.meta.dirname ?? ".", "../../../../..");
 const WORKSPACE_CHAT_PROMPT = await readFile(

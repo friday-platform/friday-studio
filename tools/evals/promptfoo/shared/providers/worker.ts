@@ -16,10 +16,13 @@
 // defensively below; raw `Deno.stdout.writeSync` from a handler will corrupt
 // the protocol.
 
-import { parseArgs } from "jsr:@std/cli/parse-args";
-
-const args = parseArgs(Deno.args, { string: ["handler"] });
-if (!args.handler) {
+// Inline `--handler <path>` parse — avoids pulling in @std/cli for one flag.
+const handlerFlagIdx = Deno.args.indexOf("--handler");
+const handlerArg =
+  handlerFlagIdx >= 0 && handlerFlagIdx + 1 < Deno.args.length
+    ? Deno.args[handlerFlagIdx + 1]
+    : undefined;
+if (!handlerArg) {
   console.error("worker.ts: --handler <path> required");
   Deno.exit(1);
 }
@@ -27,23 +30,19 @@ if (!args.handler) {
 // Redirect any handler-side console.log/info to stderr so they can't corrupt
 // the stdout JSON-Lines protocol. console.error/warn already go to stderr.
 const _logToStderr = (...parts: unknown[]) => {
-  const text = parts
-    .map((p) => (typeof p === "string" ? p : JSON.stringify(p)))
-    .join(" ");
+  const text = parts.map((p) => (typeof p === "string" ? p : JSON.stringify(p))).join(" ");
   Deno.stderr.writeSync(new TextEncoder().encode(`${text}\n`));
 };
 console.log = _logToStderr;
 console.info = _logToStderr;
 
 // Dynamic-import the per-suite handler. URL form bypasses any cache subtleties.
-const handlerAbs = args.handler.startsWith("/")
-  ? args.handler
-  : `${Deno.cwd()}/${args.handler}`;
+const handlerAbs = handlerArg.startsWith("/") ? handlerArg : `${Deno.cwd()}/${handlerArg}`;
 const handlerUrl = new URL(`file://${handlerAbs}`);
 const handlerModule = await import(handlerUrl.href);
 const handle = handlerModule.default;
 if (typeof handle !== "function") {
-  console.error(`worker.ts: ${args.handler} must export a default async function`);
+  console.error(`worker.ts: ${handlerArg} must export a default async function`);
   Deno.exit(1);
 }
 
@@ -80,8 +79,9 @@ const decoder = new TextDecoder();
 let buffer = "";
 for await (const chunk of Deno.stdin.readable) {
   buffer += decoder.decode(chunk);
-  let nl: number;
-  while ((nl = buffer.indexOf("\n")) >= 0) {
+  while (true) {
+    const nl = buffer.indexOf("\n");
+    if (nl < 0) break;
     const line = buffer.slice(0, nl);
     buffer = buffer.slice(nl + 1);
     if (!line.trim()) continue;

@@ -16,22 +16,24 @@ module.exports = (output, context) => {
   const forbiddenTypes = new Set(JSON.parse(vars.forbiddenTypesJson || "[]"));
   const forbiddenAtlasAgents = new Set(JSON.parse(vars.forbiddenAtlasAgentsJson || "[]"));
   const requiredMcpServers = JSON.parse(vars.requiredMcpServersJson || "[]");
-  const forbidUserAgentRegistration = vars.forbidUserAgentRegistration === true ||
-    vars.forbidUserAgentRegistration === "true";
+  const forbidUserAgentRegistration =
+    vars.forbidUserAgentRegistration === true || vars.forbidUserAgentRegistration === "true";
 
   const failures = [];
 
   // 1. Required type/agent present
   const matched = captures.upsertAgents.find(
-    (u) => u.config.type === expectedType &&
+    (u) =>
+      u.config.type === expectedType &&
       (expectedAgent === undefined || expectedAgent === "" || u.config.agent === expectedAgent),
   );
   if (!matched) {
-    const summary = captures.upsertAgents.length === 0
-      ? "no upsert_agent calls"
-      : captures.upsertAgents
-          .map((u) => `${u.id}(type=${u.config.type || "?"}, agent=${u.config.agent || "?"})`)
-          .join(", ");
+    const summary =
+      captures.upsertAgents.length === 0
+        ? "no upsert_agent calls"
+        : captures.upsertAgents
+            .map((u) => `${u.id}(type=${u.config.type || "?"}, agent=${u.config.agent || "?"})`)
+            .join(", ");
     failures.push(
       `Expected upsert_agent with type="${expectedType}"` +
         (expectedAgent ? `, agent="${expectedAgent}"` : "") +
@@ -53,7 +55,9 @@ module.exports = (output, context) => {
     (u) => u.config.type === "atlas" && forbiddenAtlasAgents.has(u.config.agent),
   );
   if (wrongAtlas.length > 0) {
-    failures.push("Forbidden atlas agent(s) used: " + wrongAtlas.map((u) => u.config.agent).join(", "));
+    failures.push(
+      `Forbidden atlas agent(s) used: ${wrongAtlas.map((u) => u.config.agent).join(", ")}`,
+    );
   }
 
   // 4. No spurious user-agent registration
@@ -69,10 +73,10 @@ module.exports = (output, context) => {
     const isReferenced = (serverId) =>
       captures.enabledMcpServers.includes(serverId) ||
       captures.upsertAgents.some((u) => {
-        const tools = (u.config && u.config.config && u.config.config.tools) || null;
+        const tools = u.config?.config?.tools || null;
         if (!Array.isArray(tools)) return false;
         return tools.some(
-          (t) => typeof t === "string" && (t === serverId || t.startsWith(serverId + "/")),
+          (t) => typeof t === "string" && (t === serverId || t.startsWith(`${serverId}/`)),
         );
       });
     const missing = requiredMcpServers.filter((id) => !isReferenced(id));
@@ -89,7 +93,9 @@ module.exports = (output, context) => {
   // handler since the assertion runs in promptfoo's Node sandbox where the
   // Deno-only @atlas/bundled-agents package isn't importable.)
   const phantomAtlas = captures.upsertAgents.filter(
-    (u) => u.config.type === "atlas" && typeof u.config.agent === "string" &&
+    (u) =>
+      u.config.type === "atlas" &&
+      typeof u.config.agent === "string" &&
       !knownBundledAgents.has(u.config.agent),
   );
   if (phantomAtlas.length > 0) {

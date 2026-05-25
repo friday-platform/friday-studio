@@ -9,12 +9,12 @@
 // `type: atlas` upsert must reference a real bundled id) runs in-process and
 // the result is passed to promptfoo assertions via the output JSON.
 
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import { bundledAgents, bundledAgentsRegistry } from "@atlas/bundled-agents";
 import { buildRegistryModelId, isRegistryProvider, registry } from "@atlas/llm";
 import { jsonSchema, stepCountIs, streamText, tool } from "ai";
 import { z } from "zod";
-import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
 
 const ROOT = resolve(import.meta.dirname ?? ".", "../../../../..");
 
@@ -403,9 +403,6 @@ export default async function handle(req: Request): Promise<{ output: string }> 
   // phantom-atlas check without re-importing @atlas/bundled-agents (which
   // wouldn't work — assertions run in promptfoo's Node sandbox, not Deno).
   return {
-    output: JSON.stringify({
-      captures,
-      knownBundledAgents: Object.keys(bundledAgentsRegistry),
-    }),
+    output: JSON.stringify({ captures, knownBundledAgents: Object.keys(bundledAgentsRegistry) }),
   };
 }

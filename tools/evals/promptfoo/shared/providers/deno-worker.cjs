@@ -51,17 +51,14 @@ class DenoWorker {
         "--handler",
         this.handlerAbsPath,
       ],
-      {
-        cwd: repoRoot(),
-        env: process.env,
-        stdio: ["pipe", "pipe", "inherit"],
-      },
+      { cwd: repoRoot(), env: process.env, stdio: ["pipe", "pipe", "inherit"] },
     );
 
     this.proc.stdout.on("data", (chunk) => {
       this.buffer += chunk.toString("utf8");
-      let nl;
-      while ((nl = this.buffer.indexOf("\n")) >= 0) {
+      while (true) {
+        const nl = this.buffer.indexOf("\n");
+        if (nl < 0) break;
         const line = this.buffer.slice(0, nl);
         this.buffer = this.buffer.slice(nl + 1);
         if (!line.trim()) continue;
@@ -84,9 +81,7 @@ class DenoWorker {
     });
 
     this.proc.on("exit", (code, signal) => {
-      this.exitErr = new Error(
-        `Deno worker exited unexpectedly (code=${code} signal=${signal})`,
-      );
+      this.exitErr = new Error(`Deno worker exited unexpectedly (code=${code} signal=${signal})`);
       for (const { reject } of this.pending.values()) reject(this.exitErr);
       this.pending.clear();
       this.proc = null;
@@ -97,7 +92,9 @@ class DenoWorker {
       if (this.proc) {
         try {
           this.proc.kill("SIGTERM");
-        } catch {}
+        } catch {
+          // Worker already gone — nothing to clean up.
+        }
       }
     };
     process.once("exit", killOnce);
@@ -148,11 +145,7 @@ class DenoWorkerProvider {
   async callApi(prompt, context) {
     const handlerAbsPath = resolveHandler(this.config.handler);
     const worker = getWorker(handlerAbsPath);
-    const result = await worker.call({
-      prompt,
-      vars: (context && context.vars) || {},
-      config: this.config,
-    });
+    const result = await worker.call({ prompt, vars: context?.vars || {}, config: this.config });
     return { output: result.output };
   }
 }

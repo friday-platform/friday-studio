@@ -14,12 +14,12 @@
 //   - Real `bundledAgents` registry surfaced via list_capabilities
 //   - Synthetic MCP catalog so the LLM has a meaningful bundled-vs-MCP choice
 
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import { bundledAgents } from "@atlas/bundled-agents";
 import { buildRegistryModelId, isRegistryProvider, registry } from "@atlas/llm";
 import { jsonSchema, stepCountIs, streamText, tool } from "ai";
 import { z } from "zod";
-import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
 
 const ROOT = resolve(import.meta.dirname ?? ".", "../../../../..");
 
