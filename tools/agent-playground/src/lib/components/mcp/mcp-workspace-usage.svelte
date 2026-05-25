@@ -38,6 +38,17 @@
       return [{ workspaceId: ws.id, workspaceName: ws.displayName, enabledServer }];
     });
   });
+
+  // Workspace `name` is not unique, only `id` is. When two rows share a
+  // display name, render the id as a secondary line so the user can tell
+  // them apart. Stays silent when names are unique.
+  const duplicatedNames = $derived.by<Set<string>>(() => {
+    const counts = new Map<string, number>();
+    for (const row of enabledRows) {
+      counts.set(row.workspaceName, (counts.get(row.workspaceName) ?? 0) + 1);
+    }
+    return new Set([...counts].filter(([, n]) => n > 1).map(([name]) => name));
+  });
 </script>
 
 {#if enabledRows.length > 0}
@@ -47,6 +58,9 @@
         <a class="workspace-name" href="/platform/{row.workspaceId}/settings/mcp">
           {row.workspaceName}
         </a>
+        {#if duplicatedNames.has(row.workspaceName)}
+          <div class="workspace-id" title="Workspace ID">{row.workspaceId}</div>
+        {/if}
         {#if row.enabledServer.agentIds && row.enabledServer.agentIds.length > 0}
           <div class="references">
             <span class="ref-label">Agents:</span>
@@ -90,6 +104,12 @@
 
   .workspace-name:hover {
     text-decoration: underline;
+  }
+
+  .workspace-id {
+    color: var(--text-faded);
+    font-family: var(--font-family-monospace);
+    font-size: var(--font-size-1);
   }
 
   .references {
