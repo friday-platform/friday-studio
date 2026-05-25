@@ -57,11 +57,6 @@ const runCommand = define({
       short: "T",
       description: "Tag to attach to all results in this run (e.g., baseline, experiment-1)",
     },
-    concurrency: {
-      type: "number",
-      short: "j",
-      description: "Max evals to run in parallel (default 1; set 4-8 for LLM-bound suites)",
-    },
   },
   examples: `
 # Run all evals
@@ -78,9 +73,6 @@ evals run --filter refusal
 
 # Tag a run for later comparison
 evals run --tag baseline
-
-# Run with 8-way concurrency (LLM-bound suites)
-evals run -j 8
 `.trim(),
   run: async (ctx) => {
     const { target } = ctx.values;
@@ -99,8 +91,7 @@ evals run -j 8
     }
 
     const tag = ctx.values.tag;
-    const concurrency = ctx.values.concurrency;
-    const results = await executeEvals(files, { failFast, filter, tag, concurrency });
+    const results = await executeEvals(files, { failFast, filter, tag });
 
     const passed = results.filter((r) => !r.metadata.error).length;
     const failed = results.length - passed;

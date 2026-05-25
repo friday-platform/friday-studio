@@ -392,37 +392,6 @@ export const evals = [{
     expect(resultAt(results, 0).tag).toBeUndefined();
   });
 
-  it("--concurrency runs evals in parallel but preserves source order", async () => {
-    const filepath = writeEvalFile(
-      "parallel.eval.ts",
-      `
-import { AgentContextAdapter } from "${join(import.meta.dirname ?? ".", "context.ts")}";
-const adapter = new AgentContextAdapter();
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-// First eval is slow; later evals finish first. The runner must still
-// return them in source order.
-export const evals = [
-  { name: "test-runner/slow",   adapter, config: { input: "a", run: async () => { await sleep(80); return "a"; }, outputDir: "${TEST_OUTPUT_DIR}" } },
-  { name: "test-runner/medium", adapter, config: { input: "b", run: async () => { await sleep(40); return "b"; }, outputDir: "${TEST_OUTPUT_DIR}" } },
-  { name: "test-runner/fast",   adapter, config: { input: "c", run: async () => { await sleep(10); return "c"; }, outputDir: "${TEST_OUTPUT_DIR}" } },
-];
-`,
-    );
-
-    const start = Date.now();
-    const results = await executeEvals([filepath], { concurrency: 4 });
-    const elapsed = Date.now() - start;
-
-    expect(results.map((r) => r.evalName)).toEqual([
-      "test-runner/slow",
-      "test-runner/medium",
-      "test-runner/fast",
-    ]);
-    // Sequential would be ~130ms; parallel with concurrency=4 should be ~80ms.
-    // Give it a generous ceiling to avoid CI flakiness.
-    expect(elapsed).toBeLessThan(125);
-  });
-
   it("--filter with no matches returns empty results", async () => {
     const filepath = writeEvalFile(
       "no-match.eval.ts",
