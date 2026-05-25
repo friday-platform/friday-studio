@@ -1,8 +1,18 @@
 # yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
 #
-# Per-case constraints are encoded as JSON-stringified vars so the shared
-# assertions/check.js can deserialize and apply them. The five cases mirror
-# the original eval verbatim — same prompts, same expected/forbidden shapes.
+# Per-case constraints are encoded as JSON-stringified vars so the per-constraint
+# named exports in assertions/check.js can deserialize and apply them. Each
+# constraint runs as its own `javascript:` assert with a distinct `metric:`
+# label — promptfoo's per-metric report shows pass rates per rule and a failing
+# case names the specific constraint that broke (instead of one blob assertion).
+#
+# Metric labels mirror the pre-promptfoo eval's score names:
+#   correct-type-chosen, no-wrong-type, no-overdelegated-atlas,
+#   no-spurious-user-agent, required-mcp-wired, no-phantom-atlas-agent.
+#
+# Constraints whose vars are empty for a given case (e.g. forbiddenAtlasAgentsJson
+# = "[]") trivially pass — every case wires the full set uniformly to keep
+# tests.yaml legible and per-metric aggregates stable.
 
 - description: 'inbox-triage-llm — inbox triage should be type:llm + gmail MCP'
   vars:
@@ -17,7 +27,23 @@
     forbidUserAgentRegistration: true
   assert:
     - type: javascript
-      value: file://assertions/check.js
+      value: file://assertions/check.js:correctTypeChosen
+      metric: correct-type-chosen
+    - type: javascript
+      value: file://assertions/check.js:noWrongType
+      metric: no-wrong-type
+    - type: javascript
+      value: file://assertions/check.js:noOverdelegatedAtlas
+      metric: no-overdelegated-atlas
+    - type: javascript
+      value: file://assertions/check.js:noSpuriousUserAgent
+      metric: no-spurious-user-agent
+    - type: javascript
+      value: file://assertions/check.js:requiredMcpWired
+      metric: required-mcp-wired
+    - type: javascript
+      value: file://assertions/check.js:noPhantomAtlasAgent
+      metric: no-phantom-atlas-agent
 
 - description: 'csv-streaming-user — large-CSV ingest should be type:user'
   vars:
@@ -32,7 +58,23 @@
     forbidUserAgentRegistration: false
   assert:
     - type: javascript
-      value: file://assertions/check.js
+      value: file://assertions/check.js:correctTypeChosen
+      metric: correct-type-chosen
+    - type: javascript
+      value: file://assertions/check.js:noWrongType
+      metric: no-wrong-type
+    - type: javascript
+      value: file://assertions/check.js:noOverdelegatedAtlas
+      metric: no-overdelegated-atlas
+    - type: javascript
+      value: file://assertions/check.js:noSpuriousUserAgent
+      metric: no-spurious-user-agent
+    - type: javascript
+      value: file://assertions/check.js:requiredMcpWired
+      metric: required-mcp-wired
+    - type: javascript
+      value: file://assertions/check.js:noPhantomAtlasAgent
+      metric: no-phantom-atlas-agent
 
 - description: 'code-gen-llm-not-claude-code — code-gen should be type:llm, NOT claude-code'
   vars:
@@ -47,7 +89,23 @@
     forbidUserAgentRegistration: false
   assert:
     - type: javascript
-      value: file://assertions/check.js
+      value: file://assertions/check.js:correctTypeChosen
+      metric: correct-type-chosen
+    - type: javascript
+      value: file://assertions/check.js:noWrongType
+      metric: no-wrong-type
+    - type: javascript
+      value: file://assertions/check.js:noOverdelegatedAtlas
+      metric: no-overdelegated-atlas
+    - type: javascript
+      value: file://assertions/check.js:noSpuriousUserAgent
+      metric: no-spurious-user-agent
+    - type: javascript
+      value: file://assertions/check.js:requiredMcpWired
+      metric: required-mcp-wired
+    - type: javascript
+      value: file://assertions/check.js:noPhantomAtlasAgent
+      metric: no-phantom-atlas-agent
 
 - description: 'send-daily-report-email — daily email report must use type:llm + gmail MCP, never agent:email'
   vars:
@@ -63,7 +121,23 @@
     forbidUserAgentRegistration: false
   assert:
     - type: javascript
-      value: file://assertions/check.js
+      value: file://assertions/check.js:correctTypeChosen
+      metric: correct-type-chosen
+    - type: javascript
+      value: file://assertions/check.js:noWrongType
+      metric: no-wrong-type
+    - type: javascript
+      value: file://assertions/check.js:noOverdelegatedAtlas
+      metric: no-overdelegated-atlas
+    - type: javascript
+      value: file://assertions/check.js:noSpuriousUserAgent
+      metric: no-spurious-user-agent
+    - type: javascript
+      value: file://assertions/check.js:requiredMcpWired
+      metric: required-mcp-wired
+    - type: javascript
+      value: file://assertions/check.js:noPhantomAtlasAgent
+      metric: no-phantom-atlas-agent
 
 - description: 'explicit-llm-override — user explicitly names type:llm — must respect it'
   vars:
@@ -78,4 +152,20 @@
     forbidUserAgentRegistration: true
   assert:
     - type: javascript
-      value: file://assertions/check.js
+      value: file://assertions/check.js:correctTypeChosen
+      metric: correct-type-chosen
+    - type: javascript
+      value: file://assertions/check.js:noWrongType
+      metric: no-wrong-type
+    - type: javascript
+      value: file://assertions/check.js:noOverdelegatedAtlas
+      metric: no-overdelegated-atlas
+    - type: javascript
+      value: file://assertions/check.js:noSpuriousUserAgent
+      metric: no-spurious-user-agent
+    - type: javascript
+      value: file://assertions/check.js:requiredMcpWired
+      metric: required-mcp-wired
+    - type: javascript
+      value: file://assertions/check.js:noPhantomAtlasAgent
+      metric: no-phantom-atlas-agent
