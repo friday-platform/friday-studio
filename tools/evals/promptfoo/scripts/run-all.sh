@@ -19,7 +19,11 @@
 #   PROMPTFOO_SUITE_FLOOR=N         exit 100 if ANY suite's pass rate < N
 #                                   (default 70). A suite that errored out
 #                                   and produced no parseable JSON counts as
-#                                   failing the floor, not skipped.
+#                                   failing the floor (gate=ERROR). A suite
+#                                   that ran but produced zero results (e.g.
+#                                   --filter-providers matched nothing) is
+#                                   gate=SKIPPED — excluded from the floor
+#                                   AND from aggregate numerator/denominator.
 #   PROMPTFOO_AGGREGATE_CEILING=N   exit 100 if AGGREGATE pass rate < N
 #                                   (default 85)
 #
@@ -149,6 +153,7 @@ interface Row {
   total: number;
   pct: number | null;
   parseErr: string;
+  skipped: boolean;
 }
 
 let totalPass = 0;
@@ -168,33 +173,45 @@ for (const file of files) {
   } catch (e) {
     parseErr = `parse error: ${e instanceof Error ? e.message : String(e)}`;
   }
-  totalPass += pass;
-  totalFail += fail;
-  totalErr += err;
   const total = pass + fail + err;
+  // A successful run that produced zero results = suite was filtered out
+  // (e.g. EVAL_TIER=small against a suite that excludes tier:small).
+  // Exclude from aggregate so a skipped suite can't silently green-light the run.
+  const skipped = !parseErr && total === 0;
+  if (!skipped) {
+    totalPass += pass;
+    totalFail += fail;
+    totalErr += err;
+  }
   const pct = total > 0 && !parseErr ? (pass / total) * 100 : null;
-  rows.push({ suite, pass, total, pct, parseErr });
+  rows.push({ suite, pass, total, pct, parseErr, skipped });
 }
 
 const w = (s: string, n: number) => String(s).padEnd(n);
 const fmtPct = (pct: number | null) => pct === null ? "—" : pct.toFixed(1);
 
-// A suite fails the floor if its pct is null (errored / no JSON) OR below floor.
-const suiteFailed = (r: Row) => r.pct === null || r.pct < suiteFloor;
+// A suite fails the floor if its pct is below floor, OR it errored out (no
+// parseable JSON). SKIPPED suites (intentionally filtered to zero providers)
+// don't count — they weren't tested.
+const suiteFailed = (r: Row) => !r.skipped && (r.pct === null || r.pct < suiteFloor);
+const gateFor = (r: Row) => {
+  if (r.skipped) return "SKIPPED";
+  if (r.parseErr) return "ERROR";
+  return suiteFailed(r) ? "FAIL" : "PASS";
+};
 
 console.log(`  ${w("suite", 36)} ${w("pass/total", 12)} ${w("%", 8)} gate`);
-console.log(`  ${"─".repeat(36)} ${"─".repeat(12)} ${"─".repeat(8)} ${"─".repeat(4)}`);
+console.log(`  ${"─".repeat(36)} ${"─".repeat(12)} ${"─".repeat(8)} ${"─".repeat(7)}`);
 for (const r of rows) {
   const cell = r.parseErr ? r.parseErr : `${r.pass}/${r.total}`;
-  const gate = suiteFailed(r) ? "FAIL" : "PASS";
-  console.log(`  ${w(r.suite, 36)} ${w(cell, 12)} ${w(fmtPct(r.pct), 8)} ${gate}`);
+  console.log(`  ${w(r.suite, 36)} ${w(cell, 12)} ${w(fmtPct(r.pct), 8)} ${gateFor(r)}`);
 }
 
 const grandTotal = totalPass + totalFail + totalErr;
 const grandPct = grandTotal > 0 ? (totalPass / grandTotal) * 100 : 0;
 const aggregateFailed = grandPct < aggregateCeiling;
 const aggregateGate = aggregateFailed ? "FAIL" : "PASS";
-console.log(`  ${"─".repeat(36)} ${"─".repeat(12)} ${"─".repeat(8)} ${"─".repeat(4)}`);
+console.log(`  ${"─".repeat(36)} ${"─".repeat(12)} ${"─".repeat(8)} ${"─".repeat(7)}`);
 console.log(
   `  ${w("AGGREGATE", 36)} ${w(`${totalPass}/${grandTotal}`, 12)} ${w(grandPct.toFixed(1), 8)} ${aggregateGate}`,
 );
