@@ -1,5 +1,6 @@
 <script lang="ts">
   import { Button, getHotkeyRegistry, ListDetail } from "@atlas/ui";
+  import { generateChatId } from "@atlas/core/chat/id";
   import { goto } from "$app/navigation";
   import { browser } from "$app/environment";
   import { page } from "$app/state";
@@ -56,7 +57,10 @@
   }
 
   function handleNewChat() {
-    goto(`/platform/${encodeURIComponent(workspaceId)}/chat`);
+    // Bare `/chat` redirects to `active_setup_session_id` when one is set;
+    // mint a fresh id client-side so this button always opens a new session.
+    const next = generateChatId();
+    goto(`/platform/${encodeURIComponent(workspaceId)}/chat/${encodeURIComponent(next)}`);
   }
 </script>
 

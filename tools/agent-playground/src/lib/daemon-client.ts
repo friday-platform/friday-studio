@@ -11,6 +11,7 @@ import type {
   WorkspaceEnvRoutes,
   WorkspaceMCPRoutes,
   WorkspaceRoutes,
+  WorkspaceVariablesRoutes,
 } from "@atlas/atlasd/types";
 import { hc } from "hono/client";
 
@@ -51,6 +52,10 @@ function makeDaemonClient(customFetch: typeof globalThis.fetch) {
       }),
     workspaceEnv: (workspaceId: string) =>
       hc<WorkspaceEnvRoutes>(`${PROXY_BASE}/api/workspaces/${workspaceId}/env`, {
+        fetch: customFetch,
+      }),
+    workspaceVariables: (workspaceId: string) =>
+      hc<WorkspaceVariablesRoutes>(`${PROXY_BASE}/api/workspaces/${workspaceId}/variables`, {
         fetch: customFetch,
       }),
     sessions: hc<SessionsRoutes>(`${PROXY_BASE}/api/sessions`, { fetch: customFetch }),

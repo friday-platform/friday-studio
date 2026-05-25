@@ -62,11 +62,11 @@ function makeMessage(overrides?: Partial<Message>): Message {
   } as Message;
 }
 
-function makeThread(id: string) {
+function makeThread(id: string, adapterName: string = "atlas") {
   const posted: unknown[] = [];
   return {
     id,
-    adapter: { name: "atlas" },
+    adapter: { name: adapterName, addReaction: vi.fn().mockResolvedValue(undefined) },
     subscribe: vi.fn().mockResolvedValue(undefined),
     post: vi.fn(async (stream: ReadableStream<unknown>) => {
       for await (const chunk of stream) {
@@ -1694,7 +1694,9 @@ describe("createMessageHandler — Decision 7 setup gate", () => {
       setupGate,
     });
 
-    const thread = makeThread("chat-owner");
+    // Slack is a real communicator — the surface Decision 7 actually gates.
+    // The atlas-web adapter is exempt (see bypass test below).
+    const thread = makeThread("chat-owner", "slack");
     const post = vi.fn().mockResolvedValue({ id: "sent-1", threadId: "chat-owner", raw: {} });
     (thread as unknown as { post: typeof post }).post = post;
     const subscribe = thread.subscribe;
@@ -1733,7 +1735,7 @@ describe("createMessageHandler — Decision 7 setup gate", () => {
       setupGate,
     });
 
-    const thread = makeThread("chat-stranger");
+    const thread = makeThread("chat-stranger", "slack");
     const post = vi.fn();
     (thread as unknown as { post: typeof post }).post = post;
 
@@ -1768,7 +1770,7 @@ describe("createMessageHandler — Decision 7 setup gate", () => {
       setupGate,
     });
 
-    const thread = makeThread("chat-clear");
+    const thread = makeThread("chat-clear", "slack");
     const turnBuffer = registry.createStream("ws-1", "chat-clear");
 
     await handler(thread, makeMessage({ threadId: "chat-clear", raw: { turnBuffer } }));
@@ -1812,5 +1814,63 @@ describe("createMessageHandler — Decision 7 setup gate", () => {
     );
     expect(thread.subscribe).toHaveBeenCalled();
     expect(mockAppendMessage).toHaveBeenCalled();
+  });
+
+  it("bypasses the gate entirely for the atlas-web adapter even when requires_setup is true", async () => {
+    // Per the workspace-setup design (Decision 7), the gate is "communicator
+    // inbound" — Slack/Teams/etc get the owner-reply-with-URL treatment. The
+    // atlas-web adapter is the in-product chat surface where the bootstrap
+    // setup form lives and where the user has to be able to converse with
+    // Friday DURING setup ("chat does execute"). If the gate fires on atlas,
+    // the handler short-circuits before `ChatStorage.appendMessage` and before
+    // the chat signal fires: user messages vanish on refresh and Friday never
+    // responds. The owner-reply via `thread.post` is also a no-op stub on
+    // atlas-web (postMessage in atlas-web-adapter.ts is intentionally a stub —
+    // real delivery is StreamRegistry SSE), so the user gets zero feedback.
+    const registry = new StreamRegistry();
+    const chunks = [{ type: "text-delta", delta: "atlas chat survives setup gate" }];
+    const triggerFn = makeTriggerFn(chunks);
+    const setupGate = vi
+      .fn()
+      .mockResolvedValue({ requires_setup: true, setupUrl: "http://daemon/workspaces/ws-1/chat" });
+
+    const handler = createMessageHandler("ws-1", triggerFn, registry, undefined, {
+      ownerUserId: "owner-1",
+      setupGate,
+    });
+
+    const thread = makeThread("chat-atlas-bootstrap"); // default adapter.name === "atlas"
+    const post = vi
+      .fn()
+      .mockResolvedValue({ id: "sent-1", threadId: "chat-atlas-bootstrap", raw: {} });
+    (thread as unknown as { post: typeof post }).post = post;
+    const turnBuffer = registry.createStream("ws-1", "chat-atlas-bootstrap");
+
+    await handler(
+      thread,
+      makeMessage({
+        threadId: "chat-atlas-bootstrap",
+        raw: { turnBuffer },
+        author: {
+          userId: "owner-1",
+          userName: "owner",
+          fullName: "Owner",
+          isBot: false,
+          isMe: false,
+        },
+      }),
+    );
+
+    expect(setupGate).not.toHaveBeenCalled();
+    expect(thread.subscribe).toHaveBeenCalled();
+    expect(mockAppendMessage).toHaveBeenCalled();
+    expect(triggerFn).toHaveBeenCalledOnce();
+    expect(triggerFn).toHaveBeenCalledWith(
+      "chat",
+      expect.objectContaining({ chatId: "chat-atlas-bootstrap" }),
+      "chat-atlas-bootstrap",
+      expect.any(Function),
+      undefined,
+    );
   });
 });

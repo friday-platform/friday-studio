@@ -68,11 +68,12 @@ describe("formatVariableSchemaSummary", () => {
 
 describe("formatSetupStatusBlock", () => {
   it("returns empty string when there are no requirements", () => {
-    expect(formatSetupStatusBlock([])).toBe("");
+    expect(formatSetupStatusBlock([], { isBootstrapChat: false })).toBe("");
+    expect(formatSetupStatusBlock([], { isBootstrapChat: true })).toBe("");
   });
 
-  it("matches the design template verbatim — header, bullets, tools clause", () => {
-    const out = formatSetupStatusBlock([VARIABLE_REQ, CREDENTIAL_REQ]);
+  it("matches the design template verbatim off-bootstrap — header, bullets, tools clause", () => {
+    const out = formatSetupStatusBlock([VARIABLE_REQ, CREDENTIAL_REQ], { isBootstrapChat: false });
 
     expect(out).toBe(
       [
@@ -89,17 +90,65 @@ describe("formatSetupStatusBlock", () => {
     );
   });
 
+  it("matches the design template verbatim in the bootstrap chat — same gap bullets, variant tools clause", () => {
+    const out = formatSetupStatusBlock([VARIABLE_REQ, CREDENTIAL_REQ], { isBootstrapChat: true });
+
+    expect(out).toBe(
+      [
+        "[WORKSPACE SETUP STATUS]",
+        "This workspace currently has unfilled configuration:",
+        "- Variable `region`: AWS region to scope queries to. Required: string, enum: us-east-1|us-west-2.",
+        "- Credential: gmail (no default credential selected).",
+        "",
+        "The setup form is already visible in this chat (above your turn). Your job:",
+        "- Greet the user. Use <welcome> and <variables> to ground them in what this workspace does and what each value is for.",
+        "- For each gap, explain *why* this workspace needs that value — quote or paraphrase the variable's description.",
+        "- If the user asks how a variable is used in this workspace, call describe_job(name) on workspace jobs and search for `{{variables.<name>}}` references; the returned prompt field preserves raw refs.",
+        "- Do NOT call request_workspace_setup — the form is already there.",
+        "- If the user explicitly asks you to fill a single value rather than typing into the form, use env_set. Otherwise leave the form to do its job.",
+      ].join("\n"),
+    );
+  });
+
+  it("emits identical header, intro, and gap bullets across both variants", () => {
+    const offBootstrap = formatSetupStatusBlock([VARIABLE_REQ, CREDENTIAL_REQ], {
+      isBootstrapChat: false,
+    });
+    const bootstrap = formatSetupStatusBlock([VARIABLE_REQ, CREDENTIAL_REQ], {
+      isBootstrapChat: true,
+    });
+    // Find the blank-line separator; everything before it (inclusive) is
+    // the variant-invariant prelude. Locks the design's "gap bullets same
+    // across phases" contract — only the tools clause downstream varies.
+    const offBootstrapPrelude = offBootstrap.slice(0, offBootstrap.indexOf("\n\n"));
+    const bootstrapPrelude = bootstrap.slice(0, bootstrap.indexOf("\n\n"));
+    expect(bootstrapPrelude).toBe(offBootstrapPrelude);
+  });
+
+  it("off-bootstrap clause forbids the bootstrap-chat form-visible language", () => {
+    const out = formatSetupStatusBlock([VARIABLE_REQ], { isBootstrapChat: false });
+    expect(out).not.toContain("The setup form is already visible");
+    expect(out).not.toContain("Do NOT call request_workspace_setup");
+  });
+
+  it("bootstrap-chat clause forbids the off-bootstrap request_workspace_setup tool listing", () => {
+    const out = formatSetupStatusBlock([VARIABLE_REQ], { isBootstrapChat: true });
+    expect(out).not.toContain("request_workspace_setup() — show the full setup form");
+    expect(out).toContain("Do NOT call request_workspace_setup");
+  });
+
   it("renders stale credential reason distinctly from no_default", () => {
-    const out = formatSetupStatusBlock([STALE_CREDENTIAL_REQ]);
+    const out = formatSetupStatusBlock([STALE_CREDENTIAL_REQ], { isBootstrapChat: false });
     expect(out).toContain(
       "- Credential: github (previously-linked credential no longer resolves).",
     );
   });
 
   it("falls back to a placeholder description when variable has none", () => {
-    const out = formatSetupStatusBlock([
-      { kind: "variable", name: "max_retries", schema: { type: "integer", minimum: 1 } },
-    ]);
+    const out = formatSetupStatusBlock(
+      [{ kind: "variable", name: "max_retries", schema: { type: "integer", minimum: 1 } }],
+      { isBootstrapChat: false },
+    );
     expect(out).toContain(
       "- Variable `max_retries`: (no description provided). Required: integer, min: 1.",
     );
@@ -112,7 +161,7 @@ describe("fetchWorkspaceSetupStatus", () => {
     mockParseResult.mockReset();
   });
 
-  it("returns shouldInject=true when requires_setup=true AND active_setup_session_id is null", async () => {
+  it("returns shouldInject=true, isBootstrapChat=false when active_setup_session_id is null (re-setup)", async () => {
     mockParseResult.mockResolvedValueOnce({
       ok: true,
       data: {
@@ -122,24 +171,26 @@ describe("fetchWorkspaceSetupStatus", () => {
       },
     });
 
-    const result = await fetchWorkspaceSetupStatus("ws_test", logger);
+    const result = await fetchWorkspaceSetupStatus("ws_test", logger, "chat_anything");
 
     expect(result.shouldInject).toBe(true);
+    expect(result.isBootstrapChat).toBe(false);
     expect(result.setupRequirements).toEqual([VARIABLE_REQ, CREDENTIAL_REQ]);
   });
 
-  it("returns shouldInject=true when metadata is omitted entirely (pointer treated as null)", async () => {
+  it("returns shouldInject=true, isBootstrapChat=false when metadata is omitted entirely", async () => {
     mockParseResult.mockResolvedValueOnce({
       ok: true,
       data: { requires_setup: true, setup_requirements: [VARIABLE_REQ] },
     });
 
-    const result = await fetchWorkspaceSetupStatus("ws_test", logger);
+    const result = await fetchWorkspaceSetupStatus("ws_test", logger, "chat_anything");
 
     expect(result.shouldInject).toBe(true);
+    expect(result.isBootstrapChat).toBe(false);
   });
 
-  it("returns shouldInject=false during initial setup (active_setup_session_id non-null)", async () => {
+  it("returns isBootstrapChat=true when the current session IS the bootstrap session", async () => {
     mockParseResult.mockResolvedValueOnce({
       ok: true,
       data: {
@@ -149,9 +200,63 @@ describe("fetchWorkspaceSetupStatus", () => {
       },
     });
 
-    const result = await fetchWorkspaceSetupStatus("ws_test", logger);
+    const result = await fetchWorkspaceSetupStatus("ws_test", logger, "chat_bootstrap_1");
 
-    expect(result.shouldInject).toBe(false);
+    expect(result.shouldInject).toBe(true);
+    expect(result.isBootstrapChat).toBe(true);
+    expect(result.setupRequirements).toEqual([VARIABLE_REQ]);
+  });
+
+  it("returns isBootstrapChat=false when initial setup is active but the user is in a different chat", async () => {
+    // The bug this design fixes: during initial setup (active_setup_session_id
+    // is non-null) the user started a NEW chat. The bootstrap form is not
+    // visible in this chat — the agent must be allowed to offer
+    // request_workspace_setup rather than be told "the form is already there".
+    mockParseResult.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        requires_setup: true,
+        setup_requirements: [VARIABLE_REQ],
+        metadata: { active_setup_session_id: "chat_bootstrap_1" },
+      },
+    });
+
+    const result = await fetchWorkspaceSetupStatus("ws_test", logger, "chat_some_other_session");
+
+    expect(result.shouldInject).toBe(true);
+    expect(result.isBootstrapChat).toBe(false);
+  });
+
+  it("returns isBootstrapChat=false when currentSessionId is null", async () => {
+    mockParseResult.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        requires_setup: true,
+        setup_requirements: [VARIABLE_REQ],
+        metadata: { active_setup_session_id: "chat_bootstrap_1" },
+      },
+    });
+
+    const result = await fetchWorkspaceSetupStatus("ws_test", logger, null);
+
+    expect(result.shouldInject).toBe(true);
+    expect(result.isBootstrapChat).toBe(false);
+  });
+
+  it("treats an empty-string active_setup_session_id as not the bootstrap chat", async () => {
+    mockParseResult.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        requires_setup: true,
+        setup_requirements: [VARIABLE_REQ],
+        metadata: { active_setup_session_id: "" },
+      },
+    });
+
+    const result = await fetchWorkspaceSetupStatus("ws_test", logger, "");
+
+    expect(result.shouldInject).toBe(true);
+    expect(result.isBootstrapChat).toBe(false);
   });
 
   it("returns shouldInject=false when fully configured (requires_setup=false)", async () => {
@@ -160,17 +265,19 @@ describe("fetchWorkspaceSetupStatus", () => {
       data: { requires_setup: false, setup_requirements: [], metadata: {} },
     });
 
-    const result = await fetchWorkspaceSetupStatus("ws_test", logger);
+    const result = await fetchWorkspaceSetupStatus("ws_test", logger, "chat_anything");
 
     expect(result.shouldInject).toBe(false);
+    expect(result.isBootstrapChat).toBe(false);
   });
 
   it("returns shouldInject=false silently on fetch failure (no false accusation)", async () => {
     mockParseResult.mockResolvedValueOnce({ ok: false, error: "boom" });
 
-    const result = await fetchWorkspaceSetupStatus("ws_test", logger);
+    const result = await fetchWorkspaceSetupStatus("ws_test", logger, "chat_anything");
 
     expect(result.shouldInject).toBe(false);
+    expect(result.isBootstrapChat).toBe(false);
   });
 
   it("returns shouldInject=false silently on shape mismatch", async () => {
@@ -179,8 +286,9 @@ describe("fetchWorkspaceSetupStatus", () => {
       data: { requires_setup: "not-a-bool", setup_requirements: [] },
     });
 
-    const result = await fetchWorkspaceSetupStatus("ws_test", logger);
+    const result = await fetchWorkspaceSetupStatus("ws_test", logger, "chat_anything");
 
     expect(result.shouldInject).toBe(false);
+    expect(result.isBootstrapChat).toBe(false);
   });
 });

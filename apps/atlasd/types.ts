@@ -22,3 +22,4 @@ export type { WorkspaceEnvRoutes } from "./routes/workspaces/env.ts";
 export type { WorkspaceRoutes } from "./routes/workspaces/index.ts";
 export type { IntegrationRoutes } from "./routes/workspaces/integrations.ts";
 export type { WorkspaceMCPRoutes } from "./routes/workspaces/mcp.ts";
+export type { WorkspaceVariablesRoutes } from "./routes/workspaces/variables.ts";
