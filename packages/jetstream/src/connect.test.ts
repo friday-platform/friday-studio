@@ -21,17 +21,22 @@ import process from "node:process";
 import type { Logger } from "@atlas/logger";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { connectOrSpawn } from "./connect.ts";
-import { brokerUrlFilePath, pickPort, spawnNatsServer } from "./spawn.ts";
+import { brokerUrlFilePath, spawnNatsServer } from "./spawn.ts";
 
 /**
- * Pick a port the OS just told us is free, then immediately release it.
- * Tiny TOCTOU window where some other process could grab it, but for
- * "nothing should be listening here" assertions this is dramatically
- * more reliable than hardcoding 65530-ish (inside macOS's ephemeral
- * range, where a parallel test or background process can legitimately
- * be assigned the same port).
+ * OS-assigned free port via `listen(0)`. Drawn from the kernel's
+ * ephemeral range — NOT the 10-slot Friday-reserved range used by
+ * `pickPort` in spawn.ts. The reserved range is concurrently claimed
+ * by the CI workflow's pre-launched daemon, daemon-startup tests, and
+ * nats-manager tests; using it here led to a flake where a just-stopped
+ * broker's port was probed against a sibling worker's half-spawned
+ * nats-server (or its own half-torn listening socket).
+ *
+ * Tiny TOCTOU window between close and the caller's bind — fine for
+ * both "spawn a broker here" (spawnNatsServer surfaces the conflict)
+ * and "assert nothing is listening here" patterns.
  */
-function pickDeadPort(): Promise<number> {
+function pickFreePort(): Promise<number> {
   return new Promise((resolve, reject) => {
     const srv = createServer();
     srv.unref();
@@ -42,10 +47,41 @@ function pickDeadPort(): Promise<number> {
         const port = addr.port;
         srv.close(() => resolve(port));
       } else {
-        srv.close(() => reject(new Error("could not resolve dead port")));
+        srv.close(() => reject(new Error("could not resolve free port")));
       }
     });
   });
+}
+
+/** Local copy of spawn.ts's private `tryBind` — used by waitUntilBindable. */
+function tryBind(port: number, host: string = "127.0.0.1"): Promise<boolean> {
+  return new Promise((resolve) => {
+    const srv = createServer();
+    srv.unref();
+    srv.once("error", () => resolve(false));
+    srv.once("listening", () => srv.close(() => resolve(true)));
+    srv.listen(port, host);
+  });
+}
+
+/**
+ * Spin until `port` is re-bindable. After `dead.stop()` the kernel can
+ * leave the listening socket half-torn for a few ms; tcpProbe() against
+ * it falsely reports "alive" and connectOrSpawn takes the reuse branch,
+ * then the real NATS handshake fails with CONNECTION_REFUSED. Waiting
+ * for tryBind to succeed before the test continues closes that window.
+ */
+async function waitUntilBindable(
+  port: number,
+  host: string = "127.0.0.1",
+  timeoutMs: number = 2_000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await tryBind(port, host)) return;
+    await new Promise((r) => setTimeout(r, 25));
+  }
+  throw new Error(`port ${port} did not become bindable within ${timeoutMs}ms`);
 }
 
 const noopLogger: Logger = {
@@ -81,7 +117,11 @@ describe("connectOrSpawn — URL-file rendezvous (source: url-file)", () => {
     // as if a sibling daemon had done so. connectOrSpawn must reuse it
     // (no second spawn against the same store dir — that would file-lock
     // conflict).
-    const broker = await spawnNatsServer({ port: await pickPort(), storeDir, logger: noopLogger });
+    const broker = await spawnNatsServer({
+      port: await pickFreePort(),
+      storeDir,
+      logger: noopLogger,
+    });
     try {
       await writeFile(brokerUrlFilePath(home), broker.url, "utf-8");
 
@@ -107,9 +147,14 @@ describe("connectOrSpawn — URL-file rendezvous (source: url-file)", () => {
     // Spawn + stop a broker, then write its now-dead URL to the file.
     // connectOrSpawn must detect the stale URL (TCP probe fails) and
     // spawn a fresh broker. spawnFallback defaults to true.
-    const dead = await spawnNatsServer({ port: await pickPort(), storeDir, logger: noopLogger });
+    const port = await pickFreePort();
+    const dead = await spawnNatsServer({ port, storeDir, logger: noopLogger });
     const deadUrl = dead.url;
     await dead.stop();
+    // Confirm the kernel has fully released the listening socket before
+    // we hand the URL to connectOrSpawn — otherwise its tcpProbe can
+    // race the teardown and falsely conclude the broker is still alive.
+    await waitUntilBindable(port);
     await writeFile(brokerUrlFilePath(home), deadUrl, "utf-8");
 
     const handle = await connectOrSpawn({ home, storeDir, logger: noopLogger });
@@ -133,9 +178,11 @@ describe("connectOrSpawn — spawnFallback=false honors the no-spawn contract", 
     // would silently spawn even with spawnFallback=false because the
     // source-tracking refactor moved the spawnFallback check into one
     // source branch.
-    const dead = await spawnNatsServer({ port: await pickPort(), storeDir, logger: noopLogger });
+    const port = await pickFreePort();
+    const dead = await spawnNatsServer({ port, storeDir, logger: noopLogger });
     const deadUrl = dead.url;
     await dead.stop();
+    await waitUntilBindable(port);
     await writeFile(brokerUrlFilePath(home), deadUrl, "utf-8");
 
     await expect(
@@ -154,9 +201,9 @@ describe("connectOrSpawn — spawnFallback=false honors the no-spawn contract", 
 
   it("throws when explicit URL fails to connect and spawnFallback=false", async () => {
     // Direct connect fails; spawnFallback=false means no fallback. The
-    // port comes from pickDeadPort() so we know nothing else can have
+    // port comes from pickFreePort() so we know nothing else can have
     // been assigned to it by the kernel in parallel.
-    const deadPort = await pickDeadPort();
+    const deadPort = await pickFreePort();
     await expect(
       connectOrSpawn({
         url: `nats://127.0.0.1:${deadPort}`,
@@ -172,7 +219,7 @@ describe("connectOrSpawn — spawnFallback=false honors the no-spawn contract", 
     // FRIDAY_NATS_URL is the operator's explicit declaration of an
     // external broker. If it fails, spawning silently would shadow the
     // operator's intent — throw even with spawnFallback=true.
-    const deadPort = await pickDeadPort();
+    const deadPort = await pickFreePort();
     process.env.FRIDAY_NATS_URL = `nats://127.0.0.1:${deadPort}`;
     try {
       await expect(
