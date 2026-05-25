@@ -48,6 +48,39 @@ describe("HotkeyRegistry — stack ordering", () => {
     expect(a).toHaveBeenCalledOnce();
     expect(b).not.toHaveBeenCalled();
   });
+
+  it("walks past multiple disabled bindings to the first enabled match", () => {
+    const reg = createHotkeyRegistry();
+    const a = vi.fn();
+    const b = vi.fn();
+    const c = vi.fn();
+    track(reg.register({ key: "k", cmdOrCtrl: true, handler: a }));
+    track(reg.register({ key: "k", cmdOrCtrl: true, when: () => false, handler: b }));
+    track(reg.register({ key: "k", cmdOrCtrl: true, when: () => false, handler: c }));
+    dispatch({ key: "k", metaKey: true });
+    expect(a).toHaveBeenCalledOnce();
+    expect(b).not.toHaveBeenCalled();
+    expect(c).not.toHaveBeenCalled();
+  });
+
+  it("a throwing handler is consumed and does not break later dispatch", () => {
+    const reg = createHotkeyRegistry();
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const a = vi.fn(() => {
+      throw new Error("boom");
+    });
+    const b = vi.fn();
+    track(reg.register({ key: "k", cmdOrCtrl: true, handler: b }));
+    track(reg.register({ key: "k", cmdOrCtrl: true, handler: a }));
+    dispatch({ key: "k", metaKey: true });
+    // Top-of-stack handler threw and consumed the event — b never runs.
+    expect(a).toHaveBeenCalledOnce();
+    expect(b).not.toHaveBeenCalled();
+    // A subsequent event still dispatches.
+    dispatch({ key: "k", metaKey: true });
+    expect(a).toHaveBeenCalledTimes(2);
+    errSpy.mockRestore();
+  });
 });
 
 describe("HotkeyRegistry — modifier matching", () => {
@@ -168,6 +201,11 @@ describe("HotkeyRegistry — lifecycle", () => {
     expect(addSpy).toHaveBeenCalledWith("keydown", expect.any(Function));
     dispose();
     expect(removeSpy).toHaveBeenCalledWith("keydown", expect.any(Function));
+    // Re-registering after the listener detached must re-attach it — a
+    // detach that forgets to null `listener` would silently no-op here.
+    addSpy.mockClear();
+    track(reg.register({ key: "j", cmdOrCtrl: true, handler: () => {} }));
+    expect(addSpy).toHaveBeenCalledWith("keydown", expect.any(Function));
     addSpy.mockRestore();
     removeSpy.mockRestore();
   });

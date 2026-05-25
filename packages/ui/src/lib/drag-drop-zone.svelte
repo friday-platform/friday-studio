@@ -8,6 +8,12 @@
   layout, positioning, and scoped-CSS context. Override with `class`
   or `style` if a real layout box is needed.
 
+  Callers that overlay absolutely-positioned children inside the zone
+  must set `position: relative` on the child themselves — `display:
+  contents` on the wrapper removes it as a containing block, so the
+  overlay would otherwise anchor to the nearest positioned ancestor
+  outside the zone.
+
   Multiple zones can coexist on the same page; each is scoped to its
   own subtree, so a drop on one never fires the other.
 

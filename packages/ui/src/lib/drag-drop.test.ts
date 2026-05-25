@@ -98,9 +98,12 @@ describe("createDragDropState — dragOver lifecycle", () => {
     state.onDragLeave(asDragEvent(mockEvent({ files: [] })));
     state.onDragLeave(asDragEvent(mockEvent({ files: [] })));
     state.onDragEnter(asDragEvent(mockEvent({ files: [] })));
-    // After one matched enter we should still see dragOver true —
-    // proves the counter clamped at 0, not -2.
-    expect(state.dragOver).toBe(true);
+    state.onDragLeave(asDragEvent(mockEvent({ files: [] })));
+    // With the Math.max(0, …) clamp the counter rides 0 → 0 → 1 → 0, so
+    // the final leave clears dragOver. Without it the counter goes
+    // negative and the matched enter never brings it back to 0 — dragOver
+    // would stay stuck true.
+    expect(state.dragOver).toBe(false);
   });
 });
 
@@ -117,6 +120,15 @@ describe("createDragDropState — browser-required side effects", () => {
     const e = mockEvent({ files: [] });
     state.onDragOver(asDragEvent(e));
     expect(e.defaultPrevented).toBe(true);
+  });
+
+  it("ignores dragover for non-file drags", () => {
+    const state = createDragDropState(vi.fn());
+    const e = mockEvent({ nonFile: true });
+    state.onDragOver(asDragEvent(e));
+    // Non-file drags (text/url) must not be preventDefault'd, or the
+    // browser's own drag preview gets hijacked.
+    expect(e.defaultPrevented).toBe(false);
   });
 
   it("sets dropEffect = copy on dragenter and dragover", () => {

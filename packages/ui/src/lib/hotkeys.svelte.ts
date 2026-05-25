@@ -74,7 +74,14 @@ export function createHotkeyRegistry(): HotkeyRegistry {
       if (!matches(b, e)) continue;
       if (b.when && !b.when(e)) continue;
       if (b.preventDefault !== false) e.preventDefault();
-      b.handler(e);
+      // A throwing handler must not propagate out of the window listener:
+      // the event is already consumed (preventDefault ran), and an
+      // uncaught throw would break dispatch for every later keystroke.
+      try {
+        b.handler(e);
+      } catch (err) {
+        console.error("hotkey handler threw", err);
+      }
       return;
     }
   }
