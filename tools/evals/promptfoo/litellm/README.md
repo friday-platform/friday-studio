@@ -7,6 +7,11 @@ any suite.
 
 ## Quickstart
 
+Prerequisite: a running Docker daemon (`docker info` should succeed).
+`start.sh` runs the upstream `ghcr.io/berriai/litellm:main-stable` image
+with `litellm_config.yaml` mounted in, so no local Python toolchain is
+needed.
+
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
 export GROQ_API_KEY=gsk_...

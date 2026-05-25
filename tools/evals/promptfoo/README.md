@@ -111,7 +111,7 @@ tools/evals/promptfoo/
 │       └── worker.ts               # long-lived Deno dispatcher (JSON Lines on stdin/stdout)
 ├── litellm/
 │   ├── litellm_config.yaml         # friday-sm / friday-md / friday-lg / friday-local
-│   ├── start.sh                    # uv-run helper
+│   ├── start.sh                    # Docker launcher (ghcr.io/berriai/litellm)
 │   └── README.md                   # provider-by-provider env vars
 ├── scripts/
 │   ├── render-all.ts               # discovers + runs every suite's render.ts (parallel)
@@ -247,9 +247,6 @@ Move it here when:
 
 ## Gotchas discovered during integration
 
-- **Python 3.14 breaks `uvloop`.** Install with `uv tool install --python
-  3.13 'litellm[proxy]'`. The bare `uv tool install` picks 3.14 on this
-  machine and crashes on import.
 - **Promptfoo `cost` assertion can't read LiteLLM cost headers.** Cost
   is in `x-litellm-response-cost`, not the OpenAI response body. The
   shared `defaultTest.yaml` omits `cost` for this reason; add it

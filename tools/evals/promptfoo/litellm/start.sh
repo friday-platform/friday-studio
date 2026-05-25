@@ -14,6 +14,11 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
+command -v docker >/dev/null || {
+  echo "docker is required but not installed; see https://docs.docker.com/get-docker/" >&2
+  exit 1
+}
+
 export LITELLM_MASTER_KEY="${LITELLM_MASTER_KEY:-sk-friday-evals-dev}"
 
 docker run --rm -it \
