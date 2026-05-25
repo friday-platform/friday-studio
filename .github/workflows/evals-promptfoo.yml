@@ -1,11 +1,15 @@
 name: Promptfoo Evals
 
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - 'tools/evals/promptfoo/**'
-      - '.github/workflows/evals-promptfoo.yml'
+  # Manual-only until LiteLLM proxy hosting is wired into CI. To re-enable
+  # automatic runs on PRs, add back:
+  #   pull_request:
+  #     branches: [main]
+  #     paths:
+  #       - 'tools/evals/promptfoo/**'
+  #       - '.github/workflows/evals-promptfoo.yml'
+  # and ensure LITELLM_API_KEY + LITELLM_MASTER_KEY secrets point at a running
+  # proxy that routes friday-sm/md/lg → real providers.
   workflow_dispatch:
 
 concurrency:
@@ -17,13 +21,6 @@ permissions:
 
 jobs:
   promptfoo-evals:
-    # Gated until LiteLLM proxy hosting is wired into CI. The wrapper script
-    # requires LITELLM_API_KEY + LITELLM_MASTER_KEY pointed at a running proxy
-    # that routes friday-sm/md/lg → real providers; standing that up inside
-    # GitHub Actions (sidecar service, container image, backend keys) is
-    # out-of-scope for the gate-logic change. Flip `if:` to `true` (or
-    # remove the guard) once the proxy is reachable from the runner.
-    if: false
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
