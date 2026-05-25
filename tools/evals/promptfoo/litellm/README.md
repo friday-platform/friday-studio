@@ -15,8 +15,8 @@ needed.
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
 export GROQ_API_KEY=gsk_...
-export OPENAI_API_KEY=sk-...
 export LITELLM_MASTER_KEY=sk-friday-evals-dev
+export LITELLM_API_KEY="$LITELLM_MASTER_KEY"  # runner uses same bearer the proxy validates
 
 ./start.sh
 # proxy listening on http://localhost:4000

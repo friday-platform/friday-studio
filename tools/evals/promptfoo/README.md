@@ -17,6 +17,9 @@ evals that need `AgentContextAdapter` or full `@atlas/llm` trace plumbing.
 
 ## Quickstart
 
+Prerequisites: Node ≥ 18 (for `npx promptfoo`), Deno (for the wrapper task),
+and Docker (for the LiteLLM proxy).
+
 ```bash
 # 1. Start the LiteLLM proxy once (routes friday-sm/md/lg → real providers)
 cd tools/evals/promptfoo/litellm && ./start.sh   # see litellm/README.md for env vars
