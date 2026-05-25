@@ -114,18 +114,14 @@ tools/evals/promptfoo/
 │   ├── start.sh                    # Docker launcher (ghcr.io/berriai/litellm)
 │   └── README.md                   # provider-by-provider env vars
 ├── scripts/
-│   ├── render-all.ts               # discovers + runs every suite's render.ts (parallel)
-│   ├── render-shared.ts            # shared types + writeGeneratedTests() helper
 │   └── run-all.sh                  # backs `deno task evals:promptfoo`
 └── suites/
     ├── progress-line/              # static-prompt — status-line generation
     ├── title-generation/           # static-prompt — conversation titles
     ├── prompt-interpolation/       # function-wrapping — interpolatePromptPlaceholders
-    │   ├── render.ts               # writes tests.generated.yaml
-    │   └── tests.generated.yaml    # COMMITTED — regenerate via `deno task evals:render-promptfoo`
+    │   └── render.ts               # dynamic-tests source (file://render.ts)
     ├── agent-config-prompt/        # function-wrapping — composeAgentPrompt
-    │   ├── render.ts
-    │   └── tests.generated.yaml
+    │   └── render.ts               # dynamic-tests source (file://render.ts)
     ├── workspace-chat-elicitation/    # tool-capturing — request_tool_access shapes
     │   └── handler.ts              # Deno code, runs via shared/providers/deno-worker.cjs
     ├── workspace-chat-bundled-agent/  # tool-capturing — bundled-atlas vs MCP choice
@@ -135,27 +131,30 @@ tools/evals/promptfoo/
         └── assertions/check.js     # shared per-case constraint check
 ```
 
-## The "pre-render" pattern
+## The "dynamic-tests" pattern
 
 Two of the three suites wrap a real Friday prompt-building function
 (`interpolatePromptPlaceholders` in `@atlas/fsm-engine`,
 `composeAgentPrompt` in `apps/atlasd/src/agent-helpers.ts`). Those
 functions live in Deno workspace packages; promptfoo runs in Node.
 
-Each such suite ships a `render.ts` that:
-1. Defines its cases as data (templates, configs, expectations)
-2. Calls the real function once per case
-3. Writes a `tests.generated.yaml` via `writeGeneratedTests()` from
-   `scripts/render-shared.ts`
+Each such suite ships a `render.ts` consumed via promptfoo's
+`tests: file://render.ts` dynamic-tests loader:
 
-The generated YAML is committed — promptfoo runs zero-build at eval time.
-Edit cases → `deno task evals:render-promptfoo` → run the eval.
+1. Defines its cases as data (templates, configs, expectations).
+2. `spawnSync("deno", ["eval", ...])` calls the real function in a Deno
+   child once per load — bridging Node-only promptfoo to Deno-only
+   workspace deps without committing a generated artifact.
+3. Returns `TestCase[]` from the default export, fully assembled with the
+   composed `vars.user_prompt` + per-case assertions.
 
-The renderer also enforces structural pre-checks (e.g. "this template,
-after interpolation, must contain X" / "must not contain `{{`"). If the
-function regresses, the renderer fails before promptfoo calls any model
-— same protection the original eval's `assert:` callback provided, just
-hoisted to generation time.
+No regen step. No committed YAML. Edit cases → run the eval.
+
+The renderer enforces structural pre-checks (e.g. "this template, after
+interpolation, must contain X" / "must not contain `{{`"). If the
+function regresses, the default export throws and promptfoo fails to
+load the suite — same protection as the original `.eval.ts`'s `assert:`
+callback, hoisted to load time.
 
 Suites whose user-message is hand-authored (e.g. `progress-line`) skip
 the renderer.
@@ -175,13 +174,12 @@ the renderer.
 **Function-wrapping suite** (like `prompt-interpolation` /
 `agent-config-prompt`):
 
-1. Create `suites/<name>/render.ts` — imports the Friday function,
-   defines cases, calls the function, writes via
-   `writeGeneratedTests(import.meta.url, "<fn name>", tests)`.
-2. Point `tests: file://tests.generated.yaml` in the config.
-3. Run `deno task evals:render-promptfoo` once to produce the file.
-4. Commit the generated file. Regenerate whenever cases or the
-   underlying function change.
+1. Create `suites/<name>/render.ts` — defines cases as plain data,
+   spawns Deno via `spawnSync` to call the real Friday function, and
+   exports a sync `default` returning `TestCase[]`.
+2. Point `tests: file://render.ts` in the config.
+3. Run the eval — promptfoo loads the file once at startup and the
+   default export produces the test cases on demand. No regen step.
 
 ## Tool-capturing suites (workspace-chat-*)
 

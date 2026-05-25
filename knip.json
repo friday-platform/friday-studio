@@ -78,14 +78,13 @@
         "mod.ts!",
         "agents/**/*.eval.ts",
         "lib/*.test.ts",
-        "promptfoo/scripts/*.ts!",
         "promptfoo/shared/providers/worker.ts!",
         "promptfoo/suites/**/render.ts!",
         "promptfoo/suites/**/handler.ts!",
         "promptfoo/suites/**/assertions/*.js!"
       ],
       "project": ["**/*.{ts,tsx,js,jsx}!"],
-      "ignoreDependencies": ["@std/yaml"]
+      "ignoreDependencies": ["@atlas/fsm-engine"]
     },
     "packages/ui": {
       "entry": ["src/routes/**/*.svelte!"],

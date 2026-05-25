@@ -23,7 +23,11 @@ providers: file://../../shared/providers.yaml
 
 defaultTest: file://../../shared/defaultTest.yaml
 
-tests: file://tests.generated.yaml
+# Dynamic-tests loader. The `file://` form without a `:funcName` specifier
+# resolves to the module's default export — promptfoo's `mod[functionName]`
+# code path mishandles `:default` (double-unwraps the default), so we omit
+# the specifier and rely on the implicit default-export lookup.
+tests: file://render.ts
 
 # Concurrency comes from the CLI (`-j N`) — keep config callers in control.
 evaluateOptions:

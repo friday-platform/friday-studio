@@ -1,10 +1,22 @@
-#!/usr/bin/env -S deno run -A
-
 /**
- * Renderer for the agent-config-prompt suite.
+ * Dynamic-tests source for the agent-config-prompt suite.
  *
- * Calls the real `composeAgentPrompt` (apps/atlasd/src/agent-helpers.ts)
- * against each case below, then writes `tests.generated.yaml` for promptfoo.
+ * Loaded by promptfoo via `tests: file://render.ts` — promptfoo's
+ * dynamic-tests loader, which resolves the module's default export to a
+ * `() => TestCase[]` function. Promptfoo runs in Node and loads this file
+ * through tsx; the real `composeAgentPrompt` lives in
+ * `apps/atlasd/src/agent-helpers.ts` (Deno workspace) and is not importable
+ * from Node. To bridge:
+ *
+ *   1. Define the cases as plain data (config prompt, action prompt, etc.).
+ *   2. `spawnSync("deno", ["eval", ...])` calls the real `composeAgentPrompt`
+ *      + `interpolatePromptPlaceholders` in a Deno child and returns, per
+ *      case, `{ composed, interpolatedConfig, interpolatedAction }` as JSON
+ *      over stdout. One subprocess per load — promptfoo only calls the
+ *      default export once.
+ *   3. Build the `TestCase[]` from the case data + composed strings, and
+ *      throw on any structural-precheck violation so the load fails loudly
+ *      rather than shipping a stale prompt.
  *
  * What this eval pins (model-side property):
  *   When a workspace agent has both a config-level `prompt` and a per-step FSM
@@ -13,18 +25,20 @@
  *
  * Pinned by unit tests, not this eval:
  *   The structural contract that `composeAgentPrompt` actually concatenates
- *   both layers (`apps/atlasd/src/agent-helpers.test.ts`). The renderer's
- *   `expectInComposed` pre-check still catches a regression in composition
- *   if it slips past the unit test — the renderer fails before promptfoo runs.
- *
- * Workflow: edit `cases` below → `deno task evals:render-promptfoo` →
- * `npx promptfoo eval ...`.
+ *   both layers (`apps/atlasd/src/agent-helpers.test.ts`). The pre-check
+ *   here still catches a regression in composition that slips past the unit
+ *   test — the load fails before promptfoo ever calls a model.
  */
 
-import { atlasAgent } from "@atlas/config/testing";
-import { interpolatePromptPlaceholders } from "@atlas/fsm-engine";
-import { composeAgentPrompt } from "../../../../../apps/atlasd/src/agent-helpers.ts";
-import { type PromptfooTest, writeGeneratedTests } from "../../scripts/render-shared.ts";
+import { spawnSync } from "node:child_process";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+interface TestCase {
+  description: string;
+  vars: Record<string, unknown>;
+  assert: Array<Record<string, unknown>>;
+}
 
 interface Case {
   /** URL-safe slug. */
@@ -76,32 +90,128 @@ const cases: Case[] = [
 
 const DOCUMENT_CONTEXT = "## Context Facts\n- Current Date: 2026-05-06";
 
-function renderTests(): PromptfooTest[] {
-  return cases.map((c) => {
-    const composed = composeAgentPrompt(
-      { prompt: c.actionPrompt },
-      atlasAgent({ agent: "image-generation", prompt: c.agentConfigPrompt }),
-      c.prepareConfig ? { config: c.prepareConfig } : undefined,
-      DOCUMENT_CONTEXT,
+interface DenoCasePayload {
+  agentConfigPrompt: string;
+  actionPrompt: string | null;
+  prepareConfig: Record<string, unknown> | null;
+  documentContext: string;
+}
+
+interface DenoCaseOutput {
+  composed: string;
+  interpolatedConfigPrompt: string;
+  interpolatedActionPrompt: string | null;
+}
+
+/**
+ * Spawn Deno once to compose every case via the real `composeAgentPrompt`
+ * + `interpolatePromptPlaceholders`. Returns per-case composed prompts AND
+ * the post-interpolation strings used by the structural pre-check.
+ */
+function composeInDeno(payload: DenoCasePayload[]): DenoCaseOutput[] {
+  // render.ts lives at tools/evals/promptfoo/suites/agent-config-prompt/render.ts —
+  // climb five levels for the workspace root so @atlas/* + agent-helpers.ts
+  // resolve regardless of where the user invoked promptfoo from.
+  const here = dirname(fileURLToPath(import.meta.url));
+  const repoRoot = resolve(here, "..", "..", "..", "..", "..");
+  const agentHelpersUrl = pathToFileURL(resolve(repoRoot, "apps/atlasd/src/agent-helpers.ts")).href;
+  const script = `
+import { atlasAgent } from "@atlas/config/testing";
+import { interpolatePromptPlaceholders } from "@atlas/fsm-engine";
+import { composeAgentPrompt } from "${agentHelpersUrl}";
+const payload = JSON.parse(Deno.args[0]);
+const out = payload.map((c) => {
+  const prepareResult = c.prepareConfig ? { config: c.prepareConfig } : undefined;
+  const composed = composeAgentPrompt(
+    { prompt: c.actionPrompt ?? undefined },
+    atlasAgent({ agent: "image-generation", prompt: c.agentConfigPrompt }),
+    prepareResult,
+    c.documentContext,
+  );
+  return {
+    composed,
+    interpolatedConfigPrompt: interpolatePromptPlaceholders(c.agentConfigPrompt, prepareResult),
+    interpolatedActionPrompt: c.actionPrompt
+      ? interpolatePromptPlaceholders(c.actionPrompt, prepareResult)
+      : null,
+  };
+});
+console.log(JSON.stringify(out));
+`;
+  const result = spawnSync("deno", ["eval", script, JSON.stringify(payload)], {
+    cwd: repoRoot,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "inherit"],
+  });
+  if (result.status !== 0) {
+    throw new Error(
+      `deno eval failed (status=${result.status}, signal=${result.signal ?? "none"}). ` +
+        `Is Deno on PATH and the workspace packages @atlas/config/testing + @atlas/fsm-engine resolvable?`,
     );
+  }
+  const parsed: unknown = JSON.parse(result.stdout);
+  if (!Array.isArray(parsed) || !parsed.every(isDenoCaseOutput)) {
+    throw new Error(`deno eval returned unexpected shape: ${result.stdout}`);
+  }
+  return parsed;
+}
+
+function isDenoCaseOutput(value: unknown): value is DenoCaseOutput {
+  if (typeof value !== "object" || value === null) return false;
+  if (!("composed" in value) || typeof value.composed !== "string") return false;
+  if (
+    !("interpolatedConfigPrompt" in value) ||
+    typeof value.interpolatedConfigPrompt !== "string"
+  ) {
+    return false;
+  }
+  if (!("interpolatedActionPrompt" in value)) return false;
+  return (
+    value.interpolatedActionPrompt === null || typeof value.interpolatedActionPrompt === "string"
+  );
+}
+
+/**
+ * Default export consumed by promptfoo's `tests: file://render.ts` loader.
+ * Sync — promptfoo awaits the result either way, but sync keeps the stack
+ * trace short when a pre-check throws.
+ */
+export default function render(): TestCase[] {
+  const composed = composeInDeno(
+    cases.map((c) => ({
+      agentConfigPrompt: c.agentConfigPrompt,
+      actionPrompt: c.actionPrompt ?? null,
+      prepareConfig: c.prepareConfig ?? null,
+      documentContext: DOCUMENT_CONTEXT,
+    })),
+  );
+
+  return cases.map((c, i) => {
+    const out = composed[i];
+    if (out === undefined) {
+      throw new Error(`[${c.id}] Deno renderer produced no output for case index ${i}.`);
+    }
 
     // Structural pre-check: both layers (post-interpolation) must show up in
     // the composed prompt. If composeAgentPrompt drops a layer, this fails
     // before promptfoo ever calls a model. Mirrors the original eval's
     // `requireLayer` assertion.
-    const prepareResult = c.prepareConfig ? { config: c.prepareConfig } : undefined;
-    const requireLayer = (label: string, raw: string) => {
-      const expected = interpolatePromptPlaceholders(raw, prepareResult);
-      if (!composed.includes(expected)) {
+    if (!out.composed.includes(out.interpolatedConfigPrompt)) {
+      throw new Error(
+        `[${c.id}] Composed prompt missing agentConfig.prompt (post-interpolation).\n` +
+          `Expected substring: ${JSON.stringify(out.interpolatedConfigPrompt)}\n` +
+          `Got: ${JSON.stringify(out.composed)}`,
+      );
+    }
+    if (c.actionPrompt && out.interpolatedActionPrompt !== null) {
+      if (!out.composed.includes(out.interpolatedActionPrompt)) {
         throw new Error(
-          `[${c.id}] Composed prompt missing ${label} (post-interpolation).\n` +
-            `Expected substring: ${JSON.stringify(expected)}\n` +
-            `Got: ${JSON.stringify(composed)}`,
+          `[${c.id}] Composed prompt missing action.prompt (post-interpolation).\n` +
+            `Expected substring: ${JSON.stringify(out.interpolatedActionPrompt)}\n` +
+            `Got: ${JSON.stringify(out.composed)}`,
         );
       }
-    };
-    requireLayer("agentConfig.prompt", c.agentConfigPrompt);
-    if (c.actionPrompt) requireLayer("action.prompt", c.actionPrompt);
+    }
 
     const assertions: Array<Record<string, unknown>> = [
       // HonorsConfigPrompt — the literal marker token must appear in the
@@ -120,10 +230,8 @@ function renderTests(): PromptfooTest[] {
 
     return {
       description: `${c.id} — ${c.name}`,
-      vars: { user_prompt: composed },
+      vars: { user_prompt: out.composed },
       assert: assertions,
     };
   });
 }
-
-await writeGeneratedTests(import.meta.url, "the real composeAgentPrompt", renderTests());

@@ -1,30 +1,38 @@
-#!/usr/bin/env -S deno run -A
-
 /**
- * Renderer for the prompt-interpolation suite.
+ * Dynamic-tests source for the prompt-interpolation suite.
  *
- * Calls the real `interpolatePromptPlaceholders` from `@atlas/fsm-engine`
- * against each case below, then writes `tests.generated.yaml` for promptfoo
- * to consume.
+ * Loaded by promptfoo via `tests: file://render.ts` — promptfoo's
+ * dynamic-tests loader, which resolves the module's default export to a
+ * `() => TestCase[]` function. Promptfoo runs in Node and loads this file
+ * through tsx; the real `interpolatePromptPlaceholders` lives in
+ * `@atlas/fsm-engine`, which is a Deno workspace package and is not
+ * importable from Node. To bridge:
  *
- * Why pre-render instead of calling at eval time:
- * - Promptfoo runs in Node; `@atlas/fsm-engine` is a Deno workspace package.
- *   Spawning a Deno child per test (the live-daemon pattern) is slow and
- *   couples the suite to a subprocess contract.
- * - The eval's value-add is "given a correctly-rendered prompt, the LLM
- *   behaves." The structural contract (`{{x}}` → substitution rules) is
- *   pinned by unit tests in `packages/fsm-engine/tests/prompt-interpolation.test.ts`.
- *   Baking the interpolation output here preserves the model-side property
- *   without re-running the function on every promptfoo call.
+ *   1. Define the cases as plain data (templates, configs, expectations).
+ *   2. `spawnSync("deno", ["eval", ...])` calls the real
+ *      `interpolatePromptPlaceholders` in a Deno child and returns the
+ *      interpolated strings as JSON over stdout. One subprocess per load —
+ *      promptfoo only calls the default export once.
+ *   3. Build the `TestCase[]` from the cases + interpolated outputs and
+ *      throw on any structural-precheck violation so the eval load fails
+ *      loudly rather than shipping a stale prompt.
  *
- * Workflow: edit `cases` below → `deno task evals:render-promptfoo` →
- * `npx promptfoo eval ...`. The generated file is committed so eval runs
- * are zero-build.
+ * Structural contract for `interpolatePromptPlaceholders` itself is pinned
+ * by unit tests in `packages/fsm-engine/tests/prompt-interpolation.test.ts`.
+ * The pre-checks here catch a regression in the function that slips past
+ * the unit test — the renderer fails before promptfoo calls any model.
  */
 
-import { interpolatePromptPlaceholders } from "@atlas/fsm-engine";
-import { type PromptfooTest, writeGeneratedTests } from "../../scripts/render-shared.ts";
+import { spawnSync } from "node:child_process";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { notARefusalAsserts } from "../../shared/assertions/not-a-refusal.ts";
+
+interface TestCase {
+  description: string;
+  vars: Record<string, unknown>;
+  assert: Array<Record<string, unknown>>;
+}
 
 interface Case {
   /** URL-safe slug used in the promptfoo test description. */
@@ -44,7 +52,6 @@ interface Case {
 }
 
 // Cases mirror tools/evals/agents/prompt-interpolation/prompt-interpolation.eval.ts.
-// Add new cases here; the test names in promptfoo will follow `id`.
 const cases: Case[] = [
   {
     id: "simple-substitution",
@@ -100,26 +107,72 @@ const cases: Case[] = [
   },
 ];
 
-// Build promptfoo test objects. Each rendered prompt becomes `vars.user_prompt`
-// in the chat template (prompts/chat.json), so the model sees the same bytes
-// the production FSM would have sent.
-function renderTests(): PromptfooTest[] {
-  return cases.map((c) => {
-    const interpolated = interpolatePromptPlaceholders(c.template, { config: c.config });
+/**
+ * Spawn Deno once to interpolate every template against its config. Returns
+ * the interpolated string for each case in input order. Single subprocess
+ * per load keeps the spawn cost flat regardless of case count.
+ */
+function interpolateInDeno(
+  payload: Array<{ template: string; config: Record<string, unknown> }>,
+): string[] {
+  // render.ts lives at tools/evals/promptfoo/suites/prompt-interpolation/render.ts —
+  // climb five levels for the workspace root so `@atlas/fsm-engine` resolves
+  // regardless of where the user invoked promptfoo from.
+  const here = dirname(fileURLToPath(import.meta.url));
+  const repoRoot = resolve(here, "..", "..", "..", "..", "..");
+  const script = `
+import { interpolatePromptPlaceholders } from "@atlas/fsm-engine";
+const payload = JSON.parse(Deno.args[0]);
+const out = payload.map((c) => interpolatePromptPlaceholders(c.template, { config: c.config }));
+console.log(JSON.stringify(out));
+`;
+  const result = spawnSync("deno", ["eval", script, JSON.stringify(payload)], {
+    cwd: repoRoot,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "inherit"],
+  });
+  if (result.status !== 0) {
+    throw new Error(
+      `deno eval failed (status=${result.status}, signal=${result.signal ?? "none"}). ` +
+        `Is Deno on PATH and the workspace package @atlas/fsm-engine resolvable?`,
+    );
+  }
+  const parsed: unknown = JSON.parse(result.stdout);
+  if (!Array.isArray(parsed) || !parsed.every((s): s is string => typeof s === "string")) {
+    throw new Error(`deno eval returned unexpected shape: ${result.stdout}`);
+  }
+  return parsed;
+}
+
+/**
+ * Default export consumed by promptfoo's `tests: file://render.ts` loader.
+ * Sync — promptfoo awaits the result either way, but sync keeps the stack
+ * trace short when a pre-check throws.
+ */
+export default function render(): TestCase[] {
+  const interpolated = interpolateInDeno(
+    cases.map((c) => ({ template: c.template, config: c.config })),
+  );
+
+  return cases.map((c, i) => {
+    const rendered = interpolated[i];
+    if (rendered === undefined) {
+      throw new Error(`[${c.id}] Deno renderer produced no output for case index ${i}.`);
+    }
 
     // Structural pre-check: catches a regression in the interpolation function
-    // itself. If this throws, the renderer fails — promptfoo never runs.
+    // itself. If this throws, the load fails — promptfoo never runs.
     for (const needle of c.expectInPrompt) {
-      if (!interpolated.includes(needle)) {
+      if (!rendered.includes(needle)) {
         throw new Error(
-          `[${c.id}] Interpolated prompt missing expected substring "${needle}".\nGot: ${JSON.stringify(interpolated)}`,
+          `[${c.id}] Interpolated prompt missing expected substring "${needle}".\nGot: ${JSON.stringify(rendered)}`,
         );
       }
     }
     for (const forbidden of c.expectNotInPrompt) {
-      if (interpolated.includes(forbidden)) {
+      if (rendered.includes(forbidden)) {
         throw new Error(
-          `[${c.id}] Interpolated prompt contains forbidden substring "${forbidden}".\nGot: ${JSON.stringify(interpolated)}`,
+          `[${c.id}] Interpolated prompt contains forbidden substring "${forbidden}".\nGot: ${JSON.stringify(rendered)}`,
         );
       }
     }
@@ -144,10 +197,8 @@ function renderTests(): PromptfooTest[] {
 
     return {
       description: `${c.id} — ${c.name}`,
-      vars: { user_prompt: interpolated },
+      vars: { user_prompt: rendered },
       assert: assertions,
     };
   });
 }
-
-await writeGeneratedTests(import.meta.url, "the real interpolatePromptPlaceholders", renderTests());
