@@ -1,23 +1,27 @@
 /**
- * Re-setup status block for the workspace-chat system prompt.
+ * Setup-status block for the workspace-chat system prompt.
  *
- * Decision 4: re-setup post-import is agent-driven. When a configured
- * workspace acquires new gaps (variable unset, credential disconnected,
- * default credential cleared), the agent needs to know what's missing
- * and which tools close the gap so it surfaces them conversationally
- * instead of attempting failing actions.
+ * Decision 4: gap bullets fire in both initial setup AND re-setup —
+ * symmetric grounding for the moments the agent is most likely to be
+ * asked "why do you need this?". The trailing tools clause varies by
+ * whether the bootstrap form is visible in *this* chat: bootstrap-chat
+ * tells the agent the form is right there and forbids a second
+ * request_workspace_setup call; everywhere else (off-bootstrap during
+ * initial setup, or re-setup) names the full env_set / connect_service
+ * / request_workspace_setup toolkit so the agent can offer the form on
+ * demand without nagging.
  *
- * Inject criteria — both must hold:
- *   - `requires_setup === true` (live derivation surfaces gaps)
- *   - `active_setup_session_id === null` (no initial-setup bootstrap pending)
+ * Inject criterion (single):
+ *   - `requires_setup === true` — live derivation surfaces gaps.
  *
- * Initial setup (pointer non-null) uses the redirect-to-bootstrap-session
- * flow + pre-seeded elicitation; injecting a prompt block then would
- * duplicate the form-driven surface and confuse the agent. Fully-configured
- * workspaces get no block at all.
+ * `isBootstrapChat` is true only when the daemon's
+ * `active_setup_session_id` pointer equals the current chat session id.
+ * A non-null pointer in a *different* chat means the form lives
+ * elsewhere; from this chat's perspective there is no visible form.
+ * Fully-configured workspaces get no block at all.
  *
- * Template is contract — the conversational-tools clause is what the model
- * was trained against in the design's evaluation set. Match verbatim.
+ * Templates are contract — both tools clauses are what the model was
+ * trained against in the design's evaluation set. Match verbatim.
  */
 
 import { client, parseResult } from "@atlas/client/v2";
@@ -34,13 +38,25 @@ const WorkspaceSetupStatusResponseSchema = z.object({
 });
 
 export interface WorkspaceSetupStatus {
-  /** True when both gate conditions hold and the prompt should carry the block. */
+  /** True when `requires_setup === true`. */
   shouldInject: boolean;
   /** Snapshot at fetch time — formatter consumes when `shouldInject` is true. */
   setupRequirements: SetupRequirement[];
+  /**
+   * True only when the bootstrap form is visible in *this* chat — i.e.
+   * the daemon's `active_setup_session_id` equals the current session
+   * id. A non-null pointer in a different chat means the form lives
+   * elsewhere and the agent should treat this chat as form-less.
+   * Drives the variant tools clause in `formatSetupStatusBlock`.
+   */
+  isBootstrapChat: boolean;
 }
 
-const NO_INJECT: WorkspaceSetupStatus = { shouldInject: false, setupRequirements: [] };
+const NO_INJECT: WorkspaceSetupStatus = {
+  shouldInject: false,
+  setupRequirements: [],
+  isBootstrapChat: false,
+};
 
 /**
  * Per-turn fetch of the workspace's setup state. Re-setup gaps shift on
@@ -56,6 +72,7 @@ const NO_INJECT: WorkspaceSetupStatus = { shouldInject: false, setupRequirements
 export async function fetchWorkspaceSetupStatus(
   workspaceId: string,
   logger: Logger,
+  currentSessionId: string | null,
 ): Promise<WorkspaceSetupStatus> {
   const wsResult = await parseResult(
     client.workspace[":workspaceId"].$get({ param: { workspaceId } }),
@@ -80,11 +97,10 @@ export async function fetchWorkspaceSetupStatus(
   if (!parsed.data.requires_setup) return NO_INJECT;
 
   const pointer = parsed.data.metadata?.active_setup_session_id;
-  if (typeof pointer === "string" && pointer.length > 0) {
-    return NO_INJECT;
-  }
+  const isBootstrapChat =
+    typeof pointer === "string" && pointer.length > 0 && pointer === currentSessionId;
 
-  return { shouldInject: true, setupRequirements: parsed.data.setup_requirements };
+  return { shouldInject: true, setupRequirements: parsed.data.setup_requirements, isBootstrapChat };
 }
 
 /**
@@ -137,30 +153,65 @@ function formatCredentialBullet(req: Extract<SetupRequirement, { kind: "credenti
 }
 
 /**
+ * Off-bootstrap tools clause — no form is visible in this chat (either
+ * re-setup, or initial setup but the user is in a non-bootstrap
+ * session). The agent has all three escape hatches available and is
+ * told to surface the gap conversationally rather than push.
+ */
+const OFF_BOOTSTRAP_TOOLS_CLAUSE = [
+  "Do not attempt actions that depend on these. Surface the gap conversationally. Tools:",
+  "- env_set(key, value) — fill a single variable. Confirmation card renders.",
+  "- connect_service(provider) — open OAuth for a single credential.",
+  "- request_workspace_setup() — show the full setup form. Use when multiple gaps OR the user prefers a form to a conversation.",
+];
+
+/**
+ * Bootstrap-chat tools clause — the bootstrap form is already visible
+ * above the chat input. Forbids a duplicate `request_workspace_setup`
+ * call, points the agent at `<welcome>` / `<variables>` for grounding,
+ * and surfaces `describe_job` as the discovery path for "where is this
+ * variable used?" questions.
+ */
+const BOOTSTRAP_CHAT_TOOLS_CLAUSE = [
+  "The setup form is already visible in this chat (above your turn). Your job:",
+  "- Greet the user. Use <welcome> and <variables> to ground them in what this workspace does and what each value is for.",
+  "- For each gap, explain *why* this workspace needs that value — quote or paraphrase the variable's description.",
+  "- If the user asks how a variable is used in this workspace, call describe_job(name) on workspace jobs and search for `{{variables.<name>}}` references; the returned prompt field preserves raw refs.",
+  "- Do NOT call request_workspace_setup — the form is already there.",
+  "- If the user explicitly asks you to fill a single value rather than typing into the form, use env_set. Otherwise leave the form to do its job.",
+];
+
+/**
  * Render the `[WORKSPACE SETUP STATUS]` block exactly per design §
- * Module — Re-setup surface. The tools clause is byte-identical to the
- * design template so the conversational-tools paragraph matches the
+ * Decision 4. Header, intro, and gap bullets are byte-identical across
+ * both variants; only the trailing tools clause varies based on
+ * `isBootstrapChat`. Both clauses are byte-identical to the design
+ * template so the conversational-tools paragraph matches the
  * evaluation set the chat agent was trained against.
  *
  * Returns the empty string when there are no requirements — callers
  * should only reach this when `shouldInject === true`, but the empty
  * guard keeps the formatter safe in isolation.
  */
-export function formatSetupStatusBlock(setupRequirements: SetupRequirement[]): string {
+export function formatSetupStatusBlock(
+  setupRequirements: SetupRequirement[],
+  options: { isBootstrapChat: boolean },
+): string {
   if (setupRequirements.length === 0) return "";
 
   const bullets = setupRequirements.map((req) =>
     req.kind === "variable" ? formatVariableBullet(req) : formatCredentialBullet(req),
   );
 
+  const toolsClause = options.isBootstrapChat
+    ? BOOTSTRAP_CHAT_TOOLS_CLAUSE
+    : OFF_BOOTSTRAP_TOOLS_CLAUSE;
+
   return [
     "[WORKSPACE SETUP STATUS]",
     "This workspace currently has unfilled configuration:",
     ...bullets,
     "",
-    "Do not attempt actions that depend on these. Surface the gap conversationally. Tools:",
-    "- env_set(key, value) — fill a single variable. Confirmation card renders.",
-    "- connect_service(provider) — open OAuth for a single credential.",
-    "- request_workspace_setup() — show the full setup form. Use when multiple gaps OR the user prefers a form to a conversation.",
+    ...toolsClause,
   ].join("\n");
 }

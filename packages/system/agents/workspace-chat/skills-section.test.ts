@@ -179,6 +179,27 @@ describe("getSystemBlocks block-4 (volatile workspace inventory)", () => {
     const blocks = getSystemBlocks(workspaceSection, { setupStatus: "" });
     expect(blocks.block4).toBe(workspaceSection);
   });
+
+  it("orders block 4 as setup-status → variable-values → workspace section", () => {
+    const setupStatus = "[WORKSPACE SETUP STATUS]\nstub bullets";
+    const variableValues =
+      '<variable-values>\n<variable name="email_recipient" filled="false" source="unset"/>\n</variable-values>';
+    const blocks = getSystemBlocks(workspaceSection, { setupStatus, variableValues });
+    const setupIdx = blocks.block4.indexOf(setupStatus);
+    const valuesIdx = blocks.block4.indexOf(variableValues);
+    const sectionIdx = blocks.block4.indexOf(workspaceSection);
+    expect(setupIdx).toBeGreaterThanOrEqual(0);
+    expect(valuesIdx).toBeGreaterThan(setupIdx);
+    expect(sectionIdx).toBeGreaterThan(valuesIdx);
+  });
+
+  it("collapses to byte-identical block-4 fallback when neither setup-status nor variable-values fire", () => {
+    // Locks the `filter(Boolean)` composition: a workspace with no setup
+    // gaps and no declared variables must produce block 4 byte-identical to
+    // the pre-feature output — no leading blank line, no stray separators.
+    const blocks = getSystemBlocks(workspaceSection, { setupStatus: "", variableValues: "" });
+    expect(blocks.block4).toBe(workspaceSection);
+  });
 });
 
 describe("flattenSystemBlocks", () => {

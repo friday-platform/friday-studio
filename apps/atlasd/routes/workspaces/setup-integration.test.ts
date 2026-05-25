@@ -485,4 +485,66 @@ describe("Initial workspace setup — end-to-end (Task #22)", () => {
     expect(interpolatedDescription).toBe("Send a summary to alerts@tempest.team every day.");
     expect(interpolatedDescription).not.toContain("{{variables.email_recipient}}");
   });
+
+  test("deleting a workspace mid-setup clears its pending elicitation and bootstrap chat", {
+    timeout: 60_000,
+  }, async () => {
+    // Same Link mocks as the happy path — two Gmail credentials, no default,
+    // so import produces a `no_default` credential requirement and a real
+    // pending elicitation lands in storage.
+    mockResolveByProvider.mockImplementation((provider: string) => {
+      if (provider === "gmail") {
+        return Promise.resolve([
+          { id: "cred_a", label: "A", isDefault: false },
+          { id: "cred_b", label: "B", isDefault: false },
+        ]);
+      }
+      return Promise.reject(new Error(`Unexpected provider lookup: ${provider}`));
+    });
+
+    const { app } = await makeTestRig();
+
+    const createResp = await app.request("/workspaces/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ config: fixtureConfigWithUnfilledSetup() }),
+    });
+    expect(createResp.status).toBe(201);
+    const createBody = (await createResp.json()) as {
+      workspace: { id: string };
+      bootstrapSessionId?: string;
+    };
+    const workspaceId = createBody.workspace.id;
+    const bootstrapSessionId = createBody.bootstrapSessionId!;
+    expect(bootstrapSessionId).toMatch(/^chat_/);
+
+    // Sanity: the orphan-producing state is real before delete — one pending
+    // workspace-setup elicitation, one bootstrap chat.
+    const beforeList = await ElicitationStorage.list({
+      workspaceId,
+      sessionId: bootstrapSessionId,
+      status: "pending",
+    });
+    if (!beforeList.ok) throw new Error(`list before delete failed: ${beforeList.error}`);
+    expect(beforeList.data.filter((e) => e.kind === "workspace-setup")).toHaveLength(1);
+    const beforeChat = await ChatStorage.getChat(bootstrapSessionId, workspaceId);
+    if (!beforeChat.ok) throw new Error(`getChat before delete failed: ${beforeChat.error}`);
+    expect(beforeChat.data).not.toBeNull();
+
+    // User deletes the workspace before completing setup.
+    const deleteResp = await app.request(`/workspaces/${workspaceId}`, { method: "DELETE" });
+    expect(deleteResp.status).toBe(200);
+
+    // The pending workspace-setup elicitation must NOT linger in the
+    // Activity feed. The sweeper exempts `workspace-setup` from time-based
+    // expiry, so the delete path is the only thing that can clear it.
+    const afterList = await ElicitationStorage.list({ workspaceId, status: "pending" });
+    if (!afterList.ok) throw new Error(`list after delete failed: ${afterList.error}`);
+    expect(afterList.data.filter((e) => e.kind === "workspace-setup")).toHaveLength(0);
+
+    // Bootstrap chat session is gone — no orphan in the Sessions UI either.
+    const afterChat = await ChatStorage.getChat(bootstrapSessionId, workspaceId);
+    if (!afterChat.ok) throw new Error(`getChat after delete failed: ${afterChat.error}`);
+    expect(afterChat.data).toBeNull();
+  });
 });

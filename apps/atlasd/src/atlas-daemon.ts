@@ -107,6 +107,7 @@ import { workspaceEnvRoutes } from "../routes/workspaces/env.ts";
 import { workspacesRoutes } from "../routes/workspaces/index.ts";
 import { integrationRoutes } from "../routes/workspaces/integrations.ts";
 import { mcpRoutes } from "../routes/workspaces/mcp.ts";
+import { workspaceVariablesRoutes } from "../routes/workspaces/variables.ts";
 import { CapabilityHandlerRegistry } from "./capability-handlers.ts";
 import { CascadeConsumer, ensureCascadesStream, publishCascade } from "./cascade-stream.ts";
 import { CHAT_PROVIDERS, type PlatformCredentials } from "./chat-sdk/adapter-factory.ts";
@@ -1510,6 +1511,7 @@ export class AtlasDaemon {
     // Mount workspace config routes for partial updates (separate from workspacesRoutes to avoid circular deps)
     this.app.route("/api/workspaces/:workspaceId/config", workspaceConfigRoutes);
     this.app.route("/api/workspaces/:workspaceId/env", workspaceEnvRoutes);
+    this.app.route("/api/workspaces/:workspaceId/variables", workspaceVariablesRoutes);
     this.app.route("/api/workspaces/:workspaceId/chat", workspaceChatRoutes);
     this.app.route("/api/workspaces/:workspaceId/chat", workspaceChatDebugRoutes);
     this.app.route("/api/workspaces/:workspaceId", workspaceCacheSaltRoutes);

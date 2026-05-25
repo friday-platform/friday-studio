@@ -73,6 +73,10 @@ export {
   variableEnvKey,
   WorkspaceVariablesSchema,
 } from "./src/variable-interpolation.ts";
+// Per-variable state resolution — shared by setup-requirements and the
+// Settings → Variables daemon endpoint to keep filled/unfilled in lockstep.
+export type { VariableSource, VariableState } from "./src/variable-state.ts";
+export { resolveVariableState } from "./src/variable-state.ts";
 // Re-export watchers module for convenience
 export * as watchers from "./src/watchers/index.ts";
 // Workspace `.env` overlay — loader + comment-preserving per-key editor
