@@ -5,14 +5,25 @@
     SessionView,
   } from "@atlas/core/session/session-events";
   import { initialSessionView, reduceSessionEvent } from "@atlas/core/session/session-reducer";
-  import { Button, FormattedData, Icons, IconSmall, JsonHighlight, StatusBadge } from "@atlas/ui";
+  import {
+    Button,
+    FormattedData,
+    Icons,
+    IconSmall,
+    JsonHighlight,
+    MarkdownRendered,
+    markdownToHTMLSafe,
+    StatusBadge,
+  } from "@atlas/ui";
   import { experimental_streamedQuery } from "@tanstack/query-core";
   import { createQuery } from "@tanstack/svelte-query";
   import { page } from "$app/state";
+  import { splitMarkdownByTables } from "$lib/components/chat/table-parsers.ts";
+  import TableView from "$lib/components/chat/table-view.svelte";
   import { AgentBlockCard, parseError, StepBlock } from "$lib/components/session";
   import WorkspaceBreadcrumb from "$lib/components/workspace/workspace-breadcrumb.svelte";
-  import { formatDuration, formatSessionDate } from "$lib/utils/date";
   import { subscribeToSessionEvents } from "$lib/shared-worker/client.ts";
+  import { formatDuration, formatSessionDate } from "$lib/utils/date";
   import { tick } from "svelte";
 
   const sessionId = $derived(page.params.sessionId);
@@ -36,7 +47,11 @@
   const inspectorHref = $derived.by(() => {
     const jobName = query.data?.jobName;
     if (!jobName) return null;
-    const params = new URLSearchParams({ workspace: workspaceId, job: jobName, session: sessionId });
+    const params = new URLSearchParams({
+      workspace: workspaceId,
+      job: jobName,
+      session: sessionId,
+    });
     return `/inspector?${params}`;
   });
 
@@ -49,6 +64,21 @@
   const sessionDate = $derived(
     query.data?.startedAt ? formatSessionDate(query.data.startedAt) : "",
   );
+
+  type StructuredResult = { response: string; data?: unknown };
+  type ErrorResult = { error: string };
+  function isStructuredResult(v: unknown): v is StructuredResult {
+    return (
+      typeof v === "object" &&
+      v !== null &&
+      typeof (v as { response?: unknown }).response === "string"
+    );
+  }
+  function isErrorResult(v: unknown): v is ErrorResult {
+    return (
+      typeof v === "object" && v !== null && typeof (v as { error?: unknown }).error === "string"
+    );
+  }
 
   /** Scroll to hash-targeted block once data has loaded. */
   let hasScrolled = $state(false);
@@ -163,9 +193,48 @@
                 </FormattedData>
               {/if}
             {:else if query.data.results && Object.keys(query.data.results).length > 0}
-              <FormattedData copyText={JSON.stringify(query.data.results, null, 2)} maxLines={7}>
-                <JsonHighlight code={JSON.stringify(query.data.results, null, 2)} />
-              </FormattedData>
+              {@const entries = Object.entries(query.data.results)}
+              <div class="results">
+                {#each entries as [agentName, value] (agentName)}
+                  <div class="result-block">
+                    {#if entries.length > 1}
+                      <h4 class="result-agent">{agentName}</h4>
+                    {/if}
+                    {#if typeof value === "string"}
+                      {#each splitMarkdownByTables(value) as segment, i (i)}
+                        {#if segment.kind === "prose"}
+                          <MarkdownRendered>
+                            {@html markdownToHTMLSafe(segment.markdown)}
+                          </MarkdownRendered>
+                        {:else}
+                          <TableView columns={segment.model.columns} rows={segment.model.rows} />
+                        {/if}
+                      {/each}
+                    {:else if isStructuredResult(value)}
+                      {#each splitMarkdownByTables(value.response) as segment, i (i)}
+                        {#if segment.kind === "prose"}
+                          <MarkdownRendered>
+                            {@html markdownToHTMLSafe(segment.markdown)}
+                          </MarkdownRendered>
+                        {:else}
+                          <TableView columns={segment.model.columns} rows={segment.model.rows} />
+                        {/if}
+                      {/each}
+                      {#if value.data !== undefined}
+                        <FormattedData copyText={JSON.stringify(value.data, null, 2)} maxLines={7}>
+                          <JsonHighlight code={JSON.stringify(value.data, null, 2)} />
+                        </FormattedData>
+                      {/if}
+                    {:else if isErrorResult(value)}
+                      <p class="error-label">{value.error}</p>
+                    {:else}
+                      <FormattedData copyText={JSON.stringify(value, null, 2)} maxLines={7}>
+                        <JsonHighlight code={JSON.stringify(value, null, 2)} />
+                      </FormattedData>
+                    {/if}
+                  </div>
+                {/each}
+              </div>
             {/if}
           </StepBlock.Root>
         {/if}
@@ -322,6 +391,28 @@
     color: var(--color-red);
     font-size: var(--font-size-3);
     font-weight: var(--font-weight-5);
+  }
+
+  .results {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-4);
+  }
+
+  .result-block {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-2);
+    min-inline-size: 0;
+  }
+
+  .result-agent {
+    color: color-mix(in srgb, var(--color-text), transparent 35%);
+    font-size: var(--font-size-1);
+    font-weight: var(--font-weight-6);
+    letter-spacing: 0.02em;
+    margin: 0;
+    text-transform: uppercase;
   }
 
   .timeline {
