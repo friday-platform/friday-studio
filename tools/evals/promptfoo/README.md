@@ -24,7 +24,7 @@ cd tools/evals/promptfoo/litellm && ./start.sh   # see litellm/README.md for env
 # 2. Run every suite × every model in one parallel sweep
 deno task evals:promptfoo
 
-# 3. Or just the small tier (PR-CI cost profile)
+# 3. Or just the small tier (cheap sanity sweep)
 EVAL_TIER=small deno task evals:promptfoo
 
 # 4. Or a single suite the long way
@@ -55,7 +55,7 @@ tag baked into its label:
 Pick a subset at run time — `EVAL_TIER` accepts a regex alternation:
 
 ```bash
-EVAL_TIER=small               deno task evals:promptfoo    # cheap CI
+EVAL_TIER=small               deno task evals:promptfoo    # cheap PR-tier sanity
 EVAL_TIER='small|medium'      deno task evals:promptfoo    # PR matrix
 EVAL_TIER=large               deno task evals:promptfoo    # nightly quality run
 # unset                       → full matrix
@@ -80,14 +80,16 @@ Anything after `--` is passed through to promptfoo:
 deno task evals:promptfoo -- --filter-pattern simple-substitution
 ```
 
-## CI integration
+## Gate behavior
 
-The wrapper aggregates per-suite JSON output and exits 100 if EITHER any
-single suite falls below `PROMPTFOO_SUITE_FLOOR` OR the aggregate pass rate
-across all suites falls below `PROMPTFOO_AGGREGATE_CEILING`. Per-suite floors
-catch a single-suite regression that would otherwise be diluted into the
-aggregate (e.g. a complete elicitation breakage is ~6% of the aggregate, well
-within a 90% ceiling). Standard CI shape:
+These evals run locally — they are not wired into CI (the proxy + provider
+credentials live on the developer's box). The wrapper still aggregates
+per-suite JSON output and exits 100 if EITHER any single suite falls below
+`PROMPTFOO_SUITE_FLOOR` OR the aggregate pass rate across all suites falls
+below `PROMPTFOO_AGGREGATE_CEILING`. Per-suite floors catch a single-suite
+regression that would otherwise be diluted into the aggregate (e.g. a
+complete elicitation breakage is ~6% of the aggregate, well within a 90%
+ceiling). Recommended invocation for a regression sweep before opening a PR:
 
 ```bash
 EVAL_TIER='medium' \
