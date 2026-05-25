@@ -11,11 +11,21 @@
 // Protocol (JSON Lines, newline-delimited):
 //   in:  { id, prompt, vars, config }
 //   out: { id, output }                — success; output is a string the
-//                                         suite's assertions can parse
+//                                         suite's assertions can parse.
+//                                         Additional fields on the success
+//                                         line (e.g. tokenUsage, metadata)
+//                                         are forwarded into the
+//                                         ProviderResponse — see callApi.
 //        { id, error }                 — handler threw or rejected
 //
 // Handlers must NOT write to stdout (would corrupt the protocol). The worker
 // redirects console.log/info to stderr defensively.
+//
+// callApi returns the documented promptfoo ProviderResponse shape:
+//   { output, error?, tokenUsage?, metadata? }
+// Worker-side failures surface as { output: null, error } — never as a
+// rejected promise — so promptfoo records them as scored failures instead
+// of uncaught runtime exceptions.
 
 const path = require("node:path");
 const process = require("node:process");
@@ -136,17 +146,47 @@ class DenoWorkerProvider {
     this.options = options ?? {};
     this.config = this.options.config ?? {};
     this.label = this.options.label;
+    // Cache the id at construction time so it's stable across calls and not
+    // sensitive to mutation of label/config later. `options.id` is what
+    // promptfoo passes from the YAML `id:` field — preferred over label so
+    // `--filter-providers` matches the user-written id verbatim.
+    this._id = this.options.id || this.label || `deno-worker:${this.config.handler || "unknown"}`;
   }
 
   id() {
-    return this.label || `deno-worker:${this.config.registryId || "unknown"}`;
+    return this._id;
   }
 
   async callApi(prompt, context) {
-    const handlerAbsPath = resolveHandler(this.config.handler);
+    const startedAt = Date.now();
+    let handlerAbsPath;
+    try {
+      handlerAbsPath = resolveHandler(this.config.handler);
+    } catch (err) {
+      return {
+        output: null,
+        error: err instanceof Error ? err.message : String(err),
+        metadata: { handler: this.config.handler, responseTimeMs: Date.now() - startedAt },
+      };
+    }
+
     const worker = getWorker(handlerAbsPath);
-    const result = await worker.call({ prompt, vars: context?.vars || {}, config: this.config });
-    return { output: result.output };
+    try {
+      const result = await worker.call({ prompt, vars: context?.vars || {}, config: this.config });
+      const responseTimeMs = Date.now() - startedAt;
+      // Forward any extra fields the worker emitted (besides id/output) under
+      // metadata so handlers can surface debug info without changing this shim.
+      const { id: _id, output, tokenUsage, ...extras } = result;
+      const response = { output, metadata: { handler: handlerAbsPath, responseTimeMs, ...extras } };
+      if (tokenUsage) response.tokenUsage = tokenUsage;
+      return response;
+    } catch (err) {
+      return {
+        output: null,
+        error: err instanceof Error ? err.message : String(err),
+        metadata: { handler: handlerAbsPath, responseTimeMs: Date.now() - startedAt },
+      };
+    }
   }
 }
 
