@@ -59,6 +59,15 @@ if (( ${#MISSING_KEYS[@]} > 0 )); then
   exit 1
 fi
 
+# Preflight: proxy must answer on :4000. Without this, each suite emits a
+# cryptic per-suite connection-refused ERROR row buried in its own log.
+if ! curl -sf -m 2 http://localhost:4000/health \
+    -H "Authorization: Bearer ${LITELLM_MASTER_KEY}" >/dev/null; then
+  echo "✗ proxy not responding at :4000 (run tools/evals/promptfoo/litellm/start.sh)" >&2
+  echo "  see tools/evals/promptfoo/litellm/README.md for setup" >&2
+  exit 1
+fi
+
 FILTER_ARGS=()
 if [[ -n "${EVAL_TIER:-}" ]]; then
   FILTER_ARGS+=(--filter-providers "tier:(${EVAL_TIER})")
@@ -99,7 +108,7 @@ for cfg in "${CFGS[@]}"; do
   json="${OUT_DIR}/${suite}.json"
   echo "▶ launching: ${suite}"
   (
-    npx promptfoo@latest eval \
+    npx promptfoo@0.121.12 eval \
       -c "$cfg" \
       -o "$json" \
       --no-cache --no-share \
