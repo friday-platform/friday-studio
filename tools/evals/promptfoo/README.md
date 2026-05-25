@@ -33,10 +33,14 @@ npx promptfoo@latest eval \
   --no-cache --no-share -j 20
 ```
 
-`deno task evals:promptfoo` runs all suites in a **single** `promptfoo eval`
-invocation — promptfoo's `-j` is a global worker pool, so one invocation across
-N configs schedules better than N sequential invocations. The wrapper script
-lives at `scripts/run-all.sh`.
+`deno task evals:promptfoo` launches every suite as a parallel background
+`promptfoo eval` invocation, captures per-suite JSON output, and prints a
+pass-rate table at the end. The wrapper script lives at `scripts/run-all.sh`.
+
+Per-suite (not merged) invocation is deliberate — promptfoo's multi-config
+merge uses the first config's `basePath` to resolve `file://` vars across ALL
+configs, which breaks suites that reference per-suite prompts like
+`file://prompts/claude-code.txt`.
 
 ## Picking a model tier
 
@@ -66,8 +70,8 @@ Other knobs the wrapper honors:
 | Env var | Effect |
 |---|---|
 | `EVAL_TIER` | Forwarded as `--filter-providers 'tier:<regex>'`. |
-| `EVAL_CONCURRENCY` | `-j N` (default 20). |
-| `PROMPTFOO_PASS_RATE_THRESHOLD` | Promptfoo built-in: exit code 100 if pass rate < N. |
+| `EVAL_CONCURRENCY` | `-j N` PER suite (default 20). |
+| `PROMPTFOO_PASS_RATE_THRESHOLD` | Exit 100 if **aggregate** pass rate across all suites < N (default 0 = always succeed; the table is the signal). |
 
 Anything after `--` is passed through to promptfoo:
 
@@ -77,42 +81,53 @@ deno task evals:promptfoo -- --filter-pattern simple-substitution
 
 ## CI integration
 
-Promptfoo's `eval` command returns **exit 100** when there are test failures
-*or* the pass rate is below `PROMPTFOO_PASS_RATE_THRESHOLD`. Standard CI shape:
+The wrapper aggregates per-suite JSON output and exits 100 only if the
+**aggregate** pass rate across all suites is below
+`PROMPTFOO_PASS_RATE_THRESHOLD`. Standard CI shape:
 
 ```bash
-EVAL_TIER='small|medium' \
-PROMPTFOO_PASS_RATE_THRESHOLD=95 \
-  deno task evals:promptfoo -- -o results.json
+EVAL_TIER='medium' \
+PROMPTFOO_PASS_RATE_THRESHOLD=85 \
+  deno task evals:promptfoo
 ```
 
-GitHub Actions step exits non-zero on pass-rate regression. No bespoke
-threshold parsing required — promptfoo handles it.
+Per-suite JSON outputs land in a temp dir printed at the top of the run (`▶
+outputs: …`), kept so individual results can be diffed across runs.
 
 ## Layout
 
 ```
 tools/evals/promptfoo/
 ├── shared/
-│   ├── providers.yaml         # single source of truth — tier:* labels select subsets
-│   └── defaultTest.yaml       # latency floor + pinned grader provider
+│   ├── providers.yaml              # stock-provider matrix (4 text-only suites)
+│   ├── defaultTest.yaml            # pinned grader provider (no floor assertions)
+│   └── providers/
+│       ├── deno-worker.cjs         # Node↔Deno bridge for tool-capturing suites
+│       └── worker.ts               # long-lived Deno dispatcher (JSON Lines on stdin/stdout)
 ├── litellm/
-│   ├── litellm_config.yaml    # friday-sm / friday-md / friday-lg / friday-local
-│   ├── start.sh               # docker run helper
-│   └── README.md              # provider-by-provider env vars
+│   ├── litellm_config.yaml         # friday-sm / friday-md / friday-lg / friday-local
+│   ├── start.sh                    # uv-run helper
+│   └── README.md                   # provider-by-provider env vars
 ├── scripts/
-│   ├── render-all.ts          # discovers + runs every suite's render.ts (parallel)
-│   ├── render-shared.ts       # shared types + writeGeneratedTests() helper
-│   └── run-all.sh             # backs `deno task evals:promptfoo`
+│   ├── render-all.ts               # discovers + runs every suite's render.ts (parallel)
+│   ├── render-shared.ts            # shared types + writeGeneratedTests() helper
+│   └── run-all.sh                  # backs `deno task evals:promptfoo`
 └── suites/
-    ├── progress-line/           # static-prompt suite (status-line generation)
-    ├── title-generation/        # static-prompt suite (conversation titles)
-    ├── prompt-interpolation/    # function-wrapping suite
-    │   ├── render.ts            # calls real interpolatePromptPlaceholders, writes tests.generated.yaml
-    │   └── tests.generated.yaml # COMMITTED — regenerate via `deno task evals:render-promptfoo`
-    └── agent-config-prompt/     # function-wrapping suite
-        ├── render.ts            # calls real composeAgentPrompt, writes tests.generated.yaml
-        └── tests.generated.yaml # COMMITTED — same workflow
+    ├── progress-line/              # static-prompt — status-line generation
+    ├── title-generation/           # static-prompt — conversation titles
+    ├── prompt-interpolation/       # function-wrapping — interpolatePromptPlaceholders
+    │   ├── render.ts               # writes tests.generated.yaml
+    │   └── tests.generated.yaml    # COMMITTED — regenerate via `deno task evals:render-promptfoo`
+    ├── agent-config-prompt/        # function-wrapping — composeAgentPrompt
+    │   ├── render.ts
+    │   └── tests.generated.yaml
+    ├── workspace-chat-elicitation/    # tool-capturing — request_tool_access shapes
+    │   └── handler.ts              # Deno code, runs via shared/providers/deno-worker.cjs
+    ├── workspace-chat-bundled-agent/  # tool-capturing — bundled-atlas vs MCP choice
+    │   └── handler.ts
+    └── workspace-chat-agent-type/     # tool-capturing — atlas|user|llm choice
+        ├── handler.ts
+        └── assertions/check.js     # shared per-case constraint check
 ```
 
 ## The "pre-render" pattern
@@ -163,30 +178,67 @@ the renderer.
 4. Commit the generated file. Regenerate whenever cases or the
    underlying function change.
 
+## Tool-capturing suites (workspace-chat-*)
+
+These suites assert on the model's **tool calls**, not just text. The
+contract is:
+
+- A per-suite `handler.ts` (Deno) defines the synthetic tool surface with
+  `execute()` closures that capture call args, then runs `streamText` with
+  the real `@atlas/llm` registry and real production prompts. No daemon,
+  no real side effects.
+- The shared `shared/providers/deno-worker.cjs` (Node) spawns ONE
+  long-lived Deno worker per handler, talks JSON-Lines on stdin/stdout,
+  and is reused across all provider entries in the suite.
+- Assertions in `tests.yaml` use `type: javascript` to parse the handler's
+  JSON output (text + captures) and check structural constraints.
+
+Provider entries in these suites reference the bridge directly:
+
+```yaml
+providers:
+  - id: file://../../shared/providers/deno-worker.cjs
+    label: 'friday-md (haiku via registry) | tier:medium'
+    config:
+      handler: tools/evals/promptfoo/suites/<suite>/handler.ts
+      registryId: 'anthropic:friday-md'
+```
+
+The handler resolves the model by calling
+`registry.languageModel(req.config.registryId)`. The registry transparently
+routes through the LiteLLM proxy when `LITELLM_API_KEY` is set — see
+`packages/llm/src/registry.ts`.
+
+These suites omit `tier:small` because Groq llama-3.1-8b's free-tier
+6k TPM cap can't fit the workspace-chat system prompt (9k+ tokens).
+Re-enable when a higher-context small-tier provider lands.
+
 ## Adding a new model
 
 1. Add a `- model_name: friday-<alias>` entry to `litellm/litellm_config.yaml`.
-2. Add two provider entries to `shared/providers.yaml` (one `openai:chat:`
-   variant, one `litellm:` variant) — both reuse the existing `*openai_config` /
-   `*litellm_config` YAML anchors. Tag each label with the right
-   `tier:small|medium|large`.
-3. Restart the proxy. Every suite picks the new model up automatically — no
-   per-suite edits.
+2. Add a provider entry to `shared/providers.yaml` (uses the existing
+   `*openai_config` anchor). Tag the label with `tier:small|medium|large`.
+3. For tool-capturing suites, add the alias to each workspace-chat
+   `promptfooconfig.yaml`'s `providers:` block as
+   `registryId: '<sdk-provider>:friday-<alias>'`.
+4. Restart the proxy.
 
 ## When NOT to migrate to promptfoo
 
 Keep an eval in the Deno harness when:
 
-- It needs `enterTraceScope` / `TraceEntry[]` inspection
-- It calls `bundledAgentsRegistry` against `AgentContext`
+- It needs `enterTraceScope` / `TraceEntry[]` inspection (this is why
+  `agents/web/web.eval.ts` is still custom — it scores on
+  `snapshotBeforeInteract`, `stepEfficiency`, `errorRecovery` metrics that
+  parse intermediate trace entries).
 - Scoring requires custom `llmJudge` semantics that don't map to
-  promptfoo's `llm-rubric`
+  promptfoo's `llm-rubric`.
 
 Move it here when:
 
-- It's a pure system-prompt → response → assert loop
-- Multi-model comparison adds signal
-- Latency/cost regression matters
+- The signal is text or tool-call shape (both fit promptfoo via stock or
+  deno-worker providers).
+- Multi-model comparison adds signal.
 
 ## Gotchas discovered during integration
 
