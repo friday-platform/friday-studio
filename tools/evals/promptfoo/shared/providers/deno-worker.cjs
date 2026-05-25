@@ -48,6 +48,11 @@ class DenoWorker {
 
   ensureSpawned() {
     if (this.proc) return;
+    // Fail-fast: once a worker dies, every subsequent call surfaces the
+    // exit reason. No respawn — a dead worker means the handler itself is
+    // broken (bad import, crash on first request, etc.), and silently
+    // respawning would hide that while still failing every call.
+    if (this.exitErr) throw this.exitErr;
     const workerScript = path.join(__dirname, "worker.ts");
     this.proc = spawn(
       "deno",
@@ -113,8 +118,11 @@ class DenoWorker {
   }
 
   call(payload) {
-    this.ensureSpawned();
-    if (this.exitErr) return Promise.reject(this.exitErr);
+    try {
+      this.ensureSpawned();
+    } catch (err) {
+      return Promise.reject(err);
+    }
 
     const id = `req-${this.nextId++}`;
     const promise = new Promise((resolve, reject) => {
