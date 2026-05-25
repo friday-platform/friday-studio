@@ -9,7 +9,9 @@
     "./manager": "./src/manager.ts",
     "./signal-to-stream": "./src/signal-to-stream.ts",
     "./storage": "./src/storage.ts",
-    "./types": "./src/types.ts"
+    "./types": "./src/types.ts",
+    "./variable-state": "./src/variable-state.ts",
+    "./variable-interpolation": "./src/variable-interpolation.ts"
   },
   "main": "./mod.ts",
   "dependencies": {

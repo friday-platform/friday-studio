@@ -546,15 +546,20 @@ describe("re-setup recovery: disconnect → surface → recover", () => {
     );
     mockResolveCredentialsByProvider.mockResolvedValue([]);
 
-    const status = await fetchWorkspaceSetupStatus(WORKSPACE_ID, logger);
+    const status = await fetchWorkspaceSetupStatus(WORKSPACE_ID, logger, "chat_resetup_session");
 
-    // shouldInject keys off (requires_setup=true && active_setup_session_id=null).
+    // shouldInject keys off requires_setup=true; this scenario is re-setup
+    // (active_setup_session_id=null) so isBootstrapChat is false regardless
+    // of which chat session id we pass.
     expect(status.shouldInject).toBe(true);
+    expect(status.isBootstrapChat).toBe(false);
     expect(status.setupRequirements).toEqual([
       expect.objectContaining({ kind: "credential", provider: "gmail", reason: "stale_id" }),
     ]);
 
-    const block = formatSetupStatusBlock(status.setupRequirements);
+    const block = formatSetupStatusBlock(status.setupRequirements, {
+      isBootstrapChat: status.isBootstrapChat,
+    });
 
     // AC #3: the block matches the design template. Snapshot the whole
     // formatted text so the next copy churn re-records atomically rather
@@ -590,7 +595,7 @@ describe("re-setup recovery: disconnect → surface → recover", () => {
         : Promise.reject(new MockLinkCredentialNotFoundError(id)),
     );
 
-    const status = await fetchWorkspaceSetupStatus(WORKSPACE_ID, logger);
+    const status = await fetchWorkspaceSetupStatus(WORKSPACE_ID, logger, "chat_resetup_session");
     expect(status.shouldInject).toBe(false);
     expect(status.setupRequirements).toEqual([]);
   });

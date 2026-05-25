@@ -22,11 +22,13 @@ import {
   toProviderRefs,
 } from "@atlas/config/mutations";
 import {
+  ElicitationStorage,
   MissingEnvironmentError,
   SessionFailedError,
   UserConfigurationError,
   WorkspaceNotFoundError,
 } from "@atlas/core";
+import { ChatStorage } from "@atlas/core/chat/storage";
 import {
   type ValidationContext,
   validateWorkspaceConfig,
@@ -2914,7 +2916,45 @@ const workspacesRoutes = daemonFactory
           }
         }
 
+        // Capture the bootstrap chat pointer BEFORE the registry row is
+        // dropped — once `deleteWorkspace` returns, `workspace.metadata` is
+        // unreachable from the registry.
+        const bootstrapSessionId = workspace.metadata?.active_setup_session_id ?? null;
+
         await manager.deleteWorkspace(workspaceId, { force });
+
+        // Orphan-cleanup. `workspace-setup` elicitations are exempt from
+        // the time-based expiry sweep (they may sit unanswered for days),
+        // so a pending row whose workspace is gone would otherwise linger
+        // in the Activity feed forever. Run after `deleteWorkspace`
+        // succeeds — if the workspace delete fails, we don't want to have
+        // already torn down state that's still live.
+        const elicitationCleanup = await ElicitationStorage.deletePendingByWorkspace({
+          workspaceId,
+        });
+        if (!elicitationCleanup.ok) {
+          logger.warn("Failed to delete pending elicitations for removed workspace", {
+            workspaceId,
+            error: elicitationCleanup.error,
+          });
+        } else if (elicitationCleanup.data.deleted.length > 0) {
+          logger.info("Deleted pending elicitations for removed workspace", {
+            workspaceId,
+            count: elicitationCleanup.data.deleted.length,
+          });
+        }
+
+        if (bootstrapSessionId) {
+          const chatCleanup = await ChatStorage.deleteChat(bootstrapSessionId, workspaceId);
+          if (!chatCleanup.ok) {
+            logger.warn("Failed to delete bootstrap chat for removed workspace", {
+              workspaceId,
+              bootstrapSessionId,
+              error: chatCleanup.error,
+            });
+          }
+        }
+
         return c.json({ message: `Workspace ${workspaceId} deleted` });
       } catch (error) {
         logger.error("Failed to delete workspace", { error, workspaceId });

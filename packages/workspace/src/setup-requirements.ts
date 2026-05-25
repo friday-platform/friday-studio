@@ -11,15 +11,10 @@
  * Credential glossary entry.
  */
 
-import {
-  decodeFromEnv,
-  type VariableDeclaration,
-  VariableSchemaSchema,
-  type WorkspaceConfig,
-} from "@atlas/config";
+import type { VariableDeclaration, WorkspaceConfig } from "@atlas/config";
 import { extractCredentials } from "@atlas/config/mutations";
-import { z } from "zod";
 import { variableEnvKey } from "./variable-interpolation.ts";
+import { resolveVariableState } from "./variable-state.ts";
 
 /**
  * A single unfilled blank surfaced inside a Workspace Setup form.
@@ -128,7 +123,8 @@ export function resolveWorkspaceSetupRequirements(
 
   const declarations = parsedConfig.variables ?? {};
   for (const [name, decl] of Object.entries(declarations)) {
-    if (!isVariableFilled(decl, envSnapshot[variableEnvKey(name)])) {
+    const state = resolveVariableState(name, decl, envSnapshot[variableEnvKey(name)]);
+    if (!state.is_filled) {
       const requirement: SetupRequirement = { kind: "variable", name, schema: decl.schema };
       if (decl.display_name !== undefined) requirement.display_name = decl.display_name;
       if (decl.description !== undefined) requirement.description = decl.description;
@@ -174,15 +170,4 @@ export function resolveWorkspaceSetupRequirements(
   }
 
   return { requires_setup: setup_requirements.length > 0, setup_requirements };
-}
-
-function isVariableFilled(decl: VariableDeclaration, raw: string | undefined): boolean {
-  const zodSchema = z.fromJSONSchema(VariableSchemaSchema.parse(decl.schema));
-  if (raw !== undefined) {
-    const decoded = decodeFromEnv(raw, decl);
-    if (decoded !== undefined && zodSchema.safeParse(decoded).success) return true;
-  }
-  const fallback = decl.schema.default;
-  if (fallback === undefined) return false;
-  return zodSchema.safeParse(fallback).success;
 }

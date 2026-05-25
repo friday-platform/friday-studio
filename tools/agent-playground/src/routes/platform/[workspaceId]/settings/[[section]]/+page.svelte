@@ -20,12 +20,26 @@
   import { createQuery } from "@tanstack/svelte-query";
   import { page } from "$app/state";
   import WorkspaceMcpSection from "$lib/components/mcp/workspace-mcp-section.svelte";
+  import WorkspaceVariablesFields from "$lib/components/settings/workspace-variables-fields.svelte";
   import {
+    SaveWorkspaceDetailsError,
+    useSaveWorkspaceDetails,
     useSetWorkspaceEnvVar,
-    useUpdateWorkspaceIdentity,
     workspaceEnvQueries,
     workspaceQueries,
+    workspaceVariableQueries,
   } from "$lib/queries";
+  import {
+    buildIdentityPatch,
+    identityDirty as deriveIdentityDirty,
+    pruneLandedEdits,
+    seedIdentityFromConfig,
+    splitVariableEdits,
+    summarizeCommitResults,
+    variablesDirty as deriveVariablesDirty,
+    type VariableEdits,
+  } from "$lib/workspace-variables/details-state.ts";
+  import { variableEnvKey } from "$lib/workspace-variables/validate.ts";
 
   const workspaceId = $derived(page.params.workspaceId ?? null);
 
@@ -54,10 +68,16 @@
 
   const configQuery = createQuery(() => workspaceQueries.config(workspaceId));
   const envQuery = createQuery(() => workspaceEnvQueries.list(workspaceId));
+  const variablesQuery = createQuery(() => workspaceVariableQueries.list(workspaceId));
 
   const config = $derived(configQuery.data?.config ?? null);
 
-  // ── Identity section ───────────────────────────────────────────────────
+  // ── Identity + Variables section ───────────────────────────────────────
+  // One form, one Save / Discard pair, one composite mutation. Identity
+  // inputs and the variables edits map are seeded together off the same
+  // `seededFor` sentinel so a config refetch and a variables refetch each
+  // re-seed exactly once per genuine data update — same-timestamp
+  // background refetches preserve in-flight user edits (test #8).
   const identity = $derived(
     (config?.workspace as
       | {
@@ -67,75 +87,130 @@
         }
       | undefined) ?? null,
   );
+  const identitySeed = $derived(seedIdentityFromConfig(identity));
+  const variables = $derived(variablesQuery.data ?? []);
 
   let nameInput = $state("");
   let descriptionInput = $state("");
   let progressTimeoutInput = $state("");
   let maxTotalTimeoutInput = $state("");
+  let variableEdits = $state<VariableEdits>({});
+  let variableErrors = $state<Record<string, string | undefined>>({});
 
-  // Re-seed the form whenever fresh config arrives (and after a save settles).
-  let seededFor = "";
+  // Re-seed identity inputs whenever fresh config arrives. The stamp
+  // includes `configQuery.dataUpdatedAt` so refetches at the same
+  // timestamp don't reseed — that's the dirty-edit preservation guarantee.
+  let identitySeededFor = "";
   $effect(() => {
     if (!identity || !workspaceId) return;
     const stamp = `${workspaceId}:${configQuery.dataUpdatedAt}`;
-    if (seededFor === stamp) return;
-    seededFor = stamp;
-    nameInput = identity.name ?? "";
-    descriptionInput = identity.description ?? "";
-    progressTimeoutInput = identity.timeout?.progressTimeout ?? "";
-    maxTotalTimeoutInput = identity.timeout?.maxTotalTimeout ?? "";
+    if (identitySeededFor === stamp) return;
+    identitySeededFor = stamp;
+    nameInput = identitySeed.name;
+    descriptionInput = identitySeed.description;
+    progressTimeoutInput = identitySeed.progressTimeout;
+    maxTotalTimeoutInput = identitySeed.maxTotalTimeout;
+  });
+
+  // Re-seed the variables edits map on a genuine variables refetch. Same
+  // `seededFor`-stamp pattern — background refetches at the same
+  // `dataUpdatedAt` preserve user edits (test #8).
+  let variablesSeededFor = "";
+  $effect(() => {
+    if (!workspaceId) return;
+    if (variablesQuery.dataUpdatedAt === 0) return;
+    const stamp = `${workspaceId}:${variablesQuery.dataUpdatedAt}`;
+    if (variablesSeededFor === stamp) return;
+    variablesSeededFor = stamp;
+    variableEdits = {};
+    variableErrors = {};
   });
 
   const identityDirty = $derived(
     !!identity &&
-      (nameInput !== (identity.name ?? "") ||
-        descriptionInput !== (identity.description ?? "") ||
-        progressTimeoutInput !== (identity.timeout?.progressTimeout ?? "") ||
-        maxTotalTimeoutInput !== (identity.timeout?.maxTotalTimeout ?? "")),
+      deriveIdentityDirty(
+        {
+          name: nameInput,
+          description: descriptionInput,
+          progressTimeout: progressTimeoutInput,
+          maxTotalTimeout: maxTotalTimeoutInput,
+        },
+        identitySeed,
+      ),
   );
+  const variablesDirty = $derived(deriveVariablesDirty(variableEdits, variables));
+  const hasFieldErrors = $derived(Object.values(variableErrors).some((v) => v !== undefined));
 
-  const updateIdentity = useUpdateWorkspaceIdentity();
+  const saveDetails = useSaveWorkspaceDetails();
 
-  function resetIdentity(): void {
-    if (!identity) return;
-    nameInput = identity.name ?? "";
-    descriptionInput = identity.description ?? "";
-    progressTimeoutInput = identity.timeout?.progressTimeout ?? "";
-    maxTotalTimeoutInput = identity.timeout?.maxTotalTimeout ?? "";
+  function discardChanges(): void {
+    nameInput = identitySeed.name;
+    descriptionInput = identitySeed.description;
+    progressTimeoutInput = identitySeed.progressTimeout;
+    maxTotalTimeoutInput = identitySeed.maxTotalTimeout;
+    variableEdits = {};
+    variableErrors = {};
   }
 
-  async function saveIdentity(): Promise<void> {
-    if (!workspaceId || !identity || !identityDirty) return;
-    if (nameInput.trim().length === 0) {
-      toast({ title: "Name is required", error: true });
+  function handleVariableChange(name: string, value: string | null): void {
+    variableEdits = { ...variableEdits, [name]: value };
+    // Editing clears that field's error so the user can retry without
+    // a stale pre-flight message yelling at them mid-keystroke.
+    if (variableErrors[name] !== undefined) {
+      const { [name]: _cleared, ...rest } = variableErrors;
+      variableErrors = rest;
+    }
+  }
+
+  async function saveDetailsClick(): Promise<void> {
+    if (!workspaceId || !identity) return;
+    if (!identityDirty && !variablesDirty) return;
+
+    const patchResult = buildIdentityPatch(
+      {
+        name: nameInput,
+        description: descriptionInput,
+        progressTimeout: progressTimeoutInput,
+        maxTotalTimeout: maxTotalTimeoutInput,
+      },
+      identitySeed,
+    );
+    if (patchResult.kind === "error") {
+      toast({ title: patchResult.message, error: true });
       return;
     }
-    const patch: {
-      name?: string;
-      description?: string;
-      timeout?: { progressTimeout: string; maxTotalTimeout: string };
-    } = {};
-    if (nameInput !== (identity.name ?? "")) patch.name = nameInput.trim();
-    if (descriptionInput !== (identity.description ?? "")) patch.description = descriptionInput;
-    const progress = progressTimeoutInput.trim();
-    const maxTotal = maxTotalTimeoutInput.trim();
-    if (
-      progress !== (identity.timeout?.progressTimeout ?? "") ||
-      maxTotal !== (identity.timeout?.maxTotalTimeout ?? "")
-    ) {
-      if (progress.length === 0 || maxTotal.length === 0) {
-        toast({ title: "Both timeout fields are required to change timeouts", error: true });
-        return;
-      }
-      patch.timeout = { progressTimeout: progress, maxTotalTimeout: maxTotal };
-    }
+
+    const { variableSets, variableDeletes } = splitVariableEdits(variableEdits);
 
     try {
-      await updateIdentity.mutateAsync({ workspaceId, patch });
-      toast({ title: "Workspace identity saved" });
+      await saveDetails.mutateAsync({
+        workspaceId,
+        ...(patchResult.patch !== undefined ? { identityPatch: patchResult.patch } : {}),
+        variableSets,
+        variableDeletes,
+      });
+      toast({ title: "Workspace details saved" });
     } catch (e) {
-      const err = e instanceof Error ? e : new Error(String(e));
-      toast({ title: "Save failed", description: err.message, error: true });
+      if (e instanceof SaveWorkspaceDetailsError) {
+        variableErrors = { ...variableErrors, ...e.fieldErrors };
+        if (e.commitResults !== undefined) {
+          variableEdits = pruneLandedEdits(
+            variableEdits,
+            e.commitResults,
+            variableEnvKey,
+          );
+          toast({
+            title: "Some changes did not save",
+            description: summarizeCommitResults(e.commitResults),
+            error: true,
+          });
+        } else {
+          toast({ title: "Save failed", description: e.message, error: true });
+        }
+      } else {
+        const err = e instanceof Error ? e : new Error(String(e));
+        toast({ title: "Save failed", description: err.message, error: true });
+      }
     }
   }
 
@@ -297,17 +372,32 @@
             Durations accept values like <code>30s</code>, <code>2m</code>, <code>1h</code>. Leave
             both blank to use the defaults.
           </p>
+
+          {#if variablesQuery.data && variablesQuery.data.length > 0}
+            <WorkspaceVariablesFields
+              variables={variablesQuery.data}
+              values={variableEdits}
+              errors={variableErrors}
+              onChange={handleVariableChange}
+            />
+          {/if}
         </div>
 
         <div class="actions">
           <Button
             variant="primary"
-            onclick={saveIdentity}
-            disabled={!identityDirty || updateIdentity.isPending}
+            onclick={saveDetailsClick}
+            disabled={(!identityDirty && !variablesDirty) ||
+              saveDetails.isPending ||
+              hasFieldErrors}
           >
-            {updateIdentity.isPending ? "Saving…" : "Save"}
+            {saveDetails.isPending ? "Saving…" : "Save"}
           </Button>
-          <Button variant="secondary" onclick={resetIdentity} disabled={!identityDirty}>
+          <Button
+            variant="secondary"
+            onclick={discardChanges}
+            disabled={!identityDirty && !variablesDirty}
+          >
             Discard
           </Button>
         </div>

@@ -83,4 +83,17 @@ export interface ElicitationStorageAdapter {
    * to surface the stuck state in the Activity UI.
    */
   reserveForCommit(input: { id: string }): Promise<Result<void, string>>;
+
+  /**
+   * Hard-delete every `pending` elicitation for a workspace. Called by
+   * the workspace-delete path so orphan `workspace-setup` rows (which
+   * are exempt from the time-based expiry sweep) don't linger in the
+   * Activity feed after their parent workspace is gone.
+   *
+   * Pending only — answered/declined/expired entries are preserved as
+   * audit history. Returns the ids that were deleted for logging.
+   */
+  deletePendingByWorkspace(input: {
+    workspaceId: string;
+  }): Promise<Result<{ deleted: string[] }, string>>;
 }

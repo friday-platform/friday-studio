@@ -69,4 +69,7 @@ export const ElicitationStorage: ElicitationStorageAdapter = {
   ): Promise<Result<ExpireSweepResult, string>> => require_().expirePending(input),
   reserveForCommit: (input: { id: string }): Promise<Result<void, string>> =>
     require_().reserveForCommit(input),
+  deletePendingByWorkspace: (input: {
+    workspaceId: string;
+  }): Promise<Result<{ deleted: string[] }, string>> => require_().deletePendingByWorkspace(input),
 };
