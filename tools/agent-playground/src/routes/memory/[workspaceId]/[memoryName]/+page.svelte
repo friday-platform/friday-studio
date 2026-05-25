@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { PageLayout } from "@atlas/ui";
+  import { getHotkeyRegistry, notInTextField, PageLayout } from "@atlas/ui";
   import { createQuery } from "@tanstack/svelte-query";
   import { page } from "$app/state";
   import MemoryEntryTable from "$lib/components/MemoryEntryTable.svelte";
@@ -62,21 +62,13 @@
     { label: memoryName },
   ]);
 
-  function handleKeydown(e: KeyboardEvent) {
-    const target = e.target;
-    if (target instanceof HTMLInputElement) return;
-    if (target instanceof HTMLTextAreaElement) return;
-    if (target instanceof HTMLSelectElement) return;
-    if (target instanceof HTMLElement && target.isContentEditable) return;
-
-    if (e.key === "r" || e.key === "R") {
-      e.preventDefault();
-      entriesQuery.refetch();
-    }
-  }
+  const hotkeys = getHotkeyRegistry();
+  $effect(() => hotkeys.register({
+    key: "r",
+    when: notInTextField,
+    handler: () => entriesQuery.refetch(),
+  }));
 </script>
-
-<svelte:window onkeydown={handleKeydown} />
 
 <PageLayout.Root>
   <PageLayout.Breadcrumbs {crumbs} />

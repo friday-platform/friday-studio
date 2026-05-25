@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { NotificationPortal } from "@atlas/ui";
+  import { notInTextField, NotificationPortal, setHotkeyRegistry } from "@atlas/ui";
   import { QueryClient, QueryClientProvider } from "@tanstack/svelte-query";
   import { onMount } from "svelte";
   import { browser } from "$app/environment";
@@ -21,6 +21,8 @@
   import { loadUpdateStatus } from "$lib/update-status.svelte";
 
   const { children } = $props();
+
+  const hotkeys = setHotkeyRegistry();
 
   // Routes that opt out of the playground app shell (sidebar, palette, etc.)
   // and render their children directly. Two consumers today:
@@ -81,39 +83,40 @@
   let paletteOpen = $state(false);
   let paletteMode = $state<"chat" | "switcher">("chat");
 
-  /**
-   * Bare `/` opens chat mode. Cmd/Ctrl+/ opens switcher mode.
-   * Bare `/` is suppressed while typing in inputs/textareas/contenteditables;
-   * the modified form is allowed to fire from anywhere.
-   */
-  function handleGlobalKeydown(e: KeyboardEvent) {
-    const t = e.target as HTMLElement | null;
-    if (e.key.toLowerCase() === "k" && (e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey) {
-      e.preventDefault();
+  // ⌘K / Ctrl+K opens the chat palette. Allowed everywhere — the
+  // command palette is a high-priority surface and we want it
+  // reachable from any focus state.
+  $effect(() => hotkeys.register({
+    key: "k", cmdOrCtrl: true,
+    handler: () => {
       paletteMode = "chat";
       paletteOpen = true;
-      return;
-    }
-    if (e.key === "/" && (e.metaKey || e.ctrlKey) && !e.altKey) {
-      // Cmd/Ctrl+/ is a default keymap inside code editors (e.g., CodeMirror toggle-comment).
-      if (t?.isContentEditable) return;
-      e.preventDefault();
+    },
+  }));
+
+  // ⌘/ / Ctrl+/ opens the workspace switcher palette. Suppressed only
+  // inside contentEditable surfaces — Cmd+/ is the default
+  // toggle-comment keymap in CodeMirror and we don't want to steal it.
+  $effect(() => hotkeys.register({
+    key: "/", cmdOrCtrl: true,
+    when: (e) => !(e.target instanceof HTMLElement && e.target.isContentEditable),
+    handler: () => {
       paletteMode = "switcher";
       paletteOpen = true;
-      return;
-    }
-    if (e.key !== "/" || e.metaKey || e.ctrlKey || e.altKey) return;
-    if (t) {
-      const tag = t.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA" || t.isContentEditable) return;
-    }
-    e.preventDefault();
-    paletteMode = "chat";
-    paletteOpen = true;
-  }
-</script>
+    },
+  }));
 
-<svelte:window onkeydown={handleGlobalKeydown} />
+  // Bare `/` opens the chat palette. Suppressed while typing in any
+  // text field — otherwise you couldn't type `/` into a message.
+  $effect(() => hotkeys.register({
+    key: "/",
+    when: notInTextField,
+    handler: () => {
+      paletteMode = "chat";
+      paletteOpen = true;
+    },
+  }));
+</script>
 
 <svelte:head>
   <title>Friday Studio</title>

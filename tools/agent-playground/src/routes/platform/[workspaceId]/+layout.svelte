@@ -3,7 +3,7 @@
   import { humanizeStepName } from "@atlas/config/pipeline-utils";
   import { deriveTopology } from "@atlas/config/topology";
   import { deriveWorkspaceAgents } from "@atlas/config/workspace-agents";
-  import { PageLayout } from "@atlas/ui";
+  import { getHotkeyRegistry, PageLayout } from "@atlas/ui";
   import { createQuery } from "@tanstack/svelte-query";
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
@@ -131,16 +131,14 @@
     goto(`/platform/${workspaceId}/skills?addSkill=true`);
   }
 
-  /** Escape key returns to idle sidebar. */
-  function handleKeydown(e: KeyboardEvent) {
-    if (e.key === "Escape" && workspaceId && (selectedNode || selectedWorkspaceAgent)) {
-      goto(`/platform/${workspaceId}`);
-    }
-  }
+  // Escape returns to the idle sidebar when a node/agent is selected.
+  const hotkeys = getHotkeyRegistry();
+  $effect(() => hotkeys.register({
+    key: "Escape",
+    when: () => Boolean(workspaceId && (selectedNode || selectedWorkspaceAgent)),
+    handler: () => goto(`/platform/${workspaceId}`),
+  }));
 </script>
-
-<!-- svelte-ignore a11y_no_static_element_interactions -->
-<svelte:window onkeydown={handleKeydown} />
 
 <PageLayout.Root>
   {@render children?.()}

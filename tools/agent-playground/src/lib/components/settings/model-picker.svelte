@@ -17,6 +17,7 @@
   callback with a `ModelChoice | null` payload.
 -->
 <script lang="ts">
+  import { getHotkeyRegistry } from "@atlas/ui";
   import ProviderMark from "./provider-mark.svelte";
 
   interface Model {
@@ -92,15 +93,13 @@
     searchInput?.focus();
   });
 
-  // ESC closes the picker. Attached globally so focus doesn't need to be
-  // on the picker itself — anywhere inside it works.
-  $effect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  });
+  // Escape closes the picker. Stack-registered globally so focus
+  // doesn't have to be inside the picker — anywhere on the page works.
+  const hotkeys = getHotkeyRegistry();
+  $effect(() => hotkeys.register({
+    key: "Escape",
+    handler: () => onClose(),
+  }));
 
   const activeProviderEntry = $derived(
     activeProvider ? (catalog.find((e) => e.provider === activeProvider) ?? null) : null,

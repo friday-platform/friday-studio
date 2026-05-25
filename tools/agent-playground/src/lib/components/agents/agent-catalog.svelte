@@ -16,6 +16,7 @@
 -->
 
 <script lang="ts">
+  import { getHotkeyRegistry } from "@atlas/ui";
   import { goto } from "$app/navigation";
   import type { AgentMetadata } from "$lib/queries";
   import CatalogRow from "./catalog-row.svelte";
@@ -85,59 +86,68 @@
     }
   }
 
-  function handleKeydown(e: KeyboardEvent) {
-    // Cmd+I: focus search
-    if ((e.metaKey || e.ctrlKey) && e.key === "i") {
-      e.preventDefault();
+  // Catalog keyboard shortcuts. Arrow + Enter bindings deliberately
+  // run at window scope so the user can navigate the list from
+  // anywhere on the page; the search input's own onkeydown handles
+  // ArrowDown specifically (jumps from search into the list) and runs
+  // before this since element-scoped listeners precede window ones.
+  const hotkeys = getHotkeyRegistry();
+
+  $effect(() => hotkeys.register({
+    key: "i", cmdOrCtrl: true,
+    handler: () => {
       searchInput?.focus();
       searchInput?.select();
-      return;
-    }
+    },
+  }));
 
-    // Escape: clear search and reset focus
-    if (e.key === "Escape") {
-      e.preventDefault();
+  $effect(() => hotkeys.register({
+    key: "Escape",
+    handler: () => {
       searchQuery = "";
       focusedIndex = -1;
       searchInput?.blur();
-      return;
-    }
+    },
+  }));
 
-    // Arrow keys and Enter only apply when not typing in search
-    // (unless search is focused, arrows should still navigate)
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      if (filteredAgents.length === 0) return;
-      focusRow(focusedIndex + 1);
-      return;
-    }
+  $effect(() => hotkeys.register({
+    key: "ArrowDown",
+    when: () => filteredAgents.length > 0,
+    handler: () => focusRow(focusedIndex + 1),
+  }));
 
-    if (e.key === "ArrowUp") {
-      e.preventDefault();
-      if (filteredAgents.length === 0) return;
+  $effect(() => hotkeys.register({
+    key: "ArrowUp",
+    when: () => filteredAgents.length > 0,
+    handler: () => {
       if (focusedIndex <= 0) {
         focusedIndex = -1;
         searchInput?.focus();
         return;
       }
       focusRow(focusedIndex - 1);
-      return;
-    }
+    },
+  }));
 
-    // Enter: toggle spec sheet on focused agent
-    // Cmd+Enter: navigate to workbench
-    if (e.key === "Enter" && focusedIndex >= 0 && focusedIndex < filteredAgents.length) {
-      e.preventDefault();
+  // Plain Enter toggles the focused agent's spec sheet.
+  $effect(() => hotkeys.register({
+    key: "Enter",
+    when: () => focusedIndex >= 0 && focusedIndex < filteredAgents.length,
+    handler: () => {
       const agent = filteredAgents[focusedIndex];
-      if (!agent) return;
-      if (e.metaKey || e.ctrlKey) {
-        navigate(agent.id);
-      } else {
-        toggleExpanded(agent.id);
-      }
-      return;
-    }
-  }
+      if (agent) toggleExpanded(agent.id);
+    },
+  }));
+
+  // Cmd/Ctrl+Enter opens the focused agent in the workbench.
+  $effect(() => hotkeys.register({
+    key: "Enter", cmdOrCtrl: true,
+    when: () => focusedIndex >= 0 && focusedIndex < filteredAgents.length,
+    handler: () => {
+      const agent = filteredAgents[focusedIndex];
+      if (agent) navigate(agent.id);
+    },
+  }));
 
   function handleSearchKeydown(e: KeyboardEvent) {
     if (e.key === "ArrowDown") {
@@ -170,8 +180,6 @@
     return `${bundledCount} bundled + ${userCount} user agents`;
   });
 </script>
-
-<svelte:window onkeydown={handleKeydown} />
 
 <div class="catalog">
   <header class="catalog-header">
