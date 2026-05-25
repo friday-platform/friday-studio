@@ -13,14 +13,16 @@ options:
       apiKey: '{{env.LITELLM_MASTER_KEY}}'
       temperature: 0
 
-# Floor assertions — every model on every test must clear these.
+# No shared floor assertions.
 #
-# `cost` assertion intentionally omitted from the shared defaults: when
-# promptfoo's `openai:` provider talks to LiteLLM, cost lives in the
-# `x-litellm-response-cost` response header (not the OpenAI-shaped JSON body),
-# so promptfoo reads cost as 0 and the assertion errors. Opt in per-suite if
-# the underlying provider surfaces cost in-band.
-assert:
-  - type: latency
-    threshold: 8000        # ms; only honored when --no-cache is set
-    metric: Latency
+# Previously had a `latency: threshold: 8000` floor — pulled because:
+#   - It was a sanity check that --no-cache was honored, not a real regression
+#     gate. Every CI run already uses --no-cache.
+#   - Tool-use suites (workspace-chat/*) legitimately take 30-60s for multi-
+#     step agentic workflows; the 8s floor flagged them as failures even when
+#     every other assertion passed.
+#
+# `cost` assertion is intentionally omitted: when promptfoo's `openai:` provider
+# talks to LiteLLM, cost lives in the `x-litellm-response-cost` response header
+# (not the OpenAI-shaped JSON body), so promptfoo reads cost as 0 and errors.
+# Opt in per-suite if a provider surfaces cost in-band.
