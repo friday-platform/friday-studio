@@ -81,6 +81,7 @@ beforeEach(() => {
     GEMINI_API_KEY: undefined,
     GROQ_API_KEY: undefined,
     LITELLM_API_KEY: undefined,
+    LOCAL_BASE_URL: undefined,
   });
 });
 
@@ -145,12 +146,16 @@ describe("model-catalog — credential resolution", () => {
     });
   });
 
-  it("unlocks every provider when LITELLM_API_KEY is set (proxy mode)", async () => {
+  it("unlocks every proxyable provider when LITELLM_API_KEY is set (proxy mode)", async () => {
     stubEnv({ LITELLM_API_KEY: "sk-litellm" });
     vi.stubGlobal("fetch", mockJsonFetch({ [GATEWAY_URL]: { models: [] } }));
 
     const catalog = await getCatalog();
     for (const entry of catalog.entries) {
+      // `local` is the deliberate exception — a remote LiteLLM proxy
+      // can't satisfy a localhost endpoint. Covered separately in the
+      // "local provider" describe block.
+      if (entry.provider === "local") continue;
       expect(entry.credentialConfigured).toBe(true);
       // When LiteLLM covers everything there's nothing actionable to add.
       expect(entry.credentialEnvVar).toBeNull();
@@ -214,6 +219,114 @@ describe("model-catalog — groq direct fetch", () => {
     expect(groq.credentialConfigured).toBe(true); // key IS set, fetch just failed
     // Other providers still resolved normally.
     expect(find(catalog, "anthropic").error).toBeUndefined();
+  });
+});
+
+describe("model-catalog — local provider", () => {
+  // LM Studio, Ollama, vLLM, and llama.cpp all return this exact OpenAI-
+  // standard `/v1/models` shape. Use a representative sample of each.
+  function localListResponse(ids: string[]): Record<string, unknown> {
+    return { data: ids.map((id) => ({ id, object: "model" })) };
+  }
+
+  it("fetches models from a local server when LOCAL_BASE_URL is set", async () => {
+    stubEnv({ LOCAL_BASE_URL: "http://localhost:1234/v1" });
+    const lmStudio = localListResponse([
+      "llama-3.2-3b-instruct",
+      "qwen2.5-coder-7b-instruct",
+    ]);
+    vi.stubGlobal(
+      "fetch",
+      mockJsonFetch({
+        [GATEWAY_URL]: { models: [] },
+        "http://localhost:1234/v1/models": lmStudio,
+      }),
+    );
+
+    const catalog = await getCatalog();
+    const entry = find(catalog, "local");
+    expect(entry.credentialConfigured).toBe(true);
+    expect(entry.credentialEnvVar).toBe("LOCAL_BASE_URL");
+    expect(entry.models.map((m) => m.id)).toEqual([
+      "llama-3.2-3b-instruct",
+      "qwen2.5-coder-7b-instruct",
+    ]);
+    expect(entry.error).toBeUndefined();
+  });
+
+  it("normalizes a trailing slash on LOCAL_BASE_URL when building the /models URL", async () => {
+    stubEnv({ LOCAL_BASE_URL: "http://localhost:11434/v1/" });
+    vi.stubGlobal(
+      "fetch",
+      mockJsonFetch({
+        [GATEWAY_URL]: { models: [] },
+        // Note: no double slash before /models.
+        "http://localhost:11434/v1/models": localListResponse(["llama3.1:8b"]),
+      }),
+    );
+
+    const catalog = await getCatalog();
+    const entry = find(catalog, "local");
+    expect(entry.models.map((m) => m.id)).toEqual(["llama3.1:8b"]);
+  });
+
+  it("reports credentialConfigured=false and no error when LOCAL_BASE_URL is unset", async () => {
+    vi.stubGlobal("fetch", mockJsonFetch({ [GATEWAY_URL]: { models: [] } }));
+
+    const catalog = await getCatalog();
+    const entry = find(catalog, "local");
+    expect(entry.credentialConfigured).toBe(false);
+    expect(entry.credentialEnvVar).toBe("LOCAL_BASE_URL");
+    expect(entry.models).toEqual([]);
+    // No env var, no fetch attempt — so no error to surface either.
+    expect(entry.error).toBeUndefined();
+  });
+
+  it("surfaces a per-provider error when the local fetch fails (server not running)", async () => {
+    stubEnv({ LOCAL_BASE_URL: "http://localhost:1234/v1" });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) => {
+        if (url === GATEWAY_URL) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            json: () => Promise.resolve({ models: [] }),
+          } as unknown as Response);
+        }
+        if (url === "http://localhost:1234/v1/models") {
+          // Real connection-refused throws — fetch rejects rather than 404s.
+          return Promise.reject(new Error("fetch failed: ECONNREFUSED"));
+        }
+        return Promise.resolve({
+          ok: false,
+          status: 404,
+          json: () => Promise.resolve({}),
+        } as unknown as Response);
+      }),
+    );
+
+    const catalog = await getCatalog();
+    const entry = find(catalog, "local");
+    expect(entry.models).toEqual([]);
+    expect(entry.error).toMatch(/ECONNREFUSED/);
+    // Env var IS set, the fetch just failed — UI shows "server not running",
+    // not "configure your credentials."
+    expect(entry.credentialConfigured).toBe(true);
+    // Other providers stay unaffected.
+    expect(find(catalog, "anthropic").error).toBeUndefined();
+  });
+
+  it("local is NOT auto-credentialed by LITELLM_API_KEY (localhost is not proxyable)", async () => {
+    stubEnv({ LITELLM_API_KEY: "sk-litellm", LOCAL_BASE_URL: undefined });
+    vi.stubGlobal("fetch", mockJsonFetch({ [GATEWAY_URL]: { models: [] } }));
+
+    const catalog = await getCatalog();
+    const entry = find(catalog, "local");
+    expect(entry.credentialConfigured).toBe(false);
+    // And the envVar hint stays actionable instead of being null'd out
+    // like the other providers under LiteLLM proxy mode.
+    expect(entry.credentialEnvVar).toBe("LOCAL_BASE_URL");
   });
 });
 

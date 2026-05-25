@@ -44,6 +44,7 @@ const CATALOG_PROVIDERS: readonly CatalogProvider[] = [
   "openai",
   "google",
   "groq",
+  "local",
   "openrouter",
 ] as const;
 
@@ -105,6 +106,9 @@ const GROQ_URL = "https://api.groq.com/openai/v1/models";
 // Server-side filter to tool-capable chat models — OpenRouter publishes 500+
 // model slugs and the unfiltered list dwarfs every other provider's picker.
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/models?supported_parameters=tools";
+// Local OpenAI-compatible servers (LM Studio, Ollama, vLLM, llama.cpp)
+// expose loaded models at the standard OpenAI `/models` path.
+const LOCAL_MODELS_PATH = "/models";
 
 const FETCH_TIMEOUT_MS = 3_000;
 /** One hour — models don't change intra-session. Prewarm covers first paint. */
@@ -115,6 +119,10 @@ const ENV_VAR_BY_CATALOG_PROVIDER: Record<CatalogProvider, string> = {
   openai: PROVIDER_ENV_VARS.openai,
   google: PROVIDER_ENV_VARS.google,
   groq: PROVIDER_ENV_VARS.groq,
+  // The env var the user has to set to unlock local — diverges from
+  // PROVIDER_ENV_VARS.local (`LOCAL_API_KEY`) because for local servers
+  // the *credential* is the URL, not a key.
+  local: "LOCAL_BASE_URL",
   openrouter: PROVIDER_ENV_VARS.openrouter,
 };
 
@@ -144,6 +152,14 @@ export const PROVIDER_META: Record<CatalogProvider, ProviderMeta> = {
     keyPrefix: "sk-or-v1-",
     helpUrl: "openrouter.ai/keys",
   },
+  local: {
+    name: "Local",
+    letter: "L",
+    // No prefix — the credential is a URL, not an API key. The picker's
+    // locked banner needs to render a base-URL input for this provider.
+    keyPrefix: null,
+    helpUrl: "lmstudio.ai",
+  },
 };
 
 // ─── Schemas ───────────────────────────────────────────────────────────────
@@ -162,6 +178,11 @@ const groqResponseSchema = z.object({ data: z.array(z.object({ id: z.string() })
 const openrouterModelSchema = z.object({ id: z.string(), name: z.string() });
 const openrouterResponseSchema = z.object({ data: z.array(openrouterModelSchema) });
 type OpenRouterModel = z.infer<typeof openrouterModelSchema>;
+
+// LM Studio / Ollama / vLLM / llama.cpp all return the OpenAI-standard
+// `{ data: [{ id }] }` shape from `/v1/models`. We only need the id.
+const localModelSchema = z.object({ id: z.string() });
+const localResponseSchema = z.object({ data: z.array(localModelSchema) });
 
 // ─── Fetchers ──────────────────────────────────────────────────────────────
 
@@ -203,6 +224,25 @@ async function fetchOpenRouter(): Promise<OpenRouterModel[]> {
   return parsed.data;
 }
 
+/**
+ * Discover models loaded into the user's local OpenAI-compatible server
+ * by hitting `${LOCAL_BASE_URL}/models`. The caller has already verified
+ * the env var is set (see `fetchCatalog`) so a connection refusal here
+ * is a real failure — surface it so the picker can tell the user their
+ * server isn't running.
+ */
+async function fetchLocal(baseURL: string): Promise<string[]> {
+  // Trim any trailing slash so `${baseURL}${LOCAL_MODELS_PATH}` is well-formed.
+  const url = `${baseURL.replace(/\/$/, "")}${LOCAL_MODELS_PATH}`;
+  const res = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+  if (!res.ok) {
+    await discardBody(res);
+    throw new Error(`local server at ${baseURL} returned HTTP ${res.status}`);
+  }
+  const parsed = localResponseSchema.parse(await res.json());
+  return parsed.data.map((m) => m.id);
+}
+
 // ─── Filters / normalization ───────────────────────────────────────────────
 
 /**
@@ -227,6 +267,8 @@ function groupGatewayModels(models: GatewayModel[]): Record<CatalogProvider, Mod
     openai: [],
     google: [],
     groq: [],
+    // Local is fetched directly from the user's OpenAI-compatible server.
+    local: [],
     // OpenRouter is fetched directly from openrouter.ai, not the gateway.
     openrouter: [],
   };
@@ -341,11 +383,16 @@ function isOpenAiChatCapable(id: string): boolean {
  * `LITELLM_API_KEY` unlocks everything via the LiteLLM proxy (see
  * `packages/llm/src/registry.ts`), which is why we report `null` for
  * `credentialEnvVar` in that mode — there's nothing actionable to add.
+ * `local` is the exception: its credential is a base URL pointing at the
+ * user's own server, which a remote proxy can't substitute for.
  */
 function resolveCredential(provider: CatalogProvider): {
   configured: boolean;
   envVar: string | null;
 } {
+  if (provider === "local") {
+    return { configured: Boolean(process.env.LOCAL_BASE_URL), envVar: "LOCAL_BASE_URL" };
+  }
   if (process.env.LITELLM_API_KEY) return { configured: true, envVar: null };
   const envVar = ENV_VAR_BY_CATALOG_PROVIDER[provider];
   return { configured: Boolean(process.env[envVar]), envVar };
@@ -357,13 +404,17 @@ function resolveCredential(provider: CatalogProvider): {
  */
 async function fetchCatalog(): Promise<Catalog> {
   const groqKey = process.env.GROQ_API_KEY;
+  const localBaseUrl = process.env.LOCAL_BASE_URL;
 
-  // Fire gateway, openrouter, and (optionally) groq in parallel. allSettled
-  // so one provider timing out doesn't take the whole catalog with it.
-  const [gatewayResult, groqResult, openrouterResult] = await Promise.allSettled([
+  // Fire gateway, openrouter, and (optionally) groq + local in parallel.
+  // allSettled so one provider timing out doesn't take the whole catalog
+  // with it. The `local` fetch only fires when the user has opted in via
+  // `LOCAL_BASE_URL` — otherwise the entry stays empty with no error.
+  const [gatewayResult, groqResult, openrouterResult, localResult] = await Promise.allSettled([
     fetchGateway(),
     groqKey ? fetchGroq(groqKey) : Promise.reject(new Error("no GROQ_API_KEY")),
     fetchOpenRouter(),
+    localBaseUrl ? fetchLocal(localBaseUrl) : Promise.reject(new Error("no LOCAL_BASE_URL")),
   ]);
 
   const gatewayBuckets =
@@ -399,6 +450,19 @@ async function fetchCatalog(): Promise<Catalog> {
         )
       : null;
 
+  const localModels =
+    localResult.status === "fulfilled"
+      ? localResult.value.map((id) => ({ id, displayName: id }))
+      : null;
+  // Only surface a local error when LOCAL_BASE_URL is set; absence of the
+  // env var is a separate UI state (`credentialConfigured: false`).
+  const localError =
+    localBaseUrl && localResult.status === "rejected"
+      ? String(
+          localResult.reason instanceof Error ? localResult.reason.message : localResult.reason,
+        )
+      : null;
+
   const entries: CatalogEntry[] = CATALOG_PROVIDERS.map((provider) => {
     const cred = resolveCredential(provider);
     let models: ModelInfo[] = [];
@@ -417,6 +481,14 @@ async function fetchCatalog(): Promise<Catalog> {
       } else if (openrouterError) {
         error = openrouterError;
       }
+    } else if (provider === "local") {
+      if (localModels) {
+        models = localModels;
+      } else if (localError) {
+        error = localError;
+      }
+      // else: no LOCAL_BASE_URL set — empty models, no error, UI shows
+      // the `envVar` hint to point the user at LOCAL_BASE_URL.
     } else if (gatewayBuckets) {
       models = gatewayBuckets[provider];
     } else if (gatewayError) {
