@@ -5,9 +5,13 @@
 
 # Grader used for any `llm-rubric` / `factuality` assertion. Pinned so model
 # upgrades on the system-under-test don't silently shift grading bias.
+#
+# Uses `friday-lg` (Sonnet) rather than the SUT aliases (`friday-sm` / `friday-md`)
+# so the grader is never also a system-under-test — self-grading inflates pass
+# rates and masks model-specific weaknesses.
 options:
   provider:
-    id: openai:chat:friday-md
+    id: openai:chat:friday-lg
     config:
       apiBaseUrl: http://localhost:4000/v1
       apiKey: '{{env.LITELLM_MASTER_KEY}}'
