@@ -71,7 +71,8 @@ Other knobs the wrapper honors:
 |---|---|
 | `EVAL_TIER` | Forwarded as `--filter-providers 'tier:<regex>'`. |
 | `EVAL_CONCURRENCY` | `-j N` PER suite (default 20). |
-| `PROMPTFOO_PASS_RATE_THRESHOLD` | Exit 100 if **aggregate** pass rate across all suites < N (default 0 = always succeed; the table is the signal). |
+| `PROMPTFOO_SUITE_FLOOR` | Exit 100 if **any** suite's pass rate < N (default 70). Suites that errored out with no parseable JSON count as failing the floor. |
+| `PROMPTFOO_AGGREGATE_CEILING` | Exit 100 if the **aggregate** pass rate across all suites < N (default 85). |
 
 Anything after `--` is passed through to promptfoo:
 
@@ -81,13 +82,17 @@ deno task evals:promptfoo -- --filter-pattern simple-substitution
 
 ## CI integration
 
-The wrapper aggregates per-suite JSON output and exits 100 only if the
-**aggregate** pass rate across all suites is below
-`PROMPTFOO_PASS_RATE_THRESHOLD`. Standard CI shape:
+The wrapper aggregates per-suite JSON output and exits 100 if EITHER any
+single suite falls below `PROMPTFOO_SUITE_FLOOR` OR the aggregate pass rate
+across all suites falls below `PROMPTFOO_AGGREGATE_CEILING`. Per-suite floors
+catch a single-suite regression that would otherwise be diluted into the
+aggregate (e.g. a complete elicitation breakage is ~6% of the aggregate, well
+within a 90% ceiling). Standard CI shape:
 
 ```bash
 EVAL_TIER='medium' \
-PROMPTFOO_PASS_RATE_THRESHOLD=85 \
+PROMPTFOO_SUITE_FLOOR=70 \
+PROMPTFOO_AGGREGATE_CEILING=85 \
   deno task evals:promptfoo
 ```
 

@@ -16,9 +16,12 @@
 #                                   (forwarded as --filter-providers 'tier:<v>')
 #                                   accepts a regex: small|medium → both tiers
 #   EVAL_CONCURRENCY=N              -j N PER SUITE (default 20)
-#   PROMPTFOO_PASS_RATE_THRESHOLD=N exit 100 if AGGREGATE pass rate < N
-#                                   (default 0 = always succeed; the table
-#                                   is the signal, the exit code is the gate)
+#   PROMPTFOO_SUITE_FLOOR=N         exit 100 if ANY suite's pass rate < N
+#                                   (default 70). A suite that errored out
+#                                   and produced no parseable JSON counts as
+#                                   failing the floor, not skipped.
+#   PROMPTFOO_AGGREGATE_CEILING=N   exit 100 if AGGREGATE pass rate < N
+#                                   (default 85)
 #
 # Pass through any extra promptfoo flags after `--`:
 #   deno task evals:promptfoo -- --filter-pattern simple-substitution
@@ -26,7 +29,8 @@
 # Examples:
 #   deno task evals:promptfoo                                # full matrix
 #   EVAL_TIER=medium deno task evals:promptfoo               # PR-tier run
-#   PROMPTFOO_PASS_RATE_THRESHOLD=80 deno task evals:promptfoo  # CI gate
+#   PROMPTFOO_SUITE_FLOOR=80 PROMPTFOO_AGGREGATE_CEILING=90 \
+#     deno task evals:promptfoo                              # stricter CI gate
 set -euo pipefail
 shopt -s nullglob
 
@@ -57,7 +61,8 @@ if [[ -n "${EVAL_TIER:-}" ]]; then
 fi
 
 CONCURRENCY="${EVAL_CONCURRENCY:-20}"
-THRESHOLD="${PROMPTFOO_PASS_RATE_THRESHOLD:-0}"
+SUITE_FLOOR="${PROMPTFOO_SUITE_FLOOR:-70}"
+AGGREGATE_CEILING="${PROMPTFOO_AGGREGATE_CEILING:-85}"
 
 # Per-suite outputs land in a temp dir; kept on success too so the JSON can be
 # diffed across runs if needed (e.g., `jq` on results.json for a specific case).
@@ -127,9 +132,10 @@ echo "════════════════════════�
 echo "▶ summary"
 echo "════════════════════════════════════════════════════════════"
 
-deno run --allow-read --quiet - "$OUT_DIR" "$THRESHOLD" <<'DENO'
-const [outDir, thresholdStr] = Deno.args;
-const threshold = Number(thresholdStr);
+deno run --allow-read --quiet - "$OUT_DIR" "$SUITE_FLOOR" "$AGGREGATE_CEILING" <<'DENO'
+const [outDir, floorStr, ceilingStr] = Deno.args;
+const suiteFloor = Number(floorStr);
+const aggregateCeiling = Number(ceilingStr);
 
 const files = [];
 for await (const e of Deno.readDir(outDir)) {
@@ -137,10 +143,18 @@ for await (const e of Deno.readDir(outDir)) {
 }
 files.sort();
 
+interface Row {
+  suite: string;
+  pass: number;
+  total: number;
+  pct: number | null;
+  parseErr: string;
+}
+
 let totalPass = 0;
 let totalFail = 0;
 let totalErr = 0;
-const rows = [];
+const rows: Row[] = [];
 
 for (const file of files) {
   const suite = file.replace(/\.json$/, "");
@@ -158,28 +172,42 @@ for (const file of files) {
   totalFail += fail;
   totalErr += err;
   const total = pass + fail + err;
-  const pct = total > 0 ? ((pass / total) * 100).toFixed(1) : "—";
+  const pct = total > 0 && !parseErr ? (pass / total) * 100 : null;
   rows.push({ suite, pass, total, pct, parseErr });
 }
 
-const w = (s, n) => String(s).padEnd(n);
-console.log(`  ${w("suite", 36)} ${w("pass/total", 12)} ${w("%", 8)}`);
-console.log(`  ${"─".repeat(36)} ${"─".repeat(12)} ${"─".repeat(8)}`);
+const w = (s: string, n: number) => String(s).padEnd(n);
+const fmtPct = (pct: number | null) => pct === null ? "—" : pct.toFixed(1);
+
+// A suite fails the floor if its pct is null (errored / no JSON) OR below floor.
+const suiteFailed = (r: Row) => r.pct === null || r.pct < suiteFloor;
+
+console.log(`  ${w("suite", 36)} ${w("pass/total", 12)} ${w("%", 8)} gate`);
+console.log(`  ${"─".repeat(36)} ${"─".repeat(12)} ${"─".repeat(8)} ${"─".repeat(4)}`);
 for (const r of rows) {
   const cell = r.parseErr ? r.parseErr : `${r.pass}/${r.total}`;
-  console.log(`  ${w(r.suite, 36)} ${w(cell, 12)} ${w(r.pct, 8)}`);
+  const gate = suiteFailed(r) ? "FAIL" : "PASS";
+  console.log(`  ${w(r.suite, 36)} ${w(cell, 12)} ${w(fmtPct(r.pct), 8)} ${gate}`);
 }
 
 const grandTotal = totalPass + totalFail + totalErr;
 const grandPct = grandTotal > 0 ? (totalPass / grandTotal) * 100 : 0;
-console.log(`  ${"─".repeat(36)} ${"─".repeat(12)} ${"─".repeat(8)}`);
+const aggregateFailed = grandPct < aggregateCeiling;
+const aggregateGate = aggregateFailed ? "FAIL" : "PASS";
+console.log(`  ${"─".repeat(36)} ${"─".repeat(12)} ${"─".repeat(8)} ${"─".repeat(4)}`);
 console.log(
-  `  ${w("AGGREGATE", 36)} ${w(`${totalPass}/${grandTotal}`, 12)} ${w(grandPct.toFixed(1), 8)}`,
+  `  ${w("AGGREGATE", 36)} ${w(`${totalPass}/${grandTotal}`, 12)} ${w(grandPct.toFixed(1), 8)} ${aggregateGate}`,
 );
 
-if (threshold > 0 && grandPct < threshold) {
+const trippedSuites = rows.filter(suiteFailed).map((r) => r.suite);
+if (trippedSuites.length > 0 || aggregateFailed) {
   console.log("");
-  console.log(`✗ aggregate ${grandPct.toFixed(1)}% < threshold ${threshold}%`);
+  if (trippedSuites.length > 0) {
+    console.log(`✗ suite floor ${suiteFloor}% tripped by: ${trippedSuites.join(", ")}`);
+  }
+  if (aggregateFailed) {
+    console.log(`✗ aggregate ${grandPct.toFixed(1)}% < ceiling ${aggregateCeiling}%`);
+  }
   Deno.exit(100);
 }
 Deno.exit(0);
