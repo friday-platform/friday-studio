@@ -27,8 +27,29 @@
 #   deno task evals:promptfoo                                # full matrix
 #   EVAL_TIER=medium deno task evals:promptfoo               # PR-tier run
 #   PROMPTFOO_PASS_RATE_THRESHOLD=80 deno task evals:promptfoo  # CI gate
-set -uo pipefail
-cd "$(git rev-parse --show-toplevel)"
+set -euo pipefail
+shopt -s nullglob
+
+# Preflight: must be inside a git checkout so the suites glob resolves
+# against the repo root, not whatever cwd the caller happened to be in.
+if ! REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null); then
+  echo "✗ run-all.sh must run inside a git checkout (git rev-parse --show-toplevel failed)" >&2
+  exit 1
+fi
+cd "$REPO_ROOT"
+
+# Preflight: API keys. Both are consumed downstream — LITELLM_API_KEY gates
+# the @atlas/llm registry's LiteLLM routing (workspace-chat suites);
+# LITELLM_MASTER_KEY is the bearer the shared providers send to the proxy.
+# Failing here keeps cryptic per-suite 401s out of the logs.
+MISSING_KEYS=()
+[[ -z "${LITELLM_API_KEY:-}" ]] && MISSING_KEYS+=("LITELLM_API_KEY")
+[[ -z "${LITELLM_MASTER_KEY:-}" ]] && MISSING_KEYS+=("LITELLM_MASTER_KEY")
+if (( ${#MISSING_KEYS[@]} > 0 )); then
+  echo "✗ missing required env: ${MISSING_KEYS[*]}" >&2
+  echo "  see tools/evals/promptfoo/litellm/README.md for setup" >&2
+  exit 1
+fi
 
 FILTER_ARGS=()
 if [[ -n "${EVAL_TIER:-}" ]]; then
@@ -43,12 +64,26 @@ THRESHOLD="${PROMPTFOO_PASS_RATE_THRESHOLD:-0}"
 OUT_DIR=$(mktemp -d -t friday-promptfoo-XXXXXX)
 echo "▶ outputs: ${OUT_DIR}"
 
+# Kill backgrounded suites if the user Ctrl-Cs — otherwise `npx promptfoo`
+# subprocesses get orphaned and keep burning tokens.
+trap 'kill $(jobs -p) 2>/dev/null; exit 130' INT TERM
+
 # Launch every suite as a background job. Capture stdout/stderr per suite so
 # parallel output doesn't interleave; print start markers up front. macOS
 # ships bash 3.x — no associative arrays, no `wait -n` — so we track suites
 # by name in a plain list and poll for .exit files.
 SUITES=()
-for cfg in tools/evals/promptfoo/suites/*/promptfooconfig.yaml; do
+CFGS=(tools/evals/promptfoo/suites/*/promptfooconfig.yaml)
+if (( ${#CFGS[@]} == 0 )); then
+  echo "✗ no suites matched tools/evals/promptfoo/suites/*/promptfooconfig.yaml" >&2
+  exit 1
+fi
+
+# Per-suite launches are intentionally tolerant: each one writes its exit code
+# to a .exit file and we aggregate in the wait loop. Relax -e here so a single
+# suite's non-zero exit doesn't abort the whole batch before aggregation.
+set +e
+for cfg in "${CFGS[@]}"; do
   suite=$(basename "$(dirname "$cfg")")
   SUITES+=("$suite")
   log="${OUT_DIR}/${suite}.log"
@@ -65,6 +100,7 @@ for cfg in tools/evals/promptfoo/suites/*/promptfooconfig.yaml; do
     echo $? >"${OUT_DIR}/${suite}.exit"
   ) &
 done
+set -e
 
 # Wait for jobs, printing one-line status as each .exit file appears.
 while :; do
