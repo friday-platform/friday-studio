@@ -3,11 +3,13 @@
  * the run-detail page mounts under the final "Complete"/"Failed" roll-up.
  *
  * The page's upstream type for `results` is `Record<string, unknown>`
- * because agents emit anything they want through `complete()`. The
- * component does the runtime branching: string markdown, structured
- * `{response, data}`, `{error}`, raw JSON fallback. These tests pin each
- * branch on the first paint so a future "simplification" can't quietly
- * route a markdown string back into a JSON dump.
+ * because agents emit anything they want through `complete()`, FSM
+ * `outputTo`, or the chat-tool's implicit `{ text }` fall-through.
+ * The component does the runtime branching: bare string, structured
+ * `{response, data}`, `{text}` envelope, `{error}` envelope, raw JSON
+ * fallback. These tests pin each branch on the first paint so a future
+ * "simplification" can't quietly route a markdown payload back into a
+ * JSON dump.
  *
  * Render-only assertions via `svelte/server` — no DOM event simulation.
  * `markdownToHTMLSafe` uses `isomorphic-dompurify` which transparently
@@ -79,6 +81,30 @@ describe("session-results", () => {
     // The structured `data` JSON block only appears when the agent emits one.
     expect(body).not.toContain("rows_touched");
     expect(body).not.toMatch(/<code[^>]*>{}<\/code>/);
+  });
+
+  it("`{text}` envelope renders the markdown body — the dominant chat-tool shape", () => {
+    // This is what handle-chat / workspace-chat sessions actually emit
+    // ('agentName: unknown' under the hood). Real-world data caught
+    // during browser QA showed this was the missing branch.
+    const { body } = render(SessionResults, {
+      props: {
+        results: {
+          unknown: {
+            text: "# Done\n\nThe assistant **finished** the task.\n\n- step one\n- step two",
+          },
+        },
+      },
+    });
+    expect(body).toContain("<h1");
+    expect(body).toContain("Done</h1>");
+    expect(body).toContain("<strong>finished</strong>");
+    // List items make it through too.
+    expect(body).toContain("step one");
+    expect(body).toContain("step two");
+    // Crucially: no escaped newlines, no JSON-shaped `"text": "..."`.
+    expect(body).not.toContain("\\n\\n");
+    expect(body).not.toMatch(/"text"\s*:/);
   });
 
   it("error envelope renders the error string with the error label class", () => {

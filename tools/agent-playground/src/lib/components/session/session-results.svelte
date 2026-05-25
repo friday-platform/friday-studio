@@ -2,9 +2,11 @@
   Renders the final per-agent results map that lands on the run-detail
   "Complete"/"Failed" roll-up. `query.data.results` is typed as
   `Record<string, unknown>` because agents can emit any shape via
-  `complete()` — this component does the runtime branching so markdown
-  prose, structured `{response, data}` payloads, error envelopes, and
-  raw JSON fallbacks all land in the right renderer.
+  `complete()`, FSM `outputTo`, or the chat-tool's implicit `{ text }`
+  fall-through. This component does the runtime branching so markdown
+  prose, structured `{response, data}` payloads, `{text}` envelopes,
+  error envelopes, and raw JSON fallbacks all land in the right
+  renderer.
 
   Lifts the splitMarkdownByTables + MarkdownRendered + TableView
   pattern from the fullscreen artifact markdown view
@@ -24,21 +26,30 @@
 
   const entries = $derived(Object.entries(results));
 
-  type StructuredResult = { response: string; data?: unknown };
   type ErrorResult = { error: string };
-
-  function isStructuredResult(v: unknown): v is StructuredResult {
-    return (
-      typeof v === "object" &&
-      v !== null &&
-      typeof (v as { response?: unknown }).response === "string"
-    );
-  }
+  type ProseSlice = { prose: string; data?: unknown };
 
   function isErrorResult(v: unknown): v is ErrorResult {
     return (
       typeof v === "object" && v !== null && typeof (v as { error?: unknown }).error === "string"
     );
+  }
+
+  // Pulls the prose payload out of a result entry, regardless of which
+  // emit path produced it:
+  //   - bare string                — agents that return a raw markdown blob
+  //   - { response, data? }        — Agent SDK `complete({ response, data })`
+  //   - { text }                   — FSM workspace-chat / "unknown" agent
+  //                                   fall-through (the dominant shape)
+  // Returns null for anything else so the template can route to the
+  // JSON fallback. Errors are caught earlier — don't call this on them.
+  function asProse(v: unknown): ProseSlice | null {
+    if (typeof v === "string") return { prose: v };
+    if (typeof v !== "object" || v === null) return null;
+    const obj = v as { response?: unknown; text?: unknown; data?: unknown };
+    if (typeof obj.response === "string") return { prose: obj.response, data: obj.data };
+    if (typeof obj.text === "string") return { prose: obj.text };
+    return null;
   }
 </script>
 
@@ -49,37 +60,30 @@
         {#if entries.length > 1}
           <h4 class="result-agent">{agentName}</h4>
         {/if}
-        {#if typeof value === "string"}
-          {#each splitMarkdownByTables(value) as segment, i (i)}
-            {#if segment.kind === "prose"}
-              <MarkdownRendered>
-                {@html markdownToHTMLSafe(segment.markdown)}
-              </MarkdownRendered>
-            {:else}
-              <TableView columns={segment.model.columns} rows={segment.model.rows} />
-            {/if}
-          {/each}
-        {:else if isStructuredResult(value)}
-          {#each splitMarkdownByTables(value.response) as segment, i (i)}
-            {#if segment.kind === "prose"}
-              <MarkdownRendered>
-                {@html markdownToHTMLSafe(segment.markdown)}
-              </MarkdownRendered>
-            {:else}
-              <TableView columns={segment.model.columns} rows={segment.model.rows} />
-            {/if}
-          {/each}
-          {#if value.data !== undefined}
-            <FormattedData copyText={JSON.stringify(value.data, null, 2)} maxLines={7}>
-              <JsonHighlight code={JSON.stringify(value.data, null, 2)} />
-            </FormattedData>
-          {/if}
-        {:else if isErrorResult(value)}
+        {#if isErrorResult(value)}
           <p class="error-label">{value.error}</p>
         {:else}
-          <FormattedData copyText={JSON.stringify(value, null, 2)} maxLines={7}>
-            <JsonHighlight code={JSON.stringify(value, null, 2)} />
-          </FormattedData>
+          {@const prose = asProse(value)}
+          {#if prose}
+            {#each splitMarkdownByTables(prose.prose) as segment, i (i)}
+              {#if segment.kind === "prose"}
+                <MarkdownRendered>
+                  {@html markdownToHTMLSafe(segment.markdown)}
+                </MarkdownRendered>
+              {:else}
+                <TableView columns={segment.model.columns} rows={segment.model.rows} />
+              {/if}
+            {/each}
+            {#if prose.data !== undefined}
+              <FormattedData copyText={JSON.stringify(prose.data, null, 2)} maxLines={7}>
+                <JsonHighlight code={JSON.stringify(prose.data, null, 2)} />
+              </FormattedData>
+            {/if}
+          {:else}
+            <FormattedData copyText={JSON.stringify(value, null, 2)} maxLines={7}>
+              <JsonHighlight code={JSON.stringify(value, null, 2)} />
+            </FormattedData>
+          {/if}
         {/if}
       </div>
     {/each}
