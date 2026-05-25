@@ -1,0 +1,38 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+#
+# Two targeted cases (specific bundled-agent expected) + one smoke case (any
+# atlas agent acceptable). Assertions inspect captured upsert_agent shapes
+# and forbidden-MCP behavior.
+
+- description: 'scrape-hacker-news — daily HN headlines should pick bundled web agent'
+  vars:
+    user_prompt: 'I want a workspace that scrapes the top headlines from Hacker News every morning.'
+  assert:
+    - type: javascript
+      value: "JSON.parse(output).captures.upsertAgents.some(u => u.config.type === 'atlas' && u.config.agent === 'web')"
+      metric: BundledWebAgentChosen
+    - type: javascript
+      value: "!JSON.parse(output).captures.enabledMcpServers.some(e => ['playwright-mcp','puppeteer-mcp','browser-mcp'].includes(e.serverId))"
+      metric: NoRedundantMcpEnable
+    - type: javascript
+      value: 'JSON.parse(output).captures.listCapabilitiesCallCount > 0'
+      metric: CalledListCapabilities
+
+- description: 'slack-daily-standup — daily standup post should pick bundled slack agent'
+  vars:
+    user_prompt: 'I want a workspace that posts a daily standup to Slack.'
+  assert:
+    - type: javascript
+      value: "JSON.parse(output).captures.upsertAgents.some(u => u.config.type === 'atlas' && u.config.agent === 'slack')"
+      metric: BundledSlackAgentChosen
+    - type: javascript
+      value: 'JSON.parse(output).captures.listCapabilitiesCallCount > 0'
+      metric: CalledListCapabilities
+
+- description: 'fetch-and-summarize (smoke) — at least one atlas upsert for generic fetch+summarize'
+  vars:
+    user_prompt: 'Build a workspace that fetches a URL daily and summarizes the content.'
+  assert:
+    - type: javascript
+      value: "JSON.parse(output).captures.upsertAgents.some(u => u.config.type === 'atlas')"
+      metric: AnyAtlasAgent

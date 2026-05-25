@@ -1,0 +1,81 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+#
+# Per-case constraints are encoded as JSON-stringified vars so the shared
+# assertions/check.js can deserialize and apply them. The five cases mirror
+# the original eval verbatim — same prompts, same expected/forbidden shapes.
+
+- description: 'inbox-triage-llm — inbox triage should be type:llm + gmail MCP'
+  vars:
+    user_prompt: >-
+      Build me a workspace that pulls my latest 10 unread emails and reviews them
+      with letter options for Archive, Keep, Mark Unread, Delete, Unsubscribe.
+      Remember my preferences and apply them to future reviews.
+    expectedType: llm
+    forbiddenTypesJson: '["user"]'
+    forbiddenAtlasAgentsJson: '["email"]'
+    requiredMcpServersJson: '["google-gmail"]'
+    forbidUserAgentRegistration: true
+  assert:
+    - type: javascript
+      value: file://assertions/check.js
+
+- description: 'csv-streaming-user — large-CSV ingest should be type:user'
+  vars:
+    user_prompt: >-
+      Build me a workspace that ingests 50MB CSV uploads, validates the row
+      schema, and streams the rows into a SQLite database. The schema is fixed —
+      id, timestamp, payload.
+    expectedType: user
+    forbiddenTypesJson: '["llm", "atlas"]'
+    forbiddenAtlasAgentsJson: '[]'
+    requiredMcpServersJson: '[]'
+    forbidUserAgentRegistration: false
+  assert:
+    - type: javascript
+      value: file://assertions/check.js
+
+- description: 'code-gen-llm-not-claude-code — code-gen should be type:llm, NOT claude-code'
+  vars:
+    user_prompt: >-
+      Build me a workspace that takes natural-language descriptions of small
+      Python scripts and writes the script files to a directory. Single-file
+      scripts only — no projects.
+    expectedType: llm
+    forbiddenTypesJson: '["atlas"]'
+    forbiddenAtlasAgentsJson: '["claude-code"]'
+    requiredMcpServersJson: '[]'
+    forbidUserAgentRegistration: false
+  assert:
+    - type: javascript
+      value: file://assertions/check.js
+
+- description: 'send-daily-report-email — daily email report must use type:llm + gmail MCP, never agent:email'
+  vars:
+    user_prompt: >-
+      Build me a workspace that pulls a daily ad-performance report from Snowflake
+      at 8am UTC and sends the HTML report from my Gmail account to
+      alice@example.com and bob@example.com. Use Gmail for the send — I have
+      OAuth set up.
+    expectedType: llm
+    forbiddenTypesJson: '[]'
+    forbiddenAtlasAgentsJson: '["email"]'
+    requiredMcpServersJson: '["google-gmail"]'
+    forbidUserAgentRegistration: false
+  assert:
+    - type: javascript
+      value: file://assertions/check.js
+
+- description: 'explicit-llm-override — user explicitly names type:llm — must respect it'
+  vars:
+    user_prompt: >-
+      Build me a workspace that pulls my latest 5 unread emails and lets me
+      triage them with letter options (Archive, Keep, Delete). Use llm agents
+      for this — I do not want Python user agents.
+    expectedType: llm
+    forbiddenTypesJson: '["user"]'
+    forbiddenAtlasAgentsJson: '[]'
+    requiredMcpServersJson: '["google-gmail"]'
+    forbidUserAgentRegistration: true
+  assert:
+    - type: javascript
+      value: file://assertions/check.js

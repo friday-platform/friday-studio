@@ -1,0 +1,42 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+
+description: |
+  workspace-chat / bundled-agent-default — multi-model.
+
+  Migrated from tools/evals/agents/workspace-chat/bundled-agent-default.eval.ts.
+  Anti-regression eval for the bundled-agent discovery workstream: for canonical
+  user prompts, workspace-chat should emit `upsert_agent` calls with
+  `type: "atlas"` and the appropriate bundled `agent` id (web, slack, …) instead
+  of falling back to `type: "llm"` plus an MCP server.
+
+  No daemon, no real workspace state. Imports the real prompt.txt + the real
+  workspace-api SKILL.md + the real `upsert_agent` description bytes + the real
+  `bundledAgents` registry — exercises the same LLM-facing surface a live
+  workspace-chat session would, with mock tool execute() functions that capture
+  the model's decisions.
+
+prompts:
+  - file://prompts/user.txt
+
+# Note: no tier:small entry — Groq llama-3.1-8b free tier has a 6k TPM cap,
+# and the workspace-chat prompt + workspace-api skill exceed it. Re-enable
+# tier:small here only if a higher-context small-tier provider is added.
+providers:
+  - id: file://../../shared/providers/deno-worker.cjs
+    label: 'friday-md (haiku via registry) | tier:medium'
+    config:
+      handler: tools/evals/promptfoo/suites/workspace-chat-bundled-agent/handler.ts
+      registryId: 'anthropic:friday-md'
+
+  - id: file://../../shared/providers/deno-worker.cjs
+    label: 'friday-lg (sonnet via registry) | tier:large'
+    config:
+      handler: tools/evals/promptfoo/suites/workspace-chat-bundled-agent/handler.ts
+      registryId: 'anthropic:friday-lg'
+
+defaultTest: file://../../shared/defaultTest.yaml
+
+tests: file://tests.yaml
+
+evaluateOptions:
+  showProgressBar: true
