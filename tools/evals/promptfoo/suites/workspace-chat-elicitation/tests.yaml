@@ -19,7 +19,7 @@
       value: |
         const r = JSON.parse(output);
         const lower = r.text.toLowerCase();
-        const markers = ['permission', 'approval', 'approve', 'pending', 'request'];
+        const markers = ['permission', 'approval', 'approve', 'pending'];
         return markers.some(s => lower.includes(s));
       metric: AcknowledgesPendingApproval
     - type: javascript
