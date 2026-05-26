@@ -76,6 +76,7 @@ Other knobs the wrapper honors:
 | `EVAL_CONCURRENCY` | `-j N` PER suite (default 20). |
 | `PROMPTFOO_SUITE_FLOOR` | Exit 100 if **any** suite's pass rate < N (default 70). Suites that errored out with no parseable JSON count as failing the floor. |
 | `PROMPTFOO_AGGREGATE_CEILING` | Exit 100 if the **aggregate** pass rate across all suites < N (default 85). |
+| `PROMPTFOO_REQUIRE_SUITES` | Exit 100 if fewer than N suites ran with non-zero results (default = total suites discovered). Catches `--filter-providers` silently skipping every suite (e.g. `EVAL_TIER=small` excludes all three workspace-chat suites). Set to `0` to opt out. |
 
 Anything after `--` is passed through to promptfoo:
 

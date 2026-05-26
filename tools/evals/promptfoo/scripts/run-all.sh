@@ -26,6 +26,11 @@
 #                                   AND from aggregate numerator/denominator.
 #   PROMPTFOO_AGGREGATE_CEILING=N   exit 100 if AGGREGATE pass rate < N
 #                                   (default 85)
+#   PROMPTFOO_REQUIRE_SUITES=N      exit 100 if fewer than N suites ran with
+#                                   non-zero results (default = total suites
+#                                   discovered). Catches the case where
+#                                   --filter-providers silently skips every
+#                                   suite. Set to 0 to opt out.
 #
 # Pass through any extra promptfoo flags after `--`:
 #   deno task evals:promptfoo -- --filter-pattern simple-substitution
@@ -37,6 +42,15 @@
 #     deno task evals:promptfoo                              # stricter CI gate
 set -euo pipefail
 shopt -s nullglob
+
+# Preflight: external tools we shell out to. Failing here keeps cryptic
+# "command not found" errors out of mid-run per-suite logs.
+for tool in curl npx deno; do
+  command -v "$tool" >/dev/null || {
+    echo "✗ $tool is required but not installed" >&2
+    exit 1
+  }
+done
 
 # Preflight: must be inside a git checkout so the suites glob resolves
 # against the repo root, not whatever cwd the caller happened to be in.
@@ -97,6 +111,12 @@ if (( ${#CFGS[@]} == 0 )); then
   exit 1
 fi
 
+# Default REQUIRE_SUITES to the discovered suite count — i.e. assume the caller
+# wanted every suite to run unless they explicitly opted out with `=0`. A suite
+# that ran with zero results (provider filter excluded everything) doesn't count
+# toward this floor; see the Deno aggregator below.
+REQUIRE_SUITES="${PROMPTFOO_REQUIRE_SUITES:-${#CFGS[@]}}"
+
 # Per-suite launches are intentionally tolerant: each one writes its exit code
 # to a .exit file and we aggregate in the wait loop. Relax -e here so a single
 # suite's non-zero exit doesn't abort the whole batch before aggregation.
@@ -145,10 +165,11 @@ echo "════════════════════════�
 echo "▶ summary"
 echo "════════════════════════════════════════════════════════════"
 
-deno run --allow-read --quiet - "$OUT_DIR" "$SUITE_FLOOR" "$AGGREGATE_CEILING" <<'DENO'
-const [outDir, floorStr, ceilingStr] = Deno.args;
+deno run --allow-read --quiet - "$OUT_DIR" "$SUITE_FLOOR" "$AGGREGATE_CEILING" "$REQUIRE_SUITES" <<'DENO'
+const [outDir, floorStr, ceilingStr, requireStr] = Deno.args;
 const suiteFloor = Number(floorStr);
 const aggregateCeiling = Number(ceilingStr);
+const requireSuites = Number(requireStr);
 
 const files = [];
 for await (const e of Deno.readDir(outDir)) {
@@ -226,8 +247,19 @@ console.log(
 );
 
 const trippedSuites = rows.filter(suiteFailed).map((r) => r.suite);
-if (trippedSuites.length > 0 || aggregateFailed) {
+const skippedSuites = rows.filter((r) => r.skipped).map((r) => r.suite);
+const ranSuites = rows.length - skippedSuites.length;
+// `requireSuites=0` opts out of the gate entirely (ad-hoc tier filtering).
+const requireGateFailed = requireSuites > 0 && ranSuites < requireSuites;
+if (trippedSuites.length > 0 || aggregateFailed || requireGateFailed) {
   console.log("");
+  if (requireGateFailed) {
+    console.log(
+      `✗ only ${ranSuites}/${requireSuites} suites ran; SKIPPED: ${
+        skippedSuites.join(", ")
+      } (override with PROMPTFOO_REQUIRE_SUITES=0)`,
+    );
+  }
   if (trippedSuites.length > 0) {
     console.log(`✗ suite floor ${suiteFloor}% tripped by: ${trippedSuites.join(", ")}`);
   }
