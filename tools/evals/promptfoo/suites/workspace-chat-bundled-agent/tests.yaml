@@ -18,17 +18,10 @@
       value: "output.captures.upsertAgents.some(u => u.config.type === 'atlas' && u.config.agent === 'web')"
       metric: BundledWebAgentChosen
     - type: javascript
-      value: "!output.captures.enabledMcpServers.some(e => ['playwright-mcp','puppeteer-mcp','browser-mcp'].includes(e.serverId))"
+      value: file://assertions/check.js:noRedundantMcpEnable
       metric: NoRedundantMcpEnable
-    # Catches the fallback regression where a model emits the bundled atlas/web
-    # agent AND a second `type:llm` agent that wires a browser MCP via its
-    # tools[] list — workspace-level enabledMcpServers stays clean, so the
-    # NoRedundantMcpEnable check above passes despite real redundancy.
-    # Split on '/' to match both bare ids (`playwright-mcp`) and namespaced
-    # tool refs (`playwright-mcp/browser_navigate`); mirrors the prefix logic
-    # in workspace-chat-agent-type/assertions/check.js#requiredMcpWired.
     - type: javascript
-      value: "!output.captures.upsertAgents.some(u => u.config.type !== 'atlas' && Array.isArray(u.config?.config?.tools) && u.config.config.tools.some(t => typeof t === 'string' && ['playwright-mcp','puppeteer-mcp','browser-mcp'].includes(t.split('/')[0])))"
+      value: file://assertions/check.js:noRedundantMcpViaToolList
       metric: NoRedundantMcpViaToolList
     - type: javascript
       value: 'output.captures.listCapabilitiesCallCount > 0'
@@ -43,7 +36,7 @@
       value: "output.captures.upsertAgents.some(u => u.config.type === 'atlas' && u.config.agent === 'slack')"
       metric: BundledSlackAgentChosen
     - type: javascript
-      value: "!output.captures.upsertAgents.some(u => u.config.type !== 'atlas' && Array.isArray(u.config?.config?.tools) && u.config.config.tools.some(t => typeof t === 'string' && ['playwright-mcp','puppeteer-mcp','browser-mcp'].includes(t.split('/')[0])))"
+      value: file://assertions/check.js:noRedundantMcpViaToolList
       metric: NoRedundantMcpViaToolList
     - type: javascript
       value: 'output.captures.listCapabilitiesCallCount > 0'
