@@ -366,6 +366,65 @@ describe("ChatStorage (JetStream-backed)", () => {
       const result = await ChatStorage.updateChatTitle(chatId, "renamed", keyWorkspace);
       expect(result.ok).toBe(false);
     });
+
+    // The 1z9 refactor drops `<workspaceId>/` from the KV key — under
+    // new naming the key is just `<chatId>`. The defensive ACL gate
+    // (metadata.workspaceId is the source of truth) must keep working,
+    // since the key itself no longer carries workspaceId. These cases
+    // mirror the legacy poison tests above but drive the new-naming
+    // backend directly. See friday-studio-glz.
+    describe("under newNamingEnabled: true", () => {
+      it("getChat returns null when the bare-chatId metadata claims a different workspaceId", async () => {
+        const kv = await ensureChatsKVBucket(nc);
+        const backend = createJetStreamChatBackend(nc, { newNamingEnabled: true });
+        const chatId = `nn-poison-get-${crypto.randomUUID()}`;
+        const askerWorkspace = `wsask${crypto.randomUUID().replace(/-/g, "")}`;
+        const metaWorkspace = `wsreal${crypto.randomUUID().replace(/-/g, "")}`;
+        // Poison: row written at the bare-chatId key, metadata claims
+        // a workspace the asker is not part of.
+        await kv.put(
+          chatId,
+          enc.encode(JSON.stringify(poisonedMeta(chatId, metaWorkspace))),
+        );
+
+        const get = await backend.getChat(chatId, askerWorkspace);
+        expect(get.ok).toBe(true);
+        if (get.ok) expect(get.data).toBeNull();
+      });
+
+      it("listChatsByWorkspace excludes new-naming rows whose metadata.workspaceId mismatches", async () => {
+        const kv = await ensureChatsKVBucket(nc);
+        const backend = createJetStreamChatBackend(nc, { newNamingEnabled: true });
+        const chatId = `nn-poison-list-${crypto.randomUUID()}`;
+        const askerWorkspace = `wslistask${crypto.randomUUID().replace(/-/g, "")}`;
+        const metaWorkspace = `wslistreal${crypto.randomUUID().replace(/-/g, "")}`;
+        await kv.put(
+          chatId,
+          enc.encode(JSON.stringify(poisonedMeta(chatId, metaWorkspace))),
+        );
+
+        const list = await backend.listChatsByWorkspace(askerWorkspace);
+        expect(list.ok).toBe(true);
+        if (list.ok) {
+          expect(list.data.chats.find((c) => c.id === chatId)).toBeUndefined();
+        }
+      });
+
+      it("updateChatTitle fails when the bare-chatId metadata claims a different workspaceId", async () => {
+        const kv = await ensureChatsKVBucket(nc);
+        const backend = createJetStreamChatBackend(nc, { newNamingEnabled: true });
+        const chatId = `nn-poison-upd-${crypto.randomUUID()}`;
+        const askerWorkspace = `wsupdask${crypto.randomUUID().replace(/-/g, "")}`;
+        const metaWorkspace = `wsupdreal${crypto.randomUUID().replace(/-/g, "")}`;
+        await kv.put(
+          chatId,
+          enc.encode(JSON.stringify(poisonedMeta(chatId, metaWorkspace))),
+        );
+
+        const result = await backend.updateChatTitle(chatId, "renamed", askerWorkspace);
+        expect(result.ok).toBe(false);
+      });
+    });
   });
 
   it("sorts messages by metadata.startTimestamp / .timestamp on read", async () => {

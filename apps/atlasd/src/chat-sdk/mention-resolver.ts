@@ -61,6 +61,18 @@ export interface MentionResolutionFailure {
   reason: MentionResolutionFailureReason;
 }
 
+/**
+ * Extract every `@workspace/chat` reference carried by a message's text
+ * parts. Used by callers that need to detect or count mentions without
+ * running the full ACL/snapshot pipeline (e.g. the communicator-adapter
+ * gate at chat-sdk-instance.ts that logs-and-drops mentions because
+ * those adapters don't have a real Atlas userId to authorize against —
+ * see friday-studio-2ct).
+ */
+export function extractMentionsFromMessage(message: AtlasUIMessage): MentionRef[] {
+  return parseMentions(joinMessageText(message));
+}
+
 /** Extract every `@workspace/chat` reference from a free-text body. */
 export function parseMentions(text: string): MentionRef[] {
   const seen = new Set<string>();
@@ -94,6 +106,17 @@ function truncate(s: string, n: number): string {
   return `${t.slice(0, n - 1).trimEnd()}…`;
 }
 
+// Strip the three characters that could let a hostile source-chat title /
+// message body close the `<atlas-mention-context>` tag and inject override
+// instructions across workspace boundaries. Mirrors the sanitizer in
+// summarize-chat.ts:199 — the mention path carries cross-workspace
+// user-controlled bytes into the model's hidden context and must be held
+// to the same bar. Applied to every value interpolated into the synthesized
+// text (title, both excerpts, and the id in the opening tag).
+function stripTagDelims(s: string): string {
+  return s.replace(/[<>`]/g, "");
+}
+
 function extractText(message: AtlasUIMessage | Chat["messages"][number]): string {
   for (const part of message.parts) {
     if (part.type === "text" && typeof (part as { text?: unknown }).text === "string") {
@@ -109,15 +132,15 @@ export function buildSnapshot(chat: Chat): {
   snapshot: string;
   messageCount: number;
 } {
-  const title = chat.title?.trim() || "Untitled chat";
+  const title = stripTagDelims(chat.title?.trim() || "Untitled chat");
   const messageCount = chat.messages.length;
   const firstUser = chat.messages.find((m) => m.role === "user");
   const lastAssistant = [...chat.messages].reverse().find((m) => m.role === "assistant");
   const firstUserExcerpt = firstUser
-    ? truncate(extractText(firstUser), SNAPSHOT_EXCERPT_CHARS)
+    ? stripTagDelims(truncate(extractText(firstUser), SNAPSHOT_EXCERPT_CHARS))
     : "";
   const lastAssistantExcerpt = lastAssistant
-    ? truncate(extractText(lastAssistant), SNAPSHOT_EXCERPT_CHARS)
+    ? stripTagDelims(truncate(extractText(lastAssistant), SNAPSHOT_EXCERPT_CHARS))
     : "";
 
   const lines = [`Title: ${title}`, `Messages: ${messageCount}`];
@@ -173,11 +196,18 @@ export async function resolveAllMentions(
  */
 function renderMentionContextText(resolved: ResolvedMention[]): string {
   const blocks = resolved.map((m) => {
-    const id = `${m.ref.workspaceId}/${m.ref.chatId}`;
+    // The id and per-ref workspaceId/chatId are also stripped — both
+    // are user-supplied via the @-mention text and parseMentions only
+    // bounds the charset (alphanumerics + `-_:.`), which doesn't
+    // prevent a future regex relaxation from letting `<`/`>`/backtick
+    // through. Defense-in-depth: sanitize at the embed site too.
+    const id = stripTagDelims(`${m.ref.workspaceId}/${m.ref.chatId}`);
+    const wsId = stripTagDelims(m.ref.workspaceId);
+    const chatId = stripTagDelims(m.ref.chatId);
     return [
       `<atlas-mention-context ref="${id}">`,
       m.snapshot,
-      `Full transcript available via the read_chat tool (workspace_id="${m.ref.workspaceId}", chat_id="${m.ref.chatId}").`,
+      `Full transcript available via the read_chat tool (workspace_id="${wsId}", chat_id="${chatId}").`,
       `</atlas-mention-context>`,
     ].join("\n");
   });
@@ -322,16 +352,9 @@ export async function applyMentions(input: {
     input.currentWorkspaceId,
     input.exposeKernel ?? false,
   );
-  if (failures.length > 0) {
-    logger.warn("mention_resolution_failures", {
-      currentWorkspaceId: input.currentWorkspaceId,
-      requesterUserId: input.requesterUserId,
-      failures: failures.map((f) => ({
-        workspaceId: f.ref.workspaceId,
-        chatId: f.ref.chatId,
-        reason: f.reason,
-      })),
-    });
-  }
+  // Resolver-level logging is intentionally omitted — the single caller
+  // (chat-sdk-instance.ts) emits a `mention_resolution_failures` log
+  // that includes the originating `chatId`, which this helper doesn't
+  // know about. See friday-studio-sw6.
   return { message: augmented, foregroundWorkspaceIds: foreground, resolved, failures };
 }

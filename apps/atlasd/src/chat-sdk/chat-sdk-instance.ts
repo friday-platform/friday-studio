@@ -33,7 +33,11 @@ import {
   type PlatformCredentials,
 } from "./adapter-factory.ts";
 import { ChatSdkNotifier } from "./chat-sdk-notifier.ts";
-import { applyMentions } from "./mention-resolver.ts";
+import {
+  applyMentions,
+  extractMentionsFromMessage,
+  type MentionResolutionFailure,
+} from "./mention-resolver.ts";
 
 const logger = createLogger({ component: "chat-sdk-instance" });
 
@@ -932,27 +936,64 @@ export function createMessageHandler(
     // this turn. Unauthorized / not-found refs are logged + dropped so a
     // bad reference doesn't break the send. See friday-studio-ivt /
     // friday-studio-4j7.
-    // For the web adapter, `userId` (= message.author.userId) is the
-    // Atlas userId set via `X-Atlas-User-Id` on the inbound request.
-    // For Slack/Telegram/Discord/Teams/WhatsApp it's the *platform*
-    // user id (a Slack U… id, etc.), which never matches a row in
-    // WORKSPACE_MEMBERS — every mention would fail as 'unauthorized'.
-    // Fall back to the workspace owner (the user who connected the
-    // platform integration). Single-owner workspaces (the common
-    // case) see no behavior change; in shared workspaces this is a
-    // permissive proxy that still respects per-workspace membership
-    // (the owner has to be a member of the referenced workspace for
-    // the resolution to succeed). See friday-studio-phq.
-    const mentionRequesterUserId =
-      adapterName === "atlas" ? userId : (options?.ownerUserId ?? userId);
+    //
+    // Atlas-adapter only. For Slack/Telegram/Discord/Teams/WhatsApp the
+    // inbound `userId` is the platform user id (a Slack U… id, etc.),
+    // not a real Atlas userId — there's no row in WORKSPACE_MEMBERS to
+    // authorize against. The original fallback to `options.ownerUserId`
+    // was an ACL hole in shared communicator channels: any teammate's
+    // send would resolve against the workspace owner's foreign-workspace
+    // memberships. Log-and-drop instead — mentions stay a web-only
+    // feature until a real platform-userId → Atlas-userId mapping
+    // exists. See friday-studio-2ct / friday-studio-phq.
+    let storedMessage: typeof initialStoredMessage;
+    let foregroundWorkspaceIds: string[] | undefined;
+    let mentionFailures: MentionResolutionFailure[] = [];
+    if (adapterName === "atlas") {
+      const result = await applyMentions({
+        message: initialStoredMessage,
+        requesterUserId: userId,
+        currentWorkspaceId: workspaceId,
+        foregroundWorkspaceIds: initialForegroundWorkspaceIds,
+        exposeKernel: options?.exposeKernel ?? false,
+      });
+      storedMessage = result.message;
+      foregroundWorkspaceIds = result.foregroundWorkspaceIds;
+      mentionFailures = result.failures;
+    } else {
+      storedMessage = initialStoredMessage;
+      foregroundWorkspaceIds = initialForegroundWorkspaceIds;
+      const droppedRefs = extractMentionsFromMessage(initialStoredMessage);
+      if (droppedRefs.length > 0) {
+        logger.warn("mention_resolution_skipped_non_atlas_adapter", {
+          workspaceId,
+          chatId,
+          adapter: adapterName,
+          count: droppedRefs.length,
+          refs: droppedRefs.map((r) => ({ workspaceId: r.workspaceId, chatId: r.chatId })),
+        });
+      }
+    }
 
-    const { message: storedMessage, foregroundWorkspaceIds } = await applyMentions({
-      message: initialStoredMessage,
-      requesterUserId: mentionRequesterUserId,
-      currentWorkspaceId: workspaceId,
-      foregroundWorkspaceIds: initialForegroundWorkspaceIds,
-      exposeKernel: options?.exposeKernel ?? false,
-    });
+    // Surface mention-resolution failures as a structured log so we can
+    // measure how often this fires in prod before the friday-studio-mth
+    // UI banner work starts. `chatId` is the originating chat (the one
+    // the mention was sent FROM), not the referenced chat — that's
+    // carried per-failure under `failures[].chatId`. See
+    // friday-studio-sw6.
+    if (mentionFailures.length > 0) {
+      logger.warn("mention_resolution_failures", {
+        workspaceId,
+        chatId,
+        adapter: adapterName,
+        count: mentionFailures.length,
+        failures: mentionFailures.map((f) => ({
+          workspaceId: f.ref.workspaceId,
+          chatId: f.ref.chatId,
+          reason: f.reason,
+        })),
+      });
+    }
 
     const appendResult = await ChatStorage.appendMessage(chatId, storedMessage, workspaceId);
     if (!appendResult.ok) {
