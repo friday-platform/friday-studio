@@ -129,8 +129,31 @@ class DenoWorker {
     const promise = new Promise((resolve, reject) => {
       this.pending.set(id, { resolve, reject });
     });
-    this.proc.stdin.write(`${JSON.stringify({ id, ...payload })}\n`);
-    return promise;
+    // Wrap the write: if stdin throws synchronously (worker died between
+    // ensureSpawned and write, EPIPE on closed pipe), the pending entry we
+    // just inserted would otherwise leak. The async-exit handler at line 99
+    // already covers the case where the worker dies AFTER the write queues.
+    try {
+      this.proc.stdin.write(`${JSON.stringify({ id, ...payload })}\n`);
+    } catch (err) {
+      this.pending.delete(id);
+      return Promise.reject(err instanceof Error ? err : new Error(String(err)));
+    }
+
+    // Per-request ceiling so a hung handler (network wedge, SDK stall) fails
+    // the row in bounded time instead of hanging the suite. Default 5min is
+    // generous for friday-lg + stepCountIs(6); override via env when proving
+    // the path locally.
+    const timeoutMs = Number(process.env.PROMPTFOO_REQUEST_TIMEOUT_MS) || 300_000;
+    let timer;
+    const timeout = new Promise((_, reject) => {
+      timer = setTimeout(() => {
+        if (this.pending.delete(id)) {
+          reject(new Error(`deno-worker request timeout after ${timeoutMs}ms`));
+        }
+      }, timeoutMs);
+    });
+    return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
   }
 }
 
