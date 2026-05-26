@@ -9,6 +9,7 @@ export const REGISTRY_PROVIDERS = [
   "claude-code",
   "google",
   "groq",
+  "local",
   "openai",
   "openrouter",
 ] as const;
@@ -25,6 +26,7 @@ export type RegistryModelId =
   | `claude-code:${string}`
   | `google:${string}`
   | `groq:${string}`
+  | `local:${string}`
   | `openai:${string}`
   | `openrouter:${string}`;
 
@@ -46,6 +48,8 @@ export function buildRegistryModelId(provider: RegistryProvider, model: string):
       return `google:${model}`;
     case "groq":
       return `groq:${model}`;
+    case "local":
+      return `local:${model}`;
     case "openai":
       return `openai:${model}`;
     case "openrouter":

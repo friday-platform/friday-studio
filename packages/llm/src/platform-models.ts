@@ -83,9 +83,12 @@ function parseModelId(id: string): { provider: string; model: string } | null {
 /**
  * Check whether credentials for `provider` are available.
  * `LITELLM_API_KEY` universally satisfies any provider (matches smallLLM's
- * historical behavior and supports proxy-everything LiteLLM setups).
+ * historical behavior and supports proxy-everything LiteLLM setups) —
+ * except `local`, where the credential is a base URL pointing at the
+ * user's own server and a remote LiteLLM proxy can't substitute.
  */
 function hasCredential(provider: string): boolean {
+  if (provider === "local") return !!process.env.LOCAL_BASE_URL;
   if (process.env.LITELLM_API_KEY) return true;
   if (ALWAYS_CREDENTIALED.has(provider)) return true;
   if (!isRegistryProvider(provider)) return false;
@@ -126,7 +129,11 @@ export class PlatformModelsConfigError extends Error {
         lines.push(`  known providers: ${REGISTRY_PROVIDERS.join(", ")}`);
       } else if (err.kind === "missing_credential") {
         const parsed = parseModelId(err.value);
-        if (parsed && isRegistryProvider(parsed.provider) && hasEnvVar(parsed.provider)) {
+        if (parsed?.provider === "local") {
+          lines.push(
+            `  required env var: LOCAL_BASE_URL (e.g., http://localhost:1234/v1 for LM Studio)`,
+          );
+        } else if (parsed && isRegistryProvider(parsed.provider) && hasEnvVar(parsed.provider)) {
           const envVar = PROVIDER_ENV_VARS[parsed.provider];
           lines.push(`  required env var: ${envVar} (or LITELLM_API_KEY for proxied access)`);
         }

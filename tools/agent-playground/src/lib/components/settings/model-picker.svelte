@@ -223,6 +223,13 @@
     </div>
 
     {#if locked && activeProviderEntry}
+      <!--
+        The `local` provider takes a base URL (LM Studio / Ollama / vLLM
+        endpoint), not an API key — so the input is plain text and the
+        copy points at a server URL rather than a credential string. All
+        other providers fall through to the password-input flow.
+      -->
+      {@const isLocal = activeProviderEntry.provider === "local"}
       <div class="locked-banner">
         <div class="locked-banner-head">
           <ProviderMark
@@ -234,20 +241,33 @@
           </div>
         </div>
         <div class="locked-banner-desc">
-          {activeProviderEntry.meta.name}'s models are locked until we have an API key.
-          Paste your key below — we'll save it to the daemon's .env file as
-          <code>{activeProviderEntry.credentialEnvVar}</code> and unlock
-          {activeProviderEntry.meta.name} immediately.
-          {#if activeProviderEntry.meta.helpUrl}
-            Get a key from <code>{activeProviderEntry.meta.helpUrl}</code>.
+          {#if isLocal}
+            Local models are locked until we know where your OpenAI-compatible
+            server is running. Paste its base URL below — we'll save it to the
+            daemon's .env file as <code>LOCAL_BASE_URL</code> and unlock Local
+            immediately.
+            {#if activeProviderEntry.meta.helpUrl}
+              Download a runtime from <code>{activeProviderEntry.meta.helpUrl}</code>
+              (also works with Ollama on <code>http://localhost:11434/v1</code>).
+            {/if}
+          {:else}
+            {activeProviderEntry.meta.name}'s models are locked until we have an API key.
+            Paste your key below — we'll save it to the daemon's .env file as
+            <code>{activeProviderEntry.credentialEnvVar}</code> and unlock
+            {activeProviderEntry.meta.name} immediately.
+            {#if activeProviderEntry.meta.helpUrl}
+              Get a key from <code>{activeProviderEntry.meta.helpUrl}</code>.
+            {/if}
           {/if}
         </div>
         <div class="key-input-row">
           <input
-            type="password"
-            placeholder={activeProviderEntry.meta.keyPrefix
-              ? `${activeProviderEntry.meta.keyPrefix}…`
-              : "API key"}
+            type={isLocal ? "text" : "password"}
+            placeholder={isLocal
+              ? "http://localhost:1234/v1"
+              : activeProviderEntry.meta.keyPrefix
+                ? `${activeProviderEntry.meta.keyPrefix}…`
+                : "API key"}
             value={keyInputs[activeProviderEntry.provider] ?? ""}
             oninput={(e) => {
               const v = (e.currentTarget as HTMLInputElement).value;

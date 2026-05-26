@@ -33,11 +33,19 @@ export const PROVIDER_ENV_VARS: Record<ValidProvider, string> = {
   anthropic: "ANTHROPIC_API_KEY",
   google: "GEMINI_API_KEY",
   groq: "GROQ_API_KEY",
+  local: "LOCAL_API_KEY",
   openai: "OPENAI_API_KEY",
   openrouter: "OPENROUTER_API_KEY",
 } as const;
 
-const ValidProviderSchema = z.enum(["anthropic", "google", "groq", "openai", "openrouter"]);
+const ValidProviderSchema = z.enum([
+  "anthropic",
+  "google",
+  "groq",
+  "local",
+  "openai",
+  "openrouter",
+]);
 export type ValidProvider = z.infer<typeof ValidProviderSchema>;
 
 /**

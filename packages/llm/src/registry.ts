@@ -8,6 +8,7 @@ import { createClaudeCode } from "ai-sdk-provider-claude-code";
 import { createAnthropicWithOptions } from "./anthropic.ts";
 import { createGoogleWithOptions } from "./google.ts";
 import { createGroqWithOptions } from "./groq.ts";
+import { createLocalWithOptions } from "./local.ts";
 import { createOpenAIWithOptions } from "./openai.ts";
 import { createOpenRouterWithOptions } from "./openrouter.ts";
 
@@ -104,6 +105,9 @@ function createRegistry() {
       "claude-code": createClaudeCodeProvider(),
       google: googleViaLitellm,
       groq: groqViaLitellm,
+      // Local servers (LM Studio / Ollama / vLLM) always connect direct —
+      // routing localhost through a remote LiteLLM proxy is the wrong shape.
+      local: createChatCompletionsProvider(createLocalWithOptions()),
       openai: litellmChatProvider,
       openrouter: createChatCompletionsProvider(createOpenRouterWithOptions()),
     });
@@ -115,6 +119,8 @@ function createRegistry() {
     "claude-code": createClaudeCodeProvider(),
     google: createGoogleWithOptions(),
     groq: createGroqWithOptions(),
+    // Force Chat Completions API — LM Studio / Ollama don't speak Responses API.
+    local: createChatCompletionsProvider(createLocalWithOptions()),
     openai: createOpenAIWithOptions(),
     openrouter: createChatCompletionsProvider(createOpenRouterWithOptions()),
   });
