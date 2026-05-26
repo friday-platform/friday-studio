@@ -2,20 +2,11 @@
 #
 # Defaults applied to every test in every suite that includes this file.
 # Per-suite or per-test overrides win (promptfoo deep-merges).
-
-# Grader used for any `llm-rubric` / `factuality` assertion. Pinned so model
-# upgrades on the system-under-test don't silently shift grading bias.
 #
-# Uses `friday-lg` (Sonnet) rather than the SUT aliases (`friday-sm` / `friday-md`)
-# so the grader is never also a system-under-test — self-grading inflates pass
-# rates and masks model-specific weaknesses.
-options:
-  provider:
-    id: openai:chat:friday-lg
-    config:
-      apiBaseUrl: http://localhost:4000/v1
-      apiKey: '{{env.LITELLM_MASTER_KEY}}'
-      temperature: 0
+# When a suite first adds an `llm-rubric` / `factuality` / `model-graded-*`
+# assertion, re-introduce a pinned grader here under `options.provider` so
+# model upgrades on the SUT don't silently shift grading bias. Use a model
+# distinct from the SUT aliases to avoid self-grading.
 
 # No shared floor assertions.
 #
