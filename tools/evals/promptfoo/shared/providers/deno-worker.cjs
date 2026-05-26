@@ -12,20 +12,21 @@
 //   in:  { id, prompt, vars, config }
 //   out: { id, output }                — success; output is a string the
 //                                         suite's assertions can parse.
-//                                         Additional fields on the success
-//                                         line (e.g. tokenUsage, metadata)
-//                                         are forwarded into the
-//                                         ProviderResponse — see callApi.
 //        { id, error }                 — handler threw or rejected
 //
 // Handlers must NOT write to stdout (would corrupt the protocol). The worker
 // redirects console.log/info to stderr defensively.
 //
 // callApi returns the documented promptfoo ProviderResponse shape:
-//   { output, error?, tokenUsage?, metadata? }
+//   { output, error?, metadata? }
 // Worker-side failures surface as { output: null, error } — never as a
 // rejected promise — so promptfoo records them as scored failures instead
 // of uncaught runtime exceptions.
+//
+// Extending the protocol: future fields (e.g. cost, tokenUsage) should be
+// added deliberately on both sides — emit explicitly in worker.ts's Response
+// and forward explicitly in callApi below. No speculative `...extras`
+// passthrough — it hides drift between the two ends.
 
 const path = require("node:path");
 const process = require("node:process");
@@ -182,12 +183,8 @@ class DenoWorkerProvider {
     try {
       const result = await worker.call({ prompt, vars: context?.vars || {}, config: this.config });
       const responseTimeMs = Date.now() - startedAt;
-      // Forward any extra fields the worker emitted (besides id/output) under
-      // metadata so handlers can surface debug info without changing this shim.
-      const { id: _id, output, tokenUsage, ...extras } = result;
-      const response = { output, metadata: { handler: handlerAbsPath, responseTimeMs, ...extras } };
-      if (tokenUsage) response.tokenUsage = tokenUsage;
-      return response;
+      const { output } = result;
+      return { output, metadata: { handler: handlerAbsPath, responseTimeMs } };
     } catch (err) {
       return {
         output: null,
