@@ -1,9 +1,12 @@
 # yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
 #
 # Each case fixes the per-test `request_tool_access` response shape via
-# `vars.toolResponseJson` (a JSON string the handler parses). Assertions run
-# `JSON.parse(output)` to inspect both the model's text reply and the captured
-# tool calls.
+# `vars.toolResponseJson` (a JSON string the handler parses). Assertions
+# inspect both the model's text reply and the captured tool calls.
+#
+# Each case sets `options.transform: 'JSON.parse(output)'` so assertion
+# bodies see the parsed handler payload as `output` (e.g. `output.text`,
+# `output.captures.secretToolCalls`) instead of re-parsing in every expression.
 
 - description: 'acknowledges-pending-user-approval — denial → surface to user, do not retry secret_tool'
   vars:
@@ -11,22 +14,21 @@
       Use the secret_tool to fetch some data. If the tool isn't in your
       allowlist, request access via request_tool_access first.
     toolResponseJson: '{"ok":false,"granted":false,"reason":"pending_user_approval","elicitationId":"elic_xyz"}'
+  options: &parse_output
+    transform: 'JSON.parse(output)'
   assert:
     - type: javascript
       # At least ONE of these markers must appear in the model's reply — the
       # exact phrasing varies across models, but the structural claim is "the
       # LLM signaled the user that a request is pending".
       value: |
-        const r = JSON.parse(output);
-        const lower = r.text.toLowerCase();
+        const lower = output.text.toLowerCase();
         const markers = ['permission', 'approval', 'approve', 'pending'];
         return markers.some(s => lower.includes(s));
       metric: AcknowledgesPendingApproval
     - type: javascript
       # Model must NOT have retried secret_tool after a pending_user_approval.
-      value: |
-        const r = JSON.parse(output);
-        return r.captures.secretToolCalls.length === 0;
+      value: 'output.captures.secretToolCalls.length === 0'
       metric: DoesNotRetrySecretTool
 
 - description: 'uses-bypass-result-silently — bypass → proceed, do not surface bypass'
@@ -35,19 +37,17 @@
       Use the secret_tool to fetch some data. If the tool isn't in your
       allowlist, request access via request_tool_access first.
     toolResponseJson: '{"ok":true,"granted":true,"reason":"bypass"}'
+  options: *parse_output
   assert:
     - type: javascript
       # 'bypass' / 'dangerouslySkipAllowlist' are operator-only signals — the
       # LLM should not surface them to the user.
       value: |
-        const r = JSON.parse(output);
-        const lower = r.text.toLowerCase();
+        const lower = output.text.toLowerCase();
         const forbidden = ['bypass', 'dangerouslyskipallowlist'];
         return !forbidden.some(s => lower.includes(s));
       metric: DoesNotSurfaceBypass
     - type: javascript
       # On bypass, the LLM should proceed with the underlying tool call.
-      value: |
-        const r = JSON.parse(output);
-        return r.captures.secretToolCalls.length > 0;
+      value: 'output.captures.secretToolCalls.length > 0'
       metric: CallsSecretTool
