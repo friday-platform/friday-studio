@@ -128,7 +128,8 @@ export default async function handle(req: Request): Promise<{ output: string; co
   // LiteLLM. Forward to deno-worker.cjs which surfaces it as top-level `cost`
   // on the promptfoo ProviderResponse.
   const responseMeta = await result.response;
-  const costHeader = responseMeta.headers?.["x-litellm-response-cost-original"] ??
+  const costHeader =
+    responseMeta.headers?.["x-litellm-response-cost-original"] ??
     responseMeta.headers?.["x-litellm-response-cost"];
   const cost = costHeader && !Number.isNaN(Number(costHeader)) ? Number(costHeader) : undefined;
 
