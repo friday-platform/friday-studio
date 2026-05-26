@@ -56,6 +56,12 @@ const webhookBodySchema = z.object({
     })
     .optional(),
   foreground_workspace_ids: z.array(z.string()).optional(),
+  /**
+   * Per-turn conversational model override, format `"<provider>:<modelId>"`.
+   * Threaded through `WebChatPayload.model` → `signalData.modelOverride` →
+   * agent `session.modelOverride`. Absent ⇒ daemon-wide default applies.
+   */
+  model: z.string().optional(),
 });
 
 /** Join the text parts of a validated AtlasUIMessage into a flat string. */
@@ -185,6 +191,13 @@ export interface WebChatPayload {
     timezoneOffset: string;
   };
   foregroundWorkspaceIds?: string[];
+  /**
+   * Per-turn conversational model override, `"<provider>:<modelId>"`. Set by
+   * the chat-input picker (per-workspace, persisted in browser localStorage).
+   * Plumbed into `signalData.modelOverride` → agent `session.modelOverride`
+   * where `resolveModelFromString` turns it into a `LanguageModelV3`.
+   */
+  model?: string;
   /**
    * Server-controlled abort signal for this turn. Sourced from the daemon's
    * ChatTurnRegistry — fires when a follow-up message arrives in the same
@@ -340,7 +353,7 @@ export class AtlasWebAdapter implements Adapter<string, WebChatPayload> {
     inlineAttachedFiles(uiMessage, this.workspaceId, chatId);
     const messageText = joinTextParts(uiMessage);
     const userId = request.headers.get("X-Atlas-User-Id") ?? UserStorage.getCachedLocalUserId();
-    const { datetime, foreground_workspace_ids: foregroundWorkspaceIds } = parsed.data;
+    const { datetime, foreground_workspace_ids: foregroundWorkspaceIds, model } = parsed.data;
 
     // Create the buffer BEFORE dispatching so we don't lose early events.
     // Capture the buffer reference so the delayed finishStream only closes
@@ -363,6 +376,7 @@ export class AtlasWebAdapter implements Adapter<string, WebChatPayload> {
       uiMessage,
       datetime,
       foregroundWorkspaceIds,
+      model,
       abortSignal,
       turnBuffer,
     };

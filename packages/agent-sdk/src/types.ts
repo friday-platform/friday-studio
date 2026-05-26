@@ -312,6 +312,15 @@ export const AgentSessionDataSchema = z.object({
     .optional(),
   memoryContextKey: z.string().optional(),
   foregroundWorkspaceIds: z.array(z.string()).optional(),
+  /**
+   * Per-turn conversational model override sourced from the chat-send
+   * request body. Format `"<provider>:<modelId>"` (e.g.
+   * `"anthropic:claude-haiku-4-5"`). When present, the workspace-chat
+   * agent resolves it via `resolveModelFromString` and uses it for the
+   * full turn instead of `platformModels.get("conversational")`.
+   * Absent ⇒ global default applies.
+   */
+  modelOverride: z.string().optional(),
 });
 
 export type AgentSessionData = z.infer<typeof AgentSessionDataSchema>;

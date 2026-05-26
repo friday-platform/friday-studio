@@ -24,6 +24,7 @@ import {
   buildTemporalFacts,
   enterUsageScope,
   type PlatformModels,
+  resolveModelFromString,
   smallLLM,
   type UsageCounter,
 } from "@atlas/llm";
@@ -1345,119 +1346,134 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
 
         let errorEmitted = false;
 
-        const conversationalModel = platformModels.get("conversational");
-        // Drop cross-model assistant messages that carry reasoning parts.
-        //
-        // Two providers fail in opposite ways when replayed across model
-        // boundaries:
-        //   - Groq (llama-3.3): rejects any `reasoning` in input with HTTP 400
-        //     "reasoning is not supported with this model".
-        //   - OpenAI Responses API (gpt-5*, o*): server-side msg/rs ID pairs
-        //     are co-dependent; stripping the reasoning part alone leaves
-        //     the message half of the pair orphaned, yielding
-        //     "Item 'msg_xxx' ... was provided without its required
-        //     'reasoning' item: 'rs_xxx'".
-        //
-        // The only replay shape every provider tolerates is "message not
-        // present at all", so we drop the whole turn rather than trying to
-        // surgically edit a multi-provider-incompatible shape. Same-model
-        // replays keep reasoning intact (tagged via MessageMetadata.provider
-        // + modelId on the originating turn). Untagged messages are treated
-        // as "unknown origin" — if they contain reasoning, drop them too.
-        const sanitizedMessages = messages.filter((m) => {
-          // Strip role:"system" UI messages — these are UI-only affordances
-          // (e.g. the bootstrap workspace-setup welcome) rendered as banners
-          // in the chat list. Passing them to the LLM produces a SystemBlock
-          // mid-conversation; Anthropic rejects that as
-          // "Multiple system messages that are separated by user/assistant
-          // messages." The cacheable system prompt lives in `systemBlocks`,
-          // not in chat history.
-          if (m.role === "system") return false;
-          // Strip synthetic messages — UI-only seeds (e.g. the bootstrap
-          // workspace-setup assistant message that anchors the form via a
-          // fabricated `tool-request_workspace_setup` part). The agent
-          // never actually called that tool, so replaying it as if it had
-          // would let the model treat the fake `pending_confirmation`
-          // output as real prior work, re-call the tool, or hallucinate
-          // from the fake output. The sentinel is set at the synthesis
-          // site (see `buildBootstrapAssistantMessage` in
-          // `setup-spawn.ts`). UI rendering ignores the sentinel — the
-          // tool-call card dispatches on part `type` alone, so the form
-          // still renders.
-          if (m.metadata?.synthetic === true) return false;
-          if (m.role !== "assistant") return true;
-          const fromSameModel =
-            m.metadata?.provider === conversationalModel.provider &&
-            m.metadata?.modelId === conversationalModel.modelId;
-          if (fromSameModel) return true;
-          const hasReasoning = m.parts.some((p) => p.type === "reasoning");
-          return !hasReasoning;
-        });
-
-        // Turn preface (memory + datetime) injected as a synthetic
-        // user-message at position 0 — NOT inside `system`. This keeps
-        // `system` byte-stable across turns so the Anthropic prompt
-        // cache hits the prefix; turn-local variation lives in the
-        // messages array where it doesn't poison the cacheable prefix.
-        // The synthetic message is ephemeral — it isn't appended to
-        // ChatStorage so it doesn't accumulate in the conversation.
-        const messagesWithTurnPreface: AtlasUIMessage[] = turnPreface
-          ? [
-              {
-                id: crypto.randomUUID(),
-                role: "user",
-                parts: [{ type: "text", text: turnPreface }],
-              },
-              ...sanitizedMessages,
-            ]
-          : sanitizedMessages;
-        const modelMessages = await convertToModelMessages(messagesWithTurnPreface, {
-          convertDataPart: (part) => {
-            if (part.type === "data-credential-linked") {
-              const data = (
-                part as { type: string; data?: { displayName?: string; provider?: string } }
-              ).data;
-              const name = data?.displayName ?? data?.provider ?? "service";
-              return { type: "text" as const, text: `Connected ${name}.` };
-            }
-            if (part.type === "data-env-applied") {
-              const data = (part as { type: string; data?: { scope?: string; keys?: string[] } })
-                .data;
-              const scope = data?.scope === "global" ? "global" : "workspace";
-              const keys = Array.isArray(data?.keys) ? data?.keys : [];
-              const keyList = keys.length > 0 ? keys.join(", ") : "(none)";
-              return {
-                type: "text" as const,
-                text: `Applied env write to ${scope} .env: ${keyList}.`,
-              };
-            }
-            return undefined;
-          },
-        });
-
-        // For Anthropic, split the system prompt into 3 cache breakpoints
-        // (block1 weeks-stable, block2 workspace-stable, block3 session-
-        // stable). The Anthropic provider in the AI SDK collects
-        // consecutive system messages into a `system` array of text parts,
-        // each carrying its own `cache_control`. Anthropic allows up to 4
-        // breakpoints per request; we use 3 here, leaving 1 for future
-        // turn-level use. Other providers see a single `system` string —
-        // multi-system messages are not portable.
-        // The AI SDK's Anthropic provider sets `.provider` to surface-
-        // qualified ids like "anthropic.messages" and "anthropic.tools",
-        // never the bare registry key. Match the family prefix so any
-        // future Anthropic surface (Vertex, Bedrock, future endpoints)
-        // also gets the multi-system-block + cache_control layout. A
-        // strict `=== "anthropic"` check silently bypassed the entire
-        // caching path — every turn went through the conventional
-        // top-level `system` string, no cache_control was attached, and
-        // every prefix wrote fresh.
-        const isAnthropic = conversationalModel.provider.startsWith("anthropic");
-        const systemModelMessages: ModelMessage[] = isAnthropic
-          ? buildAnthropicSystemMessages(systemBlocks)
-          : [];
-
         try {
+          // Per-turn model override (from the chat-input picker) takes precedence
+          // over the daemon-wide default. `resolveModelFromString` throws on bad
+          // spec / unknown provider / missing credentials — keep it inside this
+          // try so the existing catch routes the resolver's real error through
+          // the `data-error` writer (same path as a streamText failure) instead
+          // of letting it escape into createUIMessageStream's generic
+          // "An error occurred." fallback.
+          const conversationalModel = session.modelOverride
+            ? resolveModelFromString(session.modelOverride)
+            : platformModels.get("conversational");
+          logger.info("Conversational model resolved", {
+            source: session.modelOverride ? "override" : "default",
+            provider: conversationalModel.provider,
+            modelId: conversationalModel.modelId,
+            workspaceId,
+          });
+          // Drop cross-model assistant messages that carry reasoning parts.
+          //
+          // Two providers fail in opposite ways when replayed across model
+          // boundaries:
+          //   - Groq (llama-3.3): rejects any `reasoning` in input with HTTP 400
+          //     "reasoning is not supported with this model".
+          //   - OpenAI Responses API (gpt-5*, o*): server-side msg/rs ID pairs
+          //     are co-dependent; stripping the reasoning part alone leaves
+          //     the message half of the pair orphaned, yielding
+          //     "Item 'msg_xxx' ... was provided without its required
+          //     'reasoning' item: 'rs_xxx'".
+          //
+          // The only replay shape every provider tolerates is "message not
+          // present at all", so we drop the whole turn rather than trying to
+          // surgically edit a multi-provider-incompatible shape. Same-model
+          // replays keep reasoning intact (tagged via MessageMetadata.provider
+          // + modelId on the originating turn). Untagged messages are treated
+          // as "unknown origin" — if they contain reasoning, drop them too.
+          const sanitizedMessages = messages.filter((m) => {
+            // Strip role:"system" UI messages — these are UI-only affordances
+            // (e.g. the bootstrap workspace-setup welcome) rendered as banners
+            // in the chat list. Passing them to the LLM produces a SystemBlock
+            // mid-conversation; Anthropic rejects that as
+            // "Multiple system messages that are separated by user/assistant
+            // messages." The cacheable system prompt lives in `systemBlocks`,
+            // not in chat history.
+            if (m.role === "system") return false;
+            // Strip synthetic messages — UI-only seeds (e.g. the bootstrap
+            // workspace-setup assistant message that anchors the form via a
+            // fabricated `tool-request_workspace_setup` part). The agent
+            // never actually called that tool, so replaying it as if it had
+            // would let the model treat the fake `pending_confirmation`
+            // output as real prior work, re-call the tool, or hallucinate
+            // from the fake output. The sentinel is set at the synthesis
+            // site (see `buildBootstrapAssistantMessage` in
+            // `setup-spawn.ts`). UI rendering ignores the sentinel — the
+            // tool-call card dispatches on part `type` alone, so the form
+            // still renders.
+            if (m.metadata?.synthetic === true) return false;
+            if (m.role !== "assistant") return true;
+            const fromSameModel =
+              m.metadata?.provider === conversationalModel.provider &&
+              m.metadata?.modelId === conversationalModel.modelId;
+            if (fromSameModel) return true;
+            const hasReasoning = m.parts.some((p) => p.type === "reasoning");
+            return !hasReasoning;
+          });
+
+          // Turn preface (memory + datetime) injected as a synthetic
+          // user-message at position 0 — NOT inside `system`. This keeps
+          // `system` byte-stable across turns so the Anthropic prompt
+          // cache hits the prefix; turn-local variation lives in the
+          // messages array where it doesn't poison the cacheable prefix.
+          // The synthetic message is ephemeral — it isn't appended to
+          // ChatStorage so it doesn't accumulate in the conversation.
+          const messagesWithTurnPreface: AtlasUIMessage[] = turnPreface
+            ? [
+                {
+                  id: crypto.randomUUID(),
+                  role: "user",
+                  parts: [{ type: "text", text: turnPreface }],
+                },
+                ...sanitizedMessages,
+              ]
+            : sanitizedMessages;
+          const modelMessages = await convertToModelMessages(messagesWithTurnPreface, {
+            convertDataPart: (part) => {
+              if (part.type === "data-credential-linked") {
+                const data = (
+                  part as { type: string; data?: { displayName?: string; provider?: string } }
+                ).data;
+                const name = data?.displayName ?? data?.provider ?? "service";
+                return { type: "text" as const, text: `Connected ${name}.` };
+              }
+              if (part.type === "data-env-applied") {
+                const data = (part as { type: string; data?: { scope?: string; keys?: string[] } })
+                  .data;
+                const scope = data?.scope === "global" ? "global" : "workspace";
+                const keys = Array.isArray(data?.keys) ? data?.keys : [];
+                const keyList = keys.length > 0 ? keys.join(", ") : "(none)";
+                return {
+                  type: "text" as const,
+                  text: `Applied env write to ${scope} .env: ${keyList}.`,
+                };
+              }
+              return undefined;
+            },
+          });
+
+          // For Anthropic, split the system prompt into 3 cache breakpoints
+          // (block1 weeks-stable, block2 workspace-stable, block3 session-
+          // stable). The Anthropic provider in the AI SDK collects
+          // consecutive system messages into a `system` array of text parts,
+          // each carrying its own `cache_control`. Anthropic allows up to 4
+          // breakpoints per request; we use 3 here, leaving 1 for future
+          // turn-level use. Other providers see a single `system` string —
+          // multi-system messages are not portable.
+          // The AI SDK's Anthropic provider sets `.provider` to surface-
+          // qualified ids like "anthropic.messages" and "anthropic.tools",
+          // never the bare registry key. Match the family prefix so any
+          // future Anthropic surface (Vertex, Bedrock, future endpoints)
+          // also gets the multi-system-block + cache_control layout. A
+          // strict `=== "anthropic"` check silently bypassed the entire
+          // caching path — every turn went through the conventional
+          // top-level `system` string, no cache_control was attached, and
+          // every prefix wrote fresh.
+          const isAnthropic = conversationalModel.provider.startsWith("anthropic");
+          const systemModelMessages: ModelMessage[] = isAnthropic
+            ? buildAnthropicSystemMessages(systemBlocks)
+            : [];
+
           // Open the usage scope around streamText creation AND stream
           // consumption. `traceModel`'s wrapStream middleware captures
           // the counter reference at scope entry (during the first
@@ -1615,6 +1631,7 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
               type: "data-error",
               data: { error: displayMessage, errorCause },
             });
+            errorEmitted = true;
           }
         }
       },

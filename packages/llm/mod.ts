@@ -34,6 +34,7 @@ export {
   PlatformModelsConfigError,
   type PlatformModelsInput,
   type PlatformRole,
+  resolveModelFromString,
 } from "./src/platform-models.ts";
 export {
   type CostBreakdown,

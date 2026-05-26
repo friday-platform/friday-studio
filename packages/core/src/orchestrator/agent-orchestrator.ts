@@ -71,6 +71,9 @@ export interface AgentExecutionContext {
   /** Process-local key for looking up pre-built AgentMemoryContext from the mount context registry */
   memoryContextKey?: string;
   foregroundWorkspaceIds?: string[];
+  /** Per-turn conversational model override (`"<provider>:<modelId>"`) for
+   *  the workspace-chat agent — sourced from the chat-send body. */
+  modelOverride?: string;
   /** FSM job name — threaded across the MCP boundary so the agent-side
    *  context builder can resolve job-level skill assignments. */
   jobName?: string;
@@ -369,6 +372,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
           datetime: context.datetime,
           memoryContextKey: context.memoryContextKey,
           foregroundWorkspaceIds: context.foregroundWorkspaceIds,
+          modelOverride: context.modelOverride,
           jobName: context.jobName,
           actionId: context.actionId,
           jobTimeoutMs: context.jobTimeoutMs,

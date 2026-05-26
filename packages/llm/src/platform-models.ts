@@ -241,6 +241,40 @@ function resolveRole(
 }
 
 /**
+ * Resolve a single `"provider:modelId"` string into a traced `LanguageModelV3`,
+ * using the same provider registry and credential machinery as
+ * `createPlatformModels`. Designed for per-request overrides (e.g. a chat-send
+ * model picker) where the caller already has a fully-qualified spec rather
+ * than a role.
+ *
+ * Throws a plain `Error` with a descriptive message on:
+ *   - format errors (missing/empty halves around the colon)
+ *   - unknown provider (not in `REGISTRY_PROVIDERS`)
+ *   - missing credentials for the named provider
+ */
+export function resolveModelFromString(spec: string): LanguageModelV3 {
+  const parsed = parseModelId(spec);
+  if (!parsed) {
+    throw new Error(
+      `Invalid model spec "${spec}": must be in 'provider:model' format (e.g., 'anthropic:claude-sonnet-4-6')`,
+    );
+  }
+  if (!isRegistryProvider(parsed.provider)) {
+    throw new Error(
+      `Invalid model spec "${spec}": unknown provider '${parsed.provider}'. Known providers: ${REGISTRY_PROVIDERS.join(", ")}`,
+    );
+  }
+  if (!hasCredential(parsed.provider)) {
+    const envVar = hasEnvVar(parsed.provider) ? PROVIDER_ENV_VARS[parsed.provider] : null;
+    const detail = envVar
+      ? `set ${envVar} (or LITELLM_API_KEY for proxied access)`
+      : `credentials unavailable`;
+    throw new Error(`Invalid model spec "${spec}": missing credentials — ${detail}`);
+  }
+  return traceModel(registry.languageModel(buildRegistryModelId(parsed.provider, parsed.model)));
+}
+
+/**
  * Construct a `PlatformModels` resolver from optional friday.yml configuration.
  *
  * Boot validates every role eagerly and aggregates errors into a single
