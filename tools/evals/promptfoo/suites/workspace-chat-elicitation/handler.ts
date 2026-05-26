@@ -121,9 +121,9 @@ export default async function handle(req: Request): Promise<{ output: string; co
 
   // LiteLLM emits per-request USD cost in the `x-litellm-response-cost` HTTP
   // header rather than the OpenAI-shaped JSON body. The AI SDK exposes HTTP
-  // response headers on `result.response.headers` for HTTP-based providers,
-  // which includes LiteLLM via `openai:chat:*`. Forward it so deno-worker.cjs
-  // can surface it as a top-level `cost` on the promptfoo ProviderResponse.
+  // response headers on `result.response.headers` for any HTTP-based provider
+  // that talks to LiteLLM. Forward it so deno-worker.cjs can surface it as a
+  // top-level `cost` on the promptfoo ProviderResponse.
   const responseMeta = await result.response;
   const costHeader = responseMeta.headers?.["x-litellm-response-cost"];
   const cost = costHeader && !Number.isNaN(Number(costHeader)) ? Number(costHeader) : undefined;

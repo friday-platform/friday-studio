@@ -31,7 +31,7 @@ deno task evals:promptfoo
 EVAL_TIER=small deno task evals:promptfoo
 
 # 4. Or a single suite the long way
-npx promptfoo@latest eval \
+npx promptfoo@0.121.12 eval \
   -c tools/evals/promptfoo/suites/progress-line/promptfooconfig.yaml \
   --no-cache --no-share -j 20
 ```
@@ -251,10 +251,15 @@ Move it here when:
 
 ## Gotchas discovered during integration
 
-- **Promptfoo `cost` assertion can't read LiteLLM cost headers.** Cost
-  is in `x-litellm-response-cost`, not the OpenAI response body. The
-  shared `defaultTest.yaml` omits `cost` for this reason; add it
-  per-suite only when the provider surfaces cost in-band.
+- **Stock `openai:` providers can't read LiteLLM cost headers.** Cost
+  is in `x-litellm-response-cost`, not the OpenAI response body, and
+  promptfoo's stock providers only parse the body. Deno-worker handlers
+  CAN forward it: read `x-litellm-response-cost` off the AI SDK
+  `result.response.headers` and return it as `cost` on the
+  `ProviderResponse` (`workspace-chat-elicitation/handler.ts` is the
+  worked example, per `f8a1b70`). The shared `defaultTest.yaml` omits
+  `cost` so stock-provider suites don't trip; add it per-suite when the
+  handler surfaces cost.
 - **Promptfoo passes assertion `value` through Nunjucks.** Bare `{{` or
   `}}` in a `not-contains` value crashes with "expected expression, got
   end of file". Use `not-regex` with escaped braces (`\\{\\{`) instead.

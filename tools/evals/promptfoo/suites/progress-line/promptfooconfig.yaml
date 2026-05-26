@@ -21,7 +21,7 @@ defaultTest: file://../../shared/defaultTest.yaml
 tests: file://tests.yaml
 
 # Concurrency comes from the CLI (`-j N`) — keep config callers in control.
-# Repeat=1 for now; bump to 3 nightly to surface temperature variance.
+# Repeat=3 surfaces temperature variance across runs.
 evaluateOptions:
   showProgressBar: true
-  repeat: 1
+  repeat: 3
