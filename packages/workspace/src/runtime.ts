@@ -2726,6 +2726,12 @@ export class WorkspaceRuntime {
       ? rawFgIds.filter((id): id is string => typeof id === "string")
       : undefined;
 
+    const rawModelOverride = signal.data?.modelOverride;
+    const modelOverride =
+      typeof rawModelOverride === "string" && rawModelOverride.length > 0
+        ? rawModelOverride
+        : undefined;
+
     const sessionId = signal._context?.sessionId;
     if (!sessionId) {
       throw new Error(
@@ -2806,6 +2812,7 @@ export class WorkspaceRuntime {
                 datetime,
                 memoryContextKey: mountNames.length > 0 ? ctxKey : undefined,
                 foregroundWorkspaceIds,
+                modelOverride,
                 jobName: job.name,
                 actionId: agentId,
                 jobTimeoutMs: job.timeoutMs,

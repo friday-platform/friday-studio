@@ -6656,6 +6656,7 @@
             "npm:eslint-plugin-svelte@^3.17.1",
             "npm:eslint@^10.3.0",
             "npm:globals@^17.6.0",
+            "npm:happy-dom@^20.9.0",
             "npm:isomorphic-dompurify@^2.16.0",
             "npm:marked@^18.0.3",
             "npm:prettier-plugin-svelte@^3.5.2",

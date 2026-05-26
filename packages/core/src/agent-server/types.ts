@@ -136,6 +136,10 @@ const AgentSessionDataSchema = z.object({
   actionId: z.string().optional(),
   /** Parent job timeout in milliseconds for blocking HITL expiry. */
   jobTimeoutMs: z.number().int().positive().optional(),
+  /** Per-turn conversational model override (`"<provider>:<modelId>"`) for
+   *  the workspace-chat agent. Parallel to AgentSessionDataSchema in
+   *  packages/agent-sdk/src/types.ts. */
+  modelOverride: z.string().optional(),
 });
 
 /**

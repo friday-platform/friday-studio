@@ -6,10 +6,11 @@
  * separately in workspace-chat.agent.test.ts.
  */
 
+import process from "node:process";
 import type { AgentContext, AtlasUIMessage, StreamEmitter } from "@atlas/agent-sdk";
 import { createStubPlatformModels } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // ---------------------------------------------------------------------------
 // Hoisted mocks — referenced inside vi.mock() factories
@@ -41,6 +42,7 @@ const mockCreateJobTools = vi.hoisted(() => vi.fn());
 const mockCreateAgentTool = vi.hoisted(() => vi.fn(() => ({})));
 const mockCreateListCapabilitiesTool = vi.hoisted(() => vi.fn());
 
+const mockResolveModelFromString = vi.hoisted(() => vi.fn());
 const mockStreamText = vi.hoisted(() => vi.fn());
 const mockCreateUIMessageStream = vi.hoisted(() => vi.fn());
 const mockConvertToModelMessages = vi.hoisted(() => vi.fn());
@@ -125,6 +127,7 @@ vi.mock("@atlas/llm", async (importOriginal) => {
     smallLLM: mockSmallLLM,
     buildTemporalFacts: mockBuildTemporalFacts,
     getDefaultProviderOpts: mockGetDefaultProviderOpts,
+    resolveModelFromString: mockResolveModelFromString,
   };
 });
 
@@ -165,16 +168,24 @@ vi.mock("./tools/artifact-tools.ts", () => ({
 
 vi.mock("./prompt.txt", () => ({ default: "SYSTEM_PROMPT_PLACEHOLDER" }));
 
-vi.mock("ai", () => ({
-  streamText: mockStreamText,
-  createUIMessageStream: mockCreateUIMessageStream,
-  convertToModelMessages: mockConvertToModelMessages,
-  smoothStream: mockSmoothStream,
-  stepCountIs: mockStepCountIs,
-  hasToolCall: mockHasToolCall,
-  jsonSchema: vi.fn((s: unknown) => s),
-  tool: vi.fn((config: unknown) => config),
-}));
+// Pass through unmocked `ai` exports via importOriginal so the real
+// `resolveModelFromString` (used by the integration test below) can call
+// `createProviderRegistry`, `wrapLanguageModel`, etc. without tripping on
+// undefined-export errors from this mock factory.
+vi.mock("ai", async (importOriginal) => {
+  const actual = (await importOriginal()) as Record<string, unknown>;
+  return {
+    ...actual,
+    streamText: mockStreamText,
+    createUIMessageStream: mockCreateUIMessageStream,
+    convertToModelMessages: mockConvertToModelMessages,
+    smoothStream: mockSmoothStream,
+    stepCountIs: mockStepCountIs,
+    hasToolCall: mockHasToolCall,
+    jsonSchema: vi.fn((s: unknown) => s),
+    tool: vi.fn((config: unknown) => config),
+  };
+});
 
 // ---------------------------------------------------------------------------
 // Import the module under test (triggers createAgent, captures handler)
@@ -383,6 +394,7 @@ describe("workspace-chat handler", () => {
     mockCreateJobTools.mockReset();
     mockCreateAgentTool.mockReset();
     mockCreateListCapabilitiesTool.mockReset();
+    mockResolveModelFromString.mockReset();
     mockStreamText.mockReset();
     mockCreateUIMessageStream.mockReset();
     mockConvertToModelMessages.mockReset();
@@ -1163,6 +1175,260 @@ describe("workspace-chat handler", () => {
     expect(toolNames).toEqual(["list_capabilities", "web_search", "read_file"]);
     expect(result.toolResults).toHaveLength(2);
     expect(result.reasoning).toBe("considered the options");
+  });
+
+  // -----------------------------------------------------------------------
+  // Per-turn model override (chat-input picker)
+  //
+  // These are wiring tests: `resolveModelFromString` is mocked, so they only
+  // assert that session.modelOverride flows into streamText and the message
+  // metadata tagger. Real resolver behavior (provider parsing, credential
+  // checks, error shapes) is covered in
+  // packages/llm/src/platform-models.test.ts → describe("resolveModelFromString").
+  // -----------------------------------------------------------------------
+
+  it("uses session.modelOverride for streamText and message metadata when set", async () => {
+    setupDefaultMocks([makeMessage("user", "Hello")]);
+
+    // Resolver returns a distinct model so we can prove the override branch
+    // is the one feeding streamText and the metadata tagger.
+    const overrideModel = {
+      provider: "anthropic.messages",
+      modelId: "claude-haiku-4-5",
+      specificationVersion: "v3" as const,
+      supportedUrls: {},
+      doGenerate: vi.fn(),
+      doStream: vi.fn(),
+    };
+    mockResolveModelFromString.mockReturnValue(overrideModel);
+
+    let capturedStreamArgs: { model?: unknown } | undefined;
+    let capturedMetadata: { provider?: string; modelId?: string } | undefined;
+    mockStreamText.mockImplementation((opts: { onFinish?: (a: { text: string }) => void }) => {
+      capturedStreamArgs = opts as never;
+      opts.onFinish?.({ text: "Hi" });
+      return {
+        toUIMessageStream: vi
+          .fn()
+          .mockImplementation(
+            ({
+              messageMetadata,
+            }: {
+              messageMetadata: (m: { part: { type: string } }) => Record<string, unknown>;
+            }) => {
+              capturedMetadata = messageMetadata({ part: { type: "finish" } }) as never;
+              return new ReadableStream({ start: (c) => c.close() });
+            },
+          ),
+        finishReason: Promise.resolve("stop"),
+      };
+    });
+
+    const handler = getHandler();
+    const ctx = makeContext({
+      session: {
+        sessionId: "sess-1",
+        workspaceId: "ws-1",
+        streamId: "stream-1",
+        userId: "user-1",
+        modelOverride: "anthropic:claude-haiku-4-5",
+      },
+    });
+    await handler("", ctx);
+
+    expect(mockResolveModelFromString).toHaveBeenCalledWith("anthropic:claude-haiku-4-5");
+    expect(capturedStreamArgs?.model).toBe(overrideModel);
+    expect(capturedMetadata?.provider).toBe("anthropic.messages");
+    expect(capturedMetadata?.modelId).toBe("claude-haiku-4-5");
+  });
+
+  // Integration test: pins the contract between the pill's wire-format spec
+  // ("provider:modelId") and the metadata the agent records, by routing
+  // `resolveModelFromString` to the REAL implementation (not the hoisted
+  // stub). If the resolver's return shape or the metadata tagger drifts,
+  // this test catches it where the wiring tests above cannot.
+  describe("Per-turn model override — real resolver", () => {
+    const ANTHROPIC_KEY = "ANTHROPIC_API_KEY";
+    let originalAnthropicKey: string | undefined;
+
+    beforeEach(() => {
+      originalAnthropicKey = process.env[ANTHROPIC_KEY];
+      process.env[ANTHROPIC_KEY] = "sk-ant-test";
+    });
+
+    afterEach(() => {
+      if (originalAnthropicKey === undefined) delete process.env[ANTHROPIC_KEY];
+      else process.env[ANTHROPIC_KEY] = originalAnthropicKey;
+    });
+
+    it("records the real resolver's provider+modelId in assistant message metadata", async () => {
+      setupDefaultMocks([makeMessage("user", "Hello")]);
+
+      // Route the hoisted mock to the real implementation for this test
+      // only. importActual bypasses the vi.mock("@atlas/llm") factory and
+      // returns the unmocked module, so we exercise the production parser,
+      // credential check, and registry resolution.
+      const actualLlm = await vi.importActual<typeof import("@atlas/llm")>("@atlas/llm");
+      mockResolveModelFromString.mockImplementation(actualLlm.resolveModelFromString);
+
+      // Resolve once outside the handler to capture the resolver's own
+      // (provider, modelId) — the assertions below pin metadata against
+      // what the resolver actually returned rather than a hand-rolled
+      // string the test author chose.
+      const resolved = actualLlm.resolveModelFromString("anthropic:claude-haiku-4-5");
+
+      let capturedStreamArgs: { model?: unknown } | undefined;
+      let capturedMetadata: { provider?: string; modelId?: string } | undefined;
+      mockStreamText.mockImplementation((opts: { onFinish?: (a: { text: string }) => void }) => {
+        capturedStreamArgs = opts as never;
+        opts.onFinish?.({ text: "Hi" });
+        return {
+          toUIMessageStream: vi
+            .fn()
+            .mockImplementation(
+              ({
+                messageMetadata,
+              }: {
+                messageMetadata: (m: { part: { type: string } }) => Record<string, unknown>;
+              }) => {
+                capturedMetadata = messageMetadata({ part: { type: "finish" } }) as never;
+                return new ReadableStream({ start: (c) => c.close() });
+              },
+            ),
+          finishReason: Promise.resolve("stop"),
+        };
+      });
+
+      const handler = getHandler();
+      const ctx = makeContext({
+        session: {
+          sessionId: "sess-1",
+          workspaceId: "ws-1",
+          streamId: "stream-1",
+          userId: "user-1",
+          modelOverride: "anthropic:claude-haiku-4-5",
+        },
+      });
+      await handler("", ctx);
+
+      expect(mockResolveModelFromString).toHaveBeenCalledWith("anthropic:claude-haiku-4-5");
+      const streamModel = capturedStreamArgs?.model as
+        | { provider?: string; modelId?: string }
+        | undefined;
+      expect(streamModel?.provider).toBe(resolved.provider);
+      expect(streamModel?.modelId).toBe(resolved.modelId);
+      expect(capturedMetadata?.provider).toBe(resolved.provider);
+      expect(capturedMetadata?.modelId).toBe(resolved.modelId);
+    });
+  });
+
+  it("falls back to platformModels.get('conversational') when no modelOverride", async () => {
+    setupDefaultMocks([makeMessage("user", "Hello")]);
+
+    let capturedStreamArgs: { model?: unknown } | undefined;
+    let capturedMetadata: { provider?: string; modelId?: string } | undefined;
+    mockStreamText.mockImplementation((opts: { onFinish?: (a: { text: string }) => void }) => {
+      capturedStreamArgs = opts as never;
+      opts.onFinish?.({ text: "Hi" });
+      return {
+        toUIMessageStream: vi
+          .fn()
+          .mockImplementation(
+            ({
+              messageMetadata,
+            }: {
+              messageMetadata: (m: { part: { type: string } }) => Record<string, unknown>;
+            }) => {
+              capturedMetadata = messageMetadata({ part: { type: "finish" } }) as never;
+              return new ReadableStream({ start: (c) => c.close() });
+            },
+          ),
+        finishReason: Promise.resolve("stop"),
+      };
+    });
+
+    const handler = getHandler();
+    // Default context (no modelOverride on session).
+    const ctx = makeContext();
+    await handler("", ctx);
+
+    expect(mockResolveModelFromString).not.toHaveBeenCalled();
+    // stubPlatformModels.get('conversational') returns the stub LanguageModelV3
+    // whose modelId is the role name.
+    const streamModel = capturedStreamArgs?.model as { modelId?: string; provider?: string };
+    expect(streamModel?.modelId).toBe("conversational");
+    expect(capturedMetadata?.modelId).toBe("conversational");
+    expect(capturedMetadata?.provider).toBe("stub.language-model");
+  });
+
+  it("emits data-error and skips streamText when resolveModelFromString throws", async () => {
+    setupDefaultMocks([makeMessage("user", "Hello")]);
+
+    const resolveError = new Error("Unknown provider in spec: bogus:nope");
+    mockResolveModelFromString.mockImplementation(() => {
+      throw resolveError;
+    });
+
+    // Surface the thrown message through the display path so the test
+    // asserts the real error text reaches the writer, not the static
+    // "Something went wrong" mocked default.
+    const { getErrorDisplayMessage } = await import("@atlas/core/errors");
+    vi.mocked(getErrorDisplayMessage).mockImplementation(
+      (cause: unknown) => (cause as { raw: Error }).raw.message,
+    );
+
+    // Capture the writer that the agent's try/catch writes the
+    // `data-error` chunk to. createUIMessageStream is the boundary that
+    // hands the writer into the execute callback containing the catch.
+    const writerWrites: Array<{ type: string; data?: unknown }> = [];
+    mockCreateUIMessageStream.mockImplementation(
+      ({
+        execute,
+        onFinish,
+        originalMessages,
+      }: {
+        execute: (ctx: {
+          writer: { write: (chunk: { type: string; data?: unknown }) => void; merge: () => void };
+        }) => Promise<void>;
+        onFinish: (ctx: { messages: AtlasUIMessage[] }) => Promise<void>;
+        originalMessages: AtlasUIMessage[];
+      }) => {
+        return new ReadableStream({
+          async start(controller) {
+            const writer = {
+              write: (chunk: { type: string; data?: unknown }) => {
+                writerWrites.push(chunk);
+              },
+              merge: vi.fn(),
+            };
+            await execute({ writer });
+            await onFinish({ messages: originalMessages });
+            controller.close();
+          },
+        });
+      },
+    );
+
+    const handler = getHandler();
+    const ctx = makeContext({
+      session: {
+        sessionId: "sess-1",
+        workspaceId: "ws-1",
+        streamId: "stream-1",
+        userId: "user-1",
+        modelOverride: "bogus:nope",
+      },
+    });
+    await handler("", ctx);
+
+    expect(mockResolveModelFromString).toHaveBeenCalledWith("bogus:nope");
+    expect(mockStreamText).not.toHaveBeenCalled();
+
+    const errorChunks = writerWrites.filter((c) => c.type === "data-error");
+    expect(errorChunks).toHaveLength(1);
+    const errorData = errorChunks[0]?.data as { error: string; errorCause: { raw: Error } };
+    expect(errorData.error).toBe("Unknown provider in spec: bogus:nope");
+    expect(errorData.errorCause.raw).toBe(resolveError);
   });
 
   it("returns empty tool arrays when streamText onFinish reports no tools", async () => {

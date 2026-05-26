@@ -1,6 +1,7 @@
 <script lang="ts">
   import { ALLOWED_EXTENSION_LIST } from "@atlas/core/artifacts/file-upload";
   import { toast } from "@atlas/ui";
+  import ModelPill from "./model-pill.svelte";
   import {
     applyEditDelta,
     detectActiveMentionQuery,
@@ -592,6 +593,7 @@
         {/if}
       </button>
     {/if}
+    <ModelPill {workspaceId} />
     {#if streaming}
       <button
         class="stop-button"
