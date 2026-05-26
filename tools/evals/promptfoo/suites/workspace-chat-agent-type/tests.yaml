@@ -47,10 +47,11 @@
 
 # Acknowledged non-deterministic per the original eval's docstring
 # (agent-type-default.eval.ts) — the same prompt produces opposite
-# type-selection outcomes across sessions. Repeat 3x to mitigate flake.
+# type-selection outcomes across sessions. Flake is absorbed at the suite
+# level via `evaluateOptions.repeat: 3` in promptfooconfig.yaml (promptfoo
+# has no per-test repeat field; the previous `options.repeat: 3` here
+# silently no-op'd).
 - description: 'csv-streaming-user — large-CSV ingest should be type:user'
-  options:
-    repeat: 3
   vars:
     user_prompt: >-
       Build me a workspace that ingests 50MB CSV uploads, validates the row

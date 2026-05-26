@@ -42,3 +42,11 @@ tests: file://tests.yaml
 
 evaluateOptions:
   showProgressBar: true
+  # csv-streaming-user is acknowledged non-deterministic (the same prompt
+  # produces opposite type-selection outcomes across sessions; see tests.yaml
+  # and the original agent-type-default.eval.ts docstring). `repeat` is only
+  # valid at the config level — there is no per-test `options.repeat` field,
+  # so we repeat the entire suite 3× and let per-metric aggregates absorb the
+  # flake. All 5 cases × 2 providers now run 3×, so expect ~3× spend on this
+  # suite vs. a single pass.
+  repeat: 3
