@@ -25,7 +25,7 @@
     forbiddenAtlasAgentsJson: '["email"]'
     requiredMcpServersJson: '["google-gmail"]'
     forbidUserAgentRegistration: true
-  assert:
+  assert: &agent_type_checks
     - type: javascript
       value: file://assertions/check.js:correctTypeChosen
       metric: correct-type-chosen
@@ -45,7 +45,12 @@
       value: file://assertions/check.js:noPhantomAtlasAgent
       metric: no-phantom-atlas-agent
 
+# Acknowledged non-deterministic per the original eval's docstring
+# (agent-type-default.eval.ts) — the same prompt produces opposite
+# type-selection outcomes across sessions. Repeat 3x to mitigate flake.
 - description: 'csv-streaming-user — large-CSV ingest should be type:user'
+  options:
+    repeat: 3
   vars:
     user_prompt: >-
       Build me a workspace that ingests 50MB CSV uploads, validates the row
@@ -56,25 +61,7 @@
     forbiddenAtlasAgentsJson: '[]'
     requiredMcpServersJson: '[]'
     forbidUserAgentRegistration: false
-  assert:
-    - type: javascript
-      value: file://assertions/check.js:correctTypeChosen
-      metric: correct-type-chosen
-    - type: javascript
-      value: file://assertions/check.js:noWrongType
-      metric: no-wrong-type
-    - type: javascript
-      value: file://assertions/check.js:noOverdelegatedAtlas
-      metric: no-overdelegated-atlas
-    - type: javascript
-      value: file://assertions/check.js:noSpuriousUserAgent
-      metric: no-spurious-user-agent
-    - type: javascript
-      value: file://assertions/check.js:requiredMcpWired
-      metric: required-mcp-wired
-    - type: javascript
-      value: file://assertions/check.js:noPhantomAtlasAgent
-      metric: no-phantom-atlas-agent
+  assert: *agent_type_checks
 
 - description: 'code-gen-llm-not-claude-code — code-gen should be type:llm, NOT claude-code'
   vars:
@@ -87,25 +74,7 @@
     forbiddenAtlasAgentsJson: '["claude-code"]'
     requiredMcpServersJson: '[]'
     forbidUserAgentRegistration: false
-  assert:
-    - type: javascript
-      value: file://assertions/check.js:correctTypeChosen
-      metric: correct-type-chosen
-    - type: javascript
-      value: file://assertions/check.js:noWrongType
-      metric: no-wrong-type
-    - type: javascript
-      value: file://assertions/check.js:noOverdelegatedAtlas
-      metric: no-overdelegated-atlas
-    - type: javascript
-      value: file://assertions/check.js:noSpuriousUserAgent
-      metric: no-spurious-user-agent
-    - type: javascript
-      value: file://assertions/check.js:requiredMcpWired
-      metric: required-mcp-wired
-    - type: javascript
-      value: file://assertions/check.js:noPhantomAtlasAgent
-      metric: no-phantom-atlas-agent
+  assert: *agent_type_checks
 
 - description: 'send-daily-report-email — daily email report must use type:llm + gmail MCP, never agent:email'
   vars:
@@ -119,25 +88,7 @@
     forbiddenAtlasAgentsJson: '["email"]'
     requiredMcpServersJson: '["google-gmail"]'
     forbidUserAgentRegistration: false
-  assert:
-    - type: javascript
-      value: file://assertions/check.js:correctTypeChosen
-      metric: correct-type-chosen
-    - type: javascript
-      value: file://assertions/check.js:noWrongType
-      metric: no-wrong-type
-    - type: javascript
-      value: file://assertions/check.js:noOverdelegatedAtlas
-      metric: no-overdelegated-atlas
-    - type: javascript
-      value: file://assertions/check.js:noSpuriousUserAgent
-      metric: no-spurious-user-agent
-    - type: javascript
-      value: file://assertions/check.js:requiredMcpWired
-      metric: required-mcp-wired
-    - type: javascript
-      value: file://assertions/check.js:noPhantomAtlasAgent
-      metric: no-phantom-atlas-agent
+  assert: *agent_type_checks
 
 - description: 'explicit-llm-override — user explicitly names type:llm — must respect it'
   vars:
@@ -150,22 +101,4 @@
     forbiddenAtlasAgentsJson: '[]'
     requiredMcpServersJson: '["google-gmail"]'
     forbidUserAgentRegistration: true
-  assert:
-    - type: javascript
-      value: file://assertions/check.js:correctTypeChosen
-      metric: correct-type-chosen
-    - type: javascript
-      value: file://assertions/check.js:noWrongType
-      metric: no-wrong-type
-    - type: javascript
-      value: file://assertions/check.js:noOverdelegatedAtlas
-      metric: no-overdelegated-atlas
-    - type: javascript
-      value: file://assertions/check.js:noSpuriousUserAgent
-      metric: no-spurious-user-agent
-    - type: javascript
-      value: file://assertions/check.js:requiredMcpWired
-      metric: required-mcp-wired
-    - type: javascript
-      value: file://assertions/check.js:noPhantomAtlasAgent
-      metric: no-phantom-atlas-agent
+  assert: *agent_type_checks
