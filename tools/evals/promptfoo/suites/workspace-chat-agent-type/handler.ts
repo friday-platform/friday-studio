@@ -389,14 +389,19 @@ export default async function handle(req: Request): Promise<{ output: string }> 
     system: SYSTEM_PROMPT,
     messages: [{ role: "user", content: req.prompt }],
     tools,
+    temperature: 0,
     // Workspace authoring touches more tools (capabilities + skills + multi-agent
     // + jobs + signals) than the bundled-agent suite — 20 steps lines up with
     // the original eval's budget.
     stopWhen: stepCountIs(20),
   });
 
-  for await (const _chunk of result.fullStream) {
-    // no-op
+  // Re-throw mid-stream errors so the worker surfaces them as ERROR rows
+  // instead of empty captures that downstream assertions mistake for PASS.
+  for await (const chunk of result.fullStream) {
+    if (chunk.type === "error") {
+      throw chunk.error instanceof Error ? chunk.error : new Error(String(chunk.error));
+    }
   }
 
   // Surface the known-bundled-agent set so promptfoo assertions can run the

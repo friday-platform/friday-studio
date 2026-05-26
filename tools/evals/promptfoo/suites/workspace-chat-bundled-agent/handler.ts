@@ -359,12 +359,17 @@ export default async function handle(req: Request): Promise<{ output: string }> 
     system: SYSTEM_PROMPT,
     messages: [{ role: "user", content: req.prompt }],
     tools,
+    temperature: 0,
     stopWhen: stepCountIs(12),
   });
 
   // Drain — assertions only care about captured tool-call shapes, not text.
-  for await (const _chunk of result.fullStream) {
-    // no-op
+  // Re-throw mid-stream errors so the worker surfaces them as ERROR rows
+  // instead of empty captures that downstream assertions mistake for PASS.
+  for await (const chunk of result.fullStream) {
+    if (chunk.type === "error") {
+      throw chunk.error instanceof Error ? chunk.error : new Error(String(chunk.error));
+    }
   }
 
   return { output: JSON.stringify({ captures }) };

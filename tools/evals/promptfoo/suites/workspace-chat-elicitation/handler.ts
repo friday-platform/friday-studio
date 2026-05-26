@@ -107,6 +107,9 @@ export default async function handle(req: Request): Promise<{ output: string }> 
 
   let text = "";
   for await (const chunk of result.fullStream) {
+    if (chunk.type === "error") {
+      throw chunk.error instanceof Error ? chunk.error : new Error(String(chunk.error));
+    }
     if (chunk.type === "text-delta") {
       const delta =
         (chunk as { textDelta?: string; text?: string }).textDelta ??
