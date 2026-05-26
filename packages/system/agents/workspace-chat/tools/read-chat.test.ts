@@ -83,13 +83,15 @@ describe("read_chat (agent tool)", () => {
     }));
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue(
-        jsonResponse({
-          chat: { id: "c1", title: null, workspaceId: "ws-a", userId: "u" },
-          messages: last100,
-          totalMessageCount: 5000,
-        }),
-      ),
+      vi
+        .fn()
+        .mockResolvedValue(
+          jsonResponse({
+            chat: { id: "c1", title: null, workspaceId: "ws-a", userId: "u" },
+            messages: last100,
+            totalMessageCount: 5000,
+          }),
+        ),
     );
 
     const result = await getExecute()({ workspace_id: "ws-a", chat_id: "c1" });

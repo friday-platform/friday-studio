@@ -1035,7 +1035,6 @@ export function createMessageHandler(
         ? message.raw.model
         : undefined;
 
-
     // Capture the buffer this turn owns so stale producers can't bleed into
     // a follow-up turn's buffer. The web adapter stashes the buffer it
     // created on `Message.raw.turnBuffer` at dispatch time — reading it

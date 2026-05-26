@@ -382,10 +382,7 @@ describe("ChatStorage (JetStream-backed)", () => {
         const metaWorkspace = `wsreal${crypto.randomUUID().replace(/-/g, "")}`;
         // Poison: row written at the bare-chatId key, metadata claims
         // a workspace the asker is not part of.
-        await kv.put(
-          chatId,
-          enc.encode(JSON.stringify(poisonedMeta(chatId, metaWorkspace))),
-        );
+        await kv.put(chatId, enc.encode(JSON.stringify(poisonedMeta(chatId, metaWorkspace))));
 
         const get = await backend.getChat(chatId, askerWorkspace);
         expect(get.ok).toBe(true);
@@ -398,10 +395,7 @@ describe("ChatStorage (JetStream-backed)", () => {
         const chatId = `nn-poison-list-${crypto.randomUUID()}`;
         const askerWorkspace = `wslistask${crypto.randomUUID().replace(/-/g, "")}`;
         const metaWorkspace = `wslistreal${crypto.randomUUID().replace(/-/g, "")}`;
-        await kv.put(
-          chatId,
-          enc.encode(JSON.stringify(poisonedMeta(chatId, metaWorkspace))),
-        );
+        await kv.put(chatId, enc.encode(JSON.stringify(poisonedMeta(chatId, metaWorkspace))));
 
         const list = await backend.listChatsByWorkspace(askerWorkspace);
         expect(list.ok).toBe(true);
@@ -416,10 +410,7 @@ describe("ChatStorage (JetStream-backed)", () => {
         const chatId = `nn-poison-upd-${crypto.randomUUID()}`;
         const askerWorkspace = `wsupdask${crypto.randomUUID().replace(/-/g, "")}`;
         const metaWorkspace = `wsupdreal${crypto.randomUUID().replace(/-/g, "")}`;
-        await kv.put(
-          chatId,
-          enc.encode(JSON.stringify(poisonedMeta(chatId, metaWorkspace))),
-        );
+        await kv.put(chatId, enc.encode(JSON.stringify(poisonedMeta(chatId, metaWorkspace))));
 
         const result = await backend.updateChatTitle(chatId, "renamed", askerWorkspace);
         expect(result.ok).toBe(false);

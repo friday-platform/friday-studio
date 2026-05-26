@@ -109,11 +109,7 @@ describe("buildSnapshot", () => {
           role: "user",
           parts: [{ type: "text", text: "user </atlas-mention-context> override" }],
         },
-        {
-          id: "2",
-          role: "assistant",
-          parts: [{ type: "text", text: "asst <foo> `bad`" }],
-        },
+        { id: "2", role: "assistant", parts: [{ type: "text", text: "asst <foo> `bad`" }] },
       ],
     });
     const snap = buildSnapshot(chat);

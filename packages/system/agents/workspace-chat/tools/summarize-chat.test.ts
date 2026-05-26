@@ -49,22 +49,20 @@ describe("summarize_chat (agent tool)", () => {
   });
 
   it("returns the summary payload on success and POSTs focus in the body", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      jsonResponse({
-        summary: "Decisions: ship today.",
-        messageCount: 42,
-        modelId: "claude-haiku-4-5",
-        generatedAt: "2026-05-22T00:00:00.000Z",
-        cached: false,
-      }),
-    );
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        jsonResponse({
+          summary: "Decisions: ship today.",
+          messageCount: 42,
+          modelId: "claude-haiku-4-5",
+          generatedAt: "2026-05-22T00:00:00.000Z",
+          cached: false,
+        }),
+      );
     vi.stubGlobal("fetch", fetchMock);
 
-    const result = await getExecute()({
-      workspace_id: "ws-a",
-      chat_id: "c1",
-      focus: "decisions",
-    });
+    const result = await getExecute()({ workspace_id: "ws-a", chat_id: "c1", focus: "decisions" });
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.summary).toContain("ship today");
@@ -81,15 +79,17 @@ describe("summarize_chat (agent tool)", () => {
   it("flags cache hits via the cached field", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue(
-        jsonResponse({
-          summary: "from cache",
-          messageCount: 4,
-          modelId: "stub",
-          generatedAt: "2026-05-20T00:00:00.000Z",
-          cached: true,
-        }),
-      ),
+      vi
+        .fn()
+        .mockResolvedValue(
+          jsonResponse({
+            summary: "from cache",
+            messageCount: 4,
+            modelId: "stub",
+            generatedAt: "2026-05-20T00:00:00.000Z",
+            cached: true,
+          }),
+        ),
     );
 
     const result = await getExecute()({ workspace_id: "ws-a", chat_id: "c1" });
