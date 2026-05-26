@@ -73,7 +73,7 @@ interface Request {
   config: { registryId?: string } & Record<string, unknown>;
 }
 
-export default async function handle(req: Request): Promise<{ output: string }> {
+export default async function handle(req: Request): Promise<{ output: string; cost?: number }> {
   if (!req.config.registryId) {
     throw new Error("workspace-chat-elicitation: providerConfig.registryId is required");
   }
@@ -119,5 +119,14 @@ export default async function handle(req: Request): Promise<{ output: string }> 
     }
   }
 
-  return { output: JSON.stringify({ text, captures }) };
+  // LiteLLM emits per-request USD cost in the `x-litellm-response-cost` HTTP
+  // header rather than the OpenAI-shaped JSON body. The AI SDK exposes HTTP
+  // response headers on `result.response.headers` for HTTP-based providers,
+  // which includes LiteLLM via `openai:chat:*`. Forward it so deno-worker.cjs
+  // can surface it as a top-level `cost` on the promptfoo ProviderResponse.
+  const responseMeta = await result.response;
+  const costHeader = responseMeta.headers?.["x-litellm-response-cost"];
+  const cost = costHeader !== undefined ? Number(costHeader) : undefined;
+
+  return { output: JSON.stringify({ text, captures }), cost };
 }

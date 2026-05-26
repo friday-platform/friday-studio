@@ -183,8 +183,14 @@ class DenoWorkerProvider {
     try {
       const result = await worker.call({ prompt, vars: context?.vars || {}, config: this.config });
       const responseTimeMs = Date.now() - startedAt;
-      const { output } = result;
-      return { output, metadata: { handler: handlerAbsPath, responseTimeMs } };
+      const { output, cost } = result;
+      // `cost` lives at the top level of ProviderResponse (per promptfoo's
+      // custom-api spec) so its built-in `cost` assertion can read it. Only
+      // forward when the handler actually surfaced a number — undefined would
+      // make promptfoo treat the row as cost=0 and trip threshold asserts.
+      const response = { output, metadata: { handler: handlerAbsPath, responseTimeMs } };
+      if (typeof cost === "number") response.cost = cost;
+      return response;
     } catch (err) {
       return {
         output: null,

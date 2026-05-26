@@ -30,6 +30,15 @@
       # Model must NOT have retried secret_tool after a pending_user_approval.
       value: 'output.captures.secretToolCalls.length === 0'
       metric: DoesNotRetrySecretTool
+    # Per-row USD cost surfaced via the deno-worker bridge (handler reads
+    # x-litellm-response-cost off the AI SDK response headers). Initial
+    # calibration: 0.05 USD per row for friday-md/-lg on the elicitation
+    # workload. Tune up once we have a few runs of data — keep it loose enough
+    # that normal variance doesn't trip it, tight enough that a 10× regression
+    # (e.g. a runaway tool-call loop) fails the suite.
+    - type: cost
+      threshold: 0.05
+      metric: CostUnderThreshold
 
 - description: 'uses-bypass-result-silently — bypass → proceed, do not surface bypass'
   vars:
@@ -51,3 +60,7 @@
       # On bypass, the LLM should proceed with the underlying tool call.
       value: 'output.captures.secretToolCalls.length > 0'
       metric: CallsSecretTool
+    # Same per-row cost ceiling as the pending-approval case (see note above).
+    - type: cost
+      threshold: 0.05
+      metric: CostUnderThreshold

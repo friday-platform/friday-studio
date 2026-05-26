@@ -56,6 +56,13 @@ interface Request {
 interface Response {
   /** Stringified payload the suite's assertions can parse. */
   output: string;
+  /**
+   * Per-request USD cost. Handlers that talk to LiteLLM read
+   * `x-litellm-response-cost` off the AI SDK response headers and surface it
+   * here so deno-worker.cjs can forward it to promptfoo's `cost` assertion.
+   * Omit when the underlying provider doesn't expose cost.
+   */
+  cost?: number;
 }
 
 // Raw stdout writer — only this function writes to stdout in the whole worker.
@@ -94,7 +101,7 @@ for await (const chunk of Deno.stdin.readable) {
     }
     Promise.resolve()
       .then(() => handle(req) as Promise<Response>)
-      .then((result) => writeLine({ id: req.id, output: result.output }))
+      .then((result) => writeLine({ id: req.id, output: result.output, cost: result.cost }))
       .catch((err) => writeLine({ id: req.id, error: errorToString(err) }));
   }
 }

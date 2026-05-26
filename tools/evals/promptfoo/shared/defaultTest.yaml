@@ -17,7 +17,11 @@
 #     step agentic workflows; the 8s floor flagged them as failures even when
 #     every other assertion passed.
 #
-# `cost` assertion is intentionally omitted: when promptfoo's `openai:` provider
-# talks to LiteLLM, cost lives in the `x-litellm-response-cost` response header
-# (not the OpenAI-shaped JSON body), so promptfoo reads cost as 0 and errors.
-# Opt in per-suite if a provider surfaces cost in-band.
+# `cost` is not floored here, but is now flowing through deno-worker for
+# handlers that opt in: the worker handler reads `x-litellm-response-cost` off
+# the AI SDK response headers and returns it; deno-worker.cjs forwards it as
+# the top-level `cost` field on ProviderResponse. Opt in per-suite by adding a
+# `cost: { threshold: <USD> }` assertion. Suites that use promptfoo's stock
+# `openai:` provider (not the deno-worker bridge) still see cost as 0 because
+# the OpenAI-shaped JSON body has no cost field — keep those suites's `cost`
+# assertions off.
