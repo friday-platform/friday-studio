@@ -78,7 +78,11 @@ function noWrongType(output, context) {
     return { pass: true, score: 1, reason: "no forbidden types declared for this case" };
   }
   if (captures.upsertAgents.length === 0) {
-    return { pass: false, score: 0, reason: "no upsert_agent calls emitted — cannot verify forbidden types" };
+    return {
+      pass: false,
+      score: 0,
+      reason: "no upsert_agent calls emitted — cannot verify forbidden types",
+    };
   }
   const wrongType = captures.upsertAgents.filter((u) => forbiddenTypes.has(u.config.type));
   if (wrongType.length === 0) {

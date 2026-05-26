@@ -43,9 +43,7 @@ function noRedundantMcpEnable(output) {
       reason: "no upsert_agent calls emitted — cannot verify redundant MCP enable",
     };
   }
-  const redundant = captures.enabledMcpServers.filter((e) =>
-    BROWSER_MCP_IDS.includes(e.serverId),
-  );
+  const redundant = captures.enabledMcpServers.filter((e) => BROWSER_MCP_IDS.includes(e.serverId));
   if (redundant.length === 0) {
     return {
       pass: true,
@@ -81,9 +79,7 @@ function noRedundantMcpViaToolList(output) {
     if (u.config.type === "atlas") return false;
     const tools = u.config?.config?.tools;
     if (!Array.isArray(tools)) return false;
-    return tools.some(
-      (t) => typeof t === "string" && BROWSER_MCP_IDS.includes(t.split("/")[0]),
-    );
+    return tools.some((t) => typeof t === "string" && BROWSER_MCP_IDS.includes(t.split("/")[0]));
   });
   if (redundant.length === 0) {
     return {
@@ -101,7 +97,4 @@ function noRedundantMcpViaToolList(output) {
   };
 }
 
-module.exports = {
-  noRedundantMcpEnable,
-  noRedundantMcpViaToolList,
-};
+module.exports = { noRedundantMcpEnable, noRedundantMcpViaToolList };
