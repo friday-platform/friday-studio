@@ -11,9 +11,17 @@
 //   correct-type-chosen, no-wrong-type, no-overdelegated-atlas,
 //   no-spurious-user-agent, required-mcp-wired, no-phantom-atlas-agent.
 //
-// Constraints whose per-case vars are empty (e.g. no forbidden atlas agents
-// declared) return a trivially-passing result so every case can wire the
-// full set of asserts uniformly.
+// Two distinct trivially-pass patterns to keep separate:
+//   1. Case-vars empty (intentional): e.g. forbiddenAtlasAgentsJson="[]" or
+//      no required MCP servers declared. Returns pass:true so every case can
+//      wire the full set of asserts uniformly without per-case branching.
+//   2. Captures empty (handler failure mode, NOT a real pass): if a model
+//      emits zero upsert_agent calls — or the handler swallows an error
+//      chunk and surfaces empty captures — the constraint filters
+//      vacuously match and would silently report pass. Metrics that depend
+//      on upsert shape (noWrongType, noOverdelegatedAtlas,
+//      noPhantomAtlasAgent) explicitly guard upsertAgents.length > 0 and
+//      fail when it isn't, so a broken run doesn't masquerade as ~67% PASS.
 
 function parseContext(output, context) {
   const parsed = JSON.parse(output);
@@ -69,6 +77,9 @@ function noWrongType(output, context) {
   if (forbiddenTypes.size === 0) {
     return { pass: true, score: 1, reason: "no forbidden types declared for this case" };
   }
+  if (captures.upsertAgents.length === 0) {
+    return { pass: false, score: 0, reason: "no upsert_agent calls emitted — cannot verify forbidden types" };
+  }
   const wrongType = captures.upsertAgents.filter((u) => forbiddenTypes.has(u.config.type));
   if (wrongType.length === 0) {
     return {
@@ -91,6 +102,13 @@ function noOverdelegatedAtlas(output, context) {
   const { captures, forbiddenAtlasAgents } = parseContext(output, context);
   if (forbiddenAtlasAgents.size === 0) {
     return { pass: true, score: 1, reason: "no forbidden atlas agents declared for this case" };
+  }
+  if (captures.upsertAgents.length === 0) {
+    return {
+      pass: false,
+      score: 0,
+      reason: "no upsert_agent calls emitted — cannot verify forbidden atlas agents",
+    };
   }
   const wrongAtlas = captures.upsertAgents.filter(
     (u) => u.config.type === "atlas" && forbiddenAtlasAgents.has(u.config.agent),
@@ -165,6 +183,13 @@ function requiredMcpWired(output, context) {
 // Deno-only @atlas/bundled-agents package isn't importable.)
 function noPhantomAtlasAgent(output, context) {
   const { captures, knownBundledAgents } = parseContext(output, context);
+  if (captures.upsertAgents.length === 0) {
+    return {
+      pass: false,
+      score: 0,
+      reason: "no upsert_agent calls emitted — cannot verify phantom atlas agents",
+    };
+  }
   const phantomAtlas = captures.upsertAgents.filter(
     (u) =>
       u.config.type === "atlas" &&
