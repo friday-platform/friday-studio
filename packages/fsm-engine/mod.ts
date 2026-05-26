@@ -19,6 +19,7 @@ export type {
   AgentExecutor,
   AgentExecutorOptions,
   FSMEngineOptions,
+  SignalOutcome,
 } from "./fsm-engine.ts";
 export { FSMEngine, interpolatePromptPlaceholders } from "./fsm-engine.ts";
 // LLM integration

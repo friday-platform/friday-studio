@@ -411,6 +411,30 @@ export type AgentExecutor = (
   options?: AgentExecutorOptions,
 ) => Promise<AgentSDKExecutionResult>;
 
+/**
+ * Outcome of a top-level {@link FSMEngine.signal} call. Returned so callers
+ * (e.g. the workspace runtime) can distinguish a real run from a silent
+ * no-op — a signal that matched no `on:` handler at the current state used
+ * to resolve as `Promise<void>` and looked indistinguishable from a clean
+ * completion. Refs #322.
+ */
+export type SignalOutcome = {
+  /** True iff at least one transition committed during this signal() drain. */
+  transitionTaken: boolean;
+  /** FSM state after the drain. */
+  finalState: string;
+  /** Number of queued signals processed during this drain (cascades > 1). */
+  signalsProcessed: number;
+  /**
+   * When `transitionTaken` is false, why. `no-handler`: no `on[sig.type]`
+   * at the current state. `queued`: this call was re-entrant — the signal
+   * was appended to the in-flight queue and will be drained by the outer
+   * invocation; this outcome reflects only the re-entrant call, not the
+   * eventual processing.
+   */
+  reason?: "no-handler" | "queued";
+};
+
 export interface FSMEngineOptions {
   llmProvider?: LLMProvider;
   documentStore: DocumentStore;
@@ -697,12 +721,21 @@ export class FSMEngine {
        */
       delegationDepth?: number;
     },
-  ): Promise<void> {
+  ): Promise<SignalOutcome> {
     const signalWithContext: SignalWithContext = context ? { ...sig, _context: context } : sig;
     this._signalQueue.push(signalWithContext);
-    if (!this._processing) {
-      await this.processQueue();
+    // Re-entrant call (e.g. from `context.emit` inside an action). The
+    // outer invocation owns the drain and will return the real aggregate;
+    // this call just queues. Reflect that honestly.
+    if (this._processing) {
+      return {
+        transitionTaken: false,
+        finalState: this._currentState,
+        signalsProcessed: 0,
+        reason: "queued",
+      };
     }
+    return await this.processQueue();
   }
 
   /**
@@ -753,13 +786,15 @@ export class FSMEngine {
     }
   }
 
-  private async processQueue(): Promise<void> {
+  private async processQueue(): Promise<SignalOutcome> {
     this._processing = true;
     this._processedSignalsCount = 0;
     // Clear stale prepare config from previous signal batches so external
     // signals start fresh. Cascaded signals within this run will see
     // __lastPrepare set by earlier signals in the same batch.
     this._results.delete("__lastPrepare");
+    let anyTransitionTaken = false;
+    let signalsProcessed = 0;
     try {
       while (this._signalQueue.length > 0) {
         if (this._processedSignalsCount++ > FSMEngine.MAX_PROCESSED_SIGNALS) {
@@ -770,16 +805,26 @@ export class FSMEngine {
         }
         const sig = this._signalQueue.shift();
         if (sig) {
-          await this.processSingleSignal(sig);
+          const took = await this.processSingleSignal(sig);
+          signalsProcessed++;
+          if (took) anyTransitionTaken = true;
         }
       }
     } finally {
       this._processing = false;
     }
+    return anyTransitionTaken
+      ? { transitionTaken: true, finalState: this._currentState, signalsProcessed }
+      : {
+          transitionTaken: false,
+          finalState: this._currentState,
+          signalsProcessed,
+          reason: "no-handler",
+        };
   }
 
-  private async processSingleSignal(sig: SignalWithContext): Promise<void> {
-    await withOtelSpan(
+  private async processSingleSignal(sig: SignalWithContext): Promise<boolean> {
+    return await withOtelSpan(
       "fsm.signal",
       {
         "fsm.state": this._currentState,
@@ -790,10 +835,16 @@ export class FSMEngine {
     );
   }
 
+  /**
+   * Returns `true` iff a transition committed for this signal. `false`
+   * covers the silent no-op paths: no `on:` handler at the current state,
+   * a malformed/empty transitions list. Errors during the commit phase
+   * throw and propagate; they are not represented in this boolean.
+   */
   private async processSingleSignalInner(
     sig: SignalWithContext,
     otelSpan: OtelSpan | null,
-  ): Promise<void> {
+  ): Promise<boolean> {
     logger.debug("Processing signal", {
       signalType: sig.type,
       currentState: this._currentState,
@@ -808,13 +859,13 @@ export class FSMEngine {
         signalType: sig.type,
         currentState: this._currentState,
       });
-      return; // No transition for this signal
+      return false; // No transition for this signal
     }
 
     // Get transitions for this signal type
     const transitionsOrSingle = state.on[sig.type];
     if (!transitionsOrSingle) {
-      return; // No transition for this signal
+      return false; // No transition for this signal
     }
     const transitions = Array.isArray(transitionsOrSingle)
       ? transitionsOrSingle
@@ -822,7 +873,7 @@ export class FSMEngine {
 
     const selectedTransition: TransitionDefinition | null = transitions[0] ?? null;
 
-    if (!selectedTransition) return; // No valid transition found
+    if (!selectedTransition) return false; // No valid transition found
 
     // Skip chain-through: resolve the effective target by chaining through skipped states
     const skipStates = sig._context?.skipStates ?? [];
@@ -1013,6 +1064,8 @@ export class FSMEngine {
           },
         });
       }
+
+      return true;
     } catch (error) {
       // Classify the error to determine severity
       const errorCause = createErrorCause(error);
@@ -2605,7 +2658,9 @@ export class FSMEngine {
           this._results.set(key, data);
         }
       },
-      emit: (s: Signal) => this.signal(s),
+      emit: async (s: Signal) => {
+        await this.signal(s);
+      },
       updateDoc: this.makeUpdateDocFn(),
       createDoc: this.makeCreateDocFn(),
       deleteDoc: this.makeDeleteDocFn(),
