@@ -2,6 +2,7 @@ import type { TreeCursor } from "@lezer/common";
 import { parser, Table } from "@lezer/markdown";
 import DOMPurify from "isomorphic-dompurify";
 import { Marked } from "marked";
+import { highlightCodeBlock } from "./code-highlighter.ts";
 
 // ─── marked configuration ──────────────────────────────────────────────
 // Single shared instance with GFM tables, breaks, and links with target=_blank.
@@ -52,6 +53,12 @@ const renderer = {
   // Strip horizontal rules (matches old behavior)
   hr(): string {
     return "";
+  },
+  // Syntax-highlighted fenced code via shiki. Unknown languages get a
+  // plain `<pre><code>` fallback inside `highlightCodeBlock`, so the
+  // renderer never has to branch on language support here.
+  code({ text, lang }: { text: string; lang?: string }): string {
+    return highlightCodeBlock(text, lang);
   },
 };
 
@@ -527,5 +534,8 @@ export function markdownToHTMLSafe(markdown: string): string {
   // `target="_blank"` produced by the marked renderer above survives. The
   // marked renderer also emits `rel="noopener noreferrer"`, which DOMPurify
   // keeps as-is — so the pair lands intact on the rendered chat link.
+  // Shiki's syntax-highlighted fenced blocks carry inline `style="color:…"`
+  // on every token span; DOMPurify keeps `style` by default but it's worth
+  // noting that any token-color change here ripples through every preview.
   return DOMPurify.sanitize(markdownToHTML(markdown), { ADD_ATTR: ["target"] });
 }
