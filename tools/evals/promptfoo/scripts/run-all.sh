@@ -96,9 +96,23 @@ AGGREGATE_CEILING="${PROMPTFOO_AGGREGATE_CEILING:-85}"
 OUT_DIR=$(mktemp -d -t friday-promptfoo-XXXXXX)
 echo "▶ outputs: ${OUT_DIR}"
 
-# Kill backgrounded suites if the user Ctrl-Cs — otherwise `npx promptfoo`
-# subprocesses get orphaned and keep burning tokens.
-trap 'kill $(jobs -p) 2>/dev/null; exit 130' INT TERM
+# Each backgrounded suite must run in its OWN process group so the cleanup
+# trap can reach the `npx → node → deno` grandchildren — not just the immediate
+# subshell. Without `set -m`, `kill $(jobs -p)` SIGTERMs only the direct
+# children; the grandchildren orphan and keep burning tokens.
+set -m
+
+# Track PGIDs for the trap. Under `set -m`, each background subshell becomes
+# its own process-group leader, so $! equals the PGID at fork time. Signalling
+# a negative PID (`kill -TERM -$pgid`) hits every descendant in that group.
+SUITE_PGIDS=()
+cleanup() {
+  for pgid in ${SUITE_PGIDS[@]+"${SUITE_PGIDS[@]}"}; do
+    kill -TERM "-$pgid" 2>/dev/null || true
+  done
+  exit 130
+}
+trap cleanup INT TERM
 
 # Launch every suite as a background job. Capture stdout/stderr per suite so
 # parallel output doesn't interleave; print start markers up front. macOS
@@ -137,6 +151,7 @@ for cfg in "${CFGS[@]}"; do
       >"$log" 2>&1
     echo $? >"${OUT_DIR}/${suite}.exit"
   ) &
+  SUITE_PGIDS+=("$!")
 done
 set -e
 
