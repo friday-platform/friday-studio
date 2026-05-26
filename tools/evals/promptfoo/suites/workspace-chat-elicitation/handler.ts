@@ -126,7 +126,7 @@ export default async function handle(req: Request): Promise<{ output: string; co
   // can surface it as a top-level `cost` on the promptfoo ProviderResponse.
   const responseMeta = await result.response;
   const costHeader = responseMeta.headers?.["x-litellm-response-cost"];
-  const cost = costHeader !== undefined ? Number(costHeader) : undefined;
+  const cost = costHeader && !Number.isNaN(Number(costHeader)) ? Number(costHeader) : undefined;
 
   return { output: JSON.stringify({ text, captures }), cost };
 }
