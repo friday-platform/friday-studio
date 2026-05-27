@@ -537,6 +537,24 @@ describe("workspace-chat handler", () => {
     expect(mockSmallLLM).not.toHaveBeenCalled();
   });
 
+  it("swallows smallLLM failures during title generation (no fatal banner)", async () => {
+    // Regression for #418: an uncaught throw inside generateChatTitle
+    // escaped onFinish (AI SDK doesn't wrap user onFinish callbacks),
+    // failing the whole stream and painting a fatal banner on top of
+    // an otherwise-successful turn.
+    const existingMessages = [makeMessage("user", "Hello")];
+    setupDefaultMocks(existingMessages);
+    mockSmallLLM.mockRejectedValueOnce(new Error("labels model unreachable"));
+
+    const handler = getHandler();
+    const ctx = makeContext();
+    const result = await handler("", ctx);
+
+    expect(mockSmallLLM).toHaveBeenCalledOnce();
+    // The turn completes successfully even though title generation threw.
+    expect(result).toHaveProperty("ok", true);
+  });
+
   // -----------------------------------------------------------------------
   // System prompt context capture
   // -----------------------------------------------------------------------

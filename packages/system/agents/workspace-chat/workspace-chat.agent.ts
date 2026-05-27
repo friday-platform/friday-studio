@@ -721,16 +721,27 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           throw new Error("Stream ID is missing");
         }
 
-        // Generate title on turns 2 and 4
+        // Generate title on turns 2 and 4. Guarded because the AI SDK
+        // doesn't wrap user onFinish callbacks (callOnFinish vs
+        // callOnStepFinish in handle-ui-message-stream-finish), so an
+        // uncaught throw here fails the whole stream and paints a
+        // fatal banner over an otherwise-successful turn.
         if (messages.length === 2 || messages.length === 4) {
-          const title = await generateChatTitle(platformModels, messages, logger);
-          const titleResult = await parseResult(
-            client
-              .workspaceChat(workspaceId)
-              [":chatId"].title.$patch({ param: { chatId: session.streamId }, json: { title } }),
-          );
-          if (!titleResult.ok) {
-            logger.error("Failed to update chat title", { streamId: session.streamId, title });
+          try {
+            const title = await generateChatTitle(platformModels, messages, logger);
+            const titleResult = await parseResult(
+              client
+                .workspaceChat(workspaceId)
+                [":chatId"].title.$patch({ param: { chatId: session.streamId }, json: { title } }),
+            );
+            if (!titleResult.ok) {
+              logger.error("Failed to update chat title", { streamId: session.streamId, title });
+            }
+          } catch (error) {
+            logger.warn("Title generation failed, leaving title as-is", {
+              streamId: session.streamId,
+              error,
+            });
           }
         }
 
