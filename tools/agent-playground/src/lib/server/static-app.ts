@@ -18,8 +18,8 @@ export interface BuildStaticAppOptions {
  */
 export function buildStaticApp(options: BuildStaticAppOptions): Hono {
   const proxies = new Hono()
-    .all("/api/daemon/*", buildHonoProxy("/api/daemon", options.daemonUrl, "daemon"))
-    .all("/api/tunnel/*", buildHonoProxy("/api/tunnel", options.tunnelUrl, "tunnel"));
+    .all("/api/daemon/*", buildHonoProxy(options.daemonUrl, "daemon"))
+    .all("/api/tunnel/*", buildHonoProxy(options.tunnelUrl, "tunnel"));
 
   const app = new Hono()
     .route("/", proxies)
