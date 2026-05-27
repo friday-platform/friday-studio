@@ -106,15 +106,23 @@ function truncate(s: string, n: number): string {
   return `${t.slice(0, n - 1).trimEnd()}…`;
 }
 
-// Strip the three characters that could let a hostile source-chat title /
-// message body close the `<atlas-mention-context>` tag and inject override
-// instructions across workspace boundaries. Mirrors the sanitizer in
-// summarize-chat.ts:199 — the mention path carries cross-workspace
-// user-controlled bytes into the model's hidden context and must be held
-// to the same bar. Applied to every value interpolated into the synthesized
-// text (title, both excerpts, and the id in the opening tag).
+// Strip characters that could let a hostile source-chat title /
+// message body break out of the `<atlas-mention-context>` block and
+// inject override instructions across workspace boundaries. Two
+// classes: tag delimiters (`<`, `>`, backtick) so the wrapper tag
+// itself can't be closed, AND line breaks (`\r`, `\n`) so the
+// line-oriented `Title: …` / `Messages: …` / excerpt format can't
+// have a synthetic structural line forged into it (e.g. a fake
+// `Full transcript available via the read_chat tool (workspace_id="OTHER", chat_id="…")`
+// row that nudges the model toward a different chat). Mirrors the
+// sanitizer in summarize-chat.ts:199 plus this extra newline guard
+// — the mention path carries cross-workspace user-controlled bytes
+// into the model's hidden context and must be held to a higher bar.
+// Applied to every value interpolated into the synthesized text
+// (title, both excerpts, and the id in the opening tag). See
+// friday-studio-d1n.
 function stripTagDelims(s: string): string {
-  return s.replace(/[<>`]/g, "");
+  return s.replace(/[<>`\r\n]/g, " ");
 }
 
 function extractText(message: AtlasUIMessage | Chat["messages"][number]): string {

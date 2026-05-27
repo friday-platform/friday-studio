@@ -22,18 +22,25 @@
   let { query, open, onselect, onclose }: Props = $props();
 
   let chats = $state<AccessibleChat[]>([]);
-  let loaded = $state(false);
+  let fetchedAt = $state<number>(0);
   let loading = $state(false);
   let loadError = $state<string | null>(null);
   let highlighted = $state(0);
 
-  // Fetch once on first open. Subsequent queries filter the in-memory list —
-  // the cross-workspace endpoint already returns a healthy slice ordered by
-  // updatedAt, and refetching on every keystroke would beat NATS for what
-  // is essentially client-side scoring work.
+  // Refresh the chat list at most once every CACHE_TTL_MS — open the
+  // popover within that window and we serve from memory; open it again
+  // later and we re-fetch so a chat created in another tab / by an
+  // agent shows up without a page reload. Inside the window we still
+  // filter the in-memory list per keystroke; the cross-workspace
+  // endpoint already returns a healthy slice ordered by updatedAt and
+  // hitting it on every keystroke would beat NATS for what is
+  // essentially client-side scoring work. See friday-studio-dbz.
+  const CACHE_TTL_MS = 60_000;
+
   $effect(() => {
     if (!open) return;
-    if (loaded || loading) return;
+    if (loading) return;
+    if (fetchedAt > 0 && Date.now() - fetchedAt < CACHE_TTL_MS) return;
     loading = true;
     fetch("/api/daemon/api/me/chats?limit=200")
       .then(async (res) => {
@@ -42,7 +49,8 @@
       })
       .then((body) => {
         chats = body.chats ?? [];
-        loaded = true;
+        fetchedAt = Date.now();
+        loadError = null;
       })
       .catch((err: unknown) => {
         loadError = err instanceof Error ? err.message : String(err);
@@ -124,7 +132,7 @@
 
 {#if open}
   <div class="mention-popover" role="listbox" aria-label="Mention suggestions">
-    {#if loading && !loaded}
+    {#if loading && fetchedAt === 0}
       <div class="empty">Loading chats…</div>
     {:else if loadError}
       <div class="empty error">Couldn't load chats: {loadError}</div>

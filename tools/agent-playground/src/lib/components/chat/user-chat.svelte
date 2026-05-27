@@ -874,6 +874,15 @@
    * concatenate all `{type: "text"}` parts and ignore data-event parts
    * (`data-artifact-attached`, etc.) since the playground message list
    * doesn't render those — it's a minimal UI.
+   *
+   * Skips synthetic expansion text parts marked with
+   * `providerMetadata.atlas.kind === "mention-expansion" | "attachment-expansion"`.
+   * Mirrors the buildSegments filter in packages/core/src/chat/export/render.ts:541-548.
+   * Currently this function is only called for the latest assistant
+   * message (TTS read-aloud path) and the server only injects those
+   * markers onto user messages, but pinning the filter here keeps the
+   * function safe under future changes that synthesize similar parts
+   * onto assistant messages. See friday-studio-64x.
    */
   function extractText(msg: AtlasUIMessage): string {
     if (!Array.isArray(msg.parts)) return "";
@@ -887,6 +896,14 @@
           "text" in p &&
           typeof p.text === "string",
       )
+      .filter((p) => {
+        const meta = (p as { providerMetadata?: unknown }).providerMetadata;
+        if (typeof meta !== "object" || meta === null) return true;
+        const atlas = (meta as { atlas?: unknown }).atlas;
+        if (typeof atlas !== "object" || atlas === null) return true;
+        const kind = (atlas as { kind?: unknown }).kind;
+        return kind !== "mention-expansion" && kind !== "attachment-expansion";
+      })
       .map((p) => p.text);
 
     const credentialParts = msg.parts
