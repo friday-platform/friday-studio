@@ -5,14 +5,14 @@
     SessionView,
   } from "@atlas/core/session/session-events";
   import { initialSessionView, reduceSessionEvent } from "@atlas/core/session/session-reducer";
-  import { Button, FormattedData, Icons, IconSmall, JsonHighlight, StatusBadge } from "@atlas/ui";
+  import { Button, FormattedData, Icons, IconSmall, StatusBadge } from "@atlas/ui";
   import { experimental_streamedQuery } from "@tanstack/query-core";
   import { createQuery } from "@tanstack/svelte-query";
   import { page } from "$app/state";
-  import { AgentBlockCard, parseError, StepBlock } from "$lib/components/session";
+  import { AgentBlockCard, parseError, SessionResults, StepBlock } from "$lib/components/session";
   import WorkspaceBreadcrumb from "$lib/components/workspace/workspace-breadcrumb.svelte";
-  import { formatDuration, formatSessionDate } from "$lib/utils/date";
   import { subscribeToSessionEvents } from "$lib/shared-worker/client.ts";
+  import { formatDuration, formatSessionDate } from "$lib/utils/date";
   import { tick } from "svelte";
 
   const sessionId = $derived(page.params.sessionId);
@@ -36,7 +36,11 @@
   const inspectorHref = $derived.by(() => {
     const jobName = query.data?.jobName;
     if (!jobName) return null;
-    const params = new URLSearchParams({ workspace: workspaceId, job: jobName, session: sessionId });
+    const params = new URLSearchParams({
+      workspace: workspaceId,
+      job: jobName,
+      session: sessionId,
+    });
     return `/inspector?${params}`;
   });
 
@@ -163,9 +167,7 @@
                 </FormattedData>
               {/if}
             {:else if query.data.results && Object.keys(query.data.results).length > 0}
-              <FormattedData copyText={JSON.stringify(query.data.results, null, 2)} maxLines={7}>
-                <JsonHighlight code={JSON.stringify(query.data.results, null, 2)} />
-              </FormattedData>
+              <SessionResults results={query.data.results} />
             {/if}
           </StepBlock.Root>
         {/if}

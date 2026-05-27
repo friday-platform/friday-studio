@@ -43,6 +43,10 @@ export default defineConfig({
     // default loader externalises node_modules and tries to import the
     // file as JS, which dies on the first `<`. Inlining lets the svelte
     // plugin compile it.
-    server: { deps: { inline: [/@tanstack\/svelte-query/] } },
+    server: {
+      deps: {
+        inline: [/@tanstack\/svelte-query/, /@tanstack\/svelte-table/, /@tanstack\/svelte-store/],
+      },
+    },
   },
 });
