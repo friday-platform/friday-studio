@@ -670,7 +670,11 @@ func runAutostartCommand(cmd string) {
 			os.Exit(1)
 		}
 		// Mark state so goroutine E doesn't redo the work next launch.
-		_ = writeState(launcherState{AutostartInitialized: true})
+		// Read-modify-write so we don't clobber other persisted fields
+		// (e.g. IncludeWorkspaces) the user has already toggled.
+		state := readState()
+		state.AutostartInitialized = true
+		_ = writeState(state)
 		fmt.Println("autostart enabled")
 	case "disable":
 		if err := disableAutostart(); err != nil {

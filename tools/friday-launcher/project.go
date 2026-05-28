@@ -796,6 +796,34 @@ func playgroundURL() string {
 	return "http://localhost:" + port
 }
 
+// daemonAPIBaseURL returns the base URL the launcher uses to call the
+// daemon's HTTP API (no trailing slash). Single source of truth for
+// the daemon's URL — every launcher-internal caller (diagnostics
+// export, future health probes) routes through here so the scheme +
+// port derivation lives in exactly one place.
+//
+// Scheme follows the s2s cert pair (same gate as project.go's
+// processSpec.healthScheme for the daemon at line 740) — the daemon
+// binary listens on HTTPS iff the cert pair is present + valid.
+// Port honors FRIDAY_PORT_FRIDAY for installs that move the daemon
+// off 8080 (same convention as playgroundURL above).
+//
+// Host is always `localhost`: unlike playground (which uses
+// `local.hellofriday.ai` for the green-lock cert), the daemon's s2s
+// leaf is private-CA signed and the launcher's diagnostics HTTP client
+// uses InsecureSkipVerify (loopback, we own both ends).
+func daemonAPIBaseURL() string {
+	port := portOverride("friday")
+	if port == "" {
+		port = "8080"
+	}
+	scheme := "http"
+	if s2sCertsValid(time.Now()) {
+		scheme = "https"
+	}
+	return scheme + "://localhost:" + port
+}
+
 // Probe timings consumed by the native readinessRunner (readiness.go).
 // process-compose's own ReadinessProbe is intentionally nil for every
 // supervised service — its HttpProbe has no TLS controls and would

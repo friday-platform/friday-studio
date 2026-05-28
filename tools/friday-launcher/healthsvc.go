@@ -353,6 +353,21 @@ func (c *HealthCache) UptimeSecs() int64 {
 	return int64(time.Since(c.startedAt).Seconds())
 }
 
+// ServiceHealthy returns true iff the named service is currently in
+// the "healthy" state. Returns false for unknown names and for any
+// non-healthy status (pending, starting, failed). The tray uses this
+// to gate the diagnostic-export "Include workspaces" checkbox on the
+// daemon being up — /api/workspaces/bundle-all needs a live daemon.
+func (c *HealthCache) ServiceHealthy(name string) bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	i := indexByName(c.services, name)
+	if i < 0 {
+		return false
+	}
+	return c.services[i].status == statusHealthy
+}
+
 // Subscribe registers a notification channel for SSE fan-out.
 // The returned channel receives an empty struct whenever any
 // service transitions into a new state (including the initial

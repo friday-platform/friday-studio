@@ -2,10 +2,13 @@ package main
 
 import (
 	_ "embed"
+	"sync"
 	"sync/atomic"
 	"time"
 
 	"fyne.io/systray"
+
+	"github.com/friday-platform/friday-studio/tools/friday-launcher/diagnostics"
 )
 
 // iconFridayTemplate is a pure-black silhouette of the Friday "P" mark.
@@ -72,6 +75,38 @@ func (b trayBucket) tooltip() string {
 	}
 }
 
+// Title/tooltip overrides applied on top of computeBucket while a
+// diagnostic export is in flight. Same shape as bucketGrey's
+// " Stopping…" / "Friday Studio — shutting down…" pair — single
+// place to read so a copy edit doesn't drift across the codebase.
+const (
+	exportingTitle   = " Exporting…"
+	exportingTooltip = "Friday Studio — exporting diagnostics…"
+)
+
+// Menu item labels for the diagnostic-export item. The progress and
+// failure labels are written from the export goroutine; the default
+// is the resting state.
+const (
+	exportItemDefault        = "Export diagnostic logs…"
+	exportItemProgressBase   = "Exporting diagnostic logs…"
+	exportItemSuccess        = "Exported ✓ — revealing…"
+	exportItemFailure        = "Export failed — see launcher.log"
+	includeWorkspacesLabel   = "Include workspaces"
+	includeWorkspacesDisable = " — start Friday Studio to enable"
+)
+
+// daemonServiceName is the supervised process whose liveness gates
+// the Include workspaces checkbox. Defined here (not in healthsvc.go)
+// because the tray is the only consumer that cares which service is
+// the daemon — healthsvc treats every service uniformly.
+const daemonServiceName = "friday"
+
+// exportSuccessHold is how long the menu item shows the success label
+// before reverting to the default. Sized so a quick reader sees the
+// ✓ but the menu doesn't feel sticky if they re-open it later.
+const exportSuccessHold = 1500 * time.Millisecond
+
 // trayController owns the systray menu items and the polling loop.
 type trayController struct {
 	sup          *Supervisor
@@ -81,13 +116,41 @@ type trayController struct {
 	openedBrowserOnce atomic.Bool
 
 	// menu items kept around so we can update labels / disable / enable
-	openItem      *systray.MenuItem
-	restartItem   *systray.MenuItem
-	logsItem      *systray.MenuItem
-	autostartItem *systray.MenuItem
-	quitItem      *systray.MenuItem
+	openItem              *systray.MenuItem
+	restartItem           *systray.MenuItem
+	logsItem              *systray.MenuItem
+	includeWorkspacesItem *systray.MenuItem
+	exportItem            *systray.MenuItem
+	quitItem              *systray.MenuItem
 
 	currentBucket trayBucket
+
+	// lastTitle is the menubar title we most recently asked systray to
+	// render. Used to coalesce SetTitle calls when neither bucket nor
+	// the exporting override has changed since the prior tick — macOS
+	// NSStatusItem redraws on every SetTitle call.
+	lastTitle string
+
+	// exporting is the CAS guard for the diagnostic-export action.
+	// The handler does CompareAndSwap(false, true) BEFORE spawning the
+	// goroutine — a second click while a prior export is in flight
+	// finds the slot taken and is a no-op. Disabling the menu item is
+	// best-effort UX; the CAS is the actual correctness barrier.
+	exporting atomic.Bool
+
+	// exportMu guards the progress + failure + success-until fields
+	// below. They're written from the export goroutine and read from
+	// the tray tick(), so a small mutex is the obvious shape.
+	exportMu             sync.Mutex
+	exportProgressPhase  string    // "" when no export is in flight
+	exportFailureMsg     string    // sticky until next export click
+	exportSuccessUntilTS time.Time // zero value when no success transient
+
+	// daemonEnabledForInclude mirrors the last enable/disable verdict
+	// for the Include workspaces item so we only call Enable/Disable
+	// on the cross-platform systray when the verdict actually flips.
+	// Avoids per-tick churn on macOS NSMenu which redraws on Enable.
+	daemonEnabledForInclude bool
 }
 
 func newTrayController(
@@ -111,17 +174,28 @@ func (t *trayController) onReady() {
 	// the menubar stays clean while everything is healthy.
 	systray.SetTitle(bucketAmber.titleText())
 	systray.SetTooltip(bucketAmber.tooltip())
+	t.lastTitle = bucketAmber.titleText()
 
 	t.openItem = systray.AddMenuItem("Open in browser", "Open Friday Studio")
 	t.restartItem = systray.AddMenuItem("Restart all", "Stop and start every supervised process")
 	t.logsItem = systray.AddMenuItem("View logs", "Open ~/.friday/local/logs in your file browser")
-	systray.AddSeparator()
-	t.autostartItem = systray.AddMenuItemCheckbox(
-		"Start at login",
-		"Re-launch Friday Studio when you next log in",
-		isAutostartEnabled())
+	// Seed the Include workspaces checkbox from persisted state so the
+	// user's prior toggle survives launcher restarts (state.json
+	// IncludeWorkspaces field).
+	persisted := readState()
+	t.includeWorkspacesItem = systray.AddMenuItemCheckbox(
+		includeWorkspacesLabel,
+		"Embed each workspace's definition zip in the next diagnostic export",
+		persisted.IncludeWorkspaces)
+	t.exportItem = systray.AddMenuItem(
+		exportItemDefault,
+		"Build a one-click diagnostic zip and reveal it in your file browser")
 	systray.AddSeparator()
 	t.quitItem = systray.AddMenuItem("Quit", "Shut down Friday Studio cleanly")
+	// Optimistically enabled — tick() will Disable on the next 2s
+	// pass if the daemon isn't healthy yet. Mirror the same default
+	// so the first tick is a no-op when the daemon comes up fast.
+	t.daemonEnabledForInclude = true
 
 	go t.handleClicks()
 	go t.pollLoop()
@@ -147,20 +221,10 @@ func (t *trayController) handleClicks() {
 			if err := openInFileBrowser(logsDir()); err != nil {
 				log.Error("open logs dir failed", "error", err)
 			}
-		case <-t.autostartItem.ClickedCh:
-			if t.autostartItem.Checked() {
-				if err := disableAutostart(); err != nil {
-					log.Error("disableAutostart failed", "error", err)
-				} else {
-					t.autostartItem.Uncheck()
-				}
-			} else {
-				if err := enableAutostart(); err != nil {
-					log.Error("enableAutostart failed", "error", err)
-				} else {
-					t.autostartItem.Check()
-				}
-			}
+		case <-t.includeWorkspacesItem.ClickedCh:
+			t.toggleIncludeWorkspaces()
+		case <-t.exportItem.ClickedCh:
+			t.startExport()
 		case <-t.quitItem.ClickedCh:
 			log.Info("Quit requested from tray")
 			// Decision #2: confirmation modal before tearing down
@@ -182,6 +246,7 @@ func (t *trayController) handleClicks() {
 			t.shuttingDown.Store(true)
 			systray.SetTitle(bucketGrey.titleText())
 			systray.SetTooltip(bucketGrey.tooltip())
+			t.lastTitle = bucketGrey.titleText()
 			systray.Quit()
 			return
 		}
@@ -202,11 +267,29 @@ func (t *trayController) pollLoop() {
 
 func (t *trayController) tick() {
 	bucket := t.computeBucket()
-	if bucket != t.currentBucket {
-		systray.SetTooltip(bucket.tooltip())
-		systray.SetTitle(bucket.titleText())
-		t.currentBucket = bucket
+	exporting := t.exporting.Load()
+	wantTitle := bucket.titleText()
+	wantTooltip := bucket.tooltip()
+	if exporting {
+		// Export-in-flight wins over the bucket-derived title — the
+		// user just clicked Export and needs immediate visual feedback
+		// that something is happening. Shutdown still wins (shuttingDown
+		// trumps every other signal in computeBucket, and the click
+		// handler refuses Export after shutdown begins).
+		wantTitle = exportingTitle
+		wantTooltip = exportingTooltip
 	}
+	// Coalesce on the rendered title string so NSStatusItem only
+	// redraws when something actually changed. Covers both bucket
+	// transitions and the export-in-flight override flipping on/off.
+	if wantTitle != t.lastTitle {
+		systray.SetTooltip(wantTooltip)
+		systray.SetTitle(wantTitle)
+		t.lastTitle = wantTitle
+	}
+	t.currentBucket = bucket
+	t.updateExportItemLabel()
+	t.updateIncludeWorkspacesAvailability()
 	if bucket == bucketGreen {
 		// Open browser exactly once on first transition to green
 		// (and only if --no-browser wasn't set, which is checked
@@ -313,4 +396,214 @@ func (t *trayController) wakeFromSecondInstance() {
 	// Wake-up bypasses the once-per-session guard so a second-instance
 	// click always opens the browser.
 	t.openBrowser("second-instance wake")
+}
+
+// toggleIncludeWorkspaces flips the persisted preference and the
+// checkbox UI together. If state.json read fails we still flip the
+// in-memory checkbox so the user gets feedback, but the next launcher
+// boot will revert — that's acceptable for a one-click preference
+// (worst case: re-tick after restart).
+func (t *trayController) toggleIncludeWorkspaces() {
+	state := readState()
+	state.IncludeWorkspaces = !state.IncludeWorkspaces
+	if err := writeState(state); err != nil {
+		log.Error("persist IncludeWorkspaces failed", "error", err)
+		// Fall through — UI still flips so the click feels responsive.
+		// User will see the original value after the next launcher boot.
+	}
+	if t.includeWorkspacesItem == nil {
+		return
+	}
+	if state.IncludeWorkspaces {
+		t.includeWorkspacesItem.Check()
+	} else {
+		t.includeWorkspacesItem.Uncheck()
+	}
+}
+
+// updateIncludeWorkspacesAvailability disables the Include workspaces
+// item when the daemon isn't healthy (the /bundle-all endpoint needs
+// a live daemon) and re-enables it once the daemon comes up. The
+// persisted check state is preserved across the flip — only the label
+// + interactability changes.
+//
+// Coalesced on daemonEnabledForInclude so we don't call SetTitle on
+// every 2s tick when the state hasn't changed (macOS NSMenu redraws
+// on each SetTitle).
+func (t *trayController) updateIncludeWorkspacesAvailability() {
+	if t.includeWorkspacesItem == nil {
+		return
+	}
+	daemonUp := t.healthCache != nil && t.healthCache.ServiceHealthy(daemonServiceName)
+	if daemonUp == t.daemonEnabledForInclude {
+		return
+	}
+	if daemonUp {
+		t.includeWorkspacesItem.SetTitle(includeWorkspacesLabel)
+		t.includeWorkspacesItem.Enable()
+	} else {
+		t.includeWorkspacesItem.SetTitle(includeWorkspacesLabel + includeWorkspacesDisable)
+		t.includeWorkspacesItem.Disable()
+	}
+	t.daemonEnabledForInclude = daemonUp
+}
+
+// exportLabelState is a snapshot of the export-related fields the
+// label derivation reads. Pulled out so the pure renderer can be
+// unit-tested without a real systray (the menu mutation in
+// updateExportItemLabel is the side effect; the string derivation is
+// the logic).
+type exportLabelState struct {
+	progressPhase  string
+	failureMsg     string
+	successUntilTS time.Time
+	now            time.Time
+}
+
+// deriveExportItemLabel maps the current export state to the rendered
+// menu label. Pure function — no systray side effects, no mutex.
+func deriveExportItemLabel(s exportLabelState) (label string, successExpired bool) {
+	switch {
+	case s.progressPhase != "":
+		suffix := ""
+		switch s.progressPhase {
+		case "logs":
+			suffix = " (logs)"
+		case "workspaces":
+			suffix = " (workspaces)"
+		case "packaging":
+			suffix = " (packaging)"
+		}
+		return exportItemProgressBase + suffix, false
+	case !s.successUntilTS.IsZero():
+		if s.now.Before(s.successUntilTS) {
+			return exportItemSuccess, false
+		}
+		return exportItemDefault, true
+	case s.failureMsg != "":
+		return s.failureMsg, false
+	default:
+		return exportItemDefault, false
+	}
+}
+
+// updateExportItemLabel rewrites the export menu item's label based on
+// the current progress/failure/success state. Called from tick() so
+// label updates land on the existing 2s polling cadence — no separate
+// timer goroutine needed. The success transient expires on its own
+// when time.Now() crosses exportSuccessUntilTS.
+func (t *trayController) updateExportItemLabel() {
+	if t.exportItem == nil {
+		return
+	}
+	t.exportMu.Lock()
+	state := exportLabelState{
+		progressPhase:  t.exportProgressPhase,
+		failureMsg:     t.exportFailureMsg,
+		successUntilTS: t.exportSuccessUntilTS,
+		now:            time.Now(),
+	}
+	label, expired := deriveExportItemLabel(state)
+	if expired {
+		t.exportSuccessUntilTS = time.Time{}
+	}
+	t.exportMu.Unlock()
+	t.exportItem.SetTitle(label)
+	if expired {
+		t.exportItem.Enable()
+	}
+}
+
+// startExport handles a click on the Export diagnostic logs item.
+// The CAS on `exporting` is the real concurrency guard — second click
+// during an in-flight export finds the slot taken and is a no-op.
+// Disabling the menu item is best-effort visual feedback.
+func (t *trayController) startExport() {
+	if t.shuttingDown.Load() {
+		// Refuse new exports during shutdown — performShutdown is
+		// tearing the daemon down and any /bundle-all call would race
+		// against the daemon's HTTP server closing.
+		return
+	}
+	if !t.exporting.CompareAndSwap(false, true) {
+		return
+	}
+	if t.exportItem != nil {
+		t.exportItem.Disable()
+	}
+	t.exportMu.Lock()
+	t.exportFailureMsg = ""
+	t.exportSuccessUntilTS = time.Time{}
+	t.exportProgressPhase = "logs" // optimistic — Export will overwrite
+	t.exportMu.Unlock()
+	go t.runExport()
+}
+
+// exportFn is the diagnostics.Export call, swappable for tests so the
+// tray click flow can be exercised end-to-end without hitting disk or
+// the live daemon. Production code leaves it nil; the helper at the
+// bottom of this method picks the real function in that case.
+var exportFn func(diagnostics.ExportOptions) (string, error)
+
+// runExport is the export goroutine. Owns the exporting atomic.Bool
+// across its full lifetime (set by startExport before spawn, cleared
+// here on return). Posts progress to the tray via setExportPhase;
+// reveals on success; leaves a sticky failure label on error.
+func (t *trayController) runExport() {
+	defer t.exporting.Store(false)
+
+	persisted := readState()
+	opts := diagnostics.ExportOptions{
+		IncludeWorkspaces: persisted.IncludeWorkspaces,
+		DaemonURL:         daemonAPIBaseURL(),
+		ProgressFn:        t.setExportPhase,
+	}
+	fn := exportFn
+	if fn == nil {
+		fn = diagnostics.Export
+	}
+	zipPath, err := fn(opts)
+	if err != nil {
+		log.Error("diagnostic export failed", "error", err)
+		t.exportMu.Lock()
+		t.exportProgressPhase = ""
+		t.exportFailureMsg = exportItemFailure
+		t.exportMu.Unlock()
+		// Re-enable so the user can retry. The sticky failure label
+		// stays until the next successful export or the next click.
+		if t.exportItem != nil {
+			t.exportItem.Enable()
+		}
+		return
+	}
+	log.Info("diagnostic export ok", "path", zipPath)
+	if err := revealInFileBrowser(zipPath); err != nil {
+		log.Error("reveal diagnostic zip failed", "error", err, "path", zipPath)
+		// Reveal failure is non-fatal — the zip exists, we just couldn't
+		// pop Finder. Surface it the same way as an export failure so
+		// the user sees the launcher.log pointer.
+		t.exportMu.Lock()
+		t.exportProgressPhase = ""
+		t.exportFailureMsg = exportItemFailure
+		t.exportMu.Unlock()
+		if t.exportItem != nil {
+			t.exportItem.Enable()
+		}
+		return
+	}
+	t.exportMu.Lock()
+	t.exportProgressPhase = ""
+	t.exportSuccessUntilTS = time.Now().Add(exportSuccessHold)
+	t.exportMu.Unlock()
+	// Item stays disabled across the success transient; updateExportItemLabel
+	// re-enables it when the transient expires.
+}
+
+// setExportPhase is the ProgressFn callback handed to diagnostics.Export.
+// Writes the phase string under the export mutex — tick() reads it on
+// the next 2s pass and rewrites the menu item label.
+func (t *trayController) setExportPhase(phase string) {
+	t.exportMu.Lock()
+	t.exportProgressPhase = phase
+	t.exportMu.Unlock()
 }
