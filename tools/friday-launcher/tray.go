@@ -121,6 +121,7 @@ type trayController struct {
 	logsItem              *systray.MenuItem
 	includeWorkspacesItem *systray.MenuItem
 	exportItem            *systray.MenuItem
+	autostartItem         *systray.MenuItem
 	quitItem              *systray.MenuItem
 
 	currentBucket trayBucket
@@ -191,6 +192,11 @@ func (t *trayController) onReady() {
 		exportItemDefault,
 		"Build a one-click diagnostic zip and reveal it in your file browser")
 	systray.AddSeparator()
+	t.autostartItem = systray.AddMenuItemCheckbox(
+		"Start at login",
+		"Re-launch Friday Studio when you next log in",
+		isAutostartEnabled())
+	systray.AddSeparator()
 	t.quitItem = systray.AddMenuItem("Quit", "Shut down Friday Studio cleanly")
 	// Optimistically enabled — tick() will Disable on the next 2s
 	// pass if the daemon isn't healthy yet. Mirror the same default
@@ -225,6 +231,20 @@ func (t *trayController) handleClicks() {
 			t.toggleIncludeWorkspaces()
 		case <-t.exportItem.ClickedCh:
 			t.startExport()
+		case <-t.autostartItem.ClickedCh:
+			if t.autostartItem.Checked() {
+				if err := disableAutostart(); err != nil {
+					log.Error("disableAutostart failed", "error", err)
+				} else {
+					t.autostartItem.Uncheck()
+				}
+			} else {
+				if err := enableAutostart(); err != nil {
+					log.Error("enableAutostart failed", "error", err)
+				} else {
+					t.autostartItem.Check()
+				}
+			}
 		case <-t.quitItem.ClickedCh:
 			log.Info("Quit requested from tray")
 			// Decision #2: confirmation modal before tearing down
