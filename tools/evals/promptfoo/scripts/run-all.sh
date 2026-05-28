@@ -43,6 +43,35 @@
 set -euo pipefail
 shopt -s nullglob
 
+# Preflight: EVAL_TIER must name only known provider tiers. Validate FIRST —
+# before the heavier proxy/npx preflights and any suite launch — so a typo
+# (EVAL_TIER=smell) fails instantly with a clear message instead of matching
+# zero providers, skipping every suite, and tripping PROMPTFOO_REQUIRE_SUITES
+# with an unhelpful "0/N suites ran" after wasting N subprocesses. The value
+# is a regex alternation (small|medium); split on `|`, trim, and require each
+# token be one of the tier:<size> labels in shared/providers.yaml.
+if [[ -n "${EVAL_TIER:-}" ]]; then
+  IFS='|' read -ra _tier_tokens <<<"${EVAL_TIER}"
+  # Index the array rather than `for tok in "${arr[@]}"`: word-splitting in a
+  # for-in loop would collapse empty/whitespace-only elements (`|small`,
+  # `small||medium`, ` `) before the case sees them, silently passing them.
+  _i=0
+  while ((_i < ${#_tier_tokens[@]})); do
+    _tok="${_tier_tokens[$_i]}"
+    _i=$((_i + 1))
+    _tok="${_tok#"${_tok%%[![:space:]]*}"}" # ltrim
+    _tok="${_tok%"${_tok##*[![:space:]]}"}" # rtrim
+    case "$_tok" in
+      small | medium | large) ;;
+      *)
+        echo "✗ invalid EVAL_TIER='${EVAL_TIER}': token '${_tok}' is not a known tier" >&2
+        echo "  valid tiers: small, medium, large (alternations allowed, e.g. 'small|medium')" >&2
+        exit 1
+        ;;
+    esac
+  done
+fi
+
 # Preflight: external tools we shell out to. Failing here keeps cryptic
 # "command not found" errors out of mid-run per-suite logs.
 for tool in curl npx deno; do
@@ -84,7 +113,11 @@ fi
 
 FILTER_ARGS=()
 if [[ -n "${EVAL_TIER:-}" ]]; then
-  FILTER_ARGS+=(--filter-providers "tier:(${EVAL_TIER})")
+  # Anchor the alternation to the end of the label (`$`) so `tier:small` can't
+  # substring-match a future longer tag like `tier:small-fast`. The up-front
+  # validation already constrains tokens to the exact set; the anchor is a
+  # one-char belt-and-suspenders against new labels added without re-checking.
+  FILTER_ARGS+=(--filter-providers "tier:(${EVAL_TIER})$")
 fi
 
 CONCURRENCY="${EVAL_CONCURRENCY:-20}"
