@@ -200,23 +200,23 @@ func TestExport_ProgressFn(t *testing.T) {
 	})
 
 	t.Run("include_workspaces_true", func(t *testing.T) {
-		// No HTTP yet — IncludeWorkspaces=true still produces the same
-		// phase sequence because there's no "workspaces" phase to drive.
-		// Task #3 adds it; the contract for this slice is logs, packaging.
 		logs, state := stubSources(t)
 		writeFile(t, filepath.Join(logs, "a.log"), "x")
 		writeFile(t, filepath.Join(state, "state.json"), "{}")
+		srv := newDaemonStub(t, daemonStub{})
+		defer srv.Close()
 
 		var phases []string
 		_, err := Export(ExportOptions{
 			IncludeWorkspaces: true,
+			DaemonURL:         srv.URL,
 			OutputDir:         t.TempDir(),
 			ProgressFn:        func(p string) { phases = append(phases, p) },
 		})
 		if err != nil {
 			t.Fatalf("Export: %v", err)
 		}
-		want := []string{"logs", "packaging"}
+		want := []string{"logs", "workspaces", "packaging"}
 		if !equalStringSlices(phases, want) {
 			t.Errorf("phases = %v, want %v", phases, want)
 		}

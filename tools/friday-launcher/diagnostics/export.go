@@ -11,8 +11,14 @@ package diagnostics
 
 import (
 	"archive/zip"
+	"context"
+	"crypto/tls"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -25,16 +31,18 @@ import (
 // optional. The zero value runs against the user's real
 // ~/.friday/local data and writes to ~/Downloads.
 type ExportOptions struct {
-	// IncludeWorkspaces, when true, signals user intent to ship
-	// workspace bundles. This iteration has no HTTP path to the
-	// daemon, so the manifest records skip-reason daemon_unreachable
-	// instead of user_opted_out — the user asked for them, we just
-	// couldn't deliver. Task #3 swaps fetchWorkspaces to actually
-	// hit /api/workspaces/bundle-all.
+	// IncludeWorkspaces, when true and DaemonURL is set, instructs
+	// the export to call /api/workspaces/bundle-all and embed the
+	// response as workspaces.zip. Any failure (transport, non-2xx,
+	// timeout) records a stable skip-reason in the manifest and the
+	// export still succeeds.
 	IncludeWorkspaces bool
 
-	// DaemonURL is the base URL the export will use for daemon HTTP
-	// calls. Ignored in this iteration (no HTTP). Task #3 honors it.
+	// DaemonURL is the base URL the export uses for daemon HTTP
+	// calls (/api/version always; /api/workspaces/bundle-all when
+	// IncludeWorkspaces is true). Empty disables both calls —
+	// daemon_version becomes "unreachable" and workspaces is skipped
+	// with daemon_unreachable.
 	DaemonURL string
 
 	// OutputDir is where the final zip is written. Empty → ~/Downloads.
@@ -43,10 +51,15 @@ type ExportOptions struct {
 	OutputDir string
 
 	// ProgressFn, if non-nil, is invoked with phase strings as the
-	// export progresses. Phases this iteration emits: "logs",
-	// "packaging". Task #3 inserts "workspaces" between them when
-	// IncludeWorkspaces is true.
+	// export progresses. Phases: "logs", "packaging" by default;
+	// when IncludeWorkspaces is true AND DaemonURL is non-empty the
+	// sequence becomes "logs", "workspaces", "packaging".
 	ProgressFn func(phase string)
+
+	// bundleAllTimeout, when non-zero, overrides the default 60s
+	// bound on the /bundle-all call. Unexported test-only knob —
+	// production callers get the 60s default.
+	bundleAllTimeout time.Duration
 }
 
 // Package-level seams that tests swap. Production callers see them
@@ -137,9 +150,22 @@ func writeBundle(tmpPath string, opts ExportOptions, outDirSkipped bool) (err er
 		return err
 	}
 
+	// /api/version is called BEFORE any workspaces work — design v3
+	// § "Daemon /api/version endpoint" makes the order explicit so a
+	// future short-circuit ("skip workspaces if version unreachable")
+	// has an honest signal to read.
+	daemonVersion := getDaemonVersion(opts)
+
+	wsResult := fetchWorkspaces(opts)
+	if wsResult.body != nil {
+		if err := writeZipEntry(zw, "workspaces.zip", wsResult.body); err != nil {
+			return err
+		}
+	}
+
 	progress(opts.ProgressFn, "packaging")
 
-	m := buildManifest(opts, logNames, stateIncluded, pidsIncluded, outDirSkipped)
+	m := buildManifest(opts, logNames, stateIncluded, pidsIncluded, outDirSkipped, daemonVersion, wsResult)
 	body, err := marshalManifest(m)
 	if err != nil {
 		return fmt.Errorf("marshal manifest: %w", err)
@@ -153,22 +179,20 @@ func writeBundle(tmpPath string, opts ExportOptions, outDirSkipped bool) (err er
 	return nil
 }
 
-// buildManifest assembles the manifest struct from the inputs that
-// writeBundle gathered. The skip-reason logic lives here so it's one
-// place to grep when tokens change.
-func buildManifest(opts ExportOptions, logs []string, stateIncluded, pidsIncluded, outDirSkipped bool) manifest {
+// buildManifest assembles the manifest struct from inputs gathered
+// upstream. Pure assembly — every HTTP call has already happened by
+// the time we get here.
+func buildManifest(opts ExportOptions, logs []string, stateIncluded, pidsIncluded, outDirSkipped bool, daemonVersion string, ws workspaceResult) manifest {
 	skipped := []manifestSkip{}
-	if opts.IncludeWorkspaces {
-		// User asked, we couldn't deliver (no HTTP yet). Task #3
-		// replaces this with the real fetch + its own skip reasons.
-		skipped = append(skipped, manifestSkip{
-			What: "workspaces",
-			Why:  skipReasonDaemonUnreachable,
-		})
-	} else {
+	if !opts.IncludeWorkspaces {
 		skipped = append(skipped, manifestSkip{
 			What: "workspaces",
 			Why:  skipReasonUserOptedOut,
+		})
+	} else if ws.body == nil {
+		skipped = append(skipped, manifestSkip{
+			What: "workspaces",
+			Why:  ws.skipReason,
 		})
 	}
 	if outDirSkipped {
@@ -178,7 +202,7 @@ func buildManifest(opts ExportOptions, logs []string, stateIncluded, pidsInclude
 		})
 	}
 	return manifest{
-		DaemonVersion:              getDaemonVersion(opts),
+		DaemonVersion:              daemonVersion,
 		OS:                         runtime.GOOS,
 		Arch:                       runtime.GOARCH,
 		GeneratedAt:                nowFn(),
@@ -187,18 +211,166 @@ func buildManifest(opts ExportOptions, logs []string, stateIncluded, pidsInclude
 			Logs:       logs,
 			StateJSON:  stateIncluded,
 			Pids:       pidsIncluded,
-			Workspaces: false,
+			Workspaces: ws.body != nil,
 		},
 		Skipped: skipped,
 	}
 }
 
-// getDaemonVersion is the seam task #3 swaps to actually call
-// /api/version. Today it always returns the unreachable literal —
-// the same value a real connect-refused would produce, so swapping
-// the body doesn't change the public manifest format.
-func getDaemonVersion(_ ExportOptions) string {
-	return daemonVersionUnreachable
+// getDaemonVersion calls GET <DaemonURL>/api/version and returns the
+// `version` field from the response. Any failure — empty DaemonURL,
+// transport error, non-2xx, malformed body, timeout — collapses to
+// the reserved daemonVersionUnreachable literal so the manifest stays
+// machine-parseable.
+//
+// Bounded by a short context (versionTimeout); /api/version is a
+// constant-time handler so a long deadline only hides a hung daemon.
+func getDaemonVersion(opts ExportOptions) string {
+	if opts.DaemonURL == "" {
+		return daemonVersionUnreachable
+	}
+	client, err := newDaemonClient(opts.DaemonURL)
+	if err != nil {
+		return daemonVersionUnreachable
+	}
+	endpoint, err := joinDaemonURL(opts.DaemonURL, "/api/version")
+	if err != nil {
+		return daemonVersionUnreachable
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), versionTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return daemonVersionUnreachable
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return daemonVersionUnreachable
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return daemonVersionUnreachable
+	}
+	var payload struct {
+		Version string `json:"version"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return daemonVersionUnreachable
+	}
+	if payload.Version == "" {
+		return daemonVersionUnreachable
+	}
+	return payload.Version
+}
+
+// workspaceResult is the outcome of fetchWorkspaces. Exactly one of
+// {body, skipReason} is meaningful: a non-nil body means success
+// (skipReason is empty); a nil body means skip with the recorded
+// reason. The two-field shape avoids allocating a sentinel error per
+// skip and keeps the manifest mapping in buildManifest a one-liner.
+type workspaceResult struct {
+	body       []byte
+	skipReason string
+}
+
+// fetchWorkspaces calls GET <DaemonURL>/api/workspaces/bundle-all?mode=definition
+// when IncludeWorkspaces is true and DaemonURL is set; otherwise it
+// returns the zero value (caller treats nil body as "no embed"). The
+// returned body is intentionally raw bytes from the server — embedded
+// verbatim as workspaces.zip with no re-zip or unwrap.
+func fetchWorkspaces(opts ExportOptions) workspaceResult {
+	if !opts.IncludeWorkspaces || opts.DaemonURL == "" {
+		return workspaceResult{skipReason: skipReasonDaemonUnreachable}
+	}
+	progress(opts.ProgressFn, "workspaces")
+	client, err := newDaemonClient(opts.DaemonURL)
+	if err != nil {
+		return workspaceResult{skipReason: skipReasonDaemonUnreachable}
+	}
+	endpoint, err := joinDaemonURL(opts.DaemonURL, "/api/workspaces/bundle-all")
+	if err != nil {
+		return workspaceResult{skipReason: skipReasonDaemonUnreachable}
+	}
+	endpoint += "?mode=definition"
+	timeout := opts.bundleAllTimeout
+	if timeout == 0 {
+		timeout = defaultBundleAllTimeout
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return workspaceResult{skipReason: skipReasonDaemonUnreachable}
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		// context.DeadlineExceeded surfaces as a wrapped url.Error
+		// whose Err chains to ctx.Err(); errors.Is unwraps it.
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return workspaceResult{skipReason: skipReasonBundleAllTimeout}
+		}
+		return workspaceResult{skipReason: skipReasonDaemonUnreachable}
+	}
+	defer resp.Body.Close()
+	switch {
+	case resp.StatusCode == http.StatusUnauthorized, resp.StatusCode == http.StatusForbidden:
+		return workspaceResult{skipReason: skipReasonAuthRefused}
+	case resp.StatusCode >= 500 && resp.StatusCode < 600:
+		return workspaceResult{skipReason: skipReasonDaemonReturned5xx}
+	case resp.StatusCode < 200 || resp.StatusCode >= 300:
+		return workspaceResult{skipReason: skipReasonDaemonUnreachable}
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return workspaceResult{skipReason: skipReasonBundleAllTimeout}
+		}
+		return workspaceResult{skipReason: skipReasonDaemonUnreachable}
+	}
+	return workspaceResult{body: body}
+}
+
+// versionTimeout bounds the /api/version call. /api/version is a
+// constant-time handler — anything past a couple seconds means the
+// daemon is wedged, not slow.
+const versionTimeout = 5 * time.Second
+
+// defaultBundleAllTimeout bounds /api/workspaces/bundle-all in
+// production. Tests override via ExportOptions.bundleAllTimeout.
+const defaultBundleAllTimeout = 60 * time.Second
+
+// newDaemonClient returns the http.Client used for all daemon calls.
+// Mirrors newReadinessClient(scheme) in readiness.go: plain HTTP gets
+// a vanilla client; HTTPS clones DefaultTransport and pins a
+// skip-verify TLS config (loopback to our private-CA-signed daemon
+// has no MITM surface — same rationale as the readiness probe).
+//
+// Client.Timeout is zero — every caller uses context.WithTimeout so
+// the deadline covers connect + TLS + headers + body together.
+func newDaemonClient(daemonURL string) (*http.Client, error) {
+	u, err := url.Parse(daemonURL)
+	if err != nil {
+		return nil, err
+	}
+	if u.Scheme != "https" {
+		return &http.Client{Timeout: 0}, nil
+	}
+	tr := http.DefaultTransport.(*http.Transport).Clone()
+	//nolint:gosec // G402: loopback-only daemon call, matches readiness.go rationale
+	tr.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+	return &http.Client{Timeout: 0, Transport: tr}, nil
+}
+
+// joinDaemonURL joins a base daemon URL with a path. Returns an error
+// only if the base URL is unparseable; callers collapse the error to
+// a skip in the manifest.
+func joinDaemonURL(base, path string) (string, error) {
+	u, err := url.Parse(base)
+	if err != nil {
+		return "", err
+	}
+	u.Path = strings.TrimRight(u.Path, "/") + path
+	return u.String(), nil
 }
 
 // addLogs copies every live .log file from logsDir into zw's logs/

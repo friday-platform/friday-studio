@@ -13,6 +13,9 @@ import (
 const (
 	skipReasonUserOptedOut        = "user_opted_out"
 	skipReasonDaemonUnreachable   = "daemon_unreachable"
+	skipReasonDaemonReturned5xx   = "daemon_returned_5xx"
+	skipReasonAuthRefused         = "auth_refused"
+	skipReasonBundleAllTimeout    = "bundle_all_timeout"
 	skipReasonDownloadsUnwritable = "downloads_unwritable"
 )
 
