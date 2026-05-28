@@ -9,6 +9,8 @@
 # Scoring matches the original eval:
 #   - Relevance: required keywords appear in output (case-insensitive)
 #   - StatusLine: rejects fail-patterns, requires -ing verb, ≤50 chars
+#   - ResearchFormat: research cases only — ≤4 words, leading verb, single line
+#     (research.txt mandates a bare active verb, not StatusLine's -ing contract)
 #   - Latency / Cost: floor in shared/defaultTest.yaml
 
 # ─── Claude Code — tool invocations ──────────────────────────────────────────
@@ -71,6 +73,9 @@
     - type: icontains-all
       value: [ai, safety]
       metric: Relevance
+    - type: javascript
+      value: file://assertions/research-format.js
+      metric: ResearchFormat
 
 - description: 'research — Parker Conrad'
   vars:
@@ -80,6 +85,9 @@
     - type: icontains-all
       value: [parker, conrad]
       metric: Relevance
+    - type: javascript
+      value: file://assertions/research-format.js
+      metric: ResearchFormat
 
 - description: 'research — quantum trends'
   vars:
@@ -89,6 +97,9 @@
     - type: icontains
       value: quantum
       metric: Relevance
+    - type: javascript
+      value: file://assertions/research-format.js
+      metric: ResearchFormat
 
 - description: 'research — Anthropic meeting'
   vars:
@@ -98,6 +109,9 @@
     - type: icontains
       value: anthropic
       metric: Relevance
+    - type: javascript
+      value: file://assertions/research-format.js
+      metric: ResearchFormat
 
 # ─── Web search — progress lines ────────────────────────────────────────────
 
