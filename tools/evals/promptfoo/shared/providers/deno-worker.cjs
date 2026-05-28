@@ -102,7 +102,18 @@ class DenoWorker {
     });
 
     this.proc.on("exit", (code, signal) => {
-      this.exitErr = new Error(`Deno worker exited unexpectedly (code=${code} signal=${signal})`);
+      // A non-zero exit usually means the worker died before answering — most
+      // often a handler import/syntax error at worker.ts top-level, whose stack
+      // already went to inherited stderr above. Point the operator there:
+      // under `-j N` every pending row otherwise rejects with the same causeless
+      // "exited unexpectedly" line.
+      const hint =
+        code !== 0
+          ? " — worker died before responding; see the Deno stack trace on stderr above (usually a handler import/syntax error)"
+          : "";
+      this.exitErr = new Error(
+        `Deno worker exited unexpectedly (code=${code} signal=${signal})${hint}`,
+      );
       for (const { reject } of this.pending.values()) reject(this.exitErr);
       this.pending.clear();
       this.proc = null;
