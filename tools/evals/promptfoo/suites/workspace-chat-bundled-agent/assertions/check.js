@@ -97,4 +97,44 @@ function noRedundantMcpViaToolList(output) {
   };
 }
 
-module.exports = { noRedundantMcpEnable, noRedundantMcpViaToolList };
+// Emitted upsert set exactly matches the declared expected set (opt-in via
+// expectedAgentsJson). No-op when unset, so the generic smoke case stays loose.
+// Catches over-emission — the right bundled agent PLUS a spurious extra (e.g. a
+// stray type:llm) — and wrong composition. Matching is by type (+ agent slug
+// when given); mirrors workspace-chat-agent-type#agentSetMatches.
+function agentSetMatches(output, context) {
+  const { captures } = parseOutput(output);
+  const expectedAgents = JSON.parse(context.vars.expectedAgentsJson || "[]");
+  if (expectedAgents.length === 0) {
+    return { pass: true, score: 1, reason: "no expected agent set declared for this case" };
+  }
+  if (captures.upsertAgents.length === 0) {
+    return {
+      pass: false,
+      score: 0,
+      reason: "no upsert_agent calls emitted — cannot verify agent set",
+    };
+  }
+  const matches = (e, u) =>
+    u.config.type === e.type &&
+    (e.agent === undefined || e.agent === "" || u.config.agent === e.agent);
+  const missing = expectedAgents.filter((e) => !captures.upsertAgents.some((u) => matches(e, u)));
+  const extra = captures.upsertAgents.filter((u) => !expectedAgents.some((e) => matches(e, u)));
+  if (missing.length === 0 && extra.length === 0) {
+    return { pass: true, score: 1, reason: "emitted agent set matches expected" };
+  }
+  const parts = [];
+  if (missing.length > 0) {
+    parts.push(
+      `missing: ${missing.map((e) => (e.agent ? `${e.type}/${e.agent}` : e.type)).join(", ")}`,
+    );
+  }
+  if (extra.length > 0) {
+    parts.push(
+      `unexpected: ${extra.map((u) => `${u.id}(type=${u.config.type || "?"}, agent=${u.config.agent || "?"})`).join(", ")}`,
+    );
+  }
+  return { pass: false, score: 0, reason: `Agent set mismatch — ${parts.join("; ")}` };
+}
+
+module.exports = { noRedundantMcpEnable, noRedundantMcpViaToolList, agentSetMatches };

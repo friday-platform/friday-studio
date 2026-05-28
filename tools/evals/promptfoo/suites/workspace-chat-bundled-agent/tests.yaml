@@ -11,12 +11,16 @@
 - description: 'scrape-hacker-news — daily HN headlines should pick bundled web agent'
   vars:
     user_prompt: 'I want a workspace that scrapes the top headlines from Hacker News every morning.'
+    expectedAgentsJson: '[{"type":"atlas","agent":"web"}]'
   options: &parse_output
     transform: 'JSON.parse(output)'
   assert:
     - type: javascript
       value: "output.captures.upsertAgents.some(u => u.config.type === 'atlas' && u.config.agent === 'web')"
       metric: BundledWebAgentChosen
+    - type: javascript
+      value: file://assertions/check.js:agentSetMatches
+      metric: agent-set-matches
     - type: javascript
       value: file://assertions/check.js:noRedundantMcpEnable
       metric: NoRedundantMcpEnable
@@ -35,11 +39,15 @@
 - description: 'slack-daily-standup — daily standup post should pick bundled slack agent'
   vars:
     user_prompt: 'I want a workspace that posts a daily standup to Slack.'
+    expectedAgentsJson: '[{"type":"atlas","agent":"slack"}]'
   options: *parse_output
   assert:
     - type: javascript
       value: "output.captures.upsertAgents.some(u => u.config.type === 'atlas' && u.config.agent === 'slack')"
       metric: BundledSlackAgentChosen
+    - type: javascript
+      value: file://assertions/check.js:agentSetMatches
+      metric: agent-set-matches
     - type: javascript
       value: file://assertions/check.js:noRedundantMcpViaToolList
       metric: NoRedundantMcpViaToolList
