@@ -102,6 +102,21 @@ const (
 // the daemon — healthsvc treats every service uniformly.
 const daemonServiceName = "friday"
 
+// menuItem is the subset of *systray.MenuItem mutators that the two
+// shared items (exportItem, includeWorkspacesItem) are driven through.
+// Carved out as an interface purely so tests can inject a recording
+// fake — *systray.MenuItem can't be constructed without a live tray.
+// ClickedCh is deliberately NOT here: it's a struct field on the
+// concrete item, read only from the single-goroutine handleClicks, so
+// onReady captures it into a dedicated channel field instead.
+type menuItem interface {
+	SetTitle(string)
+	Enable()
+	Disable()
+	Check()
+	Uncheck()
+}
+
 // exportSuccessHold is how long the menu item shows the success label
 // before reverting to the default. Sized so a quick reader sees the
 // ✓ but the menu doesn't feel sticky if they re-open it later.
@@ -116,13 +131,25 @@ type trayController struct {
 	openedBrowserOnce atomic.Bool
 
 	// menu items kept around so we can update labels / disable / enable
-	openItem              *systray.MenuItem
-	restartItem           *systray.MenuItem
-	logsItem              *systray.MenuItem
-	includeWorkspacesItem *systray.MenuItem
-	exportItem            *systray.MenuItem
-	autostartItem         *systray.MenuItem
-	quitItem              *systray.MenuItem
+	openItem      *systray.MenuItem
+	restartItem   *systray.MenuItem
+	logsItem      *systray.MenuItem
+	autostartItem *systray.MenuItem
+	quitItem      *systray.MenuItem
+
+	// includeWorkspacesItem and exportItem are the two items mutated
+	// from three goroutines (tick, handleClicks, runExport); they sit
+	// behind the menuItem interface so tests can inject a fake. Their
+	// click channels live in the *ClickedCh fields below since the
+	// interface intentionally omits ClickedCh.
+	includeWorkspacesItem menuItem
+	exportItem            menuItem
+
+	// Click channels captured from the concrete items in onReady.
+	// handleClicks (the sole reader) selects on these instead of
+	// reaching through the now-interface-typed item fields.
+	includeWorkspacesClickedCh <-chan struct{}
+	exportClickedCh            <-chan struct{}
 
 	currentBucket trayBucket
 
@@ -146,6 +173,15 @@ type trayController struct {
 	exportProgressPhase  string    // "" when no export is in flight
 	exportFailureMsg     string    // sticky until next export click
 	exportSuccessUntilTS time.Time // zero value when no success transient
+
+	// menuMu serializes every mutation of the two shared menu items
+	// (exportItem, includeWorkspacesItem) across all three goroutines.
+	// systray.MenuItem's SetTitle/Enable/Disable/Check/Uncheck write
+	// the item's internal fields without any locking of their own, so
+	// without this the tick / click / export goroutines race on them.
+	// Lock ordering: NEVER held with exportMu. Callers derive state
+	// under exportMu, release it, THEN take menuMu for the systray call.
+	menuMu sync.Mutex
 
 	// daemonEnabledForInclude mirrors the last enable/disable verdict
 	// for the Include workspaces item so we only call Enable/Disable
@@ -184,13 +220,20 @@ func (t *trayController) onReady() {
 	// user's prior toggle survives launcher restarts (state.json
 	// IncludeWorkspaces field).
 	persisted := readState()
-	t.includeWorkspacesItem = systray.AddMenuItemCheckbox(
+	// Capture each concrete item locally so we can grab ClickedCh
+	// (a struct field, absent from the menuItem interface) before the
+	// field narrows to the interface type.
+	includeItem := systray.AddMenuItemCheckbox(
 		includeWorkspacesLabel,
 		"Embed each workspace's definition zip in the next diagnostic export",
 		persisted.IncludeWorkspaces)
-	t.exportItem = systray.AddMenuItem(
+	t.includeWorkspacesItem = includeItem
+	t.includeWorkspacesClickedCh = includeItem.ClickedCh
+	exportItem := systray.AddMenuItem(
 		exportItemDefault,
 		"Build a one-click diagnostic zip and reveal it in your file browser")
+	t.exportItem = exportItem
+	t.exportClickedCh = exportItem.ClickedCh
 	systray.AddSeparator()
 	t.autostartItem = systray.AddMenuItemCheckbox(
 		"Start at login",
@@ -227,9 +270,9 @@ func (t *trayController) handleClicks() {
 			if err := openInFileBrowser(logsDir()); err != nil {
 				log.Error("open logs dir failed", "error", err)
 			}
-		case <-t.includeWorkspacesItem.ClickedCh:
+		case <-t.includeWorkspacesClickedCh:
 			t.toggleIncludeWorkspaces()
-		case <-t.exportItem.ClickedCh:
+		case <-t.exportClickedCh:
 			t.startExport()
 		case <-t.autostartItem.ClickedCh:
 			if t.autostartItem.Checked() {
@@ -434,6 +477,8 @@ func (t *trayController) toggleIncludeWorkspaces() {
 	if t.includeWorkspacesItem == nil {
 		return
 	}
+	t.menuMu.Lock()
+	defer t.menuMu.Unlock()
 	if state.IncludeWorkspaces {
 		t.includeWorkspacesItem.Check()
 	} else {
@@ -458,6 +503,7 @@ func (t *trayController) updateIncludeWorkspacesAvailability() {
 	if daemonUp == t.daemonEnabledForInclude {
 		return
 	}
+	t.menuMu.Lock()
 	if daemonUp {
 		t.includeWorkspacesItem.SetTitle(includeWorkspacesLabel)
 		t.includeWorkspacesItem.Enable()
@@ -465,6 +511,7 @@ func (t *trayController) updateIncludeWorkspacesAvailability() {
 		t.includeWorkspacesItem.SetTitle(includeWorkspacesLabel + includeWorkspacesDisable)
 		t.includeWorkspacesItem.Disable()
 	}
+	t.menuMu.Unlock()
 	t.daemonEnabledForInclude = daemonUp
 }
 
@@ -527,11 +574,16 @@ func (t *trayController) updateExportItemLabel() {
 	if expired {
 		t.exportSuccessUntilTS = time.Time{}
 	}
+	// Lock ordering: release exportMu BEFORE taking menuMu — the two are
+	// never held together (see menuMu doc). exportMu guards the string
+	// fields; menuMu guards the systray mutation that follows.
 	t.exportMu.Unlock()
+	t.menuMu.Lock()
 	t.exportItem.SetTitle(label)
 	if expired {
 		t.exportItem.Enable()
 	}
+	t.menuMu.Unlock()
 }
 
 // startExport handles a click on the Export diagnostic logs item.
@@ -549,7 +601,9 @@ func (t *trayController) startExport() {
 		return
 	}
 	if t.exportItem != nil {
+		t.menuMu.Lock()
 		t.exportItem.Disable()
+		t.menuMu.Unlock()
 	}
 	t.exportMu.Lock()
 	t.exportFailureMsg = ""
@@ -592,7 +646,9 @@ func (t *trayController) runExport() {
 		// Re-enable so the user can retry. The sticky failure label
 		// stays until the next successful export or the next click.
 		if t.exportItem != nil {
+			t.menuMu.Lock()
 			t.exportItem.Enable()
+			t.menuMu.Unlock()
 		}
 		t.updateExportItemLabel()
 		return
@@ -608,7 +664,9 @@ func (t *trayController) runExport() {
 		t.exportFailureMsg = exportItemFailure
 		t.exportMu.Unlock()
 		if t.exportItem != nil {
+			t.menuMu.Lock()
 			t.exportItem.Enable()
+			t.menuMu.Unlock()
 		}
 		t.updateExportItemLabel()
 		return
