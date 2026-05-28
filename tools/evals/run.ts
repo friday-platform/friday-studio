@@ -63,7 +63,7 @@ const runCommand = define({
 evals run
 
 # Run a specific eval file
-evals run -t tools/evals/agents/workspace-chat/elicitation-behavior.eval.ts
+evals run -t tools/evals/agents/web/web.eval.ts
 
 # Stop on first failure
 evals run --fail-fast
