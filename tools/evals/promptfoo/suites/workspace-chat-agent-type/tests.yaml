@@ -44,6 +44,13 @@
     - type: javascript
       value: file://assertions/check.js:noPhantomAtlasAgent
       metric: no-phantom-atlas-agent
+    # Cumulative run cost (priced from result.totalUsage across all steps, NOT
+    # the last-step LiteLLM header). Upper bound sized for friday-lg (sonnet) on
+    # a full 20-step loop with headroom. PLACEHOLDER — tighten to ~2× the
+    # observed median once a calibration run against the proxy exists; today it
+    # only catches a gross (≈5×+) tool-thrash blowup.
+    - type: cost
+      threshold: 2.00
 
 # Acknowledged non-deterministic per the original eval's docstring
 # (agent-type-default.eval.ts) — the same prompt produces opposite

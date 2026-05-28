@@ -15,6 +15,7 @@ import { bundledAgents, bundledAgentsRegistry } from "@atlas/bundled-agents";
 import { buildRegistryModelId, isRegistryProvider, registry } from "@atlas/llm";
 import { jsonSchema, stepCountIs, streamText, tool } from "ai";
 import { z } from "zod";
+import { cumulativeRunCostUsd } from "../../shared/providers/litellm-cost.ts";
 
 const ROOT = resolve(import.meta.dirname ?? ".", "../../../../..");
 
@@ -359,7 +360,7 @@ interface Request {
   config: { registryId?: string } & Record<string, unknown>;
 }
 
-export default async function handle(req: Request): Promise<{ output: string }> {
+export default async function handle(req: Request): Promise<{ output: string; cost: number }> {
   if (!req.config.registryId) {
     throw new Error("workspace-chat-agent-type: providerConfig.registryId is required");
   }
@@ -407,7 +408,9 @@ export default async function handle(req: Request): Promise<{ output: string }> 
   // Surface the known-bundled-agent set so promptfoo assertions can run the
   // phantom-atlas check without re-importing @atlas/bundled-agents (which
   // wouldn't work — assertions run in promptfoo's Node sandbox, not Deno).
+  const cost = cumulativeRunCostUsd(await result.totalUsage, modelId);
   return {
     output: JSON.stringify({ captures, knownBundledAgents: Object.keys(bundledAgentsRegistry) }),
+    cost,
   };
 }

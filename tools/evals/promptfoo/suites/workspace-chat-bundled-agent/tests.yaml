@@ -26,6 +26,11 @@
     - type: javascript
       value: 'output.captures.listCapabilitiesCallCount > 0'
       metric: CalledListCapabilities
+    # Cumulative run cost (result.totalUsage priced across all 12 steps, not the
+    # last-step LiteLLM header). PLACEHOLDER upper bound for friday-lg — tighten
+    # to ~2× observed once a proxy calibration run exists.
+    - type: cost
+      threshold: 1.20
 
 - description: 'slack-daily-standup — daily standup post should pick bundled slack agent'
   vars:
@@ -41,6 +46,8 @@
     - type: javascript
       value: 'output.captures.listCapabilitiesCallCount > 0'
       metric: CalledListCapabilities
+    - type: cost
+      threshold: 1.20
 
 - description: 'fetch-and-summarize (smoke) — at least one atlas upsert for generic fetch+summarize'
   vars:
@@ -50,3 +57,5 @@
     - type: javascript
       value: "output.captures.upsertAgents.some(u => u.config.type === 'atlas')"
       metric: AnyAtlasAgent
+    - type: cost
+      threshold: 1.20
