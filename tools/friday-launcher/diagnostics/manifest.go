@@ -16,6 +16,7 @@ const (
 	skipReasonDaemonReturned5xx   = "daemon_returned_5xx"
 	skipReasonAuthRefused         = "auth_refused"
 	skipReasonBundleAllTimeout    = "bundle_all_timeout"
+	skipReasonBundleAllTooLarge   = "bundle_all_too_large"
 	skipReasonDownloadsUnwritable = "downloads_unwritable"
 )
 

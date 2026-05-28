@@ -60,6 +60,12 @@ type ExportOptions struct {
 	// bound on the /bundle-all call. Unexported test-only knob —
 	// production callers get the 60s default.
 	bundleAllTimeout time.Duration
+
+	// bundleAllByteCap, when non-zero, overrides the default
+	// defaultBundleAllByteCap on how many bytes the /bundle-all
+	// response body may occupy. Unexported test-only knob —
+	// production callers get the default cap.
+	bundleAllByteCap int64
 }
 
 // Package-level seams that tests swap. Production callers see them
@@ -320,12 +326,21 @@ func fetchWorkspaces(opts ExportOptions) workspaceResult {
 	case resp.StatusCode < 200 || resp.StatusCode >= 300:
 		return workspaceResult{skipReason: skipReasonDaemonUnreachable}
 	}
-	body, err := io.ReadAll(resp.Body)
+	byteCap := opts.bundleAllByteCap
+	if byteCap == 0 {
+		byteCap = defaultBundleAllByteCap
+	}
+	// Read one byte past the cap so a body sitting exactly at the cap
+	// is kept while anything larger trips the skip below.
+	body, err := io.ReadAll(io.LimitReader(resp.Body, byteCap+1))
 	if err != nil {
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			return workspaceResult{skipReason: skipReasonBundleAllTimeout}
 		}
 		return workspaceResult{skipReason: skipReasonDaemonUnreachable}
+	}
+	if int64(len(body)) > byteCap {
+		return workspaceResult{skipReason: skipReasonBundleAllTooLarge}
 	}
 	return workspaceResult{body: body}
 }
@@ -338,6 +353,13 @@ const versionTimeout = 5 * time.Second
 // defaultBundleAllTimeout bounds /api/workspaces/bundle-all in
 // production. Tests override via ExportOptions.bundleAllTimeout.
 const defaultBundleAllTimeout = 60 * time.Second
+
+// defaultBundleAllByteCap bounds how many bytes of the /bundle-all
+// response fetchWorkspaces buffers. The 60s timeout bounds latency,
+// not size — a power user with many/large workspaces (this feature's
+// persona) could otherwise balloon launcher RSS. Tests override via
+// ExportOptions.bundleAllByteCap.
+const defaultBundleAllByteCap = 256 << 20 // 256 MB
 
 // newDaemonClient returns the http.Client used for all daemon calls.
 // Mirrors newReadinessClient(scheme) in readiness.go: plain HTTP gets

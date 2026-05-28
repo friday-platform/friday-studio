@@ -218,6 +218,37 @@ func TestExport_HTTP_BundleAllTimeout(t *testing.T) {
 	}
 }
 
+func TestExport_HTTP_BundleTooLarge(t *testing.T) {
+	logs, state := stubSources(t)
+	writeFile(t, filepath.Join(logs, "a.log"), "x")
+	writeFile(t, filepath.Join(state, "state.json"), "{}")
+	// Serve a body larger than the test-injected cap.
+	srv := newDaemonStub(t, daemonStub{bundleBody: make([]byte, 64)})
+	defer srv.Close()
+
+	zipPath, err := Export(ExportOptions{
+		IncludeWorkspaces: true,
+		DaemonURL:         srv.URL,
+		OutputDir:         t.TempDir(),
+		bundleAllByteCap:  32,
+	})
+	if err != nil {
+		t.Fatalf("Export: %v", err)
+	}
+	for _, name := range readZipEntries(t, zipPath) {
+		if name == "workspaces.zip" {
+			t.Errorf("workspaces.zip present despite body exceeding cap")
+		}
+	}
+	body := string(readZipFile(t, zipPath, "manifest.yml"))
+	if !strings.Contains(body, "why: bundle_all_too_large") {
+		t.Errorf("manifest missing why: bundle_all_too_large\n%s", body)
+	}
+	if !strings.Contains(body, "workspaces: false") {
+		t.Errorf("manifest should mark workspaces: false\n%s", body)
+	}
+}
+
 func TestExport_HTTP_TLS_InsecureSkipVerify(t *testing.T) {
 	logs, state := stubSources(t)
 	writeFile(t, filepath.Join(logs, "a.log"), "x")
