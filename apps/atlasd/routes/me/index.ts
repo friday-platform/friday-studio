@@ -1,8 +1,10 @@
 import process from "node:process";
+import { ChatStorage } from "@atlas/core/chat/storage";
 import { ONBOARDING_VERSION, UserStorage } from "@atlas/core/users/storage";
 import type { Context } from "hono";
 import { z } from "zod";
-import { daemonFactory } from "../../src/factory.ts";
+import { daemonFactory, KERNEL_WORKSPACE_ID } from "../../src/factory.ts";
+import { getAccessibleWorkspaceIds } from "../../src/workspace-authz.ts";
 import { getCurrentUser, updateCurrentUser } from "./adapter.ts";
 import { deletePhoto, getPhoto, savePhoto, validatePhoto } from "./photo-storage.ts";
 
@@ -292,6 +294,74 @@ const meRoutes = daemonFactory
     const result = await UserStorage.markOnboardingComplete(userId, ONBOARDING_VERSION);
     if (!result.ok) return c.json({ error: result.error }, 503);
     return c.json({ version: ONBOARDING_VERSION, completed: true });
+  })
+
+  /**
+   * GET /api/me/chats — list chats across every workspace the caller can
+   * access, merged + sorted by updatedAt DESC. Powers the @-mention
+   * autocomplete in the chat composer (friday-studio-4j7). Optional `q`
+   * filters by case-insensitive title substring; `limit` caps the result
+   * size (default 50, hard cap 200).
+   */
+  .get("/chats", async (c) => {
+    const userId = c.get("userId");
+    if (!userId) return c.json({ error: "Unauthorized" }, 401);
+
+    const qRaw = c.req.query("q") ?? "";
+    const limitRaw = c.req.query("limit");
+    // `parseInt(...) || 50` would silently override `?limit=0` (falsy-zero
+    // pitfall) — explicit-zero callers got 50 chats back. Use isFinite
+    // so 0 is treated as an explicit-but-clamped value (Math.max lifts
+    // to 1). See friday-studio-ltn.
+    const parsedLimit = Number.parseInt(limitRaw ?? "", 10);
+    const limit = Math.max(1, Math.min(200, Number.isFinite(parsedLimit) ? parsedLimit : 50));
+    const q = qRaw.trim().toLowerCase();
+
+    const accessible = await getAccessibleWorkspaceIds(userId);
+    // Drop the kernel workspace from the autocomplete data source — a
+    // kernel-member caller in a non-kernel chat should not see kernel
+    // chats as @-mention candidates. The composer doesn't pass a
+    // context flag, so the safe default is to hide kernel chats from
+    // this endpoint entirely; kernel-internal tooling that needs to
+    // mention kernel chats should use a different route. See
+    // friday-studio-svv.
+    accessible.delete(KERNEL_WORKSPACE_ID);
+    if (accessible.size === 0) {
+      return c.json({ chats: [] }, 200);
+    }
+
+    // Per-workspace listing in parallel. Each call hits the CHATS KV
+    // bucket with the workspace's prefix — bounded by the user's
+    // membership count, which is small in practice. Pull the
+    // per-workspace cap a bit above `limit` so the merged-then-sorted
+    // page still has good coverage even when the most-recent chats
+    // cluster in a single workspace.
+    const perWorkspaceLimit = Math.max(limit, 25);
+    const results = await Promise.all(
+      Array.from(accessible).map(async (workspaceId) => {
+        const r = await ChatStorage.listChatsByWorkspace(workspaceId, { limit: perWorkspaceLimit });
+        if (!r.ok)
+          return [] as Array<{
+            workspaceId: string;
+            chatId: string;
+            title: string | null;
+            updatedAt: string;
+          }>;
+        return r.data.chats.map((chat) => ({
+          workspaceId: chat.workspaceId,
+          chatId: chat.id,
+          title: chat.title ?? null,
+          updatedAt: chat.updatedAt,
+        }));
+      }),
+    );
+
+    let merged = results.flat();
+    if (q.length > 0) {
+      merged = merged.filter((c) => (c.title ?? "").toLowerCase().includes(q));
+    }
+    merged.sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
+    return c.json({ chats: merged.slice(0, limit) }, 200);
   });
 
 export { meRoutes };

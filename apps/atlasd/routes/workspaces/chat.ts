@@ -9,16 +9,35 @@
  */
 
 import { Buffer } from "node:buffer";
+import { createHash } from "node:crypto";
 import { normalizeToUIMessages, validateAtlasUIMessages } from "@atlas/agent-sdk";
 import { ChatStorage } from "@atlas/core/chat/storage";
+import { ChatSummariesStorage } from "@atlas/core/chat/summaries-storage";
 import { WorkspaceNotFoundError } from "@atlas/core/errors/workspace-not-found";
 import { UserStorage } from "@atlas/core/users/storage";
 import { logger } from "@atlas/logger";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { daemonFactory } from "../../src/factory.ts";
+import { summarizeChat } from "../../src/summarize-chat.ts";
 import { requireWorkspaceMember } from "../../src/workspace-authz.ts";
 import { MAX_FULL_EXPORT_BYTES, MAX_FULL_EXPORT_MESSAGES } from "./chat-limits.ts";
+
+/**
+ * Bound the steering text the caller can send. The summarizer is
+ * server-side LLM cost; nobody should be able to push a 100KB
+ * "focus" through. 500 chars is plenty for "decisions and open
+ * questions" or similar steering.
+ */
+const SUMMARIZE_FOCUS_MAX_CHARS = 500;
+const summarizeChatBodySchema = z.object({
+  focus: z.string().max(SUMMARIZE_FOCUS_MAX_CHARS).optional(),
+});
+
+function hashFocus(focus: string | undefined): string {
+  if (!focus || focus.trim().length === 0) return "noop";
+  return createHash("sha256").update(focus.trim()).digest("hex").slice(0, 16);
+}
 
 const listChatsQuerySchema = z.object({
   limit: z.coerce.number().min(1).max(100).optional(),
@@ -274,6 +293,11 @@ const workspaceChatRoutes = daemonFactory
       chat,
       messages: sanitized,
       systemPromptContext: systemPromptContext ?? null,
+      // Total messages in the chat regardless of the route-side trim.
+      // Lets agent tools compute `truncated` honestly — without this
+      // they only know "I sliced what I received", not "the route
+      // already sliced at 100". See friday-studio-ns4.
+      totalMessageCount: messages.length,
     };
 
     if (full) {
@@ -315,6 +339,70 @@ const workspaceChatRoutes = daemonFactory
       return c.json({ error: result.error }, status);
     }
     return c.body(null, 204);
+  })
+
+  /**
+   * POST /:chatId/summarize — bounded-output LLM summary of the chat.
+   *
+   * Powers the "continue a context-maxed prior chat" use case: the
+   * agent in a new chat @-mentions the old one, then calls
+   * `summarize_chat` to ingest a compact representation instead of
+   * `read_chat`'s raw transcript. Auth is the workspace-membership
+   * gate mounted at the route group head.
+   *
+   * Caching: keyed on (workspaceId, chatId, updatedAt, focusHash).
+   * A new message append advances `updatedAt` and naturally
+   * invalidates. Cache miss runs the map-reduce in
+   * `summarize-chat.ts` and persists the result. Write failures are
+   * non-fatal — the route still returns the freshly computed summary.
+   */
+  .post("/:chatId/summarize", zValidator("json", summarizeChatBodySchema), async (c) => {
+    const chatId = c.req.param("chatId");
+    const workspaceId = c.req.param("workspaceId");
+    if (!chatId || !workspaceId) {
+      return c.json({ error: "Missing chatId or workspaceId" }, 400);
+    }
+    const { focus } = c.req.valid("json");
+
+    const chatResult = await ChatStorage.getChat(chatId, workspaceId);
+    if (!chatResult.ok || !chatResult.data) {
+      return c.json({ error: "Chat not found" }, 404);
+    }
+
+    const chat = chatResult.data;
+    const updatedAtMs = Date.parse(chat.updatedAt);
+    const focusHash = hashFocus(focus);
+    // Date.parse returns NaN for malformed timestamps. String(NaN)
+    // is the literal "NaN" — baking that into the cache key freezes
+    // the key forever (subsequent appends still parse to NaN → same
+    // key → stale summary returned with cached:true). Bypass cache
+    // entirely on bad timestamps so each call recomputes. See
+    // friday-studio-4t7.
+    const cacheable = Number.isFinite(updatedAtMs);
+    const keyParts = cacheable ? { workspaceId, chatId, updatedAtMs, focusHash } : null;
+
+    if (keyParts) {
+      const cached = await ChatSummariesStorage.get(keyParts);
+      if (cached) {
+        return c.json({ ...cached, cached: true }, 200);
+      }
+    }
+
+    try {
+      const ctx = c.get("app");
+      const result = await summarizeChat({
+        chat,
+        platformModels: ctx.platformModels,
+        focus,
+        abortSignal: c.req.raw.signal,
+      });
+      if (keyParts) await ChatSummariesStorage.put(keyParts, result);
+      return c.json({ ...result, cached: false }, 200);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error("chat_summarize_failed", { workspaceId, chatId, error: message });
+      return c.json({ error: "Summarization failed", details: message }, 503);
+    }
   })
 
   .post(

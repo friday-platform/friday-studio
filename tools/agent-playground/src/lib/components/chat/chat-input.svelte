@@ -3,6 +3,13 @@
   import { toast } from "@atlas/ui";
   import ModelPill from "./model-pill.svelte";
   import {
+    applyEditDelta,
+    detectActiveMentionQuery,
+    expandMentionSpans,
+    type InsertedMentionRef,
+    type InsertedMentionSpan,
+  } from "../../chat/mention-text.ts";
+  import {
     type FileAttachment,
     type ChatAttachment,
     type ImageAttachment,
@@ -13,6 +20,14 @@
     rejectionToast,
     runFileUpload,
   } from "./chat-attachment.ts";
+  import MentionAutocomplete from "./mention-autocomplete.svelte";
+
+  /**
+   * Re-export of the shared type — kept here so callers can keep
+   * importing `InsertedMention from "./chat-input.svelte"` while the
+   * actual definition lives in the shared mention-text utility module.
+   */
+  export type InsertedMention = InsertedMentionRef;
 
   // Re-export the attachment types so existing imports
   // (`import { ChatAttachment } from "./chat-input.svelte"`) keep working.
@@ -37,7 +52,11 @@
      * owns this; user-chat passes it through unchanged.
      */
     chatId: string;
-    onsubmit: (message: string, attachments: ChatAttachment[]) => void;
+    onsubmit: (
+      message: string,
+      attachments: ChatAttachment[],
+      mentions: InsertedMention[],
+    ) => void;
     /** Attached images/files. Bindable so drop targets outside this component
      * (e.g. the whole chat surface) can push files into the same preview
      * strip the file-picker uses, instead of rendering a parallel one. */
@@ -76,6 +95,80 @@
 
   let recording = $state(false);
   let recognition: SpeechRecognition | null = $state(null);
+
+  // ── @-mention autocomplete state ─────────────────────────────────────
+  // Tracks the active `@`-query (start/end indices + substring) so the
+  // popover knows what to filter against and where to splice the
+  // inserted token on select. See friday-studio-c7j.
+  let mentionPopover: MentionAutocomplete | undefined = $state();
+  let mentionQuery = $state<{ start: number; end: number; query: string } | null>(null);
+  const mentionOpen = $derived(mentionQuery !== null);
+
+  // Picked-from-autocomplete mentions tracked as offset spans into
+  // `value`. Keying by offset (rather than display title) means two
+  // chats that share a title resolve to their own refs at submit time
+  // — picking ws-a/c1 "Demo" and ws-b/c2 "Demo" no longer collide. See
+  // friday-studio-a0q.
+  let mentionSpans = $state<InsertedMentionSpan[]>([]);
+  /** Snapshot of `value` before the latest input edit. Drives
+   *  applyEditDelta so we can shift / drop spans across user edits. */
+  let prevValue = "";
+
+  /**
+   * Re-check whether the caret is currently inside an `@`-mention being
+   * typed. Called on every keystroke + click so the popover follows the
+   * caret. The single source of truth is `detectActiveMentionQuery` in
+   * `mention-text.ts` — same regex as the server-side resolver.
+   */
+  function refreshMentionQuery() {
+    if (!textareaEl) {
+      mentionQuery = null;
+      return;
+    }
+    const caret = textareaEl.selectionStart ?? value.length;
+    mentionQuery = detectActiveMentionQuery(value, caret);
+  }
+
+  function insertMention(ref: { workspaceId: string; chatId: string; title: string }) {
+    if (!mentionQuery || !textareaEl) return;
+    const { start, end } = mentionQuery;
+    // Insert the friendly title — keeps the textarea readable. We
+    // expand it back to `@workspaceId/chatId` on submit so the server
+    // resolver still sees the canonical token.
+    const display = `@${ref.title} `;
+    const before = value.slice(0, start);
+    const after = value.slice(end);
+    const newValue = before + display + after;
+    // Shift existing spans to account for replacing `[start, end)`
+    // with `display`. Drop any span that overlaps that range
+    // (shouldn't happen — the user can't be inside another span
+    // while typing the active @-query — but defensive).
+    const replaceDelta = display.length - (end - start);
+    const shifted: InsertedMentionSpan[] = [];
+    for (const span of mentionSpans) {
+      const spanEnd = span.start + span.length;
+      if (spanEnd <= start) shifted.push(span);
+      else if (span.start >= end) shifted.push({ ...span, start: span.start + replaceDelta });
+      // else: overlap → drop
+    }
+    shifted.push({ start, length: display.length, ref });
+    mentionSpans = shifted;
+    value = newValue;
+    prevValue = newValue;
+    mentionQuery = null;
+    // Restore focus + caret position after the splice in a microtask so
+    // Svelte has flushed the bind:value update before we move the caret.
+    queueMicrotask(() => {
+      if (!textareaEl) return;
+      const caretAt = start + display.length;
+      textareaEl.focus();
+      textareaEl.setSelectionRange(caretAt, caretAt);
+    });
+  }
+
+  function closeMentionPopover() {
+    mentionQuery = null;
+  }
 
   $effect(() => {
     if (!textareaEl) return;
@@ -248,17 +341,40 @@
   }
 
   function handleKeydown(e: KeyboardEvent) {
+    // Mention autocomplete owns ArrowUp/Down/Enter/Tab/Escape while it's
+    // open. The popover exposes a `handleKey` so this textarea keeps
+    // focus throughout — preventDefault on a consumed event so Enter
+    // doesn't also submit the message.
+    if (mentionOpen && mentionPopover?.handleKey(e)) {
+      e.preventDefault();
+      return;
+    }
     if (e.key === "Enter" && !e.shiftKey && hasContent) {
       e.preventDefault();
       submit();
     }
   }
 
+  function handleInput() {
+    // Reconcile span offsets against the user's edit before any
+    // downstream work that depends on them.
+    mentionSpans = applyEditDelta(mentionSpans, prevValue, value);
+    prevValue = value;
+    refreshMentionQuery();
+  }
+
+  function handleSelectionChange() {
+    refreshMentionQuery();
+  }
+
   function submit() {
     if (!hasContent) return;
-    onsubmit(value.trim(), attachments);
+    const { text, mentions } = expandMentionSpans(value, mentionSpans);
+    onsubmit(text.trim(), attachments, mentions);
     value = "";
+    prevValue = "";
     attachments = [];
+    mentionSpans = [];
   }
 
   function handleDrop(e: DragEvent) {
@@ -411,15 +527,28 @@
       onchange={handleFileInput}
       class="file-input-hidden"
     />
-    <textarea
-      data-testid="chat-input"
-      bind:this={textareaEl}
-      bind:value
-      onkeydown={handleKeydown}
-      onpaste={handlePaste}
-      placeholder={dragOver ? "Drop file here..." : recording ? "Listening..." : "Send a message..."}
-      rows={1}
-    ></textarea>
+    <div class="textarea-wrap">
+      <textarea
+        data-testid="chat-input"
+        bind:this={textareaEl}
+        bind:value
+        onkeydown={handleKeydown}
+        oninput={handleInput}
+        onclick={handleSelectionChange}
+        onkeyup={handleSelectionChange}
+        onblur={closeMentionPopover}
+        onpaste={handlePaste}
+        placeholder={dragOver ? "Drop file here..." : recording ? "Listening..." : "Send a message..."}
+        rows={1}
+      ></textarea>
+      <MentionAutocomplete
+        bind:this={mentionPopover}
+        query={mentionQuery?.query ?? ""}
+        open={mentionOpen}
+        onselect={insertMention}
+        onclose={closeMentionPopover}
+      />
+    </div>
     {#if sttSupported}
       <button
         class="mic-button"
@@ -502,6 +631,13 @@
     align-items: flex-end;
     display: flex;
     gap: var(--size-2);
+  }
+
+  /* Anchor for the mention popover — the popover positions itself
+     against this wrap so it sits just above the textarea. */
+  .textarea-wrap {
+    flex: 1;
+    position: relative;
   }
 
   .file-input-hidden {

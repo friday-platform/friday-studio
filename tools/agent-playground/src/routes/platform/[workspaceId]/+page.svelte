@@ -26,6 +26,14 @@
   import CommunicatorsCard from "$lib/components/workspace/communicators-card.svelte";
   import JobsIntegrationsCard from "$lib/components/workspace/jobs-integrations-card.svelte";
   import SignalsCard from "$lib/components/workspace/signals-card.svelte";
+  import MentionAutocomplete from "$lib/components/chat/mention-autocomplete.svelte";
+  import {
+    applyEditDelta,
+    detectActiveMentionQuery,
+    expandMentionSpans,
+    type InsertedMentionRef,
+    type InsertedMentionSpan,
+  } from "$lib/chat/mention-text.ts";
   import { sessionQueries, useDeleteWorkspace, workspaceQueries } from "$lib/queries";
   import { writable } from "svelte/store";
   import { stringify } from "yaml";
@@ -271,6 +279,71 @@
   let startMessage = $state("");
   let composerInputEl = $state<HTMLTextAreaElement | undefined>(undefined);
 
+  // ── @-mention autocomplete in the empty-state composer ────────────
+  // Same primitives the in-chat composer uses (chat-input.svelte).
+  // Picking from autocomplete inserts the friendly title; on send we
+  // expand `@Title` back to the canonical `@workspaceId/chatId` token
+  // the server resolver expects, and ship the picked refs alongside
+  // the seed text so the in-chat composer can render the optimistic
+  // link bubble immediately.
+  let mentionPopover = $state<MentionAutocomplete | undefined>(undefined);
+  let mentionQuery = $state<{ start: number; end: number; query: string } | null>(null);
+  const mentionOpen = $derived(mentionQuery !== null);
+  // Offset-based span tracking (friday-studio-a0q) so duplicate
+  // titles across workspaces don't collide.
+  let mentionSpans = $state<InsertedMentionSpan[]>([]);
+  let prevStartMessage = "";
+
+  function refreshMentionQuery() {
+    if (!composerInputEl) {
+      mentionQuery = null;
+      return;
+    }
+    const caret = composerInputEl.selectionStart ?? startMessage.length;
+    mentionQuery = detectActiveMentionQuery(startMessage, caret);
+  }
+
+  function insertMention(ref: InsertedMentionRef) {
+    if (!mentionQuery || !composerInputEl) return;
+    const { start, end } = mentionQuery;
+    const display = `@${ref.title} `;
+    const before = startMessage.slice(0, start);
+    const after = startMessage.slice(end);
+    const newValue = before + display + after;
+    const replaceDelta = display.length - (end - start);
+    const shifted: InsertedMentionSpan[] = [];
+    for (const span of mentionSpans) {
+      const spanEnd = span.start + span.length;
+      if (spanEnd <= start) shifted.push(span);
+      else if (span.start >= end) shifted.push({ ...span, start: span.start + replaceDelta });
+    }
+    shifted.push({ start, length: display.length, ref });
+    mentionSpans = shifted;
+    startMessage = newValue;
+    prevStartMessage = newValue;
+    mentionQuery = null;
+    queueMicrotask(() => {
+      if (!composerInputEl) return;
+      const caretAt = start + display.length;
+      composerInputEl.focus();
+      composerInputEl.setSelectionRange(caretAt, caretAt);
+    });
+  }
+
+  function closeMentionPopover() {
+    mentionQuery = null;
+  }
+
+  function handleComposerInput() {
+    mentionSpans = applyEditDelta(mentionSpans, prevStartMessage, startMessage);
+    prevStartMessage = startMessage;
+    refreshMentionQuery();
+  }
+
+  function handleComposerSelectionChange() {
+    refreshMentionQuery();
+  }
+
   $effect(() => {
     // Re-evaluate when the message changes.
     void startMessage;
@@ -292,13 +365,32 @@
     "Build a searchable knowledge base",
   ];
 
-  function startChat(msg = startMessage.trim()) {
-    if (!msg || !workspaceId || !browser) return;
-    sessionStorage.setItem(`chat-seed-${workspaceId}`, msg);
+  function startChat(rawMsg = startMessage) {
+    if (!workspaceId || !browser) return;
+    // Expand `@<title>` back to canonical `@workspaceId/chatId` tokens
+    // so the server resolver matches. Mentions are encoded into the
+    // sessionStorage payload alongside the text so the chat page can
+    // render the optimistic link bubble with the friendly title.
+    const useSpans = rawMsg === startMessage ? mentionSpans : [];
+    const { text, mentions } = expandMentionSpans(rawMsg, useSpans);
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    // Versioned envelope so the chat-page seed parser doesn't have to
+    // guess whether a seed that happens to start with `{` is JSON or
+    // a literal user message. user-chat checks `parsed.v === 1`
+    // before treating the seed as structured. See friday-studio-1n3.
+    const payload = mentions.length > 0
+      ? JSON.stringify({ v: 1, text: trimmed, mentions })
+      : trimmed;
+    sessionStorage.setItem(`chat-seed-${workspaceId}`, payload);
     void goto(`/platform/${workspaceId}/chat`);
   }
 
   function handleStartKeydown(e: KeyboardEvent) {
+    if (mentionOpen && mentionPopover?.handleKey(e)) {
+      e.preventDefault();
+      return;
+    }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       startChat();
@@ -533,14 +625,27 @@
         </div>
 
         <div class="composer-card">
-          <textarea
-            class="composer-input"
-            placeholder="What do you need done?"
-            bind:value={startMessage}
-            bind:this={composerInputEl}
-            onkeydown={handleStartKeydown}
-            rows={3}
-          ></textarea>
+          <div class="composer-input-wrap">
+            <textarea
+              class="composer-input"
+              placeholder="What do you need done?"
+              bind:value={startMessage}
+              bind:this={composerInputEl}
+              onkeydown={handleStartKeydown}
+              oninput={handleComposerInput}
+              onclick={handleComposerSelectionChange}
+              onkeyup={handleComposerSelectionChange}
+              onblur={closeMentionPopover}
+              rows={3}
+            ></textarea>
+            <MentionAutocomplete
+              bind:this={mentionPopover}
+              query={mentionQuery?.query ?? ""}
+              open={mentionOpen}
+              onselect={insertMention}
+              onclose={closeMentionPopover}
+            />
+          </div>
 
           <div class="composer-footer">
             <div class="suggested-prompts">
@@ -977,6 +1082,13 @@
     gap: var(--size-3);
     max-inline-size: 580px;
     padding: var(--size-4) var(--size-5);
+    width: 100%;
+  }
+
+  /* Anchor for the @-mention autocomplete popover so it sits just
+     above the textarea (same anchoring approach as chat-input). */
+  .composer-input-wrap {
+    position: relative;
     width: 100%;
   }
 

@@ -75,6 +75,22 @@ function isAttachmentExpansionText(part: Record<string, unknown>): boolean {
 }
 
 /**
+ * Same shape-flag pattern as {@link isAttachmentExpansionText}, but for
+ * the `mention-expansion` text part that the server-side @-mention
+ * resolver injects so the agent sees the referenced chat's snapshot
+ * inline. The user bubble renders the original mention text as a link
+ * via the `data-mention-resolved` part — the synthesized expansion
+ * block is agent-only.
+ */
+function isMentionExpansionText(part: Record<string, unknown>): boolean {
+  const pm = part.providerMetadata;
+  if (typeof pm !== "object" || pm === null) return false;
+  const atlas = (pm as Record<string, unknown>).atlas;
+  if (typeof atlas !== "object" || atlas === null) return false;
+  return (atlas as Record<string, unknown>).kind === "mention-expansion";
+}
+
+/**
  * Extract a top-level {@link ToolCallDisplay} from a single tool part, or
  * `null` if the part isn't a recognizable tool shape.
  */
@@ -529,6 +545,7 @@ export function buildSegments(msg: AtlasUIMessage): Segment[] {
       // bubble's ArtifactCard already represents the file visually, so
       // render-side we skip these blocks — they're agent-only.
       if (isAttachmentExpansionText(part)) continue;
+      if (isMentionExpansionText(part)) continue;
       flushBurst();
       textBuffer += part.text;
       continue;

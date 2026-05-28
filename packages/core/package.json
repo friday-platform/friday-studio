@@ -18,6 +18,7 @@
     "./elicitations/storage": "./src/elicitations/storage.ts",
     "./errors": "./src/errors.ts",
     "./chat/storage": "./src/chat/storage.ts",
+    "./chat/summaries-storage": "./src/chat/summaries-storage.ts",
     "./chat/id": "./src/chat/id.ts",
     "./chat/chat-sdk-state-adapter": "./src/chat/chat-sdk-state-adapter.ts",
     "./chat/cache-salt-storage": "./src/chat/cache-salt-storage.ts",

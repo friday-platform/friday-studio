@@ -1,5 +1,6 @@
 <script lang="ts">
   import { DropdownMenu, Icons, Tooltip } from "@atlas/ui";
+  import { splitMentions } from "../../chat/mention-text.ts";
   import MarkdownBody from "./markdown-body.svelte";
   import { createVirtualizer } from "@tanstack/svelte-virtual";
   import { tick, untrack } from "svelte";
@@ -796,7 +797,21 @@
                   </div>
                 {/if}
               {:else}
-                <div class="message-content">{segment.content}</div>
+                {@const mentionSegments = splitMentions(
+                  segment.content,
+                  message.mentions ?? [],
+                )}
+                <div class="message-content">
+                  {#each mentionSegments as seg, segIdx (segIdx)}
+                    {#if seg.kind === "mention"}
+                      <a class="mention-link" href={seg.href} title={`Open ${seg.title}`}
+                        >@{seg.title}</a
+                      >
+                    {:else}
+                      {seg.text}
+                    {/if}
+                  {/each}
+                </div>
               {/if}
             {:else if segment.type === "tool-burst"}
               {@const regularCalls = segment.calls.filter((c) => !needsUserAction(c))}
@@ -1183,6 +1198,19 @@
     padding: var(--size-2-5) var(--size-3);
     white-space: pre-wrap;
     word-break: break-word;
+  }
+
+  /* @-mention links rendered inline in user-message bodies. Inherit the
+     bubble's text color so contrast can't be wrong in any theme; the
+     dotted underline carries the "this is a link" affordance. */
+  .mention-link {
+    color: inherit;
+    text-decoration: underline dotted;
+    text-underline-offset: 2px;
+  }
+
+  .mention-link:hover {
+    text-decoration: underline solid;
   }
 
   /* Wraps the last assistant text bubble together with the actions

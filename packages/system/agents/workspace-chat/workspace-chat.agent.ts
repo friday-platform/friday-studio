@@ -113,6 +113,7 @@ import {
 } from "./tools/memory-entry-tools.ts";
 import { createMemorySaveTool } from "./tools/memory-save.ts";
 import { createPublishSkillTool } from "./tools/publish-skill.ts";
+import { createReadChatTool } from "./tools/read-chat.ts";
 import { createRequestToolAccessTool } from "./tools/request-tool-access.ts";
 import { createRequestWorkspaceSetupTool } from "./tools/request-workspace-setup.ts";
 import { createSearchMcpServersTool } from "./tools/search-mcp-servers.ts";
@@ -122,6 +123,7 @@ import {
   createAssignWorkspaceSkillTool,
   createUnassignWorkspaceSkillTool,
 } from "./tools/skill-tools.ts";
+import { createSummarizeChatTool } from "./tools/summarize-chat.ts";
 import { createBoundUpsertTools } from "./tools/upsert-tools.ts";
 import { createWebFetchTool } from "./tools/web-fetch.ts";
 import { createWebSearchTool } from "./tools/web-search.ts";
@@ -1000,6 +1002,8 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
         // run_code curl).
         const listSessionsTool = createListSessionsTool(workspaceId, logger);
         const describeSessionTool = createDescribeSessionTool(logger);
+        const readChatTool = createReadChatTool(logger);
+        const summarizeChatTool = createSummarizeChatTool(logger);
 
         // Memory-entry retrieval (replaces the old list_memory_entries shape
         // with rich substring + time + metadata filters and pagination).
@@ -1198,6 +1202,8 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           ...describeBundledAgentTool,
           ...listSessionsTool,
           ...describeSessionTool,
+          ...readChatTool,
+          ...summarizeChatTool,
           ...listMemoryEntriesTool,
           ...describeMemoryEntryTool,
           delegate: delegateTool,

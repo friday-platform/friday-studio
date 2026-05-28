@@ -89,6 +89,21 @@ export const AtlasDataEventSchemas = {
     artifactLabel: z.string().optional(),
   }),
   "credential-linked": z.object({ provider: z.string(), displayName: z.string() }),
+  /**
+   * Frozen snapshot of an @-mentioned chat resolved at send time. The
+   * composer renders this as a pill / link to the referenced chat; the
+   * model sees the full snapshot text via the companion
+   * `<atlas-mention-context>` text part inserted by the server-side
+   * resolver. See friday-studio-4j7.
+   */
+  "mention-resolved": z.object({
+    workspaceId: z.string(),
+    chatId: z.string(),
+    title: z.string(),
+    snapshot: z.string(),
+    messageCount: z.number().int().nonnegative(),
+    generatedAt: z.string(),
+  }),
   "env-applied": z.object({ scope: z.enum(["workspace", "global"]), keys: z.array(z.string()) }),
   "integration-disconnected": z.object({
     integrations: z.array(
@@ -282,6 +297,7 @@ export type AtlasDataEvents = {
   "fsm-state-transition": z.infer<(typeof AtlasDataEventSchemas)["fsm-state-transition"]>;
   "fsm-action-execution": z.infer<(typeof AtlasDataEventSchemas)["fsm-action-execution"]>;
   "credential-linked": z.infer<(typeof AtlasDataEventSchemas)["credential-linked"]>;
+  "mention-resolved": z.infer<(typeof AtlasDataEventSchemas)["mention-resolved"]>;
   "env-applied": z.infer<(typeof AtlasDataEventSchemas)["env-applied"]>;
   "integration-disconnected": z.infer<(typeof AtlasDataEventSchemas)["integration-disconnected"]>;
   intent: z.infer<(typeof AtlasDataEventSchemas)["intent"]>;

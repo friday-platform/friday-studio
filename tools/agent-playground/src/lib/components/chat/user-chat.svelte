@@ -10,7 +10,7 @@
   import { mergeElicitationIntoCache } from "$lib/queries/elicitation-queries.ts";
   import { subscribeToWorkspaceElicitations } from "$lib/shared-worker/client.ts";
   import { DefaultChatTransport } from "ai";
-  import ChatInput from "./chat-input.svelte";
+  import ChatInput, { type InsertedMention } from "./chat-input.svelte";
   import {
     type FileAttachment,
     type ChatAttachment,
@@ -484,13 +484,59 @@
   // Only fires for fresh chats (no prior messages) to avoid replaying on navigation.
   // `untrack` around handleSubmit prevents chat.sendMessage()'s synchronous status
   // mutation from re-triggering this effect mid-execution.
+  //
+  // The overview composer encodes `{ text, mentions }` as JSON when the
+  // user picked any @-mentions, plain string otherwise. Parse both
+  // shapes so old planters keep working and new ones thread mention
+  // metadata through to the optimistic bubble.
   $effect(() => {
     if (!chat || initialMessages.length > 0) return;
     const key = `chat-seed-${wsId}`;
     const seed = sessionStorage.getItem(key);
     if (!seed) return;
     sessionStorage.removeItem(key);
-    untrack(() => void handleSubmit(seed));
+
+    let seedText = seed;
+    let seedMentions: InsertedMention[] = [];
+    // Only parse JSON when the seed declares itself as a versioned
+    // envelope. Otherwise a user whose message happens to start with
+    // `{` (and JSON-parses to an object with a `text` string field)
+    // would have their literal payload silently rewritten. See
+    // friday-studio-1n3.
+    if (seed.startsWith("{")) {
+      try {
+        const parsed: unknown = JSON.parse(seed);
+        if (
+          typeof parsed === "object" &&
+          parsed !== null &&
+          (parsed as { v?: unknown }).v === 1 &&
+          typeof (parsed as { text?: unknown }).text === "string"
+        ) {
+          seedText = (parsed as { text: string }).text;
+          const rawMentions = (parsed as { mentions?: unknown }).mentions;
+          if (Array.isArray(rawMentions)) {
+            for (const m of rawMentions) {
+              if (typeof m !== "object" || m === null) continue;
+              const d = m as Record<string, unknown>;
+              if (
+                typeof d.workspaceId === "string" &&
+                typeof d.chatId === "string" &&
+                typeof d.title === "string"
+              ) {
+                seedMentions.push({
+                  workspaceId: d.workspaceId,
+                  chatId: d.chatId,
+                  title: d.title,
+                });
+              }
+            }
+          }
+        }
+      } catch {
+        // Not JSON — treat the raw value as plain text seed.
+      }
+    }
+    untrack(() => void handleSubmit(seedText, [], seedMentions));
   });
 
   // Mid-turn fetch drops (Chrome's ~50s streaming cap) get an auto-resume
@@ -759,6 +805,17 @@
         type: "data-file-attached";
         data: { paths: string[]; filenames: string[]; mimeTypes: string[] };
       }
+    | {
+        type: "data-mention-resolved";
+        data: {
+          workspaceId: string;
+          chatId: string;
+          title: string;
+          snapshot: string;
+          messageCount: number;
+          generatedAt: string;
+        };
+      }
   >;
   let queuedMessages: QueuedMessageParts[] = $state([]);
 
@@ -817,6 +874,15 @@
    * concatenate all `{type: "text"}` parts and ignore data-event parts
    * (`data-artifact-attached`, etc.) since the playground message list
    * doesn't render those — it's a minimal UI.
+   *
+   * Skips synthetic expansion text parts marked with
+   * `providerMetadata.atlas.kind === "mention-expansion" | "attachment-expansion"`.
+   * Mirrors the buildSegments filter in packages/core/src/chat/export/render.ts:541-548.
+   * Currently this function is only called for the latest assistant
+   * message (TTS read-aloud path) and the server only injects those
+   * markers onto user messages, but pinning the filter here keeps the
+   * function safe under future changes that synthesize similar parts
+   * onto assistant messages. See friday-studio-64x.
    */
   function extractText(msg: AtlasUIMessage): string {
     if (!Array.isArray(msg.parts)) return "";
@@ -830,6 +896,14 @@
           "text" in p &&
           typeof p.text === "string",
       )
+      .filter((p) => {
+        const meta = (p as { providerMetadata?: unknown }).providerMetadata;
+        if (typeof meta !== "object" || meta === null) return true;
+        const atlas = (meta as { atlas?: unknown }).atlas;
+        if (typeof atlas !== "object" || atlas === null) return true;
+        const kind = (atlas as { kind?: unknown }).kind;
+        return kind !== "mention-expansion" && kind !== "attachment-expansion";
+      })
       .map((p) => p.text);
 
     const credentialParts = msg.parts
@@ -1071,6 +1145,37 @@
       const m = (typeof msg.metadata === "object" && msg.metadata !== null
         ? msg.metadata
         : {}) as Record<string, unknown>;
+      // Resolved @-mentions for this message — server-side resolver
+      // stashes a `data-mention-resolved` part per expanded ref. The
+      // message-list reads this to swap raw `@ws/chat` tokens for
+      // links to the referenced chat. See friday-studio-c7j.
+      const mentions: ChatMessage["mentions"] = [];
+      const parts = Array.isArray(msg.parts) ? msg.parts : [];
+      for (const part of parts) {
+        if (typeof part !== "object" || part === null) continue;
+        if ((part as { type?: unknown }).type !== "data-mention-resolved") continue;
+        const data = (part as { data?: unknown }).data;
+        if (typeof data !== "object" || data === null) continue;
+        const d = data as Record<string, unknown>;
+        if (
+          typeof d.workspaceId === "string" &&
+          typeof d.chatId === "string" &&
+          typeof d.title === "string" &&
+          typeof d.snapshot === "string" &&
+          typeof d.messageCount === "number" &&
+          typeof d.generatedAt === "string"
+        ) {
+          mentions.push({
+            workspaceId: d.workspaceId,
+            chatId: d.chatId,
+            title: d.title,
+            snapshot: d.snapshot,
+            messageCount: d.messageCount,
+            generatedAt: d.generatedAt,
+          });
+        }
+      }
+
       const result: ChatMessage = {
         id: msg.id,
         role: (msg.role === "user"
@@ -1082,6 +1187,7 @@
         timestamp: ts,
         images: extractImages(msg),
         errorText: extractErrorText(msg),
+        mentions: mentions.length > 0 ? mentions : undefined,
         metadata: {
           agentId: typeof m.agentId === "string" ? m.agentId : undefined,
           jobName: typeof m.jobName === "string" ? m.jobName : undefined,
@@ -1191,7 +1297,11 @@
     }
   }
 
-  async function handleSubmit(text: string, attachments: ChatAttachment[] = []) {
+  async function handleSubmit(
+    text: string,
+    attachments: ChatAttachment[] = [],
+    mentions: InsertedMention[] = [],
+  ) {
     if (!chat) return;
     error = null;
     wasInterrupted = false;
@@ -1213,6 +1323,25 @@
           filename: att.file.name,
         });
       }
+    }
+
+    // Ship a data-mention-resolved part per autocomplete-picked mention so
+    // the optimistic user bubble renders the link with the friendly title
+    // immediately — the server resolver runs ahead of persist and
+    // overwrites these placeholders with the canonical snapshot
+    // (mention-resolver.applyMentionsToMessage dedupes on workspaceId+chatId).
+    for (const m of mentions) {
+      parts.push({
+        type: "data-mention-resolved",
+        data: {
+          workspaceId: m.workspaceId,
+          chatId: m.chatId,
+          title: m.title,
+          snapshot: "",
+          messageCount: 0,
+          generatedAt: new Date().toISOString(),
+        },
+      });
     }
 
     // Non-image attachments uploaded to scratch. The chat-input's

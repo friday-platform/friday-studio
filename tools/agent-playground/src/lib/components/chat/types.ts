@@ -28,6 +28,22 @@ import type {
 } from "@atlas/core/chat/export/render";
 export type { ImageDisplay, Segment, ToolCallDisplay };
 
+/**
+ * Resolved-mention metadata extracted from a message's
+ * `data-mention-resolved` parts. Powers link rendering for `@ws/chat`
+ * tokens in the message body. Persisted server-side at send time so
+ * the title shown in history is the title at-send, not the current
+ * title (frozen snapshot per friday-studio-4j7).
+ */
+export interface ResolvedMention {
+  workspaceId: string;
+  chatId: string;
+  title: string;
+  snapshot: string;
+  messageCount: number;
+  generatedAt: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant" | "system";
@@ -41,6 +57,12 @@ export interface ChatMessage {
   timestamp: number;
   /** Image attachments from the user (data URLs from drag-drop / paste). */
   images?: ImageDisplay[];
+  /**
+   * `@workspace/chat` mentions the resolver expanded for this message.
+   * The chat-message-list uses this to render mention tokens in the
+   * visible text as links to the referenced chat.
+   */
+  mentions?: ResolvedMention[];
   /**
    * Error text surfaced for this turn — sourced from `data-error` /
    * `data-agent-error` / `data-agent-timeout` chunks. Rendered as a visible

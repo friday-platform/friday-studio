@@ -66,7 +66,21 @@ const DEFAULT_DUPLICATE_WINDOW_NS = 24 * 60 * 60 * 1_000_000_000; // 24h
 export interface ChatStreamLimits {
   maxMsgSize?: number;
   duplicateWindowNs?: number | bigint;
+  /**
+   * Phase 3 flag for the storage-naming refactor (friday-studio-1z9):
+   * when true, freshly created chats use workspaceId-agnostic
+   * stream/subject/KV names. Existing legacy-named chats keep working
+   * via dual-read regardless of this flag. Default false until the
+   * backfill (friday-studio-qoj) has run.
+   */
+  newNamingEnabled?: boolean;
 }
+
+/**
+ * Which naming scheme a chat lives under. Legacy = workspaceId baked
+ * into the physical names. New = chat-id only. See friday-studio-1z9.
+ */
+type ChatScheme = "new" | "legacy";
 
 const SAFE_NAME_RE = /[^A-Za-z0-9_-]/g;
 
@@ -122,6 +136,66 @@ function kvKey(workspaceId: string, chatId: string): string {
 
 function kvPrefix(workspaceId: string): string {
   return `${sanitizeKeyComponent(workspaceId)}/`;
+}
+
+// ── New-scheme name builders (friday-studio-1z9) ─────────────────────
+// Workspace-id is no longer encoded in the physical names; chatId
+// alone identifies the chat. Reassignment becomes a single metadata
+// CAS instead of a stream rename + uploads move.
+
+function streamNameNew(chatId: string): string {
+  return `CHAT_${sanitizeKeyComponent(chatId)}`;
+}
+
+function flatSubjectNew(chatId: string): string {
+  return `chats.${chatId}.messages`;
+}
+
+function messageSubjectNew(chatId: string, messageId: string): string {
+  return `chats.${chatId}.messages.${messageId}`;
+}
+
+function messagesWildcardSubjectNew(chatId: string): string {
+  return `chats.${chatId}.messages.>`;
+}
+
+function kvKeyNew(chatId: string): string {
+  return sanitizeKeyComponent(chatId);
+}
+
+// ── Per-scheme dispatchers ────────────────────────────────────────────
+
+function streamNameFor(scheme: ChatScheme, workspaceId: string, chatId: string): string {
+  return scheme === "new" ? streamNameNew(chatId) : streamName(workspaceId, chatId);
+}
+
+function flatSubjectFor(scheme: ChatScheme, workspaceId: string, chatId: string): string {
+  return scheme === "new" ? flatSubjectNew(chatId) : flatSubject(workspaceId, chatId);
+}
+
+function messageSubjectFor(
+  scheme: ChatScheme,
+  workspaceId: string,
+  chatId: string,
+  messageId: string,
+): string {
+  return scheme === "new"
+    ? messageSubjectNew(chatId, messageId)
+    : messageSubject(workspaceId, chatId, messageId);
+}
+
+function messagesWildcardSubjectFor(
+  scheme: ChatScheme,
+  workspaceId: string,
+  chatId: string,
+): string {
+  return scheme === "new"
+    ? messagesWildcardSubjectNew(chatId)
+    : messagesWildcardSubject(workspaceId, chatId);
+}
+
+function kvKeyFor(scheme: ChatScheme, workspaceId: string, chatId: string): string {
+  return scheme === "new" ? kvKeyNew(chatId) : kvKey(workspaceId, chatId);
 }
 
 function isStreamNotFound(err: unknown): boolean {
@@ -208,14 +282,15 @@ async function ensureChatStream(
   workspaceId: string,
   chatId: string,
   limits: ChatStreamLimits,
+  scheme: ChatScheme,
 ): Promise<StreamLayout> {
-  const name = streamName(workspaceId, chatId);
+  const name = streamNameFor(scheme, workspaceId, chatId);
   const cached = streamLayouts.get(name);
   if (cached) return cached;
   try {
     const info = await jsm.streams.info(name);
     const subjects = info.config.subjects ?? [];
-    const wildcard = messagesWildcardSubject(workspaceId, chatId);
+    const wildcard = messagesWildcardSubjectFor(scheme, workspaceId, chatId);
     const layout: StreamLayout = { perMessage: subjects.includes(wildcard) };
     streamLayouts.set(name, layout);
     return layout;
@@ -228,7 +303,7 @@ async function ensureChatStream(
   const dup = limits.duplicateWindowNs ?? DEFAULT_DUPLICATE_WINDOW_NS;
   await jsm.streams.add({
     name,
-    subjects: [messagesWildcardSubject(workspaceId, chatId)],
+    subjects: [messagesWildcardSubjectFor(scheme, workspaceId, chatId)],
     retention: RetentionPolicy.Limits,
     storage: StorageType.File,
     max_msg_size: limits.maxMsgSize ?? DEFAULT_MAX_MSG_SIZE,
@@ -237,7 +312,7 @@ async function ensureChatStream(
     max_msgs_per_subject: 1,
     duplicate_window: typeof dup === "bigint" ? Number(dup) : dup,
   });
-  logger.info("Created chat stream", { workspaceId, chatId, name, layout: "per-message" });
+  logger.info("Created chat stream", { workspaceId, chatId, name, layout: "per-message", scheme });
   const layout: StreamLayout = { perMessage: true };
   streamLayouts.set(name, layout);
   return layout;
@@ -301,17 +376,65 @@ export function createJetStreamChatBackend(
     return nc.jetstream();
   }
 
-  async function readMetadata(workspaceId: string, chatId: string): Promise<ChatMetadata | null> {
-    const k = await kv();
-    const entry = await k.get(kvKey(workspaceId, chatId));
-    if (!entry || entry.operation !== "PUT") return null;
-    const raw = JSON.parse(dec.decode(entry.value));
-    return ChatMetadataSchema.parse(raw);
+  const newNamingEnabled = limits.newNamingEnabled ?? false;
+
+  function parseMetaSafe(raw: Uint8Array): ChatMetadata | null {
+    try {
+      return ChatMetadataSchema.parse(JSON.parse(dec.decode(raw)));
+    } catch (err) {
+      logger.warn("chat_metadata_parse_failed", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return null;
+    }
   }
 
-  async function writeMetadata(meta: ChatMetadata): Promise<void> {
+  /**
+   * Locate a chat by checking the new-naming KV key first, then the
+   * legacy `<ws>/<chat>` key. Returns the parsed metadata + the scheme
+   * the chat lives under so subsequent operations (writes, stream
+   * lookups, uploads) target the correct namespace. Mismatched
+   * workspaceId in the metadata is treated as "not found" — that's
+   * the defense-in-depth ACL from friday-studio-be9.
+   */
+  async function readChatLocation(
+    workspaceId: string,
+    chatId: string,
+  ): Promise<{ meta: ChatMetadata; scheme: ChatScheme } | null> {
     const k = await kv();
-    await k.put(kvKey(meta.workspaceId, meta.id), enc.encode(JSON.stringify(meta)));
+    // Try new naming first. Always, regardless of the flag — a chat
+    // created under the new scheme has to be readable even if the
+    // flag was later turned off.
+    const newEntry = await k.get(kvKeyNew(chatId));
+    if (newEntry && newEntry.operation === "PUT") {
+      const meta = parseMetaSafe(newEntry.value);
+      if (meta && meta.workspaceId === workspaceId) {
+        return { meta, scheme: "new" };
+      }
+    }
+    // Fall back to legacy `<ws>/<chat>`.
+    const legacyEntry = await k.get(kvKey(workspaceId, chatId));
+    if (!legacyEntry || legacyEntry.operation !== "PUT") return null;
+    const meta = parseMetaSafe(legacyEntry.value);
+    if (!meta) return null;
+    if (meta.workspaceId !== workspaceId) {
+      logger.warn("chat_metadata_workspace_mismatch", {
+        chatId,
+        requestedWorkspaceId: workspaceId,
+        actualWorkspaceId: meta.workspaceId,
+      });
+      return null;
+    }
+    return { meta, scheme: "legacy" };
+  }
+
+  async function readMetadata(workspaceId: string, chatId: string): Promise<ChatMetadata | null> {
+    return (await readChatLocation(workspaceId, chatId))?.meta ?? null;
+  }
+
+  async function writeMetadata(meta: ChatMetadata, scheme: ChatScheme): Promise<void> {
+    const k = await kv();
+    await k.put(kvKeyFor(scheme, meta.workspaceId, meta.id), enc.encode(JSON.stringify(meta)));
   }
 
   async function updateMetadata(
@@ -320,13 +443,26 @@ export function createJetStreamChatBackend(
     mut: (m: ChatMetadata) => ChatMetadata,
   ): Promise<ChatMetadata> {
     const k = await kv();
-    const key = kvKey(workspaceId, chatId);
+    // Find the chat first so we know which key to CAS against. The
+    // scheme is stable for the chat's lifetime — no need to re-detect
+    // inside the retry loop.
+    const located = await readChatLocation(workspaceId, chatId);
+    if (!located) {
+      throw new Error(`Chat metadata not found: ${chatId}`);
+    }
+    const key = kvKeyFor(located.scheme, workspaceId, chatId);
     for (let attempt = 0; attempt < 8; attempt++) {
       const entry = await k.get(key);
       if (!entry) {
         throw new Error(`Chat metadata not found: ${key}`);
       }
       const current = ChatMetadataSchema.parse(JSON.parse(dec.decode(entry.value)));
+      // Same defense-in-depth ACL as readMetadata — see beads friday-studio-1z9.
+      if (current.workspaceId !== workspaceId) {
+        throw new Error(
+          `Chat metadata workspaceId mismatch: requested ${workspaceId}, actual ${current.workspaceId}`,
+        );
+      }
       const next = mut(current);
       try {
         await k.update(key, enc.encode(JSON.stringify(next)), entry.revision);
@@ -339,9 +475,38 @@ export function createJetStreamChatBackend(
     throw new Error(`Chat metadata update failed after 8 CAS retries: ${key}`);
   }
 
+  /**
+   * Find the JetStream stream backing a chat — try the new-naming
+   * `CHAT_<chatId>` first, fall back to `CHAT_<ws>_<chatId>`. Returns
+   * null when neither exists. The dual-read tolerance from
+   * friday-studio-m4m: callers don't need to know which scheme the
+   * chat lives under.
+   */
+  async function locateChatStream(
+    workspaceId: string,
+    chatId: string,
+  ): Promise<{ name: string; scheme: ChatScheme } | null> {
+    const jsm = await nc.jetstreamManager();
+    const candidates: Array<{ name: string; scheme: ChatScheme }> = [
+      { name: streamNameNew(chatId), scheme: "new" },
+      { name: streamName(workspaceId, chatId), scheme: "legacy" },
+    ];
+    for (const candidate of candidates) {
+      try {
+        await jsm.streams.info(candidate.name);
+        return candidate;
+      } catch (err) {
+        if (!isStreamNotFound(err)) throw err;
+      }
+    }
+    return null;
+  }
+
   async function readMessages(workspaceId: string, chatId: string): Promise<AtlasUIMessage[]> {
     const messages: AtlasUIMessage[] = [];
-    const sName = streamName(workspaceId, chatId);
+    const located = await locateChatStream(workspaceId, chatId);
+    if (!located) return messages;
+    const sName = located.name;
     let totalMessages = 0;
     try {
       const jsm = await nc.jetstreamManager();
@@ -401,14 +566,31 @@ export function createJetStreamChatBackend(
     source: ChatSource;
   }): Promise<Result<Chat, string>> {
     try {
-      const existing = await readMetadata(input.workspaceId, input.chatId);
+      const existing = await readChatLocation(input.workspaceId, input.chatId);
       if (existing) {
         const messages = await readMessages(input.workspaceId, input.chatId);
         logger.debug("Chat already exists, returning existing", {
           chatId: input.chatId,
           messageCount: messages.length,
         });
-        return success({ ...existing, messages: sortMessagesByStartTime(messages) });
+        return success({ ...existing.meta, messages: sortMessagesByStartTime(messages) });
+      }
+
+      // Under the new naming scheme, chatId is a global identifier —
+      // no workspaceId prefix on the KV key. Detect cross-workspace
+      // collisions before writing so we don't overwrite another
+      // workspace's chat. See friday-studio-1z9.
+      if (newNamingEnabled) {
+        const k = await kv();
+        const collision = await k.get(kvKeyNew(input.chatId));
+        if (collision && collision.operation === "PUT") {
+          const collidingMeta = parseMetaSafe(collision.value);
+          if (collidingMeta && collidingMeta.workspaceId !== input.workspaceId) {
+            return fail(
+              `Chat ID '${input.chatId}' already exists in workspace '${collidingMeta.workspaceId}'`,
+            );
+          }
+        }
       }
 
       const now = new Date().toISOString();
@@ -421,8 +603,9 @@ export function createJetStreamChatBackend(
         createdAt: now,
         updatedAt: now,
       };
-      await writeMetadata(meta);
-      logger.debug("Created new chat", { chatId: input.chatId });
+      const scheme: ChatScheme = newNamingEnabled ? "new" : "legacy";
+      await writeMetadata(meta, scheme);
+      logger.debug("Created new chat", { chatId: input.chatId, scheme });
       return success({ ...meta, messages: [] });
     } catch (error) {
       return fail(stringifyError(error));
@@ -460,7 +643,32 @@ export function createJetStreamChatBackend(
         const [validated] = await validateAtlasUIMessages([message]);
         const repaired = validated ?? message;
         const jsm = await nc.jetstreamManager();
-        const layout = await ensureChatStream(jsm, workspaceId, chatId, limits);
+        // Detect the chat's scheme so the stream + subject use the
+        // same names the chat was created under. Fresh chats (no
+        // metadata yet) get the current default scheme.
+        const located = await readChatLocation(workspaceId, chatId);
+        // Cross-workspace chatId-collision gate under the new scheme.
+        // If `located` is null and a chat with the same chatId already
+        // exists under another workspace's metadata, refuse the
+        // append rather than cross-pollute that workspace's stream.
+        // createChat has the same check upstream, but its Result can
+        // be silently dropped (e.g. by chat-sdk-state-adapter
+        // subscribe). This is the load-bearing gate. See
+        // friday-studio-1z9.
+        if (!located && newNamingEnabled) {
+          const k = await kv();
+          const collision = await k.get(kvKeyNew(chatId));
+          if (collision?.operation === "PUT") {
+            const collidingMeta = parseMetaSafe(collision.value);
+            if (collidingMeta && collidingMeta.workspaceId !== workspaceId) {
+              throw new Error(
+                `Cannot append to chat '${chatId}': belongs to workspace '${collidingMeta.workspaceId}', not '${workspaceId}'`,
+              );
+            }
+          }
+        }
+        const scheme: ChatScheme = located?.scheme ?? (newNamingEnabled ? "new" : "legacy");
+        const layout = await ensureChatStream(jsm, workspaceId, chatId, limits, scheme);
 
         const c = js();
         const envelope = { message: repaired, ts: new Date().toISOString() };
@@ -478,8 +686,8 @@ export function createJetStreamChatBackend(
         // Old streams keep their flat subject + msgID dedup so existing
         // chats persist exactly as before.
         const publishSubject = layout.perMessage
-          ? messageSubject(workspaceId, chatId, message.id)
-          : flatSubject(workspaceId, chatId);
+          ? messageSubjectFor(scheme, workspaceId, chatId, message.id)
+          : flatSubjectFor(scheme, workspaceId, chatId);
         await c.publish(publishSubject, enc.encode(JSON.stringify(envelope)), {
           headers: h,
           ...(layout.perMessage ? {} : { msgID: message.id }),
@@ -509,19 +717,42 @@ export function createJetStreamChatBackend(
 
   async function listAllMetadata(workspaceId?: string): Promise<ChatMetadata[]> {
     const k = await kv();
+    // Legacy keys have the shape `<workspaceId>/<chatId>` (contain a
+    // slash). New-naming keys are bare `<chatId>` (no slash). When a
+    // workspace filter is requested we can still skip foreign legacy
+    // keys cheaply via the prefix check; new-naming keys always go
+    // through the metadata-field check below. See friday-studio-m4m.
     const prefix = workspaceId ? kvPrefix(workspaceId) : null;
     const it = await k.keys();
     const allKeys: string[] = [];
     for await (const key of it) {
-      if (prefix && !key.startsWith(prefix)) continue;
+      if (prefix && key.includes("/") && !key.startsWith(prefix)) continue;
       allKeys.push(key);
     }
     const metas: ChatMetadata[] = [];
+    const seenIds = new Set<string>();
     for (const key of allKeys) {
       try {
         const entry = await k.get(key);
         if (!entry || entry.operation !== "PUT") continue;
-        metas.push(ChatMetadataSchema.parse(JSON.parse(dec.decode(entry.value))));
+        const meta = ChatMetadataSchema.parse(JSON.parse(dec.decode(entry.value)));
+        // Metadata-field ACL — authoritative under both schemes.
+        if (workspaceId && meta.workspaceId !== workspaceId) {
+          logger.warn("chat_metadata_workspace_mismatch_in_list", {
+            key,
+            requestedWorkspaceId: workspaceId,
+            actualWorkspaceId: meta.workspaceId,
+          });
+          continue;
+        }
+        // A chat could in theory be present under both schemes during
+        // backfill — dedupe by (workspaceId, chatId) so each chat
+        // only surfaces once. Prefer whichever entry we hit first
+        // (KV iteration order is stable for a given snapshot).
+        const dedupKey = `${meta.workspaceId}/${meta.id}`;
+        if (seenIds.has(dedupKey)) continue;
+        seenIds.add(dedupKey);
+        metas.push(meta);
       } catch (err) {
         logger.warn("Skipping malformed chat metadata", { key, error: stringifyError(err) });
       }
@@ -602,7 +833,17 @@ export function createJetStreamChatBackend(
     try {
       const k = await kv();
       const jsm = await nc.jetstreamManager();
-      const name = streamName(workspaceId, chatId);
+      // Locate the chat first — DO NOT blind-delete both schemes,
+      // because a legacy chat in ws-a and a new-scheme chat in ws-b
+      // can both have the same chatId. Blind deletion would smash
+      // the unrelated chat. The locator already enforces the
+      // workspaceId ACL.
+      const located = await readChatLocation(workspaceId, chatId);
+      if (!located) {
+        logger.debug("Chat already gone", { chatId, workspaceId });
+        return success(undefined);
+      }
+      const name = streamNameFor(located.scheme, workspaceId, chatId);
       try {
         await jsm.streams.delete(name);
       } catch (err) {
@@ -612,8 +853,8 @@ export function createJetStreamChatBackend(
       // but a stale entry would mis-route a freshly-created stream's
       // appendMessage to the legacy subject.
       streamLayouts.delete(name);
-      await k.delete(kvKey(workspaceId, chatId));
-      logger.debug("Deleted chat", { chatId, workspaceId });
+      await k.delete(kvKeyFor(located.scheme, workspaceId, chatId));
+      logger.debug("Deleted chat", { chatId, workspaceId, scheme: located.scheme });
       return success(undefined);
     } catch (error) {
       return fail(stringifyError(error));
