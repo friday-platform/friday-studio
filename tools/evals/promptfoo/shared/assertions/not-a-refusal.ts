@@ -13,7 +13,7 @@
  */
 export function notARefusalAsserts(metric = "NotARefusal"): Array<Record<string, unknown>> {
   return [
-    { type: "not-regex", value: "missing (required )?input", metric },
+    { type: "not-regex", value: "[mM]issing (required )?input", metric },
     { type: "not-regex", value: "[nN]o input (was )?(provided|given|supplied)", metric },
     { type: "not-icontains", value: "placeholder", metric },
     { type: "not-icontains", value: "template variable", metric },
