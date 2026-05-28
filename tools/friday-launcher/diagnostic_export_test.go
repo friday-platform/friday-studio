@@ -290,6 +290,29 @@ func TestSetExportPhase_WritesUnderMutex(t *testing.T) {
 	}
 }
 
+// TestSetExportPhase_NoDeadlockOnImmediateRefresh guards the lock
+// contract behind the immediate label refresh: setExportPhase writes
+// the phase under exportMu, then calls updateExportItemLabel which
+// re-acquires exportMu. If a refactor ever leaves the write lock held
+// across that call, the non-reentrant mutex deadlocks. The nil
+// exportItem hits updateExportItemLabel's nil-guard, so this needs no
+// live systray. A watchdog fails the test instead of hanging the suite.
+func TestSetExportPhase_NoDeadlockOnImmediateRefresh(t *testing.T) {
+	tc := &trayController{} // exportItem nil → updateExportItemLabel returns early
+
+	done := make(chan struct{})
+	go func() {
+		tc.setExportPhase("logs")
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("setExportPhase deadlocked — exportMu held across updateExportItemLabel")
+	}
+}
+
 // TestToggleIncludeWorkspaces_Persists confirms a click flips the
 // persisted state on disk (read-modify-write through writeState).
 // Without this the preference resets every launcher boot.

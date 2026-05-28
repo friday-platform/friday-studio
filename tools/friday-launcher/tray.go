@@ -594,6 +594,7 @@ func (t *trayController) runExport() {
 		if t.exportItem != nil {
 			t.exportItem.Enable()
 		}
+		t.updateExportItemLabel()
 		return
 	}
 	log.Info("diagnostic export ok", "path", zipPath)
@@ -609,6 +610,7 @@ func (t *trayController) runExport() {
 		if t.exportItem != nil {
 			t.exportItem.Enable()
 		}
+		t.updateExportItemLabel()
 		return
 	}
 	t.exportMu.Lock()
@@ -617,13 +619,17 @@ func (t *trayController) runExport() {
 	t.exportMu.Unlock()
 	// Item stays disabled across the success transient; updateExportItemLabel
 	// re-enables it when the transient expires.
+	t.updateExportItemLabel()
 }
 
 // setExportPhase is the ProgressFn callback handed to diagnostics.Export.
-// Writes the phase string under the export mutex — tick() reads it on
-// the next 2s pass and rewrites the menu item label.
+// Writes the phase string under the export mutex, then refreshes the
+// menu label immediately so phase transitions don't lag the next 2s
+// tick. updateExportItemLabel re-acquires exportMu, so the write lock
+// must be released before calling it.
 func (t *trayController) setExportPhase(phase string) {
 	t.exportMu.Lock()
 	t.exportProgressPhase = phase
 	t.exportMu.Unlock()
+	t.updateExportItemLabel()
 }
