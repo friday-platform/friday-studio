@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -99,17 +100,33 @@ func TestServiceHealthy_OnlyHealthyCountsTrue(t *testing.T) {
 }
 
 // TestStartExport_CASGuardSwallowsSecondClick is the load-bearing
-// concurrency test. Two rapid clicks must not start two exports —
-// the second CompareAndSwap fails and the click is a no-op. We use
-// a blocking export to widen the race window so the test reliably
-// catches a regression where the guard was removed.
+// concurrency test. The two clicks run serially on this goroutine: the
+// first startExport CAS's exporting false→true and spawns runExport; the
+// second finds the slot taken and returns synchronously — the CAS fires
+// before any goroutine spawns, so the swallow is deterministic, not a
+// race we have to widen a window to catch. The fake blocks until we've
+// released it so the in-flight export is genuinely still running when the
+// second click lands. Coordination is via channels, not wall-clock polls.
 func TestStartExport_CASGuardSwallowsSecondClick(t *testing.T) {
 	t.Setenv("FRIDAY_LAUNCHER_HOME", t.TempDir())
 
 	var calls atomic.Int32
+	entered := make(chan struct{})
 	release := make(chan struct{})
+	finished := make(chan struct{})
 	withExportFn(t, func(diagnostics.ExportOptions) (string, error) {
-		calls.Add(1)
+		// Only the first entrant touches the barrier channels — guarding on
+		// the call count means a regression that lets a second goroutine in
+		// (CAS removed) records calls==2 and fails the assertion below
+		// cleanly, instead of panicking on a double channel close.
+		if calls.Add(1) != 1 {
+			return "", errors.New("test-cancelled")
+		}
+		// runExport's deferred exporting.Store(false) fires after this
+		// returns; closing finished here (deferred) plus draining release
+		// lets the test observe completion without polling the atomic.
+		defer close(finished)
+		close(entered)
 		<-release
 		return "", errors.New("test-cancelled")
 	})
@@ -119,25 +136,24 @@ func TestStartExport_CASGuardSwallowsSecondClick(t *testing.T) {
 	tc := &trayController{shuttingDown: &sd}
 
 	tc.startExport()
-	tc.startExport() // second click — must be a no-op while first is in flight
+	<-entered        // first export goroutine is now inside exportFn
+	tc.startExport() // second click while first is in flight — CAS no-op
+	close(release)   // let the in-flight export return
+	<-finished       // fake has returned; runExport is unwinding
 
-	// Give the first goroutine a moment to actually hit exportFn, then
-	// release it. We don't sleep-then-assert; we wait for the goroutine
-	// to enter exportFn (calls==1) before unblocking.
-	deadline := time.Now().Add(2 * time.Second)
-	for calls.Load() < 1 && time.Now().Before(deadline) {
-		time.Sleep(5 * time.Millisecond)
-	}
-	close(release)
-
-	// Wait for the first goroutine to clear the exporting flag.
-	deadline = time.Now().Add(2 * time.Second)
-	for tc.exporting.Load() && time.Now().Before(deadline) {
-		time.Sleep(5 * time.Millisecond)
+	// runExport clears exporting in a defer that runs after the fake
+	// returns. Synchronize on that defer by spinning the scheduler until
+	// the goroutine has unwound — bounded by the test's own deadline, not
+	// a wall clock: a hung goroutine would leak and fail the suite anyway.
+	for tc.exporting.Load() {
+		runtime.Gosched()
 	}
 
 	if got := calls.Load(); got != 1 {
 		t.Errorf("export invocations = %d, want 1 (CAS guard failed)", got)
+	}
+	if tc.exporting.Load() {
+		t.Error("exporting flag still set after the in-flight export completed")
 	}
 }
 
