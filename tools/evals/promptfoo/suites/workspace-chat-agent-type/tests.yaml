@@ -25,10 +25,14 @@
     forbiddenAtlasAgentsJson: '["email"]'
     requiredMcpServersJson: '["google-gmail"]'
     forbidUserAgentRegistration: true
+    expectedAgentsJson: '[{"type":"llm"}]'
   assert: &agent_type_checks
     - type: javascript
       value: file://assertions/check.js:correctTypeChosen
       metric: correct-type-chosen
+    - type: javascript
+      value: file://assertions/check.js:agentSetMatches
+      metric: agent-set-matches
     - type: javascript
       value: file://assertions/check.js:noWrongType
       metric: no-wrong-type
@@ -82,6 +86,7 @@
     forbiddenAtlasAgentsJson: '["claude-code"]'
     requiredMcpServersJson: '[]'
     forbidUserAgentRegistration: false
+    expectedAgentsJson: '[{"type":"llm"}]'
   assert: *agent_type_checks
 
 - description: 'send-daily-report-email — daily email report must use type:llm + gmail MCP, never agent:email'
@@ -96,6 +101,7 @@
     forbiddenAtlasAgentsJson: '["email"]'
     requiredMcpServersJson: '["google-gmail"]'
     forbidUserAgentRegistration: false
+    expectedAgentsJson: '[{"type":"llm"}]'
   assert: *agent_type_checks
 
 - description: 'explicit-llm-override — user explicitly names type:llm — must respect it'
@@ -109,4 +115,5 @@
     forbiddenAtlasAgentsJson: '[]'
     requiredMcpServersJson: '["google-gmail"]'
     forbidUserAgentRegistration: true
+    expectedAgentsJson: '[{"type":"llm"}]'
   assert: *agent_type_checks

@@ -31,6 +31,7 @@ function parseContext(output, context) {
     knownBundledAgents: new Set(parsed.knownBundledAgents),
     expectedType: vars.expectedType,
     expectedAgent: vars.expectedAgent,
+    expectedAgents: JSON.parse(vars.expectedAgentsJson || "[]"),
     forbiddenTypes: new Set(JSON.parse(vars.forbiddenTypesJson || "[]")),
     forbiddenAtlasAgents: new Set(JSON.parse(vars.forbiddenAtlasAgentsJson || "[]")),
     requiredMcpServers: JSON.parse(vars.requiredMcpServersJson || "[]"),
@@ -69,6 +70,45 @@ function correctTypeChosen(output, context) {
       (expectedAgent ? `, agent="${expectedAgent}"` : "") +
       `. Got: ${summarizeUpserts(captures.upsertAgents)}`,
   };
+}
+
+// 1b. Emitted upsert set exactly matches the declared expected set (opt-in via
+// expectedAgentsJson). No-op when unset, so legitimately multi-agent or
+// non-deterministic cases stay loose. The strict counterpart to
+// correctTypeChosen's "at least one right": catches over-emission (right agent
+// + a spurious different-type one) AND wrong composition. Matching is by type
+// (+ agent slug when given), so several agents of an expected type still pass —
+// only an unexpected-type extra or a missing expected type fails.
+function agentSetMatches(output, context) {
+  const { captures, expectedAgents } = parseContext(output, context);
+  if (expectedAgents.length === 0) {
+    return { pass: true, score: 1, reason: "no expected agent set declared for this case" };
+  }
+  if (captures.upsertAgents.length === 0) {
+    return {
+      pass: false,
+      score: 0,
+      reason: "no upsert_agent calls emitted — cannot verify agent set",
+    };
+  }
+  const matches = (e, u) =>
+    u.config.type === e.type &&
+    (e.agent === undefined || e.agent === "" || u.config.agent === e.agent);
+  const missing = expectedAgents.filter((e) => !captures.upsertAgents.some((u) => matches(e, u)));
+  const extra = captures.upsertAgents.filter((u) => !expectedAgents.some((e) => matches(e, u)));
+  if (missing.length === 0 && extra.length === 0) {
+    return { pass: true, score: 1, reason: "emitted agent set matches expected" };
+  }
+  const parts = [];
+  if (missing.length > 0) {
+    parts.push(
+      `missing: ${missing.map((e) => (e.agent ? `${e.type}/${e.agent}` : e.type)).join(", ")}`,
+    );
+  }
+  if (extra.length > 0) {
+    parts.push(`unexpected: ${summarizeUpserts(extra)}`);
+  }
+  return { pass: false, score: 0, reason: `Agent set mismatch — ${parts.join("; ")}` };
 }
 
 // 2. No upsert_agent used a forbidden type.
@@ -218,6 +258,7 @@ function noPhantomAtlasAgent(output, context) {
 
 module.exports = {
   correctTypeChosen,
+  agentSetMatches,
   noWrongType,
   noOverdelegatedAtlas,
   noSpuriousUserAgent,
