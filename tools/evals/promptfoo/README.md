@@ -36,6 +36,12 @@ npx promptfoo@0.121.12 eval \
   --no-cache --no-share -j 20
 ```
 
+> **Heads up:** evals run with your full host privileges and inherit your shell
+> env (including `ANTHROPIC_API_KEY` etc.). Tool-capturing suites execute their
+> `handler.ts` in a Deno subprocess launched with `--allow-all`. Only run
+> suite/handler code you trust — don't paste untrusted prompt templates or
+> handlers into a suite.
+
 `deno task evals:promptfoo` launches every suite as a parallel background
 `promptfoo eval` invocation, captures per-suite JSON output, and prints a
 pass-rate table at the end. The wrapper script lives at `scripts/run-all.sh`.
