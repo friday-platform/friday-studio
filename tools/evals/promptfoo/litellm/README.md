@@ -8,9 +8,15 @@ any suite.
 ## Quickstart
 
 Prerequisite: a running Docker daemon (`docker info` should succeed).
-`start.sh` runs the upstream `ghcr.io/berriai/litellm:main-stable` image
-with `litellm_config.yaml` mounted in, so no local Python toolchain is
-needed.
+`start.sh` runs the upstream `ghcr.io/berriai/litellm` image pinned to a
+concrete version (`v1.86.2`) with `litellm_config.yaml` mounted in, so no
+local Python toolchain is needed.
+
+The tag is pinned (not `:main-stable`) so eval cost/behavior stays
+reproducible — a moving tag is what caused the `x-litellm-response-cost`
+header rename to silently break cost capture. To bump: change the tag in
+`start.sh`, then confirm the cost-header name the proxy emits still matches
+what the elicitation handler reads (LiteLLM renamed it at `>=1.86`).
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
