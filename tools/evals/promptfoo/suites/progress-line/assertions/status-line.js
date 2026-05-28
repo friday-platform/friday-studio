@@ -5,12 +5,14 @@
 // Return a {pass, score, reason} object; promptfoo records the score under the
 // `metric:` name set on the assert.
 
+// Only patterns that catch output which PASSES the leading -ing gate below but
+// still breaks the contract. Opener blocklists (refusals, determiners, hedges)
+// were dropped: the positive `^[A-Z][a-z]+ing\b` gate already fails all of them,
+// and with no `threshold` on the assert the score is cosmetic — they added no
+// pass/fail signal.
 const FAIL_PATTERNS = [
-  /^I('m| am| cannot| can't| don't)/i,
-  /^(Some|Here|The|There|This|These|Those)\s/i,
-  /\d+\.\s+\*?\*?[A-Z]/i,
-  /^(Unfortunately|However|Sorry)/i,
-  /\n/,
+  /\d+\.\s+\*?\*?[A-Z]/i, // numbered/bulleted list item — even on a single line
+  /\n/, // multi-line
 ];
 
 module.exports = (output) => {
