@@ -31,6 +31,7 @@
 const path = require("node:path");
 const process = require("node:process");
 const { spawn } = require("node:child_process");
+const { StringDecoder } = require("node:string_decoder");
 
 function repoRoot() {
   // .cjs lives at tools/evals/promptfoo/shared/providers/deno-worker.cjs
@@ -43,6 +44,10 @@ class DenoWorker {
     this.proc = null;
     this.pending = new Map();
     this.buffer = "";
+    // One streaming UTF-8 decoder per worker so a multibyte codepoint split
+    // across a chunk boundary buffers its trailing bytes instead of decoding
+    // to U+FFFD and corrupting the JSON-Lines payload.
+    this.decoder = new StringDecoder("utf8");
     this.nextId = 1;
     this.exitErr = null;
   }
@@ -71,7 +76,7 @@ class DenoWorker {
     );
 
     this.proc.stdout.on("data", (chunk) => {
-      this.buffer += chunk.toString("utf8");
+      this.buffer += this.decoder.write(chunk);
       while (true) {
         const nl = this.buffer.indexOf("\n");
         if (nl < 0) break;

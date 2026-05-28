@@ -85,7 +85,7 @@ function errorToString(err: unknown): string {
 const decoder = new TextDecoder();
 let buffer = "";
 for await (const chunk of Deno.stdin.readable) {
-  buffer += decoder.decode(chunk);
+  buffer += decoder.decode(chunk, { stream: true });
   while (true) {
     const nl = buffer.indexOf("\n");
     if (nl < 0) break;
