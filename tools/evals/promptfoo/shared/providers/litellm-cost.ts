@@ -23,6 +23,9 @@ const ALIAS_TO_PRICING_MODEL: Record<string, string> = {
 interface RunUsage {
   inputTokens?: number;
   outputTokens?: number;
+  // ai>=6 nests cache-read tokens here; `cachedInputTokens` is the deprecated
+  // pre-6 spelling, kept as a fallback against SDK-minor drift.
+  inputTokenDetails?: { cacheReadTokens?: number };
   cachedInputTokens?: number;
 }
 
@@ -40,7 +43,7 @@ export function cumulativeRunCostUsd(usage: RunUsage, alias: string): number {
     {
       inputTokens: usage.inputTokens,
       outputTokens: usage.outputTokens,
-      cacheReadTokens: usage.cachedInputTokens,
+      cacheReadTokens: usage.inputTokenDetails?.cacheReadTokens ?? usage.cachedInputTokens,
     },
     modelId,
   );
