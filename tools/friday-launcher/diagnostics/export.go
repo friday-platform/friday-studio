@@ -108,7 +108,7 @@ func Export(opts ExportOptions) (string, error) {
 	// longer exists and Remove is a harmless no-op; if any step
 	// before Rename errored, this is what stops aborted exports from
 	// accumulating in Downloads.
-	defer os.Remove(tmpPath)
+	defer func() { _ = os.Remove(tmpPath) }()
 
 	if err := writeBundle(tmpPath, opts, outDirSkipped); err != nil {
 		return "", err
@@ -128,7 +128,7 @@ func Export(opts ExportOptions) (string, error) {
 // a close-only failure still surfaces (instead of being silently
 // swallowed like a bare `defer f.Close()` would).
 func writeBundle(tmpPath string, opts ExportOptions, outDirSkipped bool) (err error) {
-	f, err := os.Create(tmpPath)
+	f, err := os.Create(tmpPath) //nolint:gosec // G304: launcher-resolved output dir (Downloads/TempDir/explicit), no user input
 	if err != nil {
 		return fmt.Errorf("create %s: %w", tmpPath, err)
 	}
@@ -253,7 +253,7 @@ func getDaemonVersion(opts ExportOptions) string {
 	if err != nil {
 		return daemonVersionUnreachable
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return daemonVersionUnreachable
 	}
@@ -317,7 +317,7 @@ func fetchWorkspaces(opts ExportOptions) workspaceResult {
 		}
 		return workspaceResult{skipReason: skipReasonDaemonUnreachable}
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	switch {
 	case resp.StatusCode == http.StatusUnauthorized, resp.StatusCode == http.StatusForbidden:
 		return workspaceResult{skipReason: skipReasonAuthRefused}
@@ -461,11 +461,11 @@ func addPids(zw *zip.Writer, pidsDir string) (bool, error) {
 }
 
 func addFileFromDisk(zw *zip.Writer, srcPath, zipName string) error {
-	src, err := os.Open(srcPath)
+	src, err := os.Open(srcPath) //nolint:gosec // G304: launcher-controlled paths under $HOME/.friday/local (logs/state/pids)
 	if err != nil {
 		return fmt.Errorf("open %s: %w", srcPath, err)
 	}
-	defer src.Close()
+	defer func() { _ = src.Close() }()
 	w, err := zw.Create(zipName)
 	if err != nil {
 		return fmt.Errorf("zip create %s: %w", zipName, err)
@@ -544,7 +544,7 @@ func writable(dir string) bool {
 	if err != nil {
 		return false
 	}
-	probe.Close()
+	_ = probe.Close()
 	_ = os.Remove(probe.Name())
 	return true
 }

@@ -54,7 +54,7 @@ func readZipEntries(t *testing.T, path string) []string {
 	if err != nil {
 		t.Fatalf("open zip %s: %v", path, err)
 	}
-	defer r.Close()
+	defer func() { _ = r.Close() }()
 	names := make([]string, 0, len(r.File))
 	for _, f := range r.File {
 		names = append(names, f.Name)
@@ -70,7 +70,7 @@ func readZipFile(t *testing.T, zipPath, entry string) []byte {
 	if err != nil {
 		t.Fatalf("open zip: %v", err)
 	}
-	defer r.Close()
+	defer func() { _ = r.Close() }()
 	for _, f := range r.File {
 		if f.Name != entry {
 			continue
@@ -80,7 +80,7 @@ func readZipFile(t *testing.T, zipPath, entry string) []byte {
 			t.Fatalf("open entry %s: %v", entry, err)
 		}
 		body, err := io.ReadAll(rc)
-		rc.Close()
+		_ = rc.Close()
 		if err != nil {
 			t.Fatalf("read entry %s: %v", entry, err)
 		}

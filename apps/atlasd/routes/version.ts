@@ -6,4 +6,3 @@ const versionRoutes = daemonFactory.createApp().get("/", (c) => {
 });
 
 export { versionRoutes };
-export type VersionRoutes = typeof versionRoutes;
