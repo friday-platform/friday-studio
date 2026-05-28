@@ -2155,7 +2155,7 @@ export class WorkspaceRuntime {
         );
 
         try {
-          await awaitWithAbort(enginePromise, effectiveAbortSignal);
+          const signalOutcome = await awaitWithAbort(enginePromise, effectiveAbortSignal);
 
           session.artifacts = this.extractArtifacts(engine.documents);
           // Phase 2.B — persist eligible FSM documents as real artifacts so a
@@ -2185,6 +2185,17 @@ export class WorkspaceRuntime {
           // AbortController we composed up top and override the status.
           if (effectiveAbortSignal.aborted) {
             session.status = WorkspaceSessionStatus.CANCELLED;
+          } else if (!signalOutcome.transitionTaken) {
+            // The engine drained the queue without committing a single
+            // transition — the signal matched no `on:` handler at the
+            // current state. Treat this as SKIPPED (same status the
+            // runtime already uses for user-config issues) so the
+            // downstream chain converts it to a `job-error` SSE event and
+            // the chat-tool wrapper returns `success: false`. Refs #322.
+            session.status = WorkspaceSessionStatus.SKIPPED;
+            session.error = new Error(
+              `Signal "${signal.id}" had no matching transition in state "${engine.state}"`,
+            );
           } else {
             session.status = WorkspaceSessionStatus.COMPLETED;
           }

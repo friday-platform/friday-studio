@@ -1,31 +1,13 @@
 /**
- * Failing-test guard for the silent-no-op signal bug.
+ * Regression guard for the silent-no-op signal bug (#322).
  *
- * Repro: a workspace job declares an FSM whose initial state is also a
- * `type: final` state with no `on:` transitions. When the matching
- * signal is fired, `FSMEngine.processSingleSignalInner` (fsm-engine.ts
- * ~line 782) finds no `state.on[sig.type]`, logs DEBUG "No transition
- * defined for signal", and returns void. The runtime caller
- * (`runtime.ts` ~line 2083) sees no error from `engine.signal(...)`,
- * sets `session.status = COMPLETED`, and emits "Signal processed
- * successfully". Downstream chat-tool wrapper (`packages/system/agents/
- * workspace-chat/tools/job-tools.ts:404`) then returns
- * `{ success: true, status: "completed", artifactIds: [], summary: <empty
- * sentinel> }` — and the chat agent reports "Done — successfully" for a
+ * Contract: when the engine drains the signal queue without committing
+ * any transition (e.g. an FSM whose current state has no `on:` handler
+ * for the incoming signal), the session must surface as `SKIPPED`, not
+ * `COMPLETED`. The downstream chain converts `SKIPPED` to a `job-error`
+ * SSE event, which the chat-tool wrapper returns as `success: false`.
+ * Without that, the chat agent reports "Done — successfully" for a
  * session that did literally nothing.
- *
- * Discovered during a chat-driven QA round when a no-op fixture FSM
- * caused the chat agent to report a clean success on a job that did
- * literally nothing. Root-cause investigation pinpointed the engine's
- * silent return as the contract gap.
- *
- * Desired contract (this test asserts the fix): when the engine takes
- * zero transitions on a signal, the session must surface as `SKIPPED`,
- * not `COMPLETED`. This is the signal the chat-tool wrapper needs to
- * stop returning `success: true` for empty no-op runs.
- *
- * Currently failing — keeps failing until the runtime / engine plumbing
- * is taught to flag "transition not taken" as a non-completion.
  */
 
 import { rm } from "node:fs/promises";
@@ -83,14 +65,7 @@ afterEach(async () => {
   await rm(testDir, { recursive: true, force: true });
 });
 
-// `it.fails(...)` flips the assertion: the test PASSES while the
-// inner assertion fails (i.e. while the bug is unfixed) and FAILS
-// the moment the inner assertion starts to pass — that's the signal
-// to remove this `.fails` annotation and make it a regular green
-// test. Keeps CI green without papering over the bug: a fix to
-// runtime.ts/engine.ts that makes silent no-ops surface as SKIPPED
-// will trip CI on this test, forcing the cleanup. See issue #322.
-it.fails("flags a signal that took no transition as SKIPPED, not COMPLETED (refs #322)", async () => {
+it("flags a signal that took no transition as SKIPPED, not COMPLETED (refs #322)", async () => {
   runtime = new WorkspaceRuntime({ id: "test-no-op" }, configWithFinalInitialFSM(), {
     workspacePath: testDir,
     lazy: true,
@@ -100,16 +75,6 @@ it.fails("flags a signal that took no transition as SKIPPED, not COMPLETED (refs
 
   const session = await runtime.triggerSignalWithSession("reindex", {});
 
-  // Contract: a session that performed zero work and took zero
-  // transitions must NOT report `completed`. The chat-tool wrapper
-  // turns `completed` into `success: true` and the conversational
-  // agent then hallucinates a successful run. The right signal here
-  // is `skipped` — same status the runtime already uses for "user
-  // configuration issue" cases.
-  //
-  // Currently fails: runtime.ts:2083 sets COMPLETED whenever
-  // engine.signal() didn't throw, regardless of whether any
-  // transition fired.
   expect(session.status).not.toBe(WorkspaceSessionStatus.COMPLETED);
   expect(session.status).toBe(WorkspaceSessionStatus.SKIPPED);
 });
