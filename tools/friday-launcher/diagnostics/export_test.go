@@ -136,14 +136,13 @@ func TestExport_HappyPath_LogsOnly(t *testing.T) {
 		}
 	}
 
-	// Manifest sanity: workspaces opted out, state_json + pids true.
+	// Manifest sanity: workspaces opted out, recorded as a skip. What's
+	// present (logs/state/pids) is asserted via the zip listing above,
+	// not re-stated in the manifest.
 	mBytes := readZipFile(t, zipPath, "manifest.yml")
 	mStr := string(mBytes)
 	for _, needle := range []string{
 		"include_workspaces_requested: false",
-		"state_json: true",
-		"pids: true",
-		"workspaces: false",
 		"why: user_opted_out",
 		"daemon_version: unreachable",
 	} {
@@ -295,15 +294,13 @@ func TestExport_MissingStateJson(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Export: %v", err)
 	}
-	// state.json should not be in the zip when it doesn't exist on disk.
+	// Absence is read from the zip listing — state.json must not be an
+	// entry when it doesn't exist on disk. The manifest no longer
+	// restates presence, so the zip is the authoritative check.
 	for _, name := range readZipEntries(t, zipPath) {
 		if name == "state.json" {
 			t.Errorf("state.json present in zip despite missing on disk")
 		}
-	}
-	body := string(readZipFile(t, zipPath, "manifest.yml"))
-	if !strings.Contains(body, "state_json: false") {
-		t.Errorf("expected state_json: false in manifest, got:\n%s", body)
 	}
 }
 

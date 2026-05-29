@@ -22,7 +22,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"sort"
 	"strings"
 	"time"
 )
@@ -141,18 +140,15 @@ func writeBundle(tmpPath string, opts ExportOptions, outDirSkipped bool) (err er
 	zw := zip.NewWriter(f)
 
 	progress(opts.ProgressFn, "logs")
-	logNames, err := addLogs(zw, sourceLogsDir())
-	if err != nil {
+	if err := addLogs(zw, sourceLogsDir()); err != nil {
 		return err
 	}
 
-	stateIncluded, err := addStateJSON(zw, filepath.Join(sourceStateDir(), "state.json"))
-	if err != nil {
+	if err := addStateJSON(zw, filepath.Join(sourceStateDir(), "state.json")); err != nil {
 		return err
 	}
 
-	pidsIncluded, err := addPids(zw, filepath.Join(sourceStateDir(), "pids"))
-	if err != nil {
+	if err := addPids(zw, filepath.Join(sourceStateDir(), "pids")); err != nil {
 		return err
 	}
 
@@ -171,7 +167,7 @@ func writeBundle(tmpPath string, opts ExportOptions, outDirSkipped bool) (err er
 
 	progress(opts.ProgressFn, "packaging")
 
-	m := buildManifest(opts, logNames, stateIncluded, pidsIncluded, outDirSkipped, daemonVersion, wsResult)
+	m := buildManifest(opts, outDirSkipped, daemonVersion, wsResult)
 	body, err := marshalManifest(m)
 	if err != nil {
 		return fmt.Errorf("marshal manifest: %w", err)
@@ -188,7 +184,7 @@ func writeBundle(tmpPath string, opts ExportOptions, outDirSkipped bool) (err er
 // buildManifest assembles the manifest struct from inputs gathered
 // upstream. Pure assembly — every HTTP call has already happened by
 // the time we get here.
-func buildManifest(opts ExportOptions, logs []string, stateIncluded, pidsIncluded, outDirSkipped bool, daemonVersion string, ws workspaceResult) manifest {
+func buildManifest(opts ExportOptions, outDirSkipped bool, daemonVersion string, ws workspaceResult) manifest {
 	skipped := []manifestSkip{}
 	if !opts.IncludeWorkspaces {
 		skipped = append(skipped, manifestSkip{
@@ -213,13 +209,7 @@ func buildManifest(opts ExportOptions, logs []string, stateIncluded, pidsInclude
 		Arch:                       runtime.GOARCH,
 		GeneratedAt:                nowFn(),
 		IncludeWorkspacesRequested: opts.IncludeWorkspaces,
-		Included: manifestIncluded{
-			Logs:       logs,
-			StateJSON:  stateIncluded,
-			Pids:       pidsIncluded,
-			Workspaces: ws.body != nil,
-		},
-		Skipped: skipped,
+		Skipped:                    skipped,
 	}
 }
 
@@ -397,16 +387,15 @@ func joinDaemonURL(base, path string) (string, error) {
 
 // addLogs copies every live .log file from logsDir into zw's logs/
 // subdir. "Live" = filename ends in exactly .log (no .gz, no .log.N).
-// Returns the sorted list of basenames included (for the manifest).
-func addLogs(zw *zip.Writer, logsDir string) ([]string, error) {
+// A missing logs dir is not an error — the zip just has no logs/.
+func addLogs(zw *zip.Writer, logsDir string) error {
 	entries, err := os.ReadDir(logsDir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, nil
+			return nil
 		}
-		return nil, fmt.Errorf("read logs dir: %w", err)
+		return fmt.Errorf("read logs dir: %w", err)
 	}
-	var names []string
 	for _, e := range entries {
 		if e.IsDir() {
 			continue
@@ -416,37 +405,31 @@ func addLogs(zw *zip.Writer, logsDir string) ([]string, error) {
 			continue
 		}
 		if err := addFileFromDisk(zw, filepath.Join(logsDir, name), "logs/"+name); err != nil {
-			return nil, err
+			return err
 		}
-		names = append(names, name)
 	}
-	sort.Strings(names)
-	return names, nil
+	return nil
 }
 
-func addStateJSON(zw *zip.Writer, path string) (bool, error) {
+func addStateJSON(zw *zip.Writer, path string) error {
 	if _, err := os.Stat(path); err != nil {
 		if os.IsNotExist(err) {
-			return false, nil
+			return nil
 		}
-		return false, fmt.Errorf("stat state.json: %w", err)
+		return fmt.Errorf("stat state.json: %w", err)
 	}
-	if err := addFileFromDisk(zw, path, "state.json"); err != nil {
-		return false, err
-	}
-	return true, nil
+	return addFileFromDisk(zw, path, "state.json")
 }
 
-// addPids copies every entry from pidsDir into zw's pids/ subdir.
-// Returns true iff the directory existed (regardless of how many
-// files were inside — an empty pids/ still counts as "present").
-func addPids(zw *zip.Writer, pidsDir string) (bool, error) {
+// addPids copies every entry from pidsDir into zw's pids/ subdir. A
+// missing pids dir is not an error — the zip just has no pids/.
+func addPids(zw *zip.Writer, pidsDir string) error {
 	entries, err := os.ReadDir(pidsDir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return false, nil
+			return nil
 		}
-		return false, fmt.Errorf("read pids dir: %w", err)
+		return fmt.Errorf("read pids dir: %w", err)
 	}
 	for _, e := range entries {
 		if e.IsDir() {
@@ -454,10 +437,10 @@ func addPids(zw *zip.Writer, pidsDir string) (bool, error) {
 		}
 		name := e.Name()
 		if err := addFileFromDisk(zw, filepath.Join(pidsDir, name), "pids/"+name); err != nil {
-			return false, err
+			return err
 		}
 	}
-	return true, nil
+	return nil
 }
 
 func addFileFromDisk(zw *zip.Writer, srcPath, zipName string) error {

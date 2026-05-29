@@ -37,21 +37,19 @@ const privacyHeader = `# Friday diagnostic export
 
 `
 
+// manifest is provenance + negative space, NOT a content listing.
+// What's present in the archive is read from the zip's own file tree
+// (unzip -l); duplicating it here would only invite drift. The manifest
+// records what you can't see by listing the archive: the daemon/host
+// build, when it ran, what the user requested, and — critically — what
+// was skipped and why (absence isn't self-describing).
 type manifest struct {
-	DaemonVersion              string           `yaml:"daemon_version"`
-	OS                         string           `yaml:"os"`
-	Arch                       string           `yaml:"arch"`
-	GeneratedAt                time.Time        `yaml:"generated_at"`
-	IncludeWorkspacesRequested bool             `yaml:"include_workspaces_requested"`
-	Included                   manifestIncluded `yaml:"included"`
-	Skipped                    []manifestSkip   `yaml:"skipped"`
-}
-
-type manifestIncluded struct {
-	Logs       []string `yaml:"logs"`
-	StateJSON  bool     `yaml:"state_json"`
-	Pids       bool     `yaml:"pids"`
-	Workspaces bool     `yaml:"workspaces"`
+	DaemonVersion              string         `yaml:"daemon_version"`
+	OS                         string         `yaml:"os"`
+	Arch                       string         `yaml:"arch"`
+	GeneratedAt                time.Time      `yaml:"generated_at"`
+	IncludeWorkspacesRequested bool           `yaml:"include_workspaces_requested"`
+	Skipped                    []manifestSkip `yaml:"skipped"`
 }
 
 type manifestSkip struct {

@@ -110,6 +110,8 @@ func TestExport_HTTP_HappyPath(t *testing.T) {
 		t.Fatalf("Export: %v", err)
 	}
 
+	// workspaces.zip present + correct bytes IS the "workspaces embedded"
+	// assertion — the manifest no longer restates it.
 	gotBundle := readZipFile(t, zipPath, "workspaces.zip")
 	if string(gotBundle) != "STUB-BUNDLE-BYTES" {
 		t.Errorf("workspaces.zip body = %q, want canned bytes", string(gotBundle))
@@ -117,7 +119,6 @@ func TestExport_HTTP_HappyPath(t *testing.T) {
 	manifestBody := string(readZipFile(t, zipPath, "manifest.yml"))
 	for _, needle := range []string{
 		"daemon_version: dev-abc1234",
-		"workspaces: true",
 		"include_workspaces_requested: true",
 	} {
 		if !strings.Contains(manifestBody, needle) {
@@ -224,9 +225,6 @@ func TestExport_HTTP_AuthRefused(t *testing.T) {
 	if !strings.Contains(body, "why: auth_refused") {
 		t.Errorf("manifest missing why: auth_refused\n%s", body)
 	}
-	if !strings.Contains(body, "workspaces: false") {
-		t.Errorf("manifest should mark workspaces: false\n%s", body)
-	}
 }
 
 func TestExport_HTTP_5xx(t *testing.T) {
@@ -299,9 +297,6 @@ func TestExport_HTTP_BundleTooLarge(t *testing.T) {
 	if !strings.Contains(body, "why: bundle_all_too_large") {
 		t.Errorf("manifest missing why: bundle_all_too_large\n%s", body)
 	}
-	if !strings.Contains(body, "workspaces: false") {
-		t.Errorf("manifest should mark workspaces: false\n%s", body)
-	}
 }
 
 func TestExport_HTTP_TLS_InsecureSkipVerify(t *testing.T) {
@@ -352,7 +347,10 @@ func TestExport_HTTP_VersionFailsButBundleSucceeds(t *testing.T) {
 	if !strings.Contains(body, "daemon_version: unreachable") {
 		t.Errorf("manifest missing daemon_version: unreachable\n%s", body)
 	}
-	if !strings.Contains(body, "workspaces: true") {
-		t.Errorf("manifest should still have workspaces: true\n%s", body)
+	// Workspaces still embedded despite the version call failing — assert
+	// via the actual archive entry, not a manifest claim.
+	gotBundle := readZipFile(t, zipPath, "workspaces.zip")
+	if string(gotBundle) != "STUB-BUNDLE-BYTES" {
+		t.Errorf("workspaces.zip body = %q, want canned bytes (bundle should succeed even when version fails)", string(gotBundle))
 	}
 }

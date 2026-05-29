@@ -18,12 +18,6 @@ func TestManifest_Golden(t *testing.T) {
 		Arch:                       "arm64",
 		GeneratedAt:                time.Date(2026, 5, 28, 12, 34, 56, 0, time.UTC),
 		IncludeWorkspacesRequested: false,
-		Included: manifestIncluded{
-			Logs:       []string{"daemon.log", "launcher.log"},
-			StateJSON:  true,
-			Pids:       true,
-			Workspaces: false,
-		},
 		Skipped: []manifestSkip{
 			{What: "workspaces", Why: "user_opted_out"},
 		},
@@ -45,13 +39,6 @@ os: darwin
 arch: arm64
 generated_at: 2026-05-28T12:34:56Z
 include_workspaces_requested: false
-included:
-    logs:
-        - daemon.log
-        - launcher.log
-    state_json: true
-    pids: true
-    workspaces: false
 skipped:
     - what: workspaces
       why: user_opted_out
@@ -82,12 +69,6 @@ func TestManifest_DaemonUnreachableSkipReason(t *testing.T) {
 		Arch:                       "amd64",
 		GeneratedAt:                time.Date(2026, 5, 28, 0, 0, 0, 0, time.UTC),
 		IncludeWorkspacesRequested: true,
-		Included: manifestIncluded{
-			Logs:       []string{},
-			StateJSON:  true,
-			Pids:       true,
-			Workspaces: false,
-		},
 		Skipped: []manifestSkip{
 			{What: "workspaces", Why: "daemon_unreachable"},
 		},
