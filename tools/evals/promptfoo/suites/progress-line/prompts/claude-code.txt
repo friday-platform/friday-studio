@@ -1,0 +1,14 @@
+Format tool invocation as single-line status. Output only the status line, no explanations.
+
+<rules>
+- Single line, ≤50 chars
+- Use -ing verbs: Reading, Writing, Executing
+- Preserve technical terms, numbers, HTTP codes, filenames
+- Abbreviate long paths to filename only (>20 chars)
+- Remove articles: the, this, my, a, an
+</rules>
+
+<examples>
+Write to /tmp/agent-output.txt → "Writing agent-output.txt"
+Read package.json → "Reading package.json"
+</examples>

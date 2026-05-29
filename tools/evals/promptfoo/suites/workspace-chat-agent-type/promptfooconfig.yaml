@@ -1,0 +1,52 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+
+description: |
+  workspace-chat / agent-type-default — multi-model.
+
+  Migrated from tools/evals/agents/workspace-chat/agent-type-default.eval.ts.
+  Baselines workspace-chat's choice among `atlas`, `user`, `llm` agent types
+  for five cases drawn from real production failure shapes (inbox triage,
+  CSV streaming, code generation, daily email report, explicit user-named type).
+
+  Per-case constraints (expected type, forbidden types, required MCP servers,
+  …) are encoded in tests.yaml as JSON-stringified vars and applied by
+  assertions/check.js.
+
+  No daemon. Imports real prompt.txt + real workspace-api & python-agents
+  SKILL.md + real `bundledAgentsRegistry` (surfaced via the handler so the
+  phantom-atlas check can run in promptfoo's Node assertion sandbox).
+
+prompts:
+  - file://prompts/user.txt
+
+# Note: no tier:small entry — Groq llama-3.1-8b free tier has a 6k TPM cap,
+# and the workspace-chat prompt + workspace-api + python-agents skills exceed
+# 9k tokens. Re-enable tier:small here only if a higher-context small-tier
+# provider is added.
+providers:
+  - id: file://../../shared/providers/deno-worker.cjs
+    label: 'friday-md (haiku via registry) | tier:medium'
+    config:
+      handler: tools/evals/promptfoo/suites/workspace-chat-agent-type/handler.ts
+      registryId: 'anthropic:friday-md'
+
+  - id: file://../../shared/providers/deno-worker.cjs
+    label: 'friday-lg (sonnet via registry) | tier:large'
+    config:
+      handler: tools/evals/promptfoo/suites/workspace-chat-agent-type/handler.ts
+      registryId: 'anthropic:friday-lg'
+
+defaultTest: file://../../shared/defaultTest.yaml
+
+tests: file://tests.yaml
+
+evaluateOptions:
+  showProgressBar: true
+  # csv-streaming-user is acknowledged non-deterministic (the same prompt
+  # produces opposite type-selection outcomes across sessions; see tests.yaml
+  # and the original agent-type-default.eval.ts docstring). `repeat` is only
+  # valid at the config level — there is no per-test `options.repeat` field,
+  # so we repeat the entire suite 3× and let per-metric aggregates absorb the
+  # flake. All 5 cases × 2 providers now run 3×, so expect ~3× spend on this
+  # suite vs. a single pass.
+  repeat: 3

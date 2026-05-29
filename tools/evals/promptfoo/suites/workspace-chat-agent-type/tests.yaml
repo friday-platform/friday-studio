@@ -1,0 +1,119 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+#
+# Per-case constraints are encoded as JSON-stringified vars so the per-constraint
+# named exports in assertions/check.js can deserialize and apply them. Each
+# constraint runs as its own `javascript:` assert with a distinct `metric:`
+# label — promptfoo's per-metric report shows pass rates per rule and a failing
+# case names the specific constraint that broke (instead of one blob assertion).
+#
+# Metric labels mirror the pre-promptfoo eval's score names:
+#   correct-type-chosen, no-wrong-type, no-overdelegated-atlas,
+#   no-spurious-user-agent, required-mcp-wired, no-phantom-atlas-agent.
+#
+# Constraints whose vars are empty for a given case (e.g. forbiddenAtlasAgentsJson
+# = "[]") trivially pass — every case wires the full set uniformly to keep
+# tests.yaml legible and per-metric aggregates stable.
+
+- description: 'inbox-triage-llm — inbox triage should be type:llm + gmail MCP'
+  vars:
+    user_prompt: >-
+      Build me a workspace that pulls my latest 10 unread emails and reviews them
+      with letter options for Archive, Keep, Mark Unread, Delete, Unsubscribe.
+      Remember my preferences and apply them to future reviews.
+    expectedType: llm
+    forbiddenTypesJson: '["user"]'
+    forbiddenAtlasAgentsJson: '["email"]'
+    requiredMcpServersJson: '["google-gmail"]'
+    forbidUserAgentRegistration: true
+    expectedAgentsJson: '[{"type":"llm"}]'
+  assert: &agent_type_checks
+    - type: javascript
+      value: file://assertions/check.js:correctTypeChosen
+      metric: correct-type-chosen
+    - type: javascript
+      value: file://assertions/check.js:agentSetMatches
+      metric: agent-set-matches
+    - type: javascript
+      value: file://assertions/check.js:noWrongType
+      metric: no-wrong-type
+    - type: javascript
+      value: file://assertions/check.js:noOverdelegatedAtlas
+      metric: no-overdelegated-atlas
+    - type: javascript
+      value: file://assertions/check.js:noSpuriousUserAgent
+      metric: no-spurious-user-agent
+    - type: javascript
+      value: file://assertions/check.js:requiredMcpWired
+      metric: required-mcp-wired
+    - type: javascript
+      value: file://assertions/check.js:noPhantomAtlasAgent
+      metric: no-phantom-atlas-agent
+    # Cumulative run cost (priced from result.totalUsage across all steps, NOT
+    # the last-step LiteLLM header). Upper bound sized for friday-lg (sonnet) on
+    # a full 20-step loop with headroom. PLACEHOLDER — tighten to ~2× the
+    # observed median once a calibration run against the proxy exists; today it
+    # only catches a gross (≈5×+) tool-thrash blowup.
+    - type: cost
+      threshold: 2.00
+
+# Acknowledged non-deterministic per the original eval's docstring
+# (agent-type-default.eval.ts) — the same prompt produces opposite
+# type-selection outcomes across sessions. Flake is absorbed at the suite
+# level via `evaluateOptions.repeat: 3` in promptfooconfig.yaml (promptfoo
+# has no per-test repeat field; the previous `options.repeat: 3` here
+# silently no-op'd).
+- description: 'csv-streaming-user — large-CSV ingest should be type:user'
+  vars:
+    user_prompt: >-
+      Build me a workspace that ingests 50MB CSV uploads, validates the row
+      schema, and streams the rows into a SQLite database. The schema is fixed —
+      id, timestamp, payload.
+    expectedType: user
+    forbiddenTypesJson: '["llm", "atlas"]'
+    forbiddenAtlasAgentsJson: '[]'
+    requiredMcpServersJson: '[]'
+    forbidUserAgentRegistration: false
+  assert: *agent_type_checks
+
+- description: 'code-gen-llm-not-claude-code — code-gen should be type:llm, NOT claude-code'
+  vars:
+    user_prompt: >-
+      Build me a workspace that takes natural-language descriptions of small
+      Python scripts and writes the script files to a directory. Single-file
+      scripts only — no projects.
+    expectedType: llm
+    forbiddenTypesJson: '["atlas"]'
+    forbiddenAtlasAgentsJson: '["claude-code"]'
+    requiredMcpServersJson: '[]'
+    forbidUserAgentRegistration: false
+    expectedAgentsJson: '[{"type":"llm"}]'
+  assert: *agent_type_checks
+
+- description: 'send-daily-report-email — daily email report must use type:llm + gmail MCP, never agent:email'
+  vars:
+    user_prompt: >-
+      Build me a workspace that pulls a daily ad-performance report from Snowflake
+      at 8am UTC and sends the HTML report from my Gmail account to
+      alice@example.com and bob@example.com. Use Gmail for the send — I have
+      OAuth set up.
+    expectedType: llm
+    forbiddenTypesJson: '[]'
+    forbiddenAtlasAgentsJson: '["email"]'
+    requiredMcpServersJson: '["google-gmail"]'
+    forbidUserAgentRegistration: false
+    expectedAgentsJson: '[{"type":"llm"}]'
+  assert: *agent_type_checks
+
+- description: 'explicit-llm-override — user explicitly names type:llm — must respect it'
+  vars:
+    user_prompt: >-
+      Build me a workspace that pulls my latest 5 unread emails and lets me
+      triage them with letter options (Archive, Keep, Delete). Use llm agents
+      for this — I do not want Python user agents.
+    expectedType: llm
+    forbiddenTypesJson: '["user"]'
+    forbiddenAtlasAgentsJson: '[]'
+    requiredMcpServersJson: '["google-gmail"]'
+    forbidUserAgentRegistration: true
+    expectedAgentsJson: '[{"type":"llm"}]'
+  assert: *agent_type_checks

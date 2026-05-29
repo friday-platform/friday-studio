@@ -1,0 +1,48 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+
+description: |
+  workspace-chat / elicitation-behavior — multi-model.
+
+  Migrated from tools/evals/agents/workspace-chat/elicitation-behavior.eval.ts.
+  Verifies the LLM responds correctly to the two `request_tool_access` response
+  shapes (pending_user_approval vs bypass) — without spawning the daemon or
+  the real workspace-chat agent runner.
+
+  Imports the real workspace-chat system prompt and the real @atlas/llm
+  provider registry. The custom provider runs inside a long-lived Deno worker
+  spawned by shared/providers/deno-worker.cjs so each suite × tier pays the
+  Deno cold-start exactly once.
+
+prompts:
+  - file://prompts/user.txt
+
+# Provider matrix — every entry routes through @atlas/llm's `registry.languageModel`.
+# When LITELLM_API_KEY is set in env, the registry transparently routes all
+# requests through the LiteLLM proxy (see packages/llm/src/registry.ts). Without
+# it, calls go direct to each provider's native API.
+# Registry IDs use the friday-* LiteLLM aliases so the proxy resolves the
+# concrete backend. Same single-source-of-truth as the other promptfoo suites:
+# swap a backend by editing litellm_config.yaml, no eval changes needed.
+# Note: no tier:small entry — Groq llama-3.1-8b free tier has a 6k TPM cap,
+# and the workspace-chat prompt + skills exceed it. Re-enable tier:small here
+# only if a higher-context small-tier provider (Groq paid, OpenRouter, …) is
+# added to litellm_config.yaml.
+providers:
+  - id: file://../../shared/providers/deno-worker.cjs
+    label: 'friday-md (haiku via registry) | tier:medium'
+    config:
+      handler: tools/evals/promptfoo/suites/workspace-chat-elicitation/handler.ts
+      registryId: 'anthropic:friday-md'
+
+  - id: file://../../shared/providers/deno-worker.cjs
+    label: 'friday-lg (sonnet via registry) | tier:large'
+    config:
+      handler: tools/evals/promptfoo/suites/workspace-chat-elicitation/handler.ts
+      registryId: 'anthropic:friday-lg'
+
+defaultTest: file://../../shared/defaultTest.yaml
+
+tests: file://tests.yaml
+
+evaluateOptions:
+  showProgressBar: true

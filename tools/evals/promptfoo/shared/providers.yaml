@@ -1,0 +1,41 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+#
+# Stock-provider matrix for the four text-only suites (progress-line,
+# prompt-interpolation, agent-config-prompt, title-generation). One entry per
+# tier — the litellm:* dual-lane was retired after PR live validation showed
+# zero pass/fail divergence vs the openai:chat path. Bring it back here if a
+# future LiteLLM-specific bug needs to be isolated.
+#
+# Tier selection at run time: each entry's label carries a `tier:<small|medium|large>`
+# tag. Use `--filter-providers 'tier:small'` (or `tier:(small|medium)`) to pick a
+# subset. Promptfoo's --filter-providers is a regex against `id` and `label`.
+#
+# The proxy resolves `<alias>` (friday-sm, friday-md, ...) via litellm_config.yaml,
+# so adding a new model is one line in that file and one entry here.
+#
+# NOTE: The three workspace-chat suites do NOT use this file — they need a
+# custom provider (the deno-worker bridge) to capture tool-call state. See
+# shared/providers/deno-worker.cjs.
+
+- id: openai:chat:friday-sm
+  label: 'groq-8b (openai) | tier:small'
+  config: &openai_config
+    apiBaseUrl: http://localhost:4000/v1
+    apiKey: '{{env.LITELLM_MASTER_KEY}}'
+    temperature: 0
+    max_tokens: 256
+    stream: false
+
+- id: openai:chat:friday-md
+  label: 'haiku-4-5 (openai) | tier:medium'
+  config: *openai_config
+
+- id: openai:chat:friday-lg
+  label: 'sonnet-4-6 (openai) | tier:large'
+  config: *openai_config
+
+# Add extra provider lanes here. The default matrix is intentionally small
+# (Anthropic + Groq); enable an OpenAI / Bedrock / other lane by adding both a
+# `litellm_config.yaml` entry AND a provider entry here. Tag each new entry's
+# label with `tier:small`, `tier:medium`, or `tier:large` so
+# `--filter-providers 'tier:...'` continues to work.

@@ -1,0 +1,69 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+#
+# Two targeted cases (specific bundled-agent expected) + one smoke case (any
+# atlas agent acceptable). Assertions inspect captured upsert_agent shapes
+# and forbidden-MCP behavior.
+#
+# Each case sets `options.transform: 'JSON.parse(output)'` so assertion
+# bodies see the parsed handler payload as `output` (e.g.
+# `output.captures.upsertAgents`) instead of re-parsing in every expression.
+
+- description: 'scrape-hacker-news — daily HN headlines should pick bundled web agent'
+  vars:
+    user_prompt: 'I want a workspace that scrapes the top headlines from Hacker News every morning.'
+    expectedAgentsJson: '[{"type":"atlas","agent":"web"}]'
+  options: &parse_output
+    transform: 'JSON.parse(output)'
+  assert:
+    - type: javascript
+      value: "output.captures.upsertAgents.some(u => u.config.type === 'atlas' && u.config.agent === 'web')"
+      metric: BundledWebAgentChosen
+    - type: javascript
+      value: file://assertions/check.js:agentSetMatches
+      metric: agent-set-matches
+    - type: javascript
+      value: file://assertions/check.js:noRedundantMcpEnable
+      metric: NoRedundantMcpEnable
+    - type: javascript
+      value: file://assertions/check.js:noRedundantMcpViaToolList
+      metric: NoRedundantMcpViaToolList
+    - type: javascript
+      value: 'output.captures.listCapabilitiesCallCount > 0'
+      metric: CalledListCapabilities
+    # Cumulative run cost (result.totalUsage priced across all 12 steps, not the
+    # last-step LiteLLM header). PLACEHOLDER upper bound for friday-lg — tighten
+    # to ~2× observed once a proxy calibration run exists.
+    - type: cost
+      threshold: 1.20
+
+- description: 'slack-daily-standup — daily standup post should pick bundled slack agent'
+  vars:
+    user_prompt: 'I want a workspace that posts a daily standup to Slack.'
+    expectedAgentsJson: '[{"type":"atlas","agent":"slack"}]'
+  options: *parse_output
+  assert:
+    - type: javascript
+      value: "output.captures.upsertAgents.some(u => u.config.type === 'atlas' && u.config.agent === 'slack')"
+      metric: BundledSlackAgentChosen
+    - type: javascript
+      value: file://assertions/check.js:agentSetMatches
+      metric: agent-set-matches
+    - type: javascript
+      value: file://assertions/check.js:noRedundantMcpViaToolList
+      metric: NoRedundantMcpViaToolList
+    - type: javascript
+      value: 'output.captures.listCapabilitiesCallCount > 0'
+      metric: CalledListCapabilities
+    - type: cost
+      threshold: 1.20
+
+- description: 'fetch-and-summarize (smoke) — at least one atlas upsert for generic fetch+summarize'
+  vars:
+    user_prompt: 'Build a workspace that fetches a URL daily and summarizes the content.'
+  options: *parse_output
+  assert:
+    - type: javascript
+      value: "output.captures.upsertAgents.some(u => u.config.type === 'atlas')"
+      metric: AnyAtlasAgent
+    - type: cost
+      threshold: 1.20

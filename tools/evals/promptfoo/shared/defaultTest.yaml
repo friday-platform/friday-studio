@@ -1,0 +1,27 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+#
+# Defaults applied to every test in every suite that includes this file.
+# Per-suite or per-test overrides win (promptfoo deep-merges).
+#
+# When a suite first adds an `llm-rubric` / `factuality` / `model-graded-*`
+# assertion, re-introduce a pinned grader here under `options.provider` so
+# model upgrades on the SUT don't silently shift grading bias. Use a model
+# distinct from the SUT aliases to avoid self-grading.
+
+# No shared floor assertions.
+#
+# Previously had a `latency: threshold: 8000` floor — pulled because:
+#   - It was a sanity check that --no-cache was honored, not a real regression
+#     gate. Every CI run already uses --no-cache.
+#   - Tool-use suites (workspace-chat/*) legitimately take 30-60s for multi-
+#     step agentic workflows; the 8s floor flagged them as failures even when
+#     every other assertion passed.
+#
+# `cost` is not floored here, but is now flowing through deno-worker for
+# handlers that opt in: the worker handler reads `x-litellm-response-cost` off
+# the AI SDK response headers and returns it; deno-worker.cjs forwards it as
+# the top-level `cost` field on ProviderResponse. Opt in per-suite by adding a
+# `cost: { threshold: <USD> }` assertion. Suites that use promptfoo's stock
+# `openai:` provider (not the deno-worker bridge) still see cost as 0 because
+# the OpenAI-shaped JSON body has no cost field — keep those suites's `cost`
+# assertions off.

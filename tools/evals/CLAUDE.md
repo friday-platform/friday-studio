@@ -9,7 +9,7 @@ Evals run through a custom runner CLI, not `Deno.test`.
 
 ```bash
 deno task evals run                              # all evals
-deno task evals run -t tools/evals/agents/email/email.eval.ts  # one file
+deno task evals run -t tools/evals/agents/web/web.eval.ts  # one file
 deno task evals run --filter "refusal"           # by name substring
 deno task evals run --fail-fast                  # stop on first failure
 deno task evals run --verbose                    # show stack traces

@@ -1,0 +1,27 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+
+description: |
+  Progress-line generation across model tiers.
+
+  Migrated from tools/evals/agents/small-llm/small-llm.eval.ts. The original
+  exercised Groq vs Haiku only; this suite extends to Sonnet, GPT-4.1-mini,
+  and both promptfoo↔LiteLLM integration paths so prompt regressions surface
+  on any model.
+
+# Single chat-format prompt — system content is injected per-test via
+# `vars.system_prompt: file://prompts/<style>.txt`. This avoids the cartesian
+# blow-up that listing each `prompts/*.txt` here would cause.
+prompts:
+  - file://prompts/chat.json
+
+providers: file://../../shared/providers.yaml
+
+defaultTest: file://../../shared/defaultTest.yaml
+
+tests: file://tests.yaml
+
+# Concurrency comes from the CLI (`-j N`) — keep config callers in control.
+# Repeat=3 surfaces temperature variance across runs.
+evaluateOptions:
+  showProgressBar: true
+  repeat: 3

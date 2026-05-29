@@ -1,0 +1,34 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+
+description: |
+  Prompt-interpolation downstream eval — multi-model.
+
+  Migrated from tools/evals/agents/prompt-interpolation/prompt-interpolation.eval.ts.
+  The original ran Haiku only; this suite covers the full matrix via LiteLLM.
+
+  Each test's `user_prompt` is the literal output of
+  `interpolatePromptPlaceholders(template, { config })` — see render.ts.
+  Tests assert the model-side property only: given a correctly-rendered
+  prompt, the response addresses the substituted data, doesn't leak
+  `{{...}}` syntax, and isn't a "missing input" refusal.
+
+  Structural contract for `interpolatePromptPlaceholders` itself is pinned
+  by unit tests in `packages/fsm-engine/tests/prompt-interpolation.test.ts`
+  AND by render.ts's pre-check (renderer fails if interpolation drifts).
+
+prompts:
+  - file://prompts/chat.json
+
+providers: file://../../shared/providers.yaml
+
+defaultTest: file://../../shared/defaultTest.yaml
+
+# Dynamic-tests loader. The `file://` form without a `:funcName` specifier
+# resolves to the module's default export — promptfoo's `mod[functionName]`
+# code path mishandles `:default` (double-unwraps the default), so we omit
+# the specifier and rely on the implicit default-export lookup.
+tests: file://render.ts
+
+# Concurrency comes from the CLI (`-j N`) — keep config callers in control.
+evaluateOptions:
+  showProgressBar: true
