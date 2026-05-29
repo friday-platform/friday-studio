@@ -283,6 +283,38 @@ describe("markdownToHTML", () => {
     expect(result).toContain("code block");
   });
 
+  it("syntax-highlights fenced code with a known language", () => {
+    const result = markdownToHTML("```typescript\nconst x: number = 42;\n```");
+    // Shiki emits `<pre class="shiki ...">` and wraps tokens in <span style="color:...">.
+    expect(result).toContain('class="shiki');
+    expect(result).toContain("<span");
+    expect(result).toContain("style=");
+    // Token text survives.
+    expect(result).toContain("const");
+    expect(result).toContain("42");
+  });
+
+  it("falls back to plain pre/code for unknown language tags", () => {
+    const result = markdownToHTML("```unknownlang\nfoo bar\n```");
+    expect(result).toContain("<pre><code>");
+    expect(result).toContain("foo bar");
+    expect(result).not.toContain('class="shiki');
+  });
+
+  it("escapes HTML in unknown-language fallback to prevent XSS", () => {
+    const result = markdownToHTML("```\n<script>alert(1)</script>\n```");
+    expect(result).toContain("&lt;script&gt;");
+    expect(result).not.toMatch(/<script>alert\(1\)<\/script>/);
+  });
+
+  it("markdownToHTMLSafe keeps shiki's color styles through DOMPurify", () => {
+    const result = markdownToHTMLSafe("```json\n{\"a\": 1}\n```");
+    expect(result).toContain('class="shiki');
+    // The token spans must keep their inline `color: var(--…)` for the
+    // light/dark CSS-variable theme to actually paint anything.
+    expect(result).toMatch(/style="[^"]*color:/);
+  });
+
   it("mixed content", () => {
     const markdown = `Here is a paragraph with **bold** and *italic* text.
 
