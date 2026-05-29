@@ -98,6 +98,7 @@ import { shareRoutes } from "../routes/share.ts";
 import { createPlatformSignalRoutes } from "../routes/signals/platform.ts";
 import { skillsRoutes } from "../routes/skills.ts";
 import { userRoutes } from "../routes/user/index.ts";
+import { versionRoutes } from "../routes/version.ts";
 import { eventsRoutes, workspaceEventsRoutes } from "../routes/workspace-events.ts";
 import workspaceCacheSaltRoutes from "../routes/workspaces/cache-salt.ts";
 import workspaceChatRoutes from "../routes/workspaces/chat.ts";
@@ -1507,6 +1508,7 @@ export class AtlasDaemon {
     });
 
     this.app.route("/health", healthRoutes);
+    this.app.route("/api/version", versionRoutes);
     this.app.route("/api/workspaces", workspacesRoutes);
     // Mount workspace config routes for partial updates (separate from workspacesRoutes to avoid circular deps)
     this.app.route("/api/workspaces/:workspaceId/config", workspaceConfigRoutes);

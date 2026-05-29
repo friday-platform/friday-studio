@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 
 	"github.com/pkg/browser"
@@ -47,6 +48,41 @@ func openInFileBrowser(path string) error {
 	}
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("open %s: %w", path, err)
+	}
+	return nil
+}
+
+// revealInFileBrowserOverride is a test hook. When non-nil it replaces
+// the OS shell-out in revealInFileBrowser so tests can assert the
+// reveal happened without spawning Finder/Explorer on the developer's
+// machine. Production code leaves it nil.
+var revealInFileBrowserOverride func(path string) error
+
+// revealInFileBrowser opens the OS file browser with the given file
+// preselected (the diagnostic zip the user just exported). macOS and
+// Windows have native "select this file" flags; Linux's xdg-open has
+// no equivalent, so we fall back to opening the containing directory.
+//
+// Fire-and-forget like openInFileBrowser — we don't wait for Finder
+// to come up. Any spawn error surfaces to the caller for logging.
+func revealInFileBrowser(path string) error {
+	if revealInFileBrowserOverride != nil {
+		return revealInFileBrowserOverride(path)
+	}
+	// path is the launcher-produced zip in ~/Downloads (or fallback
+	// TempDir) — same provenance as logsDir() above, so the gosec
+	// suppression has the same rationale.
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("open", "-R", path) //nolint:gosec // G204: launcher-produced path
+	case "windows":
+		cmd = exec.Command("explorer.exe", "/select,"+path) //nolint:gosec // G204: launcher-produced path
+	default:
+		cmd = exec.Command("xdg-open", filepath.Dir(path)) //nolint:gosec // G204: launcher-produced path
+	}
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("reveal %s: %w", path, err)
 	}
 	return nil
 }
