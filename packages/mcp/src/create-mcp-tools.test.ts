@@ -48,7 +48,7 @@ vi.mock("@atlas/core/mcp-registry/credential-resolver", async (importOriginal) =
 });
 
 // Import after mocks
-const { createMCPTools, MCPTimeoutError } = await import("./create-mcp-tools.ts");
+const { createMCPTools, MCPTimeoutError, withTimeout } = await import("./create-mcp-tools.ts");
 
 // Fake logger
 const fakeLogger = {
@@ -67,6 +67,14 @@ beforeEach(() => {
   MockHTTPTransport.mockReset();
   mockResolveEnvValues.mockReset();
   mockResolveEnvValues.mockResolvedValue({});
+  // attemptStdio's abort listener calls transport.close() to SIGTERM the
+  // spawned child before createMCPClient resolves. The default mock needs
+  // a close() that returns a Promise so the abort path doesn't throw.
+  // Individual tests override via mockImplementation when they care about
+  // the transport instance (e.g. stderr inspection).
+  MockStdioTransport.mockImplementation(function (this: { close: () => Promise<void> }) {
+    this.close = () => Promise.resolve();
+  });
 });
 
 afterEach(() => {
@@ -694,7 +702,7 @@ describe("createMCPTools", () => {
     expect(result.disconnected[0]?.message).not.toContain("different-server");
   });
 
-  it("disposes all connected clients when signal aborts mid-connect", async () => {
+  it("disposes connected clients and short-circuits second server when signal aborts mid-connect", async () => {
     const closeA = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
     const controller = new AbortController();
 
@@ -716,9 +724,12 @@ describe("createMCPTools", () => {
     );
     expect(error).toBeInstanceOf(Error);
     expect((error as Error).message).toBe("cancelled");
-    // Both parallel mappers created a client; both get disposed in cleanup
-    expect(closeA).toHaveBeenCalledTimes(2);
-    expect(mockCreateMCPClient).toHaveBeenCalledTimes(2);
+    // The first mapper's createMCPClient resolves and the abort fires before
+    // tools() — attemptStdio closes the client on the aborted-signal check.
+    // The second mapper sees the already-aborted signal and short-circuits
+    // before calling createMCPClient, so no second spawn happens.
+    expect(mockCreateMCPClient).toHaveBeenCalledTimes(1);
+    expect(closeA).toHaveBeenCalledTimes(1);
   });
 
   it("dispose awaits close() — does not resolve before cleanup finishes", async () => {
@@ -1262,5 +1273,95 @@ describe("createMCPTools", () => {
         if (originalAtlasHome !== undefined) process.env.FRIDAY_HOME = originalAtlasHome;
       }
     });
+  });
+});
+
+describe("withTimeout", () => {
+  const makeTimeoutError = (ms: number) => new Error(`timed out after ${ms}ms`);
+
+  it("rejects immediately with signal.reason when signal is already aborted", async () => {
+    const reason = new Error("pre-aborted");
+    const controller = new AbortController();
+    controller.abort(reason);
+
+    await expect(
+      withTimeout(new Promise(() => {}), 10_000, makeTimeoutError, controller.signal),
+    ).rejects.toBe(reason);
+  });
+
+  it("rejects with signal.reason when signal aborts before the timer fires", async () => {
+    vi.useFakeTimers();
+    try {
+      const controller = new AbortController();
+      const reason = new Error("mid-flight");
+      const promise = withTimeout(
+        new Promise(() => {}),
+        10_000,
+        makeTimeoutError,
+        controller.signal,
+      );
+
+      // Abort before the 10s timer would fire.
+      await vi.advanceTimersByTimeAsync(50);
+      controller.abort(reason);
+
+      await expect(promise).rejects.toBe(reason);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("clears the timer when the signal aborts (no zombie setTimeout)", async () => {
+    vi.useFakeTimers();
+    try {
+      const controller = new AbortController();
+      const removeSpy = vi.spyOn(controller.signal, "removeEventListener");
+      const promise = withTimeout(
+        new Promise(() => {}),
+        10_000,
+        makeTimeoutError,
+        controller.signal,
+      );
+
+      controller.abort(new Error("cancel"));
+      await expect(promise).rejects.toThrow("cancel");
+
+      expect(vi.getTimerCount()).toBe(0);
+      expect(removeSpy).toHaveBeenCalledWith("abort", expect.any(Function));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("clears the timer when the inner promise resolves", async () => {
+    vi.useFakeTimers();
+    try {
+      const promise = withTimeout(Promise.resolve("ok"), 10_000, makeTimeoutError);
+      await expect(promise).resolves.toBe("ok");
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("still rejects on timeout when no signal is supplied (backward compatible)", async () => {
+    vi.useFakeTimers();
+    try {
+      const promise = withTimeout(new Promise(() => {}), 1_000, makeTimeoutError);
+      const assertion = expect(promise).rejects.toThrow("timed out after");
+      await vi.advanceTimersByTimeAsync(1_500);
+      await assertion;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("removes the abort listener after the inner promise settles", async () => {
+    const controller = new AbortController();
+    const removeSpy = vi.spyOn(controller.signal, "removeEventListener");
+
+    await withTimeout(Promise.resolve("ok"), 10_000, makeTimeoutError, controller.signal);
+
+    expect(removeSpy).toHaveBeenCalledWith("abort", expect.any(Function));
   });
 });
