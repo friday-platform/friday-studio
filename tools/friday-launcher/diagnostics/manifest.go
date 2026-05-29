@@ -1,7 +1,6 @@
 package diagnostics
 
 import (
-	"bytes"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -63,8 +62,5 @@ func marshalManifest(m manifest) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	var buf bytes.Buffer
-	buf.WriteString(privacyHeader)
-	buf.Write(body)
-	return buf.Bytes(), nil
+	return append([]byte(privacyHeader), body...), nil
 }

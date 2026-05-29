@@ -127,7 +127,7 @@ func Export(opts ExportOptions) (string, error) {
 // a close-only failure still surfaces (instead of being silently
 // swallowed like a bare `defer f.Close()` would).
 func writeBundle(tmpPath string, opts ExportOptions, outDirSkipped bool) (err error) {
-	f, err := os.Create(tmpPath) //nolint:gosec // G304: launcher-resolved output dir (Downloads/TempDir/explicit), no user input
+	f, err := os.Create(filepath.Clean(tmpPath))
 	if err != nil {
 		return fmt.Errorf("create %s: %w", tmpPath, err)
 	}
@@ -444,7 +444,7 @@ func addPids(zw *zip.Writer, pidsDir string) error {
 }
 
 func addFileFromDisk(zw *zip.Writer, srcPath, zipName string) error {
-	src, err := os.Open(srcPath) //nolint:gosec // G304: launcher-controlled paths under $HOME/.friday/local (logs/state/pids)
+	src, err := os.Open(filepath.Clean(srcPath))
 	if err != nil {
 		return fmt.Errorf("open %s: %w", srcPath, err)
 	}
@@ -528,8 +528,7 @@ func writable(dir string) bool {
 		return false
 	}
 	_ = probe.Close()
-	_ = os.Remove(probe.Name())
-	return true
+	return os.Remove(probe.Name()) == nil
 }
 
 // buildPaths derives the final + partial zip paths. On filename
