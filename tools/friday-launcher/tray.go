@@ -84,37 +84,37 @@ const (
 	exportingTooltip = "Friday Studio — exporting diagnostics…"
 )
 
-// Menu item labels for the diagnostic-export item. The progress and
-// failure labels are written from the export goroutine; the default
-// is the resting state.
+// Menu item labels. The export action is a parent menu item with a
+// submenu of two explicit actions ("Logs only", "Logs + workspaces");
+// the parent's title carries the progress/success/failure feedback,
+// written from the export goroutine. The default is the resting state.
 const (
-	exportItemDefault        = "Export diagnostic logs…"
-	exportItemProgressBase   = "Exporting diagnostic logs…"
-	exportItemSuccess        = "Exported ✓ — revealing…"
-	exportItemFailure        = "Export failed — see launcher.log"
-	includeWorkspacesLabel   = "Include workspaces"
-	includeWorkspacesDisable = " — start Friday Studio to enable"
+	exportItemDefault      = "Export diagnostics"
+	exportItemProgressBase = "Exporting diagnostics…"
+	exportItemSuccess      = "Exported ✓ — revealing…"
+	exportItemFailure      = "Export failed — see launcher.log"
+	logsOnlyLabel          = "Logs only"
+	logsWorkspacesLabel    = "Logs + workspaces"
+	logsWorkspacesDisable  = " — start Friday Studio to enable"
 )
 
 // daemonServiceName is the supervised process whose liveness gates
-// the Include workspaces checkbox. Defined here (not in healthsvc.go)
+// the "Logs + workspaces" action. Defined here (not in healthsvc.go)
 // because the tray is the only consumer that cares which service is
 // the daemon — healthsvc treats every service uniformly.
 const daemonServiceName = "friday"
 
 // menuItem is the subset of *systray.MenuItem mutators that the two
-// shared items (exportItem, includeWorkspacesItem) are driven through.
-// Carved out as an interface purely so tests can inject a recording
-// fake — *systray.MenuItem can't be constructed without a live tray.
-// ClickedCh is deliberately NOT here: it's a struct field on the
-// concrete item, read only from the single-goroutine handleClicks, so
-// onReady captures it into a dedicated channel field instead.
+// shared items (exportItem parent, logsWorkspacesItem) are driven
+// through. Carved out as an interface purely so tests can inject a
+// recording fake — *systray.MenuItem can't be constructed without a
+// live tray. ClickedCh is deliberately NOT here: it's a struct field
+// on the concrete item, read only from the single-goroutine
+// handleClicks, so onReady captures it into a dedicated channel field.
 type menuItem interface {
 	SetTitle(string)
 	Enable()
 	Disable()
-	Check()
-	Uncheck()
 }
 
 // exportSuccessHold is how long the menu item shows the success label
@@ -137,19 +137,24 @@ type trayController struct {
 	autostartItem *systray.MenuItem
 	quitItem      *systray.MenuItem
 
-	// includeWorkspacesItem and exportItem are the two items mutated
-	// from three goroutines (tick, handleClicks, runExport); they sit
-	// behind the menuItem interface so tests can inject a fake. Their
-	// click channels live in the *ClickedCh fields below since the
-	// interface intentionally omits ClickedCh.
-	includeWorkspacesItem menuItem
-	exportItem            menuItem
+	// exportItem is the "Export diagnostics" parent. Its title carries
+	// the progress/success/failure feedback (mutated from tick and the
+	// export goroutine) and it's disabled for the duration of an export
+	// so its submenu is inaccessible while one is in flight.
+	// logsWorkspacesItem is the daemon-gated sub-action (mutated from
+	// tick only). Both sit behind the menuItem interface so tests can
+	// inject a fake. The logs-only sub-item is never mutated after
+	// creation — parent-disable covers it — so only its click channel
+	// is kept. Click channels live in the *ClickedCh fields below since
+	// the interface intentionally omits ClickedCh.
+	exportItem         menuItem
+	logsWorkspacesItem menuItem
 
 	// Click channels captured from the concrete items in onReady.
 	// handleClicks (the sole reader) selects on these instead of
 	// reaching through the now-interface-typed item fields.
-	includeWorkspacesClickedCh <-chan struct{}
-	exportClickedCh            <-chan struct{}
+	logsOnlyClickedCh       <-chan struct{}
+	logsWorkspacesClickedCh <-chan struct{}
 
 	currentBucket trayBucket
 
@@ -175,19 +180,19 @@ type trayController struct {
 	exportSuccessUntilTS time.Time // zero value when no success transient
 
 	// menuMu serializes every mutation of the two shared menu items
-	// (exportItem, includeWorkspacesItem) across all three goroutines.
-	// systray.MenuItem's SetTitle/Enable/Disable/Check/Uncheck write
-	// the item's internal fields without any locking of their own, so
-	// without this the tick / click / export goroutines race on them.
-	// Lock ordering: NEVER held with exportMu. Callers derive state
-	// under exportMu, release it, THEN take menuMu for the systray call.
+	// (exportItem parent, logsWorkspacesItem) across the tick and export
+	// goroutines. systray.MenuItem's SetTitle/Enable/Disable write the
+	// item's internal fields without any locking of their own, so
+	// without this the tick / export goroutines race on them. Lock
+	// ordering: NEVER held with exportMu. Callers derive state under
+	// exportMu, release it, THEN take menuMu for the systray call.
 	menuMu sync.Mutex
 
-	// daemonEnabledForInclude mirrors the last enable/disable verdict
-	// for the Include workspaces item so we only call Enable/Disable
-	// on the cross-platform systray when the verdict actually flips.
-	// Avoids per-tick churn on macOS NSMenu which redraws on Enable.
-	daemonEnabledForInclude bool
+	// daemonEnabledForWorkspaces mirrors the last enable/disable verdict
+	// for the "Logs + workspaces" item so we only call Enable/Disable on
+	// the cross-platform systray when the verdict actually flips. Avoids
+	// per-tick churn on macOS NSMenu which redraws on Enable.
+	daemonEnabledForWorkspaces bool
 }
 
 func newTrayController(
@@ -216,24 +221,25 @@ func (t *trayController) onReady() {
 	t.openItem = systray.AddMenuItem("Open in browser", "Open Friday Studio")
 	t.restartItem = systray.AddMenuItem("Restart all", "Stop and start every supervised process")
 	t.logsItem = systray.AddMenuItem("View logs", "Open ~/.friday/local/logs in your file browser")
-	// Seed the Include workspaces checkbox from persisted state so the
-	// user's prior toggle survives launcher restarts (state.json
-	// IncludeWorkspaces field).
-	persisted := readState()
-	// Capture each concrete item locally so we can grab ClickedCh
-	// (a struct field, absent from the menuItem interface) before the
-	// field narrows to the interface type.
-	includeItem := systray.AddMenuItemCheckbox(
-		includeWorkspacesLabel,
-		"Embed each workspace's definition zip in the next diagnostic export",
-		persisted.IncludeWorkspaces)
-	t.includeWorkspacesItem = includeItem
-	t.includeWorkspacesClickedCh = includeItem.ClickedCh
+	// "Export diagnostics" is a parent item; its two sub-actions are the
+	// explicit export variants. The parent title carries progress
+	// feedback and is disabled while an export runs. Capture each
+	// concrete sub-item locally so we can grab ClickedCh (a struct
+	// field, absent from the menuItem interface) before narrowing the
+	// parent to the interface type.
 	exportItem := systray.AddMenuItem(
 		exportItemDefault,
 		"Build a one-click diagnostic zip and reveal it in your file browser")
 	t.exportItem = exportItem
-	t.exportClickedCh = exportItem.ClickedCh
+	logsOnlyItem := exportItem.AddSubMenuItem(
+		logsOnlyLabel,
+		"Export logs, launcher state, and pids only")
+	t.logsOnlyClickedCh = logsOnlyItem.ClickedCh
+	logsWorkspacesItem := exportItem.AddSubMenuItem(
+		logsWorkspacesLabel,
+		"Also embed each workspace's definition zip (needs the daemon running)")
+	t.logsWorkspacesItem = logsWorkspacesItem
+	t.logsWorkspacesClickedCh = logsWorkspacesItem.ClickedCh
 	systray.AddSeparator()
 	t.autostartItem = systray.AddMenuItemCheckbox(
 		"Start at login",
@@ -244,7 +250,7 @@ func (t *trayController) onReady() {
 	// Optimistically enabled — tick() will Disable on the next 2s
 	// pass if the daemon isn't healthy yet. Mirror the same default
 	// so the first tick is a no-op when the daemon comes up fast.
-	t.daemonEnabledForInclude = true
+	t.daemonEnabledForWorkspaces = true
 
 	go t.handleClicks()
 	go t.pollLoop()
@@ -270,10 +276,10 @@ func (t *trayController) handleClicks() {
 			if err := openInFileBrowser(logsDir()); err != nil {
 				log.Error("open logs dir failed", "error", err)
 			}
-		case <-t.includeWorkspacesClickedCh:
-			t.toggleIncludeWorkspaces()
-		case <-t.exportClickedCh:
-			t.startExport()
+		case <-t.logsOnlyClickedCh:
+			t.startExport(false)
+		case <-t.logsWorkspacesClickedCh:
+			t.startExport(true)
 		case <-t.autostartItem.ClickedCh:
 			if t.autostartItem.Checked() {
 				if err := disableAutostart(); err != nil {
@@ -352,7 +358,7 @@ func (t *trayController) tick() {
 	}
 	t.currentBucket = bucket
 	t.updateExportItemLabel()
-	t.updateIncludeWorkspacesAvailability()
+	t.updateWorkspacesItemAvailability()
 	if bucket == bucketGreen {
 		// Open browser exactly once on first transition to green
 		// (and only if --no-browser wasn't set, which is checked
@@ -461,58 +467,33 @@ func (t *trayController) wakeFromSecondInstance() {
 	t.openBrowser("second-instance wake")
 }
 
-// toggleIncludeWorkspaces flips the persisted preference and the
-// checkbox UI together. If state.json read fails we still flip the
-// in-memory checkbox so the user gets feedback, but the next launcher
-// boot will revert — that's acceptable for a one-click preference
-// (worst case: re-tick after restart).
-func (t *trayController) toggleIncludeWorkspaces() {
-	state := readState()
-	state.IncludeWorkspaces = !state.IncludeWorkspaces
-	if err := writeState(state); err != nil {
-		log.Error("persist IncludeWorkspaces failed", "error", err)
-		// Fall through — UI still flips so the click feels responsive.
-		// User will see the original value after the next launcher boot.
-	}
-	if t.includeWorkspacesItem == nil {
-		return
-	}
-	t.menuMu.Lock()
-	defer t.menuMu.Unlock()
-	if state.IncludeWorkspaces {
-		t.includeWorkspacesItem.Check()
-	} else {
-		t.includeWorkspacesItem.Uncheck()
-	}
-}
-
-// updateIncludeWorkspacesAvailability disables the Include workspaces
-// item when the daemon isn't healthy (the /bundle-all endpoint needs
-// a live daemon) and re-enables it once the daemon comes up. The
-// persisted check state is preserved across the flip — only the label
-// + interactability changes.
+// updateWorkspacesItemAvailability disables the "Logs + workspaces"
+// sub-action when the daemon isn't healthy (the /bundle-all endpoint
+// needs a live daemon) and re-enables it once the daemon comes up. The
+// "Logs only" action is always available and needs no gating. Only the
+// label suffix + interactability change.
 //
-// Coalesced on daemonEnabledForInclude so we don't call SetTitle on
+// Coalesced on daemonEnabledForWorkspaces so we don't call SetTitle on
 // every 2s tick when the state hasn't changed (macOS NSMenu redraws
 // on each SetTitle).
-func (t *trayController) updateIncludeWorkspacesAvailability() {
-	if t.includeWorkspacesItem == nil {
+func (t *trayController) updateWorkspacesItemAvailability() {
+	if t.logsWorkspacesItem == nil {
 		return
 	}
 	daemonUp := t.healthCache != nil && t.healthCache.ServiceHealthy(daemonServiceName)
-	if daemonUp == t.daemonEnabledForInclude {
+	if daemonUp == t.daemonEnabledForWorkspaces {
 		return
 	}
 	t.menuMu.Lock()
 	if daemonUp {
-		t.includeWorkspacesItem.SetTitle(includeWorkspacesLabel)
-		t.includeWorkspacesItem.Enable()
+		t.logsWorkspacesItem.SetTitle(logsWorkspacesLabel)
+		t.logsWorkspacesItem.Enable()
 	} else {
-		t.includeWorkspacesItem.SetTitle(includeWorkspacesLabel + includeWorkspacesDisable)
-		t.includeWorkspacesItem.Disable()
+		t.logsWorkspacesItem.SetTitle(logsWorkspacesLabel + logsWorkspacesDisable)
+		t.logsWorkspacesItem.Disable()
 	}
 	t.menuMu.Unlock()
-	t.daemonEnabledForInclude = daemonUp
+	t.daemonEnabledForWorkspaces = daemonUp
 }
 
 // exportLabelState is a snapshot of the export-related fields the
@@ -586,11 +567,13 @@ func (t *trayController) updateExportItemLabel() {
 	t.menuMu.Unlock()
 }
 
-// startExport handles a click on the Export diagnostic logs item.
-// The CAS on `exporting` is the real concurrency guard — second click
-// during an in-flight export finds the slot taken and is a no-op.
-// Disabling the menu item is best-effort visual feedback.
-func (t *trayController) startExport() {
+// startExport handles a click on either export sub-action.
+// includeWorkspaces is true for "Logs + workspaces", false for
+// "Logs only". The CAS on `exporting` is the real concurrency guard —
+// a second click during an in-flight export finds the slot taken and
+// is a no-op. Disabling the parent item is best-effort visual feedback
+// (it also makes the submenu inaccessible for the duration).
+func (t *trayController) startExport(includeWorkspaces bool) {
 	if t.shuttingDown.Load() {
 		// Refuse new exports during shutdown — performShutdown is
 		// tearing the daemon down and any /bundle-all call would race
@@ -610,7 +593,7 @@ func (t *trayController) startExport() {
 	t.exportSuccessUntilTS = time.Time{}
 	t.exportProgressPhase = "logs" // optimistic — Export will overwrite
 	t.exportMu.Unlock()
-	go t.runExport()
+	go t.runExport(includeWorkspaces)
 }
 
 // exportFn is the diagnostics.Export call, swappable for tests so the
@@ -621,14 +604,15 @@ var exportFn func(diagnostics.ExportOptions) (string, error)
 
 // runExport is the export goroutine. Owns the exporting atomic.Bool
 // across its full lifetime (set by startExport before spawn, cleared
-// here on return). Posts progress to the tray via setExportPhase;
-// reveals on success; leaves a sticky failure label on error.
-func (t *trayController) runExport() {
+// here on return). includeWorkspaces comes straight from the clicked
+// sub-action — there is no persisted preference. Posts progress to the
+// tray via setExportPhase; reveals on success; leaves a sticky failure
+// label on error.
+func (t *trayController) runExport(includeWorkspaces bool) {
 	defer t.exporting.Store(false)
 
-	persisted := readState()
 	opts := diagnostics.ExportOptions{
-		IncludeWorkspaces: persisted.IncludeWorkspaces,
+		IncludeWorkspaces: includeWorkspaces,
 		DaemonURL:         daemonAPIBaseURL(),
 		ProgressFn:        t.setExportPhase,
 	}

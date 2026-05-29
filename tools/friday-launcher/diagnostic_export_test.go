@@ -135,11 +135,11 @@ func TestStartExport_CASGuardSwallowsSecondClick(t *testing.T) {
 	var sd atomic.Bool
 	tc := &trayController{shuttingDown: &sd}
 
-	tc.startExport()
-	<-entered        // first export goroutine is now inside exportFn
-	tc.startExport() // second click while first is in flight — CAS no-op
-	close(release)   // let the in-flight export return
-	<-finished       // fake has returned; runExport is unwinding
+	tc.startExport(false)
+	<-entered             // first export goroutine is now inside exportFn
+	tc.startExport(false) // second click while first is in flight — CAS no-op
+	close(release)        // let the in-flight export return
+	<-finished            // fake has returned; runExport is unwinding
 
 	// runExport clears exporting in a defer that runs after the fake
 	// returns. Synchronize on that defer by spinning the scheduler until
@@ -175,7 +175,7 @@ func TestStartExport_RefusedDuringShutdown(t *testing.T) {
 	sd.Store(true)
 	tc := &trayController{shuttingDown: &sd}
 
-	tc.startExport()
+	tc.startExport(false)
 
 	if got := calls.Load(); got != 0 {
 		t.Errorf("export invocations during shutdown = %d, want 0", got)
@@ -206,7 +206,7 @@ func TestRunExport_SuccessRevealsAndSetsTransient(t *testing.T) {
 	tc := &trayController{shuttingDown: &sd}
 	tc.exporting.Store(true) // runExport assumes startExport already CAS'd
 
-	tc.runExport()
+	tc.runExport(false)
 
 	if tc.exporting.Load() {
 		t.Error("exporting flag still set after runExport returned")
@@ -246,7 +246,7 @@ func TestRunExport_FailureSetsStickyLabel(t *testing.T) {
 	tc := &trayController{shuttingDown: &sd}
 	tc.exporting.Store(true)
 
-	tc.runExport()
+	tc.runExport(false)
 
 	if tc.exporting.Load() {
 		t.Error("exporting flag still set after failed runExport")
@@ -264,32 +264,33 @@ func TestRunExport_FailureSetsStickyLabel(t *testing.T) {
 	}
 }
 
-// TestRunExport_PassesIncludeWorkspacesFromState: the daemon-bound
-// IncludeWorkspaces flag must come from persisted state, not from any
-// hidden in-memory cache. Otherwise the menu checkbox and the export
-// request can drift if the user toggles + restarts.
-func TestRunExport_PassesIncludeWorkspacesFromState(t *testing.T) {
-	t.Setenv("FRIDAY_LAUNCHER_HOME", t.TempDir())
+// TestRunExport_PassesIncludeWorkspacesArg: the daemon-bound
+// IncludeWorkspaces flag must come straight from the clicked
+// sub-action's argument. "Logs + workspaces" → true, "Logs only" →
+// false. There is no persisted preference to drift from.
+func TestRunExport_PassesIncludeWorkspacesArg(t *testing.T) {
+	for _, includeWorkspaces := range []bool{true, false} {
+		t.Run(map[bool]string{true: "workspaces", false: "logs-only"}[includeWorkspaces], func(t *testing.T) {
+			t.Setenv("FRIDAY_LAUNCHER_HOME", t.TempDir())
 
-	if err := writeState(launcherState{IncludeWorkspaces: true}); err != nil {
-		t.Fatalf("writeState: %v", err)
-	}
+			var seenOpts diagnostics.ExportOptions
+			withExportFn(t, func(o diagnostics.ExportOptions) (string, error) {
+				seenOpts = o
+				return "", errors.New("stop here") // skip reveal
+			})
+			withRevealOverride(t)
 
-	var seenOpts diagnostics.ExportOptions
-	withExportFn(t, func(o diagnostics.ExportOptions) (string, error) {
-		seenOpts = o
-		return "", errors.New("stop here") // skip reveal
-	})
-	withRevealOverride(t)
+			var sd atomic.Bool
+			tc := &trayController{shuttingDown: &sd}
+			tc.exporting.Store(true)
 
-	var sd atomic.Bool
-	tc := &trayController{shuttingDown: &sd}
-	tc.exporting.Store(true)
+			tc.runExport(includeWorkspaces)
 
-	tc.runExport()
-
-	if !seenOpts.IncludeWorkspaces {
-		t.Error("Export called with IncludeWorkspaces=false, want true (persisted state)")
+			if seenOpts.IncludeWorkspaces != includeWorkspaces {
+				t.Errorf("Export called with IncludeWorkspaces=%v, want %v",
+					seenOpts.IncludeWorkspaces, includeWorkspaces)
+			}
+		})
 	}
 }
 
@@ -326,49 +327,6 @@ func TestSetExportPhase_NoDeadlockOnImmediateRefresh(t *testing.T) {
 	case <-done:
 	case <-time.After(2 * time.Second):
 		t.Fatal("setExportPhase deadlocked — exportMu held across updateExportItemLabel")
-	}
-}
-
-// TestToggleIncludeWorkspaces_Persists confirms a click flips the
-// persisted state on disk (read-modify-write through writeState).
-// Without this the preference resets every launcher boot.
-func TestToggleIncludeWorkspaces_Persists(t *testing.T) {
-	t.Setenv("FRIDAY_LAUNCHER_HOME", t.TempDir())
-
-	tc := &trayController{}
-
-	tc.toggleIncludeWorkspaces()
-	if got := readState().IncludeWorkspaces; !got {
-		t.Errorf("after first toggle IncludeWorkspaces = false, want true")
-	}
-
-	tc.toggleIncludeWorkspaces()
-	if got := readState().IncludeWorkspaces; got {
-		t.Errorf("after second toggle IncludeWorkspaces = true, want false")
-	}
-}
-
-// TestToggleIncludeWorkspaces_PreservesAutostartInitialized is the
-// regression test for the read-modify-write fix in
-// runAutostartCommand. If toggleIncludeWorkspaces clobbered other
-// state fields, an autostart-enabled launcher would re-run the
-// self-register on every boot.
-func TestToggleIncludeWorkspaces_PreservesAutostartInitialized(t *testing.T) {
-	t.Setenv("FRIDAY_LAUNCHER_HOME", t.TempDir())
-
-	if err := writeState(launcherState{AutostartInitialized: true}); err != nil {
-		t.Fatalf("seed state: %v", err)
-	}
-
-	tc := &trayController{}
-	tc.toggleIncludeWorkspaces()
-
-	got := readState()
-	if !got.AutostartInitialized {
-		t.Error("AutostartInitialized cleared by toggleIncludeWorkspaces — read-modify-write broken")
-	}
-	if !got.IncludeWorkspaces {
-		t.Error("IncludeWorkspaces not flipped to true")
 	}
 }
 

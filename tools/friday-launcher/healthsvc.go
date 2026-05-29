@@ -356,7 +356,7 @@ func (c *HealthCache) UptimeSecs() int64 {
 // ServiceHealthy returns true iff the named service is currently in
 // the "healthy" state. Returns false for unknown names and for any
 // non-healthy status (pending, starting, failed). The tray uses this
-// to gate the diagnostic-export "Include workspaces" checkbox on the
+// to gate the diagnostic-export "Logs + workspaces" action on the
 // daemon being up — /api/workspaces/bundle-all needs a live daemon.
 func (c *HealthCache) ServiceHealthy(name string) bool {
 	c.mu.RLock()

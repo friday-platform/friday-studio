@@ -18,24 +18,22 @@ import (
 type recordingMenuItem struct {
 	calls     int
 	lastTitle string
-	checked   bool
 	enabled   bool
 }
 
 func (r *recordingMenuItem) SetTitle(s string) { r.calls++; r.lastTitle = s }
 func (r *recordingMenuItem) Enable()           { r.calls++; r.enabled = true }
 func (r *recordingMenuItem) Disable()          { r.calls++; r.enabled = false }
-func (r *recordingMenuItem) Check()            { r.calls++; r.checked = true }
-func (r *recordingMenuItem) Uncheck()          { r.calls++; r.checked = false }
 
 // TestMenuMutations_NoRaceUnderConcurrency hammers the two shared menu
-// items from all three goroutines that touch them in production —
-// tick() (updateExportItemLabel + updateIncludeWorkspacesAvailability),
-// the export goroutine (setExportPhase, the runExport Enable paths),
-// and the click handler (toggleIncludeWorkspaces) — with recording
-// fakes injected behind the menuItem interface. Run under `-race` this
-// is the load-bearing proof that menuMu serializes every mutation; with
-// menuMu removed the unguarded fakes trip the race detector.
+// items from the goroutines that touch them in production — tick()
+// (updateExportItemLabel + updateWorkspacesItemAvailability) and the
+// export goroutine (setExportPhase's immediate label refresh) — with
+// recording fakes injected behind the menuItem interface. The parent
+// (exportItem) is mutated concurrently by tick plus every setExportPhase
+// worker, so it's the load-bearing case. Run under `-race` this proves
+// menuMu serializes every mutation; with menuMu removed the unguarded
+// fakes trip the race detector.
 func TestMenuMutations_NoRaceUnderConcurrency(t *testing.T) {
 	t.Setenv("FRIDAY_LAUNCHER_HOME", t.TempDir())
 
@@ -45,17 +43,17 @@ func TestMenuMutations_NoRaceUnderConcurrency(t *testing.T) {
 
 	tc := newTrayController(sup, &sd, cache)
 	exportFake := &recordingMenuItem{}
-	includeFake := &recordingMenuItem{}
+	workspacesFake := &recordingMenuItem{}
 	tc.exportItem = exportFake
-	tc.includeWorkspacesItem = includeFake
+	tc.logsWorkspacesItem = workspacesFake
 
 	const workers = 8
 	const iters = 200
 	var wg sync.WaitGroup
 
 	// tick path: a SINGLE goroutine, mirroring production's lone
-	// pollLoop. updateIncludeWorkspacesAvailability reads/writes the
-	// unsynchronized daemonEnabledForInclude field, which is correct
+	// pollLoop. updateWorkspacesItemAvailability reads/writes the
+	// unsynchronized daemonEnabledForWorkspaces field, which is correct
 	// precisely because only tick touches it — driving it from many
 	// goroutines would manufacture a race that production can't hit. We
 	// flip the daemon verdict each iteration so the availability path
@@ -67,12 +65,12 @@ func TestMenuMutations_NoRaceUnderConcurrency(t *testing.T) {
 			cache.SetReady(daemonServiceName, n%2 == 0)
 			cache.Update(makeStates(runningReady(daemonServiceName)))
 			tc.updateExportItemLabel()
-			tc.updateIncludeWorkspacesAvailability()
+			tc.updateWorkspacesItemAvailability()
 		}
 	}()
 
-	// export-goroutine path: phase updates (immediate label refresh) and
-	// the failure/success Enable paths via setExportPhase.
+	// export-goroutine path: phase updates drive updateExportItemLabel,
+	// mutating the parent concurrently with the tick goroutine above.
 	wg.Add(workers)
 	for i := 0; i < workers; i++ {
 		go func() {
@@ -84,21 +82,9 @@ func TestMenuMutations_NoRaceUnderConcurrency(t *testing.T) {
 		}()
 	}
 
-	// click path: toggleIncludeWorkspaces always Check/Unchecks the
-	// include item after the state read.
-	wg.Add(workers)
-	for i := 0; i < workers; i++ {
-		go func() {
-			defer wg.Done()
-			for n := 0; n < iters; n++ {
-				tc.toggleIncludeWorkspaces()
-			}
-		}()
-	}
-
 	wg.Wait()
 
-	// Sanity: every path ran and mutated through the fakes. The real
+	// Sanity: both items were mutated through the fakes. The real
 	// assertion is the race detector; these guard against the test
 	// silently no-opping (e.g. a nil-guard short-circuiting everything).
 	tc.menuMu.Lock()
@@ -106,7 +92,7 @@ func TestMenuMutations_NoRaceUnderConcurrency(t *testing.T) {
 	if exportFake.calls == 0 {
 		t.Error("exportItem never mutated — test exercised nothing")
 	}
-	if includeFake.calls == 0 {
-		t.Error("includeWorkspacesItem never mutated — test exercised nothing")
+	if workspacesFake.calls == 0 {
+		t.Error("logsWorkspacesItem never mutated — test exercised nothing")
 	}
 }

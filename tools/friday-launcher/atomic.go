@@ -25,7 +25,6 @@ func atomicWriteFile(path string, data []byte, perm os.FileMode) error {
 
 type launcherState struct {
 	AutostartInitialized bool `json:"autostart_initialized"`
-	IncludeWorkspaces    bool `json:"include_workspaces"`
 }
 
 func readState() launcherState {

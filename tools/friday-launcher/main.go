@@ -670,8 +670,8 @@ func runAutostartCommand(cmd string) {
 			os.Exit(1)
 		}
 		// Mark state so goroutine E doesn't redo the work next launch.
-		// Read-modify-write so we don't clobber other persisted fields
-		// (e.g. IncludeWorkspaces) the user has already toggled.
+		// Read-modify-write keeps this consistent with
+		// autostartSelfRegister and survives any future persisted fields.
 		state := readState()
 		state.AutostartInitialized = true
 		_ = writeState(state)
