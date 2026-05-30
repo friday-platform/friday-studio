@@ -15,7 +15,7 @@
 # ============================================================================
 # Stage 1: Deno builder — compile atlas/link binaries & prepare playground
 # ============================================================================
-FROM denoland/deno:debian-2.7.4 AS deno-builder
+FROM denoland/deno:debian-2.8.1 AS deno-builder
 
 WORKDIR /app
 
@@ -99,7 +99,7 @@ RUN CGO_ENABLED=0 go build -o /out/webhook-tunnel ./tools/webhook-tunnel
 # ============================================================================
 # Stage 3: Runtime — all services in one container
 # ============================================================================
-FROM denoland/deno:debian-2.7.4
+FROM denoland/deno:debian-2.8.1
 
 # Create non-root user FIRST so COPY --chown works without duplicating layers
 RUN groupadd -g 10001 atlas && \
