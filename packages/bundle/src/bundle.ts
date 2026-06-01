@@ -1,7 +1,7 @@
 import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join, relative, sep } from "node:path";
 import JSZip from "jszip";
-import { hashPrimitive } from "./hasher.ts";
+import { hashPrimitive, isBundleExcludedEntry } from "./hasher.ts";
 import { type Lockfile, readLockfile } from "./lockfile.ts";
 
 export interface ExportOptions {
@@ -58,6 +58,10 @@ async function listPrimitiveDirs(dir: string): Promise<string[]> {
 async function walkFilesRecursive(root: string, current: string, acc: string[]): Promise<void> {
   const entries = await readdir(current, { withFileTypes: true });
   for (const entry of entries) {
+    // Same exclusion set as the integrity hasher (hasher.ts). Both walks MUST
+    // skip identical entries: a file shipped in the zip but absent from the
+    // lockfile hash — or the reverse — fails importBundle's integrity check.
+    if (isBundleExcludedEntry(entry.name)) continue;
     const abs = join(current, entry.name);
     if (entry.isDirectory()) {
       await walkFilesRecursive(root, abs, acc);

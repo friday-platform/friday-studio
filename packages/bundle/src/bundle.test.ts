@@ -159,6 +159,53 @@ describe("exportBundle + importBundle round-trip", () => {
     }
   });
 
+  it("strips agent build artifacts (.venv/__pycache__/.pyc) from the zip and still round-trips", async () => {
+    // A real Studio agent dir: source files alongside a fat local virtualenv.
+    // The .venv is what bloats a workspace export past the import size cap.
+    await mkdir(join(workDir, "agents", "knowledge"), { recursive: true });
+    await writeFile(join(workDir, "agents", "knowledge", "agent.py"), "print('knowledge')\n");
+    await writeFile(
+      join(workDir, "agents", "knowledge", "metadata.json"),
+      JSON.stringify({ id: "knowledge", version: "1.0.0", description: "k" }),
+    );
+    await mkdir(join(workDir, "agents", "knowledge", ".venv", "lib", "site-packages"), {
+      recursive: true,
+    });
+    await writeFile(
+      join(workDir, "agents", "knowledge", ".venv", "lib", "site-packages", "cygrpc.so"),
+      "x".repeat(8192),
+    );
+    await mkdir(join(workDir, "agents", "knowledge", "__pycache__"), { recursive: true });
+    await writeFile(join(workDir, "agents", "knowledge", "__pycache__", "agent.cpython.pyc"), "b");
+    await writeFile(join(workDir, "agents", "knowledge", "agent.pyc"), "b");
+
+    const zipBytes = await exportBundle({
+      workspaceDir: workDir,
+      workspaceYml: await readFile(join(workDir, "workspace.yml"), "utf-8"),
+      mode: "definition",
+      workspace: { name: "demo", version: "1.0.0" },
+    });
+
+    // Nothing under .venv/, no __pycache__/, no *.pyc made it into the archive.
+    const JSZip = (await import("jszip")).default;
+    const zip = await JSZip.loadAsync(zipBytes);
+    const names = Object.keys(zip.files);
+    expect(names).toContain("agents/knowledge/agent.py");
+    expect(names).toContain("agents/knowledge/metadata.json");
+    expect(names.some((n) => n.includes("/.venv/"))).toBe(false);
+    expect(names.some((n) => n.includes("/__pycache__/"))).toBe(false);
+    expect(names.some((n) => n.endsWith(".pyc"))).toBe(false);
+
+    // Integrity holds: the lockfile hash (computed over the stripped set) matches
+    // the re-hash of the extracted, equally-stripped dir.
+    const result = await importBundle({ zipBytes, targetDir: importDir });
+    expect(result.primitives).toContainEqual({
+      kind: "agent",
+      name: "knowledge",
+      path: "agents/knowledge",
+    });
+  });
+
   it("rejects an externalAgents entry that collides with a workspace-local agent", async () => {
     await mkdir(join(workDir, "agents", "dupe"), { recursive: true });
     await writeFile(join(workDir, "agents", "dupe", "agent.py"), "local\n");
