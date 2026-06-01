@@ -12,7 +12,31 @@ export interface HashResult {
   files: string[];
 }
 
-const DEFAULT_EXCLUDES = [".DS_Store", ".git", ".atlas-ignore"];
+/**
+ * Entry names (a single path segment — file or directory) excluded from BOTH
+ * the bundle archive (`exportBundle`'s file walk) and the lockfile integrity
+ * hash. The two MUST agree: a path counted in the hash but missing from the
+ * zip — or the reverse — fails `importBundle`'s per-primitive integrity check.
+ * This is the single source of truth for "what never belongs in a bundle".
+ *
+ * Two reasons something lands here:
+ *   - hash noise: editor/VCS scratch whose presence must not perturb the
+ *     content hash (`.DS_Store`, `.git`, `.atlas-ignore`, `*.tmp`).
+ *   - build artifacts: large, platform-specific caches that the import side
+ *     regenerates anyway. A macOS agent `.venv` is ~250 MB of darwin
+ *     `.so`/`.dylib` a Linux runtime can neither run nor needs (it reinstalls
+ *     its own deps), and shipping it is what blows a workspace export past the
+ *     import size cap.
+ */
+const EXCLUDED_NAMES = new Set([
+  ".DS_Store",
+  ".git",
+  ".atlas-ignore",
+  ".venv",
+  "venv",
+  "__pycache__",
+  "node_modules",
+]);
 
 function hasBinaryContent(bytes: Buffer): boolean {
   const scanLen = Math.min(bytes.length, 1024);
@@ -33,16 +57,17 @@ function normalizeTextBytes(bytes: Buffer): Buffer {
   return Buffer.from(out);
 }
 
-function isExcluded(name: string): boolean {
-  if (DEFAULT_EXCLUDES.includes(name)) return true;
+export function isBundleExcludedEntry(name: string): boolean {
+  if (EXCLUDED_NAMES.has(name)) return true;
   if (name.endsWith(".tmp")) return true;
+  if (name.endsWith(".pyc")) return true;
   return false;
 }
 
 async function walk(root: string, current: string, acc: string[]): Promise<void> {
   const entries = await readdir(current, { withFileTypes: true });
   for (const entry of entries) {
-    if (isExcluded(entry.name)) continue;
+    if (isBundleExcludedEntry(entry.name)) continue;
     const abs = join(current, entry.name);
     if (entry.isDirectory()) {
       await walk(root, abs, acc);

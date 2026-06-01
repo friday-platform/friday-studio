@@ -68,6 +68,27 @@ describe("hashPrimitive", () => {
     expect(result.files).toEqual(["keep.txt"]);
   });
 
+  it("excludes build artifacts (.venv, venv, __pycache__, node_modules, *.pyc)", async () => {
+    await writeFile(join(dir, "agent.py"), "print('hi')\n");
+    await writeFile(join(dir, "metadata.json"), "{}\n");
+    for (const cache of [".venv", "venv", "__pycache__", "node_modules"]) {
+      await mkdir(join(dir, cache, "deep"), { recursive: true });
+      await writeFile(join(dir, cache, "deep", "blob.so"), "binary\n");
+    }
+    await writeFile(join(dir, "module.pyc"), "bytecode");
+    const result = await hashPrimitive(dir);
+    expect(result.files).toEqual(["agent.py", "metadata.json"]);
+  });
+
+  it("hash is unaffected by adding/removing a .venv (export/import stay consistent)", async () => {
+    await writeFile(join(dir, "agent.py"), "print('hi')\n");
+    const before = await hashPrimitive(dir);
+    await mkdir(join(dir, ".venv", "lib"), { recursive: true });
+    await writeFile(join(dir, ".venv", "lib", "huge.so"), "x".repeat(4096));
+    const after = await hashPrimitive(dir);
+    expect(after.hash).toBe(before.hash);
+  });
+
   it("recurses into subdirectories with sorted relative paths", async () => {
     await mkdir(join(dir, "nested"));
     await writeFile(join(dir, "nested", "b.txt"), "B\n");
