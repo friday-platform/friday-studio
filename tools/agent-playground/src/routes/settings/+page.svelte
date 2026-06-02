@@ -278,10 +278,10 @@
         return;
       }
       const data: unknown = await res.json();
-      if (typeof data === "object" && data !== null) {
+      if (typeof data === "object" && data !== null && "configPath" in data) {
         // Daemon includes `configPath` only when friday.yml actually
         // exists on disk — a typed signal for upgrade vs fresh install.
-        fridayConfigExists = typeof (data as { configPath?: unknown }).configPath === "string";
+        fridayConfigExists = typeof data.configPath === "string";
       }
       if (
         typeof data === "object" &&
