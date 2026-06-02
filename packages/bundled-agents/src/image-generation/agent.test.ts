@@ -31,9 +31,15 @@ vi.mock("ai", () => ({ generateImage: generateImageMock }));
 
 vi.mock("./discovery.ts", () => ({ discoverImageFiles: discoverImageFilesMock }));
 
-vi.mock("@atlas/llm", () => ({
-  smallLLM: smallLLMMock,
-}));
+vi.mock("@atlas/llm", async () => {
+  // lookupImageEntry is pure data lookup against the overlay — use the real
+  // implementation so capability tests exercise the actual overlay entries.
+  const actual = await vi.importActual<typeof import("@atlas/llm")>("@atlas/llm");
+  return {
+    smallLLM: smallLLMMock,
+    lookupImageEntry: actual.lookupImageEntry,
+  };
+});
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -42,13 +48,20 @@ vi.mock("@atlas/llm", () => ({
 const mockLogger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
 const mockStream = { emit: vi.fn() };
 
-const stubImageModel: ImageModelV3 = {
-  specificationVersion: "v3",
-  provider: "stub.image-model",
-  modelId: "stub-image",
-  maxImagesPerCall: 1,
-  doGenerate: () => Promise.reject(new Error("stub ImageModelV3 invoked")),
-};
+function makeStubImageModel(modelId: string): ImageModelV3 {
+  return {
+    specificationVersion: "v3",
+    provider: "stub.image-model",
+    modelId,
+    maxImagesPerCall: 1,
+    doGenerate: () => Promise.reject(new Error("stub ImageModelV3 invoked")),
+  };
+}
+
+// Default to an edit-capable overlay entry so existing edit-mode tests pass
+// the capability gate; tests that need a gen-only model use
+// `stubPlatformModels.getImage.mockReturnValueOnce(...)` to override per-test.
+const stubImageModel = makeStubImageModel("google:gemini-2.5-flash-image");
 
 const stubPlatformModels = {
   get: vi.fn(),
@@ -443,6 +456,54 @@ describe("imageGenerationAgent", () => {
       expect(result.ok).toBe(false);
       expect.assert(result.ok === false);
       expect(result.error.reason).toContain("Image editing failed");
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Capability check — edit-mode prompt against a gen-only overlay entry
+  // -------------------------------------------------------------------------
+
+  describe("capability check", () => {
+    test("returns err with displayName when edit requested on a gen-only model", async () => {
+      stubPlatformModels.getImage.mockReturnValueOnce(makeStubImageModel("openai:dall-e-3"));
+      discoverImageFilesMock.mockResolvedValue(makeDiscoveryResult([{ id: "src-1" }]));
+
+      const result = await imageGenerationAgent.execute(
+        "Make the sky dramatic src-1",
+        makeContext(),
+      );
+
+      expect(result.ok).toBe(false);
+      expect.assert(result.ok === false);
+      expect(result.error.reason).toContain("DALL·E 3");
+      expect(result.error.reason).toContain("supports generation only");
+      expect(result.error.reason).toContain("Settings → Image");
+      expect(generateImageMock).not.toHaveBeenCalled();
+    });
+
+    test("proceeds to generateImage in edit mode on an edit-capable model", async () => {
+      // Default stub is google:gemini-2.5-flash-image (edit-capable).
+      const sourceBytes = new Uint8Array([137, 80, 78, 71]);
+      discoverImageFilesMock.mockResolvedValue(makeDiscoveryResult([{ id: "src-1" }]));
+      readBinaryContentsMock.mockResolvedValue({ ok: true, data: sourceBytes });
+      generateImageMock.mockResolvedValue(makeGenerateImageResult([makeImageFile()]));
+      setupSaveMocks();
+
+      const result = await imageGenerationAgent.execute("Edit src-1", makeContext());
+
+      expect(result.ok).toBe(true);
+      expect(generateImageMock).toHaveBeenCalled();
+    });
+
+    test("proceeds normally in generation mode on a gen-only model", async () => {
+      stubPlatformModels.getImage.mockReturnValueOnce(makeStubImageModel("openai:dall-e-3"));
+      generateImageMock.mockResolvedValue(makeGenerateImageResult([makeImageFile()]));
+      setupSaveMocks();
+
+      const result = await imageGenerationAgent.execute("Generate a sunset", makeContext());
+
+      expect(result.ok).toBe(true);
+      expect(generateImageMock).toHaveBeenCalled();
     });
   });
 });

@@ -1,6 +1,6 @@
 import { type ArtifactRef, createAgent, err, ok } from "@atlas/agent-sdk";
 import { ArtifactStorage } from "@atlas/core/artifacts/server";
-import { smallLLM } from "@atlas/llm";
+import { lookupImageEntry, smallLLM } from "@atlas/llm";
 import { stringifyError, truncateUnicode } from "@atlas/utils";
 import { generateImage } from "ai";
 import { z } from "zod";
@@ -52,6 +52,26 @@ export const imageGenerationAgent = createAgent<string, ImageGenerationOutput>({
 
     const isEditMode = discoveredImages.artifactIds.length > 0;
 
+    // -- Resolve model & verify capability -----------------------------------
+    // Pin the model once so the capability check and the generateImage call
+    // observe the same id. Boot-time validation (task #3) guarantees the
+    // overlay lookup is non-null in production; the null branch here is a
+    // defense-in-depth fallback that surfaces the misconfiguration instead
+    // of producing nonsense output.
+    const model = platformModels.getImage();
+    const entry = lookupImageEntry(model.modelId);
+    if (entry === null) {
+      logger.error("Image model missing from capability overlay", { modelId: model.modelId });
+      return err(
+        `Image model "${model.modelId}" is unknown to Friday's capability overlay. Switch to a known model in Settings → Image.`,
+      );
+    }
+    if (isEditMode && !entry.capabilities.edit) {
+      return err(
+        `${entry.displayName} supports generation only — edit is not possible. Switch to an edit-capable model in Settings → Image, or remove the image reference to generate a new one.`,
+      );
+    }
+
     // -- Build prompt for generateImage() ------------------------------------
     // Generate mode: pass raw prompt string (preserves orchestrator context).
     // Edit mode: load source image binaries, pass as { images, text }.
@@ -96,7 +116,7 @@ export const imageGenerationAgent = createAgent<string, ImageGenerationOutput>({
     // Both route through LiteLLM when LITELLM_API_KEY is set.
 
     const result = await generateImage({
-      model: platformModels.getImage(),
+      model,
       prompt: imagePrompt,
       size: IMAGE_SIZE,
       abortSignal,
