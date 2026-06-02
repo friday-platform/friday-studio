@@ -1,6 +1,7 @@
 import process from "node:process";
 import type { ImageModelV3, LanguageModelV3 } from "@ai-sdk/provider";
 import { logger } from "@atlas/logger";
+import { listImageEntries, lookupImageEntry } from "./image-capabilities.ts";
 import { registry } from "./registry.ts";
 import {
   buildRegistryModelId,
@@ -120,7 +121,7 @@ function hasCredential(provider: string): boolean {
   return !!process.env[envVar];
 }
 
-type ErrorKind = "format" | "unknown_provider" | "missing_credential";
+type ErrorKind = "format" | "unknown_provider" | "missing_credential" | "unknown_image_model";
 
 interface ResolutionError {
   role: PlatformRole;
@@ -131,8 +132,8 @@ interface ResolutionError {
 
 /**
  * Thrown by `createPlatformModels` when the resolved configuration is invalid.
- * Aggregates errors across all four roles so operators see every problem in
- * one startup attempt.
+ * Aggregates errors across every role (four language + image) so operators
+ * see every problem in one startup attempt.
  */
 export class PlatformModelsConfigError extends Error {
   public readonly errors: readonly ResolutionError[];
@@ -150,6 +151,9 @@ export class PlatformModelsConfigError extends Error {
       lines.push(`  configured value: "${err.value}"`);
       if (err.kind === "unknown_provider") {
         lines.push(`  known providers: ${REGISTRY_PROVIDERS.join(", ")}`);
+      } else if (err.kind === "unknown_image_model") {
+        const knownIds = listImageEntries().map((e) => e.id);
+        lines.push(`  known image models: ${knownIds.join(", ")}`);
       } else if (err.kind === "missing_credential") {
         const parsed = parseModelId(err.value);
         if (parsed?.provider === "local") {
@@ -272,16 +276,22 @@ function resolveRole(
 
 /**
  * Image-role sibling of `resolveRole`. Same chain-walk semantics — primary
- * → fallback_n, format/unknown-provider strict, credential-missing tolerant
- * across multi-entry chains, fall through to `DEFAULT_PLATFORM_MODELS.image`
- * when the user chain is fully uncredentialed — but constructs the model
- * via `registry.imageModel(id)` and returns `ImageModelV3`.
+ * → fallback_n, format/unknown-provider/overlay strict, credential-missing
+ * tolerant across multi-entry chains, fall through to
+ * `DEFAULT_PLATFORM_MODELS.image` when the user chain is fully uncredentialed
+ * — but constructs the model via `registry.imageModel(id)` and returns
+ * `ImageModelV3`.
  *
  * Forked from `resolveRole` rather than parameterized because the language
  * path threads through `traceModel(...)` (LanguageModelV3-specific) and the
  * image path doesn't. Generic abstraction at two callers buys less than it
- * costs. Boot-time overlay validation (`unknown_image_model`) is a separate
- * concern handled in a follow-up task.
+ * costs.
+ *
+ * The overlay check (`unknown_image_model`) here is a defensive last line:
+ * boot-time pre-flight (`preflightImageRoleAtBoot`) already proved every
+ * chain entry is in `IMAGE_OVERLAY`, but hot-reload or test-injection paths
+ * could feed a post-boot config that wasn't validated, and we'd rather error
+ * cleanly than build a registry model for an unverified id.
  */
 function resolveImageRole(
   userValue: string | readonly string[] | undefined,
@@ -307,6 +317,15 @@ function resolveImageRole(
           kind: "unknown_provider",
           value: entry,
           detail: `provider '${parsed.provider}' is not registered`,
+        });
+        return null;
+      }
+      if (!lookupImageEntry(entry)) {
+        errors.push({
+          role: "image",
+          kind: "unknown_image_model",
+          value: entry,
+          detail: `'${entry}' is not in Friday's verified image-model overlay`,
         });
         return null;
       }
@@ -387,18 +406,73 @@ export function resolveModelFromString(spec: string): LanguageModelV3 {
 }
 
 /**
+ * Boot-time pre-flight for `models.image`. Validates that every chain entry
+ * parses, names a known provider, and has an `IMAGE_OVERLAY` entry. Does NOT
+ * resolve credentials — those are checked lazily by `getImage()` so a daemon
+ * can boot without every overlay provider's key present and only fail when
+ * image-gen is actually invoked.
+ *
+ * Pushes errors into the shared `bootErrors` array so image problems aggregate
+ * with language-role problems into a single `PlatformModelsConfigError`.
+ * Returns on the first bad entry in a chain (matches per-role behavior of
+ * `resolveRole` — within a role, first error wins; across roles, all errors
+ * surface).
+ */
+function preflightImageRoleAtBoot(
+  userValue: string | readonly string[] | undefined,
+  errors: ResolutionError[],
+): void {
+  if (userValue === undefined) return;
+  const chain: readonly string[] = typeof userValue === "string" ? [userValue] : userValue;
+  for (const entry of chain) {
+    const parsed = parseModelId(entry);
+    if (!parsed) {
+      errors.push({
+        role: "image",
+        kind: "format",
+        value: entry,
+        detail: "must be in 'provider:model' format (e.g., 'google:gemini-2.5-flash-image')",
+      });
+      return;
+    }
+    if (!isRegistryProvider(parsed.provider)) {
+      errors.push({
+        role: "image",
+        kind: "unknown_provider",
+        value: entry,
+        detail: `provider '${parsed.provider}' is not registered`,
+      });
+      return;
+    }
+    if (!lookupImageEntry(entry)) {
+      errors.push({
+        role: "image",
+        kind: "unknown_image_model",
+        value: entry,
+        detail: `'${entry}' is not in Friday's verified image-model overlay`,
+      });
+      return;
+    }
+  }
+}
+
+/**
  * Construct a `PlatformModels` resolver from optional friday.yml configuration.
  *
  * Boot validates every role eagerly and aggregates errors into a single
  * `PlatformModelsConfigError` so bad config fails fast. `get(role)` then
  * re-resolves on every call so a runtime `process.env` mutation reaches
  * the daemon's LLM call sites without a restart.
+ *
+ * The image role uses a different boot-validation shape than the four
+ * language roles: language roles eagerly resolve (including credentials)
+ * because their defaults always require keys; the image role only pre-flights
+ * format/provider/overlay membership and defers credential checks to
+ * `getImage()`. This keeps daemons bootable when image providers are
+ * intentionally unset, while still catching typos in `models.image`.
  */
 export function createPlatformModels(config: PlatformModelsInput | null): PlatformModels {
   const userConfig = config?.models;
-  // Boot-time eager resolution covers only the four language roles today.
-  // Boot validation of `models.image` (overlay-id strictness) lands in a
-  // follow-up task; for now image errors surface at first `getImage()` call.
   const roles: LanguageRole[] = ["labels", "classifier", "planner", "conversational"];
 
   const bootErrors: ResolutionError[] = [];
@@ -412,6 +486,7 @@ export function createPlatformModels(config: PlatformModelsInput | null): Platfo
       });
     }
   }
+  preflightImageRoleAtBoot(userConfig?.image, bootErrors);
   if (bootErrors.length > 0) {
     throw new PlatformModelsConfigError(bootErrors);
   }
