@@ -34,7 +34,7 @@ export type ImageCapabilities = { generation: true; edit: boolean };
  */
 export type ImageDefaults =
   | { controlAxis: "size"; size: `${number}x${number}`; format: "png" | "jpeg" }
-  | { controlAxis: "aspectRatio"; aspectRatio: string; format: "png" | "jpeg" };
+  | { controlAxis: "aspectRatio"; aspectRatio: `${number}:${number}`; format: "png" | "jpeg" };
 
 export type ImageOverlayEntry = {
   displayName: string;

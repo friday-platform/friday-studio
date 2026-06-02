@@ -6,8 +6,6 @@ import { generateImage } from "ai";
 import { z } from "zod";
 import { type DiscoveredImages, discoverImageFiles } from "./discovery.ts";
 
-const IMAGE_SIZE: `${number}x${number}` = "1024x1024";
-
 const MIME_TO_EXT: Record<string, string> = { "image/png": ".png", "image/jpeg": ".jpg" };
 
 /**
@@ -114,11 +112,20 @@ export const imageGenerationAgent = createAgent<string, ImageGenerationOutput>({
     // Generate: text-to-image via /images/generations
     // Edit: image-to-image via /images/edits (passes source images + text)
     // Both route through LiteLLM when LITELLM_API_KEY is set.
+    //
+    // Dispatch on the overlay's `controlAxis` discriminator so DALL·E /
+    // GPT Image (size axis) and Imagen / Gemini (aspectRatio axis) each
+    // receive the param shape their provider expects. The discriminated
+    // union makes accidental cross-axis access a compile error.
+    const controlParams =
+      entry.defaults.controlAxis === "size"
+        ? { size: entry.defaults.size }
+        : { aspectRatio: entry.defaults.aspectRatio };
 
     const result = await generateImage({
       model,
       prompt: imagePrompt,
-      size: IMAGE_SIZE,
+      ...controlParams,
       abortSignal,
     }).catch((error: unknown) => {
       if (error instanceof DOMException && error.name === "AbortError") throw error;
@@ -200,7 +207,7 @@ export const imageGenerationAgent = createAgent<string, ImageGenerationOutput>({
     ];
 
     const mode = isEditMode ? "edit" : "generate";
-    logger.info("Image generation complete", { mode, imageSize: IMAGE_SIZE, mediaType });
+    logger.info("Image generation complete", { mode, mediaType });
 
     return ok(
       {

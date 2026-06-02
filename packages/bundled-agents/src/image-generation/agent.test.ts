@@ -220,13 +220,30 @@ describe("imageGenerationAgent", () => {
     expect(result.error.reason).toContain("Failed to save generated image");
   });
 
-  test("passes 1024x1024 size to generateImage", async () => {
+  test("dispatches aspectRatio param (and no size) for aspectRatio-axis model", async () => {
+    // Default stub is google:gemini-2.5-flash-image
+    // → { controlAxis: "aspectRatio", aspectRatio: "1:1" }
     generateImageMock.mockResolvedValue(makeGenerateImageResult([makeImageFile()]));
     setupSaveMocks();
 
     await imageGenerationAgent.execute("Generate an image", makeContext());
 
-    expect(generateImageMock).toHaveBeenCalledWith(expect.objectContaining({ size: "1024x1024" }));
+    const call = generateImageMock.mock.calls[0]?.[0];
+    expect(call.aspectRatio).toBe("1:1");
+    expect(call.size).toBeUndefined();
+  });
+
+  test("dispatches size param (and no aspectRatio) for size-axis model", async () => {
+    // openai:dall-e-3 → { controlAxis: "size", size: "1024x1024" }
+    stubPlatformModels.getImage.mockReturnValueOnce(makeStubImageModel("openai:dall-e-3"));
+    generateImageMock.mockResolvedValue(makeGenerateImageResult([makeImageFile()]));
+    setupSaveMocks();
+
+    await imageGenerationAgent.execute("Generate an image", makeContext());
+
+    const call = generateImageMock.mock.calls[0]?.[0];
+    expect(call.size).toBe("1024x1024");
+    expect(call.aspectRatio).toBeUndefined();
   });
 
   test("uses JPEG extension when model returns image/jpeg", async () => {
