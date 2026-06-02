@@ -550,7 +550,12 @@ configRoutes.get(
   }),
   async (c) => {
     const ctx = c.get("app");
-    const configPath = getFridayYmlPath();
+    const candidatePath = getFridayYmlPath();
+    // Surface the path only when friday.yml is actually on disk. The
+    // playground uses presence-of-`configPath` to distinguish upgrade users
+    // (file exists) from fresh installs (file absent) — see the Settings
+    // migration-nudge banner in `+page.svelte`.
+    const configPath = (await exists(candidatePath)) ? candidatePath : undefined;
 
     let configuredModels: Record<string, unknown> = {};
     try {

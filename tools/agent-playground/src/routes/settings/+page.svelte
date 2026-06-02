@@ -178,6 +178,17 @@
   let catalogError = $state<string | null>(null);
   let successFlash = $state<string | null>(null);
 
+  // Whether `friday.yml` already lives on disk. Surfaced by the daemon as
+  // the optional `configPath` field on GET /api/config/models — present
+  // when the file exists, absent on a fresh install. Used to gate the
+  // one-time image-model migration nudge below.
+  let fridayConfigExists = $state(false);
+  // Mirrors `localStorage["image-picker-intro-seen"]`. Starts true so the
+  // banner can't flash during the brief window before the $effect below
+  // reads the actual stored value.
+  let imagePickerIntroDismissed = $state(true);
+  const IMAGE_PICKER_INTRO_KEY = "image-picker-intro-seen";
+
   const queryClient = useQueryClient();
 
   // ─── Tunnel state ──────────────────────────────────────────────────
@@ -267,6 +278,11 @@
         return;
       }
       const data: unknown = await res.json();
+      if (typeof data === "object" && data !== null) {
+        // Daemon includes `configPath` only when friday.yml actually
+        // exists on disk — a typed signal for upgrade vs fresh install.
+        fridayConfigExists = typeof (data as { configPath?: unknown }).configPath === "string";
+      }
       if (
         typeof data === "object" &&
         data !== null &&
@@ -617,9 +633,40 @@
     return picker.slotIdx === 0 && chains[pickerRole].length === 1;
   });
 
+  // ─── Image-model migration nudge ───────────────────────────────────
+  //
+  // One-time banner shown to upgrade users (friday.yml exists, no
+  // `models.image` pin yet) explaining that the default image model
+  // changed from `gemini-3.1-flash-image-preview` (which Google can
+  // retire) to the stable `gemini-2.5-flash-image`. Fresh installs see
+  // nothing — there's no prior aesthetic to compare against.
+  // Persistence is localStorage-only; no server state.
+
+  const imageRoleUnset = $derived(
+    models.find((m) => m.role === "image")?.configured === null,
+  );
+  const showImageMigrationBanner = $derived(
+    fridayConfigExists && imageRoleUnset && !imagePickerIntroDismissed,
+  );
+
+  function dismissImagePickerIntro(): void {
+    imagePickerIntroDismissed = true;
+    try {
+      localStorage.setItem(IMAGE_PICKER_INTRO_KEY, "true");
+    } catch {
+      // Storage write can fail (private mode, quota, disabled). The
+      // in-memory dismiss above still hides the banner for this session.
+    }
+  }
+
   // ─── Boot ──────────────────────────────────────────────────────────
 
   $effect(() => {
+    // Read the dismiss bit once on mount. Guarded so SSR (no localStorage)
+    // is safe even though $effect normally only runs in the browser.
+    if (typeof localStorage !== "undefined") {
+      imagePickerIntroDismissed = localStorage.getItem(IMAGE_PICKER_INTRO_KEY) === "true";
+    }
     void (async () => {
       await loadEnv();
       await Promise.all([loadModels(), loadCatalog(), loadTunnel(), refreshFromServer()]);
@@ -870,17 +917,35 @@
                     <span class="role-name">{ROLE_TITLES[m.role]}</span>
                     <p class="role-desc">{ROLE_DESCRIPTIONS[m.role]}</p>
                   </div>
-                  <ModelChain
-                    role={m.role}
-                    chain={chains[m.role]}
-                    resolved={m.resolved}
-                    catalog={m.role === "image" ? imageCatalog : catalog}
-                    onEditSlot={(slotIdx) => handleEditSlot(m.role, slotIdx)}
-                    onRemoveSlot={(slotIdx) => handleRemoveSlot(m.role, slotIdx)}
-                    onReorder={(from, to) => handleReorder(m.role, from, to)}
-                    onAddFallback={() => handleAddFallback(m.role)}
-                    onOverrideDefault={() => handleOverrideDefault(m.role)}
-                  />
+                  <div class="role-body">
+                    {#if m.role === "image" && showImageMigrationBanner}
+                      <div class="migration-banner" role="status">
+                        <span class="migration-text">
+                          Default image model updated to Gemini 2.5 Flash Image (stable). The
+                          previous default was a <code>-preview</code>
+                          ID Google can retire without notice. No action needed.
+                        </span>
+                        <button
+                          class="migration-dismiss"
+                          type="button"
+                          onclick={dismissImagePickerIntro}
+                        >
+                          Dismiss
+                        </button>
+                      </div>
+                    {/if}
+                    <ModelChain
+                      role={m.role}
+                      chain={chains[m.role]}
+                      resolved={m.resolved}
+                      catalog={m.role === "image" ? imageCatalog : catalog}
+                      onEditSlot={(slotIdx) => handleEditSlot(m.role, slotIdx)}
+                      onRemoveSlot={(slotIdx) => handleRemoveSlot(m.role, slotIdx)}
+                      onReorder={(from, to) => handleReorder(m.role, from, to)}
+                      onAddFallback={() => handleAddFallback(m.role)}
+                      onOverrideDefault={() => handleOverrideDefault(m.role)}
+                    />
+                  </div>
                 </div>
               {/each}
             </div>
@@ -1332,6 +1397,48 @@
     display: flex;
     flex-direction: column;
     gap: 6px;
+  }
+  .role-body {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 0;
+  }
+
+  .migration-banner {
+    align-items: flex-start;
+    background: color-mix(in srgb, var(--color-accent), transparent 88%);
+    border: 1px solid color-mix(in srgb, var(--color-accent), transparent 60%);
+    border-radius: 6px;
+    display: flex;
+    font-size: 12px;
+    gap: 12px;
+    line-height: 1.5;
+    padding: 10px 12px;
+  }
+  .migration-text {
+    color: var(--color-text);
+    flex: 1;
+  }
+  .migration-text code {
+    background: var(--color-surface-3);
+    border-radius: 4px;
+    font-size: 11px;
+    padding: 1px 5px;
+  }
+  .migration-dismiss {
+    background: transparent;
+    border: 1px solid var(--color-border-2);
+    border-radius: 4px;
+    color: color-mix(in srgb, var(--color-text), transparent 30%);
+    cursor: pointer;
+    flex: 0 0 auto;
+    font-family: inherit;
+    font-size: 12px;
+    padding: 3px 10px;
+  }
+  .migration-dismiss:hover {
+    color: var(--color-text);
   }
   .role-name-upper {
     color: color-mix(in srgb, var(--color-text), transparent 55%);
