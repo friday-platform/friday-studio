@@ -227,9 +227,7 @@ describe("createPlatformModels — getImage", () => {
     // image-chain entry (openai:gpt-image-1.5) is skipped.
     stubEnv({ ANTHROPIC_API_KEY: "sk-ant-test", GEMINI_API_KEY: "test-gemini-key" });
     const pm = createPlatformModels({
-      models: {
-        image: ["openai:gpt-image-1.5", "google:gemini-2.5-flash-image"],
-      },
+      models: { image: ["openai:gpt-image-1.5", "google:gemini-2.5-flash-image"] },
     });
     const image = pm.getImage();
     expect(image.modelId).toBe("gemini-2.5-flash-image");
@@ -261,9 +259,7 @@ describe("createPlatformModels — image boot-time validation", () => {
     }
     expect(caught).not.toBeNull();
     const errors = caught?.errors ?? [];
-    expect(
-      errors.some((e) => e.role === "image" && e.kind === "unknown_image_model"),
-    ).toBe(true);
+    expect(errors.some((e) => e.role === "image" && e.kind === "unknown_image_model")).toBe(true);
     // Error message names the offending id and lists at least one known
     // overlay id so the operator can copy-paste a fix.
     expect(caught?.message).toContain("google:gemini-2.5-flas-image");
@@ -290,10 +286,7 @@ describe("createPlatformModels — image boot-time validation", () => {
     let caught: PlatformModelsConfigError | null = null;
     try {
       createPlatformModels({
-        models: {
-          conversational: "totally-not-a-provider:x",
-          image: "google:not-a-real-model",
-        },
+        models: { conversational: "totally-not-a-provider:x", image: "google:not-a-real-model" },
       });
     } catch (err) {
       if (err instanceof PlatformModelsConfigError) caught = err;
@@ -301,12 +294,10 @@ describe("createPlatformModels — image boot-time validation", () => {
     }
     expect(caught).not.toBeNull();
     const errors = caught?.errors ?? [];
-    expect(
-      errors.some((e) => e.role === "conversational" && e.kind === "unknown_provider"),
-    ).toBe(true);
-    expect(
-      errors.some((e) => e.role === "image" && e.kind === "unknown_image_model"),
-    ).toBe(true);
+    expect(errors.some((e) => e.role === "conversational" && e.kind === "unknown_provider")).toBe(
+      true,
+    );
+    expect(errors.some((e) => e.role === "image" && e.kind === "unknown_image_model")).toBe(true);
   });
 
   it("boots when models.image is unset (no overlay check to run)", () => {
@@ -322,9 +313,7 @@ describe("createPlatformModels — image boot-time validation", () => {
     // absent. Boot must tolerate this — the credential check is the runtime
     // resolver's job, not boot's.
     stubEnv({ ANTHROPIC_API_KEY: "sk-ant-test" });
-    expect(() =>
-      createPlatformModels({ models: { image: "openai:dall-e-3" } }),
-    ).not.toThrow();
+    expect(() => createPlatformModels({ models: { image: "openai:dall-e-3" } })).not.toThrow();
   });
 });
 

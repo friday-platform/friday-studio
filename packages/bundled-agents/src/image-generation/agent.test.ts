@@ -41,10 +41,7 @@ vi.mock("@atlas/llm", async () => {
   // reads — pass them through so capability and matrix tests exercise the
   // actual overlay entries. Only `smallLLM` is mocked.
   const actual = await vi.importActual<typeof import("@atlas/llm")>("@atlas/llm");
-  return {
-    ...actual,
-    smallLLM: smallLLMMock,
-  };
+  return { ...actual, smallLLM: smallLLMMock };
 });
 
 // ---------------------------------------------------------------------------
@@ -69,10 +66,7 @@ function makeStubImageModel(modelId: string): ImageModelV3 {
 // `stubPlatformModels.getImage.mockReturnValueOnce(...)` to override per-test.
 const stubImageModel = makeStubImageModel("google:gemini-2.5-flash-image");
 
-const stubPlatformModels = {
-  get: vi.fn(),
-  getImage: vi.fn(() => stubImageModel),
-};
+const stubPlatformModels = { get: vi.fn(), getImage: vi.fn(() => stubImageModel) };
 
 function makeContext(config?: Record<string, unknown>) {
   return {
@@ -562,10 +556,7 @@ describe("imageGenerationAgent", () => {
       proxy: EnvelopeSchema.nullable(),
     });
 
-    const FIXTURES_DIR = resolve(
-      fileURLToPath(new URL(".", import.meta.url)),
-      "__fixtures__",
-    );
+    const FIXTURES_DIR = resolve(fileURLToPath(new URL(".", import.meta.url)), "__fixtures__");
 
     /**
      * Resolve `provider:model` to its fixture path. The harness writes with
@@ -628,10 +619,7 @@ describe("imageGenerationAgent", () => {
             });
             setupSaveMocks();
 
-            const result = await imageGenerationAgent.execute(
-              "Generate an image",
-              makeContext(),
-            );
+            const result = await imageGenerationAgent.execute("Generate an image", makeContext());
 
             expect(result.ok).toBe(true);
             const call = generateImageMock.mock.calls[0]?.[0];
@@ -646,9 +634,7 @@ describe("imageGenerationAgent", () => {
         } else {
           test(`${label} · returns err on edit prompt (gen-only)`, async () => {
             stubPlatformModels.getImage.mockReturnValueOnce(makeStubImageModel(entry.id));
-            discoverImageFilesMock.mockResolvedValue(
-              makeDiscoveryResult([{ id: "src-art-1" }]),
-            );
+            discoverImageFilesMock.mockResolvedValue(makeDiscoveryResult([{ id: "src-art-1" }]));
 
             const result = await imageGenerationAgent.execute(
               "Edit the sky src-art-1",

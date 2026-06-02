@@ -146,12 +146,7 @@ describe("model-catalog — image partitioning", () => {
           "Gemini 2.5 Flash Image",
           "language",
         ),
-        gatewayModel(
-          "vertex",
-          "google/gemini-3-pro-image-preview",
-          "Nano Banana",
-          "language",
-        ),
+        gatewayModel("vertex", "google/gemini-3-pro-image-preview", "Nano Banana", "language"),
       ],
     };
     vi.stubGlobal("fetch", mockJsonFetch({ [GATEWAY_URL]: gateway }));
@@ -188,12 +183,7 @@ describe("model-catalog — image partitioning", () => {
     const gateway = {
       models: [
         gatewayModel("vertex", "google/imagen-4.0-generate-001", "Imagen 4", "image"),
-        gatewayModel(
-          "vertex",
-          "google/imagen-4.0-fast-generate-001",
-          "Imagen 4 Fast",
-          "image",
-        ),
+        gatewayModel("vertex", "google/imagen-4.0-fast-generate-001", "Imagen 4 Fast", "image"),
         gatewayModel("openai", "openai/gpt-image-1", "GPT Image 1", "image"),
       ],
     };

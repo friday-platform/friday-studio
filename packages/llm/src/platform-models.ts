@@ -506,10 +506,7 @@ export function createPlatformModels(config: PlatformModelsInput | null): Platfo
       if (!result) {
         throw new PlatformModelsConfigError(errors);
       }
-      logger.info("Image model resolved", {
-        provider: result.provider,
-        modelId: result.modelId,
-      });
+      logger.info("Image model resolved", { provider: result.provider, modelId: result.modelId });
       return result;
     },
   };

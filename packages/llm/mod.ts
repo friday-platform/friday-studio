@@ -10,18 +10,18 @@ export { createAnthropicWithOptions } from "./src/anthropic.ts";
 export { createGoogleWithOptions } from "./src/google.ts";
 export { createGroqWithOptions } from "./src/groq.ts";
 export {
-  type ImageCapabilities,
-  type ImageDefaults,
-  IMAGE_OVERLAY,
-  type ImageOverlayEntry,
-  listImageEntries,
-  lookupImageEntry,
-} from "./src/image-capabilities.ts";
-export {
   buildTemporalFacts,
   type DatetimeContext,
   temporalGroundingMessage,
 } from "./src/grounding.ts";
+export {
+  IMAGE_OVERLAY,
+  type ImageCapabilities,
+  type ImageDefaults,
+  type ImageOverlayEntry,
+  listImageEntries,
+  lookupImageEntry,
+} from "./src/image-capabilities.ts";
 export {
   type Catalog,
   type CatalogEntry,
