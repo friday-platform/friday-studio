@@ -5,8 +5,13 @@
  * creation failure, and MIME type handling.
  */
 
+import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { ImageModelV3 } from "@ai-sdk/provider";
+import { listImageEntries } from "@atlas/llm";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { z } from "zod";
 import { imageGenerationAgent } from "./agent.ts";
 
 // ---------------------------------------------------------------------------
@@ -32,12 +37,13 @@ vi.mock("ai", () => ({ generateImage: generateImageMock }));
 vi.mock("./discovery.ts", () => ({ discoverImageFiles: discoverImageFilesMock }));
 
 vi.mock("@atlas/llm", async () => {
-  // lookupImageEntry is pure data lookup against the overlay — use the real
-  // implementation so capability tests exercise the actual overlay entries.
+  // Overlay lookups (`lookupImageEntry`, `listImageEntries`) are pure data
+  // reads — pass them through so capability and matrix tests exercise the
+  // actual overlay entries. Only `smallLLM` is mocked.
   const actual = await vi.importActual<typeof import("@atlas/llm")>("@atlas/llm");
   return {
+    ...actual,
     smallLLM: smallLLMMock,
-    lookupImageEntry: actual.lookupImageEntry,
   };
 });
 
@@ -522,5 +528,141 @@ describe("imageGenerationAgent", () => {
       expect(result.ok).toBe(true);
       expect(generateImageMock).toHaveBeenCalled();
     });
+  });
+
+  // -------------------------------------------------------------------------
+  // (model × transport) matrix — fixture-driven dispatch + capability checks
+  //
+  // Cartesian product of every overlay entry × {direct, proxy}. Each pair
+  // either runs against the validation harness's captured envelope or skips
+  // with an explicit reason in the test title. The matrix is the audit trail
+  // for coverage: "did Imagen-4 ever validate through LiteLLM?" should be
+  // answerable from test output alone.
+  //
+  // For edit-capable entries, the pair runs a gen-mode prompt and asserts
+  // the correct controlAxis param shape + success. For gen-only entries,
+  // the pair runs an edit-mode prompt and asserts the capability `err()` —
+  // generateImage is never called, so the controlAxis axis is exercised
+  // exclusively via edit-capable entries within the same matrix.
+  // -------------------------------------------------------------------------
+
+  describe("(model × transport) matrix", () => {
+    const TRANSPORTS = ["direct", "proxy"] as const;
+    type Transport = (typeof TRANSPORTS)[number];
+
+    const EnvelopeSchema = z.object({
+      warnings: z.array(z.unknown()),
+      providerMetadata: z.unknown(),
+      mediaType: z.string(),
+      base64Length: z.number().int().nonnegative(),
+      imageCount: z.number().int().nonnegative(),
+    });
+    const FixtureSchema = z.object({
+      direct: EnvelopeSchema.nullable(),
+      proxy: EnvelopeSchema.nullable(),
+    });
+
+    const FIXTURES_DIR = resolve(
+      fileURLToPath(new URL(".", import.meta.url)),
+      "__fixtures__",
+    );
+
+    /**
+     * Resolve `provider:model` to its fixture path. The harness writes with
+     * `__` separator because `:` isn't filesystem-safe; mirror that here.
+     */
+    function fixturePathFor(id: string): string {
+      return resolve(FIXTURES_DIR, `${id.replace(":", "__")}.json`);
+    }
+
+    /**
+     * Returns the parsed fixture, or `null` when the file is absent. Bad JSON
+     * or shape mismatches throw — the harness's contract is the source of
+     * truth and a broken fixture should fail loudly, not skip silently.
+     */
+    function loadFixture(id: string): z.infer<typeof FixtureSchema> | null {
+      const p = fixturePathFor(id);
+      if (!existsSync(p)) return null;
+      return FixtureSchema.parse(JSON.parse(readFileSync(p, "utf-8")));
+    }
+
+    /**
+     * Synthesize PNG bytes for the mocked generateImage response. The agent
+     * only copies these bytes into an artifact — it doesn't validate PNG
+     * structure — so an 8-byte signature is enough to exercise the code path.
+     */
+    function synthesizePngBytes(): Uint8Array {
+      return new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
+    }
+
+    for (const entry of listImageEntries()) {
+      for (const transport of TRANSPORTS satisfies readonly Transport[]) {
+        const label = `${entry.id} · ${transport}`;
+        const fixture = loadFixture(entry.id);
+
+        if (fixture === null) {
+          test.skip(`${label} · skipped (no fixture file)`, () => {});
+          continue;
+        }
+        const envelope = fixture[transport];
+        if (envelope === null) {
+          test.skip(`${label} · skipped (${transport} fixture null)`, () => {});
+          continue;
+        }
+
+        if (entry.capabilities.edit) {
+          test(`${label} · dispatches ${entry.defaults.controlAxis} param`, async () => {
+            stubPlatformModels.getImage.mockReturnValueOnce(makeStubImageModel(entry.id));
+            const bytes = synthesizePngBytes();
+            const imageFile = {
+              uint8Array: bytes,
+              mediaType: envelope.mediaType,
+              base64: uint8ToBase64(bytes),
+            };
+            generateImageMock.mockResolvedValue({
+              image: imageFile,
+              images: [imageFile],
+              warnings: envelope.warnings,
+              responses: [],
+              providerMetadata: envelope.providerMetadata,
+            });
+            setupSaveMocks();
+
+            const result = await imageGenerationAgent.execute(
+              "Generate an image",
+              makeContext(),
+            );
+
+            expect(result.ok).toBe(true);
+            const call = generateImageMock.mock.calls[0]?.[0];
+            if (entry.defaults.controlAxis === "size") {
+              expect(call.size).toBe(entry.defaults.size);
+              expect(call.aspectRatio).toBeUndefined();
+            } else {
+              expect(call.aspectRatio).toBe(entry.defaults.aspectRatio);
+              expect(call.size).toBeUndefined();
+            }
+          });
+        } else {
+          test(`${label} · returns err on edit prompt (gen-only)`, async () => {
+            stubPlatformModels.getImage.mockReturnValueOnce(makeStubImageModel(entry.id));
+            discoverImageFilesMock.mockResolvedValue(
+              makeDiscoveryResult([{ id: "src-art-1" }]),
+            );
+
+            const result = await imageGenerationAgent.execute(
+              "Edit the sky src-art-1",
+              makeContext(),
+            );
+
+            expect(result.ok).toBe(false);
+            expect.assert(result.ok === false);
+            expect(result.error.reason).toContain(entry.displayName);
+            expect(result.error.reason).toContain("supports generation only");
+            expect(generateImageMock).not.toHaveBeenCalled();
+          });
+        }
+      }
+    }
   });
 });
