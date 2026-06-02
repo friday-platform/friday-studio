@@ -49,15 +49,53 @@ export type ImageOverlayEntry = {
 /**
  * Verified image models, keyed by `provider:model`. Resolver and Settings
  * picker treat this as authoritative for capability and default-param
- * questions. Full population (six entries: Gemini, Imagen-4, Imagen-4-fast,
- * GPT Image 1.5, DALL·E 3, DALL·E 2) lands in a follow-up task; the
- * tracer bullet ships only the new system default.
+ * questions.
+ *
+ * Default rationale:
+ * - Google: `1:1` PNG matches Gemini/Imagen's natural square output and
+ *   keeps lossless transport for editing flows.
+ * - OpenAI: `1024x1024` PNG is the canonical baseline supported by every
+ *   entry (`gpt-image-*`, `dall-e-3`, `dall-e-2`) and avoids paying for
+ *   higher-resolution tiers users haven't opted into.
  */
 export const IMAGE_OVERLAY: Readonly<Record<string, ImageOverlayEntry>> = {
   "google:gemini-2.5-flash-image": {
     displayName: "Gemini 2.5 Flash Image",
     capabilities: { generation: true, edit: true },
     defaults: { controlAxis: "aspectRatio", aspectRatio: "1:1", format: "png" },
+    lastValidatedAt: "2026-06-02",
+  },
+  "google:imagen-4.0-generate-001": {
+    displayName: "Imagen 4",
+    capabilities: { generation: true, edit: false },
+    defaults: { controlAxis: "aspectRatio", aspectRatio: "1:1", format: "png" },
+    lastValidatedAt: "2026-06-02",
+  },
+  "google:imagen-4.0-fast-generate-001": {
+    displayName: "Imagen 4 Fast",
+    capabilities: { generation: true, edit: false },
+    defaults: { controlAxis: "aspectRatio", aspectRatio: "1:1", format: "png" },
+    lastValidatedAt: "2026-06-02",
+  },
+  "openai:gpt-image-1.5": {
+    displayName: "GPT Image 1.5",
+    capabilities: { generation: true, edit: true },
+    defaults: { controlAxis: "size", size: "1024x1024", format: "png" },
+    lastValidatedAt: "2026-06-02",
+    // Surfaced in the Settings picker so users hit the org-verification
+    // gate at config time rather than at first generation attempt.
+    note: "Requires a verified OpenAI organization.",
+  },
+  "openai:dall-e-3": {
+    displayName: "DALL·E 3",
+    capabilities: { generation: true, edit: false },
+    defaults: { controlAxis: "size", size: "1024x1024", format: "png" },
+    lastValidatedAt: "2026-06-02",
+  },
+  "openai:dall-e-2": {
+    displayName: "DALL·E 2",
+    capabilities: { generation: true, edit: true },
+    defaults: { controlAxis: "size", size: "1024x1024", format: "png" },
     lastValidatedAt: "2026-06-02",
   },
 };
