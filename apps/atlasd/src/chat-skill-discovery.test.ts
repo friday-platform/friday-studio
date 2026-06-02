@@ -8,6 +8,9 @@ const fakePlatformModels: PlatformModels = {
   get: () => {
     throw new Error("platformModels.get should not be called when smallLLM is mocked");
   },
+  getImage: () => {
+    throw new Error("platformModels.getImage should not be called when smallLLM is mocked");
+  },
 };
 
 // ─── Module mocks ────────────────────────────────────────────────────────────

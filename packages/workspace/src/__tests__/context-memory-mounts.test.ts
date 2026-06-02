@@ -55,6 +55,9 @@ function buildMockContext(): AgentContext {
       get: () => {
         throw new Error("platformModels.get should not be called in this test");
       },
+      getImage: () => {
+        throw new Error("platformModels.getImage should not be called in this test");
+      },
     } satisfies PlatformModels,
   };
 }

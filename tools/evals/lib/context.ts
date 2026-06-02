@@ -190,6 +190,11 @@ const stubPlatformModels: PlatformModels = {
       `Eval AgentContextAdapter has no PlatformModels configured — got request for '${role}'. Pass a real resolver to the constructor once evals adopt the platform model path.`,
     );
   },
+  getImage() {
+    throw new Error(
+      `Eval AgentContextAdapter has no PlatformModels configured — got request for image model. Pass a real resolver to the constructor once evals adopt the platform model path.`,
+    );
+  },
 };
 
 /**
