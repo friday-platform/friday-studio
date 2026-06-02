@@ -20,6 +20,7 @@
   @component
 -->
 <script lang="ts">
+  import { listImageEntries } from "@atlas/llm/image-capabilities";
   import { Button, PageLayout, toast } from "@atlas/ui";
   import { useQueryClient } from "@tanstack/svelte-query";
   import {
@@ -28,6 +29,7 @@
     ImportBundleResponseSchema,
     type ImportedEntry as DaemonImportedEntry,
   } from "$lib/api/workspace-import.ts";
+  import ImageModelPicker from "$lib/components/settings/image-model-picker.svelte";
   import ModelChain from "$lib/components/settings/model-chain.svelte";
   import ModelPicker from "$lib/components/settings/model-picker.svelte";
   import { tunnelUrl as tunnelProxyUrl } from "$lib/daemon-url";
@@ -46,7 +48,7 @@
 
   // ─── Types mirroring the daemon's route shapes ─────────────────────
 
-  type ModelRole = "labels" | "classifier" | "planner" | "conversational";
+  type ModelRole = "labels" | "classifier" | "planner" | "conversational" | "image";
 
   interface EnvRow {
     key: string;
@@ -82,6 +84,11 @@
     credentialEnvVar: string | null;
     meta: ProviderMeta;
     models: CatalogModel[];
+    /** Image-generation models advertised by the gateway/provider. Empty
+     * for providers with no image surface. Consumed by the image picker;
+     * the chain tile uses the overlay-derived imageCatalog (see below)
+     * for friendly display names. */
+    images: CatalogModel[];
     error?: string;
   }
 
@@ -98,6 +105,7 @@
     "planner",
     "classifier",
     "labels",
+    "image",
   ] as const;
 
   const ROLE_DESCRIPTIONS: Record<ModelRole, string> = {
@@ -105,6 +113,7 @@
     classifier: "Structured output decisions — triage, routing.",
     planner: "Multi-step synthesis with tool calls — workflow planning.",
     conversational: "Streaming chat with tools and multi-turn memory.",
+    image: "Image generation and edit — verified models only.",
   };
 
   const ROLE_TITLES: Record<ModelRole, string> = {
@@ -112,6 +121,7 @@
     classifier: "Classifier",
     planner: "Planner",
     conversational: "Conversational",
+    image: "Image",
   };
 
   /**
@@ -154,6 +164,7 @@
     classifier: [],
     planner: [],
     conversational: [],
+    image: [],
   });
   let picker = $state<PickerState | null>(null);
   let dirty = $state(false);
@@ -269,6 +280,7 @@
           classifier: [],
           planner: [],
           conversational: [],
+          image: [],
         };
         for (const m of models) {
           nextChains[m.role] = parseChain(m.configured);
@@ -461,6 +473,7 @@
         classifier: serializeChain(chains.classifier),
         planner: serializeChain(chains.planner),
         conversational: serializeChain(chains.conversational),
+        image: serializeChain(chains.image),
       };
       const res = await fetch("/api/daemon/api/config/models", {
         method: "PUT",
@@ -495,6 +508,7 @@
       classifier: [],
       planner: [],
       conversational: [],
+      image: [],
     };
     for (const m of models) next[m.role] = parseChain(m.configured);
     chains = next;
@@ -558,6 +572,31 @@
     catalog.reduce((n, e) => n + (e.credentialConfigured ? e.models.length : 0), 0),
   );
   const connectedProviders = $derived(catalog.filter((e) => e.credentialConfigured).length);
+
+  /**
+   * Catalog flavored for the image role: each provider's `models` field
+   * is replaced by overlay-derived entries `{ id, displayName }` so the
+   * existing `<ModelChain>` tile lookup finds the friendly display name
+   * ("Gemini 2.5 Flash Image") instead of falling back to the raw id.
+   *
+   * Provider-level fields (`credentialConfigured`, `credentialEnvVar`,
+   * `meta`) carry over from the underlying catalog so the chain tile's
+   * locked-state and provider letter still come from real data.
+   */
+  const imageCatalog = $derived.by<CatalogEntry[]>(() => {
+    const overlay = listImageEntries();
+    const byProvider = new Map<string, CatalogModel[]>();
+    for (const entry of overlay) {
+      const idx = entry.id.indexOf(":");
+      if (idx <= 0) continue;
+      const provider = entry.id.slice(0, idx);
+      const modelId = entry.id.slice(idx + 1);
+      const list = byProvider.get(provider) ?? [];
+      list.push({ id: modelId, displayName: entry.displayName });
+      byProvider.set(provider, list);
+    }
+    return catalog.map((e) => ({ ...e, models: byProvider.get(e.provider) ?? [] }));
+  });
 
   const pickerRole = $derived(picker ? ROLES[picker.roleIdx] : null);
   const pickerCurrent = $derived.by<ModelChoice | null>(() => {
@@ -835,7 +874,7 @@
                     role={m.role}
                     chain={chains[m.role]}
                     resolved={m.resolved}
-                    {catalog}
+                    catalog={m.role === "image" ? imageCatalog : catalog}
                     onEditSlot={(slotIdx) => handleEditSlot(m.role, slotIdx)}
                     onRemoveSlot={(slotIdx) => handleRemoveSlot(m.role, slotIdx)}
                     onReorder={(from, to) => handleReorder(m.role, from, to)}
@@ -1186,16 +1225,29 @@
 </PageLayout.Root>
 
 {#if picker && pickerRole}
-  <ModelPicker
-    roleTitle={ROLE_TITLES[pickerRole]}
-    slotLabel={pickerSlotLabel}
-    current={pickerCurrent}
-    allowDefault={pickerAllowDefault}
-    {catalog}
-    saveApiKey={handleSaveApiKey}
-    onSelect={handlePickerSelect}
-    onClose={() => (picker = null)}
-  />
+  {#if pickerRole === "image"}
+    <ImageModelPicker
+      roleTitle={ROLE_TITLES[pickerRole]}
+      slotLabel={pickerSlotLabel}
+      current={pickerCurrent}
+      allowDefault={pickerAllowDefault}
+      {catalog}
+      saveApiKey={handleSaveApiKey}
+      onSelect={handlePickerSelect}
+      onClose={() => (picker = null)}
+    />
+  {:else}
+    <ModelPicker
+      roleTitle={ROLE_TITLES[pickerRole]}
+      slotLabel={pickerSlotLabel}
+      current={pickerCurrent}
+      allowDefault={pickerAllowDefault}
+      {catalog}
+      saveApiKey={handleSaveApiKey}
+      onSelect={handlePickerSelect}
+      onClose={() => (picker = null)}
+    />
+  {/if}
 {/if}
 
 <style>

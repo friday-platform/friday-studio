@@ -1,5 +1,9 @@
 {
   "name": "@atlas/llm",
   "version": "1.0.0",
-  "exports": { ".": "./mod.ts", "./pricing": "./src/pricing.ts" }
+  "exports": {
+    ".": "./mod.ts",
+    "./pricing": "./src/pricing.ts",
+    "./image-capabilities": "./src/image-capabilities.ts"
+  }
 }

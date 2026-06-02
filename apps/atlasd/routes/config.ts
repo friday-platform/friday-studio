@@ -8,8 +8,10 @@ import { join } from "node:path";
 import process from "node:process";
 import {
   createPlatformModels,
+  DEFAULT_PLATFORM_MODELS,
   getCatalog,
   invalidateCatalog,
+  type PlatformModels,
   PlatformModelsConfigError,
   resetRegistry,
 } from "@atlas/llm";
@@ -408,11 +410,11 @@ configRoutes.delete(
 // ---------------------------------------------------------------------------
 // Models (friday.yml → PlatformModels)
 // ---------------------------------------------------------------------------
-// Surfaces the four per-role models (labels, classifier, planner,
-// conversational) the daemon resolved at startup. Read-only — editing
-// requires mutating friday.yml and restarting.
+// Surfaces the five per-role models (labels, classifier, planner,
+// conversational, image) the daemon resolved at startup. Read-only —
+// editing requires mutating friday.yml and restarting.
 
-const PLATFORM_ROLES = ["labels", "classifier", "planner", "conversational"] as const;
+const PLATFORM_ROLES = ["labels", "classifier", "planner", "conversational", "image"] as const;
 type ModelRole = (typeof PLATFORM_ROLES)[number];
 
 const modelInfoSchema = z.object({
@@ -453,6 +455,7 @@ const modelsPutRequestSchema = z.object({
     classifier: roleValueSchema.optional(),
     planner: roleValueSchema.optional(),
     conversational: roleValueSchema.optional(),
+    image: roleValueSchema.optional(),
   }),
 });
 const modelsPutResponseSchema = z.object({
@@ -478,6 +481,57 @@ async function readFridayConfig(): Promise<Record<string, unknown>> {
   const parsed = parseYaml(raw);
   if (typeof parsed !== "object" || parsed === null) return {};
   return parsed as Record<string, unknown>;
+}
+
+type ResolvedModel = { provider: string; modelId: string };
+
+function pickLanguageResolved(
+  platformModels: PlatformModels,
+  role: Exclude<ModelRole, "image">,
+): ResolvedModel {
+  const m = platformModels.get(role);
+  return { provider: m.provider, modelId: m.modelId };
+}
+
+/**
+ * Resolve the image-role "resolved" tile value for the Settings GET response.
+ *
+ * Image resolution diverges from the language roles in two ways:
+ *   1. The resolver method is `getImage()` (returns `ImageModelV3`,
+ *      not `LanguageModelV3`).
+ *   2. `getImage()` defers credential checks to call time, so it CAN
+ *      throw post-boot when no chain entry is credentialed. Boot only
+ *      validates format and overlay membership for the image role.
+ *
+ * Strategy: try `getImage()` first; on success, return its resolved
+ * provider+modelId. On failure, fall back to the user's configured chain
+ * head if they set one, otherwise `DEFAULT_PLATFORM_MODELS.image[0]`.
+ * This lets the UI tile render what the user *meant* even when the
+ * credential isn't available yet — the locked-banner UX then carries
+ * the credential-missing signal to the user.
+ */
+function resolveImageRoleForGet(
+  platformModels: PlatformModels,
+  configured: string | string[] | null,
+): ResolvedModel {
+  try {
+    const m = platformModels.getImage();
+    return { provider: m.provider, modelId: m.modelId };
+  } catch {
+    const head =
+      typeof configured === "string"
+        ? configured
+        : Array.isArray(configured) && configured.length > 0
+          ? configured[0]
+          : DEFAULT_PLATFORM_MODELS.image[0];
+    return parseProviderModelId(head ?? DEFAULT_PLATFORM_MODELS.image[0] ?? "");
+  }
+}
+
+function parseProviderModelId(id: string): ResolvedModel {
+  const idx = id.indexOf(":");
+  if (idx <= 0 || idx === id.length - 1) return { provider: "unknown", modelId: id };
+  return { provider: id.slice(0, idx), modelId: id.slice(idx + 1) };
 }
 
 configRoutes.get(
@@ -510,7 +564,6 @@ configRoutes.get(
     }
 
     const models = PLATFORM_ROLES.map((role: ModelRole) => {
-      const m = ctx.platformModels.get(role);
       const raw = configuredModels[role];
       // Surface the exact shape from friday.yml so the UI can render the
       // primary + fallback slots correctly. An array with one entry is
@@ -523,7 +576,11 @@ configRoutes.get(
         const filtered = raw.filter((v): v is string => typeof v === "string" && v.length > 0);
         if (filtered.length > 0) configured = filtered;
       }
-      return { role, resolved: { provider: m.provider, modelId: m.modelId }, configured };
+      const resolved =
+        role === "image"
+          ? resolveImageRoleForGet(ctx.platformModels, configured)
+          : pickLanguageResolved(ctx.platformModels, role);
+      return { role, resolved, configured };
     });
 
     return c.json({ success: true, models, configPath });
@@ -533,6 +590,7 @@ configRoutes.get(
 // Provider + model catalog used to populate the Settings page dropdown.
 // The response is served from a 1h in-memory cache in @atlas/llm;
 // daemon startup prewarms it so the first request is already warm.
+const modelInfoFieldSchema = z.object({ id: z.string(), displayName: z.string() });
 const catalogResponseSchema = z.object({
   success: z.boolean(),
   fetchedAt: z.number(),
@@ -541,7 +599,11 @@ const catalogResponseSchema = z.object({
       provider: z.string(),
       credentialConfigured: z.boolean(),
       credentialEnvVar: z.string().nullable(),
-      models: z.array(z.object({ id: z.string(), displayName: z.string() })),
+      models: z.array(modelInfoFieldSchema),
+      /** Image-generation models advertised by the gateway/provider, used
+       * by the Settings image picker to intersect against the verified
+       * capability overlay. Empty for providers with no image surface. */
+      images: z.array(modelInfoFieldSchema),
       error: z.string().optional(),
     }),
   ),
