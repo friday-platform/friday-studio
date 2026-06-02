@@ -89,6 +89,15 @@ export interface CatalogEntry {
   meta: ProviderMeta;
   /** Language models only — image / embedding / video / tts are filtered out. */
   models: ModelInfo[];
+  /**
+   * Image generation / edit models advertised by the gateway or the
+   * provider's direct catalog. Empty for providers without an image
+   * surface (`anthropic`, `groq`, `openrouter`, `local`). Consumers
+   * intersect this set against the hand-curated capability overlay in
+   * `image-capabilities.ts` to know which are *usable* by Friday — this
+   * field is a freshness signal, not a gate.
+   */
+  images: ModelInfo[];
   /** Populated when a fetch failed so the UI can surface the reason. */
   error?: string;
 }
@@ -255,30 +264,48 @@ function stripGatewayProviderPrefix(gatewayModelId: string): string {
   return gatewayModelId.replace(/^[^/]+\//, "");
 }
 
+/** Bucketed gateway output: language `models` and image-gen `images`
+ *  per Friday provider. */
+type GatewayBuckets = Record<CatalogProvider, { models: ModelInfo[]; images: ModelInfo[] }>;
+
 /**
- * Partition gateway models into Friday's provider buckets. Returns one
- * `ModelInfo[]` per `CatalogProvider`; `groq` is left empty here because
- * the gateway's Groq coverage is intentionally skipped — we prefer the
- * direct-Groq fetch which has a meaningfully larger catalog.
+ * Partition gateway models into Friday's provider buckets, splitting
+ * language and image surfaces. Returns one `{ models, images }` pair per
+ * `CatalogProvider`; `groq`, `local`, and `openrouter` stay empty here
+ * because the gateway's coverage for them is either absent or smaller
+ * than the direct fetch we run separately.
+ *
+ * Image routing rules:
+ * - Gateway `modelType: 'image'` entries route to the appropriate
+ *   provider's `images` bucket.
+ * - Google (`vertex` + `google/gemini-` prefix) `-image` ids route to
+ *   `images` — this is the inverse of the language filter; Google ships
+ *   `-image` variants under `modelType: 'language'`.
+ * - OpenAI ids matching `gpt-image-*` / `dall-e-*` route to `images`
+ *   regardless of `modelType` (defensive against gateway misclassification).
  */
-function groupGatewayModels(models: GatewayModel[]): Record<CatalogProvider, ModelInfo[]> {
-  const out: Record<CatalogProvider, ModelInfo[]> = {
-    anthropic: [],
-    openai: [],
-    google: [],
-    groq: [],
+function groupGatewayModels(models: GatewayModel[]): GatewayBuckets {
+  const out: GatewayBuckets = {
+    anthropic: { models: [], images: [] },
+    openai: { models: [], images: [] },
+    google: { models: [], images: [] },
+    groq: { models: [], images: [] },
     // Local is fetched directly from the user's OpenAI-compatible server.
-    local: [],
+    local: { models: [], images: [] },
     // OpenRouter is fetched directly from openrouter.ai, not the gateway.
-    openrouter: [],
+    openrouter: { models: [], images: [] },
   };
   for (const m of models) {
-    // Gateway uses `modelType: null` for most language models; explicit
-    // other types cover image / embedding / video / tts / reranker.
-    if (m.modelType != null && m.modelType !== "language") continue;
     const { provider, modelId } = m.specification;
     const rawId = stripGatewayProviderPrefix(modelId);
+    // Gateway uses `modelType: null` for most language models; explicit
+    // other types cover image / embedding / video / tts / reranker.
+    const isImageType = m.modelType === "image";
+    const isLanguageType = m.modelType == null || m.modelType === "language";
+
     if (provider === "anthropic") {
+      // No image surface on Anthropic — skip anything that isn't language.
+      if (!isLanguageType) continue;
       // Gateway advertises Anthropic models in semver form with dots
       // (e.g. `claude-sonnet-4.6`), but Anthropic's direct API uses
       // hyphens (`claude-sonnet-4-6`). We talk to Anthropic directly
@@ -286,16 +313,36 @@ function groupGatewayModels(models: GatewayModel[]): Record<CatalogProvider, Mod
       // end-to-end.
       const apiId = rawId.replace(/\./g, "-");
       if (!isAnthropicDirectApiId(apiId)) continue;
-      out.anthropic.push({ id: apiId, displayName: m.name });
+      out.anthropic.models.push({ id: apiId, displayName: m.name });
     } else if (provider === "openai") {
+      // Image-types pass: `gpt-image-*` / `dall-e-*` ids (or anything
+      // the gateway explicitly tags `modelType: 'image'`) land in the
+      // images bucket. Catches the gateway both ways — by id pattern in
+      // case the modelType is misclassified, and by modelType for future
+      // image families we haven't pinned a pattern for.
+      if (isImageType || isOpenAiImageId(rawId)) {
+        out.openai.images.push({ id: rawId, displayName: m.name });
+        continue;
+      }
+      if (!isLanguageType) continue;
       if (!isOpenAiChatCapable(rawId)) continue;
-      out.openai.push({ id: rawId, displayName: m.name });
+      out.openai.models.push({ id: rawId, displayName: m.name });
     } else if (provider === "vertex" && modelId.startsWith("google/gemini-")) {
       // Google's Gemini models live under the gateway's `vertex` provider,
-      // prefixed `google/`. We only want Gemini (not Imagen / Veo /
-      // embeddings), and only language variants (not `-image` preview).
-      if (/-image(-|$)/.test(modelId)) continue;
-      out.google.push({ id: rawId, displayName: m.name });
+      // prefixed `google/`. We only want Gemini (not Veo / embeddings).
+      // Inverse of the language `-image` filter: `-image` variants are
+      // image generation models (Nano Banana etc.) — route to images.
+      if (/-image(-|$)/.test(modelId) || isImageType) {
+        out.google.images.push({ id: rawId, displayName: m.name });
+        continue;
+      }
+      if (!isLanguageType) continue;
+      out.google.models.push({ id: rawId, displayName: m.name });
+    } else if (provider === "vertex" && isImageType) {
+      // Imagen + future Google image families surface under `vertex`
+      // with `modelType: 'image'` but no `-image` substring in the id
+      // (e.g. `google/imagen-4.0-generate-001`). Route to google images.
+      out.google.images.push({ id: rawId, displayName: m.name });
     }
   }
   return out;
@@ -374,6 +421,18 @@ const OPENAI_NON_CHAT_PATTERNS: RegExp[] = [
 
 function isOpenAiChatCapable(id: string): boolean {
   return !OPENAI_NON_CHAT_PATTERNS.some((re) => re.test(id));
+}
+
+/**
+ * OpenAI image-model id patterns. Image surfaces today are `dall-e-*`
+ * (`dall-e-2`, `dall-e-3`) and the newer `gpt-image-*` family
+ * (`gpt-image-1`, `gpt-image-1.5`). Used to route catalog entries into
+ * the `images` bucket independently of the gateway's `modelType` field.
+ */
+const OPENAI_IMAGE_ID_PATTERNS: RegExp[] = [/^gpt-image-/, /^dall-e-/];
+
+function isOpenAiImageId(id: string): boolean {
+  return OPENAI_IMAGE_ID_PATTERNS.some((re) => re.test(id));
 }
 
 // ─── Catalog assembly ──────────────────────────────────────────────────────
@@ -466,6 +525,10 @@ async function fetchCatalog(): Promise<Catalog> {
   const entries: CatalogEntry[] = CATALOG_PROVIDERS.map((provider) => {
     const cred = resolveCredential(provider);
     let models: ModelInfo[] = [];
+    // Image surface lives on the gateway path (openai + google today).
+    // Direct-fetch providers (groq / openrouter / local) don't expose
+    // image generation, so their `images` stay empty.
+    let images: ModelInfo[] = [];
     let error: string | undefined;
 
     if (provider === "groq") {
@@ -490,7 +553,8 @@ async function fetchCatalog(): Promise<Catalog> {
       // else: no LOCAL_BASE_URL set — empty models, no error, UI shows
       // the `envVar` hint to point the user at LOCAL_BASE_URL.
     } else if (gatewayBuckets) {
-      models = gatewayBuckets[provider];
+      models = gatewayBuckets[provider].models;
+      images = gatewayBuckets[provider].images;
     } else if (gatewayError) {
       error = gatewayError;
     }
@@ -501,6 +565,7 @@ async function fetchCatalog(): Promise<Catalog> {
       credentialEnvVar: cred.envVar,
       meta: PROVIDER_META[provider],
       models,
+      images,
       ...(error ? { error } : {}),
     };
   });

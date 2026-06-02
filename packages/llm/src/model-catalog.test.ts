@@ -131,6 +131,97 @@ describe("model-catalog — gateway partitioning", () => {
   });
 });
 
+describe("model-catalog — image partitioning", () => {
+  it("partitions google entries: -image ids land in images, everything else stays in models", async () => {
+    // Google ships its `-image` variants under `modelType: 'language'` —
+    // language path must strip them (unchanged behavior), image path must
+    // pick them up (new behavior).
+    const gateway = {
+      models: [
+        gatewayModel("vertex", "google/gemini-3-pro-preview", "Gemini 3 Pro Preview"),
+        gatewayModel("vertex", "google/gemini-2.5-flash", "Gemini 2.5 Flash"),
+        gatewayModel(
+          "vertex",
+          "google/gemini-2.5-flash-image",
+          "Gemini 2.5 Flash Image",
+          "language",
+        ),
+        gatewayModel(
+          "vertex",
+          "google/gemini-3-pro-image-preview",
+          "Nano Banana",
+          "language",
+        ),
+      ],
+    };
+    vi.stubGlobal("fetch", mockJsonFetch({ [GATEWAY_URL]: gateway }));
+
+    const google = find(await getCatalog(), "google");
+    expect(google.models.map((m) => m.id)).toEqual(["gemini-3-pro-preview", "gemini-2.5-flash"]);
+    expect(google.images.map((m) => m.id)).toEqual([
+      "gemini-2.5-flash-image",
+      "gemini-3-pro-image-preview",
+    ]);
+  });
+
+  it("partitions openai entries: gpt-image-* and dall-e-* land in images, chat models stay in models", async () => {
+    const gateway = {
+      models: [
+        gatewayModel("openai", "openai/gpt-5.4", "GPT-5.4"),
+        gatewayModel("openai", "openai/gpt-image-1.5", "GPT Image 1.5", "image"),
+        // dall-e-3 doesn't carry `modelType: 'image'` in some gateway
+        // responses — the id-pattern rule has to catch it on its own.
+        gatewayModel("openai", "openai/dall-e-3", "DALL·E 3"),
+        gatewayModel("openai", "openai/dall-e-2", "DALL·E 2"),
+      ],
+    };
+    vi.stubGlobal("fetch", mockJsonFetch({ [GATEWAY_URL]: gateway }));
+
+    const openai = find(await getCatalog(), "openai");
+    expect(openai.models.map((m) => m.id)).toEqual(["gpt-5.4"]);
+    expect(openai.images.map((m) => m.id)).toEqual(["gpt-image-1.5", "dall-e-3", "dall-e-2"]);
+  });
+
+  it("routes gateway modelType=image entries into the appropriate provider's images bucket", async () => {
+    // Imagen models land under `vertex` with `modelType: 'image'` but no
+    // `-image` substring — exercises the explicit modelType branch.
+    const gateway = {
+      models: [
+        gatewayModel("vertex", "google/imagen-4.0-generate-001", "Imagen 4", "image"),
+        gatewayModel(
+          "vertex",
+          "google/imagen-4.0-fast-generate-001",
+          "Imagen 4 Fast",
+          "image",
+        ),
+        gatewayModel("openai", "openai/gpt-image-1", "GPT Image 1", "image"),
+      ],
+    };
+    vi.stubGlobal("fetch", mockJsonFetch({ [GATEWAY_URL]: gateway }));
+
+    const catalog = await getCatalog();
+    expect(find(catalog, "google").images.map((m) => m.id)).toEqual([
+      "imagen-4.0-generate-001",
+      "imagen-4.0-fast-generate-001",
+    ]);
+    expect(find(catalog, "openai").images.map((m) => m.id)).toEqual(["gpt-image-1"]);
+    // Language buckets untouched by image-only entries.
+    expect(find(catalog, "google").models).toEqual([]);
+    expect(find(catalog, "openai").models).toEqual([]);
+  });
+
+  it("leaves images empty for providers without an image surface", async () => {
+    vi.stubGlobal("fetch", mockJsonFetch({ [GATEWAY_URL]: { models: [] } }));
+
+    const catalog = await getCatalog();
+    for (const entry of catalog.entries) {
+      // Every entry must carry the `images` field, even when empty —
+      // consumers shouldn't have to handle `undefined`.
+      expect(entry.images).toEqual([]);
+    }
+  });
+});
+
 describe("model-catalog — credential resolution", () => {
   it("reports credentialConfigured=false and the env-var hint when no key is set", async () => {
     vi.stubGlobal("fetch", mockJsonFetch({ [GATEWAY_URL]: { models: [] } }));
