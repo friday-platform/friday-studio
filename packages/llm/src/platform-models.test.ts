@@ -219,6 +219,33 @@ describe("resolveModelFromString", () => {
   });
 });
 
+describe("createPlatformModels — getImage", () => {
+  it("returns the first chain entry with credentials present and skips uncredentialed entries", () => {
+    // Anthropic key keeps the four LLM roles' default chains resolvable
+    // (boot-time eager validation). Gemini key credentials the second
+    // image-chain entry. OpenAI is intentionally absent so the first
+    // image-chain entry (openai:gpt-image-1.5) is skipped.
+    stubEnv({ ANTHROPIC_API_KEY: "sk-ant-test", GEMINI_API_KEY: "test-gemini-key" });
+    const pm = createPlatformModels({
+      models: {
+        image: ["openai:gpt-image-1.5", "google:gemini-2.5-flash-image"],
+      },
+    });
+    const image = pm.getImage();
+    expect(image.modelId).toBe("gemini-2.5-flash-image");
+    expect(image.provider).toContain("google");
+  });
+
+  it("throws PlatformModelsConfigError when no chain entry has credentials", () => {
+    // Credential only anthropic so the default LLM-role chains pass boot.
+    // Image default is `google:gemini-2.5-flash-image`, which has no
+    // matching GEMINI_API_KEY → `getImage()` exhausts and throws.
+    stubEnv({ ANTHROPIC_API_KEY: "sk-ant-test" });
+    const pm = createPlatformModels(null);
+    expect(() => pm.getImage()).toThrow(PlatformModelsConfigError);
+  });
+});
+
 describe("createPlatformModels — lazy resolution", () => {
   it("re-resolves get() against the current process.env on each call", () => {
     stubEnv({ ANTHROPIC_API_KEY: "sk-ant-test", GROQ_API_KEY: "gsk_test" });

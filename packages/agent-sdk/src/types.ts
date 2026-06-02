@@ -1,4 +1,4 @@
-import type { LanguageModelV3 } from "@ai-sdk/provider";
+import type { ImageModelV3, LanguageModelV3 } from "@ai-sdk/provider";
 import type { Tracer } from "@opentelemetry/api";
 import type { Tool, TypedToolCall, TypedToolResult } from "ai";
 import { z } from "zod";
@@ -41,11 +41,15 @@ export interface Logger {
 // ==============================================================================
 
 /** Task archetype for a platform LLM call site. */
-export type PlatformRole = "labels" | "classifier" | "planner" | "conversational";
+export type PlatformRole = "labels" | "classifier" | "planner" | "conversational" | "image";
 
-/** Resolves platform LLMs by task archetype. Daemon constructs this once at boot. */
+/** Roles whose model is a `LanguageModelV3`. Image is served by `getImage()`. */
+type LanguageRole = Exclude<PlatformRole, "image">;
+
+/** Resolves platform models by task archetype. Daemon constructs this once at boot. */
 export interface PlatformModels {
-  get(role: PlatformRole): LanguageModelV3;
+  get(role: LanguageRole): LanguageModelV3;
+  getImage(): ImageModelV3;
 }
 
 // ==============================================================================

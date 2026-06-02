@@ -1,6 +1,6 @@
-import type { LanguageModelV3, SharedV2ProviderOptions } from "@ai-sdk/provider";
+import type { ImageModelV3, LanguageModelV3, SharedV2ProviderOptions } from "@ai-sdk/provider";
 
-export type { LanguageModelV3 };
+export type { ImageModelV3, LanguageModelV3 };
 
 import { deepMerge } from "@std/collections/deep-merge";
 import { anthropicProviderOptions } from "./src/anthropic.ts";
@@ -9,6 +9,14 @@ import type { ValidProvider } from "./src/util.ts";
 export { createAnthropicWithOptions } from "./src/anthropic.ts";
 export { createGoogleWithOptions } from "./src/google.ts";
 export { createGroqWithOptions } from "./src/groq.ts";
+export {
+  type ImageCapabilities,
+  type ImageDefaults,
+  IMAGE_OVERLAY,
+  type ImageOverlayEntry,
+  listImageEntries,
+  lookupImageEntry,
+} from "./src/image-capabilities.ts";
 export {
   buildTemporalFacts,
   type DatetimeContext,

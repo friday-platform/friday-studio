@@ -1,5 +1,5 @@
 import process from "node:process";
-import type { LanguageModelV3 } from "@ai-sdk/provider";
+import type { ImageModelV3, LanguageModelV3 } from "@ai-sdk/provider";
 import { logger } from "@atlas/logger";
 import { registry } from "./registry.ts";
 import {
@@ -32,21 +32,41 @@ export interface PlatformModelsInput {
     classifier?: PlatformModelConfig;
     planner?: PlatformModelConfig;
     conversational?: PlatformModelConfig;
+    image?: PlatformModelConfig;
   };
 }
 
 /**
  * Task archetype for a platform LLM call site. Each role has distinct
  * failure-mode and call-pattern characteristics — see the design doc.
+ *
+ * Note: `"image"` is a fifth role but is NOT served by `get(role)` —
+ * `get` returns `LanguageModelV3` and image models are `ImageModelV3`.
+ * Image resolution is on the sibling `getImage()` method. The literal
+ * is included here so `DEFAULT_PLATFORM_MODELS` and config-shape
+ * machinery can be keyed uniformly across all five roles.
  */
-export type PlatformRole = "labels" | "classifier" | "planner" | "conversational";
+export type PlatformRole = "labels" | "classifier" | "planner" | "conversational" | "image";
 
 /**
- * Injected dependency providing pre-traced `LanguageModelV3` instances
- * for each platform task archetype. Constructed once per daemon at boot.
+ * Roles whose model is a `LanguageModelV3` (resolved via `get(role)`).
+ * Excludes `"image"`, which produces an `ImageModelV3` and routes
+ * through the separate `getImage()` method.
+ */
+type LanguageRole = Exclude<PlatformRole, "image">;
+
+/**
+ * Injected dependency providing pre-traced model instances for each
+ * platform task archetype. Constructed once per daemon at boot.
+ *
+ * `get(role)` covers the four language roles; `getImage()` is a sibling
+ * for image generation. Two methods because the return types differ at
+ * the SDK layer (`LanguageModelV3` vs `ImageModelV3`) — a single
+ * polymorphic `get` would force callers to narrow, defeating its purpose.
  */
 export interface PlatformModels {
-  get(role: PlatformRole): LanguageModelV3;
+  get(role: LanguageRole): LanguageModelV3;
+  getImage(): ImageModelV3;
 }
 
 /**
@@ -60,6 +80,9 @@ export const DEFAULT_PLATFORM_MODELS: Record<PlatformRole, readonly string[]> = 
   classifier: ["anthropic:claude-haiku-4-5"],
   planner: ["anthropic:claude-sonnet-4-6"],
   conversational: ["anthropic:claude-sonnet-4-6"],
+  // Stable replacement for the now-deprecated `gemini-3.1-flash-image-preview`
+  // hardcode in image-generation agent. See design doc § Schema.
+  image: ["google:gemini-2.5-flash-image"],
 };
 
 /** Providers whose credentials are resolved via `PROVIDER_ENV_VARS`. */
@@ -163,7 +186,7 @@ export class PlatformModelsConfigError extends Error {
  * a missing_credential error when no entry in the chain is credentialed.
  */
 function resolveRole(
-  role: PlatformRole,
+  role: LanguageRole,
   userValue: string | readonly string[] | undefined,
   errors: ResolutionError[],
 ): LanguageModelV3 | null {
@@ -248,6 +271,88 @@ function resolveRole(
 }
 
 /**
+ * Image-role sibling of `resolveRole`. Same chain-walk semantics — primary
+ * → fallback_n, format/unknown-provider strict, credential-missing tolerant
+ * across multi-entry chains, fall through to `DEFAULT_PLATFORM_MODELS.image`
+ * when the user chain is fully uncredentialed — but constructs the model
+ * via `registry.imageModel(id)` and returns `ImageModelV3`.
+ *
+ * Forked from `resolveRole` rather than parameterized because the language
+ * path threads through `traceModel(...)` (LanguageModelV3-specific) and the
+ * image path doesn't. Generic abstraction at two callers buys less than it
+ * costs. Boot-time overlay validation (`unknown_image_model`) is a separate
+ * concern handled in a follow-up task.
+ */
+function resolveImageRole(
+  userValue: string | readonly string[] | undefined,
+  errors: ResolutionError[],
+): ImageModelV3 | null {
+  if (userValue !== undefined) {
+    const chain: readonly string[] = typeof userValue === "string" ? [userValue] : userValue;
+
+    for (const entry of chain) {
+      const parsed = parseModelId(entry);
+      if (!parsed) {
+        errors.push({
+          role: "image",
+          kind: "format",
+          value: entry,
+          detail: "must be in 'provider:model' format (e.g., 'google:gemini-2.5-flash-image')",
+        });
+        return null;
+      }
+      if (!isRegistryProvider(parsed.provider)) {
+        errors.push({
+          role: "image",
+          kind: "unknown_provider",
+          value: entry,
+          detail: `provider '${parsed.provider}' is not registered`,
+        });
+        return null;
+      }
+    }
+
+    for (const entry of chain) {
+      const parsed = parseModelId(entry);
+      if (parsed && isRegistryProvider(parsed.provider) && hasCredential(parsed.provider)) {
+        return registry.imageModel(buildRegistryModelId(parsed.provider, parsed.model));
+      }
+    }
+
+    if (chain.length === 1) {
+      const entry = chain[0];
+      if (entry !== undefined) {
+        errors.push({
+          role: "image",
+          kind: "missing_credential",
+          value: entry,
+          detail: "missing credentials",
+        });
+        return null;
+      }
+    }
+    // Multi-entry chain exhausted → continue to default chain below.
+  }
+
+  const chain = DEFAULT_PLATFORM_MODELS.image;
+  for (const candidate of chain) {
+    const parsed = parseModelId(candidate);
+    if (parsed && isRegistryProvider(parsed.provider) && hasCredential(parsed.provider)) {
+      return registry.imageModel(buildRegistryModelId(parsed.provider, parsed.model));
+    }
+  }
+
+  const fallback = chain[chain.length - 1] ?? "";
+  errors.push({
+    role: "image",
+    kind: "missing_credential",
+    value: fallback,
+    detail: "missing credentials (no default chain entry had credentials available)",
+  });
+  return null;
+}
+
+/**
  * Resolve a single `"provider:modelId"` string into a traced `LanguageModelV3`,
  * using the same provider registry and credential machinery as
  * `createPlatformModels`. Designed for per-request overrides (e.g. a chat-send
@@ -291,7 +396,10 @@ export function resolveModelFromString(spec: string): LanguageModelV3 {
  */
 export function createPlatformModels(config: PlatformModelsInput | null): PlatformModels {
   const userConfig = config?.models;
-  const roles: PlatformRole[] = ["labels", "classifier", "planner", "conversational"];
+  // Boot-time eager resolution covers only the four language roles today.
+  // Boot validation of `models.image` (overlay-id strictness) lands in a
+  // follow-up task; for now image errors surface at first `getImage()` call.
+  const roles: LanguageRole[] = ["labels", "classifier", "planner", "conversational"];
 
   const bootErrors: ResolutionError[] = [];
   for (const role of roles) {
@@ -309,12 +417,24 @@ export function createPlatformModels(config: PlatformModelsInput | null): Platfo
   }
 
   return {
-    get(role: PlatformRole): LanguageModelV3 {
+    get(role: LanguageRole): LanguageModelV3 {
       const errors: ResolutionError[] = [];
       const result = resolveRole(role, userConfig?.[role], errors);
       if (!result) {
         throw new PlatformModelsConfigError(errors);
       }
+      return result;
+    },
+    getImage(): ImageModelV3 {
+      const errors: ResolutionError[] = [];
+      const result = resolveImageRole(userConfig?.image, errors);
+      if (!result) {
+        throw new PlatformModelsConfigError(errors);
+      }
+      logger.info("Image model resolved", {
+        provider: result.provider,
+        modelId: result.modelId,
+      });
       return result;
     },
   };

@@ -5,6 +5,7 @@
  * creation failure, and MIME type handling.
  */
 
+import type { ImageModelV3 } from "@ai-sdk/provider";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { imageGenerationAgent } from "./agent.ts";
 
@@ -31,7 +32,6 @@ vi.mock("ai", () => ({ generateImage: generateImageMock }));
 vi.mock("./discovery.ts", () => ({ discoverImageFiles: discoverImageFilesMock }));
 
 vi.mock("@atlas/llm", () => ({
-  registry: { imageModel: () => "gemini-mock" },
   smallLLM: smallLLMMock,
 }));
 
@@ -42,6 +42,19 @@ vi.mock("@atlas/llm", () => ({
 const mockLogger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
 const mockStream = { emit: vi.fn() };
 
+const stubImageModel: ImageModelV3 = {
+  specificationVersion: "v3",
+  provider: "stub.image-model",
+  modelId: "stub-image",
+  maxImagesPerCall: 1,
+  doGenerate: () => Promise.reject(new Error("stub ImageModelV3 invoked")),
+};
+
+const stubPlatformModels = {
+  get: vi.fn(),
+  getImage: vi.fn(() => stubImageModel),
+};
+
 function makeContext(config?: Record<string, unknown>) {
   return {
     session: { sessionId: "sess-1", workspaceId: "ws-1", streamId: "chat-1" },
@@ -51,6 +64,7 @@ function makeContext(config?: Record<string, unknown>) {
     env: {},
     config,
     abortSignal: undefined,
+    platformModels: stubPlatformModels,
   } as never;
 }
 

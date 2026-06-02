@@ -1,6 +1,6 @@
 import { type ArtifactRef, createAgent, err, ok } from "@atlas/agent-sdk";
 import { ArtifactStorage } from "@atlas/core/artifacts/server";
-import { registry, smallLLM } from "@atlas/llm";
+import { smallLLM } from "@atlas/llm";
 import { stringifyError, truncateUnicode } from "@atlas/utils";
 import { generateImage } from "ai";
 import { z } from "zod";
@@ -96,7 +96,7 @@ export const imageGenerationAgent = createAgent<string, ImageGenerationOutput>({
     // Both route through LiteLLM when LITELLM_API_KEY is set.
 
     const result = await generateImage({
-      model: registry.imageModel("google:gemini-3.1-flash-image-preview"),
+      model: platformModels.getImage(),
       prompt: imagePrompt,
       size: IMAGE_SIZE,
       abortSignal,
