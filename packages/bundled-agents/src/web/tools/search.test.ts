@@ -15,6 +15,9 @@ const fakePlatformModels: PlatformModels = {
       "platformModels.getImageOverlayKey should not be called when LLM mocks are active",
     );
   },
+  reload: () => {
+    throw new Error("platformModels.reload should not be called when LLM mocks are active");
+  },
 };
 
 // ---------------------------------------------------------------------------

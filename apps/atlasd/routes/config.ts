@@ -640,7 +640,7 @@ configRoutes.put(
     tags: ["Config"],
     summary: "Update platform models in friday.yml",
     description:
-      "Writes the `models.*` section of `friday.yml`. Validates each entry via `createPlatformModels` before writing, so bad provider/model IDs (or missing credentials) fail fast with a descriptive message. Changes take effect on next daemon restart.",
+      "Writes the `models.*` section of `friday.yml`. Validates each entry via `createPlatformModels` before writing, so bad provider/model IDs (or missing credentials) fail fast with a descriptive message. On success, the daemon hot-reloads its live `PlatformModels` so the change takes effect on the next chat send — no restart required. Response's `restartRequired` flag is `false` in that case; `true` only if the hot-reload itself failed and a restart is needed to pick up the on-disk change.",
     responses: {
       200: {
         description: "friday.yml updated",
@@ -727,7 +727,25 @@ configRoutes.put(
 
       await writeFile(path, stringifyYaml(ordered), "utf-8");
       logger.info("Wrote friday.yml models section", { path, roles: Object.keys(newModels) });
-      return c.json({ success: true, restartRequired: true });
+
+      // Hot-swap the daemon's live `PlatformModels` so the next `get()` /
+      // `getImage()` returns the freshly-saved model — no daemon restart.
+      // The same instance is held by workspace runtimes, MCP servers, and
+      // every route's `ctx.platformModels`; `reload` mutates the closed-over
+      // userConfig in place, so all reference holders observe the swap.
+      // Pre-flight above proved the config validates; this reload should
+      // never throw, but if it does we log and surface the original
+      // success-with-restart-fallback response.
+      try {
+        const ctx = c.get("app");
+        ctx.platformModels.reload({ models: newModels });
+      } catch (error) {
+        logger.error("Wrote friday.yml but failed to hot-reload platform models", {
+          error: stringifyError(error),
+        });
+        return c.json({ success: true, restartRequired: true });
+      }
+      return c.json({ success: true, restartRequired: false });
     } catch (error) {
       logger.error("Failed to write friday.yml", { error: stringifyError(error) });
       return c.json({ success: false, error: stringifyError(error) }, 500);

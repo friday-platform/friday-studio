@@ -340,3 +340,67 @@ describe("createPlatformModels — lazy resolution", () => {
     expect(pm.get("labels").modelId).toBe("llama-3.3-70b");
   });
 });
+
+describe("createPlatformModels — reload", () => {
+  it("swaps the active language-role config in place — subsequent get() returns the new model", () => {
+    // Boot with anthropic-only credentials and a single-anthropic config.
+    stubEnv({ ANTHROPIC_API_KEY: "sk-ant-test", GROQ_API_KEY: "gsk_test" });
+    const pm = createPlatformModels({
+      models: { conversational: "anthropic:claude-sonnet-4-6" },
+    });
+    expect(pm.get("conversational").modelId).toBe("claude-sonnet-4-6");
+
+    // Settings UI swaps to a groq model. The same `pm` reference (held by
+    // workspaces, MCP servers, etc.) must serve the new model on next call.
+    pm.reload({ models: { conversational: "groq:llama-3.3-70b" } });
+    expect(pm.get("conversational").modelId).toBe("llama-3.3-70b");
+  });
+
+  it("swaps the active image-role config in place — subsequent getImage() returns the new model", () => {
+    // ANTHROPIC_API_KEY needed because language roles eagerly resolve at boot
+    // and default to anthropic — missing creds there fail boot before we get
+    // to exercise reload.
+    stubEnv({
+      ANTHROPIC_API_KEY: "sk-ant-test",
+      GEMINI_API_KEY: "gemini-test",
+      OPENAI_API_KEY: "sk-test",
+    });
+    const pm = createPlatformModels({
+      models: { image: "google:gemini-2.5-flash-image" },
+    });
+    expect(pm.getImageOverlayKey()).toBe("google:gemini-2.5-flash-image");
+
+    pm.reload({ models: { image: "openai:dall-e-3" } });
+    expect(pm.getImageOverlayKey()).toBe("openai:dall-e-3");
+  });
+
+  it("throws PlatformModelsConfigError on bad input WITHOUT mutating state", () => {
+    stubEnv({ ANTHROPIC_API_KEY: "sk-ant-test" });
+    const pm = createPlatformModels({
+      models: { conversational: "anthropic:claude-sonnet-4-6" },
+    });
+
+    // Reload with a typo'd image model — overlay lookup fails, throws.
+    expect(() =>
+      pm.reload({ models: { image: "google:not-a-real-model" } }),
+    ).toThrow(PlatformModelsConfigError);
+
+    // Pre-reload conversational config must still be active — failed reload
+    // leaves state untouched.
+    expect(pm.get("conversational").modelId).toBe("claude-sonnet-4-6");
+  });
+
+  it("accepts null input (resets to defaults)", () => {
+    stubEnv({ ANTHROPIC_API_KEY: "sk-ant-test" });
+    const pm = createPlatformModels({
+      models: { conversational: "anthropic:claude-haiku-4-5" },
+    });
+    expect(pm.get("conversational").modelId).toBe("claude-haiku-4-5");
+
+    // Settings UI clears the conversational override → null/empty config.
+    // Default chain takes over (anthropic:claude-sonnet-4-6 for
+    // conversational).
+    pm.reload(null);
+    expect(pm.get("conversational").modelId).toBe("claude-sonnet-4-6");
+  });
+});

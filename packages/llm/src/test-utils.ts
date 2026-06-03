@@ -80,5 +80,8 @@ export function createStubPlatformModels(
     getImageOverlayKey(): string {
       return overrides?.imageOverlayKey ?? "google:gemini-2.5-flash-image";
     },
+    // No-op reload. Tests that exercise the live-reload path should construct
+    // a real `createPlatformModels` (or assert against this stub's call).
+    reload(): void {},
   };
 }

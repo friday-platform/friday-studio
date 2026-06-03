@@ -16,6 +16,9 @@ const fakePlatformModels: PlatformModels = {
       "platformModels.getImageOverlayKey should not be called when smallLLM is mocked",
     );
   },
+  reload: () => {
+    throw new Error("platformModels.reload should not be called when smallLLM is mocked");
+  },
 };
 
 // ─── Module mocks ────────────────────────────────────────────────────────────

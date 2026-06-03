@@ -61,6 +61,9 @@ function buildMockContext(): AgentContext {
       getImageOverlayKey: () => {
         throw new Error("platformModels.getImageOverlayKey should not be called in this test");
       },
+      reload: () => {
+        throw new Error("platformModels.reload should not be called in this test");
+      },
     } satisfies PlatformModels,
   };
 }

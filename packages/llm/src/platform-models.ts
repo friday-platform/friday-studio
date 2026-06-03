@@ -71,11 +71,20 @@ type LanguageRole = Exclude<PlatformRole, "image">;
  * `provider` string (e.g. `"google.generative-ai"`) — neither match the
  * capability overlay's `provider:model` keying. Callers that need to look
  * up overlay metadata must use this method, not `model.modelId`.
+ *
+ * `reload(input)` swaps the internal config in place after re-running the
+ * same boot-time validation. The daemon and every long-lived consumer
+ * (workspace runtimes, MCP servers, route handlers) hold a stable
+ * reference to one `PlatformModels` instance — `reload` lets the
+ * Settings UI's PUT /api/config/models take effect on the next
+ * `get`/`getImage` call without restarting the daemon. Throws
+ * `PlatformModelsConfigError` on bad input WITHOUT mutating state.
  */
 export interface PlatformModels {
   get(role: LanguageRole): LanguageModelV3;
   getImage(): ImageModelV3;
   getImageOverlayKey(): string;
+  reload(input: PlatformModelsInput | null): void;
 }
 
 /**
@@ -495,24 +504,38 @@ function preflightImageRoleAtBoot(
  * intentionally unset, while still catching typos in `models.image`.
  */
 export function createPlatformModels(config: PlatformModelsInput | null): PlatformModels {
-  const userConfig = config?.models;
-  const roles: LanguageRole[] = ["labels", "classifier", "planner", "conversational"];
+  // Mutable so `reload()` can swap in a new config without invalidating
+  // long-lived references held by workspace runtimes, MCP servers, and
+  // route handlers. The closure-captured cell is the only path through
+  // which `get`/`getImage`/`getImageOverlayKey` read user config.
+  let userConfig = config?.models;
 
-  const bootErrors: ResolutionError[] = [];
-  for (const role of roles) {
-    const result = resolveRole(role, userConfig?.[role], bootErrors);
-    if (result) {
-      logger.info("Platform model resolved", {
-        role,
-        provider: result.provider,
-        modelId: result.modelId,
-      });
+  /**
+   * Eagerly validate every role and log each resolved language model.
+   * Reused by boot and `reload()` so both paths share identical semantics:
+   * any aggregated `PlatformModelsConfigError` aborts without mutating
+   * state, success logs the per-role resolution.
+   */
+  const validateAndLog = (candidate: PlatformModelsInput["models"] | undefined): void => {
+    const roles: LanguageRole[] = ["labels", "classifier", "planner", "conversational"];
+    const errors: ResolutionError[] = [];
+    for (const role of roles) {
+      const result = resolveRole(role, candidate?.[role], errors);
+      if (result) {
+        logger.info("Platform model resolved", {
+          role,
+          provider: result.provider,
+          modelId: result.modelId,
+        });
+      }
     }
-  }
-  preflightImageRoleAtBoot(userConfig?.image, bootErrors);
-  if (bootErrors.length > 0) {
-    throw new PlatformModelsConfigError(bootErrors);
-  }
+    preflightImageRoleAtBoot(candidate?.image, errors);
+    if (errors.length > 0) {
+      throw new PlatformModelsConfigError(errors);
+    }
+  };
+
+  validateAndLog(userConfig);
 
   return {
     get(role: LanguageRole): LanguageModelV3 {
@@ -543,6 +566,14 @@ export function createPlatformModels(config: PlatformModelsInput | null): Platfo
         throw new PlatformModelsConfigError(errors);
       }
       return result.key;
+    },
+    reload(input: PlatformModelsInput | null): void {
+      // Re-validate against the candidate config BEFORE mutating the cell.
+      // `validateAndLog` throws on any aggregated error, leaving `userConfig`
+      // untouched — callers see the same `PlatformModelsConfigError` shape
+      // they get at boot.
+      validateAndLog(input?.models);
+      userConfig = input?.models;
     },
   };
 }
