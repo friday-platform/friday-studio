@@ -17,10 +17,9 @@ import { mkdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
+import { createPlatformModels, type PlatformModels } from "@atlas/llm";
 import { Hono } from "hono";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-
-import { createPlatformModels, type PlatformModels } from "@atlas/llm";
 import type { AppContext, AppVariables } from "../src/factory.ts";
 
 // The PUT /env handler busts two caches in @atlas/llm after writing

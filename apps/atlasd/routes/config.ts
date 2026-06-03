@@ -713,7 +713,11 @@ configRoutes.put(
         // with only `models:`). Supply defaults when the file didn't exist or
         // was otherwise missing these.
         if (!("version" in next)) next.version = "1.0";
-        if (!("workspace" in next) || typeof next.workspace !== "object" || next.workspace === null) {
+        if (
+          !("workspace" in next) ||
+          typeof next.workspace !== "object" ||
+          next.workspace === null
+        ) {
           next.workspace = { name: "atlas-platform" };
         }
 

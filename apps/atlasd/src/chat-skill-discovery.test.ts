@@ -12,9 +12,7 @@ const fakePlatformModels = createStubPlatformModels({
     throw new Error("platformModels.get should not be called when smallLLM is mocked");
   },
   getImageResolved: () => {
-    throw new Error(
-      "platformModels.getImageResolved should not be called when smallLLM is mocked",
-    );
+    throw new Error("platformModels.getImageResolved should not be called when smallLLM is mocked");
   },
 });
 
