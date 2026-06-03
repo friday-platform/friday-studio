@@ -14,8 +14,10 @@
 
   Save button at the bottom PUTs `/api/config/models` with chains; the
   daemon validates each entry via `createPlatformModels` before writing
-  friday.yml. Restart required for changes to take effect — banner
-  reminds the user after a successful save.
+  friday.yml and hot-reloads its live `PlatformModels` so changes take
+  effect immediately. The success banner reflects the daemon's
+  `restartRequired` response — affirmative on hot-reload, falls back to
+  the restart-required message only if the hot-swap failed.
 
   @component
 -->
@@ -45,6 +47,10 @@
   import { z } from "zod";
 
   const TunnelStatusSchema = z.object({ url: z.string().nullable() });
+  const SaveModelsResponseSchema = z.object({
+    success: z.literal(true),
+    restartRequired: z.boolean(),
+  });
 
   // ─── Types mirroring the daemon's route shapes ─────────────────────
 
@@ -505,7 +511,11 @@
         modelsError = msg;
         return;
       }
-      successFlash = "Saved to friday.yml. Restart the daemon to apply.";
+      const parsed = SaveModelsResponseSchema.safeParse(body);
+      successFlash =
+        parsed.success && !parsed.data.restartRequired
+          ? "Saved. Active now."
+          : "Saved to friday.yml. Restart the daemon to apply.";
       setTimeout(() => {
         successFlash = null;
       }, 4000);
