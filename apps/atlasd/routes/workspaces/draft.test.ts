@@ -96,7 +96,12 @@ function createApp(opts: { workspaceDir: string; workspaceId: string }) {
     getAgentRegistry: vi.fn(),
     getOrCreateChatSdkInstance: vi.fn(),
     exposeKernel: false,
-    platformModels: { get: vi.fn(), getImage: vi.fn(), getImageOverlayKey: vi.fn(), reload: vi.fn() },
+    platformModels: {
+      get: vi.fn(),
+      getImage: vi.fn(),
+      getImageOverlayKey: vi.fn(),
+      reload: vi.fn(),
+    },
   };
 
   const app = new Hono<AppVariables>();
@@ -291,7 +296,12 @@ describe("Draft file flow", () => {
       getAgentRegistry: vi.fn(),
       getOrCreateChatSdkInstance: vi.fn(),
       exposeKernel: false,
-      platformModels: { get: vi.fn(), getImage: vi.fn(), getImageOverlayKey: vi.fn(), reload: vi.fn() },
+      platformModels: {
+        get: vi.fn(),
+        getImage: vi.fn(),
+        getImageOverlayKey: vi.fn(),
+        reload: vi.fn(),
+      },
     };
 
     const app = new Hono<AppVariables>();
@@ -345,7 +355,12 @@ describe("Draft file flow", () => {
       getAgentRegistry: vi.fn(),
       getOrCreateChatSdkInstance: vi.fn(),
       exposeKernel: false,
-      platformModels: { get: vi.fn(), getImage: vi.fn(), getImageOverlayKey: vi.fn(), reload: vi.fn() },
+      platformModels: {
+        get: vi.fn(),
+        getImage: vi.fn(),
+        getImageOverlayKey: vi.fn(),
+        reload: vi.fn(),
+      },
     };
 
     const app = new Hono<AppVariables>();
@@ -867,7 +882,12 @@ describe("Draft file flow", () => {
       getAgentRegistry: vi.fn(),
       getOrCreateChatSdkInstance: vi.fn(),
       exposeKernel: false,
-      platformModels: { get: vi.fn(), getImage: vi.fn(), getImageOverlayKey: vi.fn(), reload: vi.fn() },
+      platformModels: {
+        get: vi.fn(),
+        getImage: vi.fn(),
+        getImageOverlayKey: vi.fn(),
+        reload: vi.fn(),
+      },
     };
 
     const app = new Hono<AppVariables>();

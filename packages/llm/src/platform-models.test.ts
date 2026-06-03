@@ -345,9 +345,7 @@ describe("createPlatformModels — reload", () => {
   it("swaps the active language-role config in place — subsequent get() returns the new model", () => {
     // Boot with anthropic-only credentials and a single-anthropic config.
     stubEnv({ ANTHROPIC_API_KEY: "sk-ant-test", GROQ_API_KEY: "gsk_test" });
-    const pm = createPlatformModels({
-      models: { conversational: "anthropic:claude-sonnet-4-6" },
-    });
+    const pm = createPlatformModels({ models: { conversational: "anthropic:claude-sonnet-4-6" } });
     expect(pm.get("conversational").modelId).toBe("claude-sonnet-4-6");
 
     // Settings UI swaps to a groq model. The same `pm` reference (held by
@@ -365,9 +363,7 @@ describe("createPlatformModels — reload", () => {
       GEMINI_API_KEY: "gemini-test",
       OPENAI_API_KEY: "sk-test",
     });
-    const pm = createPlatformModels({
-      models: { image: "google:gemini-2.5-flash-image" },
-    });
+    const pm = createPlatformModels({ models: { image: "google:gemini-2.5-flash-image" } });
     expect(pm.getImageOverlayKey()).toBe("google:gemini-2.5-flash-image");
 
     pm.reload({ models: { image: "openai:dall-e-3" } });
@@ -376,14 +372,12 @@ describe("createPlatformModels — reload", () => {
 
   it("throws PlatformModelsConfigError on bad input WITHOUT mutating state", () => {
     stubEnv({ ANTHROPIC_API_KEY: "sk-ant-test" });
-    const pm = createPlatformModels({
-      models: { conversational: "anthropic:claude-sonnet-4-6" },
-    });
+    const pm = createPlatformModels({ models: { conversational: "anthropic:claude-sonnet-4-6" } });
 
     // Reload with a typo'd image model — overlay lookup fails, throws.
-    expect(() =>
-      pm.reload({ models: { image: "google:not-a-real-model" } }),
-    ).toThrow(PlatformModelsConfigError);
+    expect(() => pm.reload({ models: { image: "google:not-a-real-model" } })).toThrow(
+      PlatformModelsConfigError,
+    );
 
     // Pre-reload conversational config must still be active — failed reload
     // leaves state untouched.
@@ -392,9 +386,7 @@ describe("createPlatformModels — reload", () => {
 
   it("accepts null input (resets to defaults)", () => {
     stubEnv({ ANTHROPIC_API_KEY: "sk-ant-test" });
-    const pm = createPlatformModels({
-      models: { conversational: "anthropic:claude-haiku-4-5" },
-    });
+    const pm = createPlatformModels({ models: { conversational: "anthropic:claude-haiku-4-5" } });
     expect(pm.get("conversational").modelId).toBe("claude-haiku-4-5");
 
     // Settings UI clears the conversational override → null/empty config.

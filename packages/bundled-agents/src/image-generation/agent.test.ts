@@ -93,9 +93,7 @@ function useImageModel(overlayKey: string): void {
   if (!provider || !modelId) {
     throw new Error(`useImageModel: malformed overlay key "${overlayKey}"`);
   }
-  stubPlatformModels.getImage.mockReturnValueOnce(
-    makeStubImageModel(`stub.${provider}`, modelId),
-  );
+  stubPlatformModels.getImage.mockReturnValueOnce(makeStubImageModel(`stub.${provider}`, modelId));
   stubPlatformModels.getImageOverlayKey.mockReturnValueOnce(overlayKey);
 }
 
