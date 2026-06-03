@@ -60,9 +60,9 @@ export const imageGenerationAgent = createAgent<string, ImageGenerationOutput>({
     // The overlay is keyed by `provider:model` (e.g. "google:gemini-2.5-flash-image"),
     // but `model.modelId` is bare (e.g. "gemini-2.5-flash-image") and `model.provider`
     // is the SDK transport string (e.g. "google.generative-ai") — neither will match.
-    // `getImageOverlayKey()` returns the configured spec used to build the model.
-    const model = platformModels.getImage();
-    const overlayKey = platformModels.getImageOverlayKey();
+    // `getImageResolved()` returns both the SDK model and the configured spec
+    // (the overlay key) from a single resolver pass — they can't diverge.
+    const { key: overlayKey, model } = platformModels.getImageResolved();
     const entry = lookupImageEntry(overlayKey);
     if (entry === null) {
       logger.error("Image model missing from capability overlay", { overlayKey });

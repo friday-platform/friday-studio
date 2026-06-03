@@ -43,8 +43,8 @@ export interface PlatformModelsInput {
  *
  * Note: `"image"` is a fifth role but is NOT served by `get(role)` —
  * `get` returns `LanguageModelV3` and image models are `ImageModelV3`.
- * Image resolution is on the sibling `getImage()` method. The literal
- * is included here so `DEFAULT_PLATFORM_MODELS` and config-shape
+ * Image resolution is on the sibling `getImageResolved()` method. The
+ * literal is included here so `DEFAULT_PLATFORM_MODELS` and config-shape
  * machinery can be keyed uniformly across all five roles.
  */
 export type PlatformRole = "labels" | "classifier" | "planner" | "conversational" | "image";
@@ -52,7 +52,7 @@ export type PlatformRole = "labels" | "classifier" | "planner" | "conversational
 /**
  * Roles whose model is a `LanguageModelV3` (resolved via `get(role)`).
  * Excludes `"image"`, which produces an `ImageModelV3` and routes
- * through the separate `getImage()` method.
+ * through the separate `getImageResolved()` method.
  */
 type LanguageRole = Exclude<PlatformRole, "image">;
 
@@ -60,30 +60,33 @@ type LanguageRole = Exclude<PlatformRole, "image">;
  * Injected dependency providing pre-traced model instances for each
  * platform task archetype. Constructed once per daemon at boot.
  *
- * `get(role)` covers the four language roles; `getImage()` is a sibling
- * for image generation. Two methods because the return types differ at
- * the SDK layer (`LanguageModelV3` vs `ImageModelV3`) — a single
- * polymorphic `get` would force callers to narrow, defeating its purpose.
+ * `get(role)` covers the four language roles; `getImageResolved()` is a
+ * sibling for image generation. Two methods because the return types
+ * differ at the SDK layer (`LanguageModelV3` vs `ImageModelV3`) — a
+ * single polymorphic `get` would force callers to narrow, defeating its
+ * purpose.
  *
- * `getImageOverlayKey()` returns the resolved `provider:model` spec used
- * to build the image model (e.g. `"google:gemini-2.5-flash-image"`). The
- * SDK `ImageModelV3` exposes only a bare `modelId` and a transport-shaped
- * `provider` string (e.g. `"google.generative-ai"`) — neither match the
- * capability overlay's `provider:model` keying. Callers that need to look
- * up overlay metadata must use this method, not `model.modelId`.
+ * `getImageResolved()` returns both the SDK `ImageModelV3` and the
+ * resolved `provider:model` spec used to build it (e.g.
+ * `"google:gemini-2.5-flash-image"`). They come from a single resolver
+ * pass so they can't diverge if `process.env` flips between lookups.
+ * The SDK `ImageModelV3` exposes only a bare `modelId` and a
+ * transport-shaped `provider` string (e.g. `"google.generative-ai"`) —
+ * neither match the capability overlay's `provider:model` keying.
+ * Callers that need to look up overlay metadata must use the returned
+ * `key`, not `model.modelId`.
  *
  * `reload(input)` swaps the internal config in place after re-running the
  * same boot-time validation. The daemon and every long-lived consumer
  * (workspace runtimes, MCP servers, route handlers) hold a stable
  * reference to one `PlatformModels` instance — `reload` lets the
  * Settings UI's PUT /api/config/models take effect on the next
- * `get`/`getImage` call without restarting the daemon. Throws
+ * `get`/`getImageResolved` call without restarting the daemon. Throws
  * `PlatformModelsConfigError` on bad input WITHOUT mutating state.
  */
 export interface PlatformModels {
   get(role: LanguageRole): LanguageModelV3;
-  getImage(): ImageModelV3;
-  getImageOverlayKey(): string;
+  getImageResolved(): { key: string; model: ImageModelV3 };
   reload(input: PlatformModelsInput | null): void;
 }
 
@@ -440,9 +443,9 @@ export function resolveModelFromString(spec: string): LanguageModelV3 {
 /**
  * Boot-time pre-flight for `models.image`. Validates that every chain entry
  * parses, names a known provider, and has an `IMAGE_OVERLAY` entry. Does NOT
- * resolve credentials — those are checked lazily by `getImage()` so a daemon
- * can boot without every overlay provider's key present and only fail when
- * image-gen is actually invoked.
+ * resolve credentials — those are checked lazily by `getImageResolved()` so
+ * a daemon can boot without every overlay provider's key present and only
+ * fail when image-gen is actually invoked.
  *
  * Pushes errors into the shared `bootErrors` array so image problems aggregate
  * with language-role problems into a single `PlatformModelsConfigError`.
@@ -500,14 +503,14 @@ function preflightImageRoleAtBoot(
  * language roles: language roles eagerly resolve (including credentials)
  * because their defaults always require keys; the image role only pre-flights
  * format/provider/overlay membership and defers credential checks to
- * `getImage()`. This keeps daemons bootable when image providers are
+ * `getImageResolved()`. This keeps daemons bootable when image providers are
  * intentionally unset, while still catching typos in `models.image`.
  */
 export function createPlatformModels(config: PlatformModelsInput | null): PlatformModels {
   // Mutable so `reload()` can swap in a new config without invalidating
   // long-lived references held by workspace runtimes, MCP servers, and
   // route handlers. The closure-captured cell is the only path through
-  // which `get`/`getImage`/`getImageOverlayKey` read user config.
+  // which `get`/`getImageResolved` read user config.
   let userConfig = config?.models;
 
   /**
@@ -546,7 +549,7 @@ export function createPlatformModels(config: PlatformModelsInput | null): Platfo
       }
       return result;
     },
-    getImage(): ImageModelV3 {
+    getImageResolved(): ResolvedImage {
       const errors: ResolutionError[] = [];
       const result = resolveImageRole(userConfig?.image, errors);
       if (!result) {
@@ -557,15 +560,7 @@ export function createPlatformModels(config: PlatformModelsInput | null): Platfo
         provider: result.model.provider,
         modelId: result.model.modelId,
       });
-      return result.model;
-    },
-    getImageOverlayKey(): string {
-      const errors: ResolutionError[] = [];
-      const result = resolveImageRole(userConfig?.image, errors);
-      if (!result) {
-        throw new PlatformModelsConfigError(errors);
-      }
-      return result.key;
+      return result;
     },
     reload(input: PlatformModelsInput | null): void {
       // Re-validate against the candidate config BEFORE mutating the cell.

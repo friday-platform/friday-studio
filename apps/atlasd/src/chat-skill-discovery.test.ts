@@ -8,12 +8,9 @@ const fakePlatformModels: PlatformModels = {
   get: () => {
     throw new Error("platformModels.get should not be called when smallLLM is mocked");
   },
-  getImage: () => {
-    throw new Error("platformModels.getImage should not be called when smallLLM is mocked");
-  },
-  getImageOverlayKey: () => {
+  getImageResolved: () => {
     throw new Error(
-      "platformModels.getImageOverlayKey should not be called when smallLLM is mocked",
+      "platformModels.getImageResolved should not be called when smallLLM is mocked",
     );
   },
   reload: () => {

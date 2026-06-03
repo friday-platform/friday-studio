@@ -37,14 +37,9 @@ const stubPlatformModels: PlatformModels = {
       `Playground context has no PlatformModels configured — got request for '${role}'. Pass one via PlaygroundContextOpts.platformModels.`,
     );
   },
-  getImage() {
+  getImageResolved() {
     throw new Error(
-      `Playground context has no PlatformModels configured — got request for 'image'. Pass one via PlaygroundContextOpts.platformModels.`,
-    );
-  },
-  getImageOverlayKey() {
-    throw new Error(
-      `Playground context has no PlatformModels configured — got request for 'image overlay key'. Pass one via PlaygroundContextOpts.platformModels.`,
+      `Playground context has no PlatformModels configured — got request for image resolution. Pass one via PlaygroundContextOpts.platformModels.`,
     );
   },
   reload() {

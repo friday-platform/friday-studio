@@ -43,17 +43,18 @@ export interface Logger {
 /** Task archetype for a platform LLM call site. */
 export type PlatformRole = "labels" | "classifier" | "planner" | "conversational" | "image";
 
-/** Roles whose model is a `LanguageModelV3`. Image is served by `getImage()`. */
+/** Roles whose model is a `LanguageModelV3`. Image is served by `getImageResolved()`. */
 type LanguageRole = Exclude<PlatformRole, "image">;
 
 /**
  * Resolves platform models by task archetype. Daemon constructs this once at boot.
  *
- * `getImageOverlayKey()` returns the resolved `provider:model` spec used to
- * build the image model (e.g. `"google:gemini-2.5-flash-image"`). The SDK
- * `ImageModelV3` exposes only a bare `modelId` and a transport-shaped
+ * `getImageResolved()` returns both the SDK `ImageModelV3` and the resolved
+ * `provider:model` spec used to build it (e.g. `"google:gemini-2.5-flash-image"`).
+ * They come from a single resolver pass so they can't diverge between calls.
+ * The SDK `ImageModelV3` exposes only a bare `modelId` and a transport-shaped
  * `provider` string — neither match the capability overlay's `provider:model`
- * keying. Callers that need overlay metadata must use this method, not
+ * keying. Callers that need overlay metadata must use the returned `key`, not
  * `model.modelId`.
  *
  * `reload(input)` is on the interface so the daemon's `PUT /api/config/models`
@@ -65,8 +66,7 @@ type LanguageRole = Exclude<PlatformRole, "image">;
  */
 export interface PlatformModels {
   get(role: LanguageRole): LanguageModelV3;
-  getImage(): ImageModelV3;
-  getImageOverlayKey(): string;
+  getImageResolved(): { key: string; model: ImageModelV3 };
   reload(input: unknown): void;
 }
 

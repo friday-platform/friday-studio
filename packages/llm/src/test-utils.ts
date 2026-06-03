@@ -47,8 +47,8 @@ function createStubImageModel(): ImageModelV3 {
  *
  * `imageOverlayKey` defaults to the canonical overlay default
  * (`google:gemini-2.5-flash-image`) so agents that look up capability metadata
- * via `getImageOverlayKey()` resolve a real overlay entry. Override per-test
- * to exercise other entries (e.g. `"openai:dall-e-3"` for size-axis dispatch).
+ * via the resolved `key` resolve a real overlay entry. Override per-test to
+ * exercise other entries (e.g. `"openai:dall-e-3"` for size-axis dispatch).
  *
  * @example
  * ```ts
@@ -74,11 +74,11 @@ export function createStubPlatformModels(
       }
       return createStubLanguageModel(role);
     },
-    getImage(): ImageModelV3 {
-      return overrides?.image ?? createStubImageModel();
-    },
-    getImageOverlayKey(): string {
-      return overrides?.imageOverlayKey ?? "google:gemini-2.5-flash-image";
+    getImageResolved(): { key: string; model: ImageModelV3 } {
+      return {
+        key: overrides?.imageOverlayKey ?? "google:gemini-2.5-flash-image",
+        model: overrides?.image ?? createStubImageModel(),
+      };
     },
     // No-op reload. Tests that exercise the live-reload path should construct
     // a real `createPlatformModels` (or assert against this stub's call).

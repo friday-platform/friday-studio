@@ -219,7 +219,7 @@ describe("resolveModelFromString", () => {
   });
 });
 
-describe("createPlatformModels — getImage", () => {
+describe("createPlatformModels — getImageResolved", () => {
   it("returns the first chain entry with credentials present and skips uncredentialed entries", () => {
     // Anthropic key keeps the four LLM roles' default chains resolvable
     // (boot-time eager validation). Gemini key credentials the second
@@ -229,18 +229,19 @@ describe("createPlatformModels — getImage", () => {
     const pm = createPlatformModels({
       models: { image: ["openai:gpt-image-1.5", "google:gemini-2.5-flash-image"] },
     });
-    const image = pm.getImage();
-    expect(image.modelId).toBe("gemini-2.5-flash-image");
-    expect(image.provider).toContain("google");
+    const { key, model } = pm.getImageResolved();
+    expect(key).toBe("google:gemini-2.5-flash-image");
+    expect(model.modelId).toBe("gemini-2.5-flash-image");
+    expect(model.provider).toContain("google");
   });
 
   it("throws PlatformModelsConfigError when no chain entry has credentials", () => {
     // Credential only anthropic so the default LLM-role chains pass boot.
     // Image default is `google:gemini-2.5-flash-image`, which has no
-    // matching GEMINI_API_KEY → `getImage()` exhausts and throws.
+    // matching GEMINI_API_KEY → `getImageResolved()` exhausts and throws.
     stubEnv({ ANTHROPIC_API_KEY: "sk-ant-test" });
     const pm = createPlatformModels(null);
-    expect(() => pm.getImage()).toThrow(PlatformModelsConfigError);
+    expect(() => pm.getImageResolved()).toThrow(PlatformModelsConfigError);
   });
 });
 
@@ -354,7 +355,7 @@ describe("createPlatformModels — reload", () => {
     expect(pm.get("conversational").modelId).toBe("llama-3.3-70b");
   });
 
-  it("swaps the active image-role config in place — subsequent getImage() returns the new model", () => {
+  it("swaps the active image-role config in place — subsequent getImageResolved() returns the new model", () => {
     // ANTHROPIC_API_KEY needed because language roles eagerly resolve at boot
     // and default to anthropic — missing creds there fail boot before we get
     // to exercise reload.
@@ -364,10 +365,10 @@ describe("createPlatformModels — reload", () => {
       OPENAI_API_KEY: "sk-test",
     });
     const pm = createPlatformModels({ models: { image: "google:gemini-2.5-flash-image" } });
-    expect(pm.getImageOverlayKey()).toBe("google:gemini-2.5-flash-image");
+    expect(pm.getImageResolved().key).toBe("google:gemini-2.5-flash-image");
 
     pm.reload({ models: { image: "openai:dall-e-3" } });
-    expect(pm.getImageOverlayKey()).toBe("openai:dall-e-3");
+    expect(pm.getImageResolved().key).toBe("openai:dall-e-3");
   });
 
   it("throws PlatformModelsConfigError on bad input WITHOUT mutating state", () => {

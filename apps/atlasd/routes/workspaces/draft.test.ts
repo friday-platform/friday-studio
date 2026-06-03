@@ -98,8 +98,7 @@ function createApp(opts: { workspaceDir: string; workspaceId: string }) {
     exposeKernel: false,
     platformModels: {
       get: vi.fn(),
-      getImage: vi.fn(),
-      getImageOverlayKey: vi.fn(),
+      getImageResolved: vi.fn(),
       reload: vi.fn(),
     },
   };
@@ -298,8 +297,7 @@ describe("Draft file flow", () => {
       exposeKernel: false,
       platformModels: {
         get: vi.fn(),
-        getImage: vi.fn(),
-        getImageOverlayKey: vi.fn(),
+        getImageResolved: vi.fn(),
         reload: vi.fn(),
       },
     };
@@ -357,8 +355,7 @@ describe("Draft file flow", () => {
       exposeKernel: false,
       platformModels: {
         get: vi.fn(),
-        getImage: vi.fn(),
-        getImageOverlayKey: vi.fn(),
+        getImageResolved: vi.fn(),
         reload: vi.fn(),
       },
     };
@@ -884,8 +881,7 @@ describe("Draft file flow", () => {
       exposeKernel: false,
       platformModels: {
         get: vi.fn(),
-        getImage: vi.fn(),
-        getImageOverlayKey: vi.fn(),
+        getImageResolved: vi.fn(),
         reload: vi.fn(),
       },
     };

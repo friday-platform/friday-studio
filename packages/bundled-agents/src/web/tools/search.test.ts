@@ -7,12 +7,9 @@ const fakePlatformModels: PlatformModels = {
   get: () => {
     throw new Error("platformModels.get should not be called when LLM mocks are active");
   },
-  getImage: () => {
-    throw new Error("platformModels.getImage should not be called when LLM mocks are active");
-  },
-  getImageOverlayKey: () => {
+  getImageResolved: () => {
     throw new Error(
-      "platformModels.getImageOverlayKey should not be called when LLM mocks are active",
+      "platformModels.getImageResolved should not be called when LLM mocks are active",
     );
   },
   reload: () => {

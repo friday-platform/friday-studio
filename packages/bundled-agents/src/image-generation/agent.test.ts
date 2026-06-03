@@ -57,9 +57,9 @@ const mockStream = { emit: vi.fn() };
  * `provider: "google.generative-ai"`, `modelId: "gemini-2.5-flash-image"`,
  * neither of which match the capability overlay's `provider:model` key. By
  * keeping the stub's shape SDK-accurate (rather than stuffing the overlay key
- * into `modelId`), tests prove the agent looks up the overlay via
- * `getImageOverlayKey()` and not via `model.modelId` — a regression to the
- * latter would miss every overlay entry and fail the test.
+ * into `modelId`), tests prove the agent looks up the overlay via the resolved
+ * `key` and not via `model.modelId` — a regression to the latter would miss
+ * every overlay entry and fail the test.
  */
 function makeStubImageModel(provider: string, modelId: string): ImageModelV3 {
   return {
@@ -73,28 +73,33 @@ function makeStubImageModel(provider: string, modelId: string): ImageModelV3 {
 
 // SDK-shaped defaults: provider is the transport string, modelId is the bare id.
 // Neither matches an overlay key on its own — capability lookup must go through
-// `getImageOverlayKey()`.
+// the resolved `key` returned by `getImageResolved()`.
 const stubImageModel = makeStubImageModel("google.generative-ai", "gemini-2.5-flash-image");
 
 const stubPlatformModels = {
   get: vi.fn(),
-  getImage: vi.fn(() => stubImageModel),
-  getImageOverlayKey: vi.fn(() => "google:gemini-2.5-flash-image"),
+  getImageResolved: vi.fn(() => ({
+    key: "google:gemini-2.5-flash-image",
+    model: stubImageModel,
+  })),
 };
 
 /**
- * Swap the current image model + overlay key for one test. Sync helper so the
- * two `getImage`/`getImageOverlayKey` mocks can't drift out of step. The model
- * is built with the bare id half of the overlay key (post-colon) on a generic
- * stub provider — same SDK shape as production.
+ * Swap the current image model + overlay key for one test. The pair is
+ * returned atomically from `getImageResolved()`, so this just queues a
+ * one-shot return value. The model is built with the bare id half of the
+ * overlay key (post-colon) on a generic stub provider — same SDK shape as
+ * production.
  */
 function useImageModel(overlayKey: string): void {
   const [provider, modelId] = overlayKey.split(":");
   if (!provider || !modelId) {
     throw new Error(`useImageModel: malformed overlay key "${overlayKey}"`);
   }
-  stubPlatformModels.getImage.mockReturnValueOnce(makeStubImageModel(`stub.${provider}`, modelId));
-  stubPlatformModels.getImageOverlayKey.mockReturnValueOnce(overlayKey);
+  stubPlatformModels.getImageResolved.mockReturnValueOnce({
+    key: overlayKey,
+    model: makeStubImageModel(`stub.${provider}`, modelId),
+  });
 }
 
 function makeContext(config?: Record<string, unknown>) {
@@ -559,14 +564,14 @@ describe("imageGenerationAgent", () => {
     // "gemini-2.5-flash-image" — neither is an overlay key. If the agent
     // regresses to either lookup, it'll hit the null branch and `err()` with
     // "unknown to Friday's capability overlay" instead of generating.
-    test("uses getImageOverlayKey() — not model.modelId — for capability lookup", async () => {
+    test("uses resolved overlay key — not model.modelId — for capability lookup", async () => {
       generateImageMock.mockResolvedValue(makeGenerateImageResult([makeImageFile()]));
       setupSaveMocks();
 
       const result = await imageGenerationAgent.execute("Generate a cat", makeContext());
 
       expect(result.ok).toBe(true);
-      expect(stubPlatformModels.getImageOverlayKey).toHaveBeenCalled();
+      expect(stubPlatformModels.getImageResolved).toHaveBeenCalled();
       expect(generateImageMock).toHaveBeenCalled();
     });
   });
