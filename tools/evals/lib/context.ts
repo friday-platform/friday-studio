@@ -200,6 +200,11 @@ const stubPlatformModels: PlatformModels = {
       `Eval AgentContextAdapter has no PlatformModels configured — got request for image overlay key. Pass a real resolver to the constructor once evals adopt the platform model path.`,
     );
   },
+  reload() {
+    throw new Error(
+      `Eval AgentContextAdapter has no PlatformModels configured — got reload() call. Pass a real resolver to the constructor once evals adopt the platform model path.`,
+    );
+  },
 };
 
 /**

@@ -42,6 +42,16 @@ const stubPlatformModels: PlatformModels = {
       `Playground context has no PlatformModels configured — got request for 'image'. Pass one via PlaygroundContextOpts.platformModels.`,
     );
   },
+  getImageOverlayKey() {
+    throw new Error(
+      `Playground context has no PlatformModels configured — got request for 'image overlay key'. Pass one via PlaygroundContextOpts.platformModels.`,
+    );
+  },
+  reload() {
+    throw new Error(
+      `Playground context has no PlatformModels configured — got reload() call. Pass one via PlaygroundContextOpts.platformModels.`,
+    );
+  },
 };
 
 /**
