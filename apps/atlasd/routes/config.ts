@@ -497,26 +497,26 @@ function pickLanguageResolved(
  * Resolve the image-role "resolved" tile value for the Settings GET response.
  *
  * Image resolution diverges from the language roles in two ways:
- *   1. The resolver method is `getImage()` (returns `ImageModelV3`,
- *      not `LanguageModelV3`).
- *   2. `getImage()` defers credential checks to call time, so it CAN
- *      throw post-boot when no chain entry is credentialed. Boot only
+ *   1. The resolver method is `getImageResolved()` (returns
+ *      `ImageModelV3` paired with the overlay key, not `LanguageModelV3`).
+ *   2. `getImageResolved()` defers credential checks to call time, so it
+ *      CAN throw post-boot when no chain entry is credentialed. Boot only
  *      validates format and overlay membership for the image role.
  *
- * Strategy: try `getImage()` first; on success, return its resolved
- * provider+modelId. On failure, fall back to the user's configured chain
- * head if they set one, otherwise `DEFAULT_PLATFORM_MODELS.image[0]`.
- * This lets the UI tile render what the user *meant* even when the
- * credential isn't available yet — the locked-banner UX then carries
- * the credential-missing signal to the user.
+ * Strategy: try `getImageResolved()` first; on success, return the
+ * resolved provider+modelId. On failure, fall back to the user's
+ * configured chain head if they set one, otherwise
+ * `DEFAULT_PLATFORM_MODELS.image[0]`. This lets the UI tile render what
+ * the user *meant* even when the credential isn't available yet — the
+ * locked-banner UX then carries the credential-missing signal to the user.
  */
 function resolveImageRoleForGet(
   platformModels: PlatformModels,
   configured: string | string[] | null,
 ): ResolvedModel {
   try {
-    const m = platformModels.getImage();
-    return { provider: m.provider, modelId: m.modelId };
+    const { model } = platformModels.getImageResolved();
+    return { provider: model.provider, modelId: model.modelId };
   } catch {
     const head =
       typeof configured === "string"
@@ -696,54 +696,64 @@ configRoutes.put(
 
     try {
       const path = getFridayYmlPath();
-      const current = await readFridayConfig();
-      const next: Record<string, unknown> = { ...current };
 
-      // AtlasConfigSchema requires `version: "1.0"` and a `workspace` block
-      // (it extends WorkspaceConfigSchema, so daemon startup refuses a file
-      // with only `models:`). Supply defaults when the file didn't exist or
-      // was otherwise missing these.
-      if (!("version" in next)) next.version = "1.0";
-      if (!("workspace" in next) || typeof next.workspace !== "object" || next.workspace === null) {
-        next.workspace = { name: "atlas-platform" };
-      }
+      // Fresh install + empty save: don't materialize a stub friday.yml.
+      // The Settings banner gates on file presence to distinguish upgraders
+      // (file exists, no models.image) from fresh users (file absent);
+      // writing version+workspace alone would spuriously flip a fresh user
+      // into the upgrader path. See docs/plans/2026-06-02-image-model-picker-design.v3.md.
+      const skipWrite = Object.keys(newModels).length === 0 && !(await exists(path));
 
-      if (Object.keys(newModels).length === 0) {
-        delete next.models;
-      } else {
-        next.models = newModels;
-      }
+      if (!skipWrite) {
+        const current = await readFridayConfig();
+        const next: Record<string, unknown> = { ...current };
 
-      // YAML key order follows object insertion order — put the load-order-
-      // significant keys first, then everything else, so the file diff is
-      // readable.
-      const ordered: Record<string, unknown> = {};
-      ordered.version = next.version;
-      ordered.workspace = next.workspace;
-      if ("models" in next) ordered.models = next.models;
-      for (const [k, v] of Object.entries(next)) {
-        if (k !== "version" && k !== "workspace" && k !== "models") ordered[k] = v;
-      }
+        // AtlasConfigSchema requires `version: "1.0"` and a `workspace` block
+        // (it extends WorkspaceConfigSchema, so daemon startup refuses a file
+        // with only `models:`). Supply defaults when the file didn't exist or
+        // was otherwise missing these.
+        if (!("version" in next)) next.version = "1.0";
+        if (!("workspace" in next) || typeof next.workspace !== "object" || next.workspace === null) {
+          next.workspace = { name: "atlas-platform" };
+        }
 
-      await writeFile(path, stringifyYaml(ordered), "utf-8");
-      logger.info("Wrote friday.yml models section", { path, roles: Object.keys(newModels) });
+        if (Object.keys(newModels).length === 0) {
+          delete next.models;
+        } else {
+          next.models = newModels;
+        }
 
-      // Hot-swap the daemon's live `PlatformModels` so the next `get()` /
-      // `getImage()` returns the freshly-saved model — no daemon restart.
-      // The same instance is held by workspace runtimes, MCP servers, and
-      // every route's `ctx.platformModels`; `reload` mutates the closed-over
-      // userConfig in place, so all reference holders observe the swap.
-      // Pre-flight above proved the config validates; this reload should
-      // never throw, but if it does we log and surface the original
-      // success-with-restart-fallback response.
-      try {
-        const ctx = c.get("app");
-        ctx.platformModels.reload({ models: newModels });
-      } catch (error) {
-        logger.error("Wrote friday.yml but failed to hot-reload platform models", {
-          error: stringifyError(error),
-        });
-        return c.json({ success: true, restartRequired: true });
+        // YAML key order follows object insertion order — put the load-order-
+        // significant keys first, then everything else, so the file diff is
+        // readable.
+        const ordered: Record<string, unknown> = {};
+        ordered.version = next.version;
+        ordered.workspace = next.workspace;
+        if ("models" in next) ordered.models = next.models;
+        for (const [k, v] of Object.entries(next)) {
+          if (k !== "version" && k !== "workspace" && k !== "models") ordered[k] = v;
+        }
+
+        await writeFile(path, stringifyYaml(ordered), "utf-8");
+        logger.info("Wrote friday.yml models section", { path, roles: Object.keys(newModels) });
+
+        // Hot-swap the daemon's live `PlatformModels` so the next `get()` /
+        // `getImageResolved()` returns the freshly-saved model — no daemon restart.
+        // The same instance is held by workspace runtimes, MCP servers, and
+        // every route's `ctx.platformModels`; `reload` mutates the closed-over
+        // userConfig in place, so all reference holders observe the swap.
+        // Pre-flight above proved the config validates; this reload should
+        // never throw, but if it does we log and surface the original
+        // success-with-restart-fallback response.
+        try {
+          const ctx = c.get("app");
+          ctx.platformModels.reload({ models: newModels });
+        } catch (error) {
+          logger.error("Wrote friday.yml but failed to hot-reload platform models", {
+            error: stringifyError(error),
+          });
+          return c.json({ success: true, restartRequired: true });
+        }
       }
       return c.json({ success: true, restartRequired: false });
     } catch (error) {
