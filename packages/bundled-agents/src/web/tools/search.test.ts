@@ -1,5 +1,5 @@
 import process from "node:process";
-import type { PlatformModels } from "@atlas/llm";
+import type { PlatformModels } from "@atlas/agent-sdk";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
@@ -11,9 +11,6 @@ const fakePlatformModels: PlatformModels = {
     throw new Error(
       "platformModels.getImageResolved should not be called when LLM mocks are active",
     );
-  },
-  reload: () => {
-    throw new Error("platformModels.reload should not be called when LLM mocks are active");
   },
 };
 

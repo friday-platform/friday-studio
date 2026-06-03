@@ -1,6 +1,6 @@
+import type { PlatformModels } from "@atlas/agent-sdk";
 import { logger } from "@atlas/logger";
 import { APICallError, generateText } from "ai";
-import type { PlatformModels } from "./platform-models.ts";
 
 /**
  * Fast, small LLM for progress messages, titles, and short summaries.

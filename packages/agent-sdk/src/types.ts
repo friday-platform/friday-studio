@@ -56,18 +56,10 @@ type LanguageRole = Exclude<PlatformRole, "image">;
  * `provider` string — neither match the capability overlay's `provider:model`
  * keying. Callers that need overlay metadata must use the returned `key`, not
  * `model.modelId`.
- *
- * `reload(input)` is on the interface so the daemon's `PUT /api/config/models`
- * handler can hot-swap models without restart — agents don't call it, but the
- * method must mirror `@atlas/llm`'s `PlatformModels` for cross-package
- * assignability. The `input` shape is intentionally `unknown` here: agent SDK
- * is a leaf node, so it can't import `PlatformModelsInput` from `@atlas/llm`.
- * Daemon code that constructs the input uses the typed `@atlas/llm` interface.
  */
 export interface PlatformModels {
   get(role: LanguageRole): LanguageModelV3;
   getImageResolved(): { key: string; model: ImageModelV3 };
-  reload(input: unknown): void;
 }
 
 // ==============================================================================

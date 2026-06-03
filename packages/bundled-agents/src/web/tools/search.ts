@@ -1,10 +1,9 @@
 import process from "node:process";
-import type { AgentSessionData, StreamEmitter } from "@atlas/agent-sdk";
+import type { AgentSessionData, PlatformModels, StreamEmitter } from "@atlas/agent-sdk";
 import { createFailTool, repairToolCall } from "@atlas/agent-sdk";
 import {
   getCachingRequestOpts,
   getDefaultProviderOpts,
-  type PlatformModels,
   registry,
   temporalGroundingMessage,
   traceModel,

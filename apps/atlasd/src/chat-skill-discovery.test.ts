@@ -1,4 +1,4 @@
-import type { PlatformModels } from "@atlas/llm";
+import type { PlatformModels } from "@atlas/agent-sdk";
 import type { SkillsShClient, SkillsShDownloadResult, SkillsShSearchResult } from "@atlas/skills";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -12,9 +12,6 @@ const fakePlatformModels: PlatformModels = {
     throw new Error(
       "platformModels.getImageResolved should not be called when smallLLM is mocked",
     );
-  },
-  reload: () => {
-    throw new Error("platformModels.reload should not be called when smallLLM is mocked");
   },
 };
 

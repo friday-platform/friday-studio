@@ -58,9 +58,6 @@ function buildMockContext(): AgentContext {
       getImageResolved: () => {
         throw new Error("platformModels.getImageResolved should not be called in this test");
       },
-      reload: () => {
-        throw new Error("platformModels.reload should not be called in this test");
-      },
     } satisfies PlatformModels,
   };
 }
