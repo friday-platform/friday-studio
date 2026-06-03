@@ -5,7 +5,7 @@
  * creation failure, and MIME type handling.
  */
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ImageModelV3 } from "@ai-sdk/provider";
@@ -579,11 +579,12 @@ describe("imageGenerationAgent", () => {
   // -------------------------------------------------------------------------
   // (model × transport) matrix — fixture-driven dispatch + capability checks
   //
-  // Cartesian product of every overlay entry × {direct, proxy}. Each pair
-  // either runs against the validation harness's captured envelope or skips
-  // with an explicit reason in the test title. The matrix is the audit trail
-  // for coverage: "did Imagen-4 ever validate through LiteLLM?" should be
-  // answerable from test output alone.
+  // Cartesian product of every overlay entry × {direct, proxy}. Only runs
+  // when at least one fixture exists under `__fixtures__/` (produced by
+  // `scripts/validate-image-models.ts` — operator-run, cost-gated). The
+  // fixtures aren't committed to the repo, so in CI the whole describe is
+  // skipped with a single skip line — no per-cell skips inflating the
+  // output. Run the harness locally and the matrix wakes up.
   //
   // For edit-capable entries, the pair runs a gen-mode prompt and asserts
   // the correct controlAxis param shape + success. For gen-only entries,
@@ -609,6 +610,8 @@ describe("imageGenerationAgent", () => {
     });
 
     const FIXTURES_DIR = resolve(fileURLToPath(new URL(".", import.meta.url)), "__fixtures__");
+    const fixturesExist =
+      existsSync(FIXTURES_DIR) && readdirSync(FIXTURES_DIR).some((f) => f.endsWith(".json"));
 
     /**
      * Resolve `provider:model` to its fixture path. The harness writes with
@@ -636,6 +639,15 @@ describe("imageGenerationAgent", () => {
      */
     function synthesizePngBytes(): Uint8Array {
       return new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
+    }
+
+    if (!fixturesExist) {
+      // CI path: no fixtures committed. Register exactly one skip so the
+      // test output doesn't inflate with N per-cell skips that assert
+      // nothing. Run `scripts/validate-image-models.ts` locally to wake
+      // the full matrix.
+      test.skip("fixtures not committed; run validate-image-models.ts locally", () => {});
+      return;
     }
 
     for (const entry of listImageEntries()) {
