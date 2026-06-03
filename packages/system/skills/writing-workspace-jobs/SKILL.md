@@ -1002,18 +1002,47 @@ keep the supervisor cheap.
 
 ## Requesting access to a tool not in your allowlist
 
-When an action discovers it needs a real runtime-visible tool it didn't
-declare, the action calls `request_tool_access(toolName, reason)`. Two paths:
+`request_tool_access(toolName, reason)` is an **approval signal**, not a
+runtime permission gate. The action's tool array is fixed when the LLM call
+begins (`buildTools` snapshots the toolset once); a grant returned mid-action
+cannot retroactively widen that array. Read the response as a signal about
+*what to do next*, not as permission to call the requested tool in this turn.
 
-- **Bypass on** (job or workspace `permissions.dangerouslySkipAllowlist:
-  true`, or daemon `FRIDAY_DANGEROUSLY_SKIP_PERMISSIONS=1`): tool
-  returns `{ ok: true, granted: true, reason: "bypass" }` synchronously.
-  Action proceeds.
-- **Bypass off** (default): the runtime creates a `tool-allowlist`
-  elicitation surfaced in Activity/sidebar and **blocks the tool call**
-  until the user answers, declines, or the elicitation expires. On allow,
-  `request_tool_access` returns granted and the same action continues; on
-  deny/expiry it returns a terminal denial that the action must handle.
+Three response shapes:
+
+- **Bypass on** (`permissions.dangerouslySkipAllowlist: true` at job,
+  workspace, or daemon level): returns `{ ok: true, granted: true, reason:
+  "bypass" }` synchronously. The action already has every platform-allowlisted
+  tool. No elicitation, no waiting.
+- **`allow_once`**: returns `{ ok: true, granted: true, reason: "answered",
+  answer: "allow_once" }`. The LLM must still **route around in this action**
+  — delegate to a sub-agent that has the tool, fall back to a partial
+  result, or `failStep` with a clear reason. The grant does not unlock the
+  requested tool inside the current `streamText` run.
+- **`allow_always`**: returns the same shape plus `persistent: true`. The
+  current action still has to route around, but **every subsequent action
+  in this workspace** will see the granted tool in its toolset automatically
+  — no re-asking, no boilerplate.
+
+Deny / expiry returns `granted: false`. Treat as a hard "stop", explain what
+was blocked, and finish safely.
+
+### Reading the response
+
+The response includes a top-level `persistent: boolean`. Branch on it
+rather than parsing `answer`:
+
+- `persistent: true` — user chose Allow always or you hit a previously-stored
+  grant. Future actions in this workspace will see the tool in their
+  toolset without re-asking. You can tell the user "this will keep
+  working" and proceed (route around in *this* action; the next run
+  gets the real capability).
+- `persistent: false` with `granted: true` — Allow once or bypass. The
+  grant has no effect on future runs. Use it as a signal only.
+
+Operator log lines now include a `grantType` field
+(`allow_once` / `allow_always` / `bypass` / `persistent_allow` / `deny`)
+so audits don't need to join against the elicitation store.
 
 Unknown tools are rejected without creating an elicitation. If
 `request_tool_access` returns `reason: "unknown_tool"`, stop guessing: call
@@ -1023,18 +1052,21 @@ needed, or ask the user which real tool/provider they meant.
 ```yaml
 - type: llm
   tools:
-    - fs_read_file
+    - workspace-mcp/list_tasks
     - request_tool_access
   prompt: |
-    If you discover you need fs_write_file (not in your allowlist), call
-    request_tool_access("fs_write_file", "Need to apply the requested patch").
-    If granted, continue in this same action and finish with complete(...).
-    If denied or expired, explain what was blocked and stop safely.
+    If you discover you need workspace-mcp/create_task and it isn't in your
+    allowlist, call request_tool_access("workspace-mcp/create_task",
+    "Need to file a follow-up task"). The grant lets *future* actions call it;
+    this action cannot. On allow, summarise what would have been created and
+    finish with complete(...); the next run gets to actually create it. On
+    deny/expiry, explain what was blocked and stop safely.
 ```
 
-Authoring rule: only list `request_tool_access` when the action can continue
-safely after an allow or produce a useful denial/partial result. Do not use it
-as a way to ask for hallucinated tool names.
+Authoring rule: only list `request_tool_access` when the action can produce
+a useful partial result or safe denial on either path. It is not a way to
+sidestep allowlist declarations for tools you already know you need on every
+run — declare those up front.
 
 ## Asking the user for a decision mid-job
 
