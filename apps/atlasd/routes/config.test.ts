@@ -20,6 +20,9 @@ import process from "node:process";
 import { Hono } from "hono";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
+import { createPlatformModels, type PlatformModels } from "@atlas/llm";
+import type { AppContext, AppVariables } from "../src/factory.ts";
+
 // The PUT /env handler busts two caches in @atlas/llm after writing
 // the new env vars to `process.env`. Hoisted spies let the in-memory
 // sync tests observe those calls — without them, a regression that
@@ -370,6 +373,147 @@ describe("per-key /env/:key routes", () => {
     expect((await createApp().request("/env/ANYTHING")).status).toBe(403);
     expect((await putKey("ANYTHING", "x")).status).toBe(403);
     expect((await createApp().request("/env/ANYTHING", { method: "DELETE" })).status).toBe(403);
+  });
+});
+
+interface PutModelsResponse {
+  success: boolean;
+  restartRequired?: boolean;
+  error?: string;
+}
+
+interface ModelInfo {
+  role: string;
+  configured: string | string[] | null;
+  resolved: { provider: string; modelId: string };
+}
+
+interface GetModelsResponse {
+  success: boolean;
+  models?: ModelInfo[];
+  configPath?: string;
+  error?: string;
+}
+
+describe("PUT /api/config/models", () => {
+  // Real PlatformModels (not the stub from `@atlas/llm/test-utils`) so the
+  // handler's `platformModels.reload(...)` call actually swaps live state —
+  // tests then assert the post-PUT GET reflects the swap.
+  let platformModels: PlatformModels;
+  let originalFridayConfigPath: string | undefined;
+  let originalLitellmKey: string | undefined;
+
+  beforeEach(() => {
+    // The route resolves friday.yml via FRIDAY_CONFIG_PATH (falls back to
+    // process.cwd()). Pin it to the per-test temp dir so writes land in
+    // isolation and the outer afterEach's `rm` cleans them up.
+    originalFridayConfigPath = process.env.FRIDAY_CONFIG_PATH;
+    process.env.FRIDAY_CONFIG_PATH = tempHome;
+    // LITELLM_API_KEY universally satisfies hasCredential() for every
+    // provider, so the pre-flight + reload paths resolve without
+    // per-provider key wrangling. Saves the test from caring which
+    // specific provider env var unlocks which model.
+    originalLitellmKey = process.env.LITELLM_API_KEY;
+    process.env.LITELLM_API_KEY = "sk-litellm-test";
+    platformModels = createPlatformModels({ models: {} });
+  });
+
+  afterEach(() => {
+    if (originalFridayConfigPath === undefined) {
+      delete process.env.FRIDAY_CONFIG_PATH;
+    } else {
+      process.env.FRIDAY_CONFIG_PATH = originalFridayConfigPath;
+    }
+    if (originalLitellmKey === undefined) {
+      delete process.env.LITELLM_API_KEY;
+    } else {
+      process.env.LITELLM_API_KEY = originalLitellmKey;
+    }
+  });
+
+  /**
+   * Mount `configRoutes` behind middleware that supplies `platformModels` on
+   * the `app` context. Only `platformModels` is read by `/models` GET / PUT,
+   * so the rest of `AppContext` is stubbed — same partial-context pattern
+   * `daemon.test.ts` uses for the daemon-only `/shutdown` route.
+   */
+  function createModelsApp() {
+    const app = new Hono<AppVariables>();
+    app.use("*", async (c, next) => {
+      c.set("app", { platformModels } as unknown as AppContext);
+      await next();
+    });
+    app.route("/", configRoutes);
+    return app;
+  }
+
+  test("happy path: writes friday.yml, hot-reloads PlatformModels, GET reflects new config", async () => {
+    const app = createModelsApp();
+
+    const putRes = await app.request("/models", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        models: {
+          // groq differs from the anthropic default for `labels`, so the
+          // post-PUT `resolved.provider` assertion below would fail if
+          // reload silently no-op'd.
+          labels: "groq:openai/gpt-oss-120b",
+          image: "google:gemini-2.5-flash-image",
+        },
+      }),
+    });
+    expect(putRes.status).toBe(200);
+    const putBody = (await putRes.json()) as PutModelsResponse;
+    expect(putBody).toEqual({ success: true, restartRequired: false });
+
+    // friday.yml landed on disk with both configured roles.
+    const onDisk = await readFile(join(tempHome, "friday.yml"), "utf-8");
+    expect(onDisk).toContain("groq:openai/gpt-oss-120b");
+    expect(onDisk).toContain("google:gemini-2.5-flash-image");
+
+    // GET reads `configured` off disk and `resolved` off the live
+    // PlatformModels instance — the labels.resolved.provider switch from
+    // "anthropic" (default chain) to "groq" proves reload mutated state,
+    // not just that the disk write went through.
+    const getRes = await app.request("/models");
+    expect(getRes.status).toBe(200);
+    const getBody = (await getRes.json()) as GetModelsResponse;
+    expect(getBody.success).toBe(true);
+    const byRole = new Map((getBody.models ?? []).map((m) => [m.role, m]));
+    expect(byRole.get("labels")?.configured).toBe("groq:openai/gpt-oss-120b");
+    expect(byRole.get("image")?.configured).toBe("google:gemini-2.5-flash-image");
+    expect(byRole.get("labels")?.resolved.provider).toContain("groq");
+  });
+
+  test("invalid body: Zod-failing payload returns 4xx, leaves friday.yml + live PlatformModels untouched", async () => {
+    const app = createModelsApp();
+
+    // `42` is neither string nor string[] nor null — fails the
+    // `roleValueSchema` z.union, so the hono-openapi validator rejects
+    // before the handler body runs.
+    const putRes = await app.request("/models", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ models: { labels: 42 } }),
+    });
+    expect(putRes.status).toBeGreaterThanOrEqual(400);
+    expect(putRes.status).toBeLessThan(500);
+
+    // friday.yml was never created — readFile rejects with ENOENT.
+    const fridayYmlPath = join(tempHome, "friday.yml");
+    await expect(readFile(fridayYmlPath, "utf-8")).rejects.toThrow();
+
+    // Live PlatformModels still reports the pre-PUT (default-chain) state:
+    // every role's `configured` reads null because friday.yml is absent.
+    const getRes = await app.request("/models");
+    expect(getRes.status).toBe(200);
+    const getBody = (await getRes.json()) as GetModelsResponse;
+    expect(getBody.success).toBe(true);
+    const byRole = new Map((getBody.models ?? []).map((m) => [m.role, m.configured]));
+    for (const role of ["labels", "classifier", "planner", "conversational", "image"]) {
+      expect(byRole.get(role)).toBeNull();
+    }
   });
 });
 
