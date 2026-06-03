@@ -51,22 +51,53 @@ vi.mock("@atlas/llm", async () => {
 const mockLogger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
 const mockStream = { emit: vi.fn() };
 
-function makeStubImageModel(modelId: string): ImageModelV3 {
+/**
+ * Build a stub `ImageModelV3` carrying SDK-shaped `provider` / `modelId`
+ * strings. These mirror what real providers return — e.g. Google's SDK reports
+ * `provider: "google.generative-ai"`, `modelId: "gemini-2.5-flash-image"`,
+ * neither of which match the capability overlay's `provider:model` key. By
+ * keeping the stub's shape SDK-accurate (rather than stuffing the overlay key
+ * into `modelId`), tests prove the agent looks up the overlay via
+ * `getImageOverlayKey()` and not via `model.modelId` — a regression to the
+ * latter would miss every overlay entry and fail the test.
+ */
+function makeStubImageModel(provider: string, modelId: string): ImageModelV3 {
   return {
     specificationVersion: "v3",
-    provider: "stub.image-model",
+    provider,
     modelId,
     maxImagesPerCall: 1,
     doGenerate: () => Promise.reject(new Error("stub ImageModelV3 invoked")),
   };
 }
 
-// Default to an edit-capable overlay entry so existing edit-mode tests pass
-// the capability gate; tests that need a gen-only model use
-// `stubPlatformModels.getImage.mockReturnValueOnce(...)` to override per-test.
-const stubImageModel = makeStubImageModel("google:gemini-2.5-flash-image");
+// SDK-shaped defaults: provider is the transport string, modelId is the bare id.
+// Neither matches an overlay key on its own — capability lookup must go through
+// `getImageOverlayKey()`.
+const stubImageModel = makeStubImageModel("google.generative-ai", "gemini-2.5-flash-image");
 
-const stubPlatformModels = { get: vi.fn(), getImage: vi.fn(() => stubImageModel) };
+const stubPlatformModels = {
+  get: vi.fn(),
+  getImage: vi.fn(() => stubImageModel),
+  getImageOverlayKey: vi.fn(() => "google:gemini-2.5-flash-image"),
+};
+
+/**
+ * Swap the current image model + overlay key for one test. Sync helper so the
+ * two `getImage`/`getImageOverlayKey` mocks can't drift out of step. The model
+ * is built with the bare id half of the overlay key (post-colon) on a generic
+ * stub provider — same SDK shape as production.
+ */
+function useImageModel(overlayKey: string): void {
+  const [provider, modelId] = overlayKey.split(":");
+  if (!provider || !modelId) {
+    throw new Error(`useImageModel: malformed overlay key "${overlayKey}"`);
+  }
+  stubPlatformModels.getImage.mockReturnValueOnce(
+    makeStubImageModel(`stub.${provider}`, modelId),
+  );
+  stubPlatformModels.getImageOverlayKey.mockReturnValueOnce(overlayKey);
+}
 
 function makeContext(config?: Record<string, unknown>) {
   return {
@@ -235,7 +266,7 @@ describe("imageGenerationAgent", () => {
 
   test("dispatches size param (and no aspectRatio) for size-axis model", async () => {
     // openai:dall-e-3 → { controlAxis: "size", size: "1024x1024" }
-    stubPlatformModels.getImage.mockReturnValueOnce(makeStubImageModel("openai:dall-e-3"));
+    useImageModel("openai:dall-e-3");
     generateImageMock.mockResolvedValue(makeGenerateImageResult([makeImageFile()]));
     setupSaveMocks();
 
@@ -482,7 +513,7 @@ describe("imageGenerationAgent", () => {
 
   describe("capability check", () => {
     test("returns err with displayName when edit requested on a gen-only model", async () => {
-      stubPlatformModels.getImage.mockReturnValueOnce(makeStubImageModel("openai:dall-e-3"));
+      useImageModel("openai:dall-e-3");
       discoverImageFilesMock.mockResolvedValue(makeDiscoveryResult([{ id: "src-1" }]));
 
       const result = await imageGenerationAgent.execute(
@@ -513,13 +544,31 @@ describe("imageGenerationAgent", () => {
     });
 
     test("proceeds normally in generation mode on a gen-only model", async () => {
-      stubPlatformModels.getImage.mockReturnValueOnce(makeStubImageModel("openai:dall-e-3"));
+      useImageModel("openai:dall-e-3");
       generateImageMock.mockResolvedValue(makeGenerateImageResult([makeImageFile()]));
       setupSaveMocks();
 
       const result = await imageGenerationAgent.execute("Generate a sunset", makeContext());
 
       expect(result.ok).toBe(true);
+      expect(generateImageMock).toHaveBeenCalled();
+    });
+
+    // Regression guard for the QA-found bug where the agent looked up the
+    // overlay via `model.modelId` (bare id like "gemini-2.5-flash-image"),
+    // which never matches the overlay's `provider:model` keys. The default
+    // stub's SDK-shaped model has provider "google.generative-ai" and modelId
+    // "gemini-2.5-flash-image" — neither is an overlay key. If the agent
+    // regresses to either lookup, it'll hit the null branch and `err()` with
+    // "unknown to Friday's capability overlay" instead of generating.
+    test("uses getImageOverlayKey() — not model.modelId — for capability lookup", async () => {
+      generateImageMock.mockResolvedValue(makeGenerateImageResult([makeImageFile()]));
+      setupSaveMocks();
+
+      const result = await imageGenerationAgent.execute("Generate a cat", makeContext());
+
+      expect(result.ok).toBe(true);
+      expect(stubPlatformModels.getImageOverlayKey).toHaveBeenCalled();
       expect(generateImageMock).toHaveBeenCalled();
     });
   });
@@ -603,7 +652,7 @@ describe("imageGenerationAgent", () => {
 
         if (entry.capabilities.edit) {
           test(`${label} · dispatches ${entry.defaults.controlAxis} param`, async () => {
-            stubPlatformModels.getImage.mockReturnValueOnce(makeStubImageModel(entry.id));
+            useImageModel(entry.id);
             const bytes = synthesizePngBytes();
             const imageFile = {
               uint8Array: bytes,
@@ -633,7 +682,7 @@ describe("imageGenerationAgent", () => {
           });
         } else {
           test(`${label} · returns err on edit prompt (gen-only)`, async () => {
-            stubPlatformModels.getImage.mockReturnValueOnce(makeStubImageModel(entry.id));
+            useImageModel(entry.id);
             discoverImageFilesMock.mockResolvedValue(makeDiscoveryResult([{ id: "src-art-1" }]));
 
             const result = await imageGenerationAgent.execute(

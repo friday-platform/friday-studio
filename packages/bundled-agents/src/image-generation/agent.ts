@@ -56,12 +56,18 @@ export const imageGenerationAgent = createAgent<string, ImageGenerationOutput>({
     // overlay lookup is non-null in production; the null branch here is a
     // defense-in-depth fallback that surfaces the misconfiguration instead
     // of producing nonsense output.
+    //
+    // The overlay is keyed by `provider:model` (e.g. "google:gemini-2.5-flash-image"),
+    // but `model.modelId` is bare (e.g. "gemini-2.5-flash-image") and `model.provider`
+    // is the SDK transport string (e.g. "google.generative-ai") — neither will match.
+    // `getImageOverlayKey()` returns the configured spec used to build the model.
     const model = platformModels.getImage();
-    const entry = lookupImageEntry(model.modelId);
+    const overlayKey = platformModels.getImageOverlayKey();
+    const entry = lookupImageEntry(overlayKey);
     if (entry === null) {
-      logger.error("Image model missing from capability overlay", { modelId: model.modelId });
+      logger.error("Image model missing from capability overlay", { overlayKey });
       return err(
-        `Image model "${model.modelId}" is unknown to Friday's capability overlay. Switch to a known model in Settings → Image.`,
+        `Image model "${overlayKey}" is unknown to Friday's capability overlay. Switch to a known model in Settings → Image.`,
       );
     }
     if (isEditMode && !entry.capabilities.edit) {

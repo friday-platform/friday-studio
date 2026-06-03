@@ -45,6 +45,11 @@ function createStubImageModel(): ImageModelV3 {
  * every role. Pass `overrides` to supply a real or pre-mocked model — useful
  * for tests that need to exercise `doStream`/`doGenerate`.
  *
+ * `imageOverlayKey` defaults to the canonical overlay default
+ * (`google:gemini-2.5-flash-image`) so agents that look up capability metadata
+ * via `getImageOverlayKey()` resolve a real overlay entry. Override per-test
+ * to exercise other entries (e.g. `"openai:dall-e-3"` for size-axis dispatch).
+ *
  * @example
  * ```ts
  * const platformModels = createStubPlatformModels();
@@ -52,10 +57,15 @@ function createStubImageModel(): ImageModelV3 {
  * const platformModels = createStubPlatformModels({ planner: myMockModel });
  * // …or override the image model:
  * const platformModels = createStubPlatformModels({ image: myMockImageModel });
+ * // …or pin the overlay key for capability lookups:
+ * const platformModels = createStubPlatformModels({ imageOverlayKey: "openai:dall-e-3" });
  * ```
  */
 export function createStubPlatformModels(
-  overrides?: Partial<Record<LanguageRole, LanguageModelV3>> & { image?: ImageModelV3 },
+  overrides?: Partial<Record<LanguageRole, LanguageModelV3>> & {
+    image?: ImageModelV3;
+    imageOverlayKey?: string;
+  },
 ): PlatformModels {
   return {
     get(role: LanguageRole): LanguageModelV3 {
@@ -66,6 +76,9 @@ export function createStubPlatformModels(
     },
     getImage(): ImageModelV3 {
       return overrides?.image ?? createStubImageModel();
+    },
+    getImageOverlayKey(): string {
+      return overrides?.imageOverlayKey ?? "google:gemini-2.5-flash-image";
     },
   };
 }

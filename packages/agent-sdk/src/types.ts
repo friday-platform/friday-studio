@@ -46,10 +46,20 @@ export type PlatformRole = "labels" | "classifier" | "planner" | "conversational
 /** Roles whose model is a `LanguageModelV3`. Image is served by `getImage()`. */
 type LanguageRole = Exclude<PlatformRole, "image">;
 
-/** Resolves platform models by task archetype. Daemon constructs this once at boot. */
+/**
+ * Resolves platform models by task archetype. Daemon constructs this once at boot.
+ *
+ * `getImageOverlayKey()` returns the resolved `provider:model` spec used to
+ * build the image model (e.g. `"google:gemini-2.5-flash-image"`). The SDK
+ * `ImageModelV3` exposes only a bare `modelId` and a transport-shaped
+ * `provider` string — neither match the capability overlay's `provider:model`
+ * keying. Callers that need overlay metadata must use this method, not
+ * `model.modelId`.
+ */
 export interface PlatformModels {
   get(role: LanguageRole): LanguageModelV3;
   getImage(): ImageModelV3;
+  getImageOverlayKey(): string;
 }
 
 // ==============================================================================

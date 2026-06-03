@@ -64,10 +64,18 @@ type LanguageRole = Exclude<PlatformRole, "image">;
  * for image generation. Two methods because the return types differ at
  * the SDK layer (`LanguageModelV3` vs `ImageModelV3`) — a single
  * polymorphic `get` would force callers to narrow, defeating its purpose.
+ *
+ * `getImageOverlayKey()` returns the resolved `provider:model` spec used
+ * to build the image model (e.g. `"google:gemini-2.5-flash-image"`). The
+ * SDK `ImageModelV3` exposes only a bare `modelId` and a transport-shaped
+ * `provider` string (e.g. `"google.generative-ai"`) — neither match the
+ * capability overlay's `provider:model` keying. Callers that need to look
+ * up overlay metadata must use this method, not `model.modelId`.
  */
 export interface PlatformModels {
   get(role: LanguageRole): LanguageModelV3;
   getImage(): ImageModelV3;
+  getImageOverlayKey(): string;
 }
 
 /**
@@ -293,10 +301,19 @@ function resolveRole(
  * could feed a post-boot config that wasn't validated, and we'd rather error
  * cleanly than build a registry model for an unverified id.
  */
+/**
+ * Resolved image-role pair: the SDK model and the `provider:model` spec
+ * string that produced it. The spec doubles as the capability overlay key —
+ * callers needing overlay metadata use `key`, callers calling generateImage
+ * use `model`. Both halves come from a single resolver pass so they can't
+ * diverge if `process.env` flips between two separate lookups.
+ */
+type ResolvedImage = { key: string; model: ImageModelV3 };
+
 function resolveImageRole(
   userValue: string | readonly string[] | undefined,
   errors: ResolutionError[],
-): ImageModelV3 | null {
+): ResolvedImage | null {
   if (userValue !== undefined) {
     const chain: readonly string[] = typeof userValue === "string" ? [userValue] : userValue;
 
@@ -334,7 +351,10 @@ function resolveImageRole(
     for (const entry of chain) {
       const parsed = parseModelId(entry);
       if (parsed && isRegistryProvider(parsed.provider) && hasCredential(parsed.provider)) {
-        return registry.imageModel(buildRegistryModelId(parsed.provider, parsed.model));
+        return {
+          key: entry,
+          model: registry.imageModel(buildRegistryModelId(parsed.provider, parsed.model)),
+        };
       }
     }
 
@@ -357,7 +377,10 @@ function resolveImageRole(
   for (const candidate of chain) {
     const parsed = parseModelId(candidate);
     if (parsed && isRegistryProvider(parsed.provider) && hasCredential(parsed.provider)) {
-      return registry.imageModel(buildRegistryModelId(parsed.provider, parsed.model));
+      return {
+        key: candidate,
+        model: registry.imageModel(buildRegistryModelId(parsed.provider, parsed.model)),
+      };
     }
   }
 
@@ -506,8 +529,20 @@ export function createPlatformModels(config: PlatformModelsInput | null): Platfo
       if (!result) {
         throw new PlatformModelsConfigError(errors);
       }
-      logger.info("Image model resolved", { provider: result.provider, modelId: result.modelId });
-      return result;
+      logger.info("Image model resolved", {
+        key: result.key,
+        provider: result.model.provider,
+        modelId: result.model.modelId,
+      });
+      return result.model;
+    },
+    getImageOverlayKey(): string {
+      const errors: ResolutionError[] = [];
+      const result = resolveImageRole(userConfig?.image, errors);
+      if (!result) {
+        throw new PlatformModelsConfigError(errors);
+      }
+      return result.key;
     },
   };
 }
