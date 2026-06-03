@@ -1,9 +1,12 @@
 import process from "node:process";
-import type { PlatformModels } from "@atlas/agent-sdk";
+import { createStubPlatformModels } from "@atlas/llm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
-const fakePlatformModels: PlatformModels = {
+// Regression guard: `generateText` is mocked, so `platformModels` is never
+// read by `createSearchTool` — overriding `get`/`getImageResolved` with
+// throws turns any accidental future call into a loud test failure.
+const fakePlatformModels = createStubPlatformModels({
   get: () => {
     throw new Error("platformModels.get should not be called when LLM mocks are active");
   },
@@ -12,27 +15,36 @@ const fakePlatformModels: PlatformModels = {
       "platformModels.getImageResolved should not be called when LLM mocks are active",
     );
   },
-};
+});
 
 // ---------------------------------------------------------------------------
 // Hoisted mocks
 // ---------------------------------------------------------------------------
 
-const mockGenerateText = vi.fn();
-const mockExecuteSearch = vi.fn();
+// `vi.mock` factories are hoisted above non-hoisted top-level vars, so any
+// `mockX` referenced by a factory must be created via `vi.hoisted`.
+const mockGenerateText = vi.hoisted(() => vi.fn());
+const mockExecuteSearch = vi.hoisted(() => vi.fn());
 
 vi.mock("ai", () => ({
   generateText: mockGenerateText,
   tool: vi.fn((opts: Record<string, unknown>) => opts),
 }));
 
-vi.mock("@atlas/llm", () => ({
-  registry: { languageModel: vi.fn(() => "mock-model") },
-  traceModel: vi.fn((m: unknown) => m),
-  temporalGroundingMessage: vi.fn(() => ({ role: "system", content: "Today is 2026-03-11" })),
-  getDefaultProviderOpts: vi.fn(() => ({})),
-  getCachingRequestOpts: vi.fn(() => ({})),
-}));
+vi.mock("@atlas/llm", async (importOriginal) => {
+  // Spread the real module so `createStubPlatformModels` (and any other
+  // pure helpers consumed at module scope) survive — only the registry /
+  // tracing surface gets stubbed.
+  const original = await importOriginal<typeof import("@atlas/llm")>();
+  return {
+    ...original,
+    registry: { languageModel: vi.fn(() => "mock-model") },
+    traceModel: vi.fn((m: unknown) => m),
+    temporalGroundingMessage: vi.fn(() => ({ role: "system", content: "Today is 2026-03-11" })),
+    getDefaultProviderOpts: vi.fn(() => ({})),
+    getCachingRequestOpts: vi.fn(() => ({})),
+  };
+});
 
 vi.mock("@atlas/agent-sdk", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@atlas/agent-sdk")>();

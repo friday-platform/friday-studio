@@ -9,7 +9,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ImageModelV3 } from "@ai-sdk/provider";
-import { listImageEntries } from "@atlas/llm";
+import { createStubPlatformModels, listImageEntries } from "@atlas/llm";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import { imageGenerationAgent } from "./agent.ts";
@@ -76,13 +76,18 @@ function makeStubImageModel(provider: string, modelId: string): ImageModelV3 {
 // the resolved `key` returned by `getImageResolved()`.
 const stubImageModel = makeStubImageModel("google.generative-ai", "gemini-2.5-flash-image");
 
-const stubPlatformModels = {
-  get: vi.fn(),
-  getImageResolved: vi.fn(() => ({
-    key: "google:gemini-2.5-flash-image",
-    model: stubImageModel,
-  })),
-};
+// Spy handles retained separately so `mockReturnValueOnce` / `toHaveBeenCalled`
+// assertions can target them — the helper only exposes the resolved
+// `PlatformModels` shape, not its underlying spies.
+const getImageResolvedSpy = vi.fn(() => ({
+  key: "google:gemini-2.5-flash-image",
+  model: stubImageModel,
+}));
+const getSpy = vi.fn();
+const stubPlatformModels = createStubPlatformModels({
+  get: getSpy,
+  getImageResolved: getImageResolvedSpy,
+});
 
 /**
  * Swap the current image model + overlay key for one test. The pair is
@@ -96,7 +101,7 @@ function useImageModel(overlayKey: string): void {
   if (!provider || !modelId) {
     throw new Error(`useImageModel: malformed overlay key "${overlayKey}"`);
   }
-  stubPlatformModels.getImageResolved.mockReturnValueOnce({
+  getImageResolvedSpy.mockReturnValueOnce({
     key: overlayKey,
     model: makeStubImageModel(`stub.${provider}`, modelId),
   });
@@ -571,7 +576,7 @@ describe("imageGenerationAgent", () => {
       const result = await imageGenerationAgent.execute("Generate a cat", makeContext());
 
       expect(result.ok).toBe(true);
-      expect(stubPlatformModels.getImageResolved).toHaveBeenCalled();
+      expect(getImageResolvedSpy).toHaveBeenCalled();
       expect(generateImageMock).toHaveBeenCalled();
     });
   });

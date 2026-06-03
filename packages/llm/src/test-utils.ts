@@ -50,6 +50,13 @@ function createStubImageModel(): ImageModelV3 {
  * via the resolved `key` resolve a real overlay entry. Override per-test to
  * exercise other entries (e.g. `"openai:dall-e-3"` for size-axis dispatch).
  *
+ * `get` / `getImageResolved` accept wholesale function overrides for tests
+ * that want to (a) spy on calls via a `vi.fn()` they retain a reference to,
+ * or (b) hard-fail on unexpected invocation (regression guard for tests that
+ * mock the LLM dependency further upstream and want to prove `platformModels`
+ * is never read). When supplied, these take precedence over the per-role
+ * model overrides — pick one strategy or the other, not both.
+ *
  * @example
  * ```ts
  * const platformModels = createStubPlatformModels();
@@ -59,27 +66,39 @@ function createStubImageModel(): ImageModelV3 {
  * const platformModels = createStubPlatformModels({ image: myMockImageModel });
  * // …or pin the overlay key for capability lookups:
  * const platformModels = createStubPlatformModels({ imageOverlayKey: "openai:dall-e-3" });
+ * // …or pass a spy / throwing override for regression-guard assertions:
+ * const platformModels = createStubPlatformModels({
+ *   get: () => { throw new Error("get should not be called when smallLLM is mocked") },
+ * });
  * ```
  */
 export function createStubPlatformModels(
   overrides?: Partial<Record<LanguageRole, LanguageModelV3>> & {
     image?: ImageModelV3;
     imageOverlayKey?: string;
+    /** Wholesale override of `get`. Takes precedence over per-role overrides. */
+    get?: PlatformModels["get"];
+    /** Wholesale override of `getImageResolved`. Takes precedence over `image`/`imageOverlayKey`. */
+    getImageResolved?: PlatformModels["getImageResolved"];
   },
 ): PlatformModels {
-  return {
-    get(role: LanguageRole): LanguageModelV3 {
+  const get: PlatformModels["get"] =
+    overrides?.get ??
+    ((role: LanguageRole): LanguageModelV3 => {
       if (overrides?.[role]) {
         return overrides[role];
       }
       return createStubLanguageModel(role);
-    },
-    getImageResolved(): { key: string; model: ImageModelV3 } {
-      return {
-        key: overrides?.imageOverlayKey ?? "google:gemini-2.5-flash-image",
-        model: overrides?.image ?? createStubImageModel(),
-      };
-    },
+    });
+  const getImageResolved: PlatformModels["getImageResolved"] =
+    overrides?.getImageResolved ??
+    ((): { key: string; model: ImageModelV3 } => ({
+      key: overrides?.imageOverlayKey ?? "google:gemini-2.5-flash-image",
+      model: overrides?.image ?? createStubImageModel(),
+    }));
+  return {
+    get,
+    getImageResolved,
     // No-op reload. Tests that exercise the live-reload path should construct
     // a real `createPlatformModels` (or assert against this stub's call).
     reload(): void {},
