@@ -1,6 +1,7 @@
 import { logger } from "@atlas/logger";
 import { describe, expect, it, vi } from "vitest";
 import { IMAGE_OVERLAY, listImageEntries, lookupImageEntry } from "./image-capabilities.ts";
+import { DEFAULT_PLATFORM_MODELS } from "./platform-models.ts";
 
 /**
  * ISO-8601 date matcher — `YYYY-MM-DD` is what the overlay records and
@@ -102,6 +103,19 @@ describe("image-capabilities — freshness drift", () => {
     } finally {
       warnSpy.mockRestore();
     }
+  });
+});
+
+describe("image-capabilities — default chain invariant", () => {
+  it("every default image-chain entry has an overlay entry", () => {
+    // The image-generation agent relies on boot-time pre-flight to guarantee
+    // its overlay lookup is non-null in production. That guarantee only holds
+    // because every `DEFAULT_PLATFORM_MODELS.image` entry is keyed in
+    // `IMAGE_OVERLAY` — a future PR adding a non-overlay default would
+    // silently break the agent's defensive null-branch contract.
+    // See docs/reviews/2026-06-04-image-model-picker-design.md § Important #2.
+    const missing = DEFAULT_PLATFORM_MODELS.image.filter((id) => lookupImageEntry(id) === null);
+    expect(missing).toEqual([]);
   });
 });
 
