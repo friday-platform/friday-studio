@@ -571,8 +571,14 @@ describe("PUT /api/config/models", () => {
       // `models.image: openai:dall-e-3` from disk into `configured`.
       await writeFile(
         join(tempHome, "friday.yml"),
-        ['version: "1.0"', "workspace:", "  name: test", "models:", "  image: openai:dall-e-3", ""]
-          .join("\n"),
+        [
+          'version: "1.0"',
+          "workspace:",
+          "  name: test",
+          "models:",
+          "  image: openai:dall-e-3",
+          "",
+        ].join("\n"),
         "utf-8",
       );
 
