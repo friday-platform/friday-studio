@@ -13,7 +13,7 @@
  * PUT → GET round-trips preserve the original value semantically.
  */
 
-import { mkdir, readFile, rm } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
@@ -479,6 +479,10 @@ describe("PUT /api/config/models", () => {
     expect(getRes.status).toBe(200);
     const getBody = (await getRes.json()) as GetModelsResponse;
     expect(getBody.success).toBe(true);
+    // configPath is surfaced exactly when friday.yml exists on disk — the
+    // playground's migration-nudge banner reads its presence to distinguish
+    // upgraders from fresh installs.
+    expect(getBody.configPath).toBe(join(tempHome, "friday.yml"));
     const byRole = new Map((getBody.models ?? []).map((m) => [m.role, m]));
     expect(byRole.get("labels")?.configured).toBe("groq:openai/gpt-oss-120b");
     expect(byRole.get("image")?.configured).toBe("google:gemini-2.5-flash-image");
@@ -513,6 +517,152 @@ describe("PUT /api/config/models", () => {
     for (const role of ["labels", "classifier", "planner", "conversational", "image"]) {
       expect(byRole.get(role)).toBeNull();
     }
+  });
+
+  test("reload failure post-write returns restartRequired: true, friday.yml is still on disk", async () => {
+    // Pre-flight passes, writeFile lands the file, then the in-place
+    // hot-reload throws. The route swallows the throw and returns the
+    // restartRequired flag the Settings UI flips its success-flash on.
+    const reloadSpy = vi.spyOn(platformModels, "reload").mockImplementationOnce(() => {
+      throw new Error("simulated reload failure");
+    });
+
+    const app = createModelsApp();
+    const putRes = await app.request("/models", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ models: { labels: "groq:openai/gpt-oss-120b" } }),
+    });
+    expect(putRes.status).toBe(200);
+    const putBody = (await putRes.json()) as PutModelsResponse;
+    expect(putBody).toEqual({ success: true, restartRequired: true });
+
+    // The write happened before reload threw — restartRequired tells the
+    // user the file is durable, only the live instance is stale.
+    const onDisk = await readFile(join(tempHome, "friday.yml"), "utf-8");
+    expect(onDisk).toContain("groq:openai/gpt-oss-120b");
+    expect(reloadSpy).toHaveBeenCalledTimes(1);
+  });
+
+  test("GET falls back to configured chain head when getImageResolved() throws", async () => {
+    // resolveImageRoleForGet's catch branch synthesizes a tile value from
+    // the user's configured image chain when the live resolver can't
+    // produce a real ImageModelV3 (no credential for the configured
+    // provider). The Settings UI uses this to render the user's intended
+    // model in the tile even while the locked-banner explains the
+    // credential gap.
+    //
+    // Setup: drop LITELLM_API_KEY (otherwise it universally credentials
+    // every provider and the catch never fires), set ANTHROPIC_API_KEY so
+    // language-role boot still passes (defaults are anthropic), don't set
+    // OPENAI_API_KEY so the configured `openai:dall-e-3` is uncredentialed.
+    delete process.env.LITELLM_API_KEY;
+    const originalAnthropic = process.env.ANTHROPIC_API_KEY;
+    const originalOpenai = process.env.OPENAI_API_KEY;
+    process.env.ANTHROPIC_API_KEY = "sk-ant-test";
+    delete process.env.OPENAI_API_KEY;
+    try {
+      // Image boot only pre-flights format/overlay membership — credentials
+      // are deferred to getImageResolved() call time, so construction
+      // succeeds even without an OpenAI key.
+      platformModels = createPlatformModels({ models: { image: "openai:dall-e-3" } });
+
+      // Pre-write friday.yml so the GET handler reads
+      // `models.image: openai:dall-e-3` from disk into `configured`.
+      await writeFile(
+        join(tempHome, "friday.yml"),
+        ['version: "1.0"', "workspace:", "  name: test", "models:", "  image: openai:dall-e-3", ""]
+          .join("\n"),
+        "utf-8",
+      );
+
+      // Spy to confirm the catch-branch actually fired — vi.spyOn records
+      // throws as `{ type: 'throw', value: <error> }` in mock.results.
+      const imageSpy = vi.spyOn(platformModels, "getImageResolved");
+
+      const app = createModelsApp();
+      const res = await app.request("/models");
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as GetModelsResponse;
+      const image = body.models?.find((m) => m.role === "image");
+      expect(image?.configured).toBe("openai:dall-e-3");
+      expect(image?.resolved).toEqual({ provider: "openai", modelId: "dall-e-3" });
+
+      // The resolver was called and threw — the route caught and parsed
+      // the configured head instead of bubbling a 500.
+      expect(imageSpy).toHaveBeenCalled();
+      expect(imageSpy.mock.results[0]?.type).toBe("throw");
+    } finally {
+      if (originalAnthropic === undefined) delete process.env.ANTHROPIC_API_KEY;
+      else process.env.ANTHROPIC_API_KEY = originalAnthropic;
+      if (originalOpenai === undefined) delete process.env.OPENAI_API_KEY;
+      else process.env.OPENAI_API_KEY = originalOpenai;
+    }
+  });
+
+  test("skip-write: PUT { models: {} } with no friday.yml writes nothing", async () => {
+    // The fresh-install no-op gate. Without it, a fresh user clicking
+    // Save with all defaults would materialize a stub friday.yml — which
+    // flips them into the Settings "upgrader" path and shows the
+    // migration banner spuriously.
+    const fridayYmlPath = join(tempHome, "friday.yml");
+    const app = createModelsApp();
+    const res = await app.request("/models", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ models: {} }),
+    });
+    expect(res.status).toBe(200);
+    expect((await res.json()) as PutModelsResponse).toEqual({
+      success: true,
+      restartRequired: false,
+    });
+
+    // No file landed on disk — readFile rejects with ENOENT.
+    await expect(readFile(fridayYmlPath, "utf-8")).rejects.toThrow();
+
+    // configPath GET is also undefined when friday.yml is absent.
+    const getRes = await app.request("/models");
+    const getBody = (await getRes.json()) as GetModelsResponse;
+    expect(getBody.configPath).toBeUndefined();
+  });
+
+  test("PUT { models: {} } against an existing friday.yml drops the models key but preserves version + workspace", async () => {
+    // The upgrader-empty-save path. Once friday.yml exists, an empty
+    // payload means "clear my model pins, fall back to defaults" — not
+    // "skip the write". The on-disk file gets rewritten with the models
+    // key absent so the daemon's next boot falls through to defaults.
+    const fridayYmlPath = join(tempHome, "friday.yml");
+    await writeFile(
+      fridayYmlPath,
+      [
+        'version: "1.0"',
+        "workspace:",
+        "  name: pre-existing-workspace",
+        "models:",
+        "  labels: anthropic:claude-haiku-4-5",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const app = createModelsApp();
+    const res = await app.request("/models", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ models: {} }),
+    });
+    expect(res.status).toBe(200);
+
+    const onDisk = await readFile(fridayYmlPath, "utf-8");
+    // Required top-level keys preserved from the original file.
+    // stringifyYaml quotes "1.0" defensively so YAML 1.1 parsers can't
+    // coerce it to a float — accept either quote style.
+    expect(onDisk).toMatch(/^version:\s*['"]1\.0['"]/m);
+    expect(onDisk).toContain("pre-existing-workspace");
+    // The models key is gone — daemon boot now falls back to the
+    // default chain.
+    expect(onDisk).not.toMatch(/^models:/m);
   });
 });
 
