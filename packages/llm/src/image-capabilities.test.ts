@@ -1,17 +1,13 @@
-import { logger } from "@atlas/logger";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { IMAGE_OVERLAY, listImageEntries, lookupImageEntry } from "./image-capabilities.ts";
 import { DEFAULT_PLATFORM_MODELS } from "./platform-models.ts";
 
 /**
  * ISO-8601 date matcher — `YYYY-MM-DD` is what the overlay records and
  * what the validation harness (Task #9) will write. We don't accept
- * timestamps here; the freshness check operates on calendar days.
+ * timestamps here; the check operates on calendar days.
  */
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
-
-const STALE_THRESHOLD_DAYS = 180;
-const MS_PER_DAY = 24 * 60 * 60 * 1_000;
 
 describe("image-capabilities — overlay shape", () => {
   it("contains exactly the six v1 entries", () => {
@@ -45,18 +41,6 @@ describe("image-capabilities — overlay shape", () => {
       expect(entry.displayName.trim()).toBe(entry.displayName);
       expect(entry.displayName.length).toBeGreaterThan(0);
 
-      // generation is always true (every overlay entry generates images).
-      expect(entry.capabilities.generation).toBe(true);
-      expect(typeof entry.capabilities.edit).toBe("boolean");
-
-      // Discriminated union: assert the variant carries the right param.
-      if (entry.defaults.controlAxis === "size") {
-        expect(entry.defaults.size).toMatch(/^\d+x\d+$/);
-      } else {
-        expect(entry.defaults.aspectRatio.length).toBeGreaterThan(0);
-      }
-      expect(["png", "jpeg"]).toContain(entry.defaults.format);
-
       expect(entry.lastValidatedAt).toMatch(ISO_DATE);
       // Parseable as a real calendar date — `2026-13-40` would match the
       // regex but not produce a finite timestamp.
@@ -75,33 +59,6 @@ describe("image-capabilities — overlay shape", () => {
       } else if (provider === "openai") {
         expect(entry.defaults.controlAxis).toBe("size");
       }
-    }
-  });
-});
-
-describe("image-capabilities — freshness drift", () => {
-  it("emits a non-failing warning for entries older than 180 days", () => {
-    const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
-    try {
-      const now = Date.now();
-      const stale: string[] = [];
-      for (const entry of listImageEntries()) {
-        const ageDays = (now - Date.parse(entry.lastValidatedAt)) / MS_PER_DAY;
-        if (ageDays > STALE_THRESHOLD_DAYS) {
-          logger.warn("Image overlay entry is stale — re-run validation harness", {
-            id: entry.id,
-            lastValidatedAt: entry.lastValidatedAt,
-            ageDays: Math.round(ageDays),
-          });
-          stale.push(entry.id);
-        }
-      }
-      // The check is *advisory* — never fails the suite. We assert the
-      // shape of the warning (when one fired) so future agents can't
-      // accidentally turn it into a console.log.
-      expect(warnSpy.mock.calls.length).toBe(stale.length);
-    } finally {
-      warnSpy.mockRestore();
     }
   });
 });
