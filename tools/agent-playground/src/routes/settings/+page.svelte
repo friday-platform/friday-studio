@@ -673,9 +673,18 @@
 
   $effect(() => {
     // Read the dismiss bit once on mount. Guarded so SSR (no localStorage)
-    // is safe even though $effect normally only runs in the browser.
+    // is safe even though $effect normally only runs in the browser, and
+    // try/catch so hardened-WebView / Safari ITP contexts that throw on
+    // localStorage access don't abort the boot chain. On failure leave
+    // the default (`true`) so the cosmetic banner stays suppressed.
     if (typeof localStorage !== "undefined") {
-      imagePickerIntroDismissed = localStorage.getItem(IMAGE_PICKER_INTRO_KEY) === "true";
+      try {
+        imagePickerIntroDismissed = localStorage.getItem(IMAGE_PICKER_INTRO_KEY) === "true";
+      } catch {
+        // Storage read can throw (hardened WebView, Safari ITP, disabled
+        // storage). Default `imagePickerIntroDismissed = true` already
+        // hides the banner — nothing else to do.
+      }
     }
     void (async () => {
       await loadEnv();
