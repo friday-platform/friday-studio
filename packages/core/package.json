@@ -75,7 +75,7 @@
     "@std/encoding": "npm:@jsr/std__encoding@^1.0.10",
     "@std/async": "npm:@jsr/std__async@^1.0.14",
     "@xmldom/xmldom": "^0.9.10",
-    "ai": "^6.0.184",
+    "ai": "^6.0.197",
     "@libpdf/core": "^0.3.6",
     "file-type": "^22.0.1",
     "jetstream": "workspace:*",
