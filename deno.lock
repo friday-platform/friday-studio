@@ -126,7 +126,7 @@
     "npm:dotenv@17.4.2": "17.4.2",
     "npm:dotenv@^17.4.2": "17.4.2",
     "npm:eslint-config-prettier@^10.1.8": "10.1.8_eslint@10.3.0",
-    "npm:eslint-plugin-svelte@^3.17.1": "3.17.1_eslint@10.3.0_svelte@5.55.8",
+    "npm:eslint-plugin-svelte@^3.19.0": "3.19.0_eslint@10.3.0_svelte@5.55.8",
     "npm:eslint@^10.3.0": "10.3.0",
     "npm:fast-glob@^3.3.3": "3.3.3",
     "npm:file-type@^22.0.1": "22.0.1",
@@ -169,7 +169,7 @@
     "npm:react@^19.2.6": "19.2.6",
     "npm:shiki@^4.0.2": "4.0.2",
     "npm:svelte-check@^4.4.7": "4.4.8_svelte@5.55.8_typescript@5.9.3",
-    "npm:svelte-eslint-parser@^1.6.1": "1.6.1_svelte@5.55.8",
+    "npm:svelte-eslint-parser@^1.6.1": "1.8.0_svelte@5.55.8",
     "npm:svelte@^5.55.8": "5.55.8",
     "npm:tar@^7.5.13": "7.5.15",
     "npm:turndown@7.2.4": "7.2.4",
@@ -3354,8 +3354,8 @@
       ],
       "bin": true
     },
-    "eslint-plugin-svelte@3.17.1_eslint@10.3.0_svelte@5.55.8": {
-      "integrity": "sha512-NyiXHtS3Ni7e532RBwS9OXlMKDIrENg3gY+/+ODjZzQx2xhU3NlJ+nIl1a93iUUQeiJL3lS8KLmY+W8hklzweQ==",
+    "eslint-plugin-svelte@3.19.0_eslint@10.3.0_svelte@5.55.8": {
+      "integrity": "sha512-t3rNaZeXz4d2gG4uJyMEYfJCFKf22+SWbSizIIXIWKu4wM+XPLiMWuSSr/C5821JmFeN9ogK+eExbG+z+twyxw==",
       "dependencies": [
         "@eslint-community/eslint-utils",
         "@jridgewell/sourcemap-codec",
@@ -5091,7 +5091,7 @@
     "pluralize@8.0.0": {
       "integrity": "sha512-Nc3IT5yHzflTfbjgqWcCPpo7DaKy4FnpB0l/zCAW0Tc7jxAiuqSxHasntB3D7887LSrA93kDJ9IXovxJYxyLCA=="
     },
-    "postcss-load-config@3.1.4_postcss@8.5.14": {
+    "postcss-load-config@3.1.4_postcss@8.5.15": {
       "integrity": "sha512-6DiM4E7v4coTE4uzA8U//WhtPwyhiim3eyjEMFCnUpzbrkK9wJHgKDT2mR+HbtSrd/NubVaYTOpSpjUl8NQeRg==",
       "dependencies": [
         "lilconfig",
@@ -5102,13 +5102,13 @@
         "postcss"
       ]
     },
-    "postcss-safe-parser@7.0.1_postcss@8.5.14": {
+    "postcss-safe-parser@7.0.1_postcss@8.5.15": {
       "integrity": "sha512-0AioNCJZ2DPYz5ABT6bddIqlhgwhpHZ/l65YAYo0BCIn0xiDpsnTHz0gnoTGk0OXZW0JRs+cDwL8u/teRdz+8A==",
       "dependencies": [
         "postcss"
       ]
     },
-    "postcss-scss@4.0.9_postcss@8.5.14": {
+    "postcss-scss@4.0.9_postcss@8.5.15": {
       "integrity": "sha512-AjKOeiwAitL/MXxQW2DliT28EKukvvbEWx3LBmJIRN8KfBGZbRTxNYW0kSqi1COiTZ57nZ9NW06S6ux//N1c9A==",
       "dependencies": [
         "postcss"
@@ -5121,8 +5121,8 @@
         "util-deprecate"
       ]
     },
-    "postcss@8.5.14": {
-      "integrity": "sha512-SoSL4+OSEtR99LHFZQiJLkT59C5B1amGO1NzTwj7TT1qCUgUO6hxOvzkOYxD+vMrXBM3XJIKzokoERdqQq/Zmg==",
+    "postcss@8.5.15": {
+      "integrity": "sha512-FfR8sjd4em2T6fb3I2MwAJU7HWVMr9zba+enmQeeWFfCbm+UOC/0X4DS8XtpUTMwWMGbjKYP7xjfNekzyGmB3A==",
       "dependencies": [
         "nanoid@3.3.12",
         "picocolors",
@@ -5671,8 +5671,8 @@
       ],
       "bin": true
     },
-    "svelte-eslint-parser@1.6.1_svelte@5.55.8": {
-      "integrity": "sha512-hhvSH6kRj46UzrBVO5TaotD+Iuvruj5ccKBcO4wAhVcPTLmIc/c32D8UllBTYO0on4LzYuM0rNzf1lM/gBlkSQ==",
+    "svelte-eslint-parser@1.8.0_svelte@5.55.8": {
+      "integrity": "sha512-mikR1qwIVy3t5WthUoAXkMwxkXvabZP9FJgdx35Ei7EbGWmctva1Pih16Koeor/bdNNq8NXHlwKGS6NkYTawLg==",
       "dependencies": [
         "eslint-scope@8.4.0",
         "eslint-visitor-keys@4.2.1",
@@ -6653,7 +6653,7 @@
             "npm:@tanstack/svelte-table@^9.0.0-alpha.48",
             "npm:@types/node@25",
             "npm:eslint-config-prettier@^10.1.8",
-            "npm:eslint-plugin-svelte@^3.17.1",
+            "npm:eslint-plugin-svelte@^3.19.0",
             "npm:eslint@^10.3.0",
             "npm:globals@^17.6.0",
             "npm:happy-dom@^20.9.0",
