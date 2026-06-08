@@ -4,7 +4,7 @@
   "exports": "./mod.ts",
   "version": "0.1.0",
   "imports": {
-    "hono/client": "npm:hono@4.12.19/client",
+    "hono/client": "npm:hono@4.12.23/client",
     "undici": "npm:undici@^7"
   },
   "tasks": {
