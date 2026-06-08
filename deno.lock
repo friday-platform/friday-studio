@@ -40,7 +40,7 @@
     "npm:@ai-sdk/openai@^3.0.68": "3.0.68_zod@4.4.3",
     "npm:@ai-sdk/provider@^3.0.10": "3.0.10",
     "npm:@ai-sdk/svelte@^4.0.197": "4.0.197_svelte@5.55.8_zod@4.4.3",
-    "npm:@anthropic-ai/claude-agent-sdk@~0.3.143": "0.3.143_@modelcontextprotocol+sdk@1.28.0__zod@4.4.3_zod@4.4.3",
+    "npm:@anthropic-ai/claude-agent-sdk@~0.3.168": "0.3.168_@anthropic-ai+sdk@0.102.0__zod@4.4.3_@modelcontextprotocol+sdk@1.28.0__zod@4.4.3_zod@4.4.3",
     "npm:@biomejs/biome@*": "2.4.14",
     "npm:@chat-adapter/discord@4.29.0": "4.29.0_ai@6.0.197__zod@4.4.3",
     "npm:@chat-adapter/slack@4.29.0": "4.29.0_ai@6.0.197__zod@4.4.3",
@@ -377,8 +377,8 @@
       "os": ["darwin"],
       "cpu": ["arm64"]
     },
-    "@anthropic-ai/claude-agent-sdk-darwin-arm64@0.3.143": {
-      "integrity": "sha512-41WuTuP+bk4NxrjpG9IJGffsjh1ivyiiAmqgb5QoxPltDAA0p3gs+iZ3lTgDmY4Ga68wDoN05Lt18oCE+DQb7g==",
+    "@anthropic-ai/claude-agent-sdk-darwin-arm64@0.3.168": {
+      "integrity": "sha512-tvFGCGVX9tesGBzfpK008nRmv91pd3ToapDpJbjdwiFSLGWT9n+dc/qurwgxgv9VwWRvV8nWTc3zLRSFI8Lf2g==",
       "os": ["darwin"],
       "cpu": ["arm64"]
     },
@@ -387,8 +387,8 @@
       "os": ["darwin"],
       "cpu": ["x64"]
     },
-    "@anthropic-ai/claude-agent-sdk-darwin-x64@0.3.143": {
-      "integrity": "sha512-3WrJ6MjjwQKvPnPbzUOm08qftlHYobkp/tmM1P/Vk/ldSjoPfFIgLFfzSzUmCKJiKEh2ZlHLJr8ORNrTxXhgQg==",
+    "@anthropic-ai/claude-agent-sdk-darwin-x64@0.3.168": {
+      "integrity": "sha512-J5dZUCrwjz4+gY2dAds2rMDWWSdcMl9jEDpZIzKNCx0f0KlJfE1C7/+stOJaBv6tGj8d/mmzcfBCeNBS1KScgA==",
       "os": ["darwin"],
       "cpu": ["x64"]
     },
@@ -397,8 +397,8 @@
       "os": ["linux"],
       "cpu": ["arm64"]
     },
-    "@anthropic-ai/claude-agent-sdk-linux-arm64-musl@0.3.143": {
-      "integrity": "sha512-9UeV1W2vjOVwJSJrq9aw3UeMo82Ir59FfJ5mchh7OXZEaevkANvHYn25bTCnIpqfqOx7qFEosJW2ELIoV1nprg==",
+    "@anthropic-ai/claude-agent-sdk-linux-arm64-musl@0.3.168": {
+      "integrity": "sha512-uOFtBJjntrYkXlHPRK+cTx1pCc37XxGQ/kN3KBK/KoIDcIrmU8DcX2WUw5IJHJqpG2Qjb7gZ5xAbcw3WTmduwQ==",
       "os": ["linux"],
       "cpu": ["arm64"]
     },
@@ -407,8 +407,8 @@
       "os": ["linux"],
       "cpu": ["arm64"]
     },
-    "@anthropic-ai/claude-agent-sdk-linux-arm64@0.3.143": {
-      "integrity": "sha512-/9oP/FCewrPnwVN+QUS5rlO3kMa07w+hOrpWrz24aEpBYhcHzr0zoNMBriPDAkTr3ao/z1k40UZ2dHmgsSODzA==",
+    "@anthropic-ai/claude-agent-sdk-linux-arm64@0.3.168": {
+      "integrity": "sha512-K9fltcI0VJBr21z4t0iJ4aArFtiS9UwhmMGkxl1jAIM0jatGqiHHbbk+qaCB04va3U6vaflukgtmbpogSB36yQ==",
       "os": ["linux"],
       "cpu": ["arm64"]
     },
@@ -417,8 +417,8 @@
       "os": ["linux"],
       "cpu": ["x64"]
     },
-    "@anthropic-ai/claude-agent-sdk-linux-x64-musl@0.3.143": {
-      "integrity": "sha512-rr4334GOLl9caYDeyWsbwMaVJCiNvKHE9nLdey8opIkq7/FHHu712U6tDk0tcoCdsGU/S3/BBaZParOgF+s5qw==",
+    "@anthropic-ai/claude-agent-sdk-linux-x64-musl@0.3.168": {
+      "integrity": "sha512-JwYD7oxYlIVYDFhgj+QVHgWbJUVGMXsiecB6WQ5VS5u4OqUorivJPFYPaP469otMj4HFtkDupESB+7Zp4jMmUw==",
       "os": ["linux"],
       "cpu": ["x64"]
     },
@@ -427,8 +427,8 @@
       "os": ["linux"],
       "cpu": ["x64"]
     },
-    "@anthropic-ai/claude-agent-sdk-linux-x64@0.3.143": {
-      "integrity": "sha512-kwqnbHo4Zj6TzO1V/83uLhsTt0xBp/BN5V/aHIX+khM4UuNO6NOKNaZvr8Int3sF0ARF95Hjr4l/hMKxry6DhQ==",
+    "@anthropic-ai/claude-agent-sdk-linux-x64@0.3.168": {
+      "integrity": "sha512-0Fw4ICZopwKbqNQo64HqkpJw5cqxOxFOV/w8GCS2hDsJ+0aogmK/B78t4iV6rFHIkC076Nm5UH14FP1eOIJ3OA==",
       "os": ["linux"],
       "cpu": ["x64"]
     },
@@ -437,8 +437,8 @@
       "os": ["win32"],
       "cpu": ["arm64"]
     },
-    "@anthropic-ai/claude-agent-sdk-win32-arm64@0.3.143": {
-      "integrity": "sha512-q5UaLZ9ABbqQN8UXpqHUqjW6akI1zMrV5Jvtq0yueKP4nIRbBBZBQ80M4bpdrc0+SiRmjVRV3p8lsCCAd8azgg==",
+    "@anthropic-ai/claude-agent-sdk-win32-arm64@0.3.168": {
+      "integrity": "sha512-NREaLXAxl23pEzoU7bmX6u8MibAYEY2t8XP5xtj/vMO6UwxFjT3YgGsTuQcnFP+1qsjWaOBCia2ZQnqI68Y0Ng==",
       "os": ["win32"],
       "cpu": ["arm64"]
     },
@@ -447,8 +447,8 @@
       "os": ["win32"],
       "cpu": ["x64"]
     },
-    "@anthropic-ai/claude-agent-sdk-win32-x64@0.3.143": {
-      "integrity": "sha512-46L2mkskvIRfwzHP3p0uUE5u9Oc7Eb/DRVmXuGNk5Z8jiahlDSv0SHP1vnWSWw5nWIu4DWOKyXZelRmYc9LxCg==",
+    "@anthropic-ai/claude-agent-sdk-win32-x64@0.3.168": {
+      "integrity": "sha512-Ha3eivz2Wm4y3BR+Xpn/r+CBM8ARC6knYDLbjLqH/DxjKahr6WB60xQkBD1U6wchT6w7zfIQqQGbucuUOTTuew==",
       "os": ["win32"],
       "cpu": ["x64"]
     },
@@ -470,28 +470,29 @@
         "@anthropic-ai/claude-agent-sdk-win32-x64@0.2.138"
       ]
     },
-    "@anthropic-ai/claude-agent-sdk@0.3.143_@modelcontextprotocol+sdk@1.28.0__zod@4.4.3_zod@4.4.3": {
-      "integrity": "sha512-JnxOTRpSBpFqKFMfV5cW4QjpeDOHUNr31rRislmOVWEPsRmCjsy9jYwKxDf7kxcwxyZ6h/YHz1ACvMaUWy6o6A==",
+    "@anthropic-ai/claude-agent-sdk@0.3.168_@anthropic-ai+sdk@0.102.0__zod@4.4.3_@modelcontextprotocol+sdk@1.28.0__zod@4.4.3_zod@4.4.3": {
+      "integrity": "sha512-C7n9uS1fsAt9lFKw/ovsFNAlPI7UXE2uPQbOzzKLpDNjfFR5spthALhV49b01PtYWEzTo3W3OJfgCv6wooXtYg==",
       "dependencies": [
-        "@anthropic-ai/sdk@0.96.0_zod@4.4.3",
+        "@anthropic-ai/sdk@0.102.0_zod@4.4.3",
         "@modelcontextprotocol/sdk@1.28.0_zod@4.4.3",
         "zod"
       ],
       "optionalDependencies": [
-        "@anthropic-ai/claude-agent-sdk-darwin-arm64@0.3.143",
-        "@anthropic-ai/claude-agent-sdk-darwin-x64@0.3.143",
-        "@anthropic-ai/claude-agent-sdk-linux-arm64@0.3.143",
-        "@anthropic-ai/claude-agent-sdk-linux-arm64-musl@0.3.143",
-        "@anthropic-ai/claude-agent-sdk-linux-x64@0.3.143",
-        "@anthropic-ai/claude-agent-sdk-linux-x64-musl@0.3.143",
-        "@anthropic-ai/claude-agent-sdk-win32-arm64@0.3.143",
-        "@anthropic-ai/claude-agent-sdk-win32-x64@0.3.143"
+        "@anthropic-ai/claude-agent-sdk-darwin-arm64@0.3.168",
+        "@anthropic-ai/claude-agent-sdk-darwin-x64@0.3.168",
+        "@anthropic-ai/claude-agent-sdk-linux-arm64@0.3.168",
+        "@anthropic-ai/claude-agent-sdk-linux-arm64-musl@0.3.168",
+        "@anthropic-ai/claude-agent-sdk-linux-x64@0.3.168",
+        "@anthropic-ai/claude-agent-sdk-linux-x64-musl@0.3.168",
+        "@anthropic-ai/claude-agent-sdk-win32-arm64@0.3.168",
+        "@anthropic-ai/claude-agent-sdk-win32-x64@0.3.168"
       ]
     },
-    "@anthropic-ai/sdk@0.81.0_zod@4.4.3": {
-      "integrity": "sha512-D4K5PvEV6wPiRtVlVsJHIUhHAmOZ6IT/I9rKlTf84gR7GyyAurPJK7z9BOf/AZqC5d1DhYQGJNKRmV+q8dGhgw==",
+    "@anthropic-ai/sdk@0.102.0_zod@4.4.3": {
+      "integrity": "sha512-cThh3KcPW3lzkFyTz1cjyhJvOVw45NkLMoowO2ZJ/76CBz44ADUon+NsjEc/PypAkARs72Xu8qxTnx6PAOTQUQ==",
       "dependencies": [
         "json-schema-to-ts",
+        "standardwebhooks",
         "zod"
       ],
       "optionalPeers": [
@@ -499,11 +500,10 @@
       ],
       "bin": true
     },
-    "@anthropic-ai/sdk@0.96.0_zod@4.4.3": {
-      "integrity": "sha512-KlCsODtTyb17bLUVCSDC2HtSvAbJf60sEiPEax9dInF+aDF92vS4TZJ5XD7YCQXNb1/5icYaw8Y7wMjPlIV9Zg==",
+    "@anthropic-ai/sdk@0.81.0_zod@4.4.3": {
+      "integrity": "sha512-D4K5PvEV6wPiRtVlVsJHIUhHAmOZ6IT/I9rKlTf84gR7GyyAurPJK7z9BOf/AZqC5d1DhYQGJNKRmV+q8dGhgw==",
       "dependencies": [
         "json-schema-to-ts",
-        "standardwebhooks",
         "zod"
       ],
       "optionalPeers": [
@@ -6395,7 +6395,7 @@
         "packageJson": {
           "dependencies": [
             "npm:@ai-sdk/provider@^3.0.10",
-            "npm:@anthropic-ai/claude-agent-sdk@~0.3.143",
+            "npm:@anthropic-ai/claude-agent-sdk@~0.3.168",
             "npm:@chat-adapter/slack@4.29.0",
             "npm:@coderabbitai/bitbucket@^1.1.4",
             "npm:@hubspot/api-client@^13.4.0",
@@ -6509,7 +6509,7 @@
             "npm:@ai-sdk/groq@^3.0.39",
             "npm:@ai-sdk/openai@^3.0.68",
             "npm:@ai-sdk/provider@^3.0.10",
-            "npm:@anthropic-ai/claude-agent-sdk@~0.3.143",
+            "npm:@anthropic-ai/claude-agent-sdk@~0.3.168",
             "npm:@jsr/std__collections@^1.1.3",
             "npm:ai-sdk-provider-claude-code@^3.4.4",
             "npm:ai@^6.0.197",
