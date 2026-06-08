@@ -57,7 +57,7 @@
   ];
 
   const table = createTable({
-    _features: stockFeatures,
+    features: stockFeatures,
     columns,
     get data() {
       return credentials;
