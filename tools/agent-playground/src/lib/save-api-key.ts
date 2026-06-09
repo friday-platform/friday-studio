@@ -17,6 +17,10 @@ export interface CatalogEntry {
   credentialEnvVar: string | null;
   meta: { name: string; letter: string; keyPrefix: string | null; helpUrl: string | null };
   models: Array<{ id: string; displayName: string }>;
+  /** Image-generation models advertised by the gateway/provider; empty for
+   * providers with no image surface. Carried through the catalog refresh
+   * so the Settings image picker sees the post-unlock state. */
+  images: Array<{ id: string; displayName: string }>;
   error?: string;
 }
 

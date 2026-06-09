@@ -14,12 +14,15 @@
 
   Save button at the bottom PUTs `/api/config/models` with chains; the
   daemon validates each entry via `createPlatformModels` before writing
-  friday.yml. Restart required for changes to take effect — banner
-  reminds the user after a successful save.
+  friday.yml and hot-reloads its live `PlatformModels` so changes take
+  effect immediately. The success banner reflects the daemon's
+  `restartRequired` response — affirmative on hot-reload, falls back to
+  the restart-required message only if the hot-swap failed.
 
   @component
 -->
 <script lang="ts">
+  import { listImageEntries } from "@atlas/llm/image-capabilities";
   import { Button, PageLayout, toast } from "@atlas/ui";
   import { useQueryClient } from "@tanstack/svelte-query";
   import {
@@ -28,6 +31,7 @@
     ImportBundleResponseSchema,
     type ImportedEntry as DaemonImportedEntry,
   } from "$lib/api/workspace-import.ts";
+  import ImageModelPicker from "$lib/components/settings/image-model-picker.svelte";
   import ModelChain from "$lib/components/settings/model-chain.svelte";
   import ModelPicker from "$lib/components/settings/model-picker.svelte";
   import { tunnelUrl as tunnelProxyUrl } from "$lib/daemon-url";
@@ -43,10 +47,14 @@
   import { z } from "zod";
 
   const TunnelStatusSchema = z.object({ url: z.string().nullable() });
+  const SaveModelsResponseSchema = z.object({
+    success: z.literal(true),
+    restartRequired: z.boolean(),
+  });
 
   // ─── Types mirroring the daemon's route shapes ─────────────────────
 
-  type ModelRole = "labels" | "classifier" | "planner" | "conversational";
+  type ModelRole = "labels" | "classifier" | "planner" | "conversational" | "image";
 
   interface EnvRow {
     key: string;
@@ -82,6 +90,11 @@
     credentialEnvVar: string | null;
     meta: ProviderMeta;
     models: CatalogModel[];
+    /** Image-generation models advertised by the gateway/provider. Empty
+     * for providers with no image surface. Consumed by the image picker;
+     * the chain tile uses the overlay-derived imageCatalog (see below)
+     * for friendly display names. */
+    images: CatalogModel[];
     error?: string;
   }
 
@@ -98,6 +111,7 @@
     "planner",
     "classifier",
     "labels",
+    "image",
   ] as const;
 
   const ROLE_DESCRIPTIONS: Record<ModelRole, string> = {
@@ -105,6 +119,7 @@
     classifier: "Structured output decisions — triage, routing.",
     planner: "Multi-step synthesis with tool calls — workflow planning.",
     conversational: "Streaming chat with tools and multi-turn memory.",
+    image: "Image generation and edit — verified models only.",
   };
 
   const ROLE_TITLES: Record<ModelRole, string> = {
@@ -112,6 +127,7 @@
     classifier: "Classifier",
     planner: "Planner",
     conversational: "Conversational",
+    image: "Image",
   };
 
   /**
@@ -154,6 +170,7 @@
     classifier: [],
     planner: [],
     conversational: [],
+    image: [],
   });
   let picker = $state<PickerState | null>(null);
   let dirty = $state(false);
@@ -166,6 +183,17 @@
   let modelsError = $state<string | null>(null);
   let catalogError = $state<string | null>(null);
   let successFlash = $state<string | null>(null);
+
+  // Whether `friday.yml` already lives on disk. Surfaced by the daemon as
+  // the optional `configPath` field on GET /api/config/models — present
+  // when the file exists, absent on a fresh install. Used to gate the
+  // one-time image-model migration nudge below.
+  let fridayConfigExists = $state(false);
+  // Mirrors `localStorage["image-picker-intro-seen"]`. Starts true so the
+  // banner can't flash during the brief window before the $effect below
+  // reads the actual stored value.
+  let imagePickerIntroDismissed = $state(true);
+  const IMAGE_PICKER_INTRO_KEY = "image-picker-intro-seen";
 
   const queryClient = useQueryClient();
 
@@ -256,6 +284,11 @@
         return;
       }
       const data: unknown = await res.json();
+      if (typeof data === "object" && data !== null && "configPath" in data) {
+        // Daemon includes `configPath` only when friday.yml actually
+        // exists on disk — a typed signal for upgrade vs fresh install.
+        fridayConfigExists = typeof data.configPath === "string";
+      }
       if (
         typeof data === "object" &&
         data !== null &&
@@ -269,6 +302,7 @@
           classifier: [],
           planner: [],
           conversational: [],
+          image: [],
         };
         for (const m of models) {
           nextChains[m.role] = parseChain(m.configured);
@@ -461,6 +495,7 @@
         classifier: serializeChain(chains.classifier),
         planner: serializeChain(chains.planner),
         conversational: serializeChain(chains.conversational),
+        image: serializeChain(chains.image),
       };
       const res = await fetch("/api/daemon/api/config/models", {
         method: "PUT",
@@ -476,7 +511,11 @@
         modelsError = msg;
         return;
       }
-      successFlash = "Saved to friday.yml. Restart the daemon to apply.";
+      const parsed = SaveModelsResponseSchema.safeParse(body);
+      successFlash =
+        parsed.success && !parsed.data.restartRequired
+          ? "Saved. Active now."
+          : "Saved to friday.yml. Restart the daemon to apply.";
       setTimeout(() => {
         successFlash = null;
       }, 4000);
@@ -495,6 +534,7 @@
       classifier: [],
       planner: [],
       conversational: [],
+      image: [],
     };
     for (const m of models) next[m.role] = parseChain(m.configured);
     chains = next;
@@ -559,6 +599,31 @@
   );
   const connectedProviders = $derived(catalog.filter((e) => e.credentialConfigured).length);
 
+  /**
+   * Catalog flavored for the image role: each provider's `models` field
+   * is replaced by overlay-derived entries `{ id, displayName }` so the
+   * existing `<ModelChain>` tile lookup finds the friendly display name
+   * ("Gemini 2.5 Flash Image") instead of falling back to the raw id.
+   *
+   * Provider-level fields (`credentialConfigured`, `credentialEnvVar`,
+   * `meta`) carry over from the underlying catalog so the chain tile's
+   * locked-state and provider letter still come from real data.
+   */
+  const imageCatalog = $derived.by<CatalogEntry[]>(() => {
+    const overlay = listImageEntries();
+    const byProvider = new Map<string, CatalogModel[]>();
+    for (const entry of overlay) {
+      const idx = entry.id.indexOf(":");
+      if (idx <= 0) continue;
+      const provider = entry.id.slice(0, idx);
+      const modelId = entry.id.slice(idx + 1);
+      const list = byProvider.get(provider) ?? [];
+      list.push({ id: modelId, displayName: entry.displayName });
+      byProvider.set(provider, list);
+    }
+    return catalog.map((e) => ({ ...e, models: byProvider.get(e.provider) ?? [] }));
+  });
+
   const pickerRole = $derived(picker ? ROLES[picker.roleIdx] : null);
   const pickerCurrent = $derived.by<ModelChoice | null>(() => {
     if (!picker || !pickerRole) return null;
@@ -578,9 +643,49 @@
     return picker.slotIdx === 0 && chains[pickerRole].length === 1;
   });
 
+  // ─── Image-model migration nudge ───────────────────────────────────
+  //
+  // One-time banner shown to upgrade users (friday.yml exists, no
+  // `models.image` pin yet) explaining that the default image model
+  // changed from `gemini-3.1-flash-image-preview` (which Google can
+  // retire) to the stable `gemini-2.5-flash-image`. Fresh installs see
+  // nothing — there's no prior aesthetic to compare against.
+  // Persistence is localStorage-only; no server state.
+
+  const imageRoleUnset = $derived(
+    models.find((m) => m.role === "image")?.configured === null,
+  );
+  const showImageMigrationBanner = $derived(
+    fridayConfigExists && imageRoleUnset && !imagePickerIntroDismissed,
+  );
+
+  function dismissImagePickerIntro(): void {
+    imagePickerIntroDismissed = true;
+    try {
+      localStorage.setItem(IMAGE_PICKER_INTRO_KEY, "true");
+    } catch {
+      // Storage write can fail (private mode, quota, disabled). The
+      // in-memory dismiss above still hides the banner for this session.
+    }
+  }
+
   // ─── Boot ──────────────────────────────────────────────────────────
 
   $effect(() => {
+    // Read the dismiss bit once on mount. Guarded so SSR (no localStorage)
+    // is safe even though $effect normally only runs in the browser, and
+    // try/catch so hardened-WebView / Safari ITP contexts that throw on
+    // localStorage access don't abort the boot chain. On failure leave
+    // the default (`true`) so the cosmetic banner stays suppressed.
+    if (typeof localStorage !== "undefined") {
+      try {
+        imagePickerIntroDismissed = localStorage.getItem(IMAGE_PICKER_INTRO_KEY) === "true";
+      } catch {
+        // Storage read can throw (hardened WebView, Safari ITP, disabled
+        // storage). Default `imagePickerIntroDismissed = true` already
+        // hides the banner — nothing else to do.
+      }
+    }
     void (async () => {
       await loadEnv();
       await Promise.all([loadModels(), loadCatalog(), loadTunnel(), refreshFromServer()]);
@@ -831,17 +936,35 @@
                     <span class="role-name">{ROLE_TITLES[m.role]}</span>
                     <p class="role-desc">{ROLE_DESCRIPTIONS[m.role]}</p>
                   </div>
-                  <ModelChain
-                    role={m.role}
-                    chain={chains[m.role]}
-                    resolved={m.resolved}
-                    {catalog}
-                    onEditSlot={(slotIdx) => handleEditSlot(m.role, slotIdx)}
-                    onRemoveSlot={(slotIdx) => handleRemoveSlot(m.role, slotIdx)}
-                    onReorder={(from, to) => handleReorder(m.role, from, to)}
-                    onAddFallback={() => handleAddFallback(m.role)}
-                    onOverrideDefault={() => handleOverrideDefault(m.role)}
-                  />
+                  <div class="role-body">
+                    {#if m.role === "image" && showImageMigrationBanner}
+                      <div class="migration-banner" role="status">
+                        <span class="migration-text">
+                          Default image model updated to Gemini 2.5 Flash Image (stable). The
+                          previous default was a <code>-preview</code>
+                          ID Google can retire without notice. No action needed.
+                        </span>
+                        <button
+                          class="migration-dismiss"
+                          type="button"
+                          onclick={dismissImagePickerIntro}
+                        >
+                          Dismiss
+                        </button>
+                      </div>
+                    {/if}
+                    <ModelChain
+                      role={m.role}
+                      chain={chains[m.role]}
+                      resolved={m.resolved}
+                      catalog={m.role === "image" ? imageCatalog : catalog}
+                      onEditSlot={(slotIdx) => handleEditSlot(m.role, slotIdx)}
+                      onRemoveSlot={(slotIdx) => handleRemoveSlot(m.role, slotIdx)}
+                      onReorder={(from, to) => handleReorder(m.role, from, to)}
+                      onAddFallback={() => handleAddFallback(m.role)}
+                      onOverrideDefault={() => handleOverrideDefault(m.role)}
+                    />
+                  </div>
                 </div>
               {/each}
             </div>
@@ -1186,16 +1309,29 @@
 </PageLayout.Root>
 
 {#if picker && pickerRole}
-  <ModelPicker
-    roleTitle={ROLE_TITLES[pickerRole]}
-    slotLabel={pickerSlotLabel}
-    current={pickerCurrent}
-    allowDefault={pickerAllowDefault}
-    {catalog}
-    saveApiKey={handleSaveApiKey}
-    onSelect={handlePickerSelect}
-    onClose={() => (picker = null)}
-  />
+  {#if pickerRole === "image"}
+    <ImageModelPicker
+      roleTitle={ROLE_TITLES[pickerRole]}
+      slotLabel={pickerSlotLabel}
+      current={pickerCurrent}
+      allowDefault={pickerAllowDefault}
+      {catalog}
+      saveApiKey={handleSaveApiKey}
+      onSelect={handlePickerSelect}
+      onClose={() => (picker = null)}
+    />
+  {:else}
+    <ModelPicker
+      roleTitle={ROLE_TITLES[pickerRole]}
+      slotLabel={pickerSlotLabel}
+      current={pickerCurrent}
+      allowDefault={pickerAllowDefault}
+      {catalog}
+      saveApiKey={handleSaveApiKey}
+      onSelect={handlePickerSelect}
+      onClose={() => (picker = null)}
+    />
+  {/if}
 {/if}
 
 <style>
@@ -1280,6 +1416,48 @@
     display: flex;
     flex-direction: column;
     gap: 6px;
+  }
+  .role-body {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 0;
+  }
+
+  .migration-banner {
+    align-items: flex-start;
+    background: color-mix(in srgb, var(--color-accent), transparent 88%);
+    border: 1px solid color-mix(in srgb, var(--color-accent), transparent 60%);
+    border-radius: 6px;
+    display: flex;
+    font-size: 12px;
+    gap: 12px;
+    line-height: 1.5;
+    padding: 10px 12px;
+  }
+  .migration-text {
+    color: var(--color-text);
+    flex: 1;
+  }
+  .migration-text code {
+    background: var(--color-surface-3);
+    border-radius: 4px;
+    font-size: 11px;
+    padding: 1px 5px;
+  }
+  .migration-dismiss {
+    background: transparent;
+    border: 1px solid var(--color-border-2);
+    border-radius: 4px;
+    color: color-mix(in srgb, var(--color-text), transparent 30%);
+    cursor: pointer;
+    flex: 0 0 auto;
+    font-family: inherit;
+    font-size: 12px;
+    padding: 3px 10px;
+  }
+  .migration-dismiss:hover {
+    color: var(--color-text);
   }
   .role-name-upper {
     color: color-mix(in srgb, var(--color-text), transparent 55%);

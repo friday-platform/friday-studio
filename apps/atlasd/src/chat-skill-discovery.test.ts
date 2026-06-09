@@ -1,14 +1,20 @@
-import type { PlatformModels } from "@atlas/llm";
+import { createStubPlatformModels } from "@atlas/llm";
 import type { SkillsShClient, SkillsShDownloadResult, SkillsShSearchResult } from "@atlas/skills";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// `smallLLM` is mocked, so platformModels is never read in tests — but the
-// signature still requires a value with the right shape.
-const fakePlatformModels: PlatformModels = {
+// `smallLLM` is mocked, so platformModels is never read in tests — the
+// throwing overrides act as a regression guard: any future refactor that
+// accidentally hits `platformModels` will fail loudly instead of silently
+// reading a stub. Helper's `reload` no-op is harmless under the narrower
+// agent-sdk `PlatformModels` shape thanks to structural subtyping.
+const fakePlatformModels = createStubPlatformModels({
   get: () => {
     throw new Error("platformModels.get should not be called when smallLLM is mocked");
   },
-};
+  getImageResolved: () => {
+    throw new Error("platformModels.getImageResolved should not be called when smallLLM is mocked");
+  },
+});
 
 // ─── Module mocks ────────────────────────────────────────────────────────────
 
@@ -42,7 +48,12 @@ const mockSkillStoragePublish = vi.hoisted(() =>
   >(),
 );
 
-vi.mock("@atlas/llm", () => ({ smallLLM: mockSmallLLM }));
+vi.mock("@atlas/llm", async (importOriginal) => {
+  // Pass through `createStubPlatformModels` (and any other re-exports the
+  // test file consumes) — the wholesale replacement form would drop them.
+  const original = await importOriginal<typeof import("@atlas/llm")>();
+  return { ...original, smallLLM: mockSmallLLM };
+});
 
 vi.mock("@atlas/skills", async (importOriginal) => {
   const original = await importOriginal<Record<string, unknown>>();

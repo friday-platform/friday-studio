@@ -5,7 +5,13 @@
  * creation failure, and MIME type handling.
  */
 
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import type { ImageModelV3 } from "@ai-sdk/provider";
+import { createStubPlatformModels, listImageEntries } from "@atlas/llm";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { z } from "zod";
 import { imageGenerationAgent } from "./agent.ts";
 
 // ---------------------------------------------------------------------------
@@ -30,10 +36,13 @@ vi.mock("ai", () => ({ generateImage: generateImageMock }));
 
 vi.mock("./discovery.ts", () => ({ discoverImageFiles: discoverImageFilesMock }));
 
-vi.mock("@atlas/llm", () => ({
-  registry: { imageModel: () => "gemini-mock" },
-  smallLLM: smallLLMMock,
-}));
+vi.mock("@atlas/llm", async () => {
+  // Overlay lookups (`lookupImageEntry`, `listImageEntries`) are pure data
+  // reads — pass them through so capability and matrix tests exercise the
+  // actual overlay entries. Only `smallLLM` is mocked.
+  const actual = await vi.importActual<typeof import("@atlas/llm")>("@atlas/llm");
+  return { ...actual, smallLLM: smallLLMMock };
+});
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -41,6 +50,62 @@ vi.mock("@atlas/llm", () => ({
 
 const mockLogger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
 const mockStream = { emit: vi.fn() };
+
+/**
+ * Build a stub `ImageModelV3` carrying SDK-shaped `provider` / `modelId`
+ * strings. These mirror what real providers return — e.g. Google's SDK reports
+ * `provider: "google.generative-ai"`, `modelId: "gemini-2.5-flash-image"`,
+ * neither of which match the capability overlay's `provider:model` key. By
+ * keeping the stub's shape SDK-accurate (rather than stuffing the overlay key
+ * into `modelId`), tests prove the agent looks up the overlay via the resolved
+ * `key` and not via `model.modelId` — a regression to the latter would miss
+ * every overlay entry and fail the test.
+ */
+function makeStubImageModel(provider: string, modelId: string): ImageModelV3 {
+  return {
+    specificationVersion: "v3",
+    provider,
+    modelId,
+    maxImagesPerCall: 1,
+    doGenerate: () => Promise.reject(new Error("stub ImageModelV3 invoked")),
+  };
+}
+
+// SDK-shaped defaults: provider is the transport string, modelId is the bare id.
+// Neither matches an overlay key on its own — capability lookup must go through
+// the resolved `key` returned by `getImageResolved()`.
+const stubImageModel = makeStubImageModel("google.generative-ai", "gemini-2.5-flash-image");
+
+// Spy handles retained separately so `mockReturnValueOnce` / `toHaveBeenCalled`
+// assertions can target them — the helper only exposes the resolved
+// `PlatformModels` shape, not its underlying spies.
+const getImageResolvedSpy = vi.fn(() => ({
+  key: "google:gemini-2.5-flash-image",
+  model: stubImageModel,
+}));
+const getSpy = vi.fn();
+const stubPlatformModels = createStubPlatformModels({
+  get: getSpy,
+  getImageResolved: getImageResolvedSpy,
+});
+
+/**
+ * Swap the current image model + overlay key for one test. The pair is
+ * returned atomically from `getImageResolved()`, so this just queues a
+ * one-shot return value. The model is built with the bare id half of the
+ * overlay key (post-colon) on a generic stub provider — same SDK shape as
+ * production.
+ */
+function useImageModel(overlayKey: string): void {
+  const [provider, modelId] = overlayKey.split(":");
+  if (!provider || !modelId) {
+    throw new Error(`useImageModel: malformed overlay key "${overlayKey}"`);
+  }
+  getImageResolvedSpy.mockReturnValueOnce({
+    key: overlayKey,
+    model: makeStubImageModel(`stub.${provider}`, modelId),
+  });
+}
 
 function makeContext(config?: Record<string, unknown>) {
   return {
@@ -51,6 +116,7 @@ function makeContext(config?: Record<string, unknown>) {
     env: {},
     config,
     abortSignal: undefined,
+    platformModels: stubPlatformModels,
   } as never;
 }
 
@@ -193,13 +259,30 @@ describe("imageGenerationAgent", () => {
     expect(result.error.reason).toContain("Failed to save generated image");
   });
 
-  test("passes 1024x1024 size to generateImage", async () => {
+  test("dispatches aspectRatio param (and no size) for aspectRatio-axis model", async () => {
+    // Default stub is google:gemini-2.5-flash-image
+    // → { controlAxis: "aspectRatio", aspectRatio: "1:1" }
     generateImageMock.mockResolvedValue(makeGenerateImageResult([makeImageFile()]));
     setupSaveMocks();
 
     await imageGenerationAgent.execute("Generate an image", makeContext());
 
-    expect(generateImageMock).toHaveBeenCalledWith(expect.objectContaining({ size: "1024x1024" }));
+    const call = generateImageMock.mock.calls[0]?.[0];
+    expect(call.aspectRatio).toBe("1:1");
+    expect(call.size).toBeUndefined();
+  });
+
+  test("dispatches size param (and no aspectRatio) for size-axis model", async () => {
+    // openai:dall-e-3 → { controlAxis: "size", size: "1024x1024" }
+    useImageModel("openai:dall-e-3");
+    generateImageMock.mockResolvedValue(makeGenerateImageResult([makeImageFile()]));
+    setupSaveMocks();
+
+    await imageGenerationAgent.execute("Generate an image", makeContext());
+
+    const call = generateImageMock.mock.calls[0]?.[0];
+    expect(call.size).toBe("1024x1024");
+    expect(call.aspectRatio).toBeUndefined();
   });
 
   test("uses JPEG extension when model returns image/jpeg", async () => {
@@ -430,5 +513,211 @@ describe("imageGenerationAgent", () => {
       expect.assert(result.ok === false);
       expect(result.error.reason).toContain("Image editing failed");
     });
+  });
+
+  // -------------------------------------------------------------------------
+  // Capability check — edit-mode prompt against a gen-only overlay entry
+  // -------------------------------------------------------------------------
+
+  describe("capability check", () => {
+    test("returns err with displayName when edit requested on a gen-only model", async () => {
+      useImageModel("openai:dall-e-3");
+      discoverImageFilesMock.mockResolvedValue(makeDiscoveryResult([{ id: "src-1" }]));
+
+      const result = await imageGenerationAgent.execute(
+        "Make the sky dramatic src-1",
+        makeContext(),
+      );
+
+      expect(result.ok).toBe(false);
+      expect.assert(result.ok === false);
+      expect(result.error.reason).toContain("DALL·E 3");
+      expect(result.error.reason).toContain("supports generation only");
+      expect(result.error.reason).toContain("Settings → Image");
+      expect(generateImageMock).not.toHaveBeenCalled();
+    });
+
+    test("proceeds to generateImage in edit mode on an edit-capable model", async () => {
+      // Default stub is google:gemini-2.5-flash-image (edit-capable).
+      const sourceBytes = new Uint8Array([137, 80, 78, 71]);
+      discoverImageFilesMock.mockResolvedValue(makeDiscoveryResult([{ id: "src-1" }]));
+      readBinaryContentsMock.mockResolvedValue({ ok: true, data: sourceBytes });
+      generateImageMock.mockResolvedValue(makeGenerateImageResult([makeImageFile()]));
+      setupSaveMocks();
+
+      const result = await imageGenerationAgent.execute("Edit src-1", makeContext());
+
+      expect(result.ok).toBe(true);
+      expect(generateImageMock).toHaveBeenCalled();
+    });
+
+    test("proceeds normally in generation mode on a gen-only model", async () => {
+      useImageModel("openai:dall-e-3");
+      generateImageMock.mockResolvedValue(makeGenerateImageResult([makeImageFile()]));
+      setupSaveMocks();
+
+      const result = await imageGenerationAgent.execute("Generate a sunset", makeContext());
+
+      expect(result.ok).toBe(true);
+      expect(generateImageMock).toHaveBeenCalled();
+    });
+
+    // Regression guard for the QA-found bug where the agent looked up the
+    // overlay via `model.modelId` (bare id like "gemini-2.5-flash-image"),
+    // which never matches the overlay's `provider:model` keys. The default
+    // stub's SDK-shaped model has provider "google.generative-ai" and modelId
+    // "gemini-2.5-flash-image" — neither is an overlay key. If the agent
+    // regresses to either lookup, it'll hit the null branch and `err()` with
+    // "unknown to Friday's capability overlay" instead of generating.
+    test("uses resolved overlay key — not model.modelId — for capability lookup", async () => {
+      generateImageMock.mockResolvedValue(makeGenerateImageResult([makeImageFile()]));
+      setupSaveMocks();
+
+      const result = await imageGenerationAgent.execute("Generate a cat", makeContext());
+
+      expect(result.ok).toBe(true);
+      expect(getImageResolvedSpy).toHaveBeenCalled();
+      expect(generateImageMock).toHaveBeenCalled();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // (model × transport) matrix — fixture-driven dispatch + capability checks
+  //
+  // Cartesian product of every overlay entry × {direct, proxy}. Only runs
+  // when at least one fixture exists under `__fixtures__/` (produced by
+  // `scripts/validate-image-models.ts` — operator-run, cost-gated). The
+  // fixtures aren't committed to the repo, so in CI the whole describe is
+  // skipped with a single skip line — no per-cell skips inflating the
+  // output. Run the harness locally and the matrix wakes up.
+  //
+  // For edit-capable entries, the pair runs a gen-mode prompt and asserts
+  // the correct controlAxis param shape + success. For gen-only entries,
+  // the pair runs an edit-mode prompt and asserts the capability `err()` —
+  // generateImage is never called, so the controlAxis axis is exercised
+  // exclusively via edit-capable entries within the same matrix.
+  // -------------------------------------------------------------------------
+
+  describe("(model × transport) matrix", () => {
+    const TRANSPORTS = ["direct", "proxy"] as const;
+    type Transport = (typeof TRANSPORTS)[number];
+
+    const EnvelopeSchema = z.object({
+      warnings: z.array(z.unknown()),
+      providerMetadata: z.unknown(),
+      mediaType: z.string(),
+      base64Length: z.number().int().nonnegative(),
+      imageCount: z.number().int().nonnegative(),
+    });
+    const FixtureSchema = z.object({
+      direct: EnvelopeSchema.nullable(),
+      proxy: EnvelopeSchema.nullable(),
+    });
+
+    const FIXTURES_DIR = resolve(fileURLToPath(new URL(".", import.meta.url)), "__fixtures__");
+    const fixturesExist =
+      existsSync(FIXTURES_DIR) && readdirSync(FIXTURES_DIR).some((f) => f.endsWith(".json"));
+
+    /**
+     * Resolve `provider:model` to its fixture path. The harness writes with
+     * `__` separator because `:` isn't filesystem-safe; mirror that here.
+     */
+    function fixturePathFor(id: string): string {
+      return resolve(FIXTURES_DIR, `${id.replace(":", "__")}.json`);
+    }
+
+    /**
+     * Returns the parsed fixture, or `null` when the file is absent. Bad JSON
+     * or shape mismatches throw — the harness's contract is the source of
+     * truth and a broken fixture should fail loudly, not skip silently.
+     */
+    function loadFixture(id: string): z.infer<typeof FixtureSchema> | null {
+      const p = fixturePathFor(id);
+      if (!existsSync(p)) return null;
+      return FixtureSchema.parse(JSON.parse(readFileSync(p, "utf-8")));
+    }
+
+    /**
+     * Synthesize PNG bytes for the mocked generateImage response. The agent
+     * only copies these bytes into an artifact — it doesn't validate PNG
+     * structure — so an 8-byte signature is enough to exercise the code path.
+     */
+    function synthesizePngBytes(): Uint8Array {
+      return new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
+    }
+
+    if (!fixturesExist) {
+      // CI path: no fixtures committed. Register exactly one skip so the
+      // test output doesn't inflate with N per-cell skips that assert
+      // nothing. Run `scripts/validate-image-models.ts` locally to wake
+      // the full matrix.
+      test.skip("fixtures not committed; run validate-image-models.ts locally", () => {});
+      return;
+    }
+
+    for (const entry of listImageEntries()) {
+      for (const transport of TRANSPORTS satisfies readonly Transport[]) {
+        const label = `${entry.id} · ${transport}`;
+        const fixture = loadFixture(entry.id);
+
+        if (fixture === null) {
+          test.skip(`${label} · skipped (no fixture file)`, () => {});
+          continue;
+        }
+        const envelope = fixture[transport];
+        if (envelope === null) {
+          test.skip(`${label} · skipped (${transport} fixture null)`, () => {});
+          continue;
+        }
+
+        if (entry.capabilities.edit) {
+          test(`${label} · dispatches ${entry.defaults.controlAxis} param`, async () => {
+            useImageModel(entry.id);
+            const bytes = synthesizePngBytes();
+            const imageFile = {
+              uint8Array: bytes,
+              mediaType: envelope.mediaType,
+              base64: uint8ToBase64(bytes),
+            };
+            generateImageMock.mockResolvedValue({
+              image: imageFile,
+              images: [imageFile],
+              warnings: envelope.warnings,
+              responses: [],
+              providerMetadata: envelope.providerMetadata,
+            });
+            setupSaveMocks();
+
+            const result = await imageGenerationAgent.execute("Generate an image", makeContext());
+
+            expect(result.ok).toBe(true);
+            const call = generateImageMock.mock.calls[0]?.[0];
+            if (entry.defaults.controlAxis === "size") {
+              expect(call.size).toBe(entry.defaults.size);
+              expect(call.aspectRatio).toBeUndefined();
+            } else {
+              expect(call.aspectRatio).toBe(entry.defaults.aspectRatio);
+              expect(call.size).toBeUndefined();
+            }
+          });
+        } else {
+          test(`${label} · returns err on edit prompt (gen-only)`, async () => {
+            useImageModel(entry.id);
+            discoverImageFilesMock.mockResolvedValue(makeDiscoveryResult([{ id: "src-art-1" }]));
+
+            const result = await imageGenerationAgent.execute(
+              "Edit the sky src-art-1",
+              makeContext(),
+            );
+
+            expect(result.ok).toBe(false);
+            expect.assert(result.ok === false);
+            expect(result.error.reason).toContain(entry.displayName);
+            expect(result.error.reason).toContain("supports generation only");
+            expect(generateImageMock).not.toHaveBeenCalled();
+          });
+        }
+      }
+    }
   });
 });

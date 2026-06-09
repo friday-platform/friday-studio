@@ -37,6 +37,16 @@ const stubPlatformModels: PlatformModels = {
       `Playground context has no PlatformModels configured — got request for '${role}'. Pass one via PlaygroundContextOpts.platformModels.`,
     );
   },
+  getImageResolved() {
+    throw new Error(
+      `Playground context has no PlatformModels configured — got request for image resolution. Pass one via PlaygroundContextOpts.platformModels.`,
+    );
+  },
+  reload() {
+    throw new Error(
+      `Playground context has no PlatformModels configured — got reload() call. Pass one via PlaygroundContextOpts.platformModels.`,
+    );
+  },
 };
 
 /**

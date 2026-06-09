@@ -3,9 +3,9 @@ import type {
   AgentMemoryContext,
   MemoryAdapter,
   NarrativeEntry,
-  PlatformModels,
   StoreMountBinding,
 } from "@atlas/agent-sdk";
+import { createStubPlatformModels } from "@atlas/llm";
 import { describe, expect, it, vi } from "vitest";
 import { MountedStoreBinding } from "../mounted-store-binding.ts";
 
@@ -51,11 +51,17 @@ function buildMockContext(): AgentContext {
       child: vi.fn(),
     } as unknown as AgentContext["logger"],
     memory,
-    platformModels: {
+    // Regression guard: this suite only exercises the memory mount surface, so
+    // `platformModels` must never be read. Throwing overrides turn any
+    // accidental future call into a loud failure.
+    platformModels: createStubPlatformModels({
       get: () => {
         throw new Error("platformModels.get should not be called in this test");
       },
-    } satisfies PlatformModels,
+      getImageResolved: () => {
+        throw new Error("platformModels.getImageResolved should not be called in this test");
+      },
+    }),
   };
 }
 

@@ -63,7 +63,7 @@ Examples:
  */
 export async function judgeComplexity(
   messageText: string,
-  platformModels: import("@atlas/llm").PlatformModels,
+  platformModels: import("@atlas/agent-sdk").PlatformModels,
 ): Promise<ComplexityJudgment> {
   try {
     const response = await smallLLM({
@@ -204,7 +204,7 @@ export interface DiscoverSkillOptions {
   /** skills.sh client instance (injected for testability). */
   skillsShClient: SkillsShClient;
   /** Platform LLM resolver (classifier role used for the complexity judgment). */
-  platformModels: import("@atlas/llm").PlatformModels;
+  platformModels: import("@atlas/agent-sdk").PlatformModels;
 }
 
 /**

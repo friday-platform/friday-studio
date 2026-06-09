@@ -2,7 +2,11 @@
   "name": "@atlas/llm",
   "version": "1.0.0",
   "type": "module",
-  "exports": { ".": "./mod.ts", "./pricing": "./src/pricing.ts" },
+  "exports": {
+    ".": "./mod.ts",
+    "./pricing": "./src/pricing.ts",
+    "./image-capabilities": "./src/image-capabilities.ts"
+  },
   "main": "./mod.ts",
   "dependencies": {
     "@ai-sdk/groq": "^3.0.39",

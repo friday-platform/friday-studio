@@ -219,6 +219,105 @@ describe("resolveModelFromString", () => {
   });
 });
 
+describe("createPlatformModels — getImageResolved", () => {
+  it("returns the first chain entry with credentials present and skips uncredentialed entries", () => {
+    // Anthropic key keeps the four LLM roles' default chains resolvable
+    // (boot-time eager validation). Gemini key credentials the second
+    // image-chain entry. OpenAI is intentionally absent so the first
+    // image-chain entry (openai:gpt-image-1.5) is skipped.
+    stubEnv({ ANTHROPIC_API_KEY: "sk-ant-test", GEMINI_API_KEY: "test-gemini-key" });
+    const pm = createPlatformModels({
+      models: { image: ["openai:gpt-image-1.5", "google:gemini-2.5-flash-image"] },
+    });
+    const { key, model } = pm.getImageResolved();
+    expect(key).toBe("google:gemini-2.5-flash-image");
+    expect(model.modelId).toBe("gemini-2.5-flash-image");
+    expect(model.provider).toContain("google");
+  });
+
+  it("throws PlatformModelsConfigError when no chain entry has credentials", () => {
+    // Credential only anthropic so the default LLM-role chains pass boot.
+    // Image default is `google:gemini-2.5-flash-image`, which has no
+    // matching GEMINI_API_KEY → `getImageResolved()` exhausts and throws.
+    stubEnv({ ANTHROPIC_API_KEY: "sk-ant-test" });
+    const pm = createPlatformModels(null);
+    expect(() => pm.getImageResolved()).toThrow(PlatformModelsConfigError);
+  });
+});
+
+describe("createPlatformModels — image boot-time validation", () => {
+  it("aggregates `unknown_image_model` error when models.image pins an overlay-missing id", () => {
+    // Anthropic keys the default language chains so the four LLM roles boot
+    // cleanly; the only problem is `models.image` naming a known provider
+    // but an id we haven't verified in the overlay.
+    stubEnv({ ANTHROPIC_API_KEY: "sk-ant-test" });
+    let caught: PlatformModelsConfigError | null = null;
+    try {
+      createPlatformModels({ models: { image: "google:gemini-2.5-flas-image" } });
+    } catch (err) {
+      if (err instanceof PlatformModelsConfigError) caught = err;
+      else throw err;
+    }
+    expect(caught).not.toBeNull();
+    const errors = caught?.errors ?? [];
+    expect(errors.some((e) => e.role === "image" && e.kind === "unknown_image_model")).toBe(true);
+    // Error message names the offending id and lists at least one known
+    // overlay id so the operator can copy-paste a fix.
+    expect(caught?.message).toContain("google:gemini-2.5-flas-image");
+    expect(caught?.message).toContain("known image models:");
+    expect(caught?.message).toContain("google:gemini-2.5-flash-image");
+  });
+
+  it("rejects any chain entry not in the overlay (multi-entry chains)", () => {
+    // First entry is overlay-valid, second is not. Boot must surface the
+    // typo even though the chain *could* resolve via entry 1 at runtime.
+    stubEnv({ ANTHROPIC_API_KEY: "sk-ant-test" });
+    expect(() =>
+      createPlatformModels({
+        models: { image: ["google:gemini-2.5-flash-image", "openai:dall-e-9000"] },
+      }),
+    ).toThrow(PlatformModelsConfigError);
+  });
+
+  it("aggregates an image error and a conversational error in a single throw", () => {
+    // Both roles misconfigured: conversational names a nonexistent provider,
+    // image names an overlay-missing id. One startup attempt must report
+    // both — the operator shouldn't fix one, restart, then discover the next.
+    stubEnv({ ANTHROPIC_API_KEY: "sk-ant-test" });
+    let caught: PlatformModelsConfigError | null = null;
+    try {
+      createPlatformModels({
+        models: { conversational: "totally-not-a-provider:x", image: "google:not-a-real-model" },
+      });
+    } catch (err) {
+      if (err instanceof PlatformModelsConfigError) caught = err;
+      else throw err;
+    }
+    expect(caught).not.toBeNull();
+    const errors = caught?.errors ?? [];
+    expect(errors.some((e) => e.role === "conversational" && e.kind === "unknown_provider")).toBe(
+      true,
+    );
+    expect(errors.some((e) => e.role === "image" && e.kind === "unknown_image_model")).toBe(true);
+  });
+
+  it("boots when models.image is unset (no overlay check to run)", () => {
+    // No GEMINI_API_KEY — default image chain has no credentials at boot,
+    // but image credential checks are deferred to getImage(). Boot must
+    // succeed so the daemon can come up even when image-gen is unused.
+    stubEnv({ ANTHROPIC_API_KEY: "sk-ant-test" });
+    expect(() => createPlatformModels(null)).not.toThrow();
+  });
+
+  it("boots when models.image pins a valid overlay id with credentials missing", () => {
+    // openai:dall-e-3 is in the overlay; OPENAI_API_KEY is intentionally
+    // absent. Boot must tolerate this — the credential check is the runtime
+    // resolver's job, not boot's.
+    stubEnv({ ANTHROPIC_API_KEY: "sk-ant-test" });
+    expect(() => createPlatformModels({ models: { image: "openai:dall-e-3" } })).not.toThrow();
+  });
+});
+
 describe("createPlatformModels — lazy resolution", () => {
   it("re-resolves get() against the current process.env on each call", () => {
     stubEnv({ ANTHROPIC_API_KEY: "sk-ant-test", GROQ_API_KEY: "gsk_test" });
@@ -240,5 +339,61 @@ describe("createPlatformModels — lazy resolution", () => {
 
     process.env.GROQ_API_KEY = "gsk_test";
     expect(pm.get("labels").modelId).toBe("llama-3.3-70b");
+  });
+});
+
+describe("createPlatformModels — reload", () => {
+  it("swaps the active language-role config in place — subsequent get() returns the new model", () => {
+    // Boot with anthropic-only credentials and a single-anthropic config.
+    stubEnv({ ANTHROPIC_API_KEY: "sk-ant-test", GROQ_API_KEY: "gsk_test" });
+    const pm = createPlatformModels({ models: { conversational: "anthropic:claude-sonnet-4-6" } });
+    expect(pm.get("conversational").modelId).toBe("claude-sonnet-4-6");
+
+    // Settings UI swaps to a groq model. The same `pm` reference (held by
+    // workspaces, MCP servers, etc.) must serve the new model on next call.
+    pm.reload({ models: { conversational: "groq:llama-3.3-70b" } });
+    expect(pm.get("conversational").modelId).toBe("llama-3.3-70b");
+  });
+
+  it("swaps the active image-role config in place — subsequent getImageResolved() returns the new model", () => {
+    // ANTHROPIC_API_KEY needed because language roles eagerly resolve at boot
+    // and default to anthropic — missing creds there fail boot before we get
+    // to exercise reload.
+    stubEnv({
+      ANTHROPIC_API_KEY: "sk-ant-test",
+      GEMINI_API_KEY: "gemini-test",
+      OPENAI_API_KEY: "sk-test",
+    });
+    const pm = createPlatformModels({ models: { image: "google:gemini-2.5-flash-image" } });
+    expect(pm.getImageResolved().key).toBe("google:gemini-2.5-flash-image");
+
+    pm.reload({ models: { image: "openai:dall-e-3" } });
+    expect(pm.getImageResolved().key).toBe("openai:dall-e-3");
+  });
+
+  it("throws PlatformModelsConfigError on bad input WITHOUT mutating state", () => {
+    stubEnv({ ANTHROPIC_API_KEY: "sk-ant-test" });
+    const pm = createPlatformModels({ models: { conversational: "anthropic:claude-sonnet-4-6" } });
+
+    // Reload with a typo'd image model — overlay lookup fails, throws.
+    expect(() => pm.reload({ models: { image: "google:not-a-real-model" } })).toThrow(
+      PlatformModelsConfigError,
+    );
+
+    // Pre-reload conversational config must still be active — failed reload
+    // leaves state untouched.
+    expect(pm.get("conversational").modelId).toBe("claude-sonnet-4-6");
+  });
+
+  it("accepts null input (resets to defaults)", () => {
+    stubEnv({ ANTHROPIC_API_KEY: "sk-ant-test" });
+    const pm = createPlatformModels({ models: { conversational: "anthropic:claude-haiku-4-5" } });
+    expect(pm.get("conversational").modelId).toBe("claude-haiku-4-5");
+
+    // Settings UI clears the conversational override → null/empty config.
+    // Default chain takes over (anthropic:claude-sonnet-4-6 for
+    // conversational).
+    pm.reload(null);
+    expect(pm.get("conversational").modelId).toBe("claude-sonnet-4-6");
   });
 });

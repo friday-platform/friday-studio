@@ -1,6 +1,6 @@
-import type { LanguageModelV3, SharedV2ProviderOptions } from "@ai-sdk/provider";
+import type { ImageModelV3, LanguageModelV3, SharedV2ProviderOptions } from "@ai-sdk/provider";
 
-export type { LanguageModelV3 };
+export type { ImageModelV3, LanguageModelV3 };
 
 import { deepMerge } from "@std/collections/deep-merge";
 import { anthropicProviderOptions } from "./src/anthropic.ts";
@@ -14,6 +14,14 @@ export {
   type DatetimeContext,
   temporalGroundingMessage,
 } from "./src/grounding.ts";
+export {
+  IMAGE_OVERLAY,
+  type ImageCapabilities,
+  type ImageDefaults,
+  type ImageOverlayEntry,
+  listImageEntries,
+  lookupImageEntry,
+} from "./src/image-capabilities.ts";
 export {
   type Catalog,
   type CatalogEntry,
