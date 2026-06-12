@@ -355,7 +355,17 @@
     }
   }
 
-  function handleInput() {
+  function handleInput(event?: Event) {
+    // Skip the burst of intermediate `input` events an IME fires against a
+    // half-composed buffer: `value` is the in-progress composition and
+    // diffing it would feed applyEditDelta a mid-composition string,
+    // corrupting tracked offsets. `isComposing` is true throughout the
+    // composition and false on the commit event, so the settled text still
+    // gets reconciled. Reading it off the event (vs. a sticky flag) leaves
+    // no state to get wedged if `compositionend` never fires — e.g. the
+    // user hits Enter or blurs mid-composition. The `oncompositionend`
+    // flush below covers browsers that don't emit a trailing commit event.
+    if (event instanceof InputEvent && event.isComposing) return;
     // Reconcile span offsets against the user's edit before any
     // downstream work that depends on them.
     mentionSpans = applyEditDelta(mentionSpans, prevValue, value);
@@ -534,6 +544,7 @@
         bind:value
         onkeydown={handleKeydown}
         oninput={handleInput}
+        oncompositionend={() => handleInput()}
         onclick={handleSelectionChange}
         onkeyup={handleSelectionChange}
         onblur={closeMentionPopover}

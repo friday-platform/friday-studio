@@ -334,7 +334,14 @@
     mentionQuery = null;
   }
 
-  function handleComposerInput() {
+  function handleComposerInput(event?: Event) {
+    // Skip the intermediate `input` events an IME fires against a
+    // half-composed buffer; `isComposing` is false on the commit event so
+    // the settled text is still reconciled. No sticky flag means nothing to
+    // get wedged if `compositionend` is missed (Enter / blur mid-compose);
+    // the `oncompositionend` flush covers browsers without a trailing event.
+    // Mirrors chat-input.svelte.
+    if (event instanceof InputEvent && event.isComposing) return;
     mentionSpans = applyEditDelta(mentionSpans, prevStartMessage, startMessage);
     prevStartMessage = startMessage;
     refreshMentionQuery();
@@ -633,6 +640,7 @@
               bind:this={composerInputEl}
               onkeydown={handleStartKeydown}
               oninput={handleComposerInput}
+              oncompositionend={() => handleComposerInput()}
               onclick={handleComposerSelectionChange}
               onkeyup={handleComposerSelectionChange}
               onblur={closeMentionPopover}
