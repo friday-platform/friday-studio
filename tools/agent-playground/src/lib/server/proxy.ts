@@ -161,6 +161,20 @@ export async function executeProxyFetch(
   const headers = new Headers(request.headers);
   headers.delete("host");
   headers.delete("content-length");
+  // Force identity encoding upstream so the daemon never compresses. The cause
+  // is subtle: we pass a node_modules `undici` Agent as `dispatcher` (for its
+  // 1-hour timeouts) to Node's *built-in* fetch — a different undici instance.
+  // Built-in fetch decodes brotli on its own, but that cross-instance
+  // dispatcher makes it skip the decode pipeline (`res.body` arrives as raw
+  // brotli) AND strip `Content-Encoding` — so neither the body nor the
+  // response-side strip (HOP_BY_HOP_HEADERS) reveals the compression, and we'd
+  // ship raw brotli with no encoding header. The browser can't decode it and
+  // the app's `JSON.parse` chokes ("Unexpected token …"). NB: plain fetch
+  // decodes brotli fine — don't "simplify" this away after testing vanilla
+  // fetch; the dispatcher is what breaks decode. `set("identity")`, not
+  // `delete`: undici re-adds a `br, gzip, deflate` default when the header is
+  // absent. Compression buys nothing on a localhost hop anyway.
+  headers.set("accept-encoding", "identity");
 
   // Tell the upstream where the browser actually lives. Required for
   // services like Link that synthesize external callback URLs from
