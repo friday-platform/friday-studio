@@ -645,8 +645,14 @@
   }
 
   /* Anchor for the mention popover — the popover positions itself
-     against this wrap so it sits just above the textarea. */
+     against this wrap so it sits just above the textarea. `display: flex`
+     is load-bearing: the textarea relies on `flex: 1` to fill the row, but
+     this wrap (added in #417) sits between it and the flex `.input-row`. As
+     a plain block the inline-block textarea collapsed to its ~20-col
+     intrinsic width (~146px), so only the placeholder area was clickable
+     and the rest of the row didn't focus the input. */
   .textarea-wrap {
+    display: flex;
     flex: 1;
     position: relative;
   }
