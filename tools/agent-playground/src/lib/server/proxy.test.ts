@@ -194,6 +194,25 @@ describe("buildProxyHandler", () => {
     expect(forwardedHeaders.get("x-forwarded-prefix")).toBe("/api/daemon");
   });
 
+  it("forces identity Accept-Encoding upstream so the daemon never picks brotli", async () => {
+    // Regression: this proxy passes a node_modules-undici Agent as the
+    // `dispatcher` to Node's built-in fetch (a different undici instance).
+    // Built-in fetch decodes brotli on its own, but that cross-instance
+    // dispatcher makes it skip decode AND strip `Content-Encoding`, so a `br`
+    // response reaches the proxy as raw brotli with no encoding header and the
+    // client's JSON.parse chokes. Forcing `identity` upstream sidesteps it.
+    // (Vanilla fetch decodes brotli — don't be fooled into reverting this.)
+    // Must `set`, not `delete`: undici re-adds a `br, gzip, deflate` default
+    // when the header is absent.
+    fetchMock.mockResolvedValueOnce(new Response("{}", { status: 200 }));
+    const handler = buildProxyHandler({ upstream: "https://daemon.local:8080", label: "daemon" });
+    await handler(
+      event({ path: "api/workspaces/x/chat", headers: { "accept-encoding": "br, gzip, deflate" } }),
+    );
+    const forwardedHeaders = fetchMock.mock.calls[0]?.[1]?.headers as Headers;
+    expect(forwardedHeaders.get("accept-encoding")).toBe("identity");
+  });
+
   it("forwards 3xx redirects to the client instead of following them upstream", async () => {
     // Regression: OAuth flows (e.g. Link → Google authorize) depend on the
     // browser navigating the popup to accounts.google.com itself. If the SSR
