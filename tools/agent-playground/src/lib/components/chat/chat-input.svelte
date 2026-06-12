@@ -355,7 +355,17 @@
     }
   }
 
-  function handleInput() {
+  function handleInput(event?: Event) {
+    // Skip the burst of intermediate `input` events an IME fires against a
+    // half-composed buffer: `value` is the in-progress composition and
+    // diffing it would feed applyEditDelta a mid-composition string,
+    // corrupting tracked offsets. `isComposing` is true throughout the
+    // composition and false on the commit event, so the settled text still
+    // gets reconciled. Reading it off the event (vs. a sticky flag) leaves
+    // no state to get wedged if `compositionend` never fires — e.g. the
+    // user hits Enter or blurs mid-composition. The `oncompositionend`
+    // flush below covers browsers that don't emit a trailing commit event.
+    if (event instanceof InputEvent && event.isComposing) return;
     // Reconcile span offsets against the user's edit before any
     // downstream work that depends on them.
     mentionSpans = applyEditDelta(mentionSpans, prevValue, value);
@@ -534,6 +544,7 @@
         bind:value
         onkeydown={handleKeydown}
         oninput={handleInput}
+        oncompositionend={() => handleInput()}
         onclick={handleSelectionChange}
         onkeyup={handleSelectionChange}
         onblur={closeMentionPopover}
@@ -634,8 +645,14 @@
   }
 
   /* Anchor for the mention popover — the popover positions itself
-     against this wrap so it sits just above the textarea. */
+     against this wrap so it sits just above the textarea. `display: flex`
+     is load-bearing: the textarea relies on `flex: 1` to fill the row, but
+     this wrap (added in #417) sits between it and the flex `.input-row`. As
+     a plain block the inline-block textarea collapsed to its ~20-col
+     intrinsic width (~146px), so only the placeholder area was clickable
+     and the rest of the row didn't focus the input. */
   .textarea-wrap {
+    display: flex;
     flex: 1;
     position: relative;
   }
