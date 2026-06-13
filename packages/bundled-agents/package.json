@@ -18,7 +18,7 @@
     "@chat-adapter/slack": "4.29.0",
     "@coderabbitai/bitbucket": "^1.1.4",
     "@hubspot/api-client": "^13.4.0",
-    "ai": "^6.0.197",
+    "ai": "^6.0.204",
     "jira.js": "^5.3.1",
     "markdown-it": "^14.1.1",
     "parallel-web": "0.5.0",
