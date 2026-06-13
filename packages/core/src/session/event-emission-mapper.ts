@@ -75,7 +75,12 @@ export function mapActionToStepStart(
     type: "step:start",
     sessionId: event.data.sessionId,
     stepNumber,
-    agentName: event.data.actionId ?? "unknown",
+    // `actionId` is optional on the FSM event (some emit/llm action shapes
+    // don't carry one). `state` is required, so falling back to it keeps
+    // the agentName stable and matches the planned block built from the
+    // same state in `extractPlannedSteps`, so the session reducer doesn't
+    // have to lean on its stateId-fallback path for every agent action.
+    agentName: event.data.actionId ?? event.data.state,
     stateId: event.data.state,
     actionType: SessionActionTypeSchema.parse(event.data.actionType),
     task: snapshot?.task ?? "",
@@ -106,6 +111,11 @@ export function mapActionToStepComplete(
     type: "step:complete",
     sessionId: event.data.sessionId,
     stepNumber,
+    // Carry the FSM state forward so the reducer can match this complete
+    // event to its planned/running block by `stateId` if `stepNumber`
+    // drifted (e.g. step:start emitted with a fallback agentName, leaving
+    // the original planned block stuck in pending).
+    stateId: event.data.state,
     status: event.data.status === "failed" ? "failed" : "completed",
     durationMs: event.data.durationMs ?? 0,
     toolCalls: agentResult?.toolCalls ?? [],
