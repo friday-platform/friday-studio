@@ -52,6 +52,7 @@ import {
 import { stringifyError } from "@atlas/utils";
 import { type Span as OtelSpan, withOtelSpan } from "@atlas/utils/telemetry.server";
 import {
+  jsonSchema as aiJsonSchema,
   type ImagePart,
   type ModelMessage,
   type Tool,
@@ -77,6 +78,7 @@ import type {
   FSMBroadcastNotifier,
   FSMDefinition,
   FSMLLMOutput,
+  JSONSchema,
   LLMAction,
   LLMProvider,
   Signal,
@@ -98,6 +100,38 @@ import type {
  * SCOPE_INJECTED set — only that subset needs workspace-id injection.
  */
 const PLATFORM_TOOL_ALLOWLIST = LLM_AGENT_ALLOWED_PLATFORM_TOOLS;
+
+// Walk a JSON Schema and add `additionalProperties: false` to every object node
+// that doesn't already set it. OpenAI/Groq strict mode silently downgrades
+// when this is missing — the wire ends up as a permissive schema even though
+// `strict: true` was sent, and `complete({})` slips through.
+// NOTE: composition keywords (`oneOf` / `anyOf` / `allOf`), `patternProperties`,
+// and the schema-form of `additionalProperties` are not recursed into — if a
+// future workspace schema uses them, strict mode will silently downgrade on
+// those branches. Extend the walker before debugging that.
+export function withStrictObjects(schema: JSONSchema): JSONSchema {
+  if (!schema || typeof schema !== "object" || Array.isArray(schema)) return schema;
+  const out: JSONSchema = { ...schema };
+  const isObjectNode =
+    out.type === "object" ||
+    (out.properties !== undefined &&
+      typeof out.properties === "object" &&
+      !Array.isArray(out.properties));
+  if (isObjectNode) {
+    if (!("additionalProperties" in out)) out.additionalProperties = false;
+    if (out.properties && typeof out.properties === "object") {
+      const newProps: Record<string, JSONSchema> = {};
+      for (const [k, v] of Object.entries(out.properties)) {
+        newProps[k] = withStrictObjects(v);
+      }
+      out.properties = newProps;
+    }
+  }
+  if (out.type === "array" && out.items && typeof out.items === "object") {
+    out.items = withStrictObjects(out.items);
+  }
+  return out;
+}
 
 const FSMStateSchema = z.object({ state: z.string() });
 
@@ -1515,33 +1549,36 @@ export class FSMEngine {
               let completeToolInjected = false;
 
               if (action.outputTo) {
-                // Determine document type name for schema lookup:
-                // 1. action.outputType takes precedence (explicit mapping)
-                // 2. Fall back to document.type if document exists
                 const outputDoc = documents.get(action.outputTo);
                 const docTypeName = action.outputType ?? outputDoc?.type;
                 const jsonSchema = docTypeName
                   ? this._definition.documentTypes?.[docTypeName]
                   : undefined;
-                const compiledSchema =
-                  docTypeName && hasDefinedSchema(jsonSchema)
-                    ? this._compiledSchemas.get(docTypeName)
-                    : undefined;
-                const outputSchema =
-                  compiledSchema ??
-                  z
-                    .record(z.string(), z.unknown())
-                    .refine((value) => Object.keys(value).length > 0, {
-                      message: "complete output must not be empty",
-                    });
+                const hasTyped = Boolean(docTypeName && hasDefinedSchema(jsonSchema));
 
                 completeToolInjected = true;
-                tools.complete = {
+                tools.complete = tool({
                   description:
-                    "Call this to complete the task and store results. You MUST call this when finished.",
-                  inputSchema: outputSchema,
+                    "Call this to complete the task and store results. You MUST call this when finished. The `result` field is REQUIRED and must contain the full formatted output as a non-empty string.",
+                  inputSchema: aiJsonSchema(
+                    (hasTyped
+                      ? withStrictObjects(jsonSchema as JSONSchema)
+                      : {
+                          type: "object",
+                          properties: {
+                            result: {
+                              type: "string",
+                              minLength: 1,
+                              description:
+                                "The full final output of the task — put the complete formatted text here. This is what the FSM stores and what downstream steps/users see.",
+                            },
+                          },
+                          required: ["result"],
+                          additionalProperties: false,
+                        }) as unknown as Parameters<typeof aiJsonSchema>[0],
+                  ),
                   execute: () => ({ success: true }),
-                };
+                });
 
                 logger.debug("Injected complete tool for output document", {
                   docType: docTypeName ?? "LLMResult",
