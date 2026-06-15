@@ -20,7 +20,7 @@
     "@std/yaml": "npm:@jsr/std__yaml@^1.0.10",
     "ai": "^6.0.197",
     "gunshi": "^0.29.5",
-    "ink": "^7.0.1",
+    "ink": "^7.0.6",
     "js-levenshtein": "^1.1.6",
     "nanoid": "^5.1.6",
     "react": "^19.2.6",
