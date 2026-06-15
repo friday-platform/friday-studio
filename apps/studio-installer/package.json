@@ -17,5 +17,6 @@
     "svelte": "^5.55.8",
     "typescript": "^5.9.3",
     "vite": "^7.3.3"
-  }
+  },
+  "overrides": { "esbuild": "^0.28.1" }
 }
