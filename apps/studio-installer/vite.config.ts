@@ -25,10 +25,10 @@ export default defineConfig(() => ({
   envPrefix: ["VITE_", "TAURI_ENV_"],
   build: {
     // Tauri uses Chromium on Windows and WebKit on macOS and Linux.
-    // Safari 16+ is needed because Svelte 5 emits patterns esbuild 0.27 can't
-    // downlevel for older Safari (nested destructuring, dynamic-import binding
-    // patterns). Safari 16 shipped with macOS 13 (2022), which matches the
-    // realistic macOS 13+ floor for the Tauri runtime.
+    // safari16 matches the realistic macOS 13+ (2022) floor for the Tauri
+    // WebKit runtime — there's no need to downlevel Svelte 5 output (nested
+    // destructuring, dynamic-import binding patterns) below the browser we
+    // actually ship on. Safari 16 shipped with macOS 13.
     target: process.env.TAURI_ENV_PLATFORM === "windows" ? "chrome105" : "safari16",
     // don't minify for debug builds
     minify: !process.env.TAURI_ENV_DEBUG,
