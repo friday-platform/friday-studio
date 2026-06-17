@@ -205,12 +205,13 @@ export async function startDaemon(opts: StartDaemonOptions = {}): Promise<Daemon
     OTEL_EXPORTER_OTLP_ENDPOINT: "",
     OTEL_EXPORTER_OTLP_HEADERS: "",
     // Force plaintext: ensureCredentialsLoaded() pulls ~/.atlas/.env into
-    // Deno.env for the Anthropic key, and TLS cert/key ride along in that
+    // Deno.env for the Anthropic key, and TLS cert/key/ca ride along in that
     // same file. Left set, the spawned daemon auto-upgrades to https://
     // (start.tsx) while the harness probes http:// — health never matches.
     // The test daemon is a throwaway on a random port; it has no use for TLS.
     FRIDAY_TLS_CERT: "",
     FRIDAY_TLS_KEY: "",
+    FRIDAY_TLS_CA: "",
     ...(opts.env ?? {}),
   };
 
@@ -294,7 +295,15 @@ export async function startDaemon(opts: StartDaemonOptions = {}): Promise<Daemon
             }
           }
         };
-        return { port, baseUrl, fridayHome, natsUrl, process: proc, stop };
+        currentDaemonFridayHome = fridayHome;
+        const stopAndClear = async () => {
+          try {
+            await stop();
+          } finally {
+            if (currentDaemonFridayHome === fridayHome) currentDaemonFridayHome = undefined;
+          }
+        };
+        return { port, baseUrl, fridayHome, natsUrl, process: proc, stop: stopAndClear };
       }
       await resp.body?.cancel();
     } catch {
@@ -753,3 +762,17 @@ export const HARNESS_PATHS = {
   fixturesDir: join(WORKTREE_ROOT, "tools/qa/fixtures"),
   resultsDir: join(WORKTREE_ROOT, "tools/qa/results"),
 };
+
+export function qaProviderReplacements(): Record<string, string> {
+  return {
+    __FRIDAY_QA_PROVIDER__: Deno.env.get("FRIDAY_QA_PROVIDER") ?? "anthropic",
+    __FRIDAY_QA_MODEL__: Deno.env.get("FRIDAY_QA_MODEL") ?? "claude-sonnet-4-6",
+  };
+}
+
+// Tracks the active daemon's FRIDAY_HOME so fixture YAMLs land under it —
+// isUnderHome silently masks any registered workspace outside FRIDAY_HOME.
+let currentDaemonFridayHome: string | undefined;
+export function qaWorkspaceTmpRoot(): string | undefined {
+  return currentDaemonFridayHome;
+}

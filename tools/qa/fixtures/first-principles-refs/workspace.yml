@@ -228,8 +228,8 @@ agents:
     type: llm
     description: "LLM-backed agent used to prove agent outputTo has a mechanical output contract."
     config:
-      provider: anthropic
-      model: claude-sonnet-4-6
+      provider: __FRIDAY_QA_PROVIDER__
+      model: "__FRIDAY_QA_MODEL__"
       temperature: 0
       max_steps: 4
       prompt: |
@@ -241,8 +241,8 @@ agents:
     type: llm
     description: "LLM-backed agent used to prove type:agent inputFrom sees hydrated artifact contents."
     config:
-      provider: anthropic
-      model: claude-sonnet-4-6
+      provider: __FRIDAY_QA_PROVIDER__
+      model: "__FRIDAY_QA_MODEL__"
       temperature: 0
       max_steps: 6
       prompt: |
@@ -317,8 +317,8 @@ jobs:
         seed:
           entry:
             - type: llm
-              provider: anthropic
-              model: claude-sonnet-4-6
+              provider: __FRIDAY_QA_PROVIDER__
+              model: "__FRIDAY_QA_MODEL__"
               summary: "Fetch fake inbox messages into an EmailBatch document."
               outputTo: emails-result
               outputType: EmailBatch
@@ -347,8 +347,8 @@ jobs:
         consume:
           entry:
             - type: llm
-              provider: anthropic
-              model: claude-sonnet-4-6
+              provider: __FRIDAY_QA_PROVIDER__
+              model: "__FRIDAY_QA_MODEL__"
               summary: "Consume EmailBatch via inputFrom and report count."
               inputFrom: emails-result
               outputTo: review-result
@@ -411,8 +411,8 @@ jobs:
         seed-a:
           entry:
             - type: llm
-              provider: anthropic
-              model: claude-sonnet-4-6
+              provider: __FRIDAY_QA_PROVIDER__
+              model: "__FRIDAY_QA_MODEL__"
               summary: "Produce first EmailBatch for inputFrom array."
               outputTo: batch-a
               outputType: EmailBatch
@@ -430,8 +430,8 @@ jobs:
         seed-b:
           entry:
             - type: llm
-              provider: anthropic
-              model: claude-sonnet-4-6
+              provider: __FRIDAY_QA_PROVIDER__
+              model: "__FRIDAY_QA_MODEL__"
               summary: "Produce second EmailBatch for inputFrom array."
               outputTo: batch-b
               outputType: EmailBatch
@@ -449,8 +449,8 @@ jobs:
         consume-array:
           entry:
             - type: llm
-              provider: anthropic
-              model: claude-sonnet-4-6
+              provider: __FRIDAY_QA_PROVIDER__
+              model: "__FRIDAY_QA_MODEL__"
               summary: "Consume both batches via inputFrom array."
               inputFrom: [batch-a, batch-b]
               outputTo: array-review-result
@@ -495,8 +495,8 @@ jobs:
         validated:
           entry:
             - type: llm
-              provider: anthropic
-              model: claude-sonnet-4-6
+              provider: __FRIDAY_QA_PROVIDER__
+              model: "__FRIDAY_QA_MODEL__"
               summary: "Emit structured validation contract output."
               outputTo: validation-result
               outputType: ValidationContractResult
@@ -575,8 +575,8 @@ jobs:
         seed:
           entry:
             - type: llm
-              provider: anthropic
-              model: claude-sonnet-4-6
+              provider: __FRIDAY_QA_PROVIDER__
+              model: "__FRIDAY_QA_MODEL__"
               summary: "Produce bulky EmailBatch for LLM-agent inputFrom."
               outputTo: agent-emails-result
               outputType: EmailBatch
@@ -640,8 +640,8 @@ jobs:
         report:
           entry:
             - type: llm
-              provider: anthropic
-              model: claude-sonnet-4-6
+              provider: __FRIDAY_QA_PROVIDER__
+              model: "__FRIDAY_QA_MODEL__"
               summary: "Review fake inbox and write a compact triage report."
               outputTo: triage-report
               validate: skip
@@ -698,8 +698,8 @@ jobs:
         mutate:
           entry:
             - type: llm
-              provider: anthropic
-              model: claude-sonnet-4-6
+              provider: __FRIDAY_QA_PROVIDER__
+              model: "__FRIDAY_QA_MODEL__"
               summary: "Archive fake inbox messages with ack-only mutation."
               outputTo: mutation-ack
               validate: skip
@@ -737,8 +737,8 @@ jobs:
         apply-choices:
           entry:
             - type: llm
-              provider: anthropic
-              model: claude-sonnet-4-6
+              provider: __FRIDAY_QA_PROVIDER__
+              model: "__FRIDAY_QA_MODEL__"
               summary: "Apply review choices and learn preferences."
               outputTo: review-choice-result
               validate: skip
@@ -783,8 +783,8 @@ jobs:
         request:
           entry:
             - type: llm
-              provider: anthropic
-              model: claude-sonnet-4-6
+              provider: __FRIDAY_QA_PROVIDER__
+              model: "__FRIDAY_QA_MODEL__"
               summary: "Request access to a deliberately unknown tool."
               outputTo: unknown-tool-result
               validate: skip
@@ -818,8 +818,8 @@ jobs:
         request:
           entry:
             - type: llm
-              provider: anthropic
-              model: claude-sonnet-4-6
+              provider: __FRIDAY_QA_PROVIDER__
+              model: "__FRIDAY_QA_MODEL__"
               summary: "Request real tool access and continue after answer."
               outputTo: blocking-elicitation-result
               validate: skip
@@ -901,8 +901,8 @@ jobs:
         ask:
           entry:
             - type: llm
-              provider: anthropic
-              model: claude-sonnet-4-6
+              provider: __FRIDAY_QA_PROVIDER__
+              model: "__FRIDAY_QA_MODEL__"
               summary: "Ask for a generic user decision from an LLM action."
               outputTo: chat-human-input-result
               outputType: ChatHumanInputResult
@@ -1049,8 +1049,8 @@ jobs:
         seed:
           entry:
             - type: llm
-              provider: anthropic
-              model: claude-sonnet-4-6
+              provider: __FRIDAY_QA_PROVIDER__
+              model: "__FRIDAY_QA_MODEL__"
               summary: "Produce bulky EmailBatch for Python user-agent inputFrom."
               outputTo: python-emails-result
               outputType: PythonInputFromSeed
@@ -1131,8 +1131,8 @@ jobs:
         delegate:
           entry:
             - type: llm
-              provider: anthropic
-              model: claude-sonnet-4-6
+              provider: __FRIDAY_QA_PROVIDER__
+              model: "__FRIDAY_QA_MODEL__"
               summary: "Delegate fake inbox review and keep parent output compact."
               outputTo: delegate-result
               validate: skip
