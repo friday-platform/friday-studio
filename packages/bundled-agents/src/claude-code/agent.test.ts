@@ -1,5 +1,5 @@
 import type { HookInput } from "@anthropic-ai/claude-agent-sdk";
-import type { AgentContext } from "@atlas/agent-sdk";
+import type { AgentContext, StreamEmitter } from "@atlas/agent-sdk";
 import { createStubPlatformModels } from "@atlas/llm";
 import type { LogContext, Logger } from "@atlas/logger";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -514,5 +514,197 @@ describe("structured output wiring", () => {
     if (result.ok) {
       expect(result.data).toEqual({ response: "just plain text, no JSON here" });
     }
+  });
+});
+
+describe("UIMessageChunk translation", () => {
+  const testEnv = { ANTHROPIC_API_KEY: "sk-test", GH_TOKEN: "ghp-test" };
+
+  beforeEach(() => {
+    mockQuery.mockReset();
+    mockCreateSandbox.mockReset();
+    mockCreateSandbox.mockResolvedValue({
+      workDir: "/tmp/test-sandbox",
+      cleanup: () => Promise.resolve(),
+    });
+  });
+
+  function captureStream(): { emitted: Array<Record<string, unknown>>; stream: StreamEmitter } {
+    const emitted: Array<Record<string, unknown>> = [];
+    const stream: StreamEmitter = {
+      emit: (event) => {
+        emitted.push(event as Record<string, unknown>);
+      },
+      end: () => {},
+      error: () => {},
+    };
+    return { emitted, stream };
+  }
+
+  it("emits text/tool-input/tool-output chunks for assistant + user messages", async () => {
+    mockQuery.mockReturnValue(
+      createMockSDKStream([
+        {
+          type: "assistant",
+          message: {
+            content: [
+              { type: "text", text: "Reading files now." },
+              { type: "tool_use", id: "tool-1", name: "Bash", input: { command: "ls /tmp" } },
+            ],
+          },
+        },
+        {
+          type: "user",
+          message: {
+            content: [
+              { type: "tool_result", tool_use_id: "tool-1", content: "file1.txt\nfile2.txt" },
+            ],
+          },
+        },
+        sdkResult({ result: "Done." }),
+      ]),
+    );
+
+    const { emitted, stream } = captureStream();
+    const result = await claudeCodeAgent.execute(
+      "test",
+      createMockContext({ env: testEnv, stream }),
+    );
+
+    expect(result.ok).toBe(true);
+
+    // Strip the supplemental `data-tool-progress` chip — its content depends
+    // on a real `smallLLM` call, and `createStubPlatformModels`' stub model
+    // rejects `doGenerate`/`doStream`. The production try/catch swallows
+    // that and skips the emit, so the chip is never present under stub
+    // models. The chunk-ordering invariants chat depends on are the
+    // text/tool-input/tool-output positions locked below; the chip's
+    // position is covered by the integration smoke test.
+    const core = emitted.filter((e) => e.type !== "data-tool-progress");
+
+    // text-start / text-delta / text-end share one id (crypto.randomUUID).
+    expect(core[0]).toMatchObject({ type: "text-start", id: expect.any(String) });
+    const textId = (core[0] as { id: string }).id;
+    expect(core[1]).toEqual({ type: "text-delta", id: textId, delta: "Reading files now." });
+    expect(core[2]).toEqual({ type: "text-end", id: textId });
+
+    // Tool-use translation: input-start → input-available with the full
+    // input. The toolCallId mirrors the SDK block id so the chat UI can
+    // pair it with the matching tool-output below.
+    expect(core[3]).toEqual({ type: "tool-input-start", toolCallId: "tool-1", toolName: "Bash" });
+    expect(core[4]).toEqual({
+      type: "tool-input-available",
+      toolCallId: "tool-1",
+      toolName: "Bash",
+      input: { command: "ls /tmp" },
+    });
+
+    // tool_result → tool-output-available, matched via tool_use_id.
+    expect(core[5]).toEqual({
+      type: "tool-output-available",
+      toolCallId: "tool-1",
+      output: "file1.txt\nfile2.txt",
+    });
+    expect(core).toHaveLength(6);
+  });
+
+  it("emits text chunks for an assistant message with no tool_use", async () => {
+    // The most common case (final answer, no tool calls). Without this
+    // dedicated test a regression that gates the text branch on tool-call
+    // presence would slip past — the combined test still passes because it
+    // exercises both branches together.
+    mockQuery.mockReturnValue(
+      createMockSDKStream([
+        { type: "assistant", message: { content: [{ type: "text", text: "hello world" }] } },
+        sdkResult({ result: "hello world" }),
+      ]),
+    );
+
+    const { emitted, stream } = captureStream();
+    const result = await claudeCodeAgent.execute(
+      "test",
+      createMockContext({ env: testEnv, stream }),
+    );
+
+    expect(result.ok).toBe(true);
+    expect(emitted).toHaveLength(3);
+    expect(emitted[0]).toMatchObject({ type: "text-start", id: expect.any(String) });
+    const id = (emitted[0] as { id: string }).id;
+    expect(emitted[1]).toEqual({ type: "text-delta", id, delta: "hello world" });
+    expect(emitted[2]).toEqual({ type: "text-end", id });
+  });
+
+  it.each([
+    { name: "string content", content: "raw string output", expectedOutput: "raw string output" },
+    { name: "undefined content", content: undefined, expectedOutput: "" },
+    {
+      name: "structured-array content with mixed blocks",
+      content: [
+        { type: "text", text: "line 1" },
+        { type: "image", source: { type: "base64", media_type: "image/png", data: "..." } },
+        { type: "text", text: "line 2" },
+      ],
+      expectedOutput: "line 1\n[image]\nline 2",
+    },
+    {
+      // Defends the two-stage guard `type === "text" && typeof c.text === "string"`.
+      // A future flattening to `if (type === "text") return c.text` would
+      // surface `undefined` here; the placeholder branch keeps it stable.
+      name: "non-string text in a text block",
+      content: [{ type: "text", text: 123 }],
+      expectedOutput: "[text]",
+    },
+  ])("normalizes tool_result $name into a string output", async ({ content, expectedOutput }) => {
+    // tool_result.content is `string | Array<...ContentBlockParam> |
+    // undefined` per the Anthropic SDK. Any tool that returns an image,
+    // search result, or multiple blocks hits the array path — pre-fix the
+    // chat UI received the raw JS array as `output` and rendered
+    // `[object Object]`. The normalizer collapses non-text blocks to a
+    // `[type]` placeholder so the surface they existed is preserved.
+    mockQuery.mockReturnValue(
+      createMockSDKStream([
+        {
+          type: "user",
+          message: { content: [{ type: "tool_result", tool_use_id: "tool-x", content }] },
+        },
+        sdkResult({ result: "ok" }),
+      ]),
+    );
+
+    const { emitted, stream } = captureStream();
+    const result = await claudeCodeAgent.execute(
+      "test",
+      createMockContext({ env: testEnv, stream }),
+    );
+
+    expect(result.ok).toBe(true);
+    const toolOutput = emitted.find((e) => e.type === "tool-output-available");
+    expect(toolOutput).toEqual({
+      type: "tool-output-available",
+      toolCallId: "tool-x",
+      output: expectedOutput,
+    });
+  });
+
+  it("ignores user messages whose content is a bare string", async () => {
+    // SDK SDKUserMessage.content is `string | ContentBlockParam[]`. The
+    // tool_result translation must guard against the string case rather than
+    // throw on `.type` access.
+    mockQuery.mockReturnValue(
+      createMockSDKStream([
+        { type: "user", message: { content: "plain user echo" } },
+        sdkResult({ result: "ok" }),
+      ]),
+    );
+
+    const { emitted, stream } = captureStream();
+    const result = await claudeCodeAgent.execute(
+      "test",
+      createMockContext({ env: testEnv, stream }),
+    );
+
+    expect(result.ok).toBe(true);
+    // No tool-output chunks expected for a string-content user message.
+    expect(emitted.find((e) => e.type === "tool-output-available")).toBeUndefined();
   });
 });

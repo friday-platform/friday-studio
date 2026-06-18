@@ -115,6 +115,15 @@ export const StepCompleteEventSchema = z.object({
   type: z.literal("step:complete"),
   sessionId: z.string(),
   stepNumber: z.number(),
+  /**
+   * FSM state identifier — stable join key matching `StepStartEvent.stateId`
+   * and the `stateId` field on the planned `AgentBlock` from
+   * `session:start.plannedSteps`. The reducer uses this as a fallback when
+   * `stepNumber` doesn't match an existing block (the failure mode that
+   * surfaced the "Unknown · Succeeded" duplicate alongside the original
+   * "Pending" block).
+   */
+  stateId: z.string().optional(),
   status: z.enum(["completed", "failed"]),
   durationMs: z.number(),
   toolCalls: z.array(ToolCallSummarySchema),
