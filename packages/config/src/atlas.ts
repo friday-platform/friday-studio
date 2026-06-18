@@ -22,6 +22,7 @@ export const PlatformModelsSchema = z.object({
   classifier: ModelIdSchema.optional(),
   planner: ModelIdSchema.optional(),
   conversational: ModelIdSchema.optional(),
+  image: ModelIdSchema.optional(),
 });
 export type PlatformModelsConfig = z.infer<typeof PlatformModelsSchema>;
 

@@ -1,4 +1,5 @@
-import { type PlatformModels, smallLLM } from "@atlas/llm";
+import type { PlatformModels } from "@atlas/agent-sdk";
+import { smallLLM } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import type { Parallel } from "parallel-web";
 import { z } from "zod";

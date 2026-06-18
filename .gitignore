@@ -112,3 +112,8 @@ docs/
 doc/
 
 triage-reports/
+
+# Image-generation validation harness (scripts/validate-image-models.ts)
+# checks in envelope-only JSON fixtures. Raw PNG drops for visual sanity-checks
+# stay local-only — gitignored so a `git add .` can't sneak them in.
+packages/bundled-agents/src/image-generation/__fixtures__/_thumbnails/

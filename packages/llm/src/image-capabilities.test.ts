@@ -1,0 +1,89 @@
+import { describe, expect, it } from "vitest";
+import { IMAGE_OVERLAY, listImageEntries, lookupImageEntry } from "./image-capabilities.ts";
+import { DEFAULT_PLATFORM_MODELS } from "./platform-models.ts";
+
+/**
+ * ISO-8601 date matcher — `YYYY-MM-DD` is what the overlay records and
+ * what the validation harness (Task #9) will write. We don't accept
+ * timestamps here; the check operates on calendar days.
+ */
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+describe("image-capabilities — overlay shape", () => {
+  it("contains exactly the six v1 entries", () => {
+    expect(Object.keys(IMAGE_OVERLAY).sort()).toEqual(
+      [
+        "google:gemini-2.5-flash-image",
+        "google:imagen-4.0-generate-001",
+        "google:imagen-4.0-fast-generate-001",
+        "openai:gpt-image-1.5",
+        "openai:dall-e-3",
+        "openai:dall-e-2",
+      ].sort(),
+    );
+  });
+
+  it("listImageEntries returns every overlay entry with its id attached", () => {
+    const entries = listImageEntries();
+    expect(entries).toHaveLength(Object.keys(IMAGE_OVERLAY).length);
+    // ids round-trip through lookupImageEntry — verifies listImageEntries
+    // doesn't drop or mutate entries.
+    for (const entry of entries) {
+      expect(lookupImageEntry(entry.id)).not.toBeNull();
+    }
+  });
+
+  it("every entry round-trips against the type with sane field values", () => {
+    for (const entry of listImageEntries()) {
+      // displayName must be UI-presentable — non-empty, no leading/trailing
+      // whitespace. (A blank string is what the Settings picker would
+      // render verbatim, so catch it here.)
+      expect(entry.displayName.trim()).toBe(entry.displayName);
+      expect(entry.displayName.length).toBeGreaterThan(0);
+
+      expect(entry.lastValidatedAt).toMatch(ISO_DATE);
+      // Parseable as a real calendar date — `2026-13-40` would match the
+      // regex but not produce a finite timestamp.
+      expect(Number.isFinite(Date.parse(entry.lastValidatedAt))).toBe(true);
+    }
+  });
+
+  it("Google entries use the aspectRatio axis; OpenAI entries use size", () => {
+    // The agent's controlAxis dispatch (Task #5) depends on this provider
+    // split — lock it in so a misclassified entry trips the test, not the
+    // agent at runtime.
+    for (const entry of listImageEntries()) {
+      const [provider] = entry.id.split(":");
+      if (provider === "google") {
+        expect(entry.defaults.controlAxis).toBe("aspectRatio");
+      } else if (provider === "openai") {
+        expect(entry.defaults.controlAxis).toBe("size");
+      }
+    }
+  });
+});
+
+describe("image-capabilities — default chain invariant", () => {
+  it("every default image-chain entry has an overlay entry", () => {
+    // The image-generation agent relies on boot-time pre-flight to guarantee
+    // its overlay lookup is non-null in production. That guarantee only holds
+    // because every `DEFAULT_PLATFORM_MODELS.image` entry is keyed in
+    // `IMAGE_OVERLAY` — a future PR adding a non-overlay default would
+    // silently break the agent's defensive null-branch contract.
+    // See docs/reviews/2026-06-04-image-model-picker-design.md § Important #2.
+    const missing = DEFAULT_PLATFORM_MODELS.image.filter((id) => lookupImageEntry(id) === null);
+    expect(missing).toEqual([]);
+  });
+});
+
+describe("image-capabilities — lookup", () => {
+  it("returns the entry for a known id", () => {
+    const entry = lookupImageEntry("google:gemini-2.5-flash-image");
+    if (entry === null) throw new Error("expected overlay entry to exist");
+    expect(entry.displayName).toBe("Gemini 2.5 Flash Image");
+  });
+
+  it("returns null for an unknown id", () => {
+    expect(lookupImageEntry("openai:not-a-real-model")).toBeNull();
+  });
+});

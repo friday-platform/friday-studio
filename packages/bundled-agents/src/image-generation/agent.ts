@@ -1,12 +1,10 @@
 import { type ArtifactRef, createAgent, err, ok } from "@atlas/agent-sdk";
 import { ArtifactStorage } from "@atlas/core/artifacts/server";
-import { registry, smallLLM } from "@atlas/llm";
+import { lookupImageEntry, smallLLM } from "@atlas/llm";
 import { stringifyError, truncateUnicode } from "@atlas/utils";
 import { generateImage } from "ai";
 import { z } from "zod";
 import { type DiscoveredImages, discoverImageFiles } from "./discovery.ts";
-
-const IMAGE_SIZE: `${number}x${number}` = "1024x1024";
 
 const MIME_TO_EXT: Record<string, string> = { "image/png": ".png", "image/jpeg": ".jpg" };
 
@@ -52,6 +50,32 @@ export const imageGenerationAgent = createAgent<string, ImageGenerationOutput>({
 
     const isEditMode = discoveredImages.artifactIds.length > 0;
 
+    // -- Resolve model & verify capability -----------------------------------
+    // Pin the model once so the capability check and the generateImage call
+    // observe the same id. Boot-time validation (task #3) guarantees the
+    // overlay lookup is non-null in production; the null branch here is a
+    // defense-in-depth fallback that surfaces the misconfiguration instead
+    // of producing nonsense output.
+    //
+    // The overlay is keyed by `provider:model` (e.g. "google:gemini-2.5-flash-image"),
+    // but `model.modelId` is bare (e.g. "gemini-2.5-flash-image") and `model.provider`
+    // is the SDK transport string (e.g. "google.generative-ai") — neither will match.
+    // `getImageResolved()` returns both the SDK model and the configured spec
+    // (the overlay key) from a single resolver pass — they can't diverge.
+    const { key: overlayKey, model } = platformModels.getImageResolved();
+    const entry = lookupImageEntry(overlayKey);
+    if (entry === null) {
+      logger.error("Image model missing from capability overlay", { overlayKey });
+      return err(
+        `Image model "${overlayKey}" is unknown to Friday's capability overlay. Switch to a known model in Settings → Image.`,
+      );
+    }
+    if (isEditMode && !entry.capabilities.edit) {
+      return err(
+        `${entry.displayName} supports generation only — edit is not possible. Switch to an edit-capable model in Settings → Image, or remove the image reference to generate a new one.`,
+      );
+    }
+
     // -- Build prompt for generateImage() ------------------------------------
     // Generate mode: pass raw prompt string (preserves orchestrator context).
     // Edit mode: load source image binaries, pass as { images, text }.
@@ -94,11 +118,20 @@ export const imageGenerationAgent = createAgent<string, ImageGenerationOutput>({
     // Generate: text-to-image via /images/generations
     // Edit: image-to-image via /images/edits (passes source images + text)
     // Both route through LiteLLM when LITELLM_API_KEY is set.
+    //
+    // Dispatch on the overlay's `controlAxis` discriminator so DALL·E /
+    // GPT Image (size axis) and Imagen / Gemini (aspectRatio axis) each
+    // receive the param shape their provider expects. The discriminated
+    // union makes accidental cross-axis access a compile error.
+    const controlParams =
+      entry.defaults.controlAxis === "size"
+        ? { size: entry.defaults.size }
+        : { aspectRatio: entry.defaults.aspectRatio };
 
     const result = await generateImage({
-      model: registry.imageModel("google:gemini-3.1-flash-image-preview"),
+      model,
       prompt: imagePrompt,
-      size: IMAGE_SIZE,
+      ...controlParams,
       abortSignal,
     }).catch((error: unknown) => {
       if (error instanceof DOMException && error.name === "AbortError") throw error;
@@ -180,7 +213,7 @@ export const imageGenerationAgent = createAgent<string, ImageGenerationOutput>({
     ];
 
     const mode = isEditMode ? "edit" : "generate";
-    logger.info("Image generation complete", { mode, imageSize: IMAGE_SIZE, mediaType });
+    logger.info("Image generation complete", { mode, mediaType });
 
     return ok(
       {

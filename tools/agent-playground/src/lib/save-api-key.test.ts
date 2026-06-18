@@ -17,6 +17,7 @@ const catalogAfterSave: CatalogEntry[] = [
     credentialEnvVar: "ANTHROPIC_API_KEY",
     meta: { name: "Anthropic", letter: "A", keyPrefix: "sk-ant-", helpUrl: null },
     models: [{ id: "claude-haiku-4-5", displayName: "Claude Haiku 4.5" }],
+    images: [],
   },
 ];
 
