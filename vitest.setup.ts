@@ -21,7 +21,11 @@
 
 import { initArtifactStorage } from "@atlas/core/artifacts/server";
 import { ensureChatsKVBucket, initChatStorage } from "@atlas/core/chat/storage";
-import { bootstrapElicitationsStream } from "@atlas/core/elicitations";
+import {
+  bootstrapElicitationsStream,
+  bootstrapToolAccessGrantStorage,
+  initToolAccessGrantStorage,
+} from "@atlas/core/elicitations";
 import { initMCPRegistryAdapter } from "@atlas/core/mcp-registry/storage";
 import { startNatsTestServer, type TestNatsServer } from "@atlas/core/test-utils/nats-test-server";
 import { initDocumentStore } from "@atlas/document-store";
@@ -56,6 +60,12 @@ beforeAll(async () => {
   // The adapter no longer self-creates the ELICITATIONS stream — see
   // `packages/core/src/elicitations/jetstream-adapter.ts`.
   await bootstrapElicitationsStream(nc);
+  // FSM `buildTools` now reads `ToolAccessGrants.listForWorkspace` to
+  // union `allow_always` grants into the action's tool surface (#280).
+  // Tests that exercise that path need the storage adapter bound to the
+  // shared NATS connection and the KV bucket materialised.
+  await bootstrapToolAccessGrantStorage(nc);
+  initToolAccessGrantStorage(nc);
 }, 60_000);
 
 afterAll(async () => {

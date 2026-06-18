@@ -153,7 +153,12 @@ describe("request_tool_access — bypass branch (Phase 1.C)", () => {
       jobPermissions: { dangerouslySkipAllowlist: true },
     });
     expect(result.isError).toBeFalsy();
-    expect(parseBody(result)).toEqual({ ok: true, granted: true, reason: "bypass" });
+    expect(parseBody(result)).toEqual({
+      ok: true,
+      granted: true,
+      persistent: false,
+      reason: "bypass",
+    });
     // Logs at info level — operators see bypass in ~/.atlas/logs/global.log
     expect((ctx.logger.info as unknown as MockInstance).mock.calls.length).toBeGreaterThan(0);
     // No elicitation created on bypass
@@ -335,7 +340,12 @@ describe("request_tool_access — elicitation branch (Phase 12.C)", () => {
 
     expect(result.isError).toBeFalsy();
     expect(mockState.creates).toHaveLength(0);
-    expect(parseBody(result)).toEqual({ ok: true, granted: true, reason: "persistent_allow" });
+    expect(parseBody(result)).toEqual({
+      ok: true,
+      granted: true,
+      persistent: true,
+      reason: "persistent_allow",
+    });
   });
 
   it("uses resolvedPermissions when provided, skipping raw resolution (review N2)", async () => {
@@ -352,7 +362,12 @@ describe("request_tool_access — elicitation branch (Phase 12.C)", () => {
     });
     expect(result.isError).toBeFalsy();
     expect(mockState.creates).toHaveLength(0); // no elicitation created
-    expect(parseBody(result)).toEqual({ ok: true, granted: true, reason: "bypass" });
+    expect(parseBody(result)).toEqual({
+      ok: true,
+      granted: true,
+      persistent: false,
+      reason: "bypass",
+    });
   });
 
   it("derives expiresAt from jobTimeoutMs when injected (review N3)", async () => {

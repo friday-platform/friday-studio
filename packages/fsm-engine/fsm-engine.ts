@@ -37,6 +37,7 @@ import type { ArtifactStorageAdapter } from "@atlas/core/artifacts";
 import { resolveImageParts } from "@atlas/core/artifacts/images";
 import { liftToolResultsForPersist } from "@atlas/core/artifacts/scrubber";
 import { createDelegateTool, DEFAULT_MAX_DEPTH } from "@atlas/core/delegate";
+import { ToolAccessGrants } from "@atlas/core/elicitations";
 import type { LinkSummary } from "@atlas/core/mcp-registry/discovery";
 import { buildTemporalFacts, type PlatformModels, wrapRetrieved } from "@atlas/llm";
 import { logger } from "@atlas/logger";
@@ -2320,6 +2321,42 @@ export class FSMEngine {
     const hasBareToolName = bareToolNames.size > 0;
     const hasNameAllowlist = hasBareToolName || [...serverAllow.values()].some((v) => v !== "all");
 
+    // Compute bypass + hoist the grant fetch BEFORE choosing effectiveConfigs
+    // so a grant for `gmail/send_email` can pull the gmail server into the
+    // MCP load even when the action declares only `google-calendar/...`.
+    // Resolution precedence is job > workspace > daemon env var —
+    // resolvePermissions is the canonical merge helper. Bypass skips the
+    // grant query entirely; it already widens past per-agent narrowing,
+    // so the union below is a no-op under bypass.
+    const effectivePermissions = resolvePermissions({
+      job: this.options.jobPermissions,
+      workspace: this.options.workspacePermissions,
+      daemonDangerouslySkipAllowlist:
+        typeof Deno !== "undefined"
+          ? Deno.env.get("FRIDAY_DANGEROUSLY_SKIP_PERMISSIONS") === "1"
+          : undefined,
+    });
+    const bypassActive = effectivePermissions.dangerouslySkipAllowlist === true;
+
+    const grantedServerIds = new Set<string>();
+    let listedGrants: { toolName: string; bareToolName: string; serverId?: string }[] = [];
+    if (!bypassActive) {
+      const grants = await ToolAccessGrants.listForWorkspace({
+        workspaceId: this.options.scope.workspaceId,
+      });
+      if (grants.ok) {
+        listedGrants = grants.data;
+        for (const g of grants.data) {
+          if (g.serverId) grantedServerIds.add(g.serverId);
+        }
+      } else {
+        logger.warn("Failed to read tool-access grants; skipping grant union", {
+          workspaceId: this.options.scope.workspaceId,
+          error: grants.error,
+        });
+      }
+    }
+
     // MCP tools: always include atlas-platform for ambient capabilities (webfetch,
     // artifacts) even when the action only uses FSM-defined tools. The connection
     // cost is one HTTP roundtrip + dispose per LLM action — acceptable tradeoff
@@ -2342,6 +2379,29 @@ export class FSMEngine {
           effectiveConfigs[id] = config;
         }
       }
+    }
+
+    // Eagerly load servers referenced by `allow_always` grants when the
+    // workspace declares them. Closes the "strictly-qualified action +
+    // grant for a different server's tool" gap that #280's first pass
+    // left behind. Defensively skip serverIds the workspace doesn't
+    // declare — grants can outlive workspace config edits.
+    const eagerlyLoaded: string[] = [];
+    for (const serverId of grantedServerIds) {
+      if (serverId === "atlas-platform") continue;
+      if (effectiveConfigs[serverId]) continue;
+      const config = this.options.mcpServerConfigs?.[serverId];
+      if (config) {
+        effectiveConfigs[serverId] = config;
+        eagerlyLoaded.push(serverId);
+      }
+    }
+    if (eagerlyLoaded.length > 0) {
+      logger.info("Eagerly loading MCP servers referenced by allow-always grants", {
+        jobName: this._definition.id,
+        actionId,
+        servers: eagerlyLoaded,
+      });
     }
 
     // Do not lift MCP results before the producer LLM sees them. Oversized
@@ -2390,23 +2450,12 @@ export class FSMEngine {
     // the source of the daily-memo "fetcher agents send their own emails"
     // bug.
     //
-    // Bypass — when the resolved permissions for this action declare
-    // `dangerouslySkipAllowlist`, skip the per-agent narrowing
-    // and pass every platform-allowlisted tool through to the LLM.
-    // Mirrors Claude Code's `--dangerously-skip-permissions`. Resolution
-    // precedence: job > workspace > FRIDAY_DANGEROUSLY_SKIP_PERMISSIONS
-    // env var. resolvePermissions is the canonical merge helper.
-    // Falls through to wrapPlatformToolsWithScope below so request_tool_access
+    // Bypass (computed above) — when the resolved permissions for this
+    // action declare `dangerouslySkipAllowlist`, skip the per-agent
+    // narrowing and pass every platform-allowlisted tool through to the
+    // LLM. Mirrors Claude Code's `--dangerously-skip-permissions`. Falls
+    // through to wrapPlatformToolsWithScope below so request_tool_access
     // and other scope-injected tools still receive sessionId/actionId/perms.
-    const effectivePermissions = resolvePermissions({
-      job: this.options.jobPermissions,
-      workspace: this.options.workspacePermissions,
-      daemonDangerouslySkipAllowlist:
-        typeof Deno !== "undefined"
-          ? Deno.env.get("FRIDAY_DANGEROUSLY_SKIP_PERMISSIONS") === "1"
-          : undefined,
-    });
-    const bypassActive = effectivePermissions.dangerouslySkipAllowlist === true;
     if (bypassActive) {
       logger.info("Bypassing per-agent tool allowlist (dangerouslySkipAllowlist)", {
         jobName: this._definition.id,
@@ -2438,6 +2487,43 @@ export class FSMEngine {
             scoped[name] = filtered[name];
           }
         }
+      }
+    }
+
+    // Union `allow_always` grants into the action's toolset. Without this,
+    // `request_tool_access` is a permission gate the runtime never reads —
+    // see #280. Grants only widen up to what `filtered` already contains,
+    // so PLATFORM_TOOL_ALLOWLIST + workspace MCP load decisions still cap
+    // the surface. Bypass already widens past per-agent narrowing, so the
+    // union is a no-op there (grantedServerIds is empty under bypass).
+    //
+    // Two matching strategies cover both new and legacy grants:
+    //   - With `serverId` known: confirm the bareToolName is actually
+    //     attributed to that server in `mcpResult.toolsByServer` before
+    //     widening. Guards against a grant being lit up by an unrelated
+    //     server that happens to export the same tool name (rare; defense
+    //     in depth).
+    //   - Without `serverId` (legacy bare-name grants): fall through to
+    //     the existing bareToolName-in-filtered check, same as the #302
+    //     first pass.
+    if (!bypassActive && listedGrants.length > 0) {
+      const widened: string[] = [];
+      for (const grant of listedGrants) {
+        const name = grant.bareToolName;
+        if (!filtered[name] || scoped[name]) continue;
+        if (grant.serverId) {
+          const names = mcpResult.toolsByServer[grant.serverId];
+          if (!names?.includes(name)) continue;
+        }
+        scoped[name] = filtered[name];
+        widened.push(grant.toolName);
+      }
+      if (widened.length > 0) {
+        logger.info("Allow-always grants widened action toolset", {
+          jobName: this._definition.id,
+          actionId,
+          widened,
+        });
       }
     }
 
