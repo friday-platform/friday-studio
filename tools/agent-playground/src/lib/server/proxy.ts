@@ -269,17 +269,26 @@ export function buildProxyHandler({ upstream, label }: BuildProxyOptions): Reque
   };
 }
 
-/** Build a Hono handler that reverse-proxies requests matching `prefix` to
- * the upstream service. Used by the compiled `playground` binary
- * (`static-server.ts`) where the SvelteKit dev server is unavailable and
- * Hono mounts the `/api/{daemon,tunnel}/*` routes directly. Lives here
- * (next to `buildProxyHandler` + `executeProxyFetch`) so both runtimes
- * share the same OAuth-critical semantics and can be exercised by a
- * single Node-compatible test suite. */
-export function buildHonoProxy(prefix: string, upstream: string, label: string) {
+/** Build a Hono handler that reverse-proxies requests mounted at
+ * `/api/${label}/*` to the upstream service. Used by the compiled
+ * `playground` binary (`static-app.ts`) where the SvelteKit dev server is
+ * unavailable and Hono mounts the `/api/{daemon,tunnel}/*` routes directly.
+ * Lives here (next to `buildProxyHandler` + `executeProxyFetch`) so both
+ * runtimes share the same OAuth-critical semantics and can be exercised by
+ * a single Node-compatible test suite.
+ *
+ * The mount prefix is derived from `label` (`/api/${label}`) — the same
+ * value `executeProxyFetch` stamps into `x-forwarded-prefix`. Keeping one
+ * source of truth prevents the two from silently diverging (mount stripped
+ * `/foo` while the upstream received `x-forwarded-prefix: /api/daemon`
+ * would surface as wrong external URLs downstream, e.g. OAuth callbacks). */
+export function buildHonoProxy(upstream: string, label: string) {
+  const prefix = `/api/${label}`;
   return (c: { req: { url: string; raw: Request } }) => {
     const url = new URL(c.req.url);
-    const path = url.pathname.replace(new RegExp(`^${prefix}`), "");
+    const path = url.pathname.startsWith(prefix)
+      ? url.pathname.slice(prefix.length)
+      : url.pathname;
     const target = new URL(path + url.search, upstream);
     return executeProxyFetch(target, c.req.raw, label);
   };
