@@ -142,16 +142,23 @@ export async function _flushPrewarmsForTest(): Promise<void> {
  * Probe an MCP server and extract its tool list. Throws on failure (including
  * credential-disconnected servers — those get surfaced as auth errors via
  * the classifier rather than caching an empty tool list).
+ *
+ * Optional `signal` lets the route honor client disconnects (PR 1 of #344). It
+ * composes with the internal probe timeout — whichever aborts first wins.
+ * Note: this slice does NOT yet kill the spawned stdio subprocess on abort;
+ * that lands in the follow-up PR. See
+ * `docs/plans/2026-05-19-mcp-probe-abort-signal-design.md`.
  */
 export async function probeAndExtract(
   serverId: string,
   config: MCPServerConfig,
   logger: Logger,
   timeoutMs: number,
+  signal?: AbortSignal,
 ): Promise<CachedTool[]> {
-  const result = await createMCPTools({ [serverId]: config }, logger, {
-    signal: AbortSignal.timeout(timeoutMs),
-  });
+  const timeoutSignal = AbortSignal.timeout(timeoutMs);
+  const composedSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
+  const result = await createMCPTools({ [serverId]: config }, logger, { signal: composedSignal });
   // createMCPTools does not throw on missing/expired credentials — it routes
   // the server into `disconnected` with an empty tools map. For a single-
   // server probe, any disconnected entry means *this* probe failed.

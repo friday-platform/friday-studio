@@ -292,6 +292,54 @@ describe("connectHttp startup", () => {
     const callArgs = httpCall[1] as { requestInit: { headers: Record<string, string> } };
     expect(callArgs.requestInit.headers).not.toHaveProperty("TEST_PLATFORM_VAR");
   });
+
+  it("client signal is NOT forwarded to sharedMCPProcesses.acquire — shared children outlive any individual probe", async () => {
+    // Locks in the HTTP-path safety invariant from issue #344's design doc:
+    // the shared subprocess registry is daemon-scoped and intentionally
+    // outlives individual probes. If a future refactor leaked the client's
+    // AbortSignal into `acquire`, an HTTP-transport child would die on client
+    // abort and break shared reuse across probes. See
+    // `packages/mcp/src/create-mcp-tools.ts:845-851`.
+    const child = createMockChildProcess();
+    const mockSpawn = vi.fn().mockReturnValue(child);
+    let fetchCall = 0;
+    const mockFetch = vi.fn().mockImplementation(() => {
+      fetchCall++;
+      if (fetchCall <= 1) {
+        return Promise.reject(new Error("ECONNREFUSED"));
+      }
+      return Promise.resolve({ status: 200, ok: true } as Response);
+    });
+
+    mockMCPClient({ "cal-tool": { description: "calendar" } });
+
+    const acquireSpy = vi.spyOn(sharedMCPProcesses, "acquire");
+
+    const controller = new AbortController();
+    const config = makeHttpConfig();
+    await connectHttp(
+      config,
+      {},
+      "signal-isolation-server",
+      fakeLogger,
+      { spawn: mockSpawn, fetch: mockFetch, pidFile: noopPidFile() },
+      controller.signal,
+    );
+
+    expect(acquireSpy).toHaveBeenCalledTimes(1);
+    const acquireArgs = acquireSpy.mock.calls[0];
+    if (!acquireArgs) throw new Error("expected acquireSpy to have been called");
+
+    // No positional argument is (or contains) the request signal.
+    for (const arg of acquireArgs) {
+      expect(arg).not.toBe(controller.signal);
+      if (arg && typeof arg === "object") {
+        for (const value of Object.values(arg as unknown as Record<string, unknown>)) {
+          expect(value).not.toBe(controller.signal);
+        }
+      }
+    }
+  });
 });
 
 describe("MCPStartupError", () => {

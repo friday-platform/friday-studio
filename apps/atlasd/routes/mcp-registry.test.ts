@@ -2602,6 +2602,91 @@ describe("MCP Registry Routes", () => {
       expect(mockCreateMCPTools.mock.calls.length).toBe(1);
     });
 
+    it("client abort wins the race — route short-circuits, prewarm keeps running", async () => {
+      // PR 1 of #344: when the client disconnects mid-dedup-wait, the route
+      // must abort its wait without canceling the underlying prewarm — the
+      // prewarm has its own 60s lifecycle and serves the next caller.
+      const entry = createTestEntry("dedup-client-abort");
+      let resolvePrewarm:
+        | ((value: { tools: Record<string, MockTool>; disconnected: never[] }) => void)
+        | undefined;
+      const disposeSpy = vi.fn().mockResolvedValue(undefined);
+      mockCreateMCPTools.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolvePrewarm = (v) => resolve({ ...v, dispose: disposeSpy });
+          }),
+      );
+
+      await mcpRegistryRouter.request("/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entry }),
+      });
+
+      const ctl = new AbortController();
+      const probePromise = mcpRegistryRouter.request(`/${entry.id}/tools`, { signal: ctl.signal });
+      // Give the handler time to reach Promise.race and register the listener
+      // before aborting — otherwise the synchronous pre-check at the top of
+      // the abort-promise constructor would fire instead.
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      ctl.abort(new Error("client gone"));
+
+      // Hono's `app.request` doesn't observe the AbortSignal at the fetch
+      // layer — instead the handler throws and Hono surfaces it as a 500.
+      // What matters is the route did NOT return tools (no `ok: true` body)
+      // and the prewarm was NOT canceled.
+      const resp = await probePromise;
+      expect(resp.status).toBe(500);
+
+      // Prewarm is still in-flight — settle it to flush the IIFE and let the
+      // test's afterEach clean up. If the route had erroneously canceled the
+      // prewarm, mockCreateMCPTools' returned promise would have already
+      // rejected and `resolvePrewarm` would be useless.
+      expect(resolvePrewarm).toBeDefined();
+      resolvePrewarm?.({ tools: { "warmed-tool": { description: "warmed" } }, disconnected: [] });
+      await _flushPrewarmsForTest();
+      expect(mockCreateMCPTools.mock.calls.length).toBe(1);
+    });
+
+    it("prewarm wins the race — abort listener is cleaned up so a later abort is inert", async () => {
+      // Locks in the listener-cleanup invariant: once the race resolves on
+      // the prewarm branch, removing the abort listener (both via
+      // {once: true} and explicit removeEventListener) means a subsequent
+      // abort on the same signal does not double-resolve or leak handler
+      // refs. Asserted indirectly via mock state — a leaked listener would
+      // not affect functional correctness here, but the test pins both the
+      // happy path AND the lifecycle assumption the impl depends on.
+      const entry = createTestEntry("dedup-prewarm-wins");
+      mockCreateMCPTools.mockImplementationOnce(() =>
+        Promise.resolve({
+          tools: { "warmed-tool": { description: "warmed" } },
+          dispose: vi.fn().mockResolvedValue(undefined),
+          disconnected: [],
+        }),
+      );
+
+      await mcpRegistryRouter.request("/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entry }),
+      });
+
+      const ctl = new AbortController();
+      const probe = await mcpRegistryRouter.request(`/${entry.id}/tools`, { signal: ctl.signal });
+      expect(probe.status).toBe(200);
+      const body = ToolProbeSuccessSchema.parse(await probe.json());
+      expect(body.tools[0]?.name).toBe("warmed-tool");
+
+      // Aborting after the response settled must not affect anything — the
+      // listener should already be gone. We can't introspect listeners via
+      // public API, but a leak would manifest as an unhandled rejection
+      // (the `aborted` Promise would resolve into a settled race that has
+      // no consumer); vitest fails the test on unhandled rejections.
+      ctl.abort(new Error("late abort"));
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    });
+
     it("returns retryable hint when in-flight prewarm exceeds the race cap", async () => {
       _setRaceCapForTest(50);
       const entry = createTestEntry("dedup-retryable");

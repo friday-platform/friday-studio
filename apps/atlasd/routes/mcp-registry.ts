@@ -1030,6 +1030,11 @@ export const mcpRegistryRouter = daemonFactory
     ),
     async (c) => {
       const { id } = c.req.valid("param");
+      // Client abort signal — when the playground cancels (e.g. user mashing
+      // Retry, navigating away), short-circuit the probe so we stop awaiting.
+      // PR 1 of #344: this only collapses the route's wait; the in-flight
+      // stdio subprocess still lives for ~20s until task 4 lands.
+      const clientSignal = c.req.raw.signal;
 
       let server: MCPServerMetadata | undefined = mcpServersRegistry.servers[id];
       if (!server) {
@@ -1054,13 +1059,30 @@ export const mcpRegistryRouter = daemonFactory
       const inFlight = getInFlightPrewarm(id, server.configTemplate);
       if (inFlight) {
         const TIMED_OUT = Symbol("timeout");
+        const ABORTED = Symbol("aborted");
         let timer: ReturnType<typeof setTimeout> | undefined;
         const timed = new Promise<typeof TIMED_OUT>((resolve) => {
           timer = setTimeout(() => resolve(TIMED_OUT), getRaceCapMs());
         });
-        const winner = await Promise.race([inFlight, timed]);
+        // Race-loser sentinel for client abort. Cancels the *wait*, not the
+        // prewarm itself — prewarm has its own 60s lifecycle and continues
+        // so the next caller can still benefit from a warm cache.
+        let onAbort: (() => void) | undefined;
+        const aborted = new Promise<typeof ABORTED>((resolve) => {
+          if (clientSignal.aborted) {
+            resolve(ABORTED);
+            return;
+          }
+          onAbort = () => resolve(ABORTED);
+          clientSignal.addEventListener("abort", onAbort, { once: true });
+        });
+        const winner = await Promise.race([inFlight, timed, aborted]);
         if (timer) clearTimeout(timer);
+        if (onAbort) clientSignal.removeEventListener("abort", onAbort);
 
+        if (winner === ABORTED) {
+          throw clientSignal.reason ?? new Error("Aborted");
+        }
         if (winner === TIMED_OUT) {
           return c.json({
             ok: false as const,
@@ -1083,7 +1105,7 @@ export const mcpRegistryRouter = daemonFactory
       }
 
       try {
-        const tools = await probeAndExtract(id, server.configTemplate, logger, 5000);
+        const tools = await probeAndExtract(id, server.configTemplate, logger, 5000, clientSignal);
         putCachedTools(id, server.configTemplate, tools);
         return c.json({ ok: true as const, tools });
       } catch (error) {
