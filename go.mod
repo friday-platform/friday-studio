@@ -6,7 +6,7 @@ require (
 	fyne.io/systray v1.12.1
 	github.com/aymanbagabas/go-pty v0.2.3
 	github.com/caarlos0/env/v11 v11.4.1
-	github.com/coder/websocket v1.8.14
+	github.com/coder/websocket v1.8.15
 	github.com/f1bonacc1/process-compose v1.110.0
 	github.com/go-chi/chi/v5 v5.2.5
 	github.com/go-chi/cors v1.2.2
@@ -15,6 +15,7 @@ require (
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/sys v0.45.0
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
+	gopkg.in/yaml.v3 v3.0.1
 	howett.net/plist v1.0.1
 )
 
@@ -58,5 +59,4 @@ require (
 	golang.org/x/crypto v0.51.0 // indirect
 	golang.org/x/term v0.43.0 // indirect
 	golang.org/x/text v0.37.0 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
