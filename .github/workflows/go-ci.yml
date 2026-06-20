@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest-8-cores
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Setup Go
         uses: actions/setup-go@v6
@@ -38,7 +38,7 @@ jobs:
     runs-on: ubuntu-latest-8-cores
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Setup Go
         uses: actions/setup-go@v6
@@ -54,7 +54,7 @@ jobs:
     runs-on: ubuntu-latest-8-cores
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Setup Go
         uses: actions/setup-go@v6
