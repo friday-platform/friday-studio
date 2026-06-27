@@ -9,7 +9,7 @@
     "./shared-schemas": "./src/shared-schemas.ts"
   },
   "dependencies": {
-    "@ai-sdk/provider": "^3.0.10",
+    "@ai-sdk/provider": "^4.0.0",
     "@anthropic-ai/claude-agent-sdk": "^0.3.168",
     "@atlas/agent-sdk": "workspace:*",
     "@atlas/schemas": "workspace:*",
@@ -18,7 +18,7 @@
     "@chat-adapter/slack": "4.29.0",
     "@coderabbitai/bitbucket": "^1.1.4",
     "@hubspot/api-client": "^13.4.0",
-    "ai": "^6.0.197",
+    "ai": "^7.0.3",
     "jira.js": "^5.3.1",
     "markdown-it": "^14.1.1",
     "parallel-web": "0.5.0",
