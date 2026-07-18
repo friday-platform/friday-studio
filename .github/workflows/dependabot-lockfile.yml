@@ -82,7 +82,7 @@ jobs:
       # studio-installer-build.yml via `npm ci`. Dependabot updates the
       # package.json there but leaves the lockfile stale, breaking the build.
       - name: Setup Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: "22"
 
