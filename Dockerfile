@@ -81,7 +81,7 @@ RUN RUST_MIN_STACK=16777216 deno compile -q --no-check --allow-all \
 # ============================================================================
 # Stage 2: Go builder — compile webhook-tunnel binary
 # ============================================================================
-FROM golang:1.26-bookworm AS go-builder
+FROM golang:1.27-bookworm AS go-builder
 
 WORKDIR /src
 
